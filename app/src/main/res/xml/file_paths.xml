@@ -1,0 +1,4 @@
+<paths>
+    <external-files-path name="exports" path="exports/" />
+    <cache-path name="cache" path="." />
+</paths>
