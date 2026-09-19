@@ -38,6 +38,21 @@ recorder — the timbre is wildly different, the loudness shape is not.
 - **Exact seeking** in preview (`SeekParameters.EXACT`), so scrubbing lands on
   the frame rather than the nearest keyframe.
 
+## Layout
+
+**Dashboard, not a timeline.** The home screen is the full set of doors, so a
+person who just needs a smaller file never meets an editor:
+
+- **Video editor** — the full suite
+- **Quick tools** — Compress, Trim, Extract audio, Merge. One job each, one tap
+  from home, and every one also lives inside the editor. Each quick tool offers
+  "open in the full editor" so simple work can grow up without starting over.
+
+**The editor shows one tool at a time.** Preview and timeline stay pinned; a
+bottom rail switches between Trim, Crop, Speed, Audio, Text, Colour and Export.
+Everything used to be stacked in a single endless scroll, which made even trim
+and crop hard to find.
+
 ## Everything else
 
 Trim · compress by preset or to a target size (16/25/50 MB) · crop to 9:16, 1:1
@@ -103,6 +118,15 @@ audio fades and ducking, and keyframed effects.
 ## Brand
 
 Coral `#FF6B4A` primary, teal `#33E0C2` for audio and for wins (savings,
-matches, success), yellow for markers and warnings, dark `#0E0E12` ground. Type
-falls back to the system sans (`ui/theme/Type.kt`) until the real brand faces
-are wired in.
+matches, success), yellow for markers and warnings, dark `#0E0E12` ground.
+
+Type is **Space Grotesk**, inherited from Layerlink — the same four weight files
+(400/500/600/700), bundled rather than fetched so bold is the real bold face.
+One family throughout; hierarchy comes from weight and size, which keeps the
+interface quiet enough to put a video in front of. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the font licence.
+
+The launch animation is the system splash: the squish bounce is installed as
+`windowSplashScreenAnimatedIcon`, so a cold start plays one animation and lands
+on the dashboard, instead of showing a static icon and then a second in-app
+splash.

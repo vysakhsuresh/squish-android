@@ -19,33 +19,56 @@ import java.io.File
 object GallerySaver {
 
     suspend fun publish(context: Context, source: File, displayName: String = source.name): Uri? =
-        withContext(Dispatchers.IO) {
-            val resolver = context.contentResolver
-            val values = ContentValues().apply {
-                put(MediaStore.Video.Media.DISPLAY_NAME, displayName)
-                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-                put(
-                    MediaStore.Video.Media.RELATIVE_PATH,
-                    Environment.DIRECTORY_MOVIES + File.separator + "Squish"
-                )
-                put(MediaStore.Video.Media.IS_PENDING, 1)
-            }
+        insert(
+            context = context,
+            source = source,
+            displayName = displayName,
+            mimeType = "video/mp4",
+            relativePath = Environment.DIRECTORY_MOVIES + File.separator + "Squish",
+            collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        )
 
-            val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            val target = resolver.insert(collection, values) ?: return@withContext null
+    /** Extracted soundtracks belong in Music, not Movies. */
+    suspend fun publishAudio(context: Context, source: File, displayName: String = source.name): Uri? =
+        insert(
+            context = context,
+            source = source,
+            displayName = displayName,
+            mimeType = "audio/mp4",
+            relativePath = Environment.DIRECTORY_MUSIC + File.separator + "Squish",
+            collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        )
 
-            try {
-                resolver.openOutputStream(target)?.use { output ->
-                    source.inputStream().use { input -> input.copyTo(output) }
-                } ?: return@withContext null
-
-                values.clear()
-                values.put(MediaStore.Video.Media.IS_PENDING, 0)
-                resolver.update(target, values, null, null)
-                target
-            } catch (t: Throwable) {
-                runCatching { resolver.delete(target, null, null) }
-                null
-            }
+    private suspend fun insert(
+        context: Context,
+        source: File,
+        displayName: String,
+        mimeType: String,
+        relativePath: String,
+        collection: Uri
+    ): Uri? = withContext(Dispatchers.IO) {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
+
+        val target = resolver.insert(collection, values) ?: return@withContext null
+
+        try {
+            resolver.openOutputStream(target)?.use { output ->
+                source.inputStream().use { input -> input.copyTo(output) }
+            } ?: return@withContext null
+
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(target, values, null, null)
+            target
+        } catch (t: Throwable) {
+            runCatching { resolver.delete(target, null, null) }
+            null
+        }
+    }
 }

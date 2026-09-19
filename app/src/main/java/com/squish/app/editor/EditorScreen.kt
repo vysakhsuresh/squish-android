@@ -1,9 +1,13 @@
 package com.squish.app.editor
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -21,7 +24,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -38,12 +40,25 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squish.app.media.ThumbnailExtractor
-import com.squish.app.ui.components.SelectableChip
-import com.squish.app.ui.components.SquishPrimaryButton
 import com.squish.app.ui.theme.SquishColors
 
 private const val FILMSTRIP_FRAMES = 12
 
+enum class EditorTab(val label: String) {
+    Trim("Trim"),
+    Crop("Crop"),
+    Speed("Speed"),
+    Audio("Audio"),
+    Text("Text"),
+    Colour("Colour"),
+    Export("Export")
+}
+
+/**
+ * Preview and timeline stay put; only one tool panel is on screen at a time.
+ * Previously every control lived in one endless scroll, which made even trim and
+ * crop hard to find.
+ */
 @Composable
 fun EditorScreen(
     sourceUri: Uri,
@@ -55,6 +70,7 @@ fun EditorScreen(
     val context = LocalContext.current
     var thumbnails by remember { mutableStateOf(listOf<ImageBitmap>()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var tab by remember { mutableStateOf(EditorTab.Trim) }
 
     LaunchedEffect(sourceUri) { viewModel.load(sourceUri) }
 
@@ -66,15 +82,10 @@ fun EditorScreen(
         }
     }
 
-    // Accepts audio files and video files alike: the second angle of a two-camera
-    // shoot is a perfectly normal source for the good audio.
     val pickAudioTrack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
             runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    it,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+                context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             viewModel.setAudioTrack(it)
         }
@@ -86,136 +97,132 @@ fun EditorScreen(
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+
             Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onBack) { Text("← Back", color = SquishColors.TextPrimary) }
-                Text("Edit video", style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
-                Spacer(modifier = Modifier.width(64.dp))
+                Text(
+                    "Back",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = SquishColors.TextSecondary,
+                    modifier = Modifier.clickable(onClick = onBack)
+                )
+                Text("Edit", style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
+                Text(
+                    if (state.isExporting) "Exporting…" else "Export",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (state.isExporting) SquishColors.TextMuted else SquishColors.Coral,
+                    modifier = Modifier.clickable(enabled = !state.isExporting && !state.isLoadingSource) {
+                        errorMessage = null
+                        viewModel.export(onResult = onExported, onError = { errorMessage = it })
+                    }
+                )
+            }
+
+            if (state.isLoadingSource) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = SquishColors.Coral)
+                }
+                return@Column
+            }
+
+            VideoPreviewPlayer(
+                videoUri = sourceUri,
+                audioUri = state.audioTrackUri,
+                audioTrimStartMs = state.audioTrimStartMs,
+                audioPlacementMs = state.audioPlacementMs,
+                audioSliceDurationMs = state.audioSliceDurationMs,
+                muteOriginal = state.muteOriginal,
+                originalVolume = state.originalVolume,
+                audioVolume = state.audioVolume,
+                onPlayheadChange = viewModel::setPlayhead,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(16.dp))
+            )
+
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                PrecisionTimeline(
+                    state = state,
+                    thumbnails = thumbnails,
+                    onTrimChange = viewModel::setTrim,
+                    onAudioOffsetChange = { delta -> viewModel.nudgeAudioOffset(delta) }
+                )
+            }
+
+            errorMessage?.let {
+                Text(
+                    it,
+                    color = SquishColors.Pink,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
             }
 
             Column(
-                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
             ) {
-                if (state.isLoadingSource) {
-                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = SquishColors.Coral)
-                    }
-                } else {
-                    VideoPreviewPlayer(
-                        videoUri = sourceUri,
-                        audioUri = state.audioTrackUri,
-                        audioOffsetMs = state.audioOffsetMs,
-                        muteOriginal = state.muteOriginal,
-                        originalVolume = state.originalVolume,
-                        audioVolume = state.audioVolume,
-                        onPlayheadChange = viewModel::setPlayhead,
-                        modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(18.dp))
-                    )
-
-                    PrecisionTimeline(
-                        state = state,
-                        thumbnails = thumbnails,
-                        onTrimChange = viewModel::setTrim,
-                        onAudioOffsetChange = { delta -> viewModel.nudgeAudioOffset(delta) }
-                    )
-
-                    SectionLabel("Precision")
-                    PrecisionTrimPanel(state = state, viewModel = viewModel)
-
-                    SectionLabel("Separate audio & sync")
-                    SyncPanel(
+                when (tab) {
+                    EditorTab.Trim -> PrecisionTrimPanel(state, viewModel)
+                    EditorTab.Crop -> CropPanel(state, viewModel)
+                    EditorTab.Speed -> SpeedPanel(state, viewModel)
+                    EditorTab.Audio -> AudioPanel(
                         state = state,
                         viewModel = viewModel,
                         onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) }
                     )
-
-                    SectionLabel("Compress & convert")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Quality.entries.forEach { quality ->
-                            SelectableChip(
-                                label = quality.label,
-                                selected = state.quality == quality && !state.fitToSize,
-                                modifier = Modifier.weight(1f),
-                                onClick = {
-                                    viewModel.setFitToSize(false)
-                                    viewModel.setQuality(quality)
-                                }
-                            )
-                        }
-                    }
-                    FitToSizeCard(state = state, viewModel = viewModel)
-                    EstimateCard(state = state)
-
-                    SectionLabel("Crop & speed")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        CropAspect.entries.forEach { aspect ->
-                            SelectableChip(
-                                label = aspect.label,
-                                selected = state.cropAspect == aspect,
-                                accentColor = SquishColors.Purple,
-                                modifier = Modifier.weight(1f),
-                                onClick = { viewModel.setCropAspect(aspect) }
-                            )
-                        }
-                    }
-                    SpeedSlider(state.speed, viewModel::setSpeed)
-
-                    SectionLabel("Fix & clean up")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        OptionToggle("Mute camera audio", state.muteOriginal, Modifier.weight(1f)) {
-                            viewModel.setMuteOriginal(it)
-                        }
-                        OptionToggle("Rotate 90°", state.rotationDegrees != 0, Modifier.weight(1f)) {
-                            viewModel.toggleRotate()
-                        }
-                    }
-
-                    SectionLabel("Color")
-                    LabeledSlider("Brightness", state.brightness, -1f..1f, viewModel::setBrightness)
-                    LabeledSlider("Contrast", state.contrast, -1f..1f, viewModel::setContrast)
-                    LabeledSlider("Saturation", state.saturation, -1f..1f, viewModel::setSaturation)
-
-                    SectionLabel("Captions & text")
-                    TextOverlaySection(state = state, viewModel = viewModel)
-
-                    SectionLabel("Merge clips")
-                    MergeQueueSection(
+                    EditorTab.Text -> TextOverlaySection(state, viewModel)
+                    EditorTab.Colour -> ColourPanel(state, viewModel)
+                    EditorTab.Export -> ExportPanel(
                         state = state,
+                        viewModel = viewModel,
                         onAddClip = {
                             pickExtraClip.launch(
                                 PickVisualMediaRequest.Builder()
                                     .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
                                     .build()
                             )
-                        },
-                        onRemoveClip = viewModel::removeClipFromQueue
+                        }
                     )
-
-                    Spacer(modifier = Modifier.height(4.dp))
                 }
+                Spacer(modifier = Modifier.height(16.dp))
             }
 
-            Column(modifier = Modifier.padding(16.dp)) {
-                errorMessage?.let {
-                    Text(
-                        it,
-                        color = SquishColors.Pink,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                }
-                SquishPrimaryButton(
-                    text = if (state.isExporting) "Exporting…" else "Export video",
-                    enabled = !state.isExporting && !state.isLoadingSource,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        errorMessage = null
-                        viewModel.export(onResult = onExported, onError = { errorMessage = it })
-                    }
+            ToolRail(selected = tab, onSelect = { tab = it })
+        }
+    }
+}
+
+@Composable
+private fun ToolRail(selected: EditorTab, onSelect: (EditorTab) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SquishColors.Surface)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        EditorTab.entries.forEach { entry ->
+            val isSelected = entry == selected
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isSelected) SquishColors.Coral else SquishColors.Background)
+                    .clickable { onSelect(entry) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                Text(
+                    entry.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (isSelected) SquishColors.Background else SquishColors.TextSecondary
                 )
             }
         }

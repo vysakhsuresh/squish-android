@@ -35,6 +35,7 @@ data class EditorUiState(
     val sourceHeight: Int = 0,
     val originalSizeBytes: Long = 0,
     val fps: Float = 30f,
+    val sourceHasAudio: Boolean = true,
 
     val trimStartMs: Long = 0,
     val trimEndMs: Long = 0,
@@ -45,6 +46,7 @@ data class EditorUiState(
     val quality: Quality = Quality.Medium,
     val fitToSize: Boolean = false,
     val targetSizeMb: Int = 16,
+    val audioOnly: Boolean = false,
 
     val muteOriginal: Boolean = false,
     val originalVolume: Float = 1f,
@@ -59,11 +61,18 @@ data class EditorUiState(
     val textOverlays: List<TextOverlayItem> = emptyList(),
     val clipQueue: List<Uri> = emptyList(),
 
-    // Separate audio track: dual-system sound, a music bed, a voiceover.
+    // A second audio track: separately recorded sound, a music bed, a voiceover.
+    // Three numbers describe it completely -
+    //   audioTrimStartMs/EndMs : which slice of the audio file to use
+    //   audioPlacementMs       : where on the video timeline that slice begins
+    // Sync offset is simply the difference between the two, so aligning a clap and
+    // dropping a music cue at a chorus are the same operation underneath.
     val audioTrackUri: Uri? = null,
     val audioTrackDurationMs: Long = 0,
     val audioTrackName: String? = null,
-    val audioOffsetMs: Long = 0,
+    val audioTrimStartMs: Long = 0,
+    val audioTrimEndMs: Long = 0,
+    val audioPlacementMs: Long = 0,
     val audioVolume: Float = 1f,
     val syncStatus: SyncStatus = SyncStatus.Idle,
     val syncConfidence: Float = 0f,
@@ -80,11 +89,15 @@ data class EditorUiState(
 
     val hasSeparateAudio: Boolean get() = audioTrackUri != null
 
+    /** How long the chosen slice of the audio track runs. */
+    val audioSliceDurationMs: Long get() = (audioTrimEndMs - audioTrimStartMs).coerceAtLeast(0)
+
     /**
-     * How far the export has to push the video's in-point so the offset external
-     * audio still has material to play from its own time zero. Surfaced in the UI
-     * so a head trim never happens silently.
+     * At video time t the aligned audio sample sits at (t + audioOffsetMs).
+     * Positive means the track's content runs ahead of the picture.
      */
-    val syncHeadTrimMs: Long
-        get() = if (!hasSeparateAudio) 0L else (-(trimStartMs + audioOffsetMs)).coerceAtLeast(0L)
+    val audioOffsetMs: Long get() = audioTrimStartMs - audioPlacementMs
+
+    /** Whether any audio at all reaches the exported file. */
+    val hasAnyAudio: Boolean get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio
 }

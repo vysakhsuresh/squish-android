@@ -59,14 +59,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
             recomputeEstimate()
-            loadVideoWaveform(uri)
-        }
-    }
 
-    private fun loadVideoWaveform(uri: Uri) {
-        viewModelScope.launch {
-            val pcm = PcmDecoder.decodeMono(getApplication(), uri) ?: return@launch
-            _state.update { it.copy(videoWaveform = WaveformBuilder.build(pcm)) }
+            val pcm = PcmDecoder.decodeMono(getApplication(), uri)
+            _state.update {
+                it.copy(
+                    sourceHasAudio = pcm != null,
+                    videoWaveform = pcm?.let { decoded -> WaveformBuilder.build(decoded) }
+                )
+            }
         }
     }
 
@@ -74,21 +74,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setTrim(startMs: Long, endMs: Long) {
         val current = _state.value
-        val snapped = if (current.snapToMarkers) {
-            snapToNearbyMarker(startMs, current) to snapToNearbyMarker(endMs, current)
-        } else {
-            startMs to endMs
-        }
+        val start = if (current.snapToMarkers) snapToNearbyMarker(startMs, current) else startMs
+        val end = if (current.snapToMarkers) snapToNearbyMarker(endMs, current) else endMs
         _state.update {
             it.copy(
-                trimStartMs = snapped.first.coerceIn(0L, it.durationMs),
-                trimEndMs = snapped.second.coerceIn(0L, it.durationMs)
+                trimStartMs = start.coerceIn(0L, it.durationMs),
+                trimEndMs = end.coerceIn(0L, it.durationMs)
             )
         }
         recomputeEstimate()
     }
 
-    /** Frame-exact nudge of an in/out point - the control that trim sliders cannot give you. */
     fun nudgeTrim(isStart: Boolean, frames: Int) {
         val current = _state.value
         val delta = frames * current.frameMs
@@ -137,7 +133,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         return if (abs(nearest - ms) <= threshold) nearest else ms
     }
 
-    // ---- Separate audio track + sync ------------------------------------------
+    // ---- Separate audio track -------------------------------------------------
 
     fun setAudioTrack(uri: Uri?) {
         syncJob?.cancel()
@@ -147,7 +143,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     audioTrackUri = null,
                     audioTrackName = null,
                     audioTrackDurationMs = 0,
-                    audioOffsetMs = 0,
+                    audioTrimStartMs = 0,
+                    audioTrimEndMs = 0,
+                    audioPlacementMs = 0,
                     audioWaveform = null,
                     syncStatus = SyncStatus.Idle,
                     syncConfidence = 0f
@@ -161,7 +159,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             it.copy(
                 audioTrackUri = uri,
                 audioTrackName = displayNameOf(uri),
-                audioOffsetMs = 0,
+                audioTrimStartMs = 0,
+                audioTrimEndMs = 0,
+                audioPlacementMs = it.trimStartMs,
                 audioWaveform = null,
                 syncStatus = SyncStatus.Idle,
                 syncConfidence = 0f
@@ -169,25 +169,74 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         viewModelScope.launch {
-            // Real container duration, not the decoded window - the decoder caps how
-            // much it reads, and a capped value here would silently truncate the
-            // export's audio clip on long tracks.
             val trackDuration = ThumbnailExtractor.probeDurationMs(getApplication(), uri)
-            _state.update { it.copy(audioTrackDurationMs = trackDuration) }
+            _state.update {
+                it.copy(
+                    audioTrackDurationMs = trackDuration,
+                    audioTrimEndMs = trackDuration.coerceAtMost(it.trimmedDurationMs.takeIf { d -> d > 0 } ?: trackDuration)
+                )
+            }
 
             val pcm = PcmDecoder.decodeMono(getApplication(), uri, maxDurationMs = 10 * 60_000L)
             if (pcm != null) {
                 _state.update { it.copy(audioWaveform = WaveformBuilder.build(pcm)) }
             }
             recomputeEstimate()
-            runAutoSync()
         }
     }
 
+    /** Which slice of the audio file plays. */
+    fun setAudioTrim(startMs: Long, endMs: Long) {
+        _state.update {
+            val limit = if (it.audioTrackDurationMs > 0) it.audioTrackDurationMs else endMs
+            val start = startMs.coerceIn(0L, limit)
+            val end = endMs.coerceIn(start, limit)
+            it.copy(audioTrimStartMs = start, audioTrimEndMs = end)
+        }
+    }
+
+    /** Where on the video timeline the slice begins. */
+    fun setAudioPlacement(ms: Long) {
+        _state.update { it.copy(audioPlacementMs = ms.coerceIn(0L, it.durationMs)) }
+    }
+
+    fun placeAudioAtPlayhead() = setAudioPlacement(_state.value.playheadMs)
+
     /**
-     * Cross-correlates the camera's scratch audio against the external track and
-     * jumps straight to the aligned offset.
+     * Slides the track against the picture. Keeps both the in-point and the
+     * placement non-negative by spending the move on whichever end has room, so a
+     * nudge can never put the cue into invalid territory.
      */
+    fun nudgeAudioOffset(deltaMs: Long) {
+        _state.update { current ->
+            val proposedTrimStart = current.audioTrimStartMs + deltaMs
+            if (proposedTrimStart < 0) {
+                current.copy(
+                    audioTrimStartMs = 0,
+                    audioPlacementMs = (current.audioPlacementMs - proposedTrimStart).coerceAtMost(current.durationMs)
+                )
+            } else {
+                current.copy(audioTrimStartMs = proposedTrimStart)
+            }
+        }
+    }
+
+    fun nudgeAudioOffsetFrames(frames: Int) = nudgeAudioOffset(frames * _state.value.frameMs)
+
+    fun resetAudioAlignment() {
+        _state.update {
+            it.copy(
+                audioTrimStartMs = 0,
+                audioPlacementMs = it.trimStartMs,
+                syncStatus = SyncStatus.Idle
+            )
+        }
+    }
+
+    fun setAudioVolume(volume: Float) = _state.update { it.copy(audioVolume = volume.coerceIn(0f, 1f)) }
+
+    fun setOriginalVolume(volume: Float) = _state.update { it.copy(originalVolume = volume.coerceIn(0f, 1f)) }
+
     fun runAutoSync() {
         val current = _state.value
         val videoUri = current.sourceUri ?: return
@@ -204,8 +253,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } else {
                 _state.update {
+                    // A positive offset means the track runs ahead of the picture, so
+                    // we enter the file later; a negative one delays the cue instead.
+                    val offset = result.offsetMs
                     it.copy(
-                        audioOffsetMs = result.offsetMs,
+                        audioTrimStartMs = offset.coerceAtLeast(0L),
+                        audioPlacementMs = (-offset).coerceAtLeast(0L),
                         syncStatus = SyncStatus.Matched,
                         syncConfidence = result.confidence
                     )
@@ -213,22 +266,6 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
     }
-
-    fun nudgeAudioOffset(deltaMs: Long) {
-        _state.update { it.copy(audioOffsetMs = it.audioOffsetMs + deltaMs) }
-    }
-
-    fun nudgeAudioOffsetFrames(frames: Int) {
-        _state.update { it.copy(audioOffsetMs = it.audioOffsetMs + frames * it.frameMs) }
-    }
-
-    fun setAudioOffset(ms: Long) = _state.update { it.copy(audioOffsetMs = ms) }
-
-    fun resetAudioOffset() = _state.update { it.copy(audioOffsetMs = 0, syncStatus = SyncStatus.Idle) }
-
-    fun setAudioVolume(volume: Float) = _state.update { it.copy(audioVolume = volume.coerceIn(0f, 1f)) }
-
-    fun setOriginalVolume(volume: Float) = _state.update { it.copy(originalVolume = volume.coerceIn(0f, 1f)) }
 
     // ---- Look & compression ---------------------------------------------------
 
@@ -288,14 +325,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             ExportPresets.bitrateForTargetSize(
                 current.targetSizeMb * 1_000_000L,
                 current.trimmedDurationMs,
-                !current.muteOriginal || current.hasSeparateAudio
+                current.hasAnyAudio
             )
         } else {
             ExportPresets.bitrateFor(current.quality)
         }
         val durationSeconds = current.trimmedDurationMs / 1000.0
-        val hasAudio = !current.muteOriginal || current.hasSeparateAudio
-        val audioBits = if (hasAudio) ExportPresets.AUDIO_BITRATE_BPS * durationSeconds else 0.0
+        val audioBits = if (current.hasAnyAudio) ExportPresets.AUDIO_BITRATE_BPS * durationSeconds else 0.0
         val videoBits = bitrate * durationSeconds
         _state.update { it.copy(estimatedOutputBytes = ((videoBits + audioBits) / 8).toLong()) }
     }
@@ -305,8 +341,6 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
     }.getOrNull() ?: uri.lastPathSegment
-
-    // ---- Export ---------------------------------------------------------------
 
     fun export(onResult: (String) -> Unit, onError: (String) -> Unit) {
         val current = _state.value

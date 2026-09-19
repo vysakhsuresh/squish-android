@@ -18,19 +18,20 @@ import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 /**
- * Preview that plays the video against a separately recorded audio track at the
- * current sync offset, so alignment can be judged by ear before exporting.
+ * Plays the picture against the separate audio track exactly where it will land in
+ * the export, so a music cue or a synced take can be judged by ear before rendering.
  *
- * Two players rather than one merged source: a second ExoPlayer for the external
- * track is a plain, stable API, and a drift watchdog re-seeks it whenever the two
- * slip more than a frame apart. The exported file is sample-accurate regardless -
- * the exporter aligns by clipping, not by playback timing.
+ * Two players rather than one merged source: a second ExoPlayer is plain, stable
+ * API, and a watchdog re-seeks it whenever the pair drift more than a frame apart.
+ * The export is sample-accurate regardless - it aligns by clipping, not by playback.
  */
 @Composable
 fun VideoPreviewPlayer(
     videoUri: Uri,
     audioUri: Uri?,
-    audioOffsetMs: Long,
+    audioTrimStartMs: Long,
+    audioPlacementMs: Long,
+    audioSliceDurationMs: Long,
     muteOriginal: Boolean,
     originalVolume: Float,
     audioVolume: Float,
@@ -39,7 +40,9 @@ fun VideoPreviewPlayer(
 ) {
     val context = LocalContext.current
     val latestPlayhead by rememberUpdatedState(onPlayheadChange)
-    val latestOffset by rememberUpdatedState(audioOffsetMs)
+    val latestTrimStart by rememberUpdatedState(audioTrimStartMs)
+    val latestPlacement by rememberUpdatedState(audioPlacementMs)
+    val latestSlice by rememberUpdatedState(audioSliceDurationMs)
 
     val videoPlayer = remember(videoUri) {
         ExoPlayer.Builder(context).build().apply {
@@ -61,11 +64,14 @@ fun VideoPreviewPlayer(
         }
     }
 
-    DisposableEffect(videoPlayer, audioPlayer) {
-        onDispose {
-            videoPlayer.release()
-            audioPlayer?.release()
-        }
+    // One effect per player. Keying a single effect on both meant that attaching an
+    // audio track disposed - and released - the still-in-use video player, which
+    // killed the preview the moment music was added.
+    DisposableEffect(videoPlayer) {
+        onDispose { videoPlayer.release() }
+    }
+    DisposableEffect(audioPlayer) {
+        onDispose { audioPlayer?.release() }
     }
 
     LaunchedEffect(muteOriginal, originalVolume, audioVolume, audioPlayer) {
@@ -79,14 +85,16 @@ fun VideoPreviewPlayer(
             latestPlayhead(position)
 
             if (audioPlayer != null) {
-                val target = position + latestOffset
-                if (target < 0) {
-                    // The external track has no material this early; hold it until
-                    // the picture reaches the point where the two overlap.
+                val start = latestPlacement
+                val end = start + latestSlice
+                val insideCue = position in start until end.coerceAtLeast(start + 1)
+
+                if (!insideCue) {
                     if (audioPlayer.isPlaying) audioPlayer.pause()
                 } else {
+                    val target = latestTrimStart + (position - start)
                     if (abs(audioPlayer.currentPosition - target) > DRIFT_TOLERANCE_MS) {
-                        audioPlayer.seekTo(target)
+                        audioPlayer.seekTo(target.coerceAtLeast(0L))
                     }
                     if (videoPlayer.isPlaying && !audioPlayer.isPlaying) audioPlayer.play()
                     if (!videoPlayer.isPlaying && audioPlayer.isPlaying) audioPlayer.pause()

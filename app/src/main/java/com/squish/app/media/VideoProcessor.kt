@@ -31,128 +31,150 @@ import kotlin.coroutines.resume
 
 class VideoProcessor(private val context: Context) {
 
-    /**
-     * Resolved in/out points after sync correction.
-     *
-     * Offset convention (shared with the preview player and AudioSyncAnalyzer):
-     * at video time t, the aligned external sample lives at (t + offsetMs). So the
-     * external track is read from [audioStartMs], which is the video in-point shifted
-     * by the offset. When that would land before the start of the audio file, the
-     * video in-point moves forward by the shortfall instead - which keeps the two in
-     * sync rather than silently dropping the offset.
-     */
-    class Window(
-        val videoStartMs: Long,
-        val videoEndMs: Long,
-        val audioStartMs: Long,
-        val audioEndMs: Long
-    )
-
-    companion object {
-        fun resolveWindow(state: EditorUiState): Window {
-            val headTrim = state.syncHeadTrimMs
-            val videoStart = state.trimStartMs + headTrim
+    suspend fun export(state: EditorUiState, outputFile: File): Result<File> =
+        suspendCancellableCoroutine { continuation ->
+            val videoStart = state.trimStartMs
             val videoEnd = state.trimEndMs.coerceAtLeast(videoStart)
 
-            val audioStart = (state.trimStartMs + state.audioOffsetMs + headTrim).coerceAtLeast(0L)
-            var audioEnd = audioStart + (videoEnd - videoStart)
-            if (state.audioTrackDurationMs > 0) {
-                audioEnd = audioEnd.coerceAtMost(state.audioTrackDurationMs)
-            }
-            return Window(videoStart, videoEnd, audioStart, audioEnd)
-        }
-    }
-
-    suspend fun export(
-        state: EditorUiState,
-        outputFile: File
-    ): Result<File> = suspendCancellableCoroutine { continuation ->
-        val window = resolveWindow(state)
-
-        val videoItem = MediaItem.Builder()
-            .setUri(state.sourceUri)
-            .setClippingConfiguration(
-                MediaItem.ClippingConfiguration.Builder()
-                    .setStartPositionMs(window.videoStartMs)
-                    .setEndPositionMs(window.videoEndMs)
-                    .build()
-            )
-            .build()
-
-        val editedVideo = EditedMediaItem.Builder(videoItem)
-            .setRemoveAudio(state.muteOriginal)
-            .setEffects(
-                Effects(
-                    buildAudioProcessors(state.speed, state.originalVolume),
-                    buildVideoEffects(state)
-                )
-            )
-            .build()
-
-        val videoItems = mutableListOf(editedVideo)
-        state.clipQueue.forEach { uri ->
-            videoItems.add(EditedMediaItem.Builder(MediaItem.fromUri(uri)).build())
-        }
-        val videoSequence = EditedMediaItemSequence(ImmutableList.copyOf(videoItems))
-
-        val sequences = mutableListOf(videoSequence)
-        val audioUri = state.audioTrackUri
-        if (audioUri != null && window.audioEndMs > window.audioStartMs) {
-            val audioItem = MediaItem.Builder()
-                .setUri(audioUri)
+            val mainItem = MediaItem.Builder()
+                .setUri(state.sourceUri)
                 .setClippingConfiguration(
                     MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs(window.audioStartMs)
-                        .setEndPositionMs(window.audioEndMs)
+                        .setStartPositionMs(videoStart)
+                        .setEndPositionMs(videoEnd)
                         .build()
                 )
                 .build()
 
-            val editedAudio = EditedMediaItem.Builder(audioItem)
-                .setRemoveVideo(true)
-                .setEffects(Effects(buildAudioProcessors(state.speed, state.audioVolume), ImmutableList.of()))
+            val editedMain = EditedMediaItem.Builder(mainItem)
+                .setRemoveAudio(state.muteOriginal && !state.audioOnly)
+                .setRemoveVideo(state.audioOnly)
+                .setEffects(
+                    Effects(
+                        buildAudioProcessors(state.speed, state.originalVolume),
+                        if (state.audioOnly) ImmutableList.of() else buildVideoEffects(state)
+                    )
+                )
                 .build()
 
-            sequences.add(EditedMediaItemSequence(ImmutableList.of(editedAudio)))
+            val mainItems = mutableListOf(editedMain)
+            if (!state.audioOnly) {
+                state.clipQueue.forEach { uri ->
+                    mainItems.add(EditedMediaItem.Builder(MediaItem.fromUri(uri)).build())
+                }
+            }
+
+            val sequences = mutableListOf(EditedMediaItemSequence(ImmutableList.copyOf(mainItems)))
+            buildAudioTrackSequence(state, videoStart, videoEnd)?.let { sequences.add(it) }
+
+            val composition = Composition.Builder(ImmutableList.copyOf(sequences)).build()
+
+            val bitrate = if (state.fitToSize) {
+                ExportPresets.bitrateForTargetSize(
+                    state.targetSizeMb * 1_000_000L,
+                    state.trimmedDurationMs,
+                    state.hasAnyAudio
+                )
+            } else {
+                ExportPresets.bitrateFor(state.quality)
+            }
+
+            val encoderFactory = DefaultEncoderFactory.Builder(context)
+                .setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(bitrate).build())
+                .build()
+
+            val transformer = Transformer.Builder(context)
+                .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                .apply { if (!state.audioOnly) setVideoMimeType(MimeTypes.VIDEO_H264) }
+                .setEncoderFactory(encoderFactory)
+                .addListener(object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                        if (continuation.isActive) continuation.resume(Result.success(outputFile))
+                    }
+
+                    override fun onError(
+                        composition: Composition,
+                        exportResult: ExportResult,
+                        exportException: ExportException
+                    ) {
+                        if (continuation.isActive) continuation.resume(Result.failure(exportException))
+                    }
+                })
+                .build()
+
+            transformer.start(composition, outputFile.absolutePath)
+            continuation.invokeOnCancellation { transformer.cancel() }
         }
 
-        val composition = Composition.Builder(ImmutableList.copyOf(sequences)).build()
+    /**
+     * The separate audio track, positioned on the output timeline.
+     *
+     * Media3 sequences always begin at zero, so to start a music cue partway in we
+     * need leading silence. Rather than encoding a silent file, the pad is a slice
+     * of the source video's own audio played at zero gain: exactly the right length,
+     * guaranteed decodable, and no extra encoder in the path. If the source has no
+     * audio track to borrow, the cue starts with the clip instead.
+     */
+    private fun buildAudioTrackSequence(
+        state: EditorUiState,
+        videoStart: Long,
+        videoEnd: Long
+    ): EditedMediaItemSequence? {
+        val audioUri = state.audioTrackUri ?: return null
+        if (state.audioOnly) return null
 
-        val bitrate = if (state.fitToSize) {
-            ExportPresets.bitrateForTargetSize(
-                state.targetSizeMb * 1_000_000L,
-                state.trimmedDurationMs,
-                !state.muteOriginal || state.hasSeparateAudio
+        val requestedPad = (state.audioPlacementMs - videoStart).coerceAtLeast(0L)
+        val padMs = if (state.sourceHasAudio) requestedPad else 0L
+
+        val roomAfterPad = (videoEnd - videoStart - padMs).coerceAtLeast(0L)
+        var sliceMs = state.audioSliceDurationMs.coerceAtMost(roomAfterPad)
+        if (state.audioTrackDurationMs > 0) {
+            sliceMs = sliceMs.coerceAtMost(state.audioTrackDurationMs - state.audioTrimStartMs)
+        }
+        if (sliceMs <= 0) return null
+
+        val items = mutableListOf<EditedMediaItem>()
+
+        if (padMs > 0) {
+            val padItem = MediaItem.Builder()
+                .setUri(state.sourceUri)
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(videoStart)
+                        .setEndPositionMs(videoStart + padMs)
+                        .build()
+                )
+                .build()
+            items.add(
+                EditedMediaItem.Builder(padItem)
+                    .setRemoveVideo(true)
+                    .setEffects(Effects(silentProcessors(), ImmutableList.of()))
+                    .build()
             )
-        } else {
-            ExportPresets.bitrateFor(state.quality)
         }
 
-        val encoderFactory = DefaultEncoderFactory.Builder(context)
-            .setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(bitrate).build())
+        val trackItem = MediaItem.Builder()
+            .setUri(audioUri)
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(state.audioTrimStartMs)
+                    .setEndPositionMs(state.audioTrimStartMs + sliceMs)
+                    .build()
+            )
             .build()
+        items.add(
+            EditedMediaItem.Builder(trackItem)
+                .setRemoveVideo(true)
+                .setEffects(Effects(buildAudioProcessors(1f, state.audioVolume), ImmutableList.of()))
+                .build()
+        )
 
-        val transformer = Transformer.Builder(context)
-            .setVideoMimeType(MimeTypes.VIDEO_H264)
-            .setAudioMimeType(MimeTypes.AUDIO_AAC)
-            .setEncoderFactory(encoderFactory)
-            .addListener(object : Transformer.Listener {
-                override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    if (continuation.isActive) continuation.resume(Result.success(outputFile))
-                }
+        return EditedMediaItemSequence(ImmutableList.copyOf(items))
+    }
 
-                override fun onError(
-                    composition: Composition,
-                    exportResult: ExportResult,
-                    exportException: ExportException
-                ) {
-                    if (continuation.isActive) continuation.resume(Result.failure(exportException))
-                }
-            })
-            .build()
-
-        transformer.start(composition, outputFile.absolutePath)
-        continuation.invokeOnCancellation { transformer.cancel() }
+    private fun silentProcessors(): ImmutableList<AudioProcessor> {
+        val silence = AudioMixing.gain(0f)
+        return if (silence == null) ImmutableList.of() else ImmutableList.of(silence)
     }
 
     private fun buildVideoEffects(state: EditorUiState): ImmutableList<Effect> {
@@ -197,8 +219,7 @@ class VideoProcessor(private val context: Context) {
         }
 
         if (state.textOverlays.isNotEmpty()) {
-            val overlays = state.textOverlays.map { SquishTextOverlay(it) }
-            effects.add(OverlayEffect(ImmutableList.copyOf(overlays)))
+            effects.add(OverlayEffect(ImmutableList.copyOf(state.textOverlays.map { SquishTextOverlay(it) })))
         }
 
         return ImmutableList.copyOf(effects)
@@ -207,8 +228,7 @@ class VideoProcessor(private val context: Context) {
     private fun buildAudioProcessors(speed: Float, volume: Float): ImmutableList<AudioProcessor> {
         val processors = mutableListOf<AudioProcessor>()
         if (speed != 1f) {
-            // Tempo only, pitch preserved. Driving pitch from the same value as well
-            // (as this used to) stacked a chipmunk shift on top of the speed change.
+            // Tempo only, pitch preserved.
             processors.add(SonicAudioProcessor().apply { setSpeed(speed) })
         }
         AudioMixing.gain(volume)?.let { processors.add(it) }
