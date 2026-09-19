@@ -27,67 +27,102 @@ import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.Quality
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
+import kotlin.coroutines.resume
 
-/**
- * Wraps Media3 Transformer to turn one [EditorUiState] into an exported MP4.
- *
- * Confidence notes for whoever opens this in Android Studio first (this sandbox
- * could not reach Google's Maven repo to compile-check it - see README):
- *  - HIGH confidence: MediaItem clipping, EditedMediaItem.setRemoveAudio,
- *    Presentation (resolution + aspect crop), ScaleAndRotateTransformation,
- *    SpeedChangeEffect + SonicAudioProcessor, RgbAdjustment, Contrast,
- *    DefaultEncoderFactory bitrate override, EditedMediaItemSequence concatenation.
- *  - VERIFY: HslAdjustment.adjustSaturation's exact signature, OverlayEffect/
- *    TextOverlay anchor math in SquishTextOverlay, and Composition's multi-sequence
- *    audio-mixing behavior for the background-music track - all real, documented
- *    Media3 1.4.x APIs, but their exact shapes are worth a first-build sanity check.
- */
 class VideoProcessor(private val context: Context) {
+
+    /**
+     * Resolved in/out points after sync correction.
+     *
+     * Offset convention (shared with the preview player and AudioSyncAnalyzer):
+     * at video time t, the aligned external sample lives at (t + offsetMs). So the
+     * external track is read from [audioStartMs], which is the video in-point shifted
+     * by the offset. When that would land before the start of the audio file, the
+     * video in-point moves forward by the shortfall instead - which keeps the two in
+     * sync rather than silently dropping the offset.
+     */
+    class Window(
+        val videoStartMs: Long,
+        val videoEndMs: Long,
+        val audioStartMs: Long,
+        val audioEndMs: Long
+    )
+
+    companion object {
+        fun resolveWindow(state: EditorUiState): Window {
+            val headTrim = state.syncHeadTrimMs
+            val videoStart = state.trimStartMs + headTrim
+            val videoEnd = state.trimEndMs.coerceAtLeast(videoStart)
+
+            val audioStart = (state.trimStartMs + state.audioOffsetMs + headTrim).coerceAtLeast(0L)
+            var audioEnd = audioStart + (videoEnd - videoStart)
+            if (state.audioTrackDurationMs > 0) {
+                audioEnd = audioEnd.coerceAtMost(state.audioTrackDurationMs)
+            }
+            return Window(videoStart, videoEnd, audioStart, audioEnd)
+        }
+    }
 
     suspend fun export(
         state: EditorUiState,
-        sourceWidth: Int,
-        sourceHeight: Int,
         outputFile: File
-    ): Result<File> = suspendCancellableCoroutine { cont ->
-        val videoEffects = buildVideoEffects(state, sourceWidth, sourceHeight)
-        val audioProcessors = buildAudioProcessors(state)
+    ): Result<File> = suspendCancellableCoroutine { continuation ->
+        val window = resolveWindow(state)
 
-        val clippedItem = MediaItem.Builder()
+        val videoItem = MediaItem.Builder()
             .setUri(state.sourceUri)
             .setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder()
-                    .setStartPositionMs(state.trimStartMs)
-                    .setEndPositionMs(state.trimEndMs)
+                    .setStartPositionMs(window.videoStartMs)
+                    .setEndPositionMs(window.videoEndMs)
                     .build()
             )
             .build()
 
-        val editedItem = EditedMediaItem.Builder(clippedItem)
-            .setRemoveAudio(state.muted)
-            .setEffects(Effects(audioProcessors, videoEffects))
+        val editedVideo = EditedMediaItem.Builder(videoItem)
+            .setRemoveAudio(state.muteOriginal)
+            .setEffects(
+                Effects(
+                    buildAudioProcessors(state.speed, state.originalVolume),
+                    buildVideoEffects(state)
+                )
+            )
             .build()
 
-        val queueItems = state.clipQueue.map { uri -> EditedMediaItem.Builder(MediaItem.fromUri(uri)).build() }
-        val sequenceBuilder = EditedMediaItemSequence.Builder(editedItem)
-        queueItems.forEach { sequenceBuilder.addItem(it) }
-        val videoSequence = sequenceBuilder.build()
-
-        val composition = if (state.musicUri != null && !state.muted) {
-            val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(state.musicUri)).build()
-            val musicSequence = EditedMediaItemSequence.Builder(musicItem)
-                .setIsLooping(true)
-                .build()
-            Composition.Builder(ImmutableList.of(videoSequence, musicSequence)).build()
-        } else {
-            Composition.Builder(ImmutableList.of(videoSequence)).build()
+        val videoItems = mutableListOf(editedVideo)
+        state.clipQueue.forEach { uri ->
+            videoItems.add(EditedMediaItem.Builder(MediaItem.fromUri(uri)).build())
         }
+        val videoSequence = EditedMediaItemSequence(ImmutableList.copyOf(videoItems))
+
+        val sequences = mutableListOf(videoSequence)
+        val audioUri = state.audioTrackUri
+        if (audioUri != null && window.audioEndMs > window.audioStartMs) {
+            val audioItem = MediaItem.Builder()
+                .setUri(audioUri)
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(window.audioStartMs)
+                        .setEndPositionMs(window.audioEndMs)
+                        .build()
+                )
+                .build()
+
+            val editedAudio = EditedMediaItem.Builder(audioItem)
+                .setRemoveVideo(true)
+                .setEffects(Effects(buildAudioProcessors(state.speed, state.audioVolume), ImmutableList.of()))
+                .build()
+
+            sequences.add(EditedMediaItemSequence(ImmutableList.of(editedAudio)))
+        }
+
+        val composition = Composition.Builder(ImmutableList.copyOf(sequences)).build()
 
         val bitrate = if (state.fitToSize) {
             ExportPresets.bitrateForTargetSize(
                 state.targetSizeMb * 1_000_000L,
                 state.trimmedDurationMs,
-                !state.muted
+                !state.muteOriginal || state.hasSeparateAudio
             )
         } else {
             ExportPresets.bitrateFor(state.quality)
@@ -103,52 +138,62 @@ class VideoProcessor(private val context: Context) {
             .setEncoderFactory(encoderFactory)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    if (cont.isActive) cont.resume(Result.success(outputFile))
+                    if (continuation.isActive) continuation.resume(Result.success(outputFile))
                 }
 
-                override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
-                    if (cont.isActive) cont.resume(Result.failure(exportException))
+                override fun onError(
+                    composition: Composition,
+                    exportResult: ExportResult,
+                    exportException: ExportException
+                ) {
+                    if (continuation.isActive) continuation.resume(Result.failure(exportException))
                 }
             })
             .build()
 
         transformer.start(composition, outputFile.absolutePath)
-        cont.invokeOnCancellation { transformer.cancel() }
+        continuation.invokeOnCancellation { transformer.cancel() }
     }
 
-    private fun buildVideoEffects(state: EditorUiState, sourceWidth: Int, sourceHeight: Int): List<Effect> {
+    private fun buildVideoEffects(state: EditorUiState): ImmutableList<Effect> {
         val effects = mutableListOf<Effect>()
 
         if (state.rotationDegrees != 0) {
-            effects.add(ScaleAndRotateTransformation.Builder().setRotationDegrees(state.rotationDegrees.toFloat()).build())
+            effects.add(
+                ScaleAndRotateTransformation.Builder()
+                    .setRotationDegrees(state.rotationDegrees.toFloat())
+                    .build()
+            )
         }
 
         state.cropAspect.ratio?.let { ratio ->
-            effects.add(Presentation.createForAspectRatio(ratio.toDouble(), Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+            effects.add(Presentation.createForAspectRatio(ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
         }
 
         if (state.quality != Quality.Original && !state.fitToSize) {
-            val res = ExportPresets.resolutionFor(state.quality, sourceWidth, sourceHeight)
-            if (res.width > 0 && res.height > 0) {
-                effects.add(Presentation.createForWidthAndHeight(res.width, res.height, Presentation.LAYOUT_SCALE_TO_FIT))
+            val resolution = ExportPresets.resolutionFor(state.quality, state.sourceWidth, state.sourceHeight)
+            if (resolution.width > 0 && resolution.height > 0) {
+                effects.add(
+                    Presentation.createForWidthAndHeight(
+                        resolution.width,
+                        resolution.height,
+                        Presentation.LAYOUT_SCALE_TO_FIT
+                    )
+                )
             }
         }
 
-        if (state.speed != 1f) {
-            effects.add(SpeedChangeEffect(state.speed))
-        }
+        if (state.speed != 1f) effects.add(SpeedChangeEffect(state.speed))
 
         if (state.brightness != 0f) {
             val scale = (1f + state.brightness).coerceIn(0f, 2f)
             effects.add(RgbAdjustment.Builder().setRedScale(scale).setGreenScale(scale).setBlueScale(scale).build())
         }
 
-        if (state.contrast != 0f) {
-            effects.add(Contrast(state.contrast))
-        }
+        if (state.contrast != 0f) effects.add(Contrast(state.contrast))
 
         if (state.saturation != 0f) {
-            effects.add(HslAdjustment.Builder().adjustSaturation(state.saturation * 100).build())
+            effects.add(HslAdjustment.Builder().adjustSaturation(state.saturation * 100f).build())
         }
 
         if (state.textOverlays.isNotEmpty()) {
@@ -156,14 +201,17 @@ class VideoProcessor(private val context: Context) {
             effects.add(OverlayEffect(ImmutableList.copyOf(overlays)))
         }
 
-        return effects
+        return ImmutableList.copyOf(effects)
     }
 
-    private fun buildAudioProcessors(state: EditorUiState): List<AudioProcessor> {
-        if (state.speed == 1f) return emptyList()
-        val sonic = SonicAudioProcessor()
-        sonic.setSpeed(state.speed)
-        sonic.setPitch(state.speed)
-        return listOf(sonic)
+    private fun buildAudioProcessors(speed: Float, volume: Float): ImmutableList<AudioProcessor> {
+        val processors = mutableListOf<AudioProcessor>()
+        if (speed != 1f) {
+            // Tempo only, pitch preserved. Driving pitch from the same value as well
+            // (as this used to) stacked a chipmunk shift on top of the speed change.
+            processors.add(SonicAudioProcessor().apply { setSpeed(speed) })
+        }
+        AudioMixing.gain(volume)?.let { processors.add(it) }
+        return ImmutableList.copyOf(processors)
     }
 }

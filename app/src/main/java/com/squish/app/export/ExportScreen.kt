@@ -25,7 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.squish.app.data.HistoryRepository
+import com.squish.app.data.SquishRepositories
 import com.squish.app.home.formatSize
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.theme.SquishColors
@@ -35,7 +35,7 @@ import java.io.File
 fun ExportScreen(resultPath: String, onDone: () -> Unit) {
     val context = LocalContext.current
     val record = remember(resultPath) {
-        HistoryRepository(context).records.value.firstOrNull { it.outputPath == resultPath }
+        SquishRepositories.history(context).records.value.firstOrNull { it.outputPath == resultPath }
     }
     val savedPercent = record?.let {
         if (it.originalSizeBytes > 0) (100 - (it.outputSizeBytes * 100 / it.originalSizeBytes)).coerceIn(0, 99) else null

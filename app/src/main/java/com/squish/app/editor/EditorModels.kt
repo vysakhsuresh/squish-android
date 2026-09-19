@@ -1,6 +1,7 @@
 package com.squish.app.editor
 
 import android.net.Uri
+import com.squish.app.media.audio.Waveform
 
 enum class Quality(val label: String) {
     Small("Small"), Medium("Medium"), High("High"), Original("Original")
@@ -24,6 +25,8 @@ data class TextOverlayItem(
     val sizeSp: Int = 28
 )
 
+enum class SyncStatus { Idle, Analyzing, Matched, NoMatch }
+
 data class EditorUiState(
     val sourceUri: Uri? = null,
     val isLoadingSource: Boolean = true,
@@ -31,15 +34,20 @@ data class EditorUiState(
     val sourceWidth: Int = 0,
     val sourceHeight: Int = 0,
     val originalSizeBytes: Long = 0,
+    val fps: Float = 30f,
 
     val trimStartMs: Long = 0,
     val trimEndMs: Long = 0,
+    val playheadMs: Long = 0,
+    val markers: List<Long> = emptyList(),
+    val snapToMarkers: Boolean = true,
 
     val quality: Quality = Quality.Medium,
     val fitToSize: Boolean = false,
     val targetSizeMb: Int = 16,
 
-    val muted: Boolean = false,
+    val muteOriginal: Boolean = false,
+    val originalVolume: Float = 1f,
     val rotationDegrees: Int = 0,
     val cropAspect: CropAspect = CropAspect.Original,
     val speed: Float = 1f,
@@ -49,11 +57,34 @@ data class EditorUiState(
     val saturation: Float = 0f,
 
     val textOverlays: List<TextOverlayItem> = emptyList(),
-    val musicUri: Uri? = null,
     val clipQueue: List<Uri> = emptyList(),
+
+    // Separate audio track: dual-system sound, a music bed, a voiceover.
+    val audioTrackUri: Uri? = null,
+    val audioTrackDurationMs: Long = 0,
+    val audioTrackName: String? = null,
+    val audioOffsetMs: Long = 0,
+    val audioVolume: Float = 1f,
+    val syncStatus: SyncStatus = SyncStatus.Idle,
+    val syncConfidence: Float = 0f,
+
+    val videoWaveform: Waveform? = null,
+    val audioWaveform: Waveform? = null,
 
     val isExporting: Boolean = false,
     val estimatedOutputBytes: Long = 0
 ) {
     val trimmedDurationMs: Long get() = (trimEndMs - trimStartMs).coerceAtLeast(0)
+
+    val frameMs: Long get() = Timecode.frameDurationMs(fps)
+
+    val hasSeparateAudio: Boolean get() = audioTrackUri != null
+
+    /**
+     * How far the export has to push the video's in-point so the offset external
+     * audio still has material to play from its own time zero. Surfaced in the UI
+     * so a head trim never happens silently.
+     */
+    val syncHeadTrimMs: Long
+        get() = if (!hasSeparateAudio) 0L else (-(trimStartMs + audioOffsetMs)).coerceAtLeast(0L)
 }

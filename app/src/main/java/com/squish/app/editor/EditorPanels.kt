@@ -43,7 +43,11 @@ fun FitToSizeCard(state: EditorUiState, viewModel: EditorViewModel) {
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(SquishColors.Surface).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Column {
                 Text("Fit to a size", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
                 Text("We pick the bitrate for you", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
@@ -113,16 +117,26 @@ fun OptionToggle(label: String, active: Boolean, modifier: Modifier = Modifier, 
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = if (active) SquishColors.Coral else SquishColors.TextSecondary, style = MaterialTheme.typography.labelLarge)
+        Text(
+            label,
+            color = if (active) SquishColors.Coral else SquishColors.TextSecondary,
+            style = MaterialTheme.typography.labelLarge
+        )
     }
 }
 
 @Composable
-fun LabeledSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
+fun LabeledSlider(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    onChange: (Float) -> Unit
+) {
+    val readout = if (range.start < 0f) "%+.0f%%".format(value * 100) else "%.0f%%".format(value * 100)
     Column {
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text(label, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
-            Text("%+.0f%%".format(value * 100), style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
+            Text(readout, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
         }
         Slider(
             value = value,
@@ -181,27 +195,6 @@ fun TextOverlaySection(state: EditorUiState, viewModel: EditorViewModel) {
 }
 
 @Composable
-fun MusicSection(state: EditorUiState, onPick: () -> Unit, onClear: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(SquishColors.Surface).padding(16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            state.musicUri?.lastPathSegment ?: "No track selected",
-            color = if (state.musicUri != null) SquishColors.TextPrimary else SquishColors.TextMuted,
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Text(
-            if (state.musicUri != null) "Remove" else "Choose",
-            color = SquishColors.Coral,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.clickable { if (state.musicUri != null) onClear() else onPick() }
-        )
-    }
-}
-
-@Composable
 fun MergeQueueSection(state: EditorUiState, onAddClip: () -> Unit, onRemoveClip: (Uri) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         state.clipQueue.forEachIndexed { index, uri ->
@@ -221,11 +214,4 @@ fun MergeQueueSection(state: EditorUiState, onAddClip: () -> Unit, onRemoveClip:
         }
         SquishOutlinedButton(text = "+ Add another clip", onClick = onAddClip)
     }
-}
-
-fun formatMs(ms: Long): String {
-    val totalSec = ms / 1000
-    val m = totalSec / 60
-    val s = totalSec % 60
-    return "%d:%02d".format(m, s)
 }

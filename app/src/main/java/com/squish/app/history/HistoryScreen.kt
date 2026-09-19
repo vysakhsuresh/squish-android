@@ -28,14 +28,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.squish.app.data.HistoryRepository
+import com.squish.app.data.SquishRepositories
 import com.squish.app.home.formatSize
 import com.squish.app.ui.theme.SquishColors
 
 @Composable
 fun HistoryScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val repository = remember(context) { HistoryRepository(context) }
+    val repository = remember(context) { SquishRepositories.history(context) }
     val records by repository.records.collectAsState()
 
     Scaffold(containerColor = SquishColors.Background) { padding ->

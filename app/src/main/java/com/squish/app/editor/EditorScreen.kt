@@ -42,6 +42,8 @@ import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishPrimaryButton
 import com.squish.app.ui.theme.SquishColors
 
+private const val FILMSTRIP_FRAMES = 12
+
 @Composable
 fun EditorScreen(
     sourceUri: Uri,
@@ -58,15 +60,27 @@ fun EditorScreen(
 
     LaunchedEffect(state.durationMs) {
         if (state.durationMs > 0 && thumbnails.isEmpty()) {
-            val frames = ThumbnailExtractor.extractFrames(context, sourceUri, 10, state.durationMs)
-            thumbnails = frames.map { it.asImageBitmap() }
+            thumbnails = ThumbnailExtractor
+                .extractFrames(context, sourceUri, FILMSTRIP_FRAMES, state.durationMs)
+                .map { it.asImageBitmap() }
         }
     }
 
-    val addAudioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { viewModel.setMusic(it) }
+    // Accepts audio files and video files alike: the second angle of a two-camera
+    // shoot is a perfectly normal source for the good audio.
+    val pickAudioTrack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            viewModel.setAudioTrack(it)
+        }
     }
-    val addClipLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+
+    val pickExtraClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let { viewModel.addClipToQueue(it) }
     }
 
@@ -87,44 +101,52 @@ fun EditorScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (state.isLoadingSource) {
-                    Box(modifier = Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = SquishColors.Coral)
                     }
                 } else {
                     VideoPreviewPlayer(
-                        uri = sourceUri,
+                        videoUri = sourceUri,
+                        audioUri = state.audioTrackUri,
+                        audioOffsetMs = state.audioOffsetMs,
+                        muteOriginal = state.muteOriginal,
+                        originalVolume = state.originalVolume,
+                        audioVolume = state.audioVolume,
+                        onPlayheadChange = viewModel::setPlayhead,
                         modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(18.dp))
                     )
 
-                    TimelineTrimmer(
-                        durationMs = state.durationMs,
-                        trimStartMs = state.trimStartMs,
-                        trimEndMs = state.trimEndMs,
+                    PrecisionTimeline(
+                        state = state,
                         thumbnails = thumbnails,
-                        onTrimChange = viewModel::setTrim
+                        onTrimChange = viewModel::setTrim,
+                        onAudioOffsetChange = { delta -> viewModel.nudgeAudioOffset(delta) }
                     )
 
-                    Text(
-                        "${formatMs(state.trimStartMs)} – ${formatMs(state.trimEndMs)}  ·  ${formatMs(state.trimmedDurationMs)} selected",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SquishColors.TextSecondary
+                    SectionLabel("Precision")
+                    PrecisionTrimPanel(state = state, viewModel = viewModel)
+
+                    SectionLabel("Separate audio & sync")
+                    SyncPanel(
+                        state = state,
+                        viewModel = viewModel,
+                        onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) }
                     )
 
                     SectionLabel("Compress & convert")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Quality.entries.forEach { q ->
+                        Quality.entries.forEach { quality ->
                             SelectableChip(
-                                label = q.label,
-                                selected = state.quality == q && !state.fitToSize,
+                                label = quality.label,
+                                selected = state.quality == quality && !state.fitToSize,
                                 modifier = Modifier.weight(1f),
                                 onClick = {
                                     viewModel.setFitToSize(false)
-                                    viewModel.setQuality(q)
+                                    viewModel.setQuality(quality)
                                 }
                             )
                         }
                     }
-
                     FitToSizeCard(state = state, viewModel = viewModel)
                     EstimateCard(state = state)
 
@@ -144,8 +166,12 @@ fun EditorScreen(
 
                     SectionLabel("Fix & clean up")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        OptionToggle("Mute audio", state.muted, Modifier.weight(1f)) { viewModel.setMuted(it) }
-                        OptionToggle("Rotate 90°", state.rotationDegrees != 0, Modifier.weight(1f)) { viewModel.toggleRotate() }
+                        OptionToggle("Mute camera audio", state.muteOriginal, Modifier.weight(1f)) {
+                            viewModel.setMuteOriginal(it)
+                        }
+                        OptionToggle("Rotate 90°", state.rotationDegrees != 0, Modifier.weight(1f)) {
+                            viewModel.toggleRotate()
+                        }
                     }
 
                     SectionLabel("Color")
@@ -156,18 +182,11 @@ fun EditorScreen(
                     SectionLabel("Captions & text")
                     TextOverlaySection(state = state, viewModel = viewModel)
 
-                    SectionLabel("Background music")
-                    MusicSection(
-                        state = state,
-                        onPick = { addAudioLauncher.launch(arrayOf("audio/*")) },
-                        onClear = { viewModel.setMusic(null) }
-                    )
-
                     SectionLabel("Merge clips")
                     MergeQueueSection(
                         state = state,
                         onAddClip = {
-                            addClipLauncher.launch(
+                            pickExtraClip.launch(
                                 PickVisualMediaRequest.Builder()
                                     .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
                                     .build()
@@ -182,18 +201,20 @@ fun EditorScreen(
 
             Column(modifier = Modifier.padding(16.dp)) {
                 errorMessage?.let {
-                    Text(it, color = SquishColors.Pink, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+                    Text(
+                        it,
+                        color = SquishColors.Pink,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
                 }
                 SquishPrimaryButton(
-                    text = if (state.isExporting) "Compressing…" else "Compress video",
+                    text = if (state.isExporting) "Exporting…" else "Export video",
                     enabled = !state.isExporting && !state.isLoadingSource,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         errorMessage = null
-                        viewModel.export(
-                            onResult = onExported,
-                            onError = { errorMessage = it }
-                        )
+                        viewModel.export(onResult = onExported, onError = { errorMessage = it })
                     }
                 )
             }

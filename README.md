@@ -1,85 +1,60 @@
 # Squish
 
-A no-watermark, no-paywall video trimmer, compressor and converter for
-Android — built to be simple enough for the WhatsApp-video-too-big problem
-and capable enough for a real edit: multi-clip merge, captions, background
-music, crop/speed, color adjustments.
+A no-watermark, no-paywall video editor for Android, built around the thing
+mobile editors are worst at: **precision**.
 
-This is a single, all-in-one v1.0.0 — everything below shipped together
-rather than being staged across versions. Trim, compress and convert are
-the sturdy core; the advanced features (color grade, captions, background
-music mixing) are real, wired-up code, flagged below by confidence level so
-you know exactly what to sanity-check first.
+Trim, compress and convert are the everyday core. The reason to pick Squish
+over the dozen apps that already do that is the sync work — lining separately
+recorded audio up with picture, and putting a cut exactly on the frame you
+meant.
+
+## The headline feature: automatic dual-system sound sync
+
+Shoot on a phone, record sound on a separate mic, and aligning the two is
+normally a miserable manual nudge-and-listen loop. Squish does what desktop
+tools do:
+
+- Attach the separate track (audio file, or another video whose sound you want)
+- Squish decodes both, builds loudness envelopes, and **cross-correlates them to
+  find the alignment automatically** — usually under a second, entirely on-device
+- The result lands as a millisecond offset with a confidence score, and if the
+  match is weak it says so rather than confidently lying
+- Fine-tune with **±1 frame / ±10 ms** nudges, or drag the audio lane by hand
+- Preview plays video and external audio together at the current offset, with a
+  drift watchdog keeping the two players locked
+
+Amplitude envelopes are what make this work across a phone mic and a proper
+recorder — the timbre is wildly different, the loudness shape is not.
+
+## Precision editing
+
+- **Frame-accurate everything.** Real frame rate is read off the video track, so
+  nudges are correct on 24, 30 and 60 fps clips instead of assuming 30.
+- **In/out points with frame nudge and "set to playhead"**, plus timecode that
+  shows milliseconds and frame number, not a rounded `0:03`.
+- **Markers** you can drop at the playhead, with trim handles snapping to them.
+- **Waveform lanes** under the filmstrip — cut between words or on the beat by
+  looking, not guessing.
+- **Exact seeking** in preview (`SeekParameters.EXACT`), so scrubbing lands on
+  the frame rather than the nearest keyframe.
+
+## Everything else
+
+Trim · compress by preset or to a target size (16/25/50 MB) · crop to 9:16, 1:1
+or 16:9 · speed 0.5–2x with pitch preserved · mute camera audio independently of
+any added track · per-track volume · rotate · brightness/contrast/saturation ·
+burned-in captions · multi-clip merge · export straight to the gallery
+(Movies/Squish) · direct share to WhatsApp, Instagram, Email · on-device history.
+
+No cloud upload. No watermark. No paywalled resolution.
 
 ## Stack
 
-- Kotlin + Jetpack Compose (Material 3, dark theme, single Activity)
-- [Media3 Transformer](https://developer.android.com/media/media3/transformer)
-  for all video processing (trim, compress, crop, speed, color, text
-  overlay, background-music mixing, multi-clip concatenation)
-- Media3 ExoPlayer for the live preview player
-- Navigation Compose for screen flow
-- No Room, no Hilt, no DataStore, no image-loading library — history is a
-  small JSON file, DI is a couple of constructor calls. Kept the dependency
-  surface minimal on purpose so there's less that can go wrong on first
-  build.
+Kotlin · Jetpack Compose (Material 3) · Media3 Transformer for export · Media3
+ExoPlayer for preview · MediaCodec/MediaExtractor for audio analysis.
 
-## Feature map
-
-**Core (high confidence — standard, long-stable Media3/Compose/Android
-APIs):**
-- Animated splash with a bouncy "squish" logo intro (`splash/SplashScreen.kt`)
-- Video picker via the system Photo Picker (no storage permission needed)
-- Trim with a real draggable dual-handle filmstrip bound to actual duration
-- Quality presets (Small/Medium/High/Original) and "fit to a size"
-  (16/25/50 MB, back-computed bitrate)
-- Mute, rotate-fix, crop to 9:16 / 1:1 / 16:9, speed 0.5x–2x
-- Live before/after size estimate
-- Export with a live preview player, then a before/after results screen
-- Direct share to WhatsApp / Instagram / Email via `FileProvider`
-- Local export history (JSON-backed, on-device only — see Settings copy)
-- Multi-clip merge queue (concatenates clips into one export)
-
-**Advanced (real, implemented — verify against your Media3 version on
-first build, see below):**
-- Brightness / contrast / saturation sliders
-- Burned-in text captions with timing
-- Background music track, mixed under the video's own audio
-
-## Before you open this in Android Studio
-
-This was built in a sandboxed session whose network proxy blocks
-`dl.google.com` (Google's Maven repo), which is where the Android Gradle
-Plugin and every AndroidX/Media3 artifact live. **I could not run a Gradle
-build here to compile-check this project.** Everything was written
-carefully against documented Media3/Compose APIs, and a manual
-brace/paren balance pass found no gross syntax errors, but a first real
-build is still the first real build.
-
-Lowest-to-highest risk if something doesn't compile on your first sync:
-
-1. **Essentially zero risk:** Compose UI, navigation, theming, the JSON
-   history store, ExoPlayer preview, `MediaMetadataRetriever` thumbnails,
-   FileProvider sharing, Photo Picker.
-2. **Low risk, well-established Transformer APIs:** clipping, mute,
-   `Presentation` (resolution + aspect crop), `ScaleAndRotateTransformation`,
-   `SpeedChangeEffect` + `SonicAudioProcessor`, `Contrast`/`RgbAdjustment`,
-   custom bitrate via `DefaultEncoderFactory`.
-3. **Worth a first-build check:** `HslAdjustment.adjustSaturation(...)`'s
-   exact signature, the `TextOverlay`/`OverlaySettings` anchor math in
-   `media/SquishTextOverlay.kt`, and `Composition`'s multi-sequence audio
-   mixing behavior for the background-music track
-   (`media/VideoProcessor.kt`). These are real Media3 1.4.x features, just
-   ones whose exact method shapes shifted across minor releases — if
-   `./gradlew assembleDebug` flags one, paste me the error and I'll fix it
-   on the spot; it'll be a small, local signature fix, not a design change.
-
-Also not yet built (intentionally, not oversights — the honest next
-tier, not silently dropped): reverse clip (needs frame-by-frame
-re-encoding, not a Transformer flag), export progress percentage (v1
-shows an indeterminate spinner — Transformer's `getProgress` polling API
-is a fast follow), background/queued export via WorkManager, batch
-export of multiple files at once.
+Deliberately small dependency surface: no Room, no Hilt, no DataStore, no image
+loader. History is a JSON file; DI is a constructor call.
 
 ## Build
 
@@ -87,13 +62,27 @@ export of multiple files at once.
 ./gradlew assembleDebug
 ```
 
-Requires the Android SDK (compileSdk 35) and network access to
-`google()`/`mavenCentral()`.
+compileSdk 35, minSdk 29, Android SDK plus `google()`/`mavenCentral()` access.
+
+minSdk is 29 so gallery export can use scoped-storage MediaStore with no legacy
+`WRITE_EXTERNAL_STORAGE` path — one storage code path instead of two, and no
+runtime storage permission at all.
+
+**Before your first build, read [BUILD_NOTES.md](BUILD_NOTES.md).** This project
+has never been through a compiler (the build sandbox has no Android SDK and
+cannot reach Google's Maven), so that file lists the handful of Media3 calls
+worth checking and their one-line fallbacks.
+
+## Not built yet
+
+Honest list, not silent omissions: reverse clip (needs frame-by-frame
+re-encoding, not a Transformer flag), numeric export progress (currently an
+indeterminate spinner), background/queued export via WorkManager, batch export,
+audio fades and ducking, and keyframed effects.
 
 ## Brand
 
-Coral `#FF6B4A` primary, teal `#33E0C2` for "your win" moments (savings,
-success), dark `#0E0E12` background, yellow/purple as supporting accents.
-Type currently falls back to the system sans family
-(`ui/theme/Type.kt`) — real Sora/Manrope wiring is a placeholder swap,
-noted in that file, waiting on the real brand intro design you mentioned.
+Coral `#FF6B4A` primary, teal `#33E0C2` for audio and for wins (savings,
+matches, success), yellow for markers and warnings, dark `#0E0E12` ground. Type
+falls back to the system sans (`ui/theme/Type.kt`) until the real brand faces
+are wired in.
