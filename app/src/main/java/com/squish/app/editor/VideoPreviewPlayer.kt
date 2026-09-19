@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
@@ -77,17 +78,18 @@ fun VideoPreviewPlayer(
             val position = videoPlayer.currentPosition
             latestPlayhead(position)
 
-            val companion = audioPlayer
-            if (companion != null) {
+            if (audioPlayer != null) {
                 val target = position + latestOffset
                 if (target < 0) {
-                    if (companion.isPlaying) companion.pause()
+                    // The external track has no material this early; hold it until
+                    // the picture reaches the point where the two overlap.
+                    if (audioPlayer.isPlaying) audioPlayer.pause()
                 } else {
-                    if (abs(companion.currentPosition - target) > DRIFT_TOLERANCE_MS) {
-                        companion.seekTo(target)
+                    if (abs(audioPlayer.currentPosition - target) > DRIFT_TOLERANCE_MS) {
+                        audioPlayer.seekTo(target)
                     }
-                    if (videoPlayer.isPlaying && !companion.isPlaying) companion.play()
-                    if (!videoPlayer.isPlaying && companion.isPlaying) companion.pause()
+                    if (videoPlayer.isPlaying && !audioPlayer.isPlaying) audioPlayer.play()
+                    if (!videoPlayer.isPlaying && audioPlayer.isPlaying) audioPlayer.pause()
                 }
             }
             delay(POLL_INTERVAL_MS)

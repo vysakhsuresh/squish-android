@@ -31,6 +31,11 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        // Media3 marks Transformer, the effect pipeline and most of ExoPlayer
+        // @UnstableApi, which is an opt-in *error* by default. This app is built on
+        // those APIs end to end, so opt in once here rather than annotating every
+        // file that touches Media3.
+        freeCompilerArgs += "-opt-in=androidx.media3.common.util.UnstableApi"
     }
 
     buildFeatures {
