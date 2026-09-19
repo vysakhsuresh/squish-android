@@ -56,6 +56,26 @@ ExoPlayer for preview · MediaCodec/MediaExtractor for audio analysis.
 Deliberately small dependency surface: no Room, no Hilt, no DataStore, no image
 loader. History is a JSON file; DI is a constructor call.
 
+## Open in Android Studio
+
+1. **File → New → Project from Version Control**
+2. URL: `https://github.com/vysakhsuresh/squish-android`, pick a local folder, **Clone**
+3. Studio detects the Gradle project and syncs on its own. The first sync
+   downloads AGP, Compose and Media3 — expect several minutes and roughly a
+   gigabyte, on a connection that can reach `dl.google.com`.
+4. If prompted for a missing SDK, accept: this needs **Android SDK 35**
+   (compileSdk) and a **JDK 17+** (Studio bundles one — Settings → Build →
+   Build Tools → Gradle → Gradle JDK).
+5. Press **Run** with a device selected.
+
+Already cloned it? **File → Open** and select the `squish-android` folder
+itself — the one with `settings.gradle.kts` in it, not a parent or a subfolder.
+
+**Test on a physical phone, not the emulator.** The whole app is hardware video
+encoding; emulator encoders are slow, and some system images fail on H.264
+encode outright. A real device also gives you a camera and a mic, which is the
+only way to actually try dual-system sync.
+
 ## Build
 
 ```
