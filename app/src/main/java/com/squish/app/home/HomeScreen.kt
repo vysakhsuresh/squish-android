@@ -9,14 +9,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -39,8 +37,6 @@ import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.theme.SquishColors
 
 private val ThumbAccents = listOf(SquishColors.Coral, SquishColors.Teal, SquishColors.Yellow, SquishColors.Purple)
-
-enum class HomeTab { Home, History, Settings }
 
 fun formatSize(bytes: Long): String {
     val mb = bytes / 1_000_000.0
@@ -135,13 +131,13 @@ fun HomeScreen(
                 }
             }
 
-            HomeBottomNav(current = HomeTab.Home, onHome = {}, onHistory = onOpenHistory, onSettings = onOpenSettings)
+            HomeBottomNav(onHistory = onOpenHistory, onSettings = onOpenSettings)
         }
     }
 }
 
 @Composable
-private fun HomeBottomNav(current: HomeTab, onHome: () -> Unit, onHistory: () -> Unit, onSettings: () -> Unit) {
+private fun HomeBottomNav(onHistory: () -> Unit, onSettings: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -149,9 +145,11 @@ private fun HomeBottomNav(current: HomeTab, onHome: () -> Unit, onHistory: () ->
             .padding(vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        NavItem("Home", current == HomeTab.Home, onHome)
-        NavItem("History", current == HomeTab.History, onHistory)
-        NavItem("Settings", current == HomeTab.Settings, onSettings)
+        // The bar only ever renders on Home, so Home is the selected tab by
+        // construction; History and Settings navigate away to their own screens.
+        NavItem("Home", selected = true, onClick = {})
+        NavItem("History", selected = false, onClick = onHistory)
+        NavItem("Settings", selected = false, onClick = onSettings)
     }
 }
 

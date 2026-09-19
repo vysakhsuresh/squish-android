@@ -34,7 +34,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.squish.app.media.audio.Waveform
 import com.squish.app.ui.components.WaveformCanvas
 import com.squish.app.ui.theme.SquishColors
 
