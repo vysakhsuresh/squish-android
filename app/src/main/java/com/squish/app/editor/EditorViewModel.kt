@@ -14,6 +14,14 @@ import com.squish.app.media.VideoProcessor
 import com.squish.app.media.audio.AudioSyncAnalyzer
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.WaveformBuilder
+import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.TimelineState
+import com.squish.app.timeline.withClipMoved
+import com.squish.app.timeline.withClipRemoved
+import com.squish.app.timeline.withClipTrimmed
+import com.squish.app.timeline.withSplitAtPlayhead
+import com.squish.app.timeline.zoomedBy
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,6 +54,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 getApplication<Application>().contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
             }.getOrDefault(0L)
 
+            val name = displayNameOf(uri) ?: "Clip 1"
             _state.update {
                 it.copy(
                     durationMs = meta.durationMs,
@@ -55,7 +64,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     trimStartMs = 0L,
                     trimEndMs = meta.durationMs,
                     isLoadingSource = false,
-                    originalSizeBytes = originalSize
+                    originalSizeBytes = originalSize,
+                    videoClips = listOf(
+                        Clip(
+                            kind = ClipKind.Video,
+                            uri = uri,
+                            label = name,
+                            sourceInMs = 0,
+                            sourceOutMs = meta.durationMs,
+                            timelineStartMs = 0,
+                            sourceDurationMs = meta.durationMs
+                        )
+                    )
                 )
             }
             recomputeEstimate()
@@ -315,9 +335,108 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(textOverlays = it.textOverlays.filterNot { item -> item.id == id }) }
     }
 
-    fun addClipToQueue(uri: Uri) = _state.update { it.copy(clipQueue = it.clipQueue + uri) }
-    fun removeClipFromQueue(uri: Uri) =
-        _state.update { it.copy(clipQueue = it.clipQueue.filterNot { queued -> queued == uri }) }
+    // ---- Timeline -------------------------------------------------------------
+
+    fun addVideoClip(uri: Uri) {
+        viewModelScope.launch {
+            val meta = ThumbnailExtractor.probe(getApplication(), uri)
+            _state.update { current ->
+                val clip = Clip(
+                    kind = ClipKind.Video,
+                    uri = uri,
+                    label = displayNameOf(uri) ?: "Clip ${current.videoClips.size + 1}",
+                    sourceInMs = 0,
+                    sourceOutMs = meta.durationMs,
+                    timelineStartMs = current.videoClips.sumOf { it.durationMs },
+                    sourceDurationMs = meta.durationMs
+                )
+                current.copy(videoClips = current.videoClips + clip)
+            }
+            recomputeEstimate()
+        }
+    }
+
+    fun selectClip(clipId: String?) = _state.update { it.copy(selectedClipId = clipId) }
+
+    fun zoomIn() = _state.update { it.copy(pixelsPerSecond = it.toTimeline().zoomedBy(1.35f).pixelsPerSecond) }
+
+    fun zoomOut() = _state.update { it.copy(pixelsPerSecond = it.toTimeline().zoomedBy(1f / 1.35f).pixelsPerSecond) }
+
+    /** Timeline drag. Each lane writes back to whichever model owns it. */
+    fun moveClip(clipId: String, deltaMs: Long) {
+        val current = _state.value
+        when {
+            clipId == AUDIO_CLIP_ID -> setAudioPlacement(current.audioPlacementMs + deltaMs)
+            current.textOverlays.any { it.id == clipId } -> shiftOverlay(clipId, deltaMs)
+            else -> mutateVideoTrack { it.withClipMoved(clipId, deltaMs) }
+        }
+    }
+
+    /** Timeline edge drag. */
+    fun trimClip(clipId: String, startDeltaMs: Long, endDeltaMs: Long) {
+        val current = _state.value
+        when {
+            clipId == AUDIO_CLIP_ID -> setAudioTrim(
+                current.audioTrimStartMs + startDeltaMs,
+                current.audioTrimEndMs + endDeltaMs
+            )
+            current.textOverlays.any { it.id == clipId } -> resizeOverlay(clipId, startDeltaMs, endDeltaMs)
+            else -> mutateVideoTrack { it.withClipTrimmed(clipId, startDeltaMs, endDeltaMs) }
+        }
+    }
+
+    fun splitAtPlayhead() = mutateVideoTrack { it.withSplitAtPlayhead() }
+
+    fun deleteSelectedClip() {
+        val selected = _state.value.selectedClipId ?: return
+        when {
+            selected == AUDIO_CLIP_ID -> setAudioTrack(null)
+            _state.value.textOverlays.any { it.id == selected } -> removeTextOverlay(selected)
+            else -> mutateVideoTrack { it.withClipRemoved(selected) }
+        }
+        _state.update { it.copy(selectedClipId = null) }
+    }
+
+    private fun mutateVideoTrack(block: (TimelineState) -> TimelineState) {
+        _state.update { current ->
+            val track = TimelineState(
+                clips = current.videoClips,
+                selectedClipId = current.selectedClipId,
+                playheadMs = current.playheadMs
+            )
+            val next = block(track)
+            current.copy(videoClips = next.videoClips, selectedClipId = next.selectedClipId)
+        }
+        recomputeEstimate()
+    }
+
+    private fun shiftOverlay(id: String, deltaMs: Long) {
+        _state.update { current ->
+            current.copy(
+                textOverlays = current.textOverlays.map {
+                    if (it.id != id) it
+                    else it.copy(
+                        startMs = (it.startMs + deltaMs).coerceAtLeast(0L),
+                        endMs = (it.endMs + deltaMs).coerceAtLeast(0L)
+                    )
+                }
+            )
+        }
+    }
+
+    private fun resizeOverlay(id: String, startDeltaMs: Long, endDeltaMs: Long) {
+        _state.update { current ->
+            current.copy(
+                textOverlays = current.textOverlays.map {
+                    if (it.id != id) it
+                    else {
+                        val start = (it.startMs + startDeltaMs).coerceAtLeast(0L)
+                        it.copy(start, endMs = (it.endMs + endDeltaMs).coerceAtLeast(start + 200L))
+                    }
+                }
+            )
+        }
+    }
 
     private fun recomputeEstimate() {
         val current = _state.value

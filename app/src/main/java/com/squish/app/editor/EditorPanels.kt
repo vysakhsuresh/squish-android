@@ -254,19 +254,24 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
         EstimateCard(state)
 
         PanelSurface {
-            PanelHeading("Join more clips", "Played one after another, in order")
-            state.clipQueue.forEachIndexed { index, uri ->
+            PanelHeading("Video track", "Played one after another, in order")
+            state.videoClips.forEachIndexed { index, clip ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Clip ${index + 2}", color = SquishColors.TextPrimary, style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Remove",
-                        color = SquishColors.Pink,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.clickable { viewModel.removeClipFromQueue(uri) }
+                        "${index + 1}. ${clip.label}",
+                        color = SquishColors.TextPrimary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        Timecode.format(clip.durationMs),
+                        color = SquishColors.TextMuted,
+                        style = MaterialTheme.typography.labelSmall
                     )
                 }
             }

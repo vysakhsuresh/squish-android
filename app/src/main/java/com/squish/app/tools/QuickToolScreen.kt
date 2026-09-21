@@ -292,24 +292,29 @@ private fun MergeControls(
     ToolCard {
         Text("Clips in order", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
         Text("1. ${state.name ?: "First clip"}", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextSecondary)
-        state.extraClips.forEachIndexed { index, uri ->
+        state.extraClips.forEachIndexed { index, clip ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "${index + 2}. ${uri.lastPathSegment ?: "Clip"}",
+                    "${index + 2}. ${clip.label}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = SquishColors.TextSecondary,
                     maxLines = 1,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
+                    Timecode.format(clip.durationMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.TextMuted
+                )
+                Text(
                     "Remove",
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.Pink,
-                    modifier = Modifier.clickable { viewModel.removeClip(uri) }
+                    modifier = Modifier.clickable { viewModel.removeClip(clip.id) }
                 )
             }
         }

@@ -2,6 +2,10 @@ package com.squish.app.editor
 
 import android.net.Uri
 import com.squish.app.media.audio.Waveform
+import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.MIN_CLIP_MS
+import com.squish.app.timeline.TimelineState
 
 enum class Quality(val label: String) {
     Small("Small"), Medium("Medium"), High("High"), Original("Original")
@@ -59,7 +63,10 @@ data class EditorUiState(
     val saturation: Float = 0f,
 
     val textOverlays: List<TextOverlayItem> = emptyList(),
-    val clipQueue: List<Uri> = emptyList(),
+
+    // The video track, in order. Seeded with the whole source clip on load; split,
+    // trim, reorder and merge all operate on this list, and export renders it.
+    val videoClips: List<Clip> = emptyList(),
 
     // A second audio track: separately recorded sound, a music bed, a voiceover.
     // Three numbers describe it completely -
@@ -80,10 +87,15 @@ data class EditorUiState(
     val videoWaveform: Waveform? = null,
     val audioWaveform: Waveform? = null,
 
+    val selectedClipId: String? = null,
+    val pixelsPerSecond: Float = 42f,
+
     val isExporting: Boolean = false,
     val estimatedOutputBytes: Long = 0
 ) {
-    val trimmedDurationMs: Long get() = (trimEndMs - trimStartMs).coerceAtLeast(0)
+    val trimmedDurationMs: Long
+        get() = if (videoClips.isEmpty()) (trimEndMs - trimStartMs).coerceAtLeast(0)
+        else videoClips.sumOf { it.durationMs }
 
     val frameMs: Long get() = Timecode.frameDurationMs(fps)
 
@@ -101,3 +113,49 @@ data class EditorUiState(
     /** Whether any audio at all reaches the exported file. */
     val hasAnyAudio: Boolean get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio
 }
+
+/**
+ * The timeline the editor draws, assembled from the one authoritative copy of each
+ * thing: the video track as stored, the separate audio track as its three numbers,
+ * and captions as their time windows. Dragging a lane writes straight back to
+ * whichever of those owns it, so nothing is ever mirrored into a second place.
+ */
+fun EditorUiState.toTimeline(): TimelineState {
+    val audio = audioTrackUri?.let { uri ->
+        listOf(
+            Clip(
+                id = AUDIO_CLIP_ID,
+                kind = ClipKind.Audio,
+                uri = uri,
+                label = audioTrackName ?: "Audio",
+                sourceInMs = audioTrimStartMs,
+                sourceOutMs = audioTrimEndMs,
+                timelineStartMs = audioPlacementMs,
+                sourceDurationMs = audioTrackDurationMs,
+                volume = audioVolume
+            )
+        )
+    } ?: emptyList()
+
+    val captions = textOverlays.map { overlay ->
+        Clip(
+            id = overlay.id,
+            kind = ClipKind.Text,
+            label = overlay.text,
+            sourceInMs = 0,
+            sourceOutMs = (overlay.endMs - overlay.startMs).coerceAtLeast(MIN_CLIP_MS),
+            timelineStartMs = overlay.startMs,
+            sourceDurationMs = durationMs,
+            text = overlay.text
+        )
+    }
+
+    return TimelineState(
+        clips = videoClips + audio + captions,
+        selectedClipId = selectedClipId,
+        playheadMs = playheadMs,
+        pixelsPerSecond = pixelsPerSecond
+    )
+}
+
+const val AUDIO_CLIP_ID = "squish-audio-track"

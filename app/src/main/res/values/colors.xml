@@ -1,3 +1,5 @@
 <resources>
-    <color name="squish_background">#0E0E12</color>
+    <!-- Brand dark, sampled from the logo artwork so the splash, the icon layer and
+         the app background are the same colour with no seam at launch. -->
+    <color name="squish_background">#0A0E2D</color>
 </resources>

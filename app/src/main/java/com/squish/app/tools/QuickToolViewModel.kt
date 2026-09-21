@@ -13,6 +13,8 @@ import com.squish.app.media.ExportPresets
 import com.squish.app.media.GallerySaver
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.VideoProcessor
+import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ClipKind
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,7 +42,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val targetSizeMb: Int = 16,
         val trimStartMs: Long = 0,
         val trimEndMs: Long = 0,
-        val extraClips: List<Uri> = emptyList(),
+        val extraClips: List<Clip> = emptyList(),
         val isLoading: Boolean = false,
         val isExporting: Boolean = false,
         val estimatedOutputBytes: Long = 0
@@ -81,9 +83,28 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun addClip(uri: Uri) = _state.update { it.copy(extraClips = it.extraClips + uri) }
+    /** Probes each added clip so the merged timeline knows its real length. */
+    fun addClip(uri: Uri) {
+        viewModelScope.launch {
+            val meta = ThumbnailExtractor.probe(getApplication(), uri)
+            _state.update { current ->
+                current.copy(
+                    extraClips = current.extraClips + Clip(
+                        kind = ClipKind.Video,
+                        uri = uri,
+                        label = displayNameOf(uri) ?: "Clip ${current.extraClips.size + 2}",
+                        sourceInMs = 0,
+                        sourceOutMs = meta.durationMs,
+                        timelineStartMs = 0,
+                        sourceDurationMs = meta.durationMs
+                    )
+                )
+            }
+        }
+    }
 
-    fun removeClip(uri: Uri) = _state.update { it.copy(extraClips = it.extraClips.filterNot { c -> c == uri }) }
+    fun removeClip(clipId: String) =
+        _state.update { it.copy(extraClips = it.extraClips.filterNot { c -> c.id == clipId }) }
 
     fun setQuality(quality: Quality) {
         _state.update { it.copy(quality = quality, fitToSize = false) }
@@ -151,7 +172,20 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             fitToSize = tool == QuickTool.Compress && current.fitToSize,
             targetSizeMb = current.targetSizeMb,
             audioOnly = audioOnly,
-            clipQueue = if (tool == QuickTool.Merge) current.extraClips else emptyList()
+            videoClips = if (tool != QuickTool.Merge) emptyList() else buildList {
+                add(
+                    Clip(
+                        kind = ClipKind.Video,
+                        uri = sourceUri,
+                        label = current.name ?: "Clip 1",
+                        sourceInMs = 0,
+                        sourceOutMs = current.durationMs,
+                        timelineStartMs = 0,
+                        sourceDurationMs = current.durationMs
+                    )
+                )
+                addAll(current.extraClips)
+            }
         )
 
         viewModelScope.launch {

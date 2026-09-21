@@ -1,15 +1,14 @@
 <resources>
 
     <!--
-      The launch theme IS the animation. Android 12+ always draws a system splash
-      when an app cold-starts, so rather than showing that and then a second
-      in-app animation, the squish bounce is installed as the system splash's
-      animated icon. One animation, then the app.
+      The system splash shows the mark on the brand ground; the app then continues
+      the same artwork into its own entrance animation, so a cold start reads as one
+      continuous motion rather than an icon flash followed by a separate splash.
     -->
     <style name="Theme.Squish.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/squish_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/squish_splash_anim</item>
-        <item name="windowSplashScreenAnimationDuration">650</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/squish_mark_art</item>
+        <item name="windowSplashScreenAnimationDuration">200</item>
         <item name="postSplashScreenTheme">@style/Theme.Squish</item>
     </style>
 
