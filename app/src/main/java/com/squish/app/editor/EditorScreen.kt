@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Tune
@@ -57,6 +58,7 @@ enum class EditorTab(val label: String, val icon: ImageVector) {
     Trim("Trim", Icons.Filled.ContentCut),
     Crop("Crop", Icons.Filled.Crop),
     Speed("Speed", Icons.Filled.Speed),
+    Mix("Mix", Icons.Filled.Layers),
     Audio("Audio", Icons.Filled.GraphicEq),
     Text("Text", Icons.Filled.TextFields),
     Colour("Colour", Icons.Filled.Tune),
@@ -87,6 +89,9 @@ fun EditorScreen(
     }
     val pickExtraClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let { viewModel.addVideoClip(it) }
+    }
+    val pickOverlayClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { viewModel.addOverlayClip(it) }
     }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
@@ -165,7 +170,11 @@ fun EditorScreen(
                 onSelect = viewModel::selectClip,
                 onMove = viewModel::moveClip,
                 onTrim = viewModel::trimClip,
-                onScrub = viewModel::setPlayhead
+                onScrub = viewModel::setPlayhead,
+                onTransitionTap = { clipId ->
+                    viewModel.selectClip(clipId)
+                    tab = EditorTab.Mix
+                }
             )
 
             TimelineActionBar(
@@ -196,6 +205,17 @@ fun EditorScreen(
                     EditorTab.Trim -> PrecisionTrimPanel(state, viewModel)
                     EditorTab.Crop -> CropPanel(state, viewModel)
                     EditorTab.Speed -> SpeedPanel(state, viewModel)
+                    EditorTab.Mix -> TransitionPanel(
+                        state = state,
+                        viewModel = viewModel,
+                        onAddOverlay = {
+                            pickOverlayClip.launch(
+                                PickVisualMediaRequest.Builder()
+                                    .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                                    .build()
+                            )
+                        }
+                    )
                     EditorTab.Audio -> AudioPanel(
                         state = state,
                         viewModel = viewModel,

@@ -1,0 +1,126 @@
+package com.squish.app.media
+
+import androidx.media3.effect.AlphaScale
+import androidx.media3.effect.Presentation
+import androidx.media3.effect.ScaleAndRotateTransformation
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
+import com.google.common.collect.ImmutableList
+import com.squish.app.editor.EditorUiState
+import com.squish.app.timeline.Clip
+import com.squish.app.timeline.TransitionType
+
+/**
+ * Builds the video side of a [Composition].
+ *
+ * Two strategies, chosen by what the edit actually needs:
+ *
+ *  - **Cuts only** — one sequence, clips end to end. Uses nothing beyond the APIs
+ *    the rest of the app already relies on, and is what every export took before
+ *    transitions existed.
+ *
+ *  - **Composited** — A/B roll. Transitions require two shots to be on screen at
+ *    once, and a single sequence plays its items strictly one after another, so
+ *    alternating clips are dealt onto two sequences with gaps opposite each
+ *    other. Where they overlap you get a transition; overlay layers ride on
+ *    further sequences above. This is how an NLE has always done dissolves.
+ *
+ * The composited path is only taken when the edit contains a transition or an
+ * overlay, so a plain cuts export never touches the newer compositing APIs.
+ *
+ * BUILD RISK: gaps (`EditedMediaItemSequence.Builder.addGap`) and per-input
+ * compositing arrived in Media3 1.5, which is why the module was moved off
+ * 1.4.1. If those signatures differ in the version you resolve, this file is the
+ * only one to fix - `buildCutsOnly` keeps working regardless. See BUILD_NOTES.md.
+ */
+object CompositionFactory {
+
+    fun needsCompositing(state: EditorUiState): Boolean =
+        state.videoClips.any { it.isOverlay || it.transitionIn.isActive }
+
+    fun buildCutsOnly(items: List<EditedMediaItem>): List<EditedMediaItemSequence> =
+        listOf(EditedMediaItemSequence(ImmutableList.copyOf(items)))
+
+    /**
+     * Deals the base track onto two alternating sequences so consecutive shots can
+     * overlap, and puts each overlay layer on its own sequence above them.
+     */
+    fun buildComposited(
+        state: EditorUiState,
+        editedFor: (Clip) -> EditedMediaItem
+    ): List<EditedMediaItemSequence> {
+        val base = state.videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
+        if (base.isEmpty()) return emptyList()
+
+        val rollA = EditedMediaItemSequence.Builder()
+        val rollB = EditedMediaItemSequence.Builder()
+        var cursorA = 0L
+        var cursorB = 0L
+
+        base.forEachIndexed { index, clip ->
+            val ontoA = index % 2 == 0
+            val start = clip.timelineStartMs
+            if (ontoA) {
+                if (start > cursorA) rollA.addGap(msToUs(start - cursorA))
+                rollA.addItem(editedFor(clip))
+                cursorA = start + clip.durationMs
+            } else {
+                if (start > cursorB) rollB.addGap(msToUs(start - cursorB))
+                rollB.addItem(editedFor(clip))
+                cursorB = start + clip.durationMs
+            }
+        }
+
+        val sequences = mutableListOf(rollA.build())
+        if (base.size > 1) sequences.add(rollB.build())
+
+        state.videoClips.filter { it.isOverlay }.sortedBy { it.layer }.forEach { overlay ->
+            val builder = EditedMediaItemSequence.Builder()
+            if (overlay.timelineStartMs > 0) builder.addGap(msToUs(overlay.timelineStartMs))
+            builder.addItem(editedFor(overlay))
+            sequences.add(builder.build())
+        }
+
+        return sequences
+    }
+
+    /**
+     * Geometry and opacity for an overlay: scaled down, nudged into a corner, and
+     * dimmed to taste. Applied as effects on the clip itself rather than through
+     * compositor settings, so it degrades to a plain scaled inset if per-input
+     * compositing is unavailable.
+     */
+    fun overlayEffects(clip: Clip, canvasWidth: Int, canvasHeight: Int): List<androidx.media3.common.Effect> {
+        if (!clip.isOverlay || canvasWidth <= 0 || canvasHeight <= 0) return emptyList()
+        return buildList {
+            add(
+                ScaleAndRotateTransformation.Builder()
+                    .setScale(clip.scale, clip.scale)
+                    .build()
+            )
+            add(Presentation.createForWidthAndHeight(canvasWidth, canvasHeight, Presentation.LAYOUT_SCALE_TO_FIT))
+            if (clip.opacity < 1f) add(AlphaScale(clip.opacity))
+        }
+    }
+
+    /**
+     * How a transition reads on the incoming shot. A dissolve fades it up; a dip
+     * takes the outgoing shot down to black first. Both need alpha that changes
+     * over the overlap, which the compositor supplies per presentation time.
+     */
+    fun transitionAlphaAt(clip: Clip, positionInClipMs: Long): Float {
+        val transition = clip.transitionIn
+        if (!transition.isActive) return 1f
+        if (positionInClipMs >= transition.durationMs) return 1f
+        val progress = (positionInClipMs.toFloat() / transition.durationMs).coerceIn(0f, 1f)
+        return when (transition.type) {
+            TransitionType.CrossFade, TransitionType.SlideLeft, TransitionType.WipeRight -> progress
+            // Black in the middle: out to nothing, then back up.
+            TransitionType.DipToBlack -> if (progress < 0.5f) 0f else (progress - 0.5f) * 2f
+            TransitionType.None -> 1f
+        }
+    }
+
+    private fun msToUs(ms: Long): Long = ms * 1000L
+}

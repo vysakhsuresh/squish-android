@@ -17,6 +17,11 @@ import com.squish.app.media.audio.WaveformBuilder
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TimelineState
+import com.squish.app.timeline.Transition
+import com.squish.app.timeline.TransitionType
+import com.squish.app.timeline.withLayerChanged
+import com.squish.app.timeline.withOverlayGeometry
+import com.squish.app.timeline.withTransition
 import com.squish.app.timeline.withClipMoved
 import com.squish.app.timeline.withClipRemoved
 import com.squish.app.timeline.withClipTrimmed
@@ -357,6 +362,43 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun selectClip(clipId: String?) = _state.update { it.copy(selectedClipId = clipId) }
+
+    /** Adds a clip on an overlay layer, starting at the playhead. */
+    fun addOverlayClip(uri: Uri) {
+        viewModelScope.launch {
+            val meta = ThumbnailExtractor.probe(getApplication(), uri)
+            _state.update { current ->
+                val clip = Clip(
+                    kind = ClipKind.Video,
+                    uri = uri,
+                    label = displayNameOf(uri) ?: "Overlay",
+                    sourceInMs = 0,
+                    sourceOutMs = meta.durationMs,
+                    timelineStartMs = current.playheadMs,
+                    sourceDurationMs = meta.durationMs,
+                    layer = 1,
+                    scale = 0.4f,
+                    offsetXFraction = 0.45f,
+                    offsetYFraction = -0.45f
+                )
+                current.copy(videoClips = current.videoClips + clip, selectedClipId = clip.id)
+            }
+            recomputeEstimate()
+        }
+    }
+
+    fun setTransition(clipId: String, type: TransitionType, durationMs: Long) =
+        mutateVideoTrack { it.withTransition(clipId, Transition(type, durationMs)) }
+
+    fun changeLayer(clipId: String, delta: Int) = mutateVideoTrack { it.withLayerChanged(clipId, delta) }
+
+    fun setOverlayGeometry(
+        clipId: String,
+        opacity: Float? = null,
+        scale: Float? = null,
+        offsetX: Float? = null,
+        offsetY: Float? = null
+    ) = mutateVideoTrack { it.withOverlayGeometry(clipId, opacity, scale, offsetX, offsetY) }
 
     fun zoomIn() = _state.update { it.copy(pixelsPerSecond = it.toTimeline().zoomedBy(1.35f).pixelsPerSecond) }
 

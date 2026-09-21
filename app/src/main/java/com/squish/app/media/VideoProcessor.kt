@@ -37,18 +37,21 @@ class VideoProcessor(private val context: Context) {
             // source window, so a split is just two clips over the same file and
             // nothing is re-encoded twice.
             val track = state.videoClips
-            val mainItems: List<EditedMediaItem> = if (track.isEmpty()) {
-                listOf(editedVideo(state, state.sourceUri, state.trimStartMs, state.trimEndMs))
-            } else {
-                track.map { clip ->
-                    editedVideo(state, clip.uri ?: state.sourceUri, clip.sourceInMs, clip.sourceOutMs)
-                }
+            val videoSequences: List<EditedMediaItemSequence> = when {
+                track.isEmpty() -> CompositionFactory.buildCutsOnly(
+                    listOf(editedVideo(state, state.sourceUri, state.trimStartMs, state.trimEndMs))
+                )
+                // Only an edit that actually uses transitions or layers pays the
+                // cost - and the risk - of the compositing path.
+                CompositionFactory.needsCompositing(state) ->
+                    CompositionFactory.buildComposited(state) { clip -> editedClip(state, clip) }
+                else -> CompositionFactory.buildCutsOnly(track.map { editedClip(state, it) })
             }
 
             val headSourceIn = track.firstOrNull()?.sourceInMs ?: state.trimStartMs
             val timelineDuration = state.trimmedDurationMs
 
-            val sequences = mutableListOf(EditedMediaItemSequence(ImmutableList.copyOf(mainItems)))
+            val sequences = videoSequences.toMutableList()
             buildAudioTrackSequence(state, headSourceIn, timelineDuration)?.let { sequences.add(it) }
 
             val composition = Composition.Builder(ImmutableList.copyOf(sequences)).build()
@@ -99,6 +102,36 @@ class VideoProcessor(private val context: Context) {
      * guaranteed decodable, and no extra encoder in the path. If the source has no
      * audio track to borrow, the cue starts with the clip instead.
      */
+    /** One timeline clip, with the look applied and overlay geometry if it floats. */
+    private fun editedClip(state: EditorUiState, clip: com.squish.app.timeline.Clip): EditedMediaItem {
+        val item = MediaItem.Builder()
+            .setUri(clip.uri ?: state.sourceUri)
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(clip.sourceInMs)
+                    .setEndPositionMs(clip.sourceOutMs.coerceAtLeast(clip.sourceInMs))
+                    .build()
+            )
+            .build()
+
+        val effects = if (clip.isOverlay) {
+            CompositionFactory.overlayEffects(clip, state.sourceWidth, state.sourceHeight)
+        } else {
+            buildVideoEffects(state)
+        }
+
+        return EditedMediaItem.Builder(item)
+            .setRemoveAudio(clip.isOverlay || (state.muteOriginal && !state.audioOnly))
+            .setRemoveVideo(state.audioOnly)
+            .setEffects(
+                Effects(
+                    if (clip.isOverlay) ImmutableList.of() else buildAudioProcessors(state.speed, state.originalVolume),
+                    ImmutableList.copyOf(effects)
+                )
+            )
+            .build()
+    }
+
     private fun editedVideo(
         state: EditorUiState,
         uri: android.net.Uri?,

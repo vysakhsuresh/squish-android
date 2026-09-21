@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Videocam
@@ -60,16 +62,20 @@ fun TimelineEditor(
     onMove: (String, Long) -> Unit,
     onTrim: (String, Long, Long) -> Unit,
     onScrub: (Long) -> Unit,
+    onTransitionTap: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scroll = rememberScrollState()
     val pps = state.pixelsPerSecond
     val contentWidth = maxOf(state.durationMs, 8_000L).onTimeline(pps) + 240.dp
+    val overlayLayers = (state.layerCount downTo 1).toList()
+    val laneCount = overlayLayers.size + 3
 
     Row(modifier = modifier.fillMaxWidth().background(SquishColors.Background)) {
 
         Column(modifier = Modifier.width(GUTTER)) {
             Spacer(modifier = Modifier.height(RULER_HEIGHT))
+            overlayLayers.forEach { LaneBadge(Icons.Filled.Layers, SquishColors.Magenta) }
             LaneBadge(Icons.Filled.Videocam, SquishColors.Violet)
             LaneBadge(Icons.Filled.MusicNote, SquishColors.Cyan)
             LaneBadge(Icons.Filled.TextFields, SquishColors.Amber)
@@ -78,7 +84,25 @@ fun TimelineEditor(
         Box(modifier = Modifier.fillMaxWidth().horizontalScroll(scroll)) {
             Column(modifier = Modifier.width(contentWidth)) {
                 Ruler(durationMs = state.durationMs, pixelsPerSecond = pps, onScrub = onScrub)
-                Lane(state.videoClips, state, SquishColors.Violet, onSelect, onMove, onTrim)
+                overlayLayers.forEach { layer ->
+                    Lane(
+                        clips = state.clips.filter { it.kind == ClipKind.Video && it.layer == layer },
+                        state = state,
+                        accent = SquishColors.Magenta,
+                        onSelect = onSelect,
+                        onMove = onMove,
+                        onTrim = onTrim
+                    )
+                }
+                Lane(
+                    clips = state.baseVideoClips,
+                    state = state,
+                    accent = SquishColors.Violet,
+                    onSelect = onSelect,
+                    onMove = onMove,
+                    onTrim = onTrim,
+                    onTransitionTap = onTransitionTap
+                )
                 Lane(state.audioClips, state, SquishColors.Cyan, onSelect, onMove, onTrim)
                 Lane(state.textClips, state, SquishColors.Amber, onSelect, onMove, onTrim)
             }
@@ -87,7 +111,7 @@ fun TimelineEditor(
                 modifier = Modifier
                     .offset(x = state.playheadMs.onTimeline(pps))
                     .width(2.dp)
-                    .height(RULER_HEIGHT + LANE_HEIGHT * 3)
+                    .height(RULER_HEIGHT + LANE_HEIGHT * laneCount)
                     .background(SquishColors.TextPrimary)
             )
         }
@@ -150,7 +174,8 @@ private fun Lane(
     accent: Color,
     onSelect: (String?) -> Unit,
     onMove: (String, Long) -> Unit,
-    onTrim: (String, Long, Long) -> Unit
+    onTrim: (String, Long, Long) -> Unit,
+    onTransitionTap: ((String) -> Unit)? = null
 ) {
     Box(
         modifier = Modifier
@@ -169,6 +194,44 @@ private fun Lane(
                 onTrim = onTrim
             )
         }
+
+        // A tappable marker on every cut, so adding a dissolve is a tap on the
+        // join rather than a hunt through a menu.
+        onTransitionTap?.let { tap ->
+            clips.drop(1).forEach { clip ->
+                TransitionBadge(
+                    clip = clip,
+                    pixelsPerSecond = state.pixelsPerSecond,
+                    onTap = { tap(clip.id) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.TransitionBadge(clip: Clip, pixelsPerSecond: Float, onTap: () -> Unit) {
+    val active = clip.transitionIn.isActive
+    Box(
+        modifier = Modifier
+            .offset(x = clip.timelineStartMs.onTimeline(pixelsPerSecond) - 9.dp)
+            .align(Alignment.CenterStart)
+            .size(18.dp)
+            .clip(RoundedCornerShape(5.dp))
+            .background(if (active) SquishColors.Orange else SquishColors.Surface)
+            .border(
+                width = 1.dp,
+                color = if (active) SquishColors.Orange else SquishColors.Border,
+                shape = RoundedCornerShape(5.dp)
+            )
+            .clickable(onClick = onTap),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            if (active) "✕" else "|",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (active) SquishColors.Background else SquishColors.TextMuted
+        )
     }
 }
 
