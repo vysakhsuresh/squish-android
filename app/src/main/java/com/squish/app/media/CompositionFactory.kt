@@ -6,7 +6,6 @@ import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
-import com.google.common.collect.ImmutableList
 import com.squish.app.editor.EditorUiState
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.TransitionType
@@ -39,8 +38,11 @@ object CompositionFactory {
     fun needsCompositing(state: EditorUiState): Boolean =
         state.videoClips.any { it.isOverlay || it.transitionIn.isActive }
 
-    fun buildCutsOnly(items: List<EditedMediaItem>): List<EditedMediaItemSequence> =
-        listOf(EditedMediaItemSequence(ImmutableList.copyOf(items)))
+    fun buildCutsOnly(items: List<EditedMediaItem>): List<EditedMediaItemSequence> {
+        val sequence = EditedMediaItemSequence.Builder()
+        items.forEach { sequence.addItem(it) }
+        return listOf(sequence.build())
+    }
 
     /**
      * Deals the base track onto two alternating sequences so consecutive shots can

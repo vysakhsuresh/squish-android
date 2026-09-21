@@ -13,6 +13,7 @@ import androidx.media3.effect.Presentation
 import androidx.media3.effect.RgbAdjustment
 import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.effect.SpeedChangeEffect
+import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
@@ -219,7 +220,9 @@ class VideoProcessor(private val context: Context) {
                 .build()
         )
 
-        return EditedMediaItemSequence(ImmutableList.copyOf(items))
+        val sequence = EditedMediaItemSequence.Builder()
+        items.forEach { sequence.addItem(it) }
+        return sequence.build()
     }
 
     private fun silentProcessors(): ImmutableList<AudioProcessor> {
@@ -269,7 +272,10 @@ class VideoProcessor(private val context: Context) {
         }
 
         if (state.textOverlays.isNotEmpty()) {
-            effects.add(OverlayEffect(ImmutableList.copyOf(state.textOverlays.map { SquishTextOverlay(it) })))
+            // Widened at the declaration: OverlayEffect takes List<TextureOverlay>,
+            // and Java generics are invariant, so a list of the subtype will not do.
+            val overlays: List<TextureOverlay> = state.textOverlays.map { SquishTextOverlay(it) }
+            effects.add(OverlayEffect(ImmutableList.copyOf(overlays)))
         }
 
         return ImmutableList.copyOf(effects)
