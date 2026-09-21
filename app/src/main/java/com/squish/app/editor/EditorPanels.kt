@@ -58,25 +58,34 @@ fun PanelHeading(title: String, subtitle: String) {
 
 @Composable
 fun PrecisionTrimPanel(state: EditorUiState, viewModel: EditorViewModel) {
+    // These controls trim a clip on the timeline, so they must read that clip's
+    // source window - not the old whole-video trim range, which the exporter no
+    // longer consults now that the timeline is authoritative.
+    val clip = viewModel.trimTargetClip(state)
+
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface {
-            PanelHeading("In and out points", "Nudge a single frame at a time")
+            PanelHeading(
+                "In and out points",
+                if (clip == null) "Add a clip to trim" else "Trimming ${clip.label}"
+            )
             TrimPointRow(
                 label = "In",
-                value = Timecode.formatWithFrame(state.trimStartMs, state.fps),
+                value = Timecode.formatWithFrame(clip?.sourceInMs ?: 0L, state.fps),
                 onNudgeBack = { viewModel.nudgeTrim(isStart = true, frames = -1) },
                 onNudgeForward = { viewModel.nudgeTrim(isStart = true, frames = 1) },
                 onSetToPlayhead = { viewModel.setTrimPointToPlayhead(isStart = true) }
             )
             TrimPointRow(
                 label = "Out",
-                value = Timecode.formatWithFrame(state.trimEndMs, state.fps),
+                value = Timecode.formatWithFrame(clip?.sourceOutMs ?: 0L, state.fps),
                 onNudgeBack = { viewModel.nudgeTrim(isStart = false, frames = -1) },
                 onNudgeForward = { viewModel.nudgeTrim(isStart = false, frames = 1) },
                 onSetToPlayhead = { viewModel.setTrimPointToPlayhead(isStart = false) }
             )
             Text(
-                "${Timecode.format(state.trimmedDurationMs)} selected · ${state.fps.toInt()} fps",
+                "${Timecode.format(clip?.durationMs ?: 0L)} this shot · " +
+                    "${Timecode.format(state.trimmedDurationMs)} total · ${state.fps.toInt()} fps",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextSecondary
             )

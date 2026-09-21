@@ -97,43 +97,32 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---- Precision trim -------------------------------------------------------
 
-    fun setTrim(startMs: Long, endMs: Long) {
-        val current = _state.value
-        val start = if (current.snapToMarkers) snapToNearbyMarker(startMs, current) else startMs
-        val end = if (current.snapToMarkers) snapToNearbyMarker(endMs, current) else endMs
-        _state.update {
-            it.copy(
-                trimStartMs = start.coerceIn(0L, it.durationMs),
-                trimEndMs = end.coerceIn(0L, it.durationMs)
-            )
-        }
-        recomputeEstimate()
-    }
+    /**
+     * Which clip the precision controls act on: whatever is selected, falling back
+     * to the opening shot so the panel is never inert.
+     */
+    fun trimTargetClip(current: EditorUiState = _state.value): Clip? =
+        current.videoClips.firstOrNull { it.id == current.selectedClipId }
+            ?: current.videoClips.firstOrNull()
 
     fun nudgeTrim(isStart: Boolean, frames: Int) {
         val current = _state.value
+        val clip = trimTargetClip(current) ?: return
         val delta = frames * current.frameMs
-        val minGap = current.frameMs * 2
-        if (isStart) {
-            val next = (current.trimStartMs + delta).coerceIn(0L, current.trimEndMs - minGap)
-            _state.update { it.copy(trimStartMs = Timecode.quantize(next, it.fps)) }
-        } else {
-            val next = (current.trimEndMs + delta).coerceIn(current.trimStartMs + minGap, current.durationMs)
-            _state.update { it.copy(trimEndMs = Timecode.quantize(next, it.fps)) }
-        }
-        recomputeEstimate()
+        if (isStart) trimClip(clip.id, delta, 0L) else trimClip(clip.id, 0L, delta)
     }
 
     fun setTrimPointToPlayhead(isStart: Boolean) {
         val current = _state.value
-        val position = Timecode.quantize(current.playheadMs, current.fps)
-        val minGap = current.frameMs * 2
+        val clip = trimTargetClip(current) ?: return
+        val snapped = if (current.snapToMarkers) snapToNearbyMarker(current.playheadMs, current)
+        else current.playheadMs
+        val offsetInClip = Timecode.quantize(snapped - clip.timelineStartMs, current.fps)
         if (isStart) {
-            _state.update { it.copy(trimStartMs = position.coerceIn(0L, it.trimEndMs - minGap)) }
+            trimClip(clip.id, offsetInClip, 0L)
         } else {
-            _state.update { it.copy(trimEndMs = position.coerceIn(it.trimStartMs + minGap, it.durationMs)) }
+            trimClip(clip.id, 0L, offsetInClip - clip.durationMs)
         }
-        recomputeEstimate()
     }
 
     fun setPlayhead(ms: Long) = _state.update { it.copy(playheadMs = ms.coerceIn(0L, it.durationMs)) }
@@ -473,7 +462,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     if (it.id != id) it
                     else {
                         val start = (it.startMs + startDeltaMs).coerceAtLeast(0L)
-                        it.copy(start, endMs = (it.endMs + endDeltaMs).coerceAtLeast(start + 200L))
+                        it.copy(startMs = start, endMs = (it.endMs + endDeltaMs).coerceAtLeast(start + 200L))
                     }
                 }
             )
