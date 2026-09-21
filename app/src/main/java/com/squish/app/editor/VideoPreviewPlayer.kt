@@ -14,20 +14,26 @@ import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.PlayerView
+import com.squish.app.timeline.Clip
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 /**
- * Plays the picture against the separate audio track exactly where it will land in
- * the export, so a music cue or a synced take can be judged by ear before rendering.
+ * Plays the edit, not the source file.
  *
- * Two players rather than one merged source: a second ExoPlayer is plain, stable
- * API, and a watchdog re-seeks it whenever the pair drift more than a frame apart.
- * The export is sample-accurate regardless - it aligns by clipping, not by playback.
+ * Each timeline clip becomes a clipped MediaItem in a playlist, so trimming,
+ * splitting and reordering are all reflected the moment they happen. Previously
+ * this player was handed the raw Uri, which is why a trimmed clip still played
+ * the whole video back.
+ *
+ * A separate audio track runs on its own player against the same clock, with a
+ * watchdog re-seeking it whenever the two drift more than a frame apart. Export
+ * is sample-accurate regardless; it aligns by clipping, not by playback.
  */
 @Composable
 fun VideoPreviewPlayer(
-    videoUri: Uri,
+    videoClips: List<Clip>,
+    fallbackUri: Uri,
     audioUri: Uri?,
     audioTrimStartMs: Long,
     audioPlacementMs: Long,
@@ -44,11 +50,16 @@ fun VideoPreviewPlayer(
     val latestPlacement by rememberUpdatedState(audioPlacementMs)
     val latestSlice by rememberUpdatedState(audioSliceDurationMs)
 
-    val videoPlayer = remember(videoUri) {
+    val ordered = remember(videoClips) { videoClips.sortedBy { it.timelineStartMs } }
+
+    // Rebuild only when the edit actually changes shape, not on every recomposition.
+    val editSignature = remember(ordered) {
+        ordered.joinToString("|") { "${it.id}@${it.sourceInMs}-${it.sourceOutMs}" }
+    }
+
+    val videoPlayer = remember(fallbackUri) {
         ExoPlayer.Builder(context).build().apply {
             setSeekParameters(SeekParameters.EXACT)
-            setMediaItem(MediaItem.fromUri(videoUri))
-            prepare()
             playWhenReady = false
         }
     }
@@ -64,14 +75,32 @@ fun VideoPreviewPlayer(
         }
     }
 
-    // One effect per player. Keying a single effect on both meant that attaching an
-    // audio track disposed - and released - the still-in-use video player, which
-    // killed the preview the moment music was added.
-    DisposableEffect(videoPlayer) {
-        onDispose { videoPlayer.release() }
-    }
-    DisposableEffect(audioPlayer) {
-        onDispose { audioPlayer?.release() }
+    DisposableEffect(videoPlayer) { onDispose { videoPlayer.release() } }
+    DisposableEffect(audioPlayer) { onDispose { audioPlayer?.release() } }
+
+    LaunchedEffect(editSignature, fallbackUri) {
+        val items = ordered.map { clip ->
+            MediaItem.Builder()
+                .setUri(clip.uri ?: fallbackUri)
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(clip.sourceInMs)
+                        .setEndPositionMs(clip.sourceOutMs.coerceAtLeast(clip.sourceInMs))
+                        .build()
+                )
+                .build()
+        }.ifEmpty { listOf(MediaItem.fromUri(fallbackUri)) }
+
+        // Hold our place across a re-trim so the preview does not jump to the top
+        // every time a handle moves.
+        val keepIndex = videoPlayer.currentMediaItemIndex.coerceAtMost((items.size - 1).coerceAtLeast(0))
+        val keepPosition = videoPlayer.currentPosition.coerceAtLeast(0L)
+
+        videoPlayer.setMediaItems(items)
+        videoPlayer.prepare()
+        if (keepIndex > 0 || keepPosition > 0) {
+            runCatching { videoPlayer.seekTo(keepIndex, keepPosition) }
+        }
     }
 
     LaunchedEffect(muteOriginal, originalVolume, audioVolume, audioPlayer) {
@@ -79,9 +108,13 @@ fun VideoPreviewPlayer(
         audioPlayer?.volume = audioVolume
     }
 
-    LaunchedEffect(videoPlayer, audioPlayer) {
+    LaunchedEffect(videoPlayer, audioPlayer, editSignature) {
         while (true) {
-            val position = videoPlayer.currentPosition
+            // Position on the timeline, not within the current clip: everything
+            // before the playing item has already gone by.
+            val index = videoPlayer.currentMediaItemIndex
+            val elapsedBefore = ordered.take(index).sumOf { it.durationMs }
+            val position = elapsedBefore + videoPlayer.currentPosition
             latestPlayhead(position)
 
             if (audioPlayer != null) {

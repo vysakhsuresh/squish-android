@@ -111,8 +111,29 @@ fun TimelineState.rippleVideo(): TimelineState {
     return copy(clips = rippled + others)
 }
 
-fun TimelineState.withTransition(clipId: String, transition: Transition): TimelineState =
-    copy(clips = clips.map { if (it.id == clipId) it.copy(transitionIn = transition) else it }).rippleVideo()
+/**
+ * Setting a transition pulls only this clip back over its predecessor by the
+ * overlap. Everything else stays exactly where the editor put it.
+ */
+fun TimelineState.withTransition(clipId: String, transition: Transition): TimelineState {
+    val base = baseVideoClips
+    val index = base.indexOfFirst { it.id == clipId }
+    val tagged = clips.map { if (it.id == clipId) it.copy(transitionIn = transition) else it }
+    if (index <= 0) return copy(clips = tagged)
+
+    val clip = base[index]
+    val previous = base[index - 1]
+    val overlap = if (transition.isActive) {
+        transition.durationMs.coerceAtMost(minOf(clip.durationMs, previous.durationMs) / 2)
+    } else 0L
+    val start = (previous.timelineEndMs - overlap).coerceAtLeast(0L)
+
+    return copy(
+        clips = tagged.map {
+            if (it.id == clipId) it.copy(timelineStartMs = start) else it
+        }
+    )
+}
 
 /** Promote to an overlay layer or drop back onto the base picture. */
 fun TimelineState.withLayerChanged(clipId: String, delta: Int): TimelineState {
@@ -121,9 +142,9 @@ fun TimelineState.withLayerChanged(clipId: String, delta: Int): TimelineState {
     val newLayer = (clip.layer + delta).coerceIn(0, MAX_LAYER)
     if (newLayer == clip.layer) return this
 
-    // Coming off the base track it keeps its position; going onto it, ripple decides.
+    // Keeps its position either way; an overlay has no cut transition to carry.
     val moved = clip.copy(layer = newLayer, transitionIn = if (newLayer > 0) Transition() else clip.transitionIn)
-    return copy(clips = clips.map { if (it.id == clipId) moved else it }).rippleVideo()
+    return copy(clips = clips.map { if (it.id == clipId) moved else it })
 }
 
 fun TimelineState.withOverlayGeometry(
@@ -154,46 +175,28 @@ fun TimelineState.withPlayhead(ms: Long): TimelineState =
 fun TimelineState.zoomedBy(factor: Float): TimelineState =
     copy(pixelsPerSecond = (pixelsPerSecond * factor).coerceIn(ZOOM_MIN, ZOOM_MAX))
 
-fun TimelineState.withClipAdded(clip: Clip): TimelineState {
-    val next = copy(clips = clips + clip, selectedClipId = clip.id)
-    return if (clip.kind == ClipKind.Video) next.rippleVideo() else next
-}
+fun TimelineState.withClipAdded(clip: Clip): TimelineState =
+    copy(clips = clips + clip, selectedClipId = clip.id)
 
-fun TimelineState.withClipRemoved(clipId: String): TimelineState {
-    val removed = clips.firstOrNull { it.id == clipId } ?: return this
-    val next = copy(
-        clips = clips.filterNot { it.id == clipId },
-        selectedClipId = if (selectedClipId == clipId) null else selectedClipId
-    )
-    return if (removed.kind == ClipKind.Video) next.rippleVideo() else next
-}
+/** Removing leaves the hole where it was; closing it is the editor's decision. */
+fun TimelineState.withClipRemoved(clipId: String): TimelineState = copy(
+    clips = clips.filterNot { it.id == clipId },
+    selectedClipId = if (selectedClipId == clipId) null else selectedClipId
+)
 
-/** Drag. Video reorders against its neighbours; audio and text move freely. */
+/**
+ * Drag. Every clip moves freely along its lane, including video.
+ *
+ * It used to reorder video against its neighbours and then re-ripple, which meant
+ * a single clip could not be moved at all and a dragged one always snapped back.
+ * Free positioning is what makes manual sync possible: slide the picture against
+ * the sound until it lines up. [rippleVideo] is still available as a deliberate
+ * "close the gaps" action rather than something that fires behind your back.
+ */
 fun TimelineState.withClipMoved(clipId: String, deltaMs: Long): TimelineState {
     val clip = clips.firstOrNull { it.id == clipId } ?: return this
-
-    if (clip.kind != ClipKind.Video) {
-        val moved = clip.copy(timelineStartMs = (clip.timelineStartMs + deltaMs).coerceAtLeast(0L))
-        return copy(clips = clips.map { if (it.id == clipId) moved else it })
-    }
-
-    val ordered = videoClips.toMutableList()
-    val index = ordered.indexOfFirst { it.id == clipId }
-    if (index < 0) return this
-    val target = clip.timelineStartMs + deltaMs
-    var newIndex = index
-    if (deltaMs < 0 && index > 0 && target < ordered[index - 1].timelineStartMs + ordered[index - 1].durationMs / 2) {
-        newIndex = index - 1
-    } else if (deltaMs > 0 && index < ordered.lastIndex &&
-        target + clip.durationMs > ordered[index + 1].timelineStartMs + ordered[index + 1].durationMs / 2
-    ) {
-        newIndex = index + 1
-    }
-    if (newIndex == index) return this
-
-    ordered.removeAt(index)
-    ordered.add(newIndex, clip)
-    return copy(clips = ordered + clips.filter { it.kind != ClipKind.Video }).rippleVideo()
+    val moved = clip.copy(timelineStartMs = (clip.timelineStartMs + deltaMs).coerceAtLeast(0L))
+    return copy(clips = clips.map { if (it.id == clipId) moved else it })
 }
 
 /** Drag a clip edge. Trims the source window without moving anything else. */
@@ -207,12 +210,11 @@ fun TimelineState.withClipTrimmed(clipId: String, startDeltaMs: Long, endDeltaMs
     val trimmed = clip.copy(
         sourceInMs = newIn,
         sourceOutMs = newOut,
-        // Trimming the head of a freely placed clip keeps its on-screen position.
-        timelineStartMs = if (clip.kind == ClipKind.Video) clip.timelineStartMs
-        else (clip.timelineStartMs + startDeltaMs).coerceAtLeast(0L)
+        // Dragging the head in moves the clip's start with it, so the frames you
+        // keep stay put on the timeline instead of sliding under the playhead.
+        timelineStartMs = (clip.timelineStartMs + (newIn - clip.sourceInMs)).coerceAtLeast(0L)
     )
-    val next = copy(clips = clips.map { if (it.id == clipId) trimmed else it })
-    return if (clip.kind == ClipKind.Video) next.rippleVideo() else next
+    return copy(clips = clips.map { if (it.id == clipId) trimmed else it })
 }
 
 /**

@@ -35,8 +35,18 @@ import com.squish.app.timeline.TransitionType
  */
 object CompositionFactory {
 
-    fun needsCompositing(state: EditorUiState): Boolean =
-        state.videoClips.any { it.isOverlay || it.transitionIn.isActive }
+    /**
+     * Cuts-only can render a track that runs end to end. The moment clips are
+     * layered, overlap for a transition, or sit apart with a gap between them, the
+     * edit needs real positioning and goes down the compositing path.
+     */
+    fun needsCompositing(state: EditorUiState): Boolean {
+        if (state.videoClips.any { it.isOverlay || it.transitionIn.isActive }) return true
+        val base = state.videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
+        if (base.isEmpty()) return false
+        if (base.first().timelineStartMs > 0L) return true
+        return base.zipWithNext().any { (a, b) -> b.timelineStartMs != a.timelineEndMs }
+    }
 
     fun buildCutsOnly(items: List<EditedMediaItem>): List<EditedMediaItemSequence> {
         val sequence = EditedMediaItemSequence.Builder()

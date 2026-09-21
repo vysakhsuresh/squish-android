@@ -114,7 +114,7 @@ fun EditorScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
                         .clip(RoundedCornerShape(9.dp))
-                        .background(if (state.isExporting) SquishColors.Surface else SquishColors.Orange)
+                        .background(if (state.isExporting) SquishColors.Surface else SquishColors.Primary)
                         .clickable(enabled = !state.isExporting && !state.isLoadingSource) {
                             errorMessage = null
                             viewModel.export(onResult = onExported, onError = { errorMessage = it })
@@ -131,7 +131,7 @@ fun EditorScreen(
 
             if (state.isLoadingSource) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = SquishColors.Orange)
+                    CircularProgressIndicator(color = SquishColors.Primary)
                 }
                 return@Column
             }
@@ -145,7 +145,8 @@ fun EditorScreen(
                     .background(SquishColors.Surface)
             ) {
                 VideoPreviewPlayer(
-                    videoUri = sourceUri,
+                    videoClips = state.videoClips,
+                    fallbackUri = sourceUri,
                     audioUri = state.audioTrackUri,
                     audioTrimStartMs = state.audioTrimStartMs,
                     audioPlacementMs = state.audioPlacementMs,
@@ -181,6 +182,7 @@ fun EditorScreen(
                 state = timeline,
                 onSplit = viewModel::splitAtPlayhead,
                 onDelete = viewModel::deleteSelectedClip,
+                onCloseGaps = viewModel::closeGaps,
                 onZoomIn = viewModel::zoomIn,
                 onZoomOut = viewModel::zoomOut,
                 modifier = Modifier.padding(vertical = 8.dp)
@@ -260,7 +262,7 @@ private fun ToolRail(selected: EditorTab, onSelect: (EditorTab) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .background(if (isSelected) SquishColors.Orange else SquishColors.Background)
+                    .background(if (isSelected) SquishColors.Primary else SquishColors.Background)
                     .clickable { onSelect(entry) }
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {

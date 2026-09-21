@@ -1,9 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <!--
-      The mark is composed onto a full-bleed brand-dark layer at 66% scale, which is
-      the adaptive-icon safe zone, so no launcher mask ever clips it.
-    -->
-    <background android:drawable="@drawable/ic_launcher_layer" />
-    <foreground android:drawable="@android:color/transparent" />
+    <background android:drawable="@color/squish_background" />
+    <foreground android:drawable="@drawable/ic_launcher_fg" />
 </adaptive-icon>

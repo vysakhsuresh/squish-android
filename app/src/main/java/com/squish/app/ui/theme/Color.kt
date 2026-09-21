@@ -28,8 +28,15 @@ object SquishColors {
     val Orange = Color(0xFFFF7A45)
     val Amber = Color(0xFFFFC53D)
 
+    /**
+     * The primary action. Blue rather than the logo's orange: at button and
+     * selected-tab size a saturated orange reads as an error state, and it fought
+     * the clip colours on the timeline. Orange stays in the palette as an accent.
+     */
+    val Primary = Blue
+
     // Semantic aliases used across the app
-    val Coral = Orange            // primary action
+    val Coral = Primary           // primary action
     val Teal = Cyan               // audio, savings, success
     val Purple = Violet           // video track, crop
     val Pink = Magenta            // destructive, effects

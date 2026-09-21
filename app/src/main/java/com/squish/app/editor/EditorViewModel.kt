@@ -19,6 +19,7 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
+import com.squish.app.timeline.rippleVideo
 import com.squish.app.timeline.withLayerChanged
 import com.squish.app.timeline.withOverlayGeometry
 import com.squish.app.timeline.withTransition
@@ -417,6 +418,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun splitAtPlayhead() = mutateVideoTrack { it.withSplitAtPlayhead() }
+
+    /** Pull the base track back end to end. Deliberate, never automatic. */
+    fun closeGaps() = mutateVideoTrack { it.rippleVideo() }
 
     fun deleteSelectedClip() {
         val selected = _state.value.selectedClipId ?: return

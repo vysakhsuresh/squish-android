@@ -46,7 +46,7 @@ import com.squish.app.ui.theme.SquishColors
 private val LANE_HEIGHT = 54.dp
 private val GUTTER = 34.dp
 private val RULER_HEIGHT = 26.dp
-private val HANDLE_WIDTH = 14.dp
+private val HANDLE_WIDTH = 20.dp
 
 private fun Long.onTimeline(pixelsPerSecond: Float): Dp = (this / 1000f * pixelsPerSecond).dp
 
@@ -218,10 +218,10 @@ private fun BoxScope.TransitionBadge(clip: Clip, pixelsPerSecond: Float, onTap: 
             .align(Alignment.CenterStart)
             .size(18.dp)
             .clip(RoundedCornerShape(5.dp))
-            .background(if (active) SquishColors.Orange else SquishColors.Surface)
+            .background(if (active) SquishColors.Primary else SquishColors.Surface)
             .border(
                 width = 1.dp,
-                color = if (active) SquishColors.Orange else SquishColors.Border,
+                color = if (active) SquishColors.Primary else SquishColors.Border,
                 shape = RoundedCornerShape(5.dp)
             )
             .clickable(onClick = onTap),
@@ -247,6 +247,7 @@ private fun ClipView(
 ) {
     val latestMove by rememberUpdatedState(onMove)
     val latestTrim by rememberUpdatedState(onTrim)
+    val latestSelect by rememberUpdatedState(onSelect)
     val width = clip.durationMs.onTimeline(pixelsPerSecond)
 
     Box(
@@ -261,9 +262,16 @@ private fun ClipView(
                 color = if (selected) accent else accent.copy(alpha = 0.5f),
                 shape = RoundedCornerShape(7.dp)
             )
-            .clickable { onSelect(clip.id) }
+            // Tap handled as a gesture rather than Modifier.clickable: clickable sat
+            // ahead of the drag detector in the chain and swallowed the drag, which
+            // is why clips could be selected but never moved.
+            .pointerInput(clip.id) {
+                detectTapGestures { latestSelect(clip.id) }
+            }
             .pointerInput(clip.id, pixelsPerSecond) {
-                detectHorizontalDragGestures { change, dragAmount ->
+                detectHorizontalDragGestures(
+                    onDragStart = { latestSelect(clip.id) }
+                ) { change, dragAmount ->
                     change.consume()
                     latestMove(clip.id, (dragAmount / density / pixelsPerSecond * 1000f).toLong())
                 }
@@ -326,6 +334,7 @@ fun TimelineActionBar(
     state: TimelineState,
     onSplit: () -> Unit,
     onDelete: () -> Unit,
+    onCloseGaps: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     modifier: Modifier = Modifier
@@ -341,12 +350,13 @@ fun TimelineActionBar(
             color = SquishColors.TextPrimary
         )
         Spacer(modifier = Modifier.width(4.dp))
-        MiniAction("Split", SquishColors.Orange, onSplit)
+        MiniAction("Split", SquishColors.Primary, onSplit)
         MiniAction(
             "Delete",
             if (state.selectedClip == null) SquishColors.TextMuted else SquishColors.Magenta,
             onDelete
         )
+        MiniAction("Close gaps", SquishColors.TextSecondary, onCloseGaps)
         Spacer(modifier = Modifier.fillMaxWidth(0.02f))
         MiniAction("−", SquishColors.TextSecondary, onZoomOut)
         MiniAction("+", SquishColors.TextSecondary, onZoomIn)

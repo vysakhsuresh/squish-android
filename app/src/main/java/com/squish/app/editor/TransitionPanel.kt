@@ -95,8 +95,8 @@ fun TransitionPanel(
                         },
                         valueRange = 150f..2000f,
                         colors = SliderDefaults.colors(
-                            thumbColor = SquishColors.Orange,
-                            activeTrackColor = SquishColors.Orange,
+                            thumbColor = SquishColors.Primary,
+                            activeTrackColor = SquishColors.Primary,
                             inactiveTrackColor = SquishColors.Border
                         )
                     )
