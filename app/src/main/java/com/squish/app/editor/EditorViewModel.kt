@@ -350,6 +350,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setSpeed(speed: Float) = _state.update { it.copy(speed = speed) }
 
+    /**
+     * Picks a look. Choosing the same one again clears it, so the chip you just
+     * tapped is also the way back to the untouched picture.
+     */
+    fun setLook(lookId: String?) = _state.update { current ->
+        val next = if (lookId == null || lookId == current.lookId) null else lookId
+        current.copy(lookId = next, lookIntensity = if (next == null) 1f else current.lookIntensity)
+    }
+
+    fun setLookIntensity(value: Float) =
+        _state.update { it.copy(lookIntensity = value.coerceIn(0f, 1f)) }
+
     fun setBrightness(value: Float) = _state.update { it.copy(brightness = value) }
     fun setContrast(value: Float) = _state.update { it.copy(contrast = value) }
     fun setSaturation(value: Float) = _state.update { it.copy(saturation = value) }
@@ -687,6 +699,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         brightness = snapshot.brightness,
         contrast = snapshot.contrast,
         saturation = snapshot.saturation,
+        lookId = snapshot.lookId,
+        lookIntensity = snapshot.lookIntensity,
         pixelsPerSecond = snapshot.pixelsPerSecond,
         audioClips = snapshot.audioClips,
         selectedClipId = null,

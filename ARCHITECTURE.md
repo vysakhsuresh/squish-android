@@ -35,6 +35,7 @@ app/src/main/java/com/squish/app/
 │                  (split, trim, move, ripple, transitions, layers)
 ├── editor/        EditorViewModel + one immutable EditorUiState, all Compose panels
 ├── media/         Everything that touches a codec
+│   ├── effects/            the look catalogue and the grading maths
 │   ├── VideoProcessor      export orchestration
 │   ├── CompositionFactory  A/B-roll sequences, transitions, overlay geometry
 │   ├── ProxyEngine         background 540p proxies for smooth scrubbing
@@ -121,6 +122,32 @@ otherwise, so a library upgrade cannot silently change which sentence is shown.
 Space, permissions, missing audio and absurd resolutions are checked *before*
 encoding starts, so a doomed export fails in a second rather than two minutes.
 
+### The effects library, and why it is not a shader
+`Looks` describes each grade as three moves - per-channel gain, contrast,
+saturation - because Media3 gives exactly those as built-in, hardware-backed
+effects. Between them they cover the grades people actually reach for: a channel
+gain *is* a colour cast, and contrast against saturation is the whole distance
+between Vivid and Faded.
+
+Writing custom GLSL would buy grain, vignette and halation, and would cost a
+shader pipeline that cannot be verified anywhere but on a device. Real 3D LUTs
+(`SingleColorLut`) are the right next step and are on the table above. This is the
+version of the idea that ships working today.
+
+Two things keep it honest. The look and the manual sliders are **folded into one
+grade** before reaching the GPU, so grading costs three shader passes no matter how
+much of it is going on, rather than six. And the filter chips are painted by
+running that same grade over a reference ramp - the identical arithmetic the
+shaders do - so a chip cannot drift away from what the look actually does. A
+hand-picked swatch colour is a drawing of a promise; it starts lying the moment a
+look is retuned.
+
+The reference ramp is deliberately not near-white at the top. A bright reference
+clips to flat white under any contrast boost, and the first version of this had
+Vivid, Punch, Sepia and Neon all rendering an identical white band - a filter row
+that told you nothing. Only Noir and Bleach clip now, which is truthful, because
+crushing is what those two are for.
+
 ### (And the thing that makes heavy footage usable)
 `ProxyEngine` builds a 540p stand-in for anything above 1080p, in the background,
 while editing continues. The preview player uses the proxy; the export pipeline
@@ -142,6 +169,8 @@ evict, rebuilt on demand.
 - Speed, rotation, crop with live framing guides
 - Text overlays with timing, colour, size and position
 - Colour: brightness, contrast, saturation
+- Effects library: 16 graded looks across three families, with a strength dial,
+  previewed live and previewed honestly on the chips
 - Export presets, fit-to-size bitrate solving, gallery publishing
 - Quick tools: compress, trim, extract audio, merge
 - Atomic auto-save and crash recovery
@@ -162,7 +191,8 @@ structural piece of work.
 | Feature | Real cost | Note |
 | --- | --- | --- |
 | Live preview of overlays and transitions | ~1 week | A player surface per layer, composited in the preview. |
-| Effects / filter library (LUTs) | Days | Highest value per hour. Media3 supports custom GL effects directly. |
+| True 3D LUTs and custom shaders | ~1 week | Grain, vignette, halation and .cube import, on top of the look library below. |
+| Per-clip looks | 2-3 days | The grade is currently the whole timeline; Clip would carry its own. |
 | Keyframes for existing parameters | 1–2 weeks | Needs an interpolation model on every animatable property, plus timeline UI. |
 | Audio beat detection | Days | Onset detection on the PCM data we already decode for waveforms. |
 | Chroma key | 1–2 weeks | A GL shader is a day; spill suppression and edge matting are the rest. |

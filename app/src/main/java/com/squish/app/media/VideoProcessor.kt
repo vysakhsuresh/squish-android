@@ -6,11 +6,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.SonicAudioProcessor
-import androidx.media3.effect.Contrast
-import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
-import androidx.media3.effect.RgbAdjustment
 import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.effect.SpeedChangeEffect
 import androidx.media3.effect.TextureOverlay
@@ -26,6 +23,8 @@ import androidx.media3.transformer.VideoEncoderSettings
 import com.google.common.collect.ImmutableList
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.Quality
+import com.squish.app.media.effects.ColorGrade
+import com.squish.app.media.effects.Looks
 import com.squish.app.timeline.Clip
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
@@ -282,16 +281,20 @@ class VideoProcessor(private val context: Context) {
 
         if (state.speed != 1f) effects.add(SpeedChangeEffect(state.speed))
 
-        if (state.brightness != 0f) {
-            val scale = (1f + state.brightness).coerceIn(0f, 2f)
-            effects.add(RgbAdjustment.Builder().setRedScale(scale).setGreenScale(scale).setBlueScale(scale).build())
-        }
-
-        if (state.contrast != 0f) effects.add(Contrast(state.contrast))
-
-        if (state.saturation != 0f) {
-            effects.add(HslAdjustment.Builder().adjustSaturation(state.saturation * 100f).build())
-        }
+        // The chosen look and the manual sliders, folded into one set of moves and
+        // built by the same code the preview uses - so the graded frame on screen
+        // is the graded frame that gets written.
+        effects.addAll(
+            ColorGrade.effects(
+                Looks.grade(
+                    lookId = state.lookId,
+                    intensity = state.lookIntensity,
+                    brightness = state.brightness,
+                    contrast = state.contrast,
+                    saturation = state.saturation
+                )
+            )
+        )
 
         if (state.textOverlays.isNotEmpty()) {
             // Widened at the declaration: OverlayEffect takes List<TextureOverlay>,

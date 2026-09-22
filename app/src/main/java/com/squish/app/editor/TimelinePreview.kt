@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.PlayerView
+import com.squish.app.media.effects.Grade
 import com.squish.app.timeline.Clip
 import com.squish.app.ui.theme.SquishColors
 import kotlinx.coroutines.delay
@@ -53,6 +54,7 @@ fun TimelinePreview(
     proxyUri: Uri?,
     muteOriginal: Boolean,
     originalVolume: Float,
+    grade: Grade,
     playheadMs: Long,
     scrubNonce: Long,
     onPositionChange: (Long) -> Unit,
@@ -71,14 +73,14 @@ fun TimelinePreview(
     // Any change to the shape of the edit is pushed straight in. Positions and
     // trims are read fresh on every tick, so this only has to run when the set of
     // clips itself changes.
-    val editSignature = remember(videoClips, audioClips, proxyUri, muteOriginal, originalVolume) {
+    val editSignature = remember(videoClips, audioClips, proxyUri, muteOriginal, originalVolume, grade) {
         videoClips.joinToString("|") { "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}" } +
             "//" + audioClips.joinToString("|") { "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}:${it.volume}" } +
-            "//" + proxyUri + muteOriginal + originalVolume
+            "//" + proxyUri + muteOriginal + originalVolume + grade
     }
 
     LaunchedEffect(editSignature, fallbackUri) {
-        engine.setTimeline(videoClips, audioClips, fallbackUri, proxyUri, muteOriginal, originalVolume)
+        engine.setTimeline(videoClips, audioClips, fallbackUri, proxyUri, muteOriginal, originalVolume, grade)
     }
 
     // A deliberate jump - scrubbing the ruler, or a nudge - as opposed to the

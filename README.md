@@ -61,6 +61,12 @@ and crop hard to find.
 
 ## Everything else
 
+**16 graded looks** in three families — Essentials, Film, Mood — each with a
+strength dial, applied live in the preview by the same code that renders them, so
+what you see is what gets written. The filter chips are painted by running each
+grade over a reference ramp with the identical arithmetic the shaders use, so a
+chip can never advertise something the look does not do.
+
 Trim · compress by preset or to a target size (16/25/50 MB) · crop to 9:16, 1:1
 or 16:9 · speed 0.5–2x with pitch preserved · mute camera audio independently of
 any added track · per-track volume · rotate · brightness/contrast/saturation ·
@@ -142,8 +148,8 @@ against the Kotlin compiler but compiled for the first time on your machine.
 
 ## Not built yet
 
-Honest list, not silent omissions: an effects/filter library, keyframes, chroma
-key, masking, auto-captions, stabilization and motion tracking — all scoped with
+Honest list, not silent omissions: keyframes, chroma key, masking, auto-captions,
+stabilization, motion tracking, true 3D LUTs and per-clip looks — all scoped with
 real timescales in [ARCHITECTURE.md](ARCHITECTURE.md). Plus reverse clip (needs
 frame-by-frame re-encoding, not a Transformer flag), numeric export progress
 (currently an indeterminate spinner), background/queued export via WorkManager,

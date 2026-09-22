@@ -204,16 +204,6 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
 // ---- Colour -----------------------------------------------------------------
 
-@Composable
-fun ColourPanel(state: EditorUiState, viewModel: EditorViewModel) {
-    PanelSurface {
-        PanelHeading("Colour", "Small moves go a long way")
-        LabeledSlider("Brightness", state.brightness, -1f..1f, viewModel::setBrightness)
-        LabeledSlider("Contrast", state.contrast, -1f..1f, viewModel::setContrast)
-        LabeledSlider("Saturation", state.saturation, -1f..1f, viewModel::setSaturation)
-    }
-}
-
 // ---- Export -----------------------------------------------------------------
 
 @Composable

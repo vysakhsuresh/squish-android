@@ -3,6 +3,8 @@ package com.squish.app.editor
 import android.net.Uri
 import com.squish.app.data.ProjectSnapshot
 import com.squish.app.media.SquishError
+import com.squish.app.media.effects.Grade
+import com.squish.app.media.effects.Looks
 import com.squish.app.media.audio.Waveform
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
@@ -92,6 +94,11 @@ data class EditorUiState(
     val contrast: Float = 0f,
     val saturation: Float = 0f,
 
+    // The graded look, and how far it is dialled in. The sliders above refine on
+    // top of it rather than replacing it.
+    val lookId: String? = null,
+    val lookIntensity: Float = 1f,
+
     val textOverlays: List<TextOverlayItem> = emptyList(),
 
     // The video track, in order. Seeded with the whole source clip on load; split,
@@ -153,6 +160,10 @@ data class EditorUiState(
         )
 
     val frameMs: Long get() = Timecode.frameDurationMs(fps)
+
+    /** The look and the manual sliders folded together - what the GPU is asked for. */
+    val grade: Grade
+        get() = Looks.grade(lookId, lookIntensity, brightness, contrast, saturation)
 
     val hasSeparateAudio: Boolean get() = audioClips.isNotEmpty()
 

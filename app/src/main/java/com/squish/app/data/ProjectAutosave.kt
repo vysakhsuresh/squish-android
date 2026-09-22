@@ -112,6 +112,8 @@ class ProjectAutosave(context: Context) {
         put("brightness", state.brightness.toDouble())
         put("contrast", state.contrast.toDouble())
         put("saturation", state.saturation.toDouble())
+        put("lookId", state.lookId ?: JSONObject.NULL)
+        put("lookIntensity", state.lookIntensity.toDouble())
         put("pixelsPerSecond", state.pixelsPerSecond.toDouble())
         put("markers", JSONArray().apply { state.markers.forEach { put(it) } })
         put("clips", JSONArray().apply { state.videoClips.forEach { put(encodeClip(it)) } })
@@ -194,6 +196,8 @@ class ProjectAutosave(context: Context) {
             brightness = json.optDouble("brightness").toFloat(),
             contrast = json.optDouble("contrast").toFloat(),
             saturation = json.optDouble("saturation").toFloat(),
+            lookId = json.optString("lookId").takeIf { it.isNotBlank() && it != "null" },
+            lookIntensity = json.optDouble("lookIntensity", 1.0).toFloat(),
             pixelsPerSecond = json.optDouble("pixelsPerSecond", 42.0).toFloat()
         )
     }
@@ -242,7 +246,7 @@ class ProjectAutosave(context: Context) {
 
     private companion object {
         /** Bump when the shape changes; older documents are then ignored rather than misread. */
-        const val FORMAT_VERSION = 2
+        const val FORMAT_VERSION = 3
     }
 }
 
@@ -268,6 +272,8 @@ data class ProjectSnapshot(
     val brightness: Float,
     val contrast: Float,
     val saturation: Float,
+    val lookId: String?,
+    val lookIntensity: Float,
     val pixelsPerSecond: Float
 ) {
     val totalDurationMs: Long get() = clips.sumOf { it.durationMs }

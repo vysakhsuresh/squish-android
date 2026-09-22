@@ -7,6 +7,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
+import com.squish.app.media.effects.ColorGrade
+import com.squish.app.media.effects.Grade
 import com.squish.app.timeline.Clip
 import kotlin.math.abs
 
@@ -65,6 +67,7 @@ class PreviewEngine(private val context: Context) {
 
     private var loadedVideoUri: String? = null
     private var activeClipId: String? = null
+    private var appliedGrade: Grade? = null
 
     private var positionMs: Long = 0
     private var durationMs: Long = 0
@@ -82,19 +85,39 @@ class PreviewEngine(private val context: Context) {
         fallbackUri: Uri,
         proxyUri: Uri?,
         muteOriginal: Boolean,
-        originalVolume: Float
+        originalVolume: Float,
+        grade: Grade
     ) {
         this.videoClips = videoClips.sortedBy { it.timelineStartMs }
         this.audioClips = audioClips
         this.fallbackUri = fallbackUri
         this.proxyUri = proxyUri
 
+        applyGrade(grade)
         videoPlayer.volume = if (muteOriginal) 0f else originalVolume
         durationMs = maxOf(
             this.videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L,
             audioClips.maxOfOrNull { it.timelineEndMs } ?: 0L
         )
         reconcileAudioPlayers()
+    }
+
+    /**
+     * Grades the preview with the same effects the export will use, so choosing a
+     * look is a thing you see rather than a thing you guess at and discover later.
+     *
+     * Only re-applied when the grade actually changes: handing the player a new
+     * effect list rebuilds its GL pipeline, which drops frames, and dragging the
+     * intensity slider would otherwise do that on every pixel of travel.
+     *
+     * Guarded because setVideoEffects is an unstable API. If a device or a future
+     * version refuses it, the preview simply plays ungraded - the export still
+     * applies the look, so the feature degrades instead of breaking.
+     */
+    private fun applyGrade(grade: Grade) {
+        if (grade == appliedGrade) return
+        appliedGrade = grade
+        runCatching { videoPlayer.setVideoEffects(ColorGrade.effects(grade)) }
     }
 
     // ---- Transport --------------------------------------------------------------
