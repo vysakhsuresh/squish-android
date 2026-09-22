@@ -62,6 +62,7 @@ import kotlinx.coroutines.delay
 fun TimelinePreview(
     videoClips: List<Clip>,
     audioClips: List<Clip>,
+    captions: List<TextOverlayItem>,
     fallbackUri: Uri,
     proxyUri: Uri?,
     muteOriginal: Boolean,
@@ -85,7 +86,7 @@ fun TimelinePreview(
 
     // Positions and trims are read fresh every tick, so this only has to run when
     // the set of clips itself changes shape.
-    val editSignature = remember(videoClips, audioClips, proxyUri, muteOriginal, originalVolume, grade) {
+    val editSignature = remember(videoClips, audioClips, captions, proxyUri, muteOriginal, originalVolume, grade) {
         videoClips.joinToString("|") {
             "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}" +
                 ":L${it.layer}:${it.opacity}:${it.staticTransform}" +
@@ -93,11 +94,11 @@ fun TimelinePreview(
                 ":K${it.keyframes}"
         } +
             "//" + audioClips.joinToString("|") { "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}:${it.volume}" } +
-            "//" + proxyUri + muteOriginal + originalVolume + grade
+            "//" + proxyUri + muteOriginal + originalVolume + grade + captions
     }
 
     LaunchedEffect(editSignature, fallbackUri) {
-        engine.setTimeline(videoClips, audioClips, fallbackUri, proxyUri, muteOriginal, originalVolume, grade)
+        engine.setTimeline(videoClips, audioClips, captions, fallbackUri, proxyUri, muteOriginal, originalVolume, grade)
     }
 
     // A deliberate jump - scrubbing the ruler, a nudge - as opposed to the playhead

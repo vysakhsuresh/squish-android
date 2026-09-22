@@ -147,6 +147,7 @@ fun EditorScreen(
                 TimelinePreview(
                     videoClips = state.videoClips,
                     audioClips = state.audioClips,
+                    captions = state.textOverlays,
                     fallbackUri = sourceUri,
                     proxyUri = state.proxyUri,
                     muteOriginal = state.muteOriginal,

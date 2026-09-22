@@ -36,7 +36,7 @@ app/src/main/java/com/squish/app/
 ├── editor/        EditorViewModel + one immutable EditorUiState, all Compose panels
 ├── media/         Everything that touches a codec
 │   ├── effects/            the look catalogue, grading maths and the two shaders
-│   ├── video/              motion estimation and trajectory smoothing
+│   ├── video/              motion estimation, trajectory smoothing, object tracking
 │   ├── VideoProcessor      export orchestration
 │   ├── CompositionFactory  A/B-roll sequences, transitions, overlay geometry
 │   ├── ProxyEngine         background 540p proxies for smooth scrubbing
@@ -174,6 +174,44 @@ The same analysis says a **blue** screen has almost no window at all, because de
 sits 0.183 from digital blue and the screen's own shadows reach 0.178. That is
 physics rather than a bug, and the panel says so rather than letting you find out
 during a shoot.
+
+### Motion tracking
+Same shape as stabilization — an analysis that writes into machinery already built —
+but a different matching problem, and the difference decides the algorithm.
+
+Stabilization compares whole consecutive frames, which are lit identically, so an
+absolute-difference score is fine. A tracked object walks through shadow and
+sunlight, and a plain difference score would follow the lighting rather than the
+object. `ObjectTracker` therefore uses **zero-mean normalised cross-correlation**:
+subtracting each patch's own mean and dividing by its own spread makes the score
+care about pattern instead of brightness. Against synthetic frames it holds to 1.4
+pixels while the scene dims to 55%.
+
+The template is **nudged** toward what it currently sees rather than replaced or
+frozen. Frozen loses the object the moment it turns; replaced lets the template
+wander onto the background a little each frame until it is tracking nothing at all.
+A slow blend, anchored back toward the original selection, keeps up with real change
+and takes a long time to drift — and a poor match is never learned from, which is
+how a tracker eats background.
+
+A lost object is **not chased**. Below the confidence floor the last good position is
+held, so the tracker can pick the object up again when it reappears; following a bad
+match walks the template onto the background and never recovers.
+
+What the track drives is a separate decision from measuring it. A caption carries the
+track directly — `TextOverlay.getOverlaySettings` is asked per presentation time, so
+a pinned caption simply reports a different anchor each frame. A layer gets ordinary
+**keyframes**, because unlike stabilization this *is* an edit and you should be able
+to nudge it afterwards.
+
+Three clocks meet here — source time, timeline time and a layer's own local time —
+and a sign error in any conversion would put every pin at the wrong moment while
+looking entirely plausible. The chain is verified to round-trip losslessly.
+
+Closing a gap this exposed: captions were **export-only** until now, so a tracked one
+could not be seen following anything until after a render. They are applied to the
+preview surfaces too, shifted into each clip's own clock so they appear at the right
+moment over a clip that has been trimmed or moved.
 
 ### Stabilization as analysis, not rendering
 The app already applies a time-varying transform per frame, in the preview and the
@@ -342,6 +380,7 @@ evict, rebuilt on demand.
 - Chroma key with spill suppression, sampled from your own frame, live in preview
 - Shape masks — rectangle, ellipse, linear, mirror — feathered, rotatable,
   invertible, composing with the key rather than replacing it
+- Motion tracking: pin a caption or a layer to something moving
 - Stabilization: global motion estimation, trajectory smoothing and automatic crop
 - Keyframed motion: scale, position and rotation over time, with smooth, linear
   and hold easing, six one-tap presets, and live preview

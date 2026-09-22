@@ -12,6 +12,10 @@ import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.effects.MaskEffect
+import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.TextureOverlay
+import com.google.common.collect.ImmutableList
+import com.squish.app.media.SquishTextOverlay
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.TransitionType
@@ -90,6 +94,7 @@ class PreviewEngine(private val context: Context) {
     private var overlayClips: List<Clip> = emptyList()
     private var layers: List<Int> = emptyList()
     private var audioClips: List<Clip> = emptyList()
+    private var captions: List<TextOverlayItem> = emptyList()
 
     private var fallbackUri: Uri? = null
     private var proxyUri: Uri? = null
@@ -142,12 +147,14 @@ class PreviewEngine(private val context: Context) {
     fun setTimeline(
         videoClips: List<Clip>,
         audioClips: List<Clip>,
+        captions: List<TextOverlayItem>,
         fallbackUri: Uri,
         proxyUri: Uri?,
         muteOriginal: Boolean,
         originalVolume: Float,
         grade: Grade
     ) {
+        this.captions = captions
         val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
 
         // Index parity, exactly as CompositionFactory deals the export's two rolls.
@@ -214,7 +221,12 @@ class PreviewEngine(private val context: Context) {
         val grade = appliedGrade
         val chroma = clip?.chromaKey
         val mask = clip?.mask
-        val signature = "$grade|$chroma|$mask"
+        // Only captions that overlap this clip, shifted into its own clock.
+        val visible = if (clip == null) emptyList() else captions
+            .filter { it.endMs > clip.timelineStartMs && it.startMs < clip.timelineEndMs }
+            .map { it.shiftedInto(clip) }
+
+        val signature = "$grade|$chroma|$mask|$visible"
         if (appliedEffects[surfaceKey] == signature) return
         appliedEffects[surfaceKey] = signature
 
@@ -223,6 +235,12 @@ class PreviewEngine(private val context: Context) {
             chroma?.let { add(ChromaKeyEffect(it)) }
             mask?.let { add(MaskEffect(it)) }
             grade?.let { addAll(ColorGrade.effects(it)) }
+            if (visible.isNotEmpty()) {
+                // Captions were previously export-only, so a tracked one could not be
+                // seen following anything until after a render.
+                val overlays: List<TextureOverlay> = visible.map { SquishTextOverlay(it) }
+                add(OverlayEffect(ImmutableList.copyOf(overlays)))
+            }
         }
         // Guarded: setVideoEffects is unstable API, and a custom shader can fail to
         // compile on a given driver. Either way the preview falls back to plain

@@ -51,6 +51,8 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
         StabilizeCard(state = state, clip = clip, viewModel = viewModel)
 
+        TrackPanel(state = state, clip = clip, viewModel = viewModel)
+
         PanelSurface {
             PanelHeading(
                 clip.label,

@@ -38,6 +38,10 @@ recorder — the timbre is wildly different, the loudness shape is not.
   looking, not guessing.
 - **Exact seeking** in preview (`SeekParameters.EXACT`), so scrubbing lands on
   the frame rather than the nearest keyframe.
+- **Motion tracking.** Tap what you want followed, and pin a caption or a layer to
+  it. Matches on pattern rather than brightness, so it holds through a lighting
+  change, and it tells you how much of the shot it actually held on for instead of
+  quietly drifting onto the background.
 - **Stabilization.** Measures how the camera actually moved, smooths that path and
   pushes each frame back onto it — so a deliberate pan survives and only the jitter
   comes out. Crops in by exactly as much as the correction needs and no more, and
@@ -173,7 +177,8 @@ against the Kotlin compiler but compiled for the first time on your machine.
 
 ## Not built yet
 
-Honest list, not silent omissions: animated masks, motion tracking,
+Honest list, not silent omissions: animated masks and tracked masks (face and
+plate blurring),
 true 3D LUTs, per-clip looks, keyframed opacity and colour (the transform hook
 Media3 gives does not cover those), and a bundled speech model so transcription
 works on every device rather than only those with on-device recognition — all scoped with

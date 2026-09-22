@@ -6,7 +6,9 @@ import com.squish.app.media.SquishError
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.effects.Looks
 import com.squish.app.media.audio.Waveform
+import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
+import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.TimelineState
@@ -30,8 +32,40 @@ data class TextOverlayItem(
     val colorArgb: Int,
     val xFraction: Float = 0.5f,
     val yFraction: Float = 0.85f,
-    val sizeSp: Int = 28
-)
+    val sizeSp: Int = 28,
+
+    /**
+     * Pins this caption to something moving. Stored in timeline time, matching
+     * [startMs] and [endMs], because that is the clock the overlay renderer is
+     * already handed.
+     */
+    val track: MotionTrack? = null
+) {
+    /** Where the caption sits at a moment, following its track if it has one. */
+    fun anchorAt(timelineMs: Long): Pair<Float, Float> {
+        val sample = track?.sampleAt(timelineMs) ?: return xFraction to yFraction
+        return sample.xFraction to sample.yFraction
+    }
+
+    /**
+     * The same caption expressed in a clip's own source clock.
+     *
+     * The preview plays a source file, so its effects are handed source time, while
+     * a caption is written in timeline time. Shifting once here is what makes a
+     * caption appear at the right moment over a clip that has been trimmed or moved
+     * - otherwise it shows up early by however far the clip was dragged.
+     */
+    fun shiftedInto(clip: Clip): TextOverlayItem {
+        val delta = clip.sourceInMs - clip.timelineStartMs
+        return copy(
+            startMs = startMs + delta,
+            endMs = endMs + delta,
+            track = track?.let { t ->
+                MotionTrack(t.samples.map { it.copy(atMs = it.atMs + delta) })
+            }
+        )
+    }
+}
 
 enum class SyncStatus { Idle, Analyzing, Matched, NoMatch }
 
@@ -40,6 +74,21 @@ enum class SyncStatus { Idle, Analyzing, Matched, NoMatch }
  * recognition is best-effort: the timings always work, the words may not, and
  * saying which is which is the difference between a useful result and a mystery.
  */
+/** How a tracking run is going, and what it found. */
+data class TrackProgress(
+    val running: Boolean = false,
+    val done: Int = 0,
+    val total: Int = 0,
+    val finished: Boolean = false,
+    val failed: Boolean = false,
+    /** In the source clock of [clipId]. */
+    val track: MotionTrack? = null,
+    val clipId: String? = null,
+    val pointX: Float = 0.5f,
+    val pointY: Float = 0.5f,
+    val boxFraction: Float = 0.14f
+)
+
 /** How stabilization analysis is going, and what it cost. */
 data class StabilizeProgress(
     val running: Boolean = false,
@@ -128,6 +177,7 @@ data class EditorUiState(
     val captions: CaptionProgress = CaptionProgress(),
     val stabilize: StabilizeProgress = StabilizeProgress(),
     val stabilizeStrength: Float = 0.5f,
+    val tracking: TrackProgress = TrackProgress(),
 
     // The video track, in order. Seeded with the whole source clip on load; split,
     // trim, reorder and merge all operate on this list, and export renders it.

@@ -27,9 +27,14 @@ class SquishTextOverlay(private val item: TextOverlayItem) : TextOverlay() {
         }
     }
 
+    /**
+     * Asked for per presentation time, which is exactly the hook a pinned caption
+     * needs: a tracked overlay simply reports a different anchor each frame.
+     */
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
+        val (x, y) = item.anchorAt(presentationTimeUs / 1000L)
         return OverlaySettings.Builder()
-            .setBackgroundFrameAnchor(item.xFraction * 2 - 1, 1 - item.yFraction * 2)
+            .setBackgroundFrameAnchor(x * 2 - 1, 1 - y * 2)
             .build()
     }
 }

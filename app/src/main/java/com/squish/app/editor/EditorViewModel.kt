@@ -20,7 +20,9 @@ import com.squish.app.media.audio.AudioSyncAnalyzer
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.SpeechSegmenter
 import com.squish.app.media.audio.Transcriber
+import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.Stabilizer
+import com.squish.app.media.video.TrackRunner
 import com.squish.app.media.audio.WaveformBuilder
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
@@ -70,6 +72,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var proxyJob: Job? = null
     private var captionJob: Job? = null
     private var stabilizeJob: Job? = null
+    private var trackJob: Job? = null
 
     init {
         // Aggressive by design. The write is atomic and skipped entirely when
@@ -660,6 +663,129 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 }.getOrDefault(false)
             }
             onDone(ok)
+        }
+    }
+
+    // ---- Motion tracking ------------------------------------------------------------
+
+    fun setTrackPoint(x: Float, y: Float) = _state.update {
+        it.copy(tracking = it.tracking.copy(pointX = x.coerceIn(0f, 1f), pointY = y.coerceIn(0f, 1f)))
+    }
+
+    fun setTrackBox(fraction: Float) = _state.update {
+        it.copy(tracking = it.tracking.copy(boxFraction = fraction.coerceIn(0.06f, 0.35f)))
+    }
+
+    fun clearTrack() {
+        trackJob?.cancel()
+        _state.update { it.copy(tracking = TrackProgress(pointX = it.tracking.pointX, pointY = it.tracking.pointY)) }
+    }
+
+    /**
+     * Follows whatever is under the chosen point through the clip. The result is
+     * held rather than applied: a track is a measurement, and what it drives - a
+     * caption, a layer - is a separate decision.
+     */
+    fun startTracking(clipId: String) {
+        val current = _state.value
+        if (current.tracking.running) return
+        val clip = current.videoClips.firstOrNull { it.id == clipId } ?: return
+        val uri = clip.uri ?: current.sourceUri ?: return
+
+        trackJob?.cancel()
+        _state.update {
+            it.copy(tracking = it.tracking.copy(running = true, finished = false, failed = false, track = null))
+        }
+
+        trackJob = viewModelScope.launch {
+            val result = TrackRunner.track(
+                context = getApplication(),
+                uri = uri,
+                fps = current.fps,
+                fromMs = clip.sourceInMs,
+                toMs = clip.sourceOutMs,
+                startXFraction = current.tracking.pointX,
+                startYFraction = current.tracking.pointY,
+                boxFraction = current.tracking.boxFraction,
+                onProgress = { done, total ->
+                    _state.update { it.copy(tracking = it.tracking.copy(done = done, total = total)) }
+                }
+            )
+            _state.update {
+                it.copy(
+                    tracking = it.tracking.copy(
+                        running = false,
+                        finished = true,
+                        failed = result == null,
+                        track = result,
+                        clipId = clipId
+                    )
+                )
+            }
+        }
+    }
+
+    /** Source time of the tracked clip into timeline time. */
+    private fun trackInTimelineTime(track: MotionTrack, clip: Clip): MotionTrack {
+        val delta = clip.timelineStartMs - clip.sourceInMs
+        return MotionTrack(track.samples.map { it.copy(atMs = it.atMs + delta) })
+    }
+
+    fun pinCaptionToTrack(captionId: String) {
+        val current = _state.value
+        val track = current.tracking.track ?: return
+        val clip = current.videoClips.firstOrNull { it.id == current.tracking.clipId } ?: return
+        val timed = trackInTimelineTime(track, clip)
+        _state.update { state ->
+            state.copy(
+                textOverlays = state.textOverlays.map {
+                    if (it.id == captionId) it.copy(track = timed) else it
+                }
+            )
+        }
+    }
+
+    fun unpinCaption(captionId: String) = _state.update { state ->
+        state.copy(textOverlays = state.textOverlays.map {
+            if (it.id == captionId) it.copy(track = null) else it
+        })
+    }
+
+    /**
+     * Pins a layer to the track, as keyframes on that layer.
+     *
+     * Written into the ordinary keyframe track rather than a private one: unlike
+     * stabilization, this *is* an edit, and you should be able to nudge it
+     * afterwards without the app arguing.
+     */
+    fun pinLayerToTrack(layerClipId: String) {
+        val current = _state.value
+        val track = current.tracking.track ?: return
+        val source = current.videoClips.firstOrNull { it.id == current.tracking.clipId } ?: return
+        val layer = current.videoClips.firstOrNull { it.id == layerClipId } ?: return
+        val timed = trackInTimelineTime(track, source)
+
+        val keys = timed.samples.map { sample ->
+            Keyframe(
+                atMs = (sample.atMs - layer.timelineStartMs).coerceAtLeast(0L),
+                transform = Transform(
+                    scale = layer.scale * sample.scale,
+                    // Track fractions run 0..1 across the frame; transform offsets
+                    // run -1..1 from the centre.
+                    offsetXFraction = (sample.xFraction - 0.5f) * 2f,
+                    offsetYFraction = (sample.yFraction - 0.5f) * 2f,
+                    rotationDegrees = layer.rotation
+                ),
+                easing = KeyframeEasing.Linear
+            )
+        }.sortedBy { it.atMs }
+
+        _state.update { state ->
+            state.copy(
+                videoClips = state.videoClips.map {
+                    if (it.id == layerClipId) it.copy(keyframes = keys) else it
+                }
+            )
         }
     }
 

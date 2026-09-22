@@ -6,6 +6,8 @@ import com.squish.app.editor.CropAspect
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.Quality
 import com.squish.app.editor.TextOverlayItem
+import com.squish.app.media.video.MotionTrack
+import com.squish.app.media.video.TrackSample
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
@@ -189,6 +191,19 @@ class ProjectAutosave(context: Context) {
         put("xFraction", item.xFraction.toDouble())
         put("yFraction", item.yFraction.toDouble())
         put("sizeSp", item.sizeSp)
+        item.track?.let { t ->
+            put("track", JSONArray().apply {
+                t.samples.forEach { sample ->
+                    put(JSONObject().apply {
+                        put("atMs", sample.atMs)
+                        put("x", sample.xFraction.toDouble())
+                        put("y", sample.yFraction.toDouble())
+                        put("scale", sample.scale.toDouble())
+                        put("confidence", sample.confidence.toDouble())
+                    })
+                }
+            })
+        }
     }
 
     // ---- Decoding -------------------------------------------------------------
@@ -320,7 +335,22 @@ class ProjectAutosave(context: Context) {
             colorArgb = json.optInt("colorArgb"),
             xFraction = json.optDouble("xFraction", 0.5).toFloat(),
             yFraction = json.optDouble("yFraction", 0.85).toFloat(),
-            sizeSp = json.optInt("sizeSp", 28)
+            sizeSp = json.optInt("sizeSp", 28),
+            track = json.optJSONArray("track")?.let { array ->
+                MotionTrack(
+                    (0 until array.length()).mapNotNull { i ->
+                        array.optJSONObject(i)?.let { o ->
+                            TrackSample(
+                                atMs = o.optLong("atMs"),
+                                xFraction = o.optDouble("x", 0.5).toFloat(),
+                                yFraction = o.optDouble("y", 0.85).toFloat(),
+                                scale = o.optDouble("scale", 1.0).toFloat(),
+                                confidence = o.optDouble("confidence", 1.0).toFloat()
+                            )
+                        }
+                    }
+                ).takeIf { !it.isEmpty }
+            }
         )
     }
 
@@ -329,7 +359,7 @@ class ProjectAutosave(context: Context) {
 
     private companion object {
         /** Bump when the shape changes; older documents are then ignored rather than misread. */
-        const val FORMAT_VERSION = 7
+        const val FORMAT_VERSION = 8
     }
 }
 
