@@ -8,6 +8,9 @@ import com.squish.app.editor.Quality
 import com.squish.app.editor.TextOverlayItem
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.Keyframe
+import com.squish.app.timeline.KeyframeEasing
+import com.squish.app.timeline.Transform
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
 import org.json.JSONArray
@@ -139,6 +142,17 @@ class ProjectAutosave(context: Context) {
         put("scale", clip.scale.toDouble())
         put("offsetXFraction", clip.offsetXFraction.toDouble())
         put("offsetYFraction", clip.offsetYFraction.toDouble())
+        put("rotation", clip.rotation.toDouble())
+        put("keyframes", JSONArray().apply { clip.keyframes.forEach { put(encodeKeyframe(it)) } })
+    }
+
+    private fun encodeKeyframe(key: Keyframe): JSONObject = JSONObject().apply {
+        put("atMs", key.atMs)
+        put("scale", key.transform.scale.toDouble())
+        put("offsetXFraction", key.transform.offsetXFraction.toDouble())
+        put("offsetYFraction", key.transform.offsetYFraction.toDouble())
+        put("rotationDegrees", key.transform.rotationDegrees.toDouble())
+        put("easing", key.easing.name)
     }
 
     private fun encodeText(item: TextOverlayItem): JSONObject = JSONObject().apply {
@@ -223,7 +237,27 @@ class ProjectAutosave(context: Context) {
             opacity = json.optDouble("opacity", 1.0).toFloat(),
             scale = json.optDouble("scale", 1.0).toFloat(),
             offsetXFraction = json.optDouble("offsetXFraction").toFloat(),
-            offsetYFraction = json.optDouble("offsetYFraction").toFloat()
+            offsetYFraction = json.optDouble("offsetYFraction").toFloat(),
+            rotation = json.optDouble("rotation").toFloat(),
+            // Sorted on the way in: evaluation on the render thread trusts the
+            // order and does not sort, so a hand-edited file cannot break it.
+            keyframes = json.optJSONArray("keyframes")?.let { array ->
+                (0 until array.length()).mapNotNull { i -> decodeKeyframe(array.optJSONObject(i)) }
+            }.orEmpty().sortedBy { it.atMs }
+        )
+    }
+
+    private fun decodeKeyframe(json: JSONObject?): Keyframe? {
+        if (json == null) return null
+        return Keyframe(
+            atMs = json.optLong("atMs"),
+            transform = Transform(
+                scale = json.optDouble("scale", 1.0).toFloat(),
+                offsetXFraction = json.optDouble("offsetXFraction").toFloat(),
+                offsetYFraction = json.optDouble("offsetYFraction").toFloat(),
+                rotationDegrees = json.optDouble("rotationDegrees").toFloat()
+            ),
+            easing = enumOrNull<KeyframeEasing>(json.optString("easing")) ?: KeyframeEasing.Smooth
         )
     }
 
@@ -246,7 +280,7 @@ class ProjectAutosave(context: Context) {
 
     private companion object {
         /** Bump when the shape changes; older documents are then ignored rather than misread. */
-        const val FORMAT_VERSION = 3
+        const val FORMAT_VERSION = 4
     }
 }
 

@@ -183,6 +183,13 @@ data class EditorUiState(
     val hasSeparateAudio: Boolean get() = audioClips.isNotEmpty()
 
     /**
+     * Which video clip the Motion panel acts on: whatever is selected, falling back
+     * to the opening shot so the panel is never inert.
+     */
+    val targetVideoClip: Clip?
+        get() = videoClips.firstOrNull { it.id == selectedClipId } ?: videoClips.firstOrNull()
+
+    /**
      * Which audio clip the Audio panel acts on: whatever is selected, falling back
      * to the first, so the panel is never inert.
      */

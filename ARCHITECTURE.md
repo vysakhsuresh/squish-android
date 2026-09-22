@@ -144,6 +144,32 @@ Whichever shot is already driving the clock keeps it for the whole transition.
 Handing it over mid-blend would step the playhead by however much the two players
 happen to differ.
 
+### Keyframes, and the one hook that makes them possible
+Media3's per-frame effects are static: `Contrast`, `HslAdjustment` and `AlphaScale`
+are handed one value and keep it for the whole clip. `MatrixTransformation` is the
+exception — it is asked for a matrix **per presentation time**, which is precisely
+the hook an animated transform needs. So scale, position and rotation can move over
+time on an API the app already relies on, with no custom shader anywhere.
+
+That bounds the feature honestly. Transform keyframes cover the moves people
+actually reach for — a push-in, a drift, a settle, an animated picture-in-picture.
+Keyframed *opacity* or *colour* would need a different mechanism (a time-varying
+alpha effect, or `RgbMatrix`) and are not in this round.
+
+`ClipTransformEffect` derives its own time origin from the first presentation time
+it is handed, rather than assuming one. Media3 has offered both item-relative and
+composition-relative presentation times across versions, and an animation anchored
+to the wrong origin would not fail loudly — it would simply play at the wrong
+moment, or be over before the clip appeared. Each clip gets its own instance and
+frames arrive in order, so the first time seen *is* that clip's zero.
+
+Keyframe times are measured from the clip's start **on the timeline**, so moving a
+clip carries its animation with it — which is what "this shot pushes in over its
+three seconds" means to an editor. Outside the first and last key the animation
+holds rather than extrapolating; a value that keeps racing past the last key you set
+is never what you meant. The list is kept sorted on insert, so evaluation on the
+render thread never sorts and allocates nothing beyond its result.
+
 ### The effects library, and why it is not a shader
 `Looks` describes each grade as three moves - per-channel gain, contrast,
 saturation - because Media3 gives exactly those as built-in, hardware-backed
@@ -192,6 +218,8 @@ evict, rebuilt on demand.
 - Automatic dual-system audio sync by RMS-envelope cross-correlation
 - Speed, rotation, crop with live framing guides
 - Text overlays with timing, colour, size and position
+- Keyframed motion: scale, position and rotation over time, with smooth, linear
+  and hold easing, six one-tap presets, and live preview
 - Colour: brightness, contrast, saturation
 - Effects library: 16 graded looks across three families, with a strength dial,
   previewed live and previewed honestly on the chips
@@ -210,6 +238,7 @@ claiming otherwise would be the fastest way to lose trust in this document.
 | --- | --- | --- |
 | True 3D LUTs and custom shaders | ~1 week | Grain, vignette, halation and .cube import, on top of the look library below. |
 | Per-clip looks | 2-3 days | The grade is currently the whole timeline; Clip would carry its own. |
+| Keyframed opacity and colour | 3-4 days | Needs a time-varying alpha effect and RgbMatrix; the transform hook does not cover them. |
 | Keyframes for existing parameters | 1–2 weeks | Needs an interpolation model on every animatable property, plus timeline UI. |
 | Audio beat detection | Days | Onset detection on the PCM data we already decode for waveforms. |
 | Chroma key | 1–2 weeks | A GL shader is a day; spill suppression and edge matting are the rest. |

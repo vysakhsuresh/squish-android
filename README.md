@@ -38,6 +38,10 @@ recorder — the timbre is wildly different, the loudness shape is not.
   looking, not guessing.
 - **Exact seeking** in preview (`SeekParameters.EXACT`), so scrubbing lands on
   the frame rather than the nearest keyframe.
+- **Keyframed motion.** Push in, drift across, settle from a tilt — scale,
+  position and rotation animate over a clip with smooth, linear or hold easing.
+  Six one-tap presets to start from, auto-keying once a clip is animated, and
+  keyframe markers on the strip so an animated shot reads as animated.
 - **Transitions and layers preview live.** A dissolve dissolves, a wipe wipes, a
   picture-in-picture sits where you put it — on screen, before you render, because
   the preview composites A/B roll the same way the exporter does.
@@ -151,8 +155,9 @@ against the Kotlin compiler but compiled for the first time on your machine.
 
 ## Not built yet
 
-Honest list, not silent omissions: keyframes, chroma key, masking, auto-captions,
-stabilization, motion tracking, true 3D LUTs and per-clip looks — all scoped with
+Honest list, not silent omissions: chroma key, masking, auto-captions,
+stabilization, motion tracking, true 3D LUTs, per-clip looks, and keyframed
+opacity and colour (the transform hook Media3 gives does not cover those) — all scoped with
 real timescales in [ARCHITECTURE.md](ARCHITECTURE.md). Plus reverse clip (needs
 frame-by-frame re-encoding, not a Transformer flag), numeric export progress
 (currently an indeterminate spinner), background/queued export via WorkManager,

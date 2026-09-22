@@ -35,6 +35,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -312,6 +313,20 @@ private fun ClipView(
                     maxLines = 1
                 )
             }
+        }
+
+        // Keyframes, where they sit along the clip. An animated shot should be
+        // readable as animated from the strip, without opening a panel.
+        clip.keyframes.forEach { key ->
+            val x = (key.atMs / 1000f * pixelsPerSecond).dp
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .offset(x = x - 3.dp, y = (-3).dp)
+                    .size(6.dp)
+                    .rotate(45f)
+                    .background(SquishColors.Amber)
+            )
         }
 
         if (selected) {

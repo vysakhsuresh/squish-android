@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -59,6 +60,7 @@ enum class EditorTab(val label: String, val icon: ImageVector) {
     Crop("Crop", Icons.Filled.Crop),
     Speed("Speed", Icons.Filled.Speed),
     Mix("Mix", Icons.Filled.Layers),
+    Motion("Motion", Icons.Filled.Animation),
     Audio("Audio", Icons.Filled.GraphicEq),
     Text("Text", Icons.Filled.TextFields),
     Effects("Effects", Icons.Filled.AutoAwesome),
@@ -228,6 +230,7 @@ fun EditorScreen(
                             )
                         }
                     )
+                    EditorTab.Motion -> MotionPanel(state, viewModel)
                     EditorTab.Audio -> AudioPanel(
                         state = state,
                         viewModel = viewModel,

@@ -102,15 +102,13 @@ object CompositionFactory {
      * compositor settings, so it degrades to a plain scaled inset if per-input
      * compositing is unavailable.
      *
-     * Scale and position are one matrix rather than two effects, because
-     * ScaleAndRotateTransformation has no translation - which is why the editor's
-     * position sliders used to move a layer in the preview and then be discarded at
-     * render time. See OverlayPlacementEffect.
+     * Scale, position and rotation are one matrix rather than several effects,
+     * which is also what lets them be animated: see ClipTransformEffect.
      */
     fun overlayEffects(clip: Clip, canvasWidth: Int, canvasHeight: Int): List<androidx.media3.common.Effect> {
         if (!clip.isOverlay || canvasWidth <= 0 || canvasHeight <= 0) return emptyList()
         return buildList {
-            add(OverlayPlacementEffect(clip.scale, clip.offsetXFraction, clip.offsetYFraction))
+            add(ClipTransformEffect(clip.keyframes, clip.staticTransform))
             add(Presentation.createForWidthAndHeight(canvasWidth, canvasHeight, Presentation.LAYOUT_SCALE_TO_FIT))
             if (clip.opacity < 1f) add(AlphaScale(clip.opacity))
         }

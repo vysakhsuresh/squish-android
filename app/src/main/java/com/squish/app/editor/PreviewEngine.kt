@@ -10,6 +10,7 @@ import androidx.media3.exoplayer.SeekParameters
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.Grade
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.Transform
 import com.squish.app.timeline.TransitionType
 import kotlin.math.abs
 
@@ -22,7 +23,9 @@ data class SurfaceDraw(
     /** Wipe: the fraction of the width revealed from the left edge. */
     val revealFraction: Float = 1f,
     /** The incoming shot of a transition draws over the outgoing one. */
-    val zIndex: Int = 0
+    val zIndex: Int = 0,
+    /** The clip's own placement, animated if it carries keyframes. */
+    val transform: Transform = Transform.Identity
 )
 
 /** Where an overlay layer sits this frame. */
@@ -30,9 +33,7 @@ data class OverlayPlacement(
     val layer: Int,
     val visible: Boolean = false,
     val opacity: Float = 1f,
-    val scale: Float = 1f,
-    val offsetXFraction: Float = 0f,
-    val offsetYFraction: Float = 0f
+    val transform: Transform = Transform.Identity
 )
 
 /** One reading of the transport, and everything the UI needs to draw the frame. */
@@ -296,9 +297,10 @@ class PreviewEngine(private val context: Context) {
 
         if (clipA == null || clipB == null) {
             val onA = clipA != null
+            val only = (clipA ?: clipB)!!
             return Triple(
-                SurfaceDraw(visible = onA),
-                SurfaceDraw(visible = !onA),
+                SurfaceDraw(visible = onA, transform = only.transformAt(t)),
+                SurfaceDraw(visible = !onA, transform = only.transformAt(t)),
                 0f
             )
         }
@@ -310,10 +312,14 @@ class PreviewEngine(private val context: Context) {
         val progress = ((t - incoming.timelineStartMs).toFloat() / overlapMs).coerceIn(0f, 1f)
 
         val (outDraw, inDraw, veil) = blend(incoming.transitionIn.type, progress)
+        // Both shots keep animating through the blend, which is the point of
+        // keyframing a transition - a push-in that stalls mid-dissolve is a glitch.
+        val outMoved = outDraw.copy(transform = outgoing.transformAt(t))
+        val inMoved = inDraw.copy(transform = incoming.transformAt(t))
         val aIsIncoming = incoming === clipA
         return Triple(
-            if (aIsIncoming) inDraw else outDraw,
-            if (aIsIncoming) outDraw else inDraw,
+            if (aIsIncoming) inMoved else outMoved,
+            if (aIsIncoming) outMoved else inMoved,
             veil
         )
     }
@@ -364,9 +370,7 @@ class PreviewEngine(private val context: Context) {
                 layer = layer,
                 visible = true,
                 opacity = clip.opacity,
-                scale = clip.scale,
-                offsetXFraction = clip.offsetXFraction,
-                offsetYFraction = clip.offsetYFraction
+                transform = clip.transformAt(t)
             )
         }
     }

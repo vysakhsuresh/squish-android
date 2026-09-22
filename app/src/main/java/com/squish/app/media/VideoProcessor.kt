@@ -124,9 +124,18 @@ class VideoProcessor(private val context: Context) {
             .build()
 
         val effects = if (clip.isOverlay) {
+            // Overlays carry their placement inside overlayEffects already.
             CompositionFactory.overlayEffects(clip, state.sourceWidth, state.sourceHeight)
         } else {
-            buildVideoEffects(state)
+            // A base shot can be animated too - a push-in, a drift, a slow turn -
+            // so its transform goes on first, in source space, ahead of rotation,
+            // crop and the output resolution.
+            val moved = clip.keyframes.isNotEmpty() || !clip.staticTransform.isIdentity
+            if (moved) {
+                listOf<Effect>(ClipTransformEffect(clip.keyframes, clip.staticTransform)) + buildVideoEffects(state)
+            } else {
+                buildVideoEffects(state)
+            }
         }
 
         return EditedMediaItem.Builder(item)

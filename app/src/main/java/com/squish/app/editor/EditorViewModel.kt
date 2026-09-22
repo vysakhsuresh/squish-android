@@ -18,7 +18,10 @@ import com.squish.app.media.audio.AudioSyncAnalyzer
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.WaveformBuilder
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.Keyframe
+import com.squish.app.timeline.KeyframeEasing
 import com.squish.app.timeline.MIN_CLIP_MS
+import com.squish.app.timeline.Transform
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.Transition
@@ -441,6 +444,118 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         offsetX: Float? = null,
         offsetY: Float? = null
     ) = mutateVideoTrack { it.withOverlayGeometry(clipId, opacity, scale, offsetX, offsetY) }
+
+    // ---- Motion and keyframes ---------------------------------------------------
+
+    /**
+     * Edits the placement of a clip at the playhead.
+     *
+     * If the clip is not animated this simply moves it. If it *is* animated, the
+     * edit lands as a keyframe at the playhead - creating one if there is not
+     * already a key there. That is auto-keying, and it is how every editor behaves:
+     * once you have said "this shot moves", changing the picture at a moment in time
+     * can only sensibly mean "and here is where it should be at that moment".
+     */
+    fun setClipTransform(
+        clipId: String,
+        scale: Float? = null,
+        offsetX: Float? = null,
+        offsetY: Float? = null,
+        rotation: Float? = null
+    ) = mutateTimeline { timeline ->
+        val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+        val playhead = timeline.playheadMs
+        val current = clip.transformAt(playhead)
+        val next = Transform(
+            scale = (scale ?: current.scale).coerceIn(0.1f, 4f),
+            offsetXFraction = (offsetX ?: current.offsetXFraction).coerceIn(-1.5f, 1.5f),
+            offsetYFraction = (offsetY ?: current.offsetYFraction).coerceIn(-1.5f, 1.5f),
+            rotationDegrees = (rotation ?: current.rotationDegrees).coerceIn(-180f, 180f)
+        )
+
+        val updated = if (clip.keyframes.isEmpty()) {
+            clip.copy(
+                scale = next.scale,
+                offsetXFraction = next.offsetXFraction,
+                offsetYFraction = next.offsetYFraction,
+                rotation = next.rotationDegrees
+            )
+        } else {
+            val at = (playhead - clip.timelineStartMs).coerceIn(0L, clip.durationMs)
+            clip.copy(keyframes = clip.keyframes.upsert(Keyframe(at, next, easingNear(clip, at))))
+        }
+        timeline.copy(clips = timeline.clips.map { if (it.id == clipId) updated else it })
+    }
+
+    /** Pins the clip's current appearance at the playhead as a control point. */
+    fun addKeyframeAtPlayhead(clipId: String) = mutateTimeline { timeline ->
+        val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+        val at = (timeline.playheadMs - clip.timelineStartMs).coerceIn(0L, clip.durationMs)
+        val here = clip.transformAt(timeline.playheadMs)
+        val updated = clip.copy(keyframes = clip.keyframes.upsert(Keyframe(at, here, easingNear(clip, at))))
+        timeline.copy(clips = timeline.clips.map { if (it.id == clipId) updated else it })
+    }
+
+    fun removeKeyframe(clipId: String, atMs: Long) = mutateTimeline { timeline ->
+        val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+        val updated = clip.copy(keyframes = clip.keyframes.filterNot { it.atMs == atMs })
+        timeline.copy(clips = timeline.clips.map { if (it.id == clipId) updated else it })
+    }
+
+    fun setKeyframeEasing(clipId: String, atMs: Long, easing: KeyframeEasing) = mutateTimeline { timeline ->
+        val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+        val updated = clip.copy(
+            keyframes = clip.keyframes.map { if (it.atMs == atMs) it.copy(easing = easing) else it }
+        )
+        timeline.copy(clips = timeline.clips.map { if (it.id == clipId) updated else it })
+    }
+
+    /** Drops the animation, leaving the clip wherever it was at the first key. */
+    fun clearKeyframes(clipId: String) = mutateTimeline { timeline ->
+        val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+        val settled = clip.keyframes.firstOrNull()?.transform ?: clip.staticTransform
+        val updated = clip.copy(
+            keyframes = emptyList(),
+            scale = settled.scale,
+            offsetXFraction = settled.offsetXFraction,
+            offsetYFraction = settled.offsetYFraction,
+            rotation = settled.rotationDegrees
+        )
+        timeline.copy(clips = timeline.clips.map { if (it.id == clipId) updated else it })
+    }
+
+    /** The one-tap moves people actually want, as a pair of keys across the clip. */
+    fun applyMotionPreset(clipId: String, preset: MotionPreset) = mutateTimeline { timeline ->
+        val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+        val end = clip.durationMs.coerceAtLeast(MIN_CLIP_MS)
+        val (from, to) = preset.endpoints()
+        val updated = clip.copy(
+            keyframes = listOf(
+                Keyframe(0L, from, KeyframeEasing.Smooth),
+                Keyframe(end, to, KeyframeEasing.Smooth)
+            )
+        )
+        timeline.copy(clips = timeline.clips.map { if (it.id == clipId) updated else it })
+    }
+
+    /**
+     * A new key inherits the easing of the segment it lands in, so inserting a
+     * control point in the middle of a smooth move does not put a linear kink in it.
+     */
+    private fun easingNear(clip: Clip, atMs: Long): KeyframeEasing =
+        clip.keyframes.lastOrNull { it.atMs <= atMs }?.easing
+            ?: clip.keyframes.firstOrNull()?.easing
+            ?: KeyframeEasing.Smooth
+
+    /**
+     * Inserts a key, or replaces the one already at that moment. The tolerance is a
+     * frame: two keys a millisecond apart are a fight, not an animation.
+     */
+    private fun List<Keyframe>.upsert(key: Keyframe): List<Keyframe> {
+        val tolerance = _state.value.frameMs
+        val without = filterNot { abs(it.atMs - key.atMs) <= tolerance }
+        return (without + key).sortedBy { it.atMs }
+    }
 
     fun zoomIn() = _state.update { it.copy(pixelsPerSecond = it.toTimeline().zoomedBy(1.35f).pixelsPerSecond) }
 

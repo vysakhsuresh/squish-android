@@ -54,12 +54,30 @@ data class Clip(
     val opacity: Float = 1f,
     val scale: Float = 1f,
     val offsetXFraction: Float = 0f,
-    val offsetYFraction: Float = 0f
+    val offsetYFraction: Float = 0f,
+    val rotation: Float = 0f,
+
+    /**
+     * Animation. Empty means the clip sits still at [staticTransform]; otherwise
+     * these drive it over the clip's length. Kept sorted by time by the editor, so
+     * evaluation on the render thread never has to sort.
+     */
+    val keyframes: List<Keyframe> = emptyList()
 ) {
     val durationMs: Long get() = (sourceOutMs - sourceInMs).coerceAtLeast(0)
     val timelineEndMs: Long get() = timelineStartMs + durationMs
     fun spans(ms: Long): Boolean = ms > timelineStartMs && ms < timelineEndMs
     val isOverlay: Boolean get() = layer > 0
+
+    /** Where the picture sits when nothing is animating it. */
+    val staticTransform: Transform
+        get() = Transform(scale, offsetXFraction, offsetYFraction, rotation)
+
+    val isAnimated: Boolean get() = keyframes.size >= 2
+
+    /** The transform at a moment on the timeline. */
+    fun transformAt(timelineMs: Long): Transform =
+        keyframes.transformAt(timelineMs - timelineStartMs, staticTransform)
 }
 
 data class TimelineState(

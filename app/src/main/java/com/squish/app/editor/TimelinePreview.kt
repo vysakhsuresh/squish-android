@@ -88,8 +88,9 @@ fun TimelinePreview(
     val editSignature = remember(videoClips, audioClips, proxyUri, muteOriginal, originalVolume, grade) {
         videoClips.joinToString("|") {
             "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}" +
-                ":L${it.layer}:${it.opacity}:${it.scale}:${it.offsetXFraction},${it.offsetYFraction}" +
-                ":${it.transitionIn.type}/${it.transitionIn.durationMs}"
+                ":L${it.layer}:${it.opacity}:${it.staticTransform}" +
+                ":${it.transitionIn.type}/${it.transitionIn.durationMs}" +
+                ":K${it.keyframes}"
         } +
             "//" + audioClips.joinToString("|") { "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}:${it.volume}" } +
             "//" + proxyUri + muteOriginal + originalVolume + grade
@@ -188,7 +189,14 @@ private fun VideoSurface(player: ExoPlayer, draw: SurfaceDraw) {
             .zIndex(draw.zIndex.toFloat())
             .graphicsLayer {
                 alpha = if (draw.visible) draw.alpha.coerceIn(0f, 1f) else 0f
-                translationX = draw.translateXFraction * size.width
+                // The clip's own animated placement, plus whatever the transition
+                // is doing to the whole surface.
+                rotationZ = draw.transform.rotationDegrees
+                scaleX = draw.transform.scale
+                scaleY = draw.transform.scale
+                translationX = draw.translateXFraction * size.width +
+                    draw.transform.offsetXFraction * size.width / 2f
+                translationY = draw.transform.offsetYFraction * size.height / 2f
             }
             .drawWithContent {
                 if (draw.revealFraction >= 1f) {
@@ -217,10 +225,11 @@ private fun OverlaySurface(player: ExoPlayer, placement: OverlayPlacement) {
             .zIndex(10f + placement.layer)
             .graphicsLayer {
                 alpha = if (placement.visible) placement.opacity.coerceIn(0f, 1f) else 0f
-                scaleX = placement.scale
-                scaleY = placement.scale
-                translationX = placement.offsetXFraction * size.width / 2f
-                translationY = placement.offsetYFraction * size.height / 2f
+                rotationZ = placement.transform.rotationDegrees
+                scaleX = placement.transform.scale
+                scaleY = placement.transform.scale
+                translationX = placement.transform.offsetXFraction * size.width / 2f
+                translationY = placement.transform.offsetYFraction * size.height / 2f
             }
     )
 }
