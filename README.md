@@ -38,6 +38,10 @@ recorder — the timbre is wildly different, the loudness shape is not.
   looking, not guessing.
 - **Exact seeking** in preview (`SeekParameters.EXACT`), so scrubbing lands on
   the frame rather than the nearest keyframe.
+- **Face and plate hiding.** Track a face, pin a pixelate or blur to it, and it
+  follows. Leaves the frame intact and destroys only what is inside the shape —
+  and the strength range is set by what it takes to actually make a face
+  unrecognisable, not by what looks blurry in a thumbnail.
 - **Motion tracking.** Tap what you want followed, and pin a caption or a layer to
   it. Matches on pattern rather than brightness, so it holds through a lighting
   change, and it tells you how much of the shot it actually held on for instead of
@@ -177,8 +181,7 @@ against the Kotlin compiler but compiled for the first time on your machine.
 
 ## Not built yet
 
-Honest list, not silent omissions: animated masks and tracked masks (face and
-plate blurring),
+Honest list, not silent omissions: hand-keyframed mask shapes,
 true 3D LUTs, per-clip looks, keyframed opacity and colour (the transform hook
 Media3 gives does not cover those), and a bundled speech model so transcription
 works on every device rather than only those with on-device recognition — all scoped with

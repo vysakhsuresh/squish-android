@@ -175,6 +175,33 @@ sits 0.183 from digital blue and the screen's own shadows reach 0.178. That is
 physics rather than a bug, and the panel says so rather than letting you find out
 during a shoot.
 
+### Tracked masks, and what a privacy tool has to actually do
+A mask that follows a track is the point where the tracker and the masks pay off
+together: a face does not hold still, so a privacy mask that cannot follow one is a
+mask you would have to keyframe by hand for every frame of a shot.
+
+The hook is the same one everything time-varying in this app uses — the shader
+program is handed a presentation time per frame, so a tracked mask simply sets a
+different centre each time. Which clock that time is on differs between the preview
+and the export, so the effect is told which: the preview player holds the whole
+source file and its times *are* source time, while the export latches its first
+frame as the clip's origin. Getting that wrong does not fail loudly, it just puts
+the shape on the object at the wrong moment.
+
+Masking gained two modes beyond cutting out, because hiding a face is not the same
+operation as compositing one. `Cutout` makes the outside transparent; `Pixelate` and
+`Blur` leave the frame **and its alpha** untouched and destroy only what is inside
+the shape — hiding a face must not also punch a hole in the picture.
+
+**Both obscure modes were rendered and looked at, and both were wrong first time.**
+The blur topped out at a 3% radius, through which a face came through perfectly
+recognisable — which is worse than no blur at all, because it looks like the job was
+done. It now reaches 14%, and uses twenty-four taps on a golden-angle spiral rather
+than two rings of six: at a large radius, rings put every tap at the same few angles
+and read as a smear, where a spiral fills the disc. The pixelation took one pixel per
+block, so a dark eye either vanished or became a solid black square; it now averages
+nine samples across the block, which reads as a censor rather than a glitch.
+
 ### Motion tracking
 Same shape as stabilization — an analysis that writes into machinery already built —
 but a different matching problem, and the difference decides the algorithm.
@@ -380,7 +407,8 @@ evict, rebuilt on demand.
 - Chroma key with spill suppression, sampled from your own frame, live in preview
 - Shape masks — rectangle, ellipse, linear, mirror — feathered, rotatable,
   invertible, composing with the key rather than replacing it
-- Motion tracking: pin a caption or a layer to something moving
+- Motion tracking: pin a caption, a layer or a privacy mask to something moving
+- Face and plate hiding: a tracked pixelate or blur that follows the subject
 - Stabilization: global motion estimation, trajectory smoothing and automatic crop
 - Keyframed motion: scale, position and rotation over time, with smooth, linear
   and hold easing, six one-tap presets, and live preview

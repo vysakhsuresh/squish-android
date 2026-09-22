@@ -29,6 +29,7 @@ import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
 import com.squish.app.timeline.Mask
+import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.Transform
@@ -731,6 +732,41 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         return MotionTrack(track.samples.map { it.copy(atMs = it.atMs + delta) })
     }
 
+    /**
+     * Pins a mask to the track - the point of which is hiding a face or a plate.
+     *
+     * The mask lives on the clip being tracked, so the track goes in as it was
+     * measured: in source time, which is also how the mask evaluates it. No
+     * conversion, and nothing to get backwards.
+     */
+    fun pinMaskToTrack(clipId: String) {
+        val current = _state.value
+        val track = current.tracking.track ?: return
+        if (current.tracking.clipId != clipId) return
+        mutateTimeline { timeline ->
+            val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+            val existing = clip.mask ?: Mask(
+                shape = MaskShape.Ellipse,
+                widthFraction = current.tracking.boxFraction * 1.4f,
+                heightFraction = current.tracking.boxFraction * 1.4f,
+                mode = MaskMode.Pixelate
+            )
+            timeline.copy(
+                clips = timeline.clips.map {
+                    if (it.id == clipId) it.copy(mask = existing.copy(track = track)) else it
+                }
+            )
+        }
+    }
+
+    fun unpinMask(clipId: String) = mutateTimeline { timeline ->
+        timeline.copy(
+            clips = timeline.clips.map {
+                if (it.id == clipId) it.copy(mask = it.mask?.copy(track = null)) else it
+            }
+        )
+    }
+
     fun pinCaptionToTrack(captionId: String) {
         val current = _state.value
         val track = current.tracking.track ?: return
@@ -873,7 +909,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         rotation: Float? = null,
         feather: Float? = null,
         cornerRadius: Float? = null,
-        inverted: Boolean? = null
+        inverted: Boolean? = null,
+        mode: MaskMode? = null,
+        strength: Float? = null
     ) = mutateTimeline { timeline ->
         val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
         val current = clip.mask ?: Mask()
@@ -886,7 +924,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             rotationDegrees = (rotation ?: current.rotationDegrees).coerceIn(-180f, 180f),
             feather = (feather ?: current.feather).coerceIn(0.001f, 0.5f),
             cornerRadius = (cornerRadius ?: current.cornerRadius).coerceIn(0f, 1f),
-            inverted = inverted ?: current.inverted
+            inverted = inverted ?: current.inverted,
+            mode = mode ?: current.mode,
+            strength = (strength ?: current.strength).coerceIn(0f, 1f)
         )
         timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(mask = next) else it })
     }

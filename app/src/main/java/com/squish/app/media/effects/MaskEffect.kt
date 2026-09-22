@@ -22,16 +22,31 @@ import java.io.IOException
  * Like the key, the same effect runs in the preview through setVideoEffects, so
  * the shape you drag is the shape that renders.
  */
-class MaskEffect(private val mask: Mask) : GlEffect {
+class MaskEffect(
+    private val mask: Mask,
+    /** Where in the source file the clip starts, so a tracked shape lines up after a trim. */
+    private val sourceInMs: Long = 0L,
+    /**
+     * True when presentation times already *are* source time, which is the case in
+     * the preview: the player holds the whole file, so its clock is the file's clock.
+     * The export normalises instead, latching its first frame as the clip's origin.
+     *
+     * Getting this wrong does not fail loudly - the shape simply follows the object
+     * at the wrong moment, or races ahead of it.
+     */
+    private val timesAreSourceTime: Boolean = false
+) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        MaskShaderProgram(context, useHdr, mask)
+        MaskShaderProgram(context, useHdr, mask, sourceInMs, timesAreSourceTime)
 }
 
 private class MaskShaderProgram(
     context: Context,
     useHdr: Boolean,
-    private val mask: Mask
+    private val mask: Mask,
+    private val sourceInMs: Long,
+    private val timesAreSourceTime: Boolean
 ) : BaseGlShaderProgram(/* useHighPrecisionColorComponents= */ useHdr, /* texturePoolCapacity= */ 1) {
 
     private val glProgram: GlProgram
@@ -61,6 +76,9 @@ private class MaskShaderProgram(
         glProgram.setFloatsUniform("uFeather", floatArrayOf(mask.safeFeather))
         glProgram.setFloatsUniform("uCornerRadius", floatArrayOf(mask.safeCornerRadius))
         glProgram.setFloatsUniform("uInvert", floatArrayOf(if (mask.inverted) 1f else 0f))
+        glProgram.setFloatsUniform("uMode", floatArrayOf(mask.modeIndex))
+        glProgram.setFloatsUniform("uPixelSize", floatArrayOf(mask.pixelSize))
+        glProgram.setFloatsUniform("uBlurRadius", floatArrayOf(mask.blurRadius))
 
         glProgram.setBufferAttribute(
             "aFramePosition",
@@ -80,10 +98,24 @@ private class MaskShaderProgram(
         return Size(inputWidth, inputHeight)
     }
 
+    /** Latched on the first frame when presentation times are not already source time. */
+    private var originUs = Long.MIN_VALUE
+
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
         try {
             glProgram.use()
             glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
+
+            // Re-aimed every frame when the shape is following something. A static
+            // mask sets this once in the constructor and never touches it again.
+            if (mask.track != null) {
+                if (originUs == Long.MIN_VALUE) originUs = presentationTimeUs
+                val sourceMs = if (timesAreSourceTime) presentationTimeUs / 1_000L
+                else sourceInMs + (presentationTimeUs - originUs) / 1_000L
+                val (x, y) = mask.centerAt(sourceMs)
+                glProgram.setFloatsUniform("uCenter", floatArrayOf(x, y))
+            }
+
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, /* first= */ 0, /* count= */ 4)
         } catch (e: GlUtil.GlException) {

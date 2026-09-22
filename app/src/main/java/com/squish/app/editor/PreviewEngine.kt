@@ -233,7 +233,8 @@ class PreviewEngine(private val context: Context) {
         val effects = buildList<Effect> {
             // Keyed first, then masked, matching the export's order exactly.
             chroma?.let { add(ChromaKeyEffect(it)) }
-            mask?.let { add(MaskEffect(it)) }
+            // The preview player holds the whole source file, so its clock is source time.
+            mask?.let { add(MaskEffect(it, clip?.sourceInMs ?: 0L, timesAreSourceTime = true)) }
             grade?.let { addAll(ColorGrade.effects(it)) }
             if (visible.isNotEmpty()) {
                 // Captions were previously export-only, so a tracked one could not be

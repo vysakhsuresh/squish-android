@@ -16,6 +16,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Mask
+import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
@@ -72,6 +73,51 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            MaskMode.entries.forEach { mode ->
+                SelectableChip(
+                    label = mode.label,
+                    selected = mask.mode == mode,
+                    modifier = Modifier.weight(1f),
+                    onClick = { viewModel.updateMask(clip.id, mode = mode) }
+                )
+            }
+        }
+        Text(
+            when (mask.mode) {
+                MaskMode.Cutout -> "Keeps the shape and hides the rest of the clip."
+                MaskMode.Pixelate -> "Keeps the whole picture and pixelates what is inside the shape."
+                MaskMode.Blur -> "Keeps the whole picture and blurs what is inside the shape."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextMuted
+        )
+
+        if (mask.mode != MaskMode.Cutout) {
+            LabeledSlider("Obscure strength", mask.strength, 0f..1f) {
+                viewModel.updateMask(clip.id, strength = it)
+            }
+            if (mask.track != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Following a track · ${(mask.track.heldFraction * 100).toInt()}% held",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SquishColors.Teal
+                    )
+                    Text(
+                        "Unpin",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.Pink,
+                        modifier = Modifier.clickable { viewModel.unpinMask(clip.id) }
+                    )
+                }
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             MaskShape.entries.forEach { shape ->
                 SelectableChip(
                     label = shape.label,
@@ -98,11 +144,15 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
             )
         }
 
-        LabeledSlider("Across", mask.centerXFraction, -1f..1f) {
-            viewModel.updateMask(clip.id, centerX = it)
-        }
-        LabeledSlider("Up / down", mask.centerYFraction, -1f..1f) {
-            viewModel.updateMask(clip.id, centerY = it)
+        // A pinned mask takes its centre from the track every frame, so these two
+        // would be controls that visibly do nothing.
+        if (mask.track == null) {
+            LabeledSlider("Across", mask.centerXFraction, -1f..1f) {
+                viewModel.updateMask(clip.id, centerX = it)
+            }
+            LabeledSlider("Up / down", mask.centerYFraction, -1f..1f) {
+                viewModel.updateMask(clip.id, centerY = it)
+            }
         }
 
         // Linear takes its edge from the centre and the angle alone, and Mirror is a

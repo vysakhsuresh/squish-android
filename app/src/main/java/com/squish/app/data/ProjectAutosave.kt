@@ -12,6 +12,7 @@ import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.Mask
+import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
@@ -161,6 +162,21 @@ class ProjectAutosave(context: Context) {
                 put("feather", m.feather.toDouble())
                 put("cornerRadius", m.cornerRadius.toDouble())
                 put("inverted", m.inverted)
+                put("mode", m.mode.name)
+                put("strength", m.strength.toDouble())
+                m.track?.let { t ->
+                    put("track", JSONArray().apply {
+                        t.samples.forEach { sample ->
+                            put(JSONObject().apply {
+                                put("atMs", sample.atMs)
+                                put("x", sample.xFraction.toDouble())
+                                put("y", sample.yFraction.toDouble())
+                                put("scale", sample.scale.toDouble())
+                                put("confidence", sample.confidence.toDouble())
+                            })
+                        }
+                    })
+                }
             })
         }
         clip.chromaKey?.let { key ->
@@ -305,7 +321,24 @@ class ProjectAutosave(context: Context) {
                     rotationDegrees = m.optDouble("rotationDegrees").toFloat(),
                     feather = m.optDouble("feather", 0.04).toFloat(),
                     cornerRadius = m.optDouble("cornerRadius").toFloat(),
-                    inverted = m.optBoolean("inverted")
+                    inverted = m.optBoolean("inverted"),
+                    mode = enumOrNull<MaskMode>(m.optString("mode")) ?: MaskMode.Cutout,
+                    strength = m.optDouble("strength", 0.5).toFloat(),
+                    track = m.optJSONArray("track")?.let { array ->
+                        MotionTrack(
+                            (0 until array.length()).mapNotNull { i ->
+                                array.optJSONObject(i)?.let { o ->
+                                    TrackSample(
+                                        atMs = o.optLong("atMs"),
+                                        xFraction = o.optDouble("x", 0.5).toFloat(),
+                                        yFraction = o.optDouble("y", 0.5).toFloat(),
+                                        scale = o.optDouble("scale", 1.0).toFloat(),
+                                        confidence = o.optDouble("confidence", 1.0).toFloat()
+                                    )
+                                }
+                            }
+                        ).takeIf { !it.isEmpty }
+                    }
                 )
             }
         )
@@ -359,7 +392,7 @@ class ProjectAutosave(context: Context) {
 
     private companion object {
         /** Bump when the shape changes; older documents are then ignored rather than misread. */
-        const val FORMAT_VERSION = 8
+        const val FORMAT_VERSION = 9
     }
 }
 

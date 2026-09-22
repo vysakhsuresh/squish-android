@@ -201,6 +201,13 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
 private fun PinTargets(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
     Text("Pin to the track", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
 
+    SquishOutlinedButton(
+        text = if (clip.mask?.track != null) "✓ Hiding a face or plate on this clip"
+        else "Hide a face or plate here",
+        modifier = Modifier.fillMaxWidth(),
+        onClick = { viewModel.pinMaskToTrack(clip.id) }
+    )
+
     if (clip.isOverlay) {
         SquishOutlinedButton(
             text = "Pin this layer to it",

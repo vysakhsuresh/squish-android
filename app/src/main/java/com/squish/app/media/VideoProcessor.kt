@@ -136,7 +136,7 @@ class VideoProcessor(private val context: Context) {
                 !clip.staticTransform.isIdentity
             val leading = buildList<Effect> {
                 clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
-                clip.mask?.let { add(MaskEffect(it)) }
+                clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
                 if (moved) add(ClipTransformEffect(clip.keyframes, clip.staticTransform, clip.stabilizer, clip.sourceInMs))
             }
             if (leading.isEmpty()) buildVideoEffects(state) else leading + buildVideoEffects(state)
