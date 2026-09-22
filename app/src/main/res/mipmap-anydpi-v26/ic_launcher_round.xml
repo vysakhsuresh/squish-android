@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/squish_background" />
+    <background android:drawable="@drawable/ic_launcher_bg" />
     <foreground android:drawable="@drawable/ic_launcher_fg" />
+    <!-- Android 13+ themed icons: the launcher tints this silhouette to the
+         wallpaper palette, so the mark has to work as a shape on its own. -->
+    <monochrome android:drawable="@drawable/ic_launcher_fg" />
 </adaptive-icon>

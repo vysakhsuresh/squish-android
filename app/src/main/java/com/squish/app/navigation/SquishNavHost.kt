@@ -12,7 +12,6 @@ import com.squish.app.export.ExportScreen
 import com.squish.app.history.HistoryScreen
 import com.squish.app.home.HomeScreen
 import com.squish.app.settings.SettingsScreen
-import com.squish.app.splash.LogoSplash
 import com.squish.app.tools.QuickTool
 import com.squish.app.tools.QuickToolScreen
 
@@ -20,17 +19,10 @@ import com.squish.app.tools.QuickToolScreen
 fun SquishNavHost() {
     val navController = rememberNavController()
 
-    NavHost(navController = navController, startDestination = Destination.Splash.route) {
-
-        composable(Destination.Splash.route) {
-            LogoSplash(
-                onFinished = {
-                    navController.navigate(Destination.Home.route) {
-                        popUpTo(Destination.Splash.route) { inclusive = true }
-                    }
-                }
-            )
-        }
+    // Straight to the dashboard. The launch animation is the system splash, which
+    // Android shows before this composes at all - routing through a second in-app
+    // splash meant the same mark animated twice, back to back.
+    NavHost(navController = navController, startDestination = Destination.Home.route) {
 
         composable(Destination.Home.route) {
             HomeScreen(

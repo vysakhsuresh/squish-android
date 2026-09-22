@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launcher only ever shows the middle 72 of this 108 canvas, so the sweep runs
+  corner to corner across *that* window rather than the full square. Run across the
+  whole canvas instead and both ends of the gradient are masked off and never seen.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="18" android:startY="18"
+                android:endX="90"   android:endY="90">
+                    <item android:offset="0.0"  android:color="#FF3DE0C0" />
+                    <item android:offset="0.36" android:color="#FF4A7BFF" />
+                    <item android:offset="0.68" android:color="#FF8B5CF6" />
+                    <item android:offset="1.0"  android:color="#FFF0477F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

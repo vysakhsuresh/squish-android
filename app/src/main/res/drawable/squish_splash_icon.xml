@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launcher icon, self-contained, for the launch animation. Android crops the
+  splash icon to the middle two thirds of the canvas - exactly the disc below - so
+  what appears at launch is the app icon itself rather than a second piece of art.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group android:name="mark" android:pivotX="54" android:pivotY="54">
+
+        <!-- Radius 37 rather than 36: the system crop is a circle of exactly 36, so
+             a hair of overdraw guarantees no pale rim. Four cubics rather than an
+             arc command - a 360-degree arc is a degenerate case some parsers get
+             wrong, and every parser agrees on these. -->
+        <path android:pathData="M91,54 C91,74.44 74.44,91 54,91 C33.56,91 17,74.44 17,54 C17,33.56 33.56,17 54,17 C74.44,17 91,33.56 91,54 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                android:type="linear"
+                android:startX="18" android:startY="18"
+                android:endX="90"   android:endY="90">
+                <item android:offset="0.0"  android:color="#FF3DE0C0" />
+                <item android:offset="0.36" android:color="#FF4A7BFF" />
+                <item android:offset="0.68" android:color="#FF8B5CF6" />
+                <item android:offset="1.0"  android:color="#FFF0477F" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <path android:fillColor="#FFFFFFFF" android:pathData="M42.97,63.04 C41.47,63.81 40.24,65.81 40.24,67.50 L40.24,69.54 C40.24,72.34 42.29,73.61 44.80,72.36 L76.27,56.62 C79.16,55.18 79.16,52.82 76.27,51.38 L73.28,49.88 C72.04,49.26 70.01,49.27 68.77,49.90 L42.97,63.04 Z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M47.48,36.98 C43.50,34.99 40.24,37.00 40.24,41.45 L40.24,49.43 C40.24,53.92 43.51,55.92 47.51,53.88 L55.41,49.86 C60.27,47.38 60.25,43.37 55.38,40.93 L47.48,36.98 Z" />
+    </group>
+</vector>

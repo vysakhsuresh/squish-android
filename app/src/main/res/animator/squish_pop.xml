@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Squash and stretch, which is the oldest trick in animation and the only one the
+  name asks for: the mark arrives small, overshoots wide-and-flat as if it landed,
+  rebounds tall, then settles. Scaling both axes by the same amount would just be a
+  zoom - it is the opposition between them that reads as something squishy.
+-->
+<objectAnimator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="520"
+    android:interpolator="@android:interpolator/fast_out_slow_in"
+    android:valueType="floatType">
+
+    <propertyValuesHolder android:propertyName="scaleX">
+        <keyframe android:fraction="0.0"  android:value="0.62" />
+        <keyframe android:fraction="0.42" android:value="1.14" />
+        <keyframe android:fraction="0.72" android:value="0.96" />
+        <keyframe android:fraction="1.0"  android:value="1.0" />
+    </propertyValuesHolder>
+
+    <propertyValuesHolder android:propertyName="scaleY">
+        <keyframe android:fraction="0.0"  android:value="0.62" />
+        <keyframe android:fraction="0.42" android:value="0.88" />
+        <keyframe android:fraction="0.72" android:value="1.04" />
+        <keyframe android:fraction="1.0"  android:value="1.0" />
+    </propertyValuesHolder>
+</objectAnimator>

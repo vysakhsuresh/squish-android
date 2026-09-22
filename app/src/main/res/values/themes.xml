@@ -1,14 +1,15 @@
 <resources>
 
     <!--
-      The system splash shows the mark on the brand ground; the app then continues
-      the same artwork into its own entrance animation, so a cold start reads as one
-      continuous motion rather than an icon flash followed by a separate splash.
+      One entrance, not two. This is the only intro the app has: the mark squashes
+      into place on the brand ground and the dashboard is already behind it. The app
+      used to play this *and* a second in-app splash showing the same artwork, which
+      is why a cold start looked like it was introducing itself twice.
     -->
     <style name="Theme.Squish.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/squish_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/squish_mark_art</item>
-        <item name="windowSplashScreenAnimationDuration">200</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/squish_splash</item>
+        <item name="windowSplashScreenAnimationDuration">520</item>
         <item name="postSplashScreenTheme">@style/Theme.Squish</item>
     </style>
 

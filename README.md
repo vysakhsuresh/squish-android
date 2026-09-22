@@ -151,11 +151,20 @@ batch export, and audio fades and ducking.
 
 ## Brand
 
-Sampled from the logo: deep navy `#0A0E2D` ground, with the mark's cyan → blue →
-violet → magenta → orange run carrying meaning rather than decoration — violet is
-video, cyan is audio, amber is text and markers, magenta is destructive. Blue
-`#4A7BFF` is the primary action; at button size the logo's orange read as an
-error state and fought the clip colours, so it stays an accent.
+The mark is a **play triangle cut clean through** — play for video, the cut
+because this is an editor and not a player. Both halves are real geometry, rounded
+on every corner, and it holds up under a circle mask down to 36px.
+
+It is drawn, never loaded: the launcher icon, the launch animation and the in-app
+mark are all generated from the same 108-unit path, so they cannot drift apart,
+and there is not a single bitmap in the app.
+
+Colour is a corner-to-corner sweep — cyan `#3DE0C0` → blue `#4A7BFF` → violet
+`#8B5CF6` → magenta `#F0477F` — laid across the *visible* window of the icon
+rather than the full canvas, because a launcher only ever shows the middle two
+thirds and a sweep across the whole square has both its ends masked off. The app
+itself sits on deep navy `#0A0E2D`, and the same hues carry meaning in the editor:
+violet is video, cyan is audio, amber is text and markers, magenta is destructive.
 
 Type is **Space Grotesk**, inherited from Layerlink — the same four weight files
 (400/500/600/700), bundled rather than fetched so bold is the real bold face.
@@ -163,7 +172,8 @@ One family throughout; hierarchy comes from weight and size, which keeps the
 interface quiet enough to put a video in front of. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the font licence.
 
-The launch animation is the system splash: the squish bounce is installed as
-`windowSplashScreenAnimatedIcon`, so a cold start plays one animation and lands
-on the dashboard, instead of showing a static icon and then a second in-app
-splash.
+**One entrance, not two.** The launch animation is the system splash: the mark
+squashes into place on the brand ground while the dashboard loads behind it, and
+that is the only intro. The app previously played this *and* a second in-app
+splash showing the same artwork, which is why a cold start looked like it was
+introducing itself twice.
