@@ -29,7 +29,7 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,7 +62,7 @@ enum class EditorTab(val label: String, val icon: ImageVector) {
     Mix("Mix", Icons.Filled.Layers),
     Motion("Motion", Icons.Filled.Animation),
     Audio("Audio", Icons.Filled.GraphicEq),
-    Text("Text", Icons.Filled.TextFields),
+    Captions("Captions", Icons.Filled.ClosedCaption),
     Effects("Effects", Icons.Filled.AutoAwesome),
     Export("Export", Icons.Filled.FileUpload)
 }
@@ -236,7 +236,7 @@ fun EditorScreen(
                         viewModel = viewModel,
                         onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) }
                     )
-                    EditorTab.Text -> TextOverlaySection(state, viewModel)
+                    EditorTab.Captions -> CaptionsPanel(state, viewModel)
                     EditorTab.Effects -> EffectsPanel(state, viewModel)
                     EditorTab.Export -> ExportPanel(
                         state = state,

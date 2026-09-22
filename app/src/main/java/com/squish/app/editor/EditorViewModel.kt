@@ -7,6 +7,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.ProjectSnapshot
+import com.squish.app.data.SrtCue
+import com.squish.app.data.SrtFile
 import com.squish.app.data.SquishRepositories
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ProxyEngine
@@ -16,6 +18,8 @@ import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.VideoProcessor
 import com.squish.app.media.audio.AudioSyncAnalyzer
 import com.squish.app.media.audio.PcmDecoder
+import com.squish.app.media.audio.SpeechSegmenter
+import com.squish.app.media.audio.Transcriber
 import com.squish.app.media.audio.WaveformBuilder
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
@@ -45,7 +49,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 import java.util.UUID
 import kotlin.math.abs
 
@@ -61,6 +67,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var loadedUri: Uri? = null
     private var syncJob: Job? = null
     private var proxyJob: Job? = null
+    private var captionJob: Job? = null
 
     init {
         // Aggressive by design. The write is atomic and skipped entirely when
@@ -372,13 +379,20 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun setContrast(value: Float) = _state.update { it.copy(contrast = value) }
     fun setSaturation(value: Float) = _state.update { it.copy(saturation = value) }
 
-    fun addTextOverlay(text: String) {
+    /**
+     * A blank line starting at the playhead. Spanning the whole clip - which is what
+     * this used to do - is never what anyone wants from a caption.
+     */
+    fun addCaptionAtPlayhead() {
         val current = _state.value
+        val start = current.playheadMs
         val item = TextOverlayItem(
             id = UUID.randomUUID().toString(),
-            text = text,
-            startMs = current.trimStartMs,
-            endMs = current.trimEndMs,
+            text = "",
+            startMs = start,
+            endMs = (start + DEFAULT_CAPTION_MS).coerceAtMost(
+                current.timelineDurationMs.takeIf { it > start } ?: (start + DEFAULT_CAPTION_MS)
+            ),
             colorArgb = android.graphics.Color.WHITE
         )
         _state.update { it.copy(textOverlays = it.textOverlays + item) }
@@ -480,6 +494,171 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val uri = clip.uri ?: _state.value.sourceUri ?: return null
         val inClip = (clip.sourceInMs + (atMs - clip.timelineStartMs)).coerceIn(clip.sourceInMs, clip.sourceOutMs)
         return ThumbnailExtractor.frameAt(getApplication(), uri, inClip)
+    }
+
+    // ---- Captions ---------------------------------------------------------------
+
+    /**
+     * Finds every stretch of speech and makes a caption for each, transcribing where
+     * the device can.
+     *
+     * The two halves are deliberately independent. Segmentation runs on the PCM the
+     * app already decodes and always works; recognition needs an on-device model
+     * that not every phone has. When recognition is unavailable you still get every
+     * caption card sitting on exactly the right frames, which is the half that takes
+     * the time - typing the words is quick once the timing is done for you.
+     */
+    fun generateCaptions() {
+        val current = _state.value
+        val uri = current.sourceUri ?: return
+        if (current.captions.running) return
+
+        captionJob?.cancel()
+        _state.update {
+            it.copy(captions = CaptionProgress(running = true, stage = "Listening to the audio"))
+        }
+
+        captionJob = viewModelScope.launch {
+            // 16 kHz mono is what speech recognisers expect, and it is plenty for
+            // finding utterance boundaries.
+            val pcm = PcmDecoder.decodeMono(
+                getApplication(), uri,
+                targetSampleRate = 16_000,
+                maxDurationMs = 30 * 60_000L
+            )
+            if (pcm == null) {
+                _state.update {
+                    it.copy(
+                        captions = CaptionProgress(finished = true),
+                        failure = SquishError.NoAudioTrack()
+                    )
+                }
+                return@launch
+            }
+
+            val segments = SpeechSegmenter.segment(pcm)
+            if (segments.isEmpty()) {
+                _state.update { it.copy(captions = CaptionProgress(finished = true, total = 0)) }
+                return@launch
+            }
+
+            val canTranscribe = Transcriber.isAvailable(getApplication())
+            _state.update {
+                it.copy(
+                    captions = CaptionProgress(
+                        running = true,
+                        stage = if (canTranscribe) "Transcribing" else "Timing the captions",
+                        total = segments.size,
+                        recognitionAvailable = canTranscribe
+                    )
+                )
+            }
+
+            val language = Locale.getDefault().toLanguageTag()
+            val made = mutableListOf<TextOverlayItem>()
+            var transcribed = 0
+
+            segments.forEach { segment ->
+                val words = if (canTranscribe) {
+                    Transcriber.transcribe(getApplication(), pcm, segment, language)
+                } else null
+                if (!words.isNullOrBlank()) transcribed++
+
+                made.add(
+                    TextOverlayItem(
+                        id = UUID.randomUUID().toString(),
+                        text = words?.takeIf { it.isNotBlank() } ?: "",
+                        startMs = segment.startMs,
+                        endMs = segment.endMs,
+                        colorArgb = android.graphics.Color.WHITE
+                    )
+                )
+                _state.update {
+                    it.copy(captions = it.captions.copy(transcribed = transcribed))
+                }
+            }
+
+            _state.update {
+                it.copy(
+                    textOverlays = it.textOverlays + made,
+                    captions = CaptionProgress(
+                        finished = true,
+                        total = made.size,
+                        transcribed = transcribed,
+                        recognitionAvailable = canTranscribe
+                    )
+                )
+            }
+        }
+    }
+
+    fun updateCaptionText(id: String, text: String) {
+        _state.update { current ->
+            current.copy(
+                textOverlays = current.textOverlays.map {
+                    if (it.id == id) it.copy(text = text) else it
+                }
+            )
+        }
+    }
+
+    fun clearCaptions() {
+        captionJob?.cancel()
+        _state.update { it.copy(textOverlays = emptyList(), captions = CaptionProgress()) }
+    }
+
+    /** Brings in a transcript made anywhere else. */
+    fun importSrt(uri: Uri) {
+        viewModelScope.launch {
+            val raw = withContext(Dispatchers.IO) {
+                runCatching {
+                    getApplication<Application>().contentResolver.openInputStream(uri)
+                        ?.bufferedReader()?.use { it.readText() }
+                }.getOrNull()
+            }
+            if (raw == null) {
+                _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+                return@launch
+            }
+            val cues = SrtFile.parse(raw)
+            if (cues.isEmpty()) {
+                _state.update { it.copy(failure = SquishError.CaptionsUnreadable()) }
+                return@launch
+            }
+            _state.update { current ->
+                current.copy(
+                    textOverlays = current.textOverlays + cues.map { cue ->
+                        TextOverlayItem(
+                            id = UUID.randomUUID().toString(),
+                            text = cue.text,
+                            startMs = cue.startMs,
+                            endMs = cue.endMs,
+                            colorArgb = android.graphics.Color.WHITE
+                        )
+                    },
+                    captions = CaptionProgress(finished = true, total = cues.size, transcribed = cues.size)
+                )
+            }
+        }
+    }
+
+    /** Writes the captions out so they can be used anywhere else. */
+    fun exportSrt(target: Uri, onDone: (Boolean) -> Unit) {
+        val cues = _state.value.textOverlays
+            .sortedBy { it.startMs }
+            .map { SrtCue(it.startMs, it.endMs, it.text) }
+            .filter { it.text.isNotBlank() }
+
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    getApplication<Application>().contentResolver.openOutputStream(target)?.use {
+                        it.write(SrtFile.format(cues).toByteArray())
+                    } != null
+                }.getOrDefault(false)
+            }
+            onDone(ok)
+        }
     }
 
     // ---- Masking --------------------------------------------------------------
@@ -935,5 +1114,6 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private companion object {
         const val MIN_SYNC_CONFIDENCE = 0.28f
         const val AUTOSAVE_INTERVAL_MS = 1_500L
+        const val DEFAULT_CAPTION_MS = 2_000L
     }
 }

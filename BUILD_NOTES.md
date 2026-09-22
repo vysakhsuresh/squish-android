@@ -134,3 +134,24 @@ check.
 
 Note that `BaseGlShaderProgram` was called `SingleFrameGlShaderProgram` before
 Media3 1.2 — if you ever move the module backwards, that is the rename to make.
+
+## On-device speech recognition
+
+`media/audio/Transcriber.kt` reaches into a rarely-used corner of the framework:
+feeding a `SpeechRecognizer` from a pipe rather than the microphone, via the
+`android.speech.extra.AUDIO_SOURCE` family of extras (Android 12+), with the
+recognizer itself created by `createOnDeviceSpeechRecognizer` (Android 13+).
+
+Those extras are written as their **documented string names** rather than the
+`RecognizerIntent` constants. They mean exactly the same thing to the recognizer,
+and a string literal cannot fail to resolve against a platform version — which is
+worth having for the one part of the app reaching somewhere this obscure.
+
+It is best-effort by design. Every failure path — no on-device model, an
+unsupported language, a pipe that will not open, a recognizer error — returns null,
+and the caller turns that into an empty caption card with correct timings. Nothing
+about captioning breaks if this whole file never succeeds on a given device.
+
+**It never falls back to `createSpeechRecognizer`**, which is free to send audio to
+a server. That would break the app's central promise, so the on-device path is the
+only path.

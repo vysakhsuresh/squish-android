@@ -82,6 +82,12 @@ sealed class SquishError(
         fix = "Turn off audio-only, or add a separate audio track first."
     )
 
+    class CaptionsUnreadable : SquishError(
+        title = "No captions in that file",
+        detail = "The file opened, but nothing in it looked like subtitle timings.",
+        fix = "Check it is a .srt file — SubRip, with lines like 00:00:01,000 --> 00:00:04,000."
+    )
+
     class OutOfMemory(cause: Throwable? = null) : SquishError(
         title = "Ran out of memory",
         detail = "Decoding and encoding at this resolution needed more memory than Android would give the app.",

@@ -321,53 +321,6 @@ fun LabeledSlider(
     }
 }
 
-@Composable
-fun TextOverlaySection(state: EditorUiState, viewModel: EditorViewModel) {
-    var draft by remember { mutableStateOf(TextFieldValue("")) }
-    PanelSurface {
-        PanelHeading("Captions", "Burned into the video on export")
-        state.textOverlays.forEach { overlay ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(SquishColors.Background)
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(overlay.text, color = SquishColors.TextPrimary, style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "Remove",
-                    color = SquishColors.Pink,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.clickable { viewModel.removeTextOverlay(overlay.id) }
-                )
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Add a caption…", color = SquishColors.TextMuted) },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = SquishColors.Coral,
-                    unfocusedBorderColor = SquishColors.Border,
-                    focusedTextColor = SquishColors.TextPrimary,
-                    unfocusedTextColor = SquishColors.TextPrimary
-                )
-            )
-            SquishOutlinedButton(text = "Add") {
-                if (draft.text.isNotBlank()) {
-                    viewModel.addTextOverlay(draft.text)
-                    draft = TextFieldValue("")
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun OptionToggle(label: String, active: Boolean, modifier: Modifier = Modifier, onClick: (Boolean) -> Unit) {

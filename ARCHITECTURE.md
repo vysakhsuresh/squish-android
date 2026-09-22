@@ -174,6 +174,37 @@ sits 0.183 from digital blue and the screen's own shadows reach 0.178. That is
 physics rather than a bug, and the panel says so rather than letting you find out
 during a shoot.
 
+### Captions: two halves, honestly separated
+Captioning is two jobs, and only one of them is hard to do on a phone.
+
+**Finding the speech** is the half that eats an afternoon — typing a sentence takes
+seconds, finding the exact frame someone starts and stops talking, forty times
+over, does not. `SpeechSegmenter` does it on the PCM the app already decodes for
+waveforms and A/V sync: energy framing with hysteresis, a threshold derived from the
+recording's own statistics rather than a constant, gaps under ~220 ms merged because
+that is a pause between words rather than between sentences, and long runs split so
+no caption is unreadable. No model, no download, no network. This always works.
+
+**Turning it into words** needs a speech model. There are three ways to get one and
+only one of them is acceptable here:
+
+| Approach | Why not |
+| --- | --- |
+| Cloud API | The app has no network permission and a written promise that nothing leaves the device. Disqualified by design. |
+| Bundled Whisper/Vosk | 40–50 MB of weights plus a native dependency. Defensible as a product decision; not something to add unverified. |
+| **On-device `SpeechRecognizer`** | No new dependency, no app-size cost, never leaves the phone. Needs Android 13 and a model the user has installed. |
+
+So Squish uses the third, and says plainly when it is unavailable. You still get
+every caption card on exactly the right frames, which is the expensive half.
+
+**SRT import and export** is the escape hatch, and it matters more than it looks:
+on-device recognition is not available everywhere and is not equally good in every
+language, so being able to bring a transcript in from whatever tool you trust is the
+difference between captions being a feature and captions being a dead end. The
+parser is deliberately forgiving — BOMs, CRLF, dots for commas, missing indices,
+missing blank lines — because a parser that rejects real files is technically
+correct and practically useless.
+
 ### Masking
 A second alpha shader rather than a branch inside the key one, so the two chain:
 keying writes a matte, masking multiplies into whatever alpha arrived. A clip can be
@@ -271,7 +302,8 @@ evict, rebuilt on demand.
 - Timeline-driven preview with its own transport, black gaps and multi-track sound
 - Automatic dual-system audio sync by RMS-envelope cross-correlation
 - Speed, rotation, crop with live framing guides
-- Text overlays with timing, colour, size and position
+- Auto-captions: speech detection and timing on-device, transcription where the
+  device supports it, SRT import and export, and an inline caption editor
 - Chroma key with spill suppression, sampled from your own frame, live in preview
 - Shape masks — rectangle, ellipse, linear, mirror — feathered, rotatable,
   invertible, composing with the key rather than replacing it

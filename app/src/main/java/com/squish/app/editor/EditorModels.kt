@@ -36,6 +36,20 @@ data class TextOverlayItem(
 enum class SyncStatus { Idle, Analyzing, Matched, NoMatch }
 
 /**
+ * How captioning is going. [transcribed] is separate from [total] because speech
+ * recognition is best-effort: the timings always work, the words may not, and
+ * saying which is which is the difference between a useful result and a mystery.
+ */
+data class CaptionProgress(
+    val running: Boolean = false,
+    val stage: String = "",
+    val total: Int = 0,
+    val transcribed: Int = 0,
+    val finished: Boolean = false,
+    val recognitionAvailable: Boolean = true
+)
+
+/**
  * Where the low-resolution stand-in for heavy footage has got to. Only 4K-and-up
  * sources ever leave [NotNeeded]; everything smaller plays fine as it is.
  */
@@ -100,6 +114,7 @@ data class EditorUiState(
     val lookIntensity: Float = 1f,
 
     val textOverlays: List<TextOverlayItem> = emptyList(),
+    val captions: CaptionProgress = CaptionProgress(),
 
     // The video track, in order. Seeded with the whole source clip on load; split,
     // trim, reorder and merge all operate on this list, and export renders it.

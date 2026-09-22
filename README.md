@@ -38,6 +38,11 @@ recorder — the timbre is wildly different, the loudness shape is not.
   looking, not guessing.
 - **Exact seeking** in preview (`SeekParameters.EXACT`), so scrubbing lands on
   the frame rather than the nearest keyframe.
+- **Auto-captions.** Finds every line of speech and times it to the frame — the
+  half of captioning that actually takes an afternoon — then transcribes it where
+  the device has on-device speech recognition. Nothing is uploaded, so if your
+  phone cannot do it locally, it does not happen; you get perfectly timed cards to
+  type into instead. Import and export .srt to use any transcript you like.
 - **Shape masks.** Rectangle, ellipse, linear and mirror, each feathered,
   rotatable and invertible. Rotation is aspect-corrected, so a turned rectangle
   stays a rectangle instead of shearing. Composes with the chroma key rather than
@@ -164,9 +169,10 @@ against the Kotlin compiler but compiled for the first time on your machine.
 
 ## Not built yet
 
-Honest list, not silent omissions: animated masks, auto-captions,
-stabilization, motion tracking, true 3D LUTs, per-clip looks, and keyframed
-opacity and colour (the transform hook Media3 gives does not cover those) — all scoped with
+Honest list, not silent omissions: animated masks, stabilization, motion tracking,
+true 3D LUTs, per-clip looks, keyframed opacity and colour (the transform hook
+Media3 gives does not cover those), and a bundled speech model so transcription
+works on every device rather than only those with on-device recognition — all scoped with
 real timescales in [ARCHITECTURE.md](ARCHITECTURE.md). Plus reverse clip (needs
 frame-by-frame re-encoding, not a Transformer flag), numeric export progress
 (currently an indeterminate spinner), background/queued export via WorkManager,
