@@ -40,6 +40,17 @@ enum class SyncStatus { Idle, Analyzing, Matched, NoMatch }
  * recognition is best-effort: the timings always work, the words may not, and
  * saying which is which is the difference between a useful result and a mystery.
  */
+/** How stabilization analysis is going, and what it cost. */
+data class StabilizeProgress(
+    val running: Boolean = false,
+    val done: Int = 0,
+    val total: Int = 0,
+    val finished: Boolean = false,
+    val crop: Float = 0f,
+    val framesAnalysed: Int = 0,
+    val failed: Boolean = false
+)
+
 data class CaptionProgress(
     val running: Boolean = false,
     val stage: String = "",
@@ -115,6 +126,8 @@ data class EditorUiState(
 
     val textOverlays: List<TextOverlayItem> = emptyList(),
     val captions: CaptionProgress = CaptionProgress(),
+    val stabilize: StabilizeProgress = StabilizeProgress(),
+    val stabilizeStrength: Float = 0.5f,
 
     // The video track, in order. Seeded with the whole source clip on load; split,
     // trim, reorder and merge all operate on this list, and export renders it.

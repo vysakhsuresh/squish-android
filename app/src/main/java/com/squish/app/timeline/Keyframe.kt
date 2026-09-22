@@ -87,3 +87,33 @@ fun List<Keyframe>.transformAt(tInClipMs: Long, fallback: Transform): Transform 
     val raw = ((tInClipMs - a.atMs).toFloat() / span).coerceIn(0f, 1f)
     return Transform.lerp(a.transform, b.transform, a.easing.ease(raw))
 }
+
+/**
+ * A clip's placement at a moment, with stabilization folded in.
+ *
+ * The two tracks are kept apart on purpose. Stabilization is measured from the
+ * footage; the keyframes are what the editor asked for. Writing the correction into
+ * the same track would mean re-analysing every time someone nudged a slider, and
+ * applying a preset would silently throw the stabilization away.
+ *
+ * [stabilizerMs] is source time, not clip time: the correction belongs to a frame of
+ * the file, so trimming the head of a clip must not slide the whole correction out
+ * of step with the picture it was measured from.
+ */
+fun composeTransform(
+    keyframes: List<Keyframe>,
+    staticTransform: Transform,
+    stabilizer: List<Keyframe>,
+    localMs: Long,
+    stabilizerMs: Long
+): Transform {
+    val user = keyframes.transformAt(localMs, staticTransform)
+    if (stabilizer.isEmpty()) return user
+    val fix = stabilizer.transformAt(stabilizerMs, Transform.Identity)
+    return Transform(
+        scale = user.scale * fix.scale,
+        offsetXFraction = user.offsetXFraction + fix.offsetXFraction,
+        offsetYFraction = user.offsetYFraction + fix.offsetYFraction,
+        rotationDegrees = user.rotationDegrees + fix.rotationDegrees
+    )
+}

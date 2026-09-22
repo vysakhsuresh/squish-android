@@ -20,6 +20,7 @@ import com.squish.app.media.audio.AudioSyncAnalyzer
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.SpeechSegmenter
 import com.squish.app.media.audio.Transcriber
+import com.squish.app.media.video.Stabilizer
 import com.squish.app.media.audio.WaveformBuilder
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
@@ -68,6 +69,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var syncJob: Job? = null
     private var proxyJob: Job? = null
     private var captionJob: Job? = null
+    private var stabilizeJob: Job? = null
 
     init {
         // Aggressive by design. The write is atomic and skipped entirely when
@@ -658,6 +660,74 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 }.getOrDefault(false)
             }
             onDone(ok)
+        }
+    }
+
+    // ---- Stabilization ------------------------------------------------------------
+
+    fun setStabilizeStrength(value: Float) =
+        _state.update { it.copy(stabilizeStrength = value.coerceIn(0f, 1f)) }
+
+    /**
+     * Measures the shake in a clip and writes the correction.
+     *
+     * Analysis only - it produces a keyframe track, which the existing transform
+     * effect then applies in the preview and the export alike. Nothing about
+     * rendering changes.
+     */
+    fun stabilizeClip(clipId: String) {
+        val current = _state.value
+        if (current.stabilize.running) return
+        val clip = current.videoClips.firstOrNull { it.id == clipId } ?: return
+        val uri = clip.uri ?: current.sourceUri ?: return
+
+        stabilizeJob?.cancel()
+        _state.update { it.copy(stabilize = StabilizeProgress(running = true)) }
+
+        stabilizeJob = viewModelScope.launch {
+            val result = Stabilizer.analyse(
+                context = getApplication(),
+                uri = uri,
+                fps = current.fps,
+                fromMs = clip.sourceInMs,
+                toMs = clip.sourceOutMs,
+                strength = current.stabilizeStrength,
+                onProgress = { done, total ->
+                    _state.update { it.copy(stabilize = it.stabilize.copy(done = done, total = total)) }
+                }
+            )
+
+            if (result == null) {
+                _state.update {
+                    it.copy(stabilize = StabilizeProgress(finished = true, failed = true))
+                }
+                return@launch
+            }
+
+            _state.update { state ->
+                state.copy(
+                    videoClips = state.videoClips.map {
+                        if (it.id == clipId) it.copy(stabilizer = result.keyframes) else it
+                    },
+                    stabilize = StabilizeProgress(
+                        finished = true,
+                        crop = result.crop,
+                        framesAnalysed = result.framesAnalysed
+                    )
+                )
+            }
+        }
+    }
+
+    fun clearStabilization(clipId: String) {
+        stabilizeJob?.cancel()
+        _state.update { state ->
+            state.copy(
+                videoClips = state.videoClips.map {
+                    if (it.id == clipId) it.copy(stabilizer = emptyList()) else it
+                },
+                stabilize = StabilizeProgress()
+            )
         }
     }
 

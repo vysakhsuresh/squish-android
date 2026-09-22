@@ -38,6 +38,10 @@ recorder — the timbre is wildly different, the loudness shape is not.
   looking, not guessing.
 - **Exact seeking** in preview (`SeekParameters.EXACT`), so scrubbing lands on
   the frame rather than the nearest keyframe.
+- **Stabilization.** Measures how the camera actually moved, smooths that path and
+  pushes each frame back onto it — so a deliberate pan survives and only the jitter
+  comes out. Crops in by exactly as much as the correction needs and no more, and
+  composes with your own keyframes rather than overwriting them.
 - **Auto-captions.** Finds every line of speech and times it to the frame — the
   half of captioning that actually takes an afternoon — then transcribes it where
   the device has on-device speech recognition. Nothing is uploaded, so if your
@@ -169,7 +173,7 @@ against the Kotlin compiler but compiled for the first time on your machine.
 
 ## Not built yet
 
-Honest list, not silent omissions: animated masks, stabilization, motion tracking,
+Honest list, not silent omissions: animated masks, motion tracking,
 true 3D LUTs, per-clip looks, keyframed opacity and colour (the transform hook
 Media3 gives does not cover those), and a bundled speech model so transcription
 works on every device rather than only those with on-device recognition — all scoped with

@@ -71,7 +71,14 @@ data class Clip(
     val chromaKey: ChromaKey? = null,
 
     /** Restricts the clip to a shape. Composes with [chromaKey] rather than replacing it. */
-    val mask: Mask? = null
+    val mask: Mask? = null,
+
+    /**
+     * The measured correction for camera shake, keyed by **source** time. Separate
+     * from [keyframes] so an edit never destroys an analysis, and an analysis never
+     * destroys an edit.
+     */
+    val stabilizer: List<Keyframe> = emptyList()
 ) {
     val durationMs: Long get() = (sourceOutMs - sourceInMs).coerceAtLeast(0)
     val timelineEndMs: Long get() = timelineStartMs + durationMs
@@ -84,9 +91,13 @@ data class Clip(
 
     val isAnimated: Boolean get() = keyframes.size >= 2
 
-    /** The transform at a moment on the timeline. */
-    fun transformAt(timelineMs: Long): Transform =
-        keyframes.transformAt(timelineMs - timelineStartMs, staticTransform)
+    val isStabilized: Boolean get() = stabilizer.isNotEmpty()
+
+    /** The transform at a moment on the timeline, stabilization included. */
+    fun transformAt(timelineMs: Long): Transform {
+        val local = timelineMs - timelineStartMs
+        return composeTransform(keyframes, staticTransform, stabilizer, local, sourceInMs + local)
+    }
 }
 
 data class TimelineState(

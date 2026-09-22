@@ -4,7 +4,7 @@ import android.graphics.Matrix
 import androidx.media3.effect.MatrixTransformation
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.Transform
-import com.squish.app.timeline.transformAt
+import com.squish.app.timeline.composeTransform
 
 /**
  * Moves a clip's picture - scaled, turned and shifted - and animates it if the
@@ -33,7 +33,10 @@ import com.squish.app.timeline.transformAt
  */
 class ClipTransformEffect(
     private val keyframes: List<Keyframe>,
-    private val staticTransform: Transform
+    private val staticTransform: Transform,
+    private val stabilizer: List<Keyframe> = emptyList(),
+    /** Where in the source file this clip starts, so stabilization lines up after a trim. */
+    private val sourceInMs: Long = 0L
 ) : MatrixTransformation {
 
     /**
@@ -54,7 +57,9 @@ class ClipTransformEffect(
         if (originUs == Long.MIN_VALUE) originUs = presentationTimeUs
         val tInClipMs = (presentationTimeUs - originUs) / 1_000L
 
-        val transform = keyframes.transformAt(tInClipMs, staticTransform)
+        val transform = composeTransform(
+            keyframes, staticTransform, stabilizer, tInClipMs, sourceInMs + tInClipMs
+        )
 
         matrix.reset()
         // Post-concatenation, so these read in application order: turn about the

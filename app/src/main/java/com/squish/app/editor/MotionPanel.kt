@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +48,8 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
     val animated = clip.keyframes.isNotEmpty()
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
+        StabilizeCard(state = state, clip = clip, viewModel = viewModel)
 
         PanelSurface {
             PanelHeading(
@@ -210,5 +215,104 @@ private fun KeyRow(
                 }
             }
         }
+    }
+}
+
+/**
+ * Stabilization. Analysis rather than an effect: it measures the shake and writes a
+ * correction into the same transform track everything else already uses, which is
+ * why it shows up live in the preview the moment it finishes.
+ */
+@Composable
+private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
+    val progress = state.stabilize
+
+    PanelSurface {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PanelHeading(
+                "Stabilize",
+                if (clip.isStabilized) "Shake removed · ${clip.stabilizer.size} measurements"
+                else "Smooth out handheld shake"
+            )
+            if (clip.isStabilized) {
+                Text(
+                    "Remove",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Pink,
+                    modifier = Modifier.clickable { viewModel.clearStabilization(clip.id) }
+                )
+            }
+        }
+
+        when {
+            progress.running -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color = SquishColors.Cyan,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        if (progress.total > 0) "Measuring — frame ${progress.done} of ${progress.total}"
+                        else "Reading the footage",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SquishColors.TextSecondary
+                    )
+                }
+                if (progress.total > 0) {
+                    LinearProgressIndicator(
+                        progress = { progress.done.toFloat() / progress.total },
+                        color = SquishColors.Cyan,
+                        trackColor = SquishColors.Border,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            progress.finished && progress.failed -> Text(
+                "Could not read enough frames to measure the shake. Very short clips and some " +
+                    "formats do not expose individual frames for analysis.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.Yellow
+            )
+
+            progress.finished -> Text(
+                "Measured ${progress.framesAnalysed} frames. Zoomed in " +
+                    "${(progress.crop * 100).toInt()}% to hide the edges the correction exposes.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.Teal
+            )
+
+            else -> Text(
+                "Squish measures how the camera actually moved, smooths that path, and pushes each " +
+                    "frame back onto it. A deliberate pan survives — only the jitter is taken out.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.TextMuted
+            )
+        }
+
+        LabeledSlider("Strength", state.stabilizeStrength, 0f..1f, viewModel::setStabilizeStrength)
+        Text(
+            "Stronger holds the frame steadier and crops in further to afford it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextMuted
+        )
+
+        SquishOutlinedButton(
+            text = when {
+                progress.running -> "Measuring…"
+                clip.isStabilized -> "Measure again at this strength"
+                else -> "Stabilize this clip"
+            },
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { if (!progress.running) viewModel.stabilizeClip(clip.id) }
+        )
     }
 }

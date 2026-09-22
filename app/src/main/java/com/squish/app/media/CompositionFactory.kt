@@ -117,7 +117,7 @@ object CompositionFactory {
             // the other, and before the transform, so the shape is cut from the
             // frame the camera saw rather than from a scaled copy of it.
             clip.mask?.let { add(MaskEffect(it)) }
-            add(ClipTransformEffect(clip.keyframes, clip.staticTransform))
+            add(ClipTransformEffect(clip.keyframes, clip.staticTransform, clip.stabilizer, clip.sourceInMs))
             add(Presentation.createForWidthAndHeight(canvasWidth, canvasHeight, Presentation.LAYOUT_SCALE_TO_FIT))
             if (clip.opacity < 1f) add(AlphaScale(clip.opacity))
         }

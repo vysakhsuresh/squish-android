@@ -36,6 +36,7 @@ app/src/main/java/com/squish/app/
 ├── editor/        EditorViewModel + one immutable EditorUiState, all Compose panels
 ├── media/         Everything that touches a codec
 │   ├── effects/            the look catalogue, grading maths and the two shaders
+│   ├── video/              motion estimation and trajectory smoothing
 │   ├── VideoProcessor      export orchestration
 │   ├── CompositionFactory  A/B-roll sequences, transitions, overlay geometry
 │   ├── ProxyEngine         background 540p proxies for smooth scrubbing
@@ -174,6 +175,40 @@ sits 0.183 from digital blue and the screen's own shadows reach 0.178. That is
 physics rather than a bug, and the panel says so rather than letting you find out
 during a shoot.
 
+### Stabilization as analysis, not rendering
+The app already applies a time-varying transform per frame, in the preview and the
+export alike. So stabilization needed no new rendering at all: it measures the shake
+and writes a corrective **keyframe track**, which the existing `ClipTransformEffect`
+then applies. The feature is arithmetic dropped into machinery that was already
+there.
+
+The idea underneath is one observation: a shaky shot is an intended camera path with
+noise added. Integrate the frame-to-frame motion and you have the path the camera
+actually took; smooth that path and you have the path it meant to take; the
+difference is what to undo. A pan survives because it is in both, and only the
+jitter cancels. Simply cancelling *all* motion is the classic way to make
+stabilization look worse than none — it locks the frame rigid and turns a deliberate
+pan into a stutter as the correction saturates against the crop.
+
+Motion is estimated by matching each frame against the last across a range of
+offsets on a 96-pixel-wide luma grid, refined to sub-pixel by fitting a parabola
+through the best score and its neighbours. Real optical flow wants OpenCV, a 30 MB
+native dependency; for undoing handheld shake — a whole-frame movement — a global
+match is the right model anyway, and feature tracking would mostly be a more
+expensive way to compute the same number. Roll comes from matching the two halves of
+the frame separately: if the left drifts down while the right drifts up, the camera
+rolled.
+
+The measured track is kept **separate from the user's keyframes** and composed at
+evaluation time, so an edit never destroys an analysis and an analysis never
+destroys an edit. It is keyed by *source* time rather than clip time, because the
+correction belongs to a frame of the file — trimming the head of a clip must not
+slide the whole correction out of step with the picture it was measured from.
+
+The correction is bounded by the crop and scaled down uniformly when it would
+overshoot, rather than clipped per frame: a clipped correction puts a kink in the
+path, and a kink is exactly the jolt being removed.
+
 ### Captions: two halves, honestly separated
 Captioning is two jobs, and only one of them is hard to do on a phone.
 
@@ -307,6 +342,7 @@ evict, rebuilt on demand.
 - Chroma key with spill suppression, sampled from your own frame, live in preview
 - Shape masks — rectangle, ellipse, linear, mirror — feathered, rotatable,
   invertible, composing with the key rather than replacing it
+- Stabilization: global motion estimation, trajectory smoothing and automatic crop
 - Keyframed motion: scale, position and rotation over time, with smooth, linear
   and hold easing, six one-tap presets, and live preview
 - Colour: brightness, contrast, saturation

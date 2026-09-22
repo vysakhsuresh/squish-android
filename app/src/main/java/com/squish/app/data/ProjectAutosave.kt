@@ -147,6 +147,7 @@ class ProjectAutosave(context: Context) {
         put("offsetYFraction", clip.offsetYFraction.toDouble())
         put("rotation", clip.rotation.toDouble())
         put("keyframes", JSONArray().apply { clip.keyframes.forEach { put(encodeKeyframe(it)) } })
+        put("stabilizer", JSONArray().apply { clip.stabilizer.forEach { put(encodeKeyframe(it)) } })
         clip.mask?.let { m ->
             put("mask", JSONObject().apply {
                 put("shape", m.shape.name)
@@ -268,6 +269,9 @@ class ProjectAutosave(context: Context) {
             keyframes = json.optJSONArray("keyframes")?.let { array ->
                 (0 until array.length()).mapNotNull { i -> decodeKeyframe(array.optJSONObject(i)) }
             }.orEmpty().sortedBy { it.atMs },
+            stabilizer = json.optJSONArray("stabilizer")?.let { array ->
+                (0 until array.length()).mapNotNull { i -> decodeKeyframe(array.optJSONObject(i)) }
+            }.orEmpty().sortedBy { it.atMs },
             chromaKey = json.optJSONObject("chromaKey")?.let { k ->
                 ChromaKey(
                     keyColorArgb = k.optInt("keyColorArgb", ChromaKey.STANDARD_GREEN),
@@ -325,7 +329,7 @@ class ProjectAutosave(context: Context) {
 
     private companion object {
         /** Bump when the shape changes; older documents are then ignored rather than misread. */
-        const val FORMAT_VERSION = 6
+        const val FORMAT_VERSION = 7
     }
 }
 
