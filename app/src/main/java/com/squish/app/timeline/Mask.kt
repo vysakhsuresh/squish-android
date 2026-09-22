@@ -32,8 +32,8 @@ enum class MaskMode(val label: String) {
 /**
  * Restricts a clip to a shape.
  *
- * Sizes and the centre are fractions of the **frame**, so width 1.0 spans the
- * whole picture and the centre runs -1 to 1 from edge to edge. Rotation and the
+ * Sizes and the center are fractions of the **frame**, so width 1.0 spans the
+ * whole picture and the center runs -1 to 1 from edge to edge. Rotation and the
  * corner radius are applied in pixel-isotropic space, so a turned rectangle stays
  * a rectangle on a 16:9 frame rather than shearing into a rhombus.
  *
@@ -86,8 +86,8 @@ data class Mask(
     val blurRadius: Float get() = 0.015f + 0.125f * strength.coerceIn(0f, 1f)
 
     /**
-     * The shape's centre at a moment of the source, following its track if it has
-     * one. Track fractions run 0..1 across the frame; the shader's centre runs
+     * The shape's center at a moment of the source, following its track if it has
+     * one. Track fractions run 0..1 across the frame; the shader's center runs
      * -1..1 from the middle.
      */
     fun centerAt(sourceMs: Long): Pair<Float, Float> {

@@ -31,17 +31,17 @@ void main() {
   float base = chromaDistance - uSimilarity;
 
   // Raised to 1.5 rather than left linear: a straight ramp across the feather band
-  // leaves a visible grey halo on hair, where a slightly concave one does not.
+  // leaves a visible gray halo on hair, where a slightly concave one does not.
   float mask = pow(clamp(base / uSmoothness, 0.0, 1.0), 1.5);
   float spillMask = pow(clamp(base / uSpill, 0.0, 1.0), 1.5);
 
-  // Spill suppression. The screen bounces its colour onto shoulders and hair, and
+  // Spill suppression. The screen bounces its color onto shoulders and hair, and
   // those pixels are not close enough to the key to be cut - they just look wrong.
   // Pulling them toward their own luminance removes the fringe without touching
-  // anything far from the key colour.
+  // anything far from the key color.
   float luma = dot(src.rgb, vec3(0.2126, 0.7152, 0.0722));
-  vec3 colour = mix(vec3(luma), src.rgb, spillMask);
+  vec3 color = mix(vec3(luma), src.rgb, spillMask);
 
   // Straight alpha, matching the convention AlphaScale already uses in this app.
-  gl_FragColor = vec4(colour, mask);
+  gl_FragColor = vec4(color, mask);
 }

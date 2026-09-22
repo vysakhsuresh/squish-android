@@ -144,7 +144,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
             )
         }
 
-        // A pinned mask takes its centre from the track every frame, so these two
+        // A pinned mask takes its center from the track every frame, so these two
         // would be controls that visibly do nothing.
         if (mask.track == null) {
             LabeledSlider("Across", mask.centerXFraction, -1f..1f) {
@@ -155,7 +155,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
             }
         }
 
-        // Linear takes its edge from the centre and the angle alone, and Mirror is a
+        // Linear takes its edge from the center and the angle alone, and Mirror is a
         // band with no width - offering sliders that do nothing would just invite
         // someone to drag them and conclude the mask is broken.
         if (mask.shape == MaskShape.Rectangle || mask.shape == MaskShape.Ellipse) {

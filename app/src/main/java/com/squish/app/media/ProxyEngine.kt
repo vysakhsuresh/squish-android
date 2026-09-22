@@ -121,7 +121,7 @@ object ProxyEngine {
                         exportResult: ExportResult,
                         exportException: ExportException
                     ) {
-                        // Deliberately silent. A proxy is an optimisation; failing to
+                        // Deliberately silent. A proxy is an optimization; failing to
                         // build one must never interrupt an edit in progress.
                         if (continuation.isActive) continuation.resume(false)
                     }

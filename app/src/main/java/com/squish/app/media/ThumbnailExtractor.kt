@@ -78,11 +78,11 @@ object ThumbnailExtractor {
     }
 
     /**
-     * One frame, scaled down, for sampling a colour out of.
+     * One frame, scaled down, for sampling a color out of.
      *
      * Scaled because a 4K frame is ~35 MB and this is held in Compose state while a
      * panel is open; a few hundred pixels across is far more than enough to pick a
-     * screen colour from, and averaging over the downscale actually helps - it
+     * screen color from, and averaging over the downscale actually helps - it
      * smooths the sensor noise that would otherwise make two adjacent taps on the
      * same green give two different answers.
      */

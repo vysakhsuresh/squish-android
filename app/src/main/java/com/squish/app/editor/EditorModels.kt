@@ -117,14 +117,11 @@ enum class ProxyStatus { NotNeeded, Building, Ready, Failed }
 /**
  * An edit recovered from disk after the app was killed, offered rather than
  * applied: silently overwriting what someone just opened would be its own kind of
- * data loss. [sourceReadable] is false when the original clip can no longer be
- * opened - the permission a gallery picker grants does not outlive the process -
- * in which case the edit is kept and re-attaches when that clip is opened again.
+ * data loss. A snapshot whose clip can no longer be opened is not offered at all -
+ * the permission a gallery picker grants does not outlive the process - and is left
+ * on disk to re-attach when that clip is opened again.
  */
-data class RecoveryOffer(
-    val snapshot: ProjectSnapshot,
-    val sourceReadable: Boolean
-) {
+data class RecoveryOffer(val snapshot: ProjectSnapshot) {
     val clipCount: Int get() = snapshot.clipCount
     val savedAtMillis: Long get() = snapshot.savedAtMillis
     val durationMs: Long get() = snapshot.totalDurationMs

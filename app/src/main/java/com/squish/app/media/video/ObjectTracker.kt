@@ -69,7 +69,7 @@ data class TrackStep(val x: Float, val y: Float, val scale: Float, val confidenc
 /**
  * Follows a patch of picture from frame to frame.
  *
- * Zero-mean normalised cross-correlation rather than the absolute-difference match
+ * Zero-mean normalized cross-correlation rather than the absolute-difference match
  * the stabilizer uses. Stabilization compares whole consecutive frames, which are
  * lit identically; a tracked object walks through shadow and sunlight, and a plain
  * difference score would follow the lighting instead of the object. Subtracting each
@@ -155,7 +155,7 @@ class ObjectTracker(
         return TrackStep(bestX.toFloat(), bestY.toFloat(), bestScale, best)
     }
 
-    /** ZNCC of the template against the frame patch centred at (x, y). */
+    /** ZNCC of the template against the frame patch centered at (x, y). */
     private fun correlate(frame: LumaFrame, x: Int, y: Int, scale: Float): Float {
         val halfW = templateWidth / 2
         val halfH = templateHeight / 2

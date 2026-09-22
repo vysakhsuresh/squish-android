@@ -27,7 +27,7 @@ uniform float uBlurRadius;
 varying vec2 vTexSamplingCoord;
 
 /**
- * Twenty-four taps on a golden-angle spiral, plus the centre.
+ * Twenty-four taps on a golden-angle spiral, plus the center.
  *
  * The first version used two rings of six and was far too weak to be a privacy
  * tool - a face came through it perfectly recognisable, which is worse than no blur
@@ -50,7 +50,7 @@ vec3 blurred(vec2 uv, float r) {
 }
 
 /**
- * Averaged over the block rather than taking its centre pixel. Point-sampling makes
+ * Averaged over the block rather than taking its center pixel. Point-sampling makes
  * a whole block whatever single pixel happened to land in the middle, so a dark eye
  * either vanishes or becomes a solid black square - artefacts that read as a glitch
  * instead of a censor.
@@ -70,7 +70,7 @@ vec3 pixelated(vec2 uv, float size) {
 void main() {
   vec4 src = texture2D(uTexSampler, vTexSamplingCoord);
 
-  // Frame fractions, -1 to 1, then offset to the mask's centre.
+  // Frame fractions, -1 to 1, then offset to the mask's center.
   vec2 p = vTexSamplingCoord * 2.0 - 1.0;
   p -= uCenter;
 

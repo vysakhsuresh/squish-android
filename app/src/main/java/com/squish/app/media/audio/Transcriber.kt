@@ -87,7 +87,7 @@ object Transcriber {
 
                 recognizer.setRecognitionListener(object : RecognitionListener {
                     override fun onResults(results: Bundle) {
-                        val best = results
+                        val best: String? = results
                             .getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             ?.firstOrNull()
                             ?.trim()

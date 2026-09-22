@@ -156,22 +156,22 @@ object MotionEstimator {
         // Negated on the way out. The search asks "where in the previous frame did
         // this pixel come from", which is the opposite of "where did the picture go":
         // content that moved three pixels right is found three pixels left of where
-        // it now is. Returning the raw search offset would stabilise every clip in
+        // it now is. Returning the raw search offset would stabilize every clip in
         // exactly the wrong direction - and look, convincingly, like it was working.
         return Match(-(bestDx + refinedX), -(bestDy + refinedY), confidence)
     }
 
     /** Parabola through three samples; its vertex is the sub-pixel minimum. */
-    private fun refine(before: Float?, centre: Float, after: Float?): Float {
+    private fun refine(before: Float?, center: Float, after: Float?): Float {
         if (before == null || after == null) return 0f
-        val denominator = before - 2f * centre + after
+        val denominator = before - 2f * center + after
         if (abs(denominator) < 1e-6f) return 0f
         return (0.5f * (before - after) / denominator).coerceIn(-0.5f, 0.5f)
     }
 
     private fun key(dx: Int, dy: Int): Long = (dx.toLong() shl 32) or (dy.toLong() and 0xFFFFFFFFL)
 
-    /** Nearest-neighbour downsample of a packed ARGB frame into a luma grid. */
+    /** Nearest-neighbor downsample of a packed ARGB frame into a luma grid. */
     fun toLuma(argb: IntArray, srcWidth: Int, srcHeight: Int, dstWidth: Int, dstHeight: Int): LumaFrame {
         val out = FloatArray(dstWidth * dstHeight)
         for (y in 0 until dstHeight) {

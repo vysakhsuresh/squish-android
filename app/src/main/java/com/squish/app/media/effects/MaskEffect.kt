@@ -29,7 +29,7 @@ class MaskEffect(
     /**
      * True when presentation times already *are* source time, which is the case in
      * the preview: the player holds the whole file, so its clock is the file's clock.
-     * The export normalises instead, latching its first frame as the clip's origin.
+     * The export normalizes instead, latching its first frame as the clip's origin.
      *
      * Getting this wrong does not fail loudly - the shape simply follows the object
      * at the wrong moment, or races ahead of it.

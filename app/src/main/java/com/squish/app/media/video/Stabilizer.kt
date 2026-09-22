@@ -36,7 +36,7 @@ object Stabilizer {
     /** Frames decoded per call. Small: these arrive as full-size bitmaps. */
     private const val BATCH = 12
 
-    suspend fun analyse(
+    suspend fun analyze(
         context: Context,
         uri: Uri,
         fps: Float,
@@ -78,7 +78,10 @@ object Stabilizer {
                 coroutineContext.ensureActive()
 
                 val count = minOf(BATCH * stride, lastIndex - index + 1)
-                val frames = runCatching { retriever.getFramesAtIndex(index, count) }.getOrNull()
+                // Typed explicitly: getFramesAtIndex is a Java call, so its result is a
+                // platform type and an inferred val would carry that ambiguity onward.
+                val frames: List<Bitmap>? =
+                    runCatching { retriever.getFramesAtIndex(index, count) }.getOrNull()
                 if (frames.isNullOrEmpty()) break
 
                 frames.forEachIndexed { offset, bitmap ->

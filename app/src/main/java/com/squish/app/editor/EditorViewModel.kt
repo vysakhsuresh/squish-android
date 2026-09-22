@@ -46,6 +46,7 @@ import com.squish.app.timeline.withClipRemoved
 import com.squish.app.timeline.withClipTrimmed
 import com.squish.app.timeline.withSplitAtPlayhead
 import com.squish.app.timeline.zoomedBy
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -76,7 +77,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var trackJob: Job? = null
 
     init {
-        // Aggressive by design. The write is atomic and skipped entirely when
+        // Aggressive by design. Each save is atomic, and skipped entirely when
         // nothing changed, so the cost of a tick is one string comparison, and the
         // worst case after a kill is a second and a half of lost work.
         viewModelScope.launch {
@@ -456,9 +457,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setTransition(clipId: String, type: TransitionType, durationMs: Long) =
-        mutateVideoTrack { it.withTransition(clipId, Transition(type, durationMs)) }
+        mutateTimeline { it.withTransition(clipId, Transition(type, durationMs)) }
 
-    fun changeLayer(clipId: String, delta: Int) = mutateVideoTrack { it.withLayerChanged(clipId, delta) }
+    fun changeLayer(clipId: String, delta: Int) = mutateTimeline { it.withLayerChanged(clipId, delta) }
 
     fun setOverlayGeometry(
         clipId: String,
@@ -466,7 +467,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         scale: Float? = null,
         offsetX: Float? = null,
         offsetY: Float? = null
-    ) = mutateVideoTrack { it.withOverlayGeometry(clipId, opacity, scale, offsetX, offsetY) }
+    ) = mutateTimeline { it.withOverlayGeometry(clipId, opacity, scale, offsetX, offsetY) }
 
     // ---- Green screen -------------------------------------------------------------
 
@@ -495,7 +496,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(chromaKey = next) else it })
     }
 
-    /** The frame under the playhead, for sampling the screen colour out of. */
+    /** The frame under the playhead, for sampling the screen color out of. */
     suspend fun sampleFrame(clip: Clip, atMs: Long): android.graphics.Bitmap? {
         val uri = clip.uri ?: _state.value.sourceUri ?: return null
         val inClip = (clip.sourceInMs + (atMs - clip.timelineStartMs)).coerceIn(clip.sourceInMs, clip.sourceOutMs)
@@ -792,7 +793,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      *
      * Written into the ordinary keyframe track rather than a private one: unlike
      * stabilization, this *is* an edit, and you should be able to nudge it
-     * afterwards without the app arguing.
+     * afterward without the app arguing.
      */
     fun pinLayerToTrack(layerClipId: String) {
         val current = _state.value
@@ -807,7 +808,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 transform = Transform(
                     scale = layer.scale * sample.scale,
                     // Track fractions run 0..1 across the frame; transform offsets
-                    // run -1..1 from the centre.
+                    // run -1..1 from the center.
                     offsetXFraction = (sample.xFraction - 0.5f) * 2f,
                     offsetYFraction = (sample.yFraction - 0.5f) * 2f,
                     rotationDegrees = layer.rotation
@@ -847,7 +848,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(stabilize = StabilizeProgress(running = true)) }
 
         stabilizeJob = viewModelScope.launch {
-            val result = Stabilizer.analyse(
+            val result = Stabilizer.analyze(
                 context = getApplication(),
                 uri = uri,
                 fps = current.fps,
@@ -1218,16 +1219,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         // teach the user to dismiss this banner without reading it.
         if (snapshot.isTrivial) return
 
-        val sameClip = snapshot.sourceUri == openedUri
-
         // A snapshot whose media is gone is worth nothing to restore, so only a
-        // readable source ever produces an offer for a different clip.
-        val readable = sameClip || canRead(snapshot.sourceUri)
-        if (!sameClip && !readable) return
+        // readable source ever produces an offer for a different clip. The clip
+        // being opened has just been probed, so it is readable by definition.
+        val sameClip = snapshot.sourceUri == openedUri
+        if (!sameClip && !canRead(snapshot.sourceUri)) return
 
         // A session already finished by an export was cleared; anything still here
         // ended some other way, which is exactly the case worth recovering.
-        _state.update { it.copy(recovery = RecoveryOffer(snapshot, readable)) }
+        _state.update { it.copy(recovery = RecoveryOffer(snapshot)) }
     }
 
     fun dismissRecovery() {

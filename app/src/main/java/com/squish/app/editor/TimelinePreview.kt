@@ -214,7 +214,7 @@ private fun VideoSurface(player: ExoPlayer, draw: SurfaceDraw) {
 
 /**
  * A floating layer. The offsets are fractions of half the canvas, so ±1 puts the
- * layer's centre on the edge - the same convention the export's placement matrix
+ * layer's center on the edge - the same convention the export's placement matrix
  * uses, which is what keeps the two agreeing.
  */
 @Composable

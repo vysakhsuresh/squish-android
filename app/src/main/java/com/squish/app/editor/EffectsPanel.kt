@@ -42,7 +42,7 @@ import com.squish.app.ui.theme.SquishColors
  *
  * Every chip paints what the look actually does, by running the grade over a
  * reference ramp with the same maths the shaders use. That is the whole reason to
- * build the swatch from the grade rather than hand-picking a colour per filter: a
+ * build the swatch from the grade rather than hand-picking a color per filter: a
  * hand-picked chip is a drawing of a promise, and it starts lying the moment a
  * look is retuned.
  */

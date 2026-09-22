@@ -13,7 +13,7 @@ import kotlin.math.roundToInt
 /**
  * Runs [ObjectTracker] over a clip and returns the path it found, in source time.
  *
- * Analysed at 320 pixels wide rather than the stabilizer's 96. Stabilization only
+ * Analyzed at 320 pixels wide rather than the stabilizer's 96. Stabilization only
  * needs to know how the whole frame drifted; tracking has to tell one object from
  * the things around it, and at 96 across, a face is about four pixels.
  */
@@ -65,7 +65,8 @@ object TrackRunner {
                 coroutineContext.ensureActive()
 
                 val count = minOf(BATCH * stride, lastIndex - index + 1)
-                val frames = runCatching { retriever.getFramesAtIndex(index, count) }.getOrNull()
+                val frames: List<Bitmap>? =
+                    runCatching { retriever.getFramesAtIndex(index, count) }.getOrNull()
                 if (frames.isNullOrEmpty()) break
 
                 frames.forEachIndexed { offset, bitmap ->
@@ -89,7 +90,7 @@ object TrackRunner {
                         val atMs = ((index + offset) / frameRate * 1000.0).toLong()
 
                         if (tracker == null) {
-                            // Odd sizes only: a centred patch needs a middle pixel.
+                            // Odd sizes only: a centered patch needs a middle pixel.
                             val size = (boxFraction * analysisWidth).roundToInt()
                                 .coerceIn(12, 96).let { if (it % 2 == 0) it + 1 else it }
                             x = startXFraction * analysisWidth

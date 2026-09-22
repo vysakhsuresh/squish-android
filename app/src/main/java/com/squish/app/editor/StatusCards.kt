@@ -113,18 +113,8 @@ fun RecoveryBanner(
             color = SquishColors.TextSecondary
         )
 
-        if (!offer.sourceReadable) {
-            Text(
-                "The original clip is no longer readable from here. Open that clip again and this edit will be waiting.",
-                style = MaterialTheme.typography.bodySmall,
-                color = SquishColors.TextMuted
-            )
-        }
-
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (offer.sourceReadable) {
-                SquishOutlinedButton(text = "Restore it", onClick = onRestore)
-            }
+            SquishOutlinedButton(text = "Restore it", onClick = onRestore)
             SquishOutlinedButton(text = "Start fresh", onClick = onDiscard)
         }
     }

@@ -59,7 +59,7 @@ hide the saturation slider. Brightness and contrast are separate and unaffected.
 
 `OverlaySettings.Builder().setBackgroundFrameAnchor(...)` moved around across
 Media3 minor versions. If it will not resolve, delete the `getOverlaySettings`
-override entirely — captions then render centred instead of lower-third, which
+override entirely — captions then render centered instead of lower-third, which
 is cosmetic. Only `getText` is required.
 
 ## Things that are NOT uncertain
@@ -87,7 +87,7 @@ publishing, the JSON history store, and every Compose screen.
 `media/OverlayPlacementEffect.kt` is the one new Media3 interface in the app. It
 exists because `ScaleAndRotateTransformation` can scale but cannot translate, so
 the editor's "Across" and "Up / down" sliders moved a layer in the preview and
-were then discarded at render time — every picture-in-picture came out centred.
+were then discarded at render time — every picture-in-picture came out centered.
 
 If the signature differs in the version you resolve, the fallback is one line:
 drop `OverlayPlacementEffect(...)` from `CompositionFactory.overlayEffects` and
@@ -97,7 +97,7 @@ put back
 ScaleAndRotateTransformation.Builder().setScale(clip.scale, clip.scale).build()
 ```
 
-Layers then render centred, exactly as they did before, and nothing else changes.
+Layers then render centered, exactly as they did before, and nothing else changes.
 
 ## Preview surfaces must stay TextureViews
 

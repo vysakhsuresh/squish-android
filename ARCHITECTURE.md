@@ -146,7 +146,7 @@ Handing it over mid-blend would step the playhead by however much the two player
 happen to differ.
 
 ### Chroma key, and the one shader in the app
-Every built-in Media3 colour effect maps RGB to RGB. Chroma key has to produce
+Every built-in Media3 color effect maps RGB to RGB. Chroma key has to produce
 **per-pixel alpha**, and no combination of Contrast, HslAdjustment, RgbAdjustment
 or a 3D LUT can cut a hole in a frame — so unlike the look library, there is no
 version of this that avoids a shader. It is the app's only one.
@@ -163,8 +163,8 @@ The same `ChromaKeyEffect` instance type runs in the preview and the export — 
 preview player is handed it through `setVideoEffects` — so the key you tune is the
 key that renders.
 
-**The default threshold was tuned against the maths, not by eye.** Neutral colours
-— a white shirt, a grey wall, black hair — all sit about 0.33 from digital green in
+**The default threshold was tuned against the maths, not by eye.** Neutral colors
+— a white shirt, a gray wall, black hair — all sit about 0.33 from digital green in
 this space, while a green screen in deep shadow is still within 0.20 of it. The
 usable window is therefore about 0.20 to 0.30, and the first draft of this defaulted
 to 0.38, which would have deleted the subject's shirt. It now defaults to 0.24, mid
@@ -182,7 +182,7 @@ keyframe by hand, for every frame of the shot.
 
 The hook is the same one everything time-varying in this app uses — the shader
 program is handed a presentation time per frame, so a tracked mask simply sets a
-different centre each time. Which clock that time is on differs between the preview
+different center each time. Which clock that time is on differs between the preview
 and the export, so the effect is told which: the preview player holds the whole
 source file and its times *are* source time, while the export latches its first
 frame as the clip's origin. Getting that wrong does not fail loudly, it just puts
@@ -209,7 +209,7 @@ but a different matching problem, and the difference decides the algorithm.
 Stabilization compares whole consecutive frames, which are lit identically, so an
 absolute-difference score is fine. A tracked object walks through shadow and
 sunlight, and a plain difference score would follow the lighting rather than the
-object. `ObjectTracker` therefore uses **zero-mean normalised cross-correlation**:
+object. `ObjectTracker` therefore uses **zero-mean normalized cross-correlation**:
 subtracting each patch's own mean and dividing by its own spread makes the score
 care about pattern instead of brightness. Against synthetic frames it holds to 1.4
 pixels while the scene dims to 55%.
@@ -229,7 +229,7 @@ What the track drives is a separate decision from measuring it. A caption carrie
 track directly — `TextOverlay.getOverlaySettings` is asked per presentation time, so
 a pinned caption simply reports a different anchor each frame. A layer gets ordinary
 **keyframes**, because unlike stabilization this *is* an edit and you should be able
-to nudge it afterwards.
+to nudge it afterward.
 
 Three clocks meet here — source time, timeline time and a layer's own local time —
 and a sign error in any conversion would put every pin at the wrong moment while
@@ -251,7 +251,7 @@ The idea underneath is one observation: a shaky shot is an intended camera path 
 noise added. Integrate the frame-to-frame motion and you have the path the camera
 actually took; smooth that path and you have the path it meant to take; the
 difference is what to undo. A pan survives because it is in both, and only the
-jitter cancels. Simply cancelling *all* motion is the classic way to make
+jitter cancels. Simply canceling *all* motion is the classic way to make
 stabilization look worse than none — it locks the frame rigid and turns a deliberate
 pan into a stutter as the correction saturates against the crop.
 
@@ -338,7 +338,7 @@ time on an API the app already relies on, with no custom shader anywhere.
 
 That bounds the feature honestly. Transform keyframes cover the moves people
 actually reach for — a push-in, a drift, a settle, an animated picture-in-picture.
-Keyframed *opacity* or *colour* would need a different mechanism (a time-varying
+Keyframed *opacity* or *color* would need a different mechanism (a time-varying
 alpha effect, or `RgbMatrix`) and are not in this round.
 
 `ClipTransformEffect` derives its own time origin from the first presentation time
@@ -359,7 +359,7 @@ render thread never sorts and allocates nothing beyond its result.
 `Looks` describes each grade as three moves - per-channel gain, contrast,
 saturation - because Media3 gives exactly those as built-in, hardware-backed
 effects. Between them they cover the grades people actually reach for: a channel
-gain *is* a colour cast, and contrast against saturation is the whole distance
+gain *is* a color cast, and contrast against saturation is the whole distance
 between Vivid and Faded.
 
 Writing custom GLSL would buy grain, vignette and halation, and would cost a
@@ -372,7 +372,7 @@ grade** before reaching the GPU, so grading costs three shader passes no matter 
 much of it is going on, rather than six. And the filter chips are painted by
 running that same grade over a reference ramp - the identical arithmetic the
 shaders do - so a chip cannot drift away from what the look actually does. A
-hand-picked swatch colour is a drawing of a promise; it starts lying the moment a
+hand-picked swatch color is a drawing of a promise; it starts lying the moment a
 look is retuned.
 
 The reference ramp is deliberately not near-white at the top. A bright reference
@@ -398,7 +398,7 @@ evict, rebuilt on demand.
 - Layered compositing: picture-in-picture with opacity, scale and position,
   composited live in the preview as well as at export
 - Unlimited audio tracks: music, voiceover and a second mic at once, overlapping
-  freely, each trimmed, cut, moved and levelled like any other clip
+  freely, each trimmed, cut, moved and leveled like any other clip
 - Timeline-driven preview with its own transport, black gaps and multi-track sound
 - Automatic dual-system audio sync by RMS-envelope cross-correlation
 - Speed, rotation, crop with live framing guides
@@ -412,7 +412,7 @@ evict, rebuilt on demand.
 - Stabilization: global motion estimation, trajectory smoothing and automatic crop
 - Keyframed motion: scale, position and rotation over time, with smooth, linear
   and hold easing, six one-tap presets, and live preview
-- Colour: brightness, contrast, saturation
+- Color: brightness, contrast, saturation
 - Effects library: 16 graded looks across three families, with a strength dial,
   previewed live and previewed honestly on the chips
 - Export presets, fit-to-size bitrate solving, gallery publishing
@@ -430,7 +430,7 @@ claiming otherwise would be the fastest way to lose trust in this document.
 | --- | --- | --- |
 | True 3D LUTs and custom shaders | ~1 week | Grain, vignette, halation and .cube import, on top of the look library below. |
 | Per-clip looks | 2-3 days | The grade is currently the whole timeline; Clip would carry its own. |
-| Keyframed opacity and colour | 3-4 days | Needs a time-varying alpha effect and RgbMatrix; the transform hook does not cover them. |
+| Keyframed opacity and color | 3-4 days | Needs a time-varying alpha effect and RgbMatrix; the transform hook does not cover them. |
 | Keyframes for existing parameters | 1–2 weeks | Needs an interpolation model on every animatable property, plus timeline UI. |
 | Audio beat detection | Days | Onset detection on the PCM data we already decode for waveforms. |
 | Chroma key | 1–2 weeks | A GL shader is a day; spill suppression and edge matting are the rest. |

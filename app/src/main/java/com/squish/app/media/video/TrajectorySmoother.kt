@@ -16,7 +16,7 @@ data class Correction(val dx: Float, val dy: Float, val rotationDegrees: Float)
  * meant to take; the difference is what to undo. A pan survives because it is in
  * both, and only the jitter cancels.
  *
- * The alternative - simply cancelling all motion - locks the frame rigid and turns
+ * The alternative - simply canceling all motion - locks the frame rigid and turns
  * a deliberate pan into a stuttering mess as the correction saturates against the
  * crop. That is the classic way to make stabilization look worse than no
  * stabilization.
@@ -47,7 +47,7 @@ object TrajectorySmoother {
     ): List<Correction> {
         if (motions.isEmpty()) return emptyList()
 
-        // Integrate to get the path actually travelled. A low-confidence estimate
+        // Integrate to get the path actually traveled. A low-confidence estimate
         // contributes nothing rather than its guess: a wrong delta does not just
         // spoil its own frame, it shifts the whole path from there on.
         val n = motions.size
@@ -97,7 +97,7 @@ object TrajectorySmoother {
         }
         // Both axes are scaled by the same factor even though their budgets differ.
         // Squeezing one axis harder than the other would turn the correction vector,
-        // so the frame would slide off at an angle to the shake it is cancelling.
+        // so the frame would slide off at an angle to the shake it is canceling.
         val scale = minOf(
             if (peakX > maxShiftX && peakX > 0f) maxShiftX / peakX else 1f,
             if (peakY > maxShiftY && peakY > 0f) maxShiftY / peakY else 1f

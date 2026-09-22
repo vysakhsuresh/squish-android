@@ -20,16 +20,16 @@ import com.squish.app.timeline.composeTransform
  * It also replaced ScaleAndRotateTransformation, which can scale but cannot
  * translate - so the editor's position sliders moved a layer in the preview and
  * were then discarded at render time, and every picture-in-picture came out
- * centred.
+ * centered.
  *
- * Media3 matrices work in normalised device coordinates, where the frame spans -1
+ * Media3 matrices work in normalized device coordinates, where the frame spans -1
  * to 1 and **+Y points up**. The editor's offsets are screen-space, where down is
  * positive, which is why Y is negated here - and here only, so the convention has
  * exactly one place it can go wrong.
  *
  * BUILD RISK: MatrixTransformation is the one new Media3 interface in the app. If
  * the signature differs in the version you resolve, see BUILD_NOTES.md for the
- * one-line fallback; layers then render centred and unanimated, as before.
+ * one-line fallback; layers then render centered and unanimated, as before.
  */
 class ClipTransformEffect(
     private val keyframes: List<Keyframe>,
@@ -63,7 +63,7 @@ class ClipTransformEffect(
 
         matrix.reset()
         // Post-concatenation, so these read in application order: turn about the
-        // centre, scale about the centre, then move.
+        // center, scale about the center, then move.
         matrix.postRotate(transform.rotationDegrees)
         matrix.postScale(transform.scale, transform.scale)
         matrix.postTranslate(transform.offsetXFraction, -transform.offsetYFraction)

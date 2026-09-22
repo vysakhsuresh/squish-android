@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.Color
  * The mark runs cyan → blue → violet → magenta → orange on a deep navy ground.
  * Those hues carry meaning in the editor rather than being decoration: video is
  * violet, audio is cyan, text is amber, effects are magenta, and the warm orange
- * is reserved for the primary action so it never competes with track colour.
+ * is reserved for the primary action so it never competes with track color.
  */
 object SquishColors {
     val Background = Color(0xFF0A0E2D)
@@ -31,7 +31,7 @@ object SquishColors {
     /**
      * The primary action. Blue rather than the logo's orange: at button and
      * selected-tab size a saturated orange reads as an error state, and it fought
-     * the clip colours on the timeline. Orange stays in the palette as an accent.
+     * the clip colors on the timeline. Orange stays in the palette as an accent.
      */
     val Primary = Blue
 

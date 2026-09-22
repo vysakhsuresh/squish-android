@@ -16,12 +16,12 @@ enum class LookFamily(val label: String) {
  *
  * Deliberately not a shader. Media3 gives these three as built-in, hardware-backed
  * effects, and between them they cover the grades people actually reach for - a
- * channel gain is a colour cast, contrast plus saturation is the difference between
+ * channel gain is a color cast, contrast plus saturation is the difference between
  * Vivid and Faded. Writing custom GLSL would buy film-grain and vignette and cost a
  * shader pipeline that cannot be verified without a device. Real 3D LUTs are the
  * right next step; this is the honest version of that idea which ships working.
  *
- * Every parameter is normalised to -1..1 or a multiplier around 1, so a look can be
+ * Every parameter is normalized to -1..1 or a multiplier around 1, so a look can be
  * dialled continuously between "off" and "full" ([atIntensity]).
  */
 data class Look(
@@ -52,7 +52,7 @@ data class Look(
 }
 
 /**
- * What actually reaches the GPU: one look and the manual colour sliders folded into
+ * What actually reaches the GPU: one look and the manual color sliders folded into
  * a single set of moves.
  *
  * Folding matters. Applying a look and then three more adjustments would stack six
@@ -73,7 +73,7 @@ data class Grade(
     val isIdentity: Boolean get() = !hasChannelGain && !hasContrast && !hasSaturation
 
     /**
-     * The same maths the shaders do, on one colour.
+     * The same maths the shaders do, on one color.
      *
      * This exists so a filter chip can show what the look does to a real frame
      * without decoding one - and because both paths reading from a single
@@ -87,8 +87,8 @@ data class Grade(
         r *= redScale; g *= greenScale; b *= blueScale
 
         if (hasContrast) {
-            // Media3's Contrast: a factor either side of mid-grey, steepening as the
-            // value approaches 1 and flattening to grey as it approaches -1.
+            // Media3's Contrast: a factor either side of mid-gray, steepening as the
+            // value approaches 1 and flattening to gray as it approaches -1.
             val f = (1f + contrast) / (1.0001f - contrast)
             r = f * (r - 0.5f) + 0.5f
             g = f * (g - 0.5f) + 0.5f
@@ -165,7 +165,7 @@ object Looks {
     }
 
     /**
-     * Reference colours for the filter chips: a shadow, a skin midtone and a warm
+     * Reference colors for the filter chips: a shadow, a skin midtone and a warm
      * highlight. Three points are enough to show a cast, a crush and a lift - which
      * is what separates one look from another at chip size.
      *

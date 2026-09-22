@@ -55,9 +55,9 @@ object AudioSyncAnalyzer {
             return@withContext Result(coarseOffsetMs, coarse.second)
         }
 
-        val centre = coarseOffsetMs.toInt() / FINE_BUCKET_MS
+        val center = coarseOffsetMs.toInt() / FINE_BUCKET_MS
         val window = COARSE_BUCKET_MS / FINE_BUCKET_MS + 2
-        val fine = bestLag(fineRef, fineExt, centre - window, centre + window)
+        val fine = bestLag(fineRef, fineExt, center - window, center + window)
             ?: return@withContext Result(coarseOffsetMs, coarse.second)
 
         Result(fine.first.toLong() * FINE_BUCKET_MS, max(coarse.second, fine.second))

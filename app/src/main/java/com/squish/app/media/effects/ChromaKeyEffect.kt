@@ -16,7 +16,7 @@ import java.io.IOException
  * Green screen, as a Media3 video effect.
  *
  * This is the app's only custom GL shader, and it is custom out of necessity
- * rather than ambition: every built-in Media3 colour effect maps RGB to RGB, and
+ * rather than ambition: every built-in Media3 color effect maps RGB to RGB, and
  * chroma key has to produce **per-pixel alpha**. No combination of Contrast,
  * HslAdjustment, RgbAdjustment or a 3D LUT can cut a hole in a frame, so there is
  * no version of this feature that avoids a shader.
@@ -60,7 +60,7 @@ private class ChromaKeyShaderProgram(
         glProgram.setFloatsUniform("uSmoothness", floatArrayOf(key.safeSmoothness))
         glProgram.setFloatsUniform("uSpill", floatArrayOf(key.safeSpill))
 
-        // Draw over the whole normalised device coordinate space, -1 to 1 on both axes.
+        // Draw over the whole normalized device coordinate space, -1 to 1 on both axes.
         glProgram.setBufferAttribute(
             "aFramePosition",
             GlUtil.getNormalizedCoordinateBounds(),

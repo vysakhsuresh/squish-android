@@ -23,7 +23,7 @@ enum class KeyframeEasing(val label: String) {
 /**
  * Where a clip's picture sits: scaled, moved and turned.
  *
- * Offsets are fractions of half the canvas, so ±1 puts the centre of the picture
+ * Offsets are fractions of half the canvas, so ±1 puts the center of the picture
  * on the edge. That is the same convention the export's placement matrix uses, and
  * keeping one convention is what lets the preview and the render agree.
  */
@@ -93,7 +93,7 @@ fun List<Keyframe>.transformAt(tInClipMs: Long, fallback: Transform): Transform 
  *
  * The two tracks are kept apart on purpose. Stabilization is measured from the
  * footage; the keyframes are what the editor asked for. Writing the correction into
- * the same track would mean re-analysing every time someone nudged a slider, and
+ * the same track would mean re-analyzing every time someone nudged a slider, and
  * applying a preset would silently throw the stabilization away.
  *
  * [stabilizerMs] is source time, not clip time: the correction belongs to a frame of

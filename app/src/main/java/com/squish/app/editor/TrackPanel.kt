@@ -45,7 +45,7 @@ import com.squish.app.ui.theme.SquishColors
  * The picker shows the frame under the playhead with the box you are about to track
  * drawn on it. That matters more than it sounds - tracking succeeds or fails almost
  * entirely on what you select, and a box that is mostly background, or mostly flat
- * colour, has nothing to lock onto. Seeing the box before committing to a minute of
+ * color, has nothing to lock onto. Seeing the box before committing to a minute of
  * analysis is the difference between one attempt and five.
  */
 @Composable
@@ -132,7 +132,7 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
         LabeledSlider("Box size", tracking.boxFraction, 0.06f..0.35f, viewModel::setTrackBox)
         Text(
             "Tight enough to be mostly the object, loose enough to include some of its pattern. " +
-                "A box of flat colour has nothing to lock onto.",
+                "A box of flat color has nothing to lock onto.",
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextMuted
         )

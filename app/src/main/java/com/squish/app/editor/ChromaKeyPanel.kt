@@ -39,7 +39,7 @@ import com.squish.app.ui.theme.SquishColors
  *
  * The sampler is the point of this panel. Screen paint and cloth vary enormously -
  * a cheap fabric under warm light is nowhere near the digital green a preset
- * assumes - so keying against a canned colour is guesswork. Tapping the actual
+ * assumes - so keying against a canned color is guesswork. Tapping the actual
  * screen in your own frame is the difference between a key that works and an
  * afternoon of moving sliders.
  */
@@ -53,7 +53,7 @@ fun ChromaKeyPanel(clip: Clip, playheadMs: Long, viewModel: EditorViewModel) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            PanelHeading("Green screen", "Cut a colour out of this layer")
+            PanelHeading("Green screen", "Cut a color out of this layer")
             if (key != null) {
                 Text(
                     "Turn off",
@@ -99,7 +99,7 @@ fun ChromaKeyPanel(clip: Clip, playheadMs: Long, viewModel: EditorViewModel) {
 
         if (key.keyColorArgb == ChromaKey.STANDARD_BLUE) {
             Text(
-                "Blue screens and denim are nearly the same colour once luma is thrown away, " +
+                "Blue screens and denim are nearly the same color once luma is thrown away, " +
                     "so blue jeans will key out along with the screen. Green is the safer screen " +
                     "unless the subject is wearing green.",
                 style = MaterialTheme.typography.bodySmall,
@@ -108,7 +108,7 @@ fun ChromaKeyPanel(clip: Clip, playheadMs: Long, viewModel: EditorViewModel) {
         }
         Text(
             "Similarity decides how much counts as background. Softness feathers the edge. " +
-                "Spill pulls the screen's colour back out of hair and shoulders.",
+                "Spill pulls the screen's color back out of hair and shoulders.",
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextMuted
         )
@@ -159,7 +159,7 @@ private fun FrameSampler(
     if (bitmap != null && bitmap.width > 0 && bitmap.height > 0) {
         Image(
             bitmap = bitmap.asImageBitmap(),
-            contentDescription = "Tap to sample the screen colour",
+            contentDescription = "Tap to sample the screen color",
             // FillBounds against the bitmap's own aspect ratio: no distortion, and
             // the tap maps to a pixel by plain proportion rather than by unpicking
             // whatever letterboxing a Fit would have introduced.

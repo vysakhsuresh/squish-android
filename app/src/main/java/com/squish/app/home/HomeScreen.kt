@@ -166,7 +166,7 @@ private fun EditorEntryCard(onClick: () -> Unit) {
     ) {
         Text("Video editor", style = MaterialTheme.typography.headlineSmall, color = SquishColors.Background)
         Text(
-            "Timeline, trim, crop, captions, colour and automatic audio sync.",
+            "Timeline, trim, crop, captions, color and automatic audio sync.",
             style = MaterialTheme.typography.bodyMedium,
             color = SquishColors.Background.copy(alpha = 0.78f)
         )

@@ -61,9 +61,9 @@ recorder — the timbre is wildly different, the loudness shape is not.
   replacing it, and applied by the preview's own shader so the sliders move the
   finished result.
 - **Chroma key with spill suppression.** Tap your actual screen in the frame to
-  sample it — screen paint and cloth vary far too much for a canned colour to
+  sample it — screen paint and cloth vary far too much for a canned color to
   work. Keys in chroma only, so it holds through uneven lighting, and pulls the
-  screen's colour back out of hair and shoulders. Live in the preview.
+  screen's color back out of hair and shoulders. Live in the preview.
 - **Keyframed motion.** Push in, drift across, settle from a tilt — scale,
   position and rotation animate over a clip with smooth, linear or hold easing.
   Six one-tap presets to start from, auto-keying once a clip is animated, and
@@ -88,7 +88,7 @@ person who just needs a smaller file never meets an editor:
   "open in the full editor" so simple work can grow up without starting over.
 
 **The editor shows one tool at a time.** Preview and timeline stay pinned; a
-bottom rail switches between Trim, Crop, Speed, Audio, Text, Colour and Export.
+bottom rail switches between Trim, Crop, Speed, Audio, Text, Color and Export.
 Everything used to be stacked in a single endless scroll, which made even trim
 and crop hard to find.
 
@@ -118,7 +118,7 @@ home, there is no account and no upload step. Every frame is decoded, composed
 and encoded here. Verify it from the manifest.
 
 **No edit is ever lost.** The whole timeline is written to disk every 1.5 seconds,
-atomically: a temp file is `fsync`ed, then `rename`d over the live document, so
+atomically — a temp file is `fsync`ed, then `rename`d over the live document, so
 the saved project is always a complete version — never a truncated one, however
 abruptly Android kills the app. Reopen and the edit is offered back, with the
 previous version kept alongside as a second parachute.
@@ -182,7 +182,7 @@ against the Kotlin compiler but compiled for the first time on your machine.
 ## Not built yet
 
 Honest list, not silent omissions: hand-keyframed mask shapes,
-true 3D LUTs, per-clip looks, keyframed opacity and colour (the transform hook
+true 3D LUTs, per-clip looks, keyframed opacity and color (the transform hook
 Media3 gives does not cover those), and a bundled speech model so transcription
 works on every device rather than only those with on-device recognition — all scoped with
 real timescales in [ARCHITECTURE.md](ARCHITECTURE.md). Plus reverse clip (needs
@@ -200,7 +200,7 @@ It is drawn, never loaded: the launcher icon, the launch animation and the in-ap
 mark are all generated from the same 108-unit path, so they cannot drift apart,
 and there is not a single bitmap in the app.
 
-Colour is a corner-to-corner sweep — cyan `#3DE0C0` → blue `#4A7BFF` → violet
+Color is a corner-to-corner sweep — cyan `#3DE0C0` → blue `#4A7BFF` → violet
 `#8B5CF6` → magenta `#F0477F` — laid across the *visible* window of the icon
 rather than the full canvas, because a launcher only ever shows the middle two
 thirds and a sweep across the whole square has both its ends masked off. The app
@@ -211,7 +211,7 @@ Type is **Space Grotesk**, inherited from Layerlink — the same four weight fil
 (400/500/600/700), bundled rather than fetched so bold is the real bold face.
 One family throughout; hierarchy comes from weight and size, which keeps the
 interface quiet enough to put a video in front of. See
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the font licence.
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the font license.
 
 **One entrance, not two.** The launch animation is the system splash: the mark
 squashes into place on the brand ground while the dashboard loads behind it, and
