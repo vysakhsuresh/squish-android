@@ -8,7 +8,6 @@ import com.squish.app.media.effects.Looks
 import com.squish.app.media.audio.Waveform
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
-import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.TimelineState
@@ -71,8 +70,8 @@ enum class SyncStatus { Idle, Analyzing, Matched, NoMatch }
 
 /**
  * How captioning is going. [transcribed] is separate from [total] because speech
- * recognition is best-effort: the timings always work, the words may not, and
- * saying which is which is the difference between a useful result and a mystery.
+ * recognition is best-effort: the timings always work, the words may not. Reporting
+ * the two apart is what turns an empty caption card from a mystery into an answer.
  */
 /** How a tracking run is going, and what it found. */
 data class TrackProgress(

@@ -176,9 +176,9 @@ physics rather than a bug, and the panel says so rather than letting you find ou
 during a shoot.
 
 ### Tracked masks, and what a privacy tool has to actually do
-A mask that follows a track is the point where the tracker and the masks pay off
-together: a face does not hold still, so a privacy mask that cannot follow one is a
-mask you would have to keyframe by hand for every frame of a shot.
+A mask that follows a track is where the tracker and the masks pay off together. A
+face does not hold still. A privacy mask that cannot follow one is a mask you would
+keyframe by hand, for every frame of the shot.
 
 The hook is the same one everything time-varying in this app uses — the shader
 program is handed a presentation time per frame, so a tracked mask simply sets a

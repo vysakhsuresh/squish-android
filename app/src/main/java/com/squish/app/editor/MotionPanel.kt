@@ -227,7 +227,7 @@ private fun KeyRow(
  */
 @Composable
 private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
-    val progress = state.stabilize
+    val status = state.stabilize
 
     PanelSurface {
         Row(
@@ -251,7 +251,7 @@ private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorVie
         }
 
         when {
-            progress.running -> {
+            status.running -> {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -262,15 +262,15 @@ private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorVie
                         modifier = Modifier.size(14.dp)
                     )
                     Text(
-                        if (progress.total > 0) "Measuring — frame ${progress.done} of ${progress.total}"
+                        if (status.total > 0) "Measuring — frame ${status.done} of ${status.total}"
                         else "Reading the footage",
                         style = MaterialTheme.typography.bodySmall,
                         color = SquishColors.TextSecondary
                     )
                 }
-                if (progress.total > 0) {
+                if (status.total > 0) {
                     LinearProgressIndicator(
-                        progress = { progress.done.toFloat() / progress.total },
+                        progress = { status.done.toFloat() / status.total },
                         color = SquishColors.Cyan,
                         trackColor = SquishColors.Border,
                         modifier = Modifier.fillMaxWidth()
@@ -278,16 +278,16 @@ private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorVie
                 }
             }
 
-            progress.finished && progress.failed -> Text(
+            status.finished && status.failed -> Text(
                 "Could not read enough frames to measure the shake. Very short clips and some " +
                     "formats do not expose individual frames for analysis.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.Yellow
             )
 
-            progress.finished -> Text(
-                "Measured ${progress.framesAnalysed} frames. Zoomed in " +
-                    "${(progress.crop * 100).toInt()}% to hide the edges the correction exposes.",
+            status.finished -> Text(
+                "Measured ${status.framesAnalysed} frames. Zoomed in " +
+                    "${(status.crop * 100).toInt()}% to hide the edges the correction exposes.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.Teal
             )
@@ -309,12 +309,12 @@ private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorVie
 
         SquishOutlinedButton(
             text = when {
-                progress.running -> "Measuring…"
+                status.running -> "Measuring…"
                 clip.isStabilized -> "Measure again at this strength"
                 else -> "Stabilize this clip"
             },
             modifier = Modifier.fillMaxWidth(),
-            onClick = { if (!progress.running) viewModel.stabilizeClip(clip.id) }
+            onClick = { if (!status.running) viewModel.stabilizeClip(clip.id) }
         )
     }
 }

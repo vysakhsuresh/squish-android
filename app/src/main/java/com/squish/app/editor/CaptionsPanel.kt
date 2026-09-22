@@ -60,9 +60,9 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
         PanelSurface {
             PanelHeading("Auto-captions", "Finds every line of speech and times it")
 
-            val progress = state.captions
+            val status = state.captions
             when {
-                progress.running -> {
+                status.running -> {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -73,15 +73,15 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                             modifier = Modifier.size(14.dp)
                         )
                         Text(
-                            if (progress.total > 0) "${progress.stage} — ${progress.transcribed} of ${progress.total}"
-                            else progress.stage,
+                            if (status.total > 0) "${status.stage} — ${status.transcribed} of ${status.total}"
+                            else status.stage,
                             style = MaterialTheme.typography.bodySmall,
                             color = SquishColors.TextSecondary
                         )
                     }
-                    if (progress.total > 0) {
+                    if (status.total > 0) {
                         LinearProgressIndicator(
-                            progress = { progress.transcribed.toFloat() / progress.total },
+                            progress = { status.transcribed.toFloat() / status.total },
                             color = SquishColors.Cyan,
                             trackColor = SquishColors.Border,
                             modifier = Modifier.fillMaxWidth()
@@ -89,18 +89,18 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     }
                 }
 
-                progress.finished && progress.total == 0 -> Text(
+                status.finished && status.total == 0 -> Text(
                     "No speech found in this clip. If there is talking in it, the recording may be " +
                         "too quiet or too noisy for the detector to separate from the background.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.Yellow
                 )
 
-                progress.finished -> Text(
-                    if (!progress.recognitionAvailable)
-                        "${progress.total} lines timed. This device has no on-device speech " +
+                status.finished -> Text(
+                    if (!status.recognitionAvailable)
+                        "${status.total} lines timed. This device has no on-device speech " +
                             "recognition, so the words are yours to type — the timing is done."
-                    else "${progress.total} lines timed, ${progress.transcribed} transcribed.",
+                    else "${status.total} lines timed, ${status.transcribed} transcribed.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.Teal
                 )
