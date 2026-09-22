@@ -6,6 +6,7 @@ import com.squish.app.editor.CropAspect
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.Quality
 import com.squish.app.editor.TextOverlayItem
+import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.Keyframe
@@ -144,6 +145,14 @@ class ProjectAutosave(context: Context) {
         put("offsetYFraction", clip.offsetYFraction.toDouble())
         put("rotation", clip.rotation.toDouble())
         put("keyframes", JSONArray().apply { clip.keyframes.forEach { put(encodeKeyframe(it)) } })
+        clip.chromaKey?.let { key ->
+            put("chromaKey", JSONObject().apply {
+                put("keyColorArgb", key.keyColorArgb)
+                put("similarity", key.similarity.toDouble())
+                put("smoothness", key.smoothness.toDouble())
+                put("spill", key.spill.toDouble())
+            })
+        }
     }
 
     private fun encodeKeyframe(key: Keyframe): JSONObject = JSONObject().apply {
@@ -243,7 +252,15 @@ class ProjectAutosave(context: Context) {
             // order and does not sort, so a hand-edited file cannot break it.
             keyframes = json.optJSONArray("keyframes")?.let { array ->
                 (0 until array.length()).mapNotNull { i -> decodeKeyframe(array.optJSONObject(i)) }
-            }.orEmpty().sortedBy { it.atMs }
+            }.orEmpty().sortedBy { it.atMs },
+            chromaKey = json.optJSONObject("chromaKey")?.let { k ->
+                ChromaKey(
+                    keyColorArgb = k.optInt("keyColorArgb", ChromaKey.STANDARD_GREEN),
+                    similarity = k.optDouble("similarity", 0.38).toFloat(),
+                    smoothness = k.optDouble("smoothness", 0.1).toFloat(),
+                    spill = k.optDouble("spill", 0.12).toFloat()
+                )
+            }
         )
     }
 
@@ -280,7 +297,7 @@ class ProjectAutosave(context: Context) {
 
     private companion object {
         /** Bump when the shape changes; older documents are then ignored rather than misread. */
-        const val FORMAT_VERSION = 4
+        const val FORMAT_VERSION = 5
     }
 }
 

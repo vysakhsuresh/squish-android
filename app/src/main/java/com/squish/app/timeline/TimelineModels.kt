@@ -62,7 +62,13 @@ data class Clip(
      * these drive it over the clip's length. Kept sorted by time by the editor, so
      * evaluation on the render thread never has to sort.
      */
-    val keyframes: List<Keyframe> = emptyList()
+    val keyframes: List<Keyframe> = emptyList(),
+
+    /**
+     * Green screen, when this clip has one. Only useful on an overlay layer -
+     * keying the base track just reveals black.
+     */
+    val chromaKey: ChromaKey? = null
 ) {
     val durationMs: Long get() = (sourceOutMs - sourceInMs).coerceAtLeast(0)
     val timelineEndMs: Long get() = timelineStartMs + durationMs

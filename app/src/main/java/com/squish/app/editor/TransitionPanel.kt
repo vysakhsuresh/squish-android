@@ -161,5 +161,9 @@ fun TransitionPanel(
                 onClick = onAddOverlay
             )
         }
+
+        if (isVideo && selected != null) {
+            ChromaKeyPanel(clip = selected, playheadMs = state.playheadMs, viewModel = viewModel)
+        }
     }
 }

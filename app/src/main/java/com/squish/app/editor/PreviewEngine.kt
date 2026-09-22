@@ -7,6 +7,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
+import androidx.media3.common.Effect
+import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.Grade
 import com.squish.app.timeline.Clip
@@ -103,6 +105,13 @@ class PreviewEngine(private val context: Context) {
     private var inGap: Boolean = false
     private var appliedGrade: Grade? = null
 
+    /**
+     * What each surface's effect chain currently is. Handing a player a new effect
+     * list rebuilds its GL pipeline and drops frames, so it is only done when the
+     * chain would actually differ - which for most clips is never.
+     */
+    private val appliedEffects = HashMap<String, String>()
+
     private var anchorTimelineMs: Long = 0
     private var anchorWallMs: Long = SystemClock.elapsedRealtime()
 
@@ -120,10 +129,11 @@ class PreviewEngine(private val context: Context) {
      * chosen would otherwise be the one ungraded surface on screen.
      */
     fun overlayPlayer(layer: Int): ExoPlayer = overlayPlayers.getOrPut(layer) {
-        newPlayer().apply {
-            volume = 0f
-            appliedGrade?.let { g -> runCatching { setVideoEffects(ColorGrade.effects(g)) } }
-        }
+        // Created bare; the next syncSurface gives it the grade and any chroma key.
+        // Forgetting that is how a layer added after a look was chosen ended up the
+        // one ungraded surface on screen.
+        appliedEffects.remove(KEY_OVERLAY + layer)
+        newPlayer().apply { volume = 0f }
     }
 
     // ---- Timeline ---------------------------------------------------------------
@@ -186,10 +196,35 @@ class PreviewEngine(private val context: Context) {
     private fun applyGrade(grade: Grade) {
         if (grade == appliedGrade) return
         appliedGrade = grade
-        val effects = ColorGrade.effects(grade)
-        runCatching { baseA.setVideoEffects(effects) }
-        runCatching { baseB.setVideoEffects(effects) }
-        overlayPlayers.values.forEach { p -> runCatching { p.setVideoEffects(effects) } }
+        // Every surface now disagrees with what it is running; the next tick
+        // rebuilds each one, chroma key included.
+        appliedEffects.clear()
+    }
+
+    /**
+     * Gives one surface the effects its current clip needs: the green screen key,
+     * then the grade.
+     *
+     * This is the same ChromaKeyEffect and the same ColorGrade the export builds,
+     * handed to the preview player - so the key you tune is the key that renders,
+     * to the pixel, rather than an approximation of it.
+     */
+    private fun applySurfaceEffects(surfaceKey: String, player: ExoPlayer, clip: Clip?) {
+        val grade = appliedGrade
+        val chroma = clip?.chromaKey
+        val signature = "$grade|$chroma"
+        if (appliedEffects[surfaceKey] == signature) return
+        appliedEffects[surfaceKey] = signature
+
+        val effects = buildList<Effect> {
+            // Keyed first, on the raw frame, matching the export's order exactly.
+            chroma?.let { add(ChromaKeyEffect(it)) }
+            grade?.let { addAll(ColorGrade.effects(it)) }
+        }
+        // Guarded: setVideoEffects is unstable API, and a custom shader can fail to
+        // compile on a given driver. Either way the preview falls back to plain
+        // playback and the export still applies everything.
+        runCatching { player.setVideoEffects(effects) }
     }
 
     // ---- Transport --------------------------------------------------------------
@@ -386,6 +421,7 @@ class PreviewEngine(private val context: Context) {
         }
 
         val source = playbackUriFor(clip) ?: return
+        applySurfaceEffects(key, player, clip)
         val wanted = (clip.sourceInMs + (t - clip.timelineStartMs)).coerceAtLeast(0L)
 
         when {

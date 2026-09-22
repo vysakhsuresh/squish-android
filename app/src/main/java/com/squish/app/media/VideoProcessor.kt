@@ -23,6 +23,7 @@ import androidx.media3.transformer.VideoEncoderSettings
 import com.google.common.collect.ImmutableList
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.Quality
+import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.Looks
 import com.squish.app.timeline.Clip
@@ -131,11 +132,11 @@ class VideoProcessor(private val context: Context) {
             // so its transform goes on first, in source space, ahead of rotation,
             // crop and the output resolution.
             val moved = clip.keyframes.isNotEmpty() || !clip.staticTransform.isIdentity
-            if (moved) {
-                listOf<Effect>(ClipTransformEffect(clip.keyframes, clip.staticTransform)) + buildVideoEffects(state)
-            } else {
-                buildVideoEffects(state)
+            val leading = buildList<Effect> {
+                clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
+                if (moved) add(ClipTransformEffect(clip.keyframes, clip.staticTransform))
             }
+            if (leading.isEmpty()) buildVideoEffects(state) else leading + buildVideoEffects(state)
         }
 
         return EditedMediaItem.Builder(item)

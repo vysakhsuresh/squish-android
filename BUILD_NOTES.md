@@ -107,3 +107,26 @@ composited by the system, so it ignores view alpha, transforms and clipping — 
 these back to `PlayerView` (which defaults to `SurfaceView`) and every dissolve,
 slide, wipe and picture-in-picture silently stops working while the code still
 looks correct.
+
+## The chroma key shader
+
+`media/effects/ChromaKeyEffect.kt` is the only file in the app that touches
+Media3's shader API — `BaseGlShaderProgram`, `GlProgram`, `GlUtil`, `Size`,
+`VideoFrameProcessingException`. It was written against the actual 1.5.1 sources
+rather than from memory, and its uniforms are cross-checked against the GLSL, but
+it is still the largest new API surface in the project.
+
+It is deliberately self-contained. If those signatures differ in the version you
+resolve:
+
+1. delete `media/effects/ChromaKeyEffect.kt`
+2. delete the two `clip.chromaKey?.let { add(ChromaKeyEffect(it)) }` lines — one in
+   `CompositionFactory.overlayEffects`, one in `VideoProcessor.editedClip`
+3. delete the `chroma?.let { add(ChromaKeyEffect(it)) }` line in
+   `PreviewEngine.applySurfaceEffects`
+
+Everything else builds exactly as before; the panel still stores settings, they
+simply stop being applied. The shader assets can stay where they are.
+
+Note that `BaseGlShaderProgram` was called `SingleFrameGlShaderProgram` before
+Media3 1.2 — if you ever move the module backwards, that is the rename to make.

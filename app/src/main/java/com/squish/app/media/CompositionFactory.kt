@@ -6,6 +6,7 @@ import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import com.squish.app.editor.EditorUiState
+import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.TransitionType
 
@@ -108,6 +109,9 @@ object CompositionFactory {
     fun overlayEffects(clip: Clip, canvasWidth: Int, canvasHeight: Int): List<androidx.media3.common.Effect> {
         if (!clip.isOverlay || canvasWidth <= 0 || canvasHeight <= 0) return emptyList()
         return buildList {
+            // Keyed first, on the raw frame, so the matte is cut from the pixels the
+            // camera saw rather than from a scaled and resampled copy of them.
+            clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
             add(ClipTransformEffect(clip.keyframes, clip.staticTransform))
             add(Presentation.createForWidthAndHeight(canvasWidth, canvasHeight, Presentation.LAYOUT_SCALE_TO_FIT))
             if (clip.opacity < 1f) add(AlphaScale(clip.opacity))

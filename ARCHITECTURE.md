@@ -35,7 +35,7 @@ app/src/main/java/com/squish/app/
 │                  (split, trim, move, ripple, transitions, layers)
 ├── editor/        EditorViewModel + one immutable EditorUiState, all Compose panels
 ├── media/         Everything that touches a codec
-│   ├── effects/            the look catalogue and the grading maths
+│   ├── effects/            the look catalogue, grading maths and the key shader
 │   ├── VideoProcessor      export orchestration
 │   ├── CompositionFactory  A/B-roll sequences, transitions, overlay geometry
 │   ├── ProxyEngine         background 540p proxies for smooth scrubbing
@@ -144,6 +144,36 @@ Whichever shot is already driving the clock keeps it for the whole transition.
 Handing it over mid-blend would step the playhead by however much the two players
 happen to differ.
 
+### Chroma key, and the one shader in the app
+Every built-in Media3 colour effect maps RGB to RGB. Chroma key has to produce
+**per-pixel alpha**, and no combination of Contrast, HslAdjustment, RgbAdjustment
+or a 3D LUT can cut a hole in a frame — so unlike the look library, there is no
+version of this that avoids a shader. It is the app's only one.
+
+The comparison happens in chroma alone, the UV plane of YCbCr with luma discarded.
+A green screen is never evenly lit, and a key that compares full RGB punches holes
+in the shadowed folds of the cloth while leaving the hot spots solid. Chroma barely
+moves under a lighting change, so one setting holds across the frame. Spill
+suppression pulls surviving pixels toward their own luminance in proportion to how
+close they still are to the key, which is what removes the green fringe on hair
+without touching anything else.
+
+The same `ChromaKeyEffect` instance type runs in the preview and the export — the
+preview player is handed it through `setVideoEffects` — so the key you tune is the
+key that renders.
+
+**The default threshold was tuned against the maths, not by eye.** Neutral colours
+— a white shirt, a grey wall, black hair — all sit about 0.33 from digital green in
+this space, while a green screen in deep shadow is still within 0.20 of it. The
+usable window is therefore about 0.20 to 0.30, and the first draft of this defaulted
+to 0.38, which would have deleted the subject's shirt. It now defaults to 0.24, mid
+-window, with roughly 0.05 of margin either side.
+
+The same analysis says a **blue** screen has almost no window at all, because denim
+sits 0.183 from digital blue and the screen's own shadows reach 0.178. That is
+physics rather than a bug, and the panel says so rather than letting you find out
+during a shoot.
+
 ### Keyframes, and the one hook that makes them possible
 Media3's per-frame effects are static: `Contrast`, `HslAdjustment` and `AlphaScale`
 are handed one value and keep it for the whole clip. `MatrixTransformation` is the
@@ -218,6 +248,7 @@ evict, rebuilt on demand.
 - Automatic dual-system audio sync by RMS-envelope cross-correlation
 - Speed, rotation, crop with live framing guides
 - Text overlays with timing, colour, size and position
+- Chroma key with spill suppression, sampled from your own frame, live in preview
 - Keyframed motion: scale, position and rotation over time, with smooth, linear
   and hold easing, six one-tap presets, and live preview
 - Colour: brightness, contrast, saturation

@@ -17,6 +17,7 @@ import com.squish.app.media.VideoProcessor
 import com.squish.app.media.audio.AudioSyncAnalyzer
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.WaveformBuilder
+import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
@@ -444,6 +445,40 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         offsetX: Float? = null,
         offsetY: Float? = null
     ) = mutateVideoTrack { it.withOverlayGeometry(clipId, opacity, scale, offsetX, offsetY) }
+
+    // ---- Green screen -------------------------------------------------------------
+
+    /** Turns keying on for a clip, or off when passed null. */
+    fun setChromaKey(clipId: String, key: ChromaKey?) = mutateTimeline { timeline ->
+        timeline.copy(
+            clips = timeline.clips.map { if (it.id == clipId) it.copy(chromaKey = key) else it }
+        )
+    }
+
+    fun updateChromaKey(
+        clipId: String,
+        keyColorArgb: Int? = null,
+        similarity: Float? = null,
+        smoothness: Float? = null,
+        spill: Float? = null
+    ) = mutateTimeline { timeline ->
+        val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+        val current = clip.chromaKey ?: ChromaKey()
+        val next = current.copy(
+            keyColorArgb = keyColorArgb ?: current.keyColorArgb,
+            similarity = (similarity ?: current.similarity).coerceIn(0.02f, 0.6f),
+            smoothness = (smoothness ?: current.smoothness).coerceIn(0.005f, 0.4f),
+            spill = (spill ?: current.spill).coerceIn(0.005f, 0.4f)
+        )
+        timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(chromaKey = next) else it })
+    }
+
+    /** The frame under the playhead, for sampling the screen colour out of. */
+    suspend fun sampleFrame(clip: Clip, atMs: Long): android.graphics.Bitmap? {
+        val uri = clip.uri ?: _state.value.sourceUri ?: return null
+        val inClip = (clip.sourceInMs + (atMs - clip.timelineStartMs)).coerceIn(clip.sourceInMs, clip.sourceOutMs)
+        return ThumbnailExtractor.frameAt(getApplication(), uri, inClip)
+    }
 
     // ---- Motion and keyframes ---------------------------------------------------
 
