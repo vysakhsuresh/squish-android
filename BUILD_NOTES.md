@@ -155,3 +155,36 @@ about captioning breaks if this whole file never succeeds on a given device.
 **It never falls back to `createSpeechRecognizer`**, which is free to send audio to
 a server. That would break the app's central promise, so the on-device path is the
 only path.
+
+## Checking work without an Android SDK
+
+The development sandbox has no Android SDK and cannot reach Google's Maven, so
+`kotlinc` there reports every Compose and Media3 reference as unresolved. A real
+mistake — a renamed function, a missing import — looks identical to that noise,
+which is how three calls to a renamed `mutateVideoTrack` and a missing
+`Dispatchers` import both survived several apparently clean runs.
+
+Two scripts separate signal from noise. Neither replaces building the project;
+they catch the class of error that a sandbox build cannot.
+
+```
+kotlinc -nowarn -d /dev/null $(find app/src/main/java -name '*.kt') > log 2>&1
+python3 tools/check_unresolved.py log        # renamed / misspelled references
+python3 tools/check_modifier_imports.py      # Modifier extensions used unimported
+```
+
+`check_unresolved.py` drops member accesses, names the file imports and names the
+file declares, leaving bare references to things that do not exist. Known
+unresolvable names live in `tools/unresolved_baseline.txt`; regenerate it with
+`--write-baseline` after a dependency change.
+
+`check_modifier_imports.py` exists because a missing extension import shows up as
+an unresolved *member*, which the first script deliberately ignores. It learns each
+extension's expected import from the rest of the codebase and inspects only chains
+rooted at `Modifier`, so ordinary properties like `list.size` cannot be mistaken
+for one.
+
+The pure-Kotlin files — the look catalog, the keyframe and tracking maths, the SRT
+parser — have no Android dependencies, so they compile and run for real. Several
+bugs were caught that way: a negated motion estimate, a crop budget measured
+against the wrong axis, an SRT index swallowed into the previous caption.
