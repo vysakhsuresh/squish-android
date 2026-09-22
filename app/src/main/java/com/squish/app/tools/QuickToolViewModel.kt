@@ -11,6 +11,7 @@ import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.Quality
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.GallerySaver
+import com.squish.app.media.SquishError
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.VideoProcessor
 import com.squish.app.timeline.Clip
@@ -218,7 +219,10 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
-                onError(throwable.message ?: "Export failed")
+                // Same typed vocabulary as the editor, so a failure reads the same
+                // way whichever door the user came in through.
+                val problem = SquishError.from(throwable)
+                onError("${problem.title}. ${problem.fix}")
             }
         }
     }

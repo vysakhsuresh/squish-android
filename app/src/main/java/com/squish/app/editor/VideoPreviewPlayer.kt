@@ -34,6 +34,7 @@ import kotlin.math.abs
 fun VideoPreviewPlayer(
     videoClips: List<Clip>,
     fallbackUri: Uri,
+    proxyUri: Uri?,
     audioUri: Uri?,
     audioTrimStartMs: Long,
     audioPlacementMs: Long,
@@ -53,8 +54,10 @@ fun VideoPreviewPlayer(
     val ordered = remember(videoClips) { videoClips.sortedBy { it.timelineStartMs } }
 
     // Rebuild only when the edit actually changes shape, not on every recomposition.
-    val editSignature = remember(ordered) {
-        ordered.joinToString("|") { "${it.id}@${it.sourceInMs}-${it.sourceOutMs}" }
+    // The proxy is part of the signature so the playlist swaps over the moment one
+    // finishes building, mid-session, without the user doing anything.
+    val editSignature = remember(ordered, proxyUri) {
+        ordered.joinToString("|") { "${it.id}@${it.sourceInMs}-${it.sourceOutMs}" } + "#" + proxyUri
     }
 
     val videoPlayer = remember(fallbackUri) {
@@ -80,8 +83,15 @@ fun VideoPreviewPlayer(
 
     LaunchedEffect(editSignature, fallbackUri) {
         val items = ordered.map { clip ->
+            // Clips of the main source play from its proxy when one exists. The
+            // proxy is a straight transcode, so it shares the source's timebase and
+            // every trim point still lands on the same frame. Export never comes
+            // through here; it reads the originals.
+            val sourceOfClip = clip.uri ?: fallbackUri
+            val playbackUri = if (proxyUri != null && sourceOfClip == fallbackUri) proxyUri else sourceOfClip
+
             MediaItem.Builder()
-                .setUri(clip.uri ?: fallbackUri)
+                .setUri(playbackUri)
                 .setClippingConfiguration(
                     MediaItem.ClippingConfiguration.Builder()
                         .setStartPositionMs(clip.sourceInMs)
@@ -89,7 +99,7 @@ fun VideoPreviewPlayer(
                         .build()
                 )
                 .build()
-        }.ifEmpty { listOf(MediaItem.fromUri(fallbackUri)) }
+        }.ifEmpty { listOf(MediaItem.fromUri(proxyUri ?: fallbackUri)) }
 
         // Hold our place across a re-trim so the preview does not jump to the top
         // every time a handle moves.

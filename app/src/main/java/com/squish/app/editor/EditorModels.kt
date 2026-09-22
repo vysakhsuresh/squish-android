@@ -1,6 +1,8 @@
 package com.squish.app.editor
 
 import android.net.Uri
+import com.squish.app.data.ProjectSnapshot
+import com.squish.app.media.SquishError
 import com.squish.app.media.audio.Waveform
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
@@ -30,6 +32,28 @@ data class TextOverlayItem(
 )
 
 enum class SyncStatus { Idle, Analyzing, Matched, NoMatch }
+
+/**
+ * Where the low-resolution stand-in for heavy footage has got to. Only 4K-and-up
+ * sources ever leave [NotNeeded]; everything smaller plays fine as it is.
+ */
+enum class ProxyStatus { NotNeeded, Building, Ready, Failed }
+
+/**
+ * An edit recovered from disk after the app was killed, offered rather than
+ * applied: silently overwriting what someone just opened would be its own kind of
+ * data loss. [sourceReadable] is false when the original clip can no longer be
+ * opened - the permission a gallery picker grants does not outlive the process -
+ * in which case the edit is kept and re-attaches when that clip is opened again.
+ */
+data class RecoveryOffer(
+    val snapshot: ProjectSnapshot,
+    val sourceReadable: Boolean
+) {
+    val clipCount: Int get() = snapshot.clipCount
+    val savedAtMillis: Long get() = snapshot.savedAtMillis
+    val durationMs: Long get() = snapshot.totalDurationMs
+}
 
 data class EditorUiState(
     val sourceUri: Uri? = null,
@@ -89,6 +113,16 @@ data class EditorUiState(
 
     val selectedClipId: String? = null,
     val pixelsPerSecond: Float = 42f,
+
+    // Proxy media. The preview plays [proxyUri] when it exists; export never does.
+    val proxyUri: Uri? = null,
+    val proxyStatus: ProxyStatus = ProxyStatus.NotNeeded,
+
+    // A session that survived the process being killed, waiting to be accepted.
+    val recovery: RecoveryOffer? = null,
+
+    // The last failure, in sentences. Null whenever the editor is healthy.
+    val failure: SquishError? = null,
 
     val isExporting: Boolean = false,
     val estimatedOutputBytes: Long = 0

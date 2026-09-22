@@ -74,7 +74,6 @@ fun EditorScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    var errorMessage by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(EditorTab.Trim) }
 
     LaunchedEffect(sourceUri) { viewModel.load(sourceUri) }
@@ -116,8 +115,7 @@ fun EditorScreen(
                         .clip(RoundedCornerShape(9.dp))
                         .background(if (state.isExporting) SquishColors.Surface else SquishColors.Primary)
                         .clickable(enabled = !state.isExporting && !state.isLoadingSource) {
-                            errorMessage = null
-                            viewModel.export(onResult = onExported, onError = { errorMessage = it })
+                            viewModel.export(onResult = onExported)
                         }
                         .padding(horizontal = 12.dp, vertical = 7.dp)
                 ) {
@@ -147,6 +145,7 @@ fun EditorScreen(
                 VideoPreviewPlayer(
                     videoClips = state.videoClips,
                     fallbackUri = sourceUri,
+                    proxyUri = state.proxyUri,
                     audioUri = state.audioTrackUri,
                     audioTrimStartMs = state.audioTrimStartMs,
                     audioPlacementMs = state.audioPlacementMs,
@@ -163,7 +162,9 @@ fun EditorScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            ProxyIndicator(status = state.proxyStatus, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+
+            Spacer(modifier = Modifier.height(2.dp))
 
             val timeline = state.toTimeline()
             TimelineEditor(
@@ -188,12 +189,20 @@ fun EditorScreen(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
-            errorMessage?.let {
-                Text(
-                    it,
-                    color = SquishColors.Magenta,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            state.recovery?.let { offer ->
+                RecoveryBanner(
+                    offer = offer,
+                    onRestore = viewModel::acceptRecovery,
+                    onDiscard = viewModel::dismissRecovery,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+
+            state.failure?.let { failure ->
+                FailureCard(
+                    error = failure,
+                    onDismiss = viewModel::clearFailure,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }
 

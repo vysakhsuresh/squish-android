@@ -63,6 +63,32 @@ burned-in captions · multi-clip merge · export straight to the gallery
 
 No cloud upload. No watermark. No paywalled resolution.
 
+## Three promises, implemented
+
+These are the reasons to pick Squish over the big names, and they are code, not
+marketing copy. [ARCHITECTURE.md](ARCHITECTURE.md) has the detail.
+
+**Nothing leaves your device.** No network permission is requested, no SDK phones
+home, there is no account and no upload step. Every frame is decoded, composed
+and encoded here. Verify it from the manifest.
+
+**No edit is ever lost.** The whole timeline is written to disk every 1.5 seconds,
+atomically: a temp file is `fsync`ed, then `rename`d over the live document, so
+the saved project is always a complete version — never a truncated one, however
+abruptly Android kills the app. Reopen and the edit is offered back, with the
+previous version kept alongside as a second parachute.
+
+**Failures are explained.** Every error carries what happened, why, and the one
+action that fixes it — "This phone can't decode that clip (HEVC)", not "Export
+failed". Disk space, permissions, missing audio and impossible resolutions are
+checked *before* encoding starts, so a doomed export fails in a second instead
+of two minutes.
+
+**And heavy footage stays smooth.** Anything above 1080p gets a 540p stand-in
+built in the background while you keep working. The preview plays the proxy; the
+export pipeline never sees it and always reads the camera original, so nothing
+about the finished file is degraded.
+
 ## Stack
 
 Kotlin · Jetpack Compose (Material 3) · Media3 Transformer for export · Media3
@@ -103,22 +129,27 @@ minSdk is 29 so gallery export can use scoped-storage MediaStore with no legacy
 `WRITE_EXTERNAL_STORAGE` path — one storage code path instead of two, and no
 runtime storage permission at all.
 
-**Before your first build, read [BUILD_NOTES.md](BUILD_NOTES.md).** This project
-has never been through a compiler (the build sandbox has no Android SDK and
-cannot reach Google's Maven), so that file lists the handful of Media3 calls
-worth checking and their one-line fallbacks.
+**[BUILD_NOTES.md](BUILD_NOTES.md)** lists the Media3 calls worth knowing about
+and their one-line fallbacks. Note that the development sandbox has no Android
+SDK and cannot reach Google's Maven, so changes made there are parse-checked
+against the Kotlin compiler but compiled for the first time on your machine.
 
 ## Not built yet
 
-Honest list, not silent omissions: reverse clip (needs frame-by-frame
-re-encoding, not a Transformer flag), numeric export progress (currently an
-indeterminate spinner), background/queued export via WorkManager, batch export,
-audio fades and ducking, and keyframed effects.
+Honest list, not silent omissions: an effects/filter library, keyframes, chroma
+key, masking, auto-captions, stabilization and motion tracking — all scoped with
+real timescales in [ARCHITECTURE.md](ARCHITECTURE.md). Plus reverse clip (needs
+frame-by-frame re-encoding, not a Transformer flag), numeric export progress
+(currently an indeterminate spinner), background/queued export via WorkManager,
+batch export, and audio fades and ducking.
 
 ## Brand
 
-Coral `#FF6B4A` primary, teal `#33E0C2` for audio and for wins (savings,
-matches, success), yellow for markers and warnings, dark `#0E0E12` ground.
+Sampled from the logo: deep navy `#0A0E2D` ground, with the mark's cyan → blue →
+violet → magenta → orange run carrying meaning rather than decoration — violet is
+video, cyan is audio, amber is text and markers, magenta is destructive. Blue
+`#4A7BFF` is the primary action; at button size the logo's orange read as an
+error state and fought the clip colours, so it stays an accent.
 
 Type is **Space Grotesk**, inherited from Layerlink — the same four weight files
 (400/500/600/700), bundled rather than fetched so bold is the real bold face.

@@ -6,8 +6,11 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.squish.app.data.ExportRecord
+import com.squish.app.data.ProjectSnapshot
 import com.squish.app.data.SquishRepositories
 import com.squish.app.media.ExportPresets
+import com.squish.app.media.ProxyEngine
+import com.squish.app.media.SquishError
 import com.squish.app.media.GallerySaver
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.VideoProcessor
@@ -29,6 +32,7 @@ import com.squish.app.timeline.withClipTrimmed
 import com.squish.app.timeline.withSplitAtPlayhead
 import com.squish.app.timeline.zoomedBy
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,13 +49,34 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private val processor = VideoProcessor(application)
     private val historyRepository = SquishRepositories.history(application)
+    private val autosave = SquishRepositories.autosave(application)
 
     private var loadedUri: Uri? = null
     private var syncJob: Job? = null
+    private var proxyJob: Job? = null
+
+    init {
+        // Aggressive by design. The write is atomic and skipped entirely when
+        // nothing changed, so the cost of a tick is one string comparison, and the
+        // worst case after a kill is a second and a half of lost work.
+        viewModelScope.launch {
+            while (true) {
+                delay(AUTOSAVE_INTERVAL_MS)
+                val current = _state.value
+                if (!current.isExporting) autosave.save(current)
+            }
+        }
+    }
 
     fun load(uri: Uri) {
         if (loadedUri == uri) return
         loadedUri = uri
+
+        // Read before anything else writes. The autosave timer is already running,
+        // and once this session starts saving it will overwrite the very document
+        // we might need to recover.
+        val recoverable = autosave.peek()
+
         _state.update { it.copy(sourceUri = uri, isLoadingSource = true) }
 
         viewModelScope.launch {
@@ -85,6 +110,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
             recomputeEstimate()
+            offerRecovery(recoverable, uri)
+            startProxy(uri, meta.width, meta.height)
 
             val pcm = PcmDecoder.decodeMono(getApplication(), uri)
             _state.update {
@@ -496,10 +523,24 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
     }.getOrNull() ?: uri.lastPathSegment
 
-    fun export(onResult: (String) -> Unit, onError: (String) -> Unit) {
+    fun clearFailure() = _state.update { it.copy(failure = null) }
+
+    fun export(onResult: (String) -> Unit) {
         val current = _state.value
-        val sourceUri = current.sourceUri ?: return
-        _state.update { it.copy(isExporting = true) }
+        val sourceUri = current.sourceUri ?: run {
+            _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+            return
+        }
+
+        // Checked before a single frame is encoded. A two-minute export that dies
+        // on the last chunk for want of disk space is the worst possible way to
+        // learn about it.
+        SquishError.preflight(getApplication(), current, current.estimatedOutputBytes)?.let { problem ->
+            _state.update { it.copy(failure = problem) }
+            return
+        }
+
+        _state.update { it.copy(isExporting = true, failure = null) }
 
         viewModelScope.launch {
             val outputDir = File(getApplication<Application>().getExternalFilesDir(null), "exports")
@@ -524,14 +565,154 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                         createdAtMillis = System.currentTimeMillis()
                     )
                 )
+                // The work is in the gallery now, so there is nothing left to
+                // recover and no reason to offer it on the next launch.
+                autosave.markCompleted()
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
-                onError(throwable.message ?: "Export failed")
+                _state.update { it.copy(failure = SquishError.from(throwable)) }
+            }
+        }
+    }
+
+    // ---- Crash recovery -------------------------------------------------------
+
+    /**
+     * Surfaces a saved session, without applying it. The offer stands until it is
+     * accepted or dismissed; a snapshot for a clip that is not the one being opened
+     * is left on disk untouched so it re-attaches when that clip comes back.
+     */
+    private fun offerRecovery(snapshot: ProjectSnapshot?, openedUri: Uri) {
+        if (snapshot == null) return
+
+        // An untouched clip is not work, and offering to restore it would only
+        // teach the user to dismiss this banner without reading it.
+        if (snapshot.isTrivial) return
+
+        val sameClip = snapshot.sourceUri == openedUri
+
+        // A snapshot whose media is gone is worth nothing to restore, so only a
+        // readable source ever produces an offer for a different clip.
+        val readable = sameClip || canRead(snapshot.sourceUri)
+        if (!sameClip && !readable) return
+
+        // A session already finished by an export was cleared; anything still here
+        // ended some other way, which is exactly the case worth recovering.
+        _state.update { it.copy(recovery = RecoveryOffer(snapshot, readable)) }
+    }
+
+    fun dismissRecovery() {
+        autosave.clear()
+        _state.update { it.copy(recovery = null) }
+    }
+
+    fun acceptRecovery() {
+        val snapshot = _state.value.recovery?.snapshot ?: return
+        _state.update { it.copy(recovery = null, isLoadingSource = true) }
+
+        viewModelScope.launch {
+            // Metadata is re-probed rather than trusted from the file: the same clip
+            // can come back through a different provider with a different rotation.
+            val meta = ThumbnailExtractor.probe(getApplication(), snapshot.sourceUri)
+            loadedUri = snapshot.sourceUri
+            _state.update { it.applying(snapshot, meta.durationMs, meta.width, meta.height, meta.fps) }
+            recomputeEstimate()
+            startProxy(snapshot.sourceUri, meta.width, meta.height)
+
+            val pcm = PcmDecoder.decodeMono(getApplication(), snapshot.sourceUri)
+            _state.update {
+                it.copy(
+                    sourceHasAudio = pcm != null,
+                    videoWaveform = pcm?.let { decoded -> WaveformBuilder.build(decoded) }
+                )
+            }
+        }
+    }
+
+    private fun EditorUiState.applying(
+        snapshot: ProjectSnapshot,
+        durationMs: Long,
+        width: Int,
+        height: Int,
+        fps: Float
+    ): EditorUiState = copy(
+        sourceUri = snapshot.sourceUri,
+        isLoadingSource = false,
+        durationMs = durationMs,
+        sourceWidth = width,
+        sourceHeight = height,
+        fps = fps,
+        trimStartMs = 0L,
+        trimEndMs = durationMs,
+        videoClips = snapshot.clips,
+        textOverlays = snapshot.textOverlays,
+        markers = snapshot.markers,
+        playheadMs = snapshot.playheadMs,
+        quality = snapshot.quality,
+        fitToSize = snapshot.fitToSize,
+        targetSizeMb = snapshot.targetSizeMb,
+        audioOnly = snapshot.audioOnly,
+        muteOriginal = snapshot.muteOriginal,
+        originalVolume = snapshot.originalVolume,
+        rotationDegrees = snapshot.rotationDegrees,
+        cropAspect = snapshot.cropAspect,
+        speed = snapshot.speed,
+        brightness = snapshot.brightness,
+        contrast = snapshot.contrast,
+        saturation = snapshot.saturation,
+        pixelsPerSecond = snapshot.pixelsPerSecond,
+        audioTrackUri = snapshot.audioTrackUri,
+        audioTrackName = snapshot.audioTrackName,
+        audioTrackDurationMs = snapshot.audioTrackDurationMs,
+        audioTrimStartMs = snapshot.audioTrimStartMs,
+        audioTrimEndMs = snapshot.audioTrimEndMs,
+        audioPlacementMs = snapshot.audioPlacementMs,
+        audioVolume = snapshot.audioVolume,
+        selectedClipId = null,
+        failure = null
+    )
+
+    private fun canRead(uri: Uri): Boolean = runCatching {
+        getApplication<Application>().contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+    }.getOrDefault(false)
+
+    // ---- Proxy media ----------------------------------------------------------
+
+    /**
+     * Heavy footage gets a 540p stand-in for the preview player while the export
+     * pipeline keeps reading the original. Everything at or below 1080p skips this
+     * entirely - it already scrubs smoothly, and transcoding it would cost more
+     * time than it ever saves.
+     */
+    private fun startProxy(uri: Uri, width: Int, height: Int) {
+        proxyJob?.cancel()
+
+        if (!ProxyEngine.isWorthProxying(width, height)) {
+            _state.update { it.copy(proxyUri = null, proxyStatus = ProxyStatus.NotNeeded) }
+            return
+        }
+
+        ProxyEngine.cached(getApplication(), uri)?.let { file ->
+            _state.update { it.copy(proxyUri = Uri.fromFile(file), proxyStatus = ProxyStatus.Ready) }
+            return
+        }
+
+        _state.update { it.copy(proxyUri = null, proxyStatus = ProxyStatus.Building) }
+        proxyJob = viewModelScope.launch {
+            val file = ProxyEngine.ensure(getApplication(), uri)
+            _state.update {
+                if (file != null) {
+                    it.copy(proxyUri = Uri.fromFile(file), proxyStatus = ProxyStatus.Ready)
+                } else {
+                    // Not worth a dialogue: the original still plays, just heavier.
+                    it.copy(proxyUri = null, proxyStatus = ProxyStatus.Failed)
+                }
             }
         }
     }
 
     private companion object {
         const val MIN_SYNC_CONFIDENCE = 0.28f
+        const val AUTOSAVE_INTERVAL_MS = 1_500L
     }
 }

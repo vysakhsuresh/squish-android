@@ -90,8 +90,13 @@ class VideoProcessor(private val context: Context) {
                 })
                 .build()
 
-            transformer.start(composition, outputFile.absolutePath)
-            continuation.invokeOnCancellation { transformer.cancel() }
+            continuation.invokeOnCancellation { runCatching { transformer.cancel() } }
+
+            // start() validates the composition on the calling thread and throws
+            // synchronously for a malformed one, which the listener never sees.
+            // Without this the coroutine would hang forever on an invalid edit.
+            runCatching { transformer.start(composition, outputFile.absolutePath) }
+                .onFailure { if (continuation.isActive) continuation.resume(Result.failure(it)) }
         }
 
     /**

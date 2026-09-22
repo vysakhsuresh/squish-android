@@ -1,0 +1,299 @@
+package com.squish.app.data
+
+import android.content.Context
+import android.net.Uri
+import com.squish.app.editor.CropAspect
+import com.squish.app.editor.EditorUiState
+import com.squish.app.editor.Quality
+import com.squish.app.editor.TextOverlayItem
+import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.Transition
+import com.squish.app.timeline.TransitionType
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+
+/**
+ * The edit in progress, on disk, all the time.
+ *
+ * Android kills backgrounded apps without warning and video editors are the first
+ * to go, because they hold the most memory. Every editor that keeps the timeline
+ * only in RAM loses the session when that happens. This one does not.
+ *
+ * Writes are atomic in the POSIX sense: the new document goes to a temporary file,
+ * that file is flushed to the platter, and only then is it renamed over the live
+ * one. rename(2) is atomic, so the saved project is always either the previous
+ * complete version or the new complete version - never a half-written file, no
+ * matter when the process dies. The previous version is kept alongside as a second
+ * parachute in case the JSON itself is ever unreadable.
+ */
+class ProjectAutosave(context: Context) {
+
+    private val dir = File(context.filesDir, "projects").apply { mkdirs() }
+    private val live = File(dir, "current.json")
+    private val backup = File(dir, "current.bak.json")
+    private val scratch = File(dir, "current.tmp.json")
+
+    /** Cheap change detector, so an idle editor never touches the disk. */
+    @Volatile
+    private var lastSignature: String? = null
+
+    /**
+     * Persists the edit if anything has changed since the last write. Safe to call
+     * on a timer; it is a no-op when nothing moved.
+     */
+    fun save(state: EditorUiState): Boolean {
+        if (state.sourceUri == null || state.isLoadingSource) return false
+
+        // The signature is taken from the edit alone. Stamping the time first would
+        // make every tick look like a change and turn "save when something moved"
+        // into "write to flash every 1.5 seconds, forever".
+        val document = encode(state)
+        val signature = document.toString()
+        if (signature == lastSignature) return false
+
+        document.put("savedAtMillis", System.currentTimeMillis())
+
+        val ok = runCatching {
+            FileOutputStream(scratch).use { out ->
+                out.write(document.toString().toByteArray())
+                out.flush()
+                out.fd.sync()          // on the platter, not just in the page cache
+            }
+            if (live.exists()) {
+                backup.delete()
+                live.copyTo(backup, overwrite = true)
+            }
+            check(scratch.renameTo(live)) { "atomic rename refused" }
+        }.isSuccess
+
+        if (ok) lastSignature = signature
+        return ok
+    }
+
+    /** A recoverable session, if one survived. */
+    fun peek(): ProjectSnapshot? = read(live) ?: read(backup)
+
+    fun clear() {
+        lastSignature = null
+        listOf(live, backup, scratch).forEach { runCatching { it.delete() } }
+    }
+
+    /**
+     * Marks the current edit as finished. Called after a successful export: the
+     * work reached the gallery, so there is nothing left to recover and offering
+     * to restore it on next launch would only confuse.
+     */
+    fun markCompleted() = clear()
+
+    private fun read(file: File): ProjectSnapshot? {
+        if (!file.exists()) return null
+        return runCatching { decode(JSONObject(file.readText())) }.getOrNull()
+    }
+
+    // ---- Encoding -------------------------------------------------------------
+
+    private fun encode(state: EditorUiState): JSONObject = JSONObject().apply {
+        put("version", FORMAT_VERSION)
+        put("sourceUri", state.sourceUri.toString())
+        put("durationMs", state.durationMs)
+        put("playheadMs", state.playheadMs)
+        put("quality", state.quality.name)
+        put("fitToSize", state.fitToSize)
+        put("targetSizeMb", state.targetSizeMb)
+        put("audioOnly", state.audioOnly)
+        put("muteOriginal", state.muteOriginal)
+        put("originalVolume", state.originalVolume.toDouble())
+        put("rotationDegrees", state.rotationDegrees)
+        put("cropAspect", state.cropAspect.name)
+        put("speed", state.speed.toDouble())
+        put("brightness", state.brightness.toDouble())
+        put("contrast", state.contrast.toDouble())
+        put("saturation", state.saturation.toDouble())
+        put("pixelsPerSecond", state.pixelsPerSecond.toDouble())
+        put("markers", JSONArray().apply { state.markers.forEach { put(it) } })
+        put("clips", JSONArray().apply { state.videoClips.forEach { put(encodeClip(it)) } })
+        put("textOverlays", JSONArray().apply { state.textOverlays.forEach { put(encodeText(it)) } })
+
+        state.audioTrackUri?.let { put("audioTrackUri", it.toString()) }
+        put("audioTrackName", state.audioTrackName ?: JSONObject.NULL)
+        put("audioTrackDurationMs", state.audioTrackDurationMs)
+        put("audioTrimStartMs", state.audioTrimStartMs)
+        put("audioTrimEndMs", state.audioTrimEndMs)
+        put("audioPlacementMs", state.audioPlacementMs)
+        put("audioVolume", state.audioVolume.toDouble())
+    }
+
+    private fun encodeClip(clip: Clip): JSONObject = JSONObject().apply {
+        put("id", clip.id)
+        put("uri", clip.uri?.toString() ?: JSONObject.NULL)
+        put("label", clip.label)
+        put("sourceInMs", clip.sourceInMs)
+        put("sourceOutMs", clip.sourceOutMs)
+        put("timelineStartMs", clip.timelineStartMs)
+        put("sourceDurationMs", clip.sourceDurationMs)
+        put("volume", clip.volume.toDouble())
+        put("speed", clip.speed.toDouble())
+        put("transitionType", clip.transitionIn.type.name)
+        put("transitionMs", clip.transitionIn.durationMs)
+        put("layer", clip.layer)
+        put("opacity", clip.opacity.toDouble())
+        put("scale", clip.scale.toDouble())
+        put("offsetXFraction", clip.offsetXFraction.toDouble())
+        put("offsetYFraction", clip.offsetYFraction.toDouble())
+    }
+
+    private fun encodeText(item: TextOverlayItem): JSONObject = JSONObject().apply {
+        put("id", item.id)
+        put("text", item.text)
+        put("startMs", item.startMs)
+        put("endMs", item.endMs)
+        put("colorArgb", item.colorArgb)
+        put("xFraction", item.xFraction.toDouble())
+        put("yFraction", item.yFraction.toDouble())
+        put("sizeSp", item.sizeSp)
+    }
+
+    // ---- Decoding -------------------------------------------------------------
+
+    private fun decode(json: JSONObject): ProjectSnapshot? {
+        if (json.optInt("version") != FORMAT_VERSION) return null
+        val sourceUri = json.optString("sourceUri").takeIf { it.isNotBlank() } ?: return null
+
+        val clips = json.optJSONArray("clips")?.let { array ->
+            (0 until array.length()).mapNotNull { i -> decodeClip(array.optJSONObject(i)) }
+        }.orEmpty()
+        if (clips.isEmpty()) return null
+
+        val overlays = json.optJSONArray("textOverlays")?.let { array ->
+            (0 until array.length()).mapNotNull { i -> decodeText(array.optJSONObject(i)) }
+        }.orEmpty()
+
+        val markers = json.optJSONArray("markers")?.let { array ->
+            (0 until array.length()).map { i -> array.optLong(i) }
+        }.orEmpty()
+
+        return ProjectSnapshot(
+            sourceUri = Uri.parse(sourceUri),
+            savedAtMillis = json.optLong("savedAtMillis"),
+            clipCount = clips.size,
+            clips = clips,
+            textOverlays = overlays,
+            markers = markers,
+            playheadMs = json.optLong("playheadMs"),
+            quality = enumOrNull<Quality>(json.optString("quality")) ?: Quality.Medium,
+            fitToSize = json.optBoolean("fitToSize"),
+            targetSizeMb = json.optInt("targetSizeMb", 16),
+            audioOnly = json.optBoolean("audioOnly"),
+            muteOriginal = json.optBoolean("muteOriginal"),
+            originalVolume = json.optDouble("originalVolume", 1.0).toFloat(),
+            rotationDegrees = json.optInt("rotationDegrees"),
+            cropAspect = enumOrNull<CropAspect>(json.optString("cropAspect")) ?: CropAspect.Original,
+            speed = json.optDouble("speed", 1.0).toFloat(),
+            brightness = json.optDouble("brightness").toFloat(),
+            contrast = json.optDouble("contrast").toFloat(),
+            saturation = json.optDouble("saturation").toFloat(),
+            pixelsPerSecond = json.optDouble("pixelsPerSecond", 42.0).toFloat(),
+            audioTrackUri = json.optString("audioTrackUri").takeIf { it.isNotBlank() }?.let(Uri::parse),
+            audioTrackName = json.optString("audioTrackName").takeIf { it.isNotBlank() && it != "null" },
+            audioTrackDurationMs = json.optLong("audioTrackDurationMs"),
+            audioTrimStartMs = json.optLong("audioTrimStartMs"),
+            audioTrimEndMs = json.optLong("audioTrimEndMs"),
+            audioPlacementMs = json.optLong("audioPlacementMs"),
+            audioVolume = json.optDouble("audioVolume", 1.0).toFloat()
+        )
+    }
+
+    private fun decodeClip(json: JSONObject?): Clip? {
+        if (json == null) return null
+        return Clip(
+            id = json.optString("id").takeIf { it.isNotBlank() } ?: return null,
+            kind = ClipKind.Video,
+            uri = json.optString("uri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse),
+            label = json.optString("label", "Clip"),
+            sourceInMs = json.optLong("sourceInMs"),
+            sourceOutMs = json.optLong("sourceOutMs"),
+            timelineStartMs = json.optLong("timelineStartMs"),
+            sourceDurationMs = json.optLong("sourceDurationMs"),
+            volume = json.optDouble("volume", 1.0).toFloat(),
+            speed = json.optDouble("speed", 1.0).toFloat(),
+            transitionIn = Transition(
+                type = enumOrNull<TransitionType>(json.optString("transitionType")) ?: TransitionType.None,
+                durationMs = json.optLong("transitionMs", 500L)
+            ),
+            layer = json.optInt("layer"),
+            opacity = json.optDouble("opacity", 1.0).toFloat(),
+            scale = json.optDouble("scale", 1.0).toFloat(),
+            offsetXFraction = json.optDouble("offsetXFraction").toFloat(),
+            offsetYFraction = json.optDouble("offsetYFraction").toFloat()
+        )
+    }
+
+    private fun decodeText(json: JSONObject?): TextOverlayItem? {
+        if (json == null) return null
+        return TextOverlayItem(
+            id = json.optString("id").takeIf { it.isNotBlank() } ?: return null,
+            text = json.optString("text"),
+            startMs = json.optLong("startMs"),
+            endMs = json.optLong("endMs"),
+            colorArgb = json.optInt("colorArgb"),
+            xFraction = json.optDouble("xFraction", 0.5).toFloat(),
+            yFraction = json.optDouble("yFraction", 0.85).toFloat(),
+            sizeSp = json.optInt("sizeSp", 28)
+        )
+    }
+
+    private inline fun <reified T : Enum<T>> enumOrNull(name: String?): T? =
+        name?.let { runCatching { enumValueOf<T>(it) }.getOrNull() }
+
+    private companion object {
+        /** Bump when the shape changes; older documents are then ignored rather than misread. */
+        const val FORMAT_VERSION = 1
+    }
+}
+
+/** A recovered edit, ready to be poured back into the editor. */
+data class ProjectSnapshot(
+    val sourceUri: Uri,
+    val savedAtMillis: Long,
+    val clipCount: Int,
+    val clips: List<Clip>,
+    val textOverlays: List<TextOverlayItem>,
+    val markers: List<Long>,
+    val playheadMs: Long,
+    val quality: Quality,
+    val fitToSize: Boolean,
+    val targetSizeMb: Int,
+    val audioOnly: Boolean,
+    val muteOriginal: Boolean,
+    val originalVolume: Float,
+    val rotationDegrees: Int,
+    val cropAspect: CropAspect,
+    val speed: Float,
+    val brightness: Float,
+    val contrast: Float,
+    val saturation: Float,
+    val pixelsPerSecond: Float,
+    val audioTrackUri: Uri?,
+    val audioTrackName: String?,
+    val audioTrackDurationMs: Long,
+    val audioTrimStartMs: Long,
+    val audioTrimEndMs: Long,
+    val audioPlacementMs: Long,
+    val audioVolume: Float
+) {
+    val totalDurationMs: Long get() = clips.sumOf { it.durationMs }
+
+    /**
+     * A single untrimmed clip with nothing else on it - the state a freshly opened
+     * file is already in. There is nothing here to recover.
+     */
+    val isTrivial: Boolean
+        get() = clips.size == 1 &&
+            textOverlays.isEmpty() &&
+            audioTrackUri == null &&
+            markers.isEmpty() &&
+            clips.first().let { it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs }
+}
