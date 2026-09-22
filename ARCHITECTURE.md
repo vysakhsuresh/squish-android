@@ -122,6 +122,28 @@ otherwise, so a library upgrade cannot silently change which sentence is shown.
 Space, permissions, missing audio and absurd resolutions are checked *before*
 encoding starts, so a doomed export fails in a second rather than two minutes.
 
+### Compositing the preview
+The base track previews as **A/B roll**, the same way the exporter builds it. A
+transition needs two shots on screen at once and one player shows one, so
+consecutive clips are dealt onto two players by index parity - which guarantees any
+two overlapping neighbours land on different players. Where they overlap, the
+transition is a blend between the two surfaces; each overlay layer gets a player
+above them.
+
+The parity rule is copied from `CompositionFactory` deliberately. If the preview and
+the exporter disagreed about which shot sits on which roll, a dissolve would preview
+one way and render the other.
+
+Every surface is a **TextureView, not a SurfaceView**. A SurfaceView is punched
+through the window and composited by the system, so it ignores view alpha,
+transforms and clipping outright - on one of those, every dissolve, slide and
+picture-in-picture would silently do nothing. A TextureView draws into the view
+hierarchy, which is what lets a wipe be a clip rect and a dissolve be an alpha.
+
+Whichever shot is already driving the clock keeps it for the whole transition.
+Handing it over mid-blend would step the playhead by however much the two players
+happen to differ.
+
 ### The effects library, and why it is not a shader
 `Looks` describes each grade as three moves - per-channel gain, contrast,
 saturation - because Media3 gives exactly those as built-in, hardware-backed
@@ -160,8 +182,10 @@ evict, rebuilt on demand.
 
 - Multi-track timeline: split, trim, move, delete, close gaps, zoom
 - Frame-accurate precision trim driven by the clip's real frame rate
-- Transitions (dissolve, dip to black, slide, wipe) via A/B-roll compositing
-- Layered compositing: picture-in-picture with opacity, scale and position
+- Transitions (dissolve, dip to black, slide, wipe) via A/B-roll compositing,
+  previewed live
+- Layered compositing: picture-in-picture with opacity, scale and position,
+  composited live in the preview as well as at export
 - Unlimited audio tracks: music, voiceover and a second mic at once, overlapping
   freely, each trimmed, cut, moved and levelled like any other clip
 - Timeline-driven preview with its own transport, black gaps and multi-track sound
@@ -182,15 +206,8 @@ evict, rebuilt on demand.
 Listed in the order they would actually be worth doing. None of these are small;
 claiming otherwise would be the fastest way to lose trust in this document.
 
-One limitation worth stating plainly: the preview shows the **base video track**.
-Layer compositing (picture-in-picture) and transitions are applied at export, not
-in the preview, so a dissolve is something you currently set up and then render to
-see. Compositing them live needs a second player surface per layer and is the next
-structural piece of work.
-
 | Feature | Real cost | Note |
 | --- | --- | --- |
-| Live preview of overlays and transitions | ~1 week | A player surface per layer, composited in the preview. |
 | True 3D LUTs and custom shaders | ~1 week | Grain, vignette, halation and .cube import, on top of the look library below. |
 | Per-clip looks | 2-3 days | The grade is currently the whole timeline; Clip would carry its own. |
 | Keyframes for existing parameters | 1–2 weeks | Needs an interpolation model on every animatable property, plus timeline UI. |

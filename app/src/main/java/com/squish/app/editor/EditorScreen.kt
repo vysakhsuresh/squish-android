@@ -150,6 +150,7 @@ fun EditorScreen(
                     muteOriginal = state.muteOriginal,
                     originalVolume = state.originalVolume,
                     grade = state.grade,
+                    sourceAspect = state.previewAspect,
                     playheadMs = state.playheadMs,
                     scrubNonce = state.scrubNonce,
                     onPositionChange = viewModel::setPlayhead,

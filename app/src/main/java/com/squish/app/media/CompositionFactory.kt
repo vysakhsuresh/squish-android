@@ -2,7 +2,6 @@ package com.squish.app.media
 
 import androidx.media3.effect.AlphaScale
 import androidx.media3.effect.Presentation
-import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
@@ -98,19 +97,20 @@ object CompositionFactory {
     }
 
     /**
-     * Geometry and opacity for an overlay: scaled down, nudged into a corner, and
+     * Geometry and opacity for an overlay: scaled down, moved where it was put, and
      * dimmed to taste. Applied as effects on the clip itself rather than through
      * compositor settings, so it degrades to a plain scaled inset if per-input
      * compositing is unavailable.
+     *
+     * Scale and position are one matrix rather than two effects, because
+     * ScaleAndRotateTransformation has no translation - which is why the editor's
+     * position sliders used to move a layer in the preview and then be discarded at
+     * render time. See OverlayPlacementEffect.
      */
     fun overlayEffects(clip: Clip, canvasWidth: Int, canvasHeight: Int): List<androidx.media3.common.Effect> {
         if (!clip.isOverlay || canvasWidth <= 0 || canvasHeight <= 0) return emptyList()
         return buildList {
-            add(
-                ScaleAndRotateTransformation.Builder()
-                    .setScale(clip.scale, clip.scale)
-                    .build()
-            )
+            add(OverlayPlacementEffect(clip.scale, clip.offsetXFraction, clip.offsetYFraction))
             add(Presentation.createForWidthAndHeight(canvasWidth, canvasHeight, Presentation.LAYOUT_SCALE_TO_FIT))
             if (clip.opacity < 1f) add(AlphaScale(clip.opacity))
         }

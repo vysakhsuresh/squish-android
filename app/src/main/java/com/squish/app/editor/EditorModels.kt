@@ -161,6 +161,21 @@ data class EditorUiState(
 
     val frameMs: Long get() = Timecode.frameDurationMs(fps)
 
+    /**
+     * The shape of the picture the preview composes on: the crop if one is chosen,
+     * otherwise the source, turned on its side when the edit is rotated a quarter
+     * turn. Overlay offsets are fractions of this canvas, so getting it wrong would
+     * move every layer.
+     */
+    val previewAspect: Float
+        get() {
+            cropAspect.ratio?.let { return it }
+            if (sourceWidth <= 0 || sourceHeight <= 0) return 16f / 9f
+            val quarterTurned = rotationDegrees % 180 != 0
+            return if (quarterTurned) sourceHeight.toFloat() / sourceWidth
+            else sourceWidth.toFloat() / sourceHeight
+        }
+
     /** The look and the manual sliders folded together - what the GPU is asked for. */
     val grade: Grade
         get() = Looks.grade(lookId, lookIntensity, brightness, contrast, saturation)

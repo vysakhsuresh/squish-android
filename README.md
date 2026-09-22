@@ -38,6 +38,9 @@ recorder — the timbre is wildly different, the loudness shape is not.
   looking, not guessing.
 - **Exact seeking** in preview (`SeekParameters.EXACT`), so scrubbing lands on
   the frame rather than the nearest keyframe.
+- **Transitions and layers preview live.** A dissolve dissolves, a wipe wipes, a
+  picture-in-picture sits where you put it — on screen, before you render, because
+  the preview composites A/B roll the same way the exporter does.
 - **The preview plays the timeline, not a playlist.** Move a clip and it plays
   where you put it; leave a gap and the picture goes black there, exactly as the
   exported file will. The playhead is derived from the picture's own clock, so it

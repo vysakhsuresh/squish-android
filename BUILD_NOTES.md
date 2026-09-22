@@ -81,3 +81,29 @@ publishing, the JSON history store, and every Compose screen.
    two. A flat, noisy pair legitimately returns "no clear match" rather than a
    confident wrong answer.
 5. Export, then check Movies/Squish in the gallery.
+
+## MatrixTransformation (overlay placement)
+
+`media/OverlayPlacementEffect.kt` is the one new Media3 interface in the app. It
+exists because `ScaleAndRotateTransformation` can scale but cannot translate, so
+the editor's "Across" and "Up / down" sliders moved a layer in the preview and
+were then discarded at render time — every picture-in-picture came out centred.
+
+If the signature differs in the version you resolve, the fallback is one line:
+drop `OverlayPlacementEffect(...)` from `CompositionFactory.overlayEffects` and
+put back
+
+```kotlin
+ScaleAndRotateTransformation.Builder().setScale(clip.scale, clip.scale).build()
+```
+
+Layers then render centred, exactly as they did before, and nothing else changes.
+
+## Preview surfaces must stay TextureViews
+
+`TimelinePreview` binds each player with `setVideoTextureView`, not a `PlayerView`.
+This is not a style preference. A `SurfaceView` is punched through the window and
+composited by the system, so it ignores view alpha, transforms and clipping — swap
+these back to `PlayerView` (which defaults to `SurfaceView`) and every dissolve,
+slide, wipe and picture-in-picture silently stops working while the code still
+looks correct.

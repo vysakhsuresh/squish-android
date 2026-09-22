@@ -10,72 +10,120 @@ import androidx.media3.exoplayer.SeekParameters
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.Grade
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.TransitionType
 import kotlin.math.abs
 
-/** One reading of the transport, handed to the UI each tick. */
-data class PlaybackFrame(
+/** How one video surface should be drawn this frame. */
+data class SurfaceDraw(
+    val visible: Boolean = false,
+    val alpha: Float = 1f,
+    /** Slide: 0 is in place, 1 is one full width off to the right. */
+    val translateXFraction: Float = 0f,
+    /** Wipe: the fraction of the width revealed from the left edge. */
+    val revealFraction: Float = 1f,
+    /** The incoming shot of a transition draws over the outgoing one. */
+    val zIndex: Int = 0
+)
+
+/** Where an overlay layer sits this frame. */
+data class OverlayPlacement(
+    val layer: Int,
+    val visible: Boolean = false,
+    val opacity: Float = 1f,
+    val scale: Float = 1f,
+    val offsetXFraction: Float = 0f,
+    val offsetYFraction: Float = 0f
+)
+
+/** One reading of the transport, and everything the UI needs to draw the frame. */
+data class PreviewFrame(
     val positionMs: Long = 0,
     val durationMs: Long = 0,
     val isPlaying: Boolean = false,
     /** True when the playhead is over empty space: the picture is legitimately black. */
-    val inGap: Boolean = false
+    val inGap: Boolean = false,
+    val surfaceA: SurfaceDraw = SurfaceDraw(),
+    val surfaceB: SurfaceDraw = SurfaceDraw(),
+    /** Dip to black: how much black sits over the picture right now. */
+    val blackVeil: Float = 0f,
+    val overlays: List<OverlayPlacement> = emptyList()
 )
 
 /**
- * Plays the timeline.
+ * Plays the timeline, composited.
  *
- * The previous preview was an ExoPlayer *playlist* - the clips glued end to end in
- * order. A playlist has no notion of when a clip sits or that empty space can exist
- * between two of them, so moving a clip changed nothing about when it played, and
- * the reported playhead was "how far into the playlist we are", which is a
- * different number from "where we are on the timeline" the moment anything is
- * dragged. That single mismatch is why repositioning appeared to do nothing and why
- * the playhead wandered through empty space.
+ * Timeline time is the authority: the covering clip is looked up by time every
+ * tick, so a clip that moves plays at its new position immediately; each player
+ * holds a whole source file rather than a clipped window, so its position *is*
+ * source time; empty space is a real state with the clock still running.
  *
- * This runs the other way round. Timeline time is the authority:
+ * The base track runs as **A/B roll**, the same way the exporter builds it and the
+ * same way an NLE has always done dissolves. A transition needs two shots on
+ * screen at once and one player can only show one, so consecutive clips are dealt
+ * onto two players by index parity - which guarantees any two overlapping
+ * neighbours are on different players. Where they overlap, the transition is a
+ * blend between the two surfaces. Overlay layers get a player each above them.
  *
- *  - the covering clip is looked up by time, every tick, so a clip that moves plays
- *    at its new position immediately;
- *  - the video player holds the whole source file, never a clipped window, so its
- *    position *is* source time and maps to timeline time by one addition;
- *  - empty space is a real state - the picture goes black and the clock keeps
- *    running, because that is what the exported file will do;
- *  - every sound is an independent player positioned against the same clock, which
- *    is what makes any number of overlapping tracks work.
+ * The surfaces are TextureViews, not SurfaceViews. A SurfaceView is punched
+ * through the window and composited by the system, so it ignores view alpha,
+ * transforms and clipping outright - every dissolve, slide and picture-in-picture
+ * here would silently do nothing on one.
  */
 class PreviewEngine(private val context: Context) {
 
-    val videoPlayer: ExoPlayer = ExoPlayer.Builder(context).build().apply {
-        setSeekParameters(SeekParameters.EXACT)
-        repeatMode = Player.REPEAT_MODE_OFF
-        playWhenReady = false
-    }
+    val baseA: ExoPlayer = newPlayer()
+    val baseB: ExoPlayer = newPlayer()
 
+    private val overlayPlayers = LinkedHashMap<Int, ExoPlayer>()
     private val audioPlayers = LinkedHashMap<String, ExoPlayer>()
     private val audioSources = HashMap<String, String>()
 
-    /**
-     * Sounds that have been positioned since the last jump. A clip is seeked once,
-     * on the way in, and then left alone.
-     */
+    /** Sounds positioned since the last jump: each is seeked once, on the way in. */
     private val primed = HashSet<String>()
 
-    private var videoClips: List<Clip> = emptyList()
+    private var rollA: List<Clip> = emptyList()
+    private var rollB: List<Clip> = emptyList()
+    private var overlayClips: List<Clip> = emptyList()
+    private var layers: List<Int> = emptyList()
     private var audioClips: List<Clip> = emptyList()
+
     private var fallbackUri: Uri? = null
     private var proxyUri: Uri? = null
 
-    private var loadedVideoUri: String? = null
-    private var activeClipId: String? = null
-    private var appliedGrade: Grade? = null
+    private val loadedUri = HashMap<String, String>()   // surface key -> source uri
+    private val activeClip = HashMap<String, String>()  // surface key -> clip id
+
+    private var clockClipId: String? = null
+    private var clockKey: String = KEY_A
 
     private var positionMs: Long = 0
     private var durationMs: Long = 0
     private var playing: Boolean = false
     private var inGap: Boolean = false
+    private var appliedGrade: Grade? = null
 
     private var anchorTimelineMs: Long = 0
     private var anchorWallMs: Long = SystemClock.elapsedRealtime()
+
+    private fun newPlayer() = ExoPlayer.Builder(context).build().apply {
+        setSeekParameters(SeekParameters.EXACT)
+        repeatMode = Player.REPEAT_MODE_OFF
+        playWhenReady = false
+    }
+
+    /**
+     * The player for an overlay layer, created the first time that layer appears.
+     * Muted, because the export removes an overlay's audio too.
+     *
+     * The current grade is applied on creation: a layer added after the look was
+     * chosen would otherwise be the one ungraded surface on screen.
+     */
+    fun overlayPlayer(layer: Int): ExoPlayer = overlayPlayers.getOrPut(layer) {
+        newPlayer().apply {
+            volume = 0f
+            appliedGrade?.let { g -> runCatching { setVideoEffects(ColorGrade.effects(g)) } }
+        }
+    }
 
     // ---- Timeline ---------------------------------------------------------------
 
@@ -88,36 +136,59 @@ class PreviewEngine(private val context: Context) {
         originalVolume: Float,
         grade: Grade
     ) {
-        this.videoClips = videoClips.sortedBy { it.timelineStartMs }
+        val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
+
+        // Index parity, exactly as CompositionFactory deals the export's two rolls.
+        // Matching it is not an aesthetic choice: if preview and export disagreed
+        // about which shot is on which roll, a dissolve would preview one way and
+        // render the other.
+        rollA = base.filterIndexed { i, _ -> i % 2 == 0 }
+        rollB = base.filterIndexed { i, _ -> i % 2 == 1 }
+
+        overlayClips = videoClips.filter { it.isOverlay }.sortedBy { it.layer }
+        layers = overlayClips.map { it.layer }.distinct().sorted()
+
+        // A layer that has been deleted or dropped back onto the base track is no
+        // longer walked by syncOverlays, so nothing would ever tell its player to
+        // stop - it would keep playing, unseen and unheard but decoding.
+        overlayPlayers.forEach { (layer, player) ->
+            if (layer !in layers && player.playWhenReady) player.pause()
+        }
+
         this.audioClips = audioClips
         this.fallbackUri = fallbackUri
         this.proxyUri = proxyUri
 
         applyGrade(grade)
-        videoPlayer.volume = if (muteOriginal) 0f else originalVolume
+        baseA.volume = if (muteOriginal) 0f else originalVolume
+        baseB.volume = if (muteOriginal) 0f else originalVolume
+
         durationMs = maxOf(
-            this.videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L,
+            videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L,
             audioClips.maxOfOrNull { it.timelineEndMs } ?: 0L
         )
         reconcileAudioPlayers()
     }
 
     /**
-     * Grades the preview with the same effects the export will use, so choosing a
-     * look is a thing you see rather than a thing you guess at and discover later.
+     * Grades every surface with the effects the export will use, so choosing a look
+     * is something you see rather than something you guess at.
      *
-     * Only re-applied when the grade actually changes: handing the player a new
-     * effect list rebuilds its GL pipeline, which drops frames, and dragging the
-     * intensity slider would otherwise do that on every pixel of travel.
+     * Only re-applied when the grade changes: handing a player a new effect list
+     * rebuilds its GL pipeline and drops frames, and dragging the strength slider
+     * would otherwise do that on every pixel of travel.
      *
-     * Guarded because setVideoEffects is an unstable API. If a device or a future
-     * version refuses it, the preview simply plays ungraded - the export still
-     * applies the look, so the feature degrades instead of breaking.
+     * Guarded because setVideoEffects is unstable API. If a device refuses it the
+     * preview plays ungraded and the export still applies the look - the feature
+     * degrades instead of breaking.
      */
     private fun applyGrade(grade: Grade) {
         if (grade == appliedGrade) return
         appliedGrade = grade
-        runCatching { videoPlayer.setVideoEffects(ColorGrade.effects(grade)) }
+        val effects = ColorGrade.effects(grade)
+        runCatching { baseA.setVideoEffects(effects) }
+        runCatching { baseB.setVideoEffects(effects) }
+        overlayPlayers.values.forEach { p -> runCatching { p.setVideoEffects(effects) } }
     }
 
     // ---- Transport --------------------------------------------------------------
@@ -127,13 +198,13 @@ class PreviewEngine(private val context: Context) {
         playing = true
         anchorTimelineMs = positionMs
         anchorWallMs = SystemClock.elapsedRealtime()
-        // Everything re-positions once on the way in rather than chasing the clock.
         primed.clear()
     }
 
     fun pause() {
         playing = false
-        videoPlayer.pause()
+        baseA.pause(); baseB.pause()
+        overlayPlayers.values.forEach { it.pause() }
         audioPlayers.values.forEach { it.pause() }
     }
 
@@ -144,38 +215,30 @@ class PreviewEngine(private val context: Context) {
         anchorTimelineMs = positionMs
         anchorWallMs = SystemClock.elapsedRealtime()
         primed.clear()
-        // Forces the next tick to re-resolve the covering clip and seek to it,
-        // which is also what makes a scrub land on the right frame of the right shot.
-        activeClipId = null
+        // Forces every surface to re-resolve its clip and seek, which is what makes
+        // a scrub land on the right frame of the right shot on every layer at once.
+        activeClip.clear()
+        clockClipId = null
     }
 
     // ---- The clock --------------------------------------------------------------
 
-    /**
-     * Advances everything one step and reports where we are. Called on a short
-     * timer by the UI; all the scheduling decisions live here.
-     */
-    fun tick(): PlaybackFrame {
+    fun tick(): PreviewFrame {
         val now = SystemClock.elapsedRealtime()
-        val active = videoClips.firstOrNull { it.id == activeClipId }
 
-        val state = videoPlayer.playbackState
-        val videoDriving = active != null && state == Player.STATE_READY && videoPlayer.isPlaying
-
-        // Waiting on the decoder is not the same as time passing. Holding the clock
-        // keeps sound and picture together through a stall instead of letting the
-        // audio sprint ahead and then get yanked back.
-        val stalled = playing && active != null && state == Player.STATE_BUFFERING
+        val clockPlayer = if (clockKey == KEY_A) baseA else baseB
+        val clockClip = (rollA + rollB).firstOrNull { it.id == clockClipId }
+        val state = clockPlayer.playbackState
+        val driving = clockClip != null && state == Player.STATE_READY && clockPlayer.isPlaying
+        val stalled = playing && clockClip != null && state == Player.STATE_BUFFERING
 
         var t = when {
             !playing -> positionMs
+            // Waiting on a decoder is not time passing. Holding the clock keeps
+            // sound and picture together through a stall.
             stalled -> positionMs
-            // The picture's own clock is the most accurate one available, and using
-            // it means the playhead can never disagree with the frame on screen.
-            videoDriving && active != null ->
-                active.timelineStartMs + (videoPlayer.currentPosition - active.sourceInMs)
-            // Over empty space there is no picture to take time from, so wall time
-            // carries the playhead across the gap.
+            driving && clockClip != null ->
+                clockClip.timelineStartMs + (clockPlayer.currentPosition - clockClip.sourceInMs)
             else -> anchorTimelineMs + (now - anchorWallMs)
         }.coerceAtLeast(0L)
 
@@ -188,62 +251,164 @@ class PreviewEngine(private val context: Context) {
         anchorTimelineMs = t
         anchorWallMs = now
 
-        syncVideo(t)
+        val (drawA, drawB, veil) = composeBase(t)
+        val overlays = syncOverlays(t)
         syncAudio(t, transportRunning = playing && !stalled)
 
-        return PlaybackFrame(positionMs = t, durationMs = durationMs, isPlaying = playing, inGap = inGap)
+        return PreviewFrame(
+            positionMs = t,
+            durationMs = durationMs,
+            isPlaying = playing,
+            inGap = inGap,
+            surfaceA = drawA,
+            surfaceB = drawB,
+            blackVeil = veil,
+            overlays = overlays
+        )
     }
 
-    // ---- Picture ----------------------------------------------------------------
+    // ---- Base track and transitions ---------------------------------------------
 
-    private fun syncVideo(t: Long) {
-        val clip = baseClipAt(t)
+    private fun composeBase(t: Long): Triple<SurfaceDraw, SurfaceDraw, Float> {
+        val clipA = rollA.lastOrNull { covers(it, t) }
+        val clipB = rollB.lastOrNull { covers(it, t) }
+
+        if (clipA == null && clipB == null) {
+            inGap = rollA.isNotEmpty() || rollB.isNotEmpty()
+            if (baseA.playWhenReady) baseA.pause()
+            if (baseB.playWhenReady) baseB.pause()
+            return Triple(SurfaceDraw(), SurfaceDraw(), 0f)
+        }
+        inGap = false
+
+        syncSurface(KEY_A, baseA, clipA, t)
+        syncSurface(KEY_B, baseB, clipB, t)
+
+        // Whichever shot was already driving keeps the clock for the whole
+        // transition. Handing it over mid-blend would step the playhead by whatever
+        // the two players happen to differ by.
+        val stillClocking = listOfNotNull(clipA, clipB).any { it.id == clockClipId }
+        if (!stillClocking) {
+            val next = listOfNotNull(clipA, clipB).minByOrNull { it.timelineStartMs }
+            clockClipId = next?.id
+            clockKey = if (next != null && clipA?.id == next.id) KEY_A else KEY_B
+        }
+
+        if (clipA == null || clipB == null) {
+            val onA = clipA != null
+            return Triple(
+                SurfaceDraw(visible = onA),
+                SurfaceDraw(visible = !onA),
+                0f
+            )
+        }
+
+        // Both rolls have a shot here, so the two overlap: a transition.
+        val incoming = if (clipA.timelineStartMs >= clipB.timelineStartMs) clipA else clipB
+        val outgoing = if (incoming === clipA) clipB else clipA
+        val overlapMs = (outgoing.timelineEndMs - incoming.timelineStartMs).coerceAtLeast(1L)
+        val progress = ((t - incoming.timelineStartMs).toFloat() / overlapMs).coerceIn(0f, 1f)
+
+        val (outDraw, inDraw, veil) = blend(incoming.transitionIn.type, progress)
+        val aIsIncoming = incoming === clipA
+        return Triple(
+            if (aIsIncoming) inDraw else outDraw,
+            if (aIsIncoming) outDraw else inDraw,
+            veil
+        )
+    }
+
+    /**
+     * How a transition reads, as (outgoing, incoming, black veil). These mirror
+     * CompositionFactory.transitionAlphaAt - the preview and the render describe the
+     * same blend, one for the screen and one for the compositor.
+     */
+    private fun blend(type: TransitionType, p: Float): Triple<SurfaceDraw, SurfaceDraw, Float> {
+        val under = SurfaceDraw(visible = true, zIndex = 0)
+        val over = SurfaceDraw(visible = true, zIndex = 1)
+        return when (type) {
+            TransitionType.CrossFade ->
+                Triple(under, over.copy(alpha = p), 0f)
+
+            // Out to nothing and back up, with black deepest at the midpoint.
+            TransitionType.DipToBlack -> Triple(
+                under.copy(visible = p < 0.5f),
+                over.copy(visible = p >= 0.5f),
+                1f - abs(2f * p - 1f)
+            )
+
+            TransitionType.SlideLeft ->
+                Triple(under, over.copy(translateXFraction = 1f - p), 0f)
+
+            TransitionType.WipeRight ->
+                Triple(under, over.copy(revealFraction = p), 0f)
+
+            // Overlapping shots with no transition set: a hard cut to the new one.
+            TransitionType.None ->
+                Triple(under.copy(visible = false), over, 0f)
+        }
+    }
+
+    // ---- Overlay layers ----------------------------------------------------------
+
+    private fun syncOverlays(t: Long): List<OverlayPlacement> = layers.map { layer ->
+        val clip = overlayClips.lastOrNull { it.layer == layer && covers(it, t) }
+        val key = KEY_OVERLAY + layer
+        val player = overlayPlayer(layer)
+        syncSurface(key, player, clip, t)
 
         if (clip == null) {
-            // Real empty space. Black picture, clock still running - exactly what
-            // the exported file does here.
-            inGap = videoClips.isNotEmpty()
-            activeClipId = null
-            if (videoPlayer.playWhenReady) videoPlayer.pause()
+            OverlayPlacement(layer = layer, visible = false)
+        } else {
+            OverlayPlacement(
+                layer = layer,
+                visible = true,
+                opacity = clip.opacity,
+                scale = clip.scale,
+                offsetXFraction = clip.offsetXFraction,
+                offsetYFraction = clip.offsetYFraction
+            )
+        }
+    }
+
+    // ---- Shared surface plumbing --------------------------------------------------
+
+    /** Points one player at whatever clip covers this moment, or parks it. */
+    private fun syncSurface(key: String, player: ExoPlayer, clip: Clip?, t: Long) {
+        if (clip == null) {
+            if (player.playWhenReady) player.pause()
+            activeClip.remove(key)
             return
         }
 
-        inGap = false
         val source = playbackUriFor(clip) ?: return
         val wanted = (clip.sourceInMs + (t - clip.timelineStartMs)).coerceAtLeast(0L)
 
         when {
-            loadedVideoUri != source.toString() -> {
-                videoPlayer.setMediaItem(MediaItem.fromUri(source))
-                videoPlayer.prepare()
-                loadedVideoUri = source.toString()
-                activeClipId = clip.id
-                videoPlayer.seekTo(wanted)
+            loadedUri[key] != source.toString() -> {
+                player.setMediaItem(MediaItem.fromUri(source))
+                player.prepare()
+                loadedUri[key] = source.toString()
+                activeClip[key] = clip.id
+                player.seekTo(wanted)
             }
             // A different slice of the same file - a split, or a jump. No reload:
             // the media is already open, so this is a seek and nothing more.
-            activeClipId != clip.id -> {
-                activeClipId = clip.id
-                videoPlayer.seekTo(wanted)
+            activeClip[key] != clip.id -> {
+                activeClip[key] = clip.id
+                player.seekTo(wanted)
             }
-            // While the picture is driving the clock this difference is zero by
-            // construction, so playback is never interrupted by its own correction.
-            abs(videoPlayer.currentPosition - wanted) > VIDEO_RESYNC_MS -> {
-                videoPlayer.seekTo(wanted)
-            }
+            // Zero by construction while this surface drives the clock, so playback
+            // is never interrupted by its own correction.
+            abs(player.currentPosition - wanted) > VIDEO_RESYNC_MS -> player.seekTo(wanted)
         }
 
-        if (playing && !videoPlayer.playWhenReady) videoPlayer.play()
-        if (!playing && videoPlayer.playWhenReady) videoPlayer.pause()
+        if (playing && !player.playWhenReady) player.play()
+        if (!playing && player.playWhenReady) player.pause()
     }
 
-    /**
-     * The base clip under a given moment. Later clips win where two overlap, which
-     * is what a transition looks like on the strip.
-     */
-    private fun baseClipAt(t: Long): Clip? =
-        videoClips.lastOrNull { it.layer == 0 && t >= it.timelineStartMs && t < it.timelineEndMs }
-            ?: videoClips.lastOrNull { t >= it.timelineStartMs && t < it.timelineEndMs }
+    private fun covers(clip: Clip, t: Long): Boolean =
+        t >= clip.timelineStartMs && t < clip.timelineEndMs
 
     private fun playbackUriFor(clip: Clip): Uri? {
         val source = clip.uri ?: fallbackUri ?: return null
@@ -251,14 +416,12 @@ class PreviewEngine(private val context: Context) {
         return if (proxyUri != null && source == fallbackUri) proxyUri else source
     }
 
-    // ---- Sound ------------------------------------------------------------------
+    // ---- Sound --------------------------------------------------------------------
 
     private fun syncAudio(t: Long, transportRunning: Boolean) {
         audioClips.forEach { clip ->
             val player = audioPlayers[clip.id] ?: return@forEach
-            val inside = t >= clip.timelineStartMs && t < clip.timelineEndMs
-
-            if (!inside) {
+            if (!covers(clip, t)) {
                 if (player.playWhenReady) player.pause()
                 primed.remove(clip.id)
                 return@forEach
@@ -268,19 +431,13 @@ class PreviewEngine(private val context: Context) {
             val wanted = (clip.sourceInMs + (t - clip.timelineStartMs)).coerceAtLeast(0L)
 
             if (!primed.contains(clip.id)) {
-                // One seek on the way in, then let it run on its own clock.
-                //
-                // The previous build re-seeked whenever the two players drifted 45 ms
-                // apart. Every seek forces a re-buffer, a re-buffer causes more drift,
-                // and that drift triggers the next seek - a feedback loop that sounds
-                // exactly like audio breaking up, and that only quietens once the file
-                // is warm in the page cache. That is the whole story behind "it plays
-                // properly on the fourth or fifth try".
+                // One seek on the way in, then let it run on its own clock. Re-seeking
+                // to chase drift forces a re-buffer, the re-buffer causes more drift,
+                // and that drift triggers the next seek - a loop that sounds exactly
+                // like audio breaking up.
                 player.seekTo(wanted)
                 primed.add(clip.id)
             } else if (abs(player.currentPosition - wanted) > AUDIO_RESYNC_MS) {
-                // Two media clocks at 1x drift by a few milliseconds a minute, so in
-                // practice this only fires after a scrub - never during playback.
                 player.seekTo(wanted)
             }
 
@@ -289,7 +446,6 @@ class PreviewEngine(private val context: Context) {
         }
     }
 
-    /** One player per sound, created when it appears and released when it goes. */
     private fun reconcileAudioPlayers() {
         val wanted = audioClips.associateBy { it.id }
 
@@ -304,13 +460,11 @@ class PreviewEngine(private val context: Context) {
             val existing = audioPlayers[clip.id]
             when {
                 existing == null -> {
-                    audioPlayers[clip.id] = ExoPlayer.Builder(context).build().apply {
-                        setSeekParameters(SeekParameters.EXACT)
+                    audioPlayers[clip.id] = newPlayer().apply {
                         setMediaItem(MediaItem.fromUri(uri))
                         // Prepared the moment the track is added, so the first play
                         // is not also the first read off storage.
                         prepare()
-                        playWhenReady = false
                         volume = clip.volume
                     }
                     audioSources[clip.id] = uri.toString()
@@ -326,14 +480,21 @@ class PreviewEngine(private val context: Context) {
     }
 
     fun release() {
-        videoPlayer.release()
+        baseA.release()
+        baseB.release()
+        overlayPlayers.values.forEach { it.release() }
         audioPlayers.values.forEach { it.release() }
+        overlayPlayers.clear()
         audioPlayers.clear()
         audioSources.clear()
         primed.clear()
     }
 
     private companion object {
+        const val KEY_A = "base-a"
+        const val KEY_B = "base-b"
+        const val KEY_OVERLAY = "overlay-"
+
         /** Generous on purpose: correction is for a jump, not for playback. */
         const val AUDIO_RESYNC_MS = 400L
         const val VIDEO_RESYNC_MS = 120L
