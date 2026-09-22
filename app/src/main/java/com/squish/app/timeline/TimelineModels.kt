@@ -77,6 +77,25 @@ data class TimelineState(
         get() = clips.filter { it.kind == ClipKind.Video && it.layer > 0 }.sortedBy { it.timelineStartMs }
     val layerCount: Int get() = clips.filter { it.kind == ClipKind.Video }.maxOfOrNull { it.layer } ?: 0
     val audioClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Audio }.sortedBy { it.timelineStartMs }
+
+    /**
+     * Added sounds packed into as few rows as they will fit, by the same greedy
+     * rule every editor uses: a clip goes on the first row where nothing already
+     * occupies its span. Two tracks that never overlap therefore share a row, and
+     * ones that do get a row each - so a music bed under a voiceover reads as two
+     * things rather than one drawn on top of the other.
+     */
+    val audioLanes: List<List<Clip>>
+        get() {
+            val lanes = mutableListOf<MutableList<Clip>>()
+            audioClips.forEach { clip ->
+                val lane = lanes.firstOrNull { row ->
+                    row.none { it.timelineStartMs < clip.timelineEndMs && clip.timelineStartMs < it.timelineEndMs }
+                }
+                if (lane != null) lane.add(clip) else lanes.add(mutableListOf(clip))
+            }
+            return lanes
+        }
     val textClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Text }.sortedBy { it.timelineStartMs }
     val durationMs: Long get() = clips.maxOfOrNull { it.timelineEndMs } ?: 0L
     val selectedClip: Clip? get() = clips.firstOrNull { it.id == selectedClipId }

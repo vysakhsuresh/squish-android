@@ -26,6 +26,7 @@ import androidx.media3.transformer.VideoEncoderSettings
 import com.google.common.collect.ImmutableList
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.Quality
+import com.squish.app.timeline.Clip
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import kotlin.coroutines.resume
@@ -53,7 +54,10 @@ class VideoProcessor(private val context: Context) {
             val timelineDuration = state.trimmedDurationMs
 
             val sequences = videoSequences.toMutableList()
-            buildAudioTrackSequence(state, headSourceIn, timelineDuration)?.let { sequences.add(it) }
+            // One sequence per added sound. A Composition mixes its sequences
+            // together, so overlapping music, a voiceover and a second mic all
+            // land in the same output without any of them being a special case.
+            sequences.addAll(buildAudioSequences(state, headSourceIn, timelineDuration))
 
             val composition = Composition.Builder(ImmutableList.copyOf(sequences)).build()
 
@@ -167,25 +171,38 @@ class VideoProcessor(private val context: Context) {
     }
 
     /**
+     * Every added sound, each as its own sequence.
+     *
      * @param headSourceIn where in the source file the first video clip starts -
      *   the silent pad is borrowed from there.
      * @param timelineDuration total length of the assembled video track.
      */
-    private fun buildAudioTrackSequence(
+    private fun buildAudioSequences(
         state: EditorUiState,
         headSourceIn: Long,
         timelineDuration: Long
-    ): EditedMediaItemSequence? {
-        val audioUri = state.audioTrackUri ?: return null
-        if (state.audioOnly) return null
+    ): List<EditedMediaItemSequence> {
+        if (state.audioOnly) return emptyList()
+        return state.audioClips.mapNotNull { clip ->
+            buildAudioSequence(state, clip, headSourceIn, timelineDuration)
+        }
+    }
 
-        val requestedPad = state.audioPlacementMs.coerceAtLeast(0L)
+    private fun buildAudioSequence(
+        state: EditorUiState,
+        clip: Clip,
+        headSourceIn: Long,
+        timelineDuration: Long
+    ): EditedMediaItemSequence? {
+        val audioUri = clip.uri ?: return null
+
+        val requestedPad = clip.timelineStartMs.coerceAtLeast(0L)
         val padMs = if (state.sourceHasAudio) requestedPad else 0L
 
         val roomAfterPad = (timelineDuration - padMs).coerceAtLeast(0L)
-        var sliceMs = state.audioSliceDurationMs.coerceAtMost(roomAfterPad)
-        if (state.audioTrackDurationMs > 0) {
-            sliceMs = sliceMs.coerceAtMost(state.audioTrackDurationMs - state.audioTrimStartMs)
+        var sliceMs = clip.durationMs.coerceAtMost(roomAfterPad)
+        if (clip.sourceDurationMs > 0) {
+            sliceMs = sliceMs.coerceAtMost(clip.sourceDurationMs - clip.sourceInMs)
         }
         if (sliceMs <= 0) return null
 
@@ -213,15 +230,15 @@ class VideoProcessor(private val context: Context) {
             .setUri(audioUri)
             .setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder()
-                    .setStartPositionMs(state.audioTrimStartMs)
-                    .setEndPositionMs(state.audioTrimStartMs + sliceMs)
+                    .setStartPositionMs(clip.sourceInMs)
+                    .setEndPositionMs(clip.sourceInMs + sliceMs)
                     .build()
             )
             .build()
         items.add(
             EditedMediaItem.Builder(trackItem)
                 .setRemoveVideo(true)
-                .setEffects(Effects(buildAudioProcessors(1f, state.audioVolume), ImmutableList.of()))
+                .setEffects(Effects(buildAudioProcessors(1f, clip.volume), ImmutableList.of()))
                 .build()
         )
 

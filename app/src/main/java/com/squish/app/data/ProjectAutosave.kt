@@ -117,13 +117,7 @@ class ProjectAutosave(context: Context) {
         put("clips", JSONArray().apply { state.videoClips.forEach { put(encodeClip(it)) } })
         put("textOverlays", JSONArray().apply { state.textOverlays.forEach { put(encodeText(it)) } })
 
-        state.audioTrackUri?.let { put("audioTrackUri", it.toString()) }
-        put("audioTrackName", state.audioTrackName ?: JSONObject.NULL)
-        put("audioTrackDurationMs", state.audioTrackDurationMs)
-        put("audioTrimStartMs", state.audioTrimStartMs)
-        put("audioTrimEndMs", state.audioTrimEndMs)
-        put("audioPlacementMs", state.audioPlacementMs)
-        put("audioVolume", state.audioVolume.toDouble())
+        put("audioClips", JSONArray().apply { state.audioClips.forEach { put(encodeClip(it)) } })
     }
 
     private fun encodeClip(clip: Clip): JSONObject = JSONObject().apply {
@@ -163,9 +157,13 @@ class ProjectAutosave(context: Context) {
         val sourceUri = json.optString("sourceUri").takeIf { it.isNotBlank() } ?: return null
 
         val clips = json.optJSONArray("clips")?.let { array ->
-            (0 until array.length()).mapNotNull { i -> decodeClip(array.optJSONObject(i)) }
+            (0 until array.length()).mapNotNull { i -> decodeClip(array.optJSONObject(i), ClipKind.Video) }
         }.orEmpty()
         if (clips.isEmpty()) return null
+
+        val audio = json.optJSONArray("audioClips")?.let { array ->
+            (0 until array.length()).mapNotNull { i -> decodeClip(array.optJSONObject(i), ClipKind.Audio) }
+        }.orEmpty()
 
         val overlays = json.optJSONArray("textOverlays")?.let { array ->
             (0 until array.length()).mapNotNull { i -> decodeText(array.optJSONObject(i)) }
@@ -180,6 +178,7 @@ class ProjectAutosave(context: Context) {
             savedAtMillis = json.optLong("savedAtMillis"),
             clipCount = clips.size,
             clips = clips,
+            audioClips = audio,
             textOverlays = overlays,
             markers = markers,
             playheadMs = json.optLong("playheadMs"),
@@ -195,22 +194,15 @@ class ProjectAutosave(context: Context) {
             brightness = json.optDouble("brightness").toFloat(),
             contrast = json.optDouble("contrast").toFloat(),
             saturation = json.optDouble("saturation").toFloat(),
-            pixelsPerSecond = json.optDouble("pixelsPerSecond", 42.0).toFloat(),
-            audioTrackUri = json.optString("audioTrackUri").takeIf { it.isNotBlank() }?.let(Uri::parse),
-            audioTrackName = json.optString("audioTrackName").takeIf { it.isNotBlank() && it != "null" },
-            audioTrackDurationMs = json.optLong("audioTrackDurationMs"),
-            audioTrimStartMs = json.optLong("audioTrimStartMs"),
-            audioTrimEndMs = json.optLong("audioTrimEndMs"),
-            audioPlacementMs = json.optLong("audioPlacementMs"),
-            audioVolume = json.optDouble("audioVolume", 1.0).toFloat()
+            pixelsPerSecond = json.optDouble("pixelsPerSecond", 42.0).toFloat()
         )
     }
 
-    private fun decodeClip(json: JSONObject?): Clip? {
+    private fun decodeClip(json: JSONObject?, kind: ClipKind): Clip? {
         if (json == null) return null
         return Clip(
             id = json.optString("id").takeIf { it.isNotBlank() } ?: return null,
-            kind = ClipKind.Video,
+            kind = kind,
             uri = json.optString("uri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse),
             label = json.optString("label", "Clip"),
             sourceInMs = json.optLong("sourceInMs"),
@@ -250,7 +242,7 @@ class ProjectAutosave(context: Context) {
 
     private companion object {
         /** Bump when the shape changes; older documents are then ignored rather than misread. */
-        const val FORMAT_VERSION = 1
+        const val FORMAT_VERSION = 2
     }
 }
 
@@ -260,6 +252,7 @@ data class ProjectSnapshot(
     val savedAtMillis: Long,
     val clipCount: Int,
     val clips: List<Clip>,
+    val audioClips: List<Clip>,
     val textOverlays: List<TextOverlayItem>,
     val markers: List<Long>,
     val playheadMs: Long,
@@ -275,14 +268,7 @@ data class ProjectSnapshot(
     val brightness: Float,
     val contrast: Float,
     val saturation: Float,
-    val pixelsPerSecond: Float,
-    val audioTrackUri: Uri?,
-    val audioTrackName: String?,
-    val audioTrackDurationMs: Long,
-    val audioTrimStartMs: Long,
-    val audioTrimEndMs: Long,
-    val audioPlacementMs: Long,
-    val audioVolume: Float
+    val pixelsPerSecond: Float
 ) {
     val totalDurationMs: Long get() = clips.sumOf { it.durationMs }
 
@@ -293,7 +279,7 @@ data class ProjectSnapshot(
     val isTrivial: Boolean
         get() = clips.size == 1 &&
             textOverlays.isEmpty() &&
-            audioTrackUri == null &&
+            audioClips.isEmpty() &&
             markers.isEmpty() &&
             clips.first().let { it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs }
 }

@@ -51,7 +51,51 @@ about (and tested) without a device. The view model holds exactly one
 `StateFlow<EditorUiState>`; nothing is mirrored into a second place, which is what
 stops the preview and the export from ever disagreeing about what the edit is.
 
-## 3. The three guarantees
+## 3. How playback works, and why it was rebuilt
+
+The first version previewed the edit as an ExoPlayer **playlist**: the clips glued
+end to end in order. A playlist has no notion of *when* a clip sits or that empty
+space can exist between two of them. Two things followed, and both were reported
+from real use:
+
+- moving a clip changed nothing about when it played, because the playlist only
+  knows order, not position;
+- the reported playhead was "how far into the playlist we are", which stops being
+  the same number as "where we are on the timeline" the moment anything is dragged
+  — so the playhead wandered through empty space.
+
+`PreviewEngine` inverts the relationship. **Timeline time is the authority**, and
+everything else is slaved to it:
+
+- the covering clip is looked up *by time*, every tick, so a clip that moves plays
+  at its new position immediately;
+- the video player holds the whole source file, never a clipped window, so its
+  position *is* source time and converts to timeline time by one addition — and a
+  split costs a seek rather than a reload, because the file is already open;
+- empty space is a real state: the picture goes black and the clock keeps running,
+  because that is what the exported file does there;
+- each added sound is an independent player positioned against the same clock,
+  which is what makes any number of overlapping tracks work at all.
+
+The clock itself prefers the picture's own: while a clip is playing, the position
+is derived from the video player, so the playhead can never disagree with the
+frame on screen. Wall time carries it across gaps, and a decoder stall holds the
+clock rather than letting sound run ahead of picture.
+
+### The audio stutter, specifically
+
+The old preview re-seeked the audio player whenever it drifted 45 ms from the
+video. Every seek forces a re-buffer, a re-buffer causes more drift, and that
+drift triggers the next seek — a feedback loop that sounds exactly like audio
+breaking up, and that only quietens once the file is warm in the page cache.
+That is the whole explanation for "it plays properly on the fourth or fifth try".
+
+Now a sound is seeked **once**, on the way into its range, and then left to run on
+its own clock. The correction threshold is 400 ms and exists only to absorb a
+scrub; two media clocks at 1x drift by a few milliseconds a minute, so during
+playback it never fires.
+
+## 4. The three guarantees
 
 These are what the app is actually competing on. They are implemented, not planned.
 
@@ -85,13 +129,15 @@ transcode sharing the source timebase, so every trim point still lands on the sa
 frame. Proxies live in the cache directory — derived data, safe for Android to
 evict, rebuilt on demand.
 
-## 4. Built
+## 5. Built
 
 - Multi-track timeline: split, trim, move, delete, close gaps, zoom
 - Frame-accurate precision trim driven by the clip's real frame rate
 - Transitions (dissolve, dip to black, slide, wipe) via A/B-roll compositing
 - Layered compositing: picture-in-picture with opacity, scale and position
-- Separate audio track: trim, place anywhere, per-track volume
+- Unlimited audio tracks: music, voiceover and a second mic at once, overlapping
+  freely, each trimmed, cut, moved and levelled like any other clip
+- Timeline-driven preview with its own transport, black gaps and multi-track sound
 - Automatic dual-system audio sync by RMS-envelope cross-correlation
 - Speed, rotation, crop with live framing guides
 - Text overlays with timing, colour, size and position
@@ -102,13 +148,20 @@ evict, rebuilt on demand.
 - Background proxy generation
 - Typed, human-readable errors
 
-## 5. Not built — and honestly scoped
+## 6. Not built — and honestly scoped
 
 Listed in the order they would actually be worth doing. None of these are small;
 claiming otherwise would be the fastest way to lose trust in this document.
 
+One limitation worth stating plainly: the preview shows the **base video track**.
+Layer compositing (picture-in-picture) and transitions are applied at export, not
+in the preview, so a dissolve is something you currently set up and then render to
+see. Compositing them live needs a second player surface per layer and is the next
+structural piece of work.
+
 | Feature | Real cost | Note |
 | --- | --- | --- |
+| Live preview of overlays and transitions | ~1 week | A player surface per layer, composited in the preview. |
 | Effects / filter library (LUTs) | Days | Highest value per hour. Media3 supports custom GL effects directly. |
 | Keyframes for existing parameters | 1–2 weeks | Needs an interpolation model on every animatable property, plus timeline UI. |
 | Audio beat detection | Days | Onset detection on the PCM data we already decode for waveforms. |

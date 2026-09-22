@@ -83,7 +83,7 @@ fun EditorScreen(
             runCatching {
                 context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            viewModel.setAudioTrack(it)
+            viewModel.addAudioTrack(it)
         }
     }
     val pickExtraClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -137,23 +137,22 @@ fun EditorScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(186.dp)
+                    .height(200.dp)
                     .padding(horizontal = 12.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(SquishColors.Surface)
             ) {
-                VideoPreviewPlayer(
+                TimelinePreview(
                     videoClips = state.videoClips,
+                    audioClips = state.audioClips,
                     fallbackUri = sourceUri,
                     proxyUri = state.proxyUri,
-                    audioUri = state.audioTrackUri,
-                    audioTrimStartMs = state.audioTrimStartMs,
-                    audioPlacementMs = state.audioPlacementMs,
-                    audioSliceDurationMs = state.audioSliceDurationMs,
                     muteOriginal = state.muteOriginal,
                     originalVolume = state.originalVolume,
-                    audioVolume = state.audioVolume,
-                    onPlayheadChange = viewModel::setPlayhead,
+                    playheadMs = state.playheadMs,
+                    scrubNonce = state.scrubNonce,
+                    onPositionChange = viewModel::setPlayhead,
+                    onPlayingChange = viewModel::setPlaying,
                     modifier = Modifier.fillMaxSize()
                 )
                 // Live framing while cropping, so the ratio is never chosen blind.
@@ -172,7 +171,7 @@ fun EditorScreen(
                 onSelect = viewModel::selectClip,
                 onMove = viewModel::moveClip,
                 onTrim = viewModel::trimClip,
-                onScrub = viewModel::setPlayhead,
+                onScrub = viewModel::scrubTo,
                 onTransitionTap = { clipId ->
                     viewModel.selectClip(clipId)
                     tab = EditorTab.Mix

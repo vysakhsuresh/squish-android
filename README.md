@@ -14,7 +14,8 @@ Shoot on a phone, record sound on a separate mic, and aligning the two is
 normally a miserable manual nudge-and-listen loop. Squish does what desktop
 tools do:
 
-- Attach the separate track (audio file, or another video whose sound you want)
+- Attach as many tracks as you need (audio files, or other videos whose sound you
+  want) — they can overlap, and each one syncs independently
 - Squish decodes both, builds loudness envelopes, and **cross-correlates them to
   find the alignment automatically** — usually under a second, entirely on-device
 - The result lands as a millisecond offset with a confidence score, and if the
@@ -37,6 +38,11 @@ recorder — the timbre is wildly different, the loudness shape is not.
   looking, not guessing.
 - **Exact seeking** in preview (`SeekParameters.EXACT`), so scrubbing lands on
   the frame rather than the nearest keyframe.
+- **The preview plays the timeline, not a playlist.** Move a clip and it plays
+  where you put it; leave a gap and the picture goes black there, exactly as the
+  exported file will. The playhead is derived from the picture's own clock, so it
+  can never disagree with the frame on screen. Drag the ruler to scrub, tap the
+  picture to play.
 
 ## Layout
 

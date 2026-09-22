@@ -89,6 +89,14 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val meta = ThumbnailExtractor.probe(getApplication(), uri)
             _state.update { current ->
+                // Placed after everything already queued, the first clip included.
+                // Every appended clip used to land at zero, so a merge asked the
+                // compositor to stack them on top of one another instead of playing
+                // them one after another.
+                val start = maxOf(
+                    current.durationMs,
+                    current.extraClips.maxOfOrNull { it.timelineEndMs } ?: 0L
+                )
                 current.copy(
                     extraClips = current.extraClips + Clip(
                         kind = ClipKind.Video,
@@ -96,7 +104,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                         label = displayNameOf(uri) ?: "Clip ${current.extraClips.size + 2}",
                         sourceInMs = 0,
                         sourceOutMs = meta.durationMs,
-                        timelineStartMs = 0,
+                        timelineStartMs = start,
                         sourceDurationMs = meta.durationMs
                     )
                 )

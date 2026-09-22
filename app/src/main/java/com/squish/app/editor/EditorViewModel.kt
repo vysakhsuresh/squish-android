@@ -18,6 +18,7 @@ import com.squish.app.media.audio.AudioSyncAnalyzer
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.WaveformBuilder
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.Transition
@@ -153,7 +154,20 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun setPlayhead(ms: Long) = _state.update { it.copy(playheadMs = ms.coerceIn(0L, it.durationMs)) }
+    /** The playhead advancing under playback. Never moves the players. */
+    fun setPlayhead(ms: Long) =
+        _state.update { it.copy(playheadMs = ms.coerceIn(0L, it.timelineDurationMs)) }
+
+    /**
+     * A deliberate jump - scrubbing the ruler, a nudge, a snap to a marker. The
+     * nonce is what tells the preview engine to actually go there, which is how a
+     * scrub is distinguished from the playhead simply moving on its own.
+     */
+    fun scrubTo(ms: Long) = _state.update {
+        it.copy(playheadMs = ms.coerceIn(0L, it.timelineDurationMs), scrubNonce = it.scrubNonce + 1)
+    }
+
+    fun setPlaying(playing: Boolean) = _state.update { it.copy(isPlaying = playing) }
 
     // ---- Markers --------------------------------------------------------------
 
@@ -175,114 +189,110 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         return if (abs(nearest - ms) <= threshold) nearest else ms
     }
 
-    // ---- Separate audio track -------------------------------------------------
+    // ---- Sound ----------------------------------------------------------------
 
-    fun setAudioTrack(uri: Uri?) {
-        syncJob?.cancel()
-        if (uri == null) {
-            _state.update {
-                it.copy(
-                    audioTrackUri = null,
-                    audioTrackName = null,
-                    audioTrackDurationMs = 0,
-                    audioTrimStartMs = 0,
-                    audioTrimEndMs = 0,
-                    audioPlacementMs = 0,
-                    audioWaveform = null,
-                    syncStatus = SyncStatus.Idle,
-                    syncConfidence = 0f
+    /**
+     * Adds a sound to the timeline at the playhead. There is no limit: music, a
+     * voiceover and a second mic can all sit on the strip at once, overlapping
+     * freely, because each one is an ordinary clip rather than a special case.
+     */
+    fun addAudioTrack(uri: Uri) {
+        viewModelScope.launch {
+            val trackDuration = ThumbnailExtractor.probeDurationMs(getApplication(), uri)
+            val name = displayNameOf(uri) ?: "Audio"
+
+            _state.update { current ->
+                val clip = Clip(
+                    kind = ClipKind.Audio,
+                    uri = uri,
+                    label = name,
+                    sourceInMs = 0,
+                    sourceOutMs = trackDuration,
+                    timelineStartMs = current.playheadMs,
+                    sourceDurationMs = trackDuration
                 )
+                current.copy(audioClips = current.audioClips + clip, selectedClipId = clip.id)
             }
             recomputeEstimate()
-            return
-        }
 
-        _state.update {
-            it.copy(
-                audioTrackUri = uri,
-                audioTrackName = displayNameOf(uri),
-                audioTrimStartMs = 0,
-                audioTrimEndMs = 0,
-                audioPlacementMs = it.trimStartMs,
-                audioWaveform = null,
+            // Cached against the file, not the clip, so splitting a track in two
+            // costs nothing and both halves draw immediately.
+            if (_state.value.audioWaveforms[uri.toString()] == null) {
+                val pcm = PcmDecoder.decodeMono(getApplication(), uri, maxDurationMs = 10 * 60_000L)
+                if (pcm != null) {
+                    val wave = WaveformBuilder.build(pcm)
+                    _state.update { it.copy(audioWaveforms = it.audioWaveforms + (uri.toString() to wave)) }
+                }
+            }
+        }
+    }
+
+    fun removeAudioClip(clipId: String) {
+        _state.update { current ->
+            current.copy(
+                audioClips = current.audioClips.filterNot { it.id == clipId },
+                selectedClipId = if (current.selectedClipId == clipId) null else current.selectedClipId,
                 syncStatus = SyncStatus.Idle,
                 syncConfidence = 0f
             )
         }
+        recomputeEstimate()
+    }
 
-        viewModelScope.launch {
-            val trackDuration = ThumbnailExtractor.probeDurationMs(getApplication(), uri)
-            _state.update {
-                it.copy(
-                    audioTrackDurationMs = trackDuration,
-                    audioTrimEndMs = trackDuration.coerceAtMost(it.trimmedDurationMs.takeIf { d -> d > 0 } ?: trackDuration)
-                )
-            }
-
-            val pcm = PcmDecoder.decodeMono(getApplication(), uri, maxDurationMs = 10 * 60_000L)
-            if (pcm != null) {
-                _state.update { it.copy(audioWaveform = WaveformBuilder.build(pcm)) }
-            }
-            recomputeEstimate()
+    private fun updateAudioClip(clipId: String, block: (Clip) -> Clip) {
+        _state.update { current ->
+            current.copy(audioClips = current.audioClips.map { if (it.id == clipId) block(it) else it })
         }
+        recomputeEstimate()
     }
 
-    /** Which slice of the audio file plays. */
-    fun setAudioTrim(startMs: Long, endMs: Long) {
-        _state.update {
-            val limit = if (it.audioTrackDurationMs > 0) it.audioTrackDurationMs else endMs
-            val start = startMs.coerceIn(0L, limit)
-            val end = endMs.coerceIn(start, limit)
-            it.copy(audioTrimStartMs = start, audioTrimEndMs = end)
-        }
+    /** Which slice of the audio file plays, in source time. */
+    fun setAudioTrim(clipId: String, startMs: Long, endMs: Long) = updateAudioClip(clipId) { clip ->
+        val limit = if (clip.sourceDurationMs > 0) clip.sourceDurationMs else endMs
+        val start = startMs.coerceIn(0L, (limit - MIN_CLIP_MS).coerceAtLeast(0L))
+        clip.copy(sourceInMs = start, sourceOutMs = endMs.coerceIn(start + MIN_CLIP_MS, limit))
     }
 
-    /** Where on the video timeline the slice begins. */
-    fun setAudioPlacement(ms: Long) {
-        _state.update { it.copy(audioPlacementMs = ms.coerceIn(0L, it.durationMs)) }
+    fun placeAudioAtPlayhead(clipId: String) {
+        val playhead = _state.value.playheadMs
+        updateAudioClip(clipId) { it.copy(timelineStartMs = playhead) }
     }
 
-    fun placeAudioAtPlayhead() = setAudioPlacement(_state.value.playheadMs)
+    fun setAudioClipVolume(clipId: String, volume: Float) =
+        updateAudioClip(clipId) { it.copy(volume = volume.coerceIn(0f, 1f)) }
 
     /**
-     * Slides the track against the picture. Keeps both the in-point and the
-     * placement non-negative by spending the move on whichever end has room, so a
-     * nudge can never put the cue into invalid territory.
+     * Slides a sound against the picture. Sliding left past the start of the edit
+     * is impossible, so the remainder is spent entering the file later instead -
+     * which is the same thing to the ear and keeps the nudge from stalling at zero.
      */
-    fun nudgeAudioOffset(deltaMs: Long) {
-        _state.update { current ->
-            val proposedTrimStart = current.audioTrimStartMs + deltaMs
-            if (proposedTrimStart < 0) {
-                current.copy(
-                    audioTrimStartMs = 0,
-                    audioPlacementMs = (current.audioPlacementMs - proposedTrimStart).coerceAtMost(current.durationMs)
-                )
-            } else {
-                current.copy(audioTrimStartMs = proposedTrimStart)
-            }
-        }
-    }
-
-    fun nudgeAudioOffsetFrames(frames: Int) = nudgeAudioOffset(frames * _state.value.frameMs)
-
-    fun resetAudioAlignment() {
-        _state.update {
-            it.copy(
-                audioTrimStartMs = 0,
-                audioPlacementMs = it.trimStartMs,
-                syncStatus = SyncStatus.Idle
+    fun nudgeAudioOffset(clipId: String, deltaMs: Long) = updateAudioClip(clipId) { clip ->
+        val proposed = clip.timelineStartMs + deltaMs
+        if (proposed >= 0) {
+            clip.copy(timelineStartMs = proposed)
+        } else {
+            clip.copy(
+                timelineStartMs = 0,
+                sourceInMs = (clip.sourceInMs - proposed).coerceAtMost(clip.sourceOutMs - MIN_CLIP_MS)
             )
         }
     }
 
-    fun setAudioVolume(volume: Float) = _state.update { it.copy(audioVolume = volume.coerceIn(0f, 1f)) }
+    fun nudgeAudioOffsetFrames(clipId: String, frames: Int) =
+        nudgeAudioOffset(clipId, frames * _state.value.frameMs)
+
+    fun resetAudioAlignment(clipId: String) {
+        updateAudioClip(clipId) { it.copy(timelineStartMs = 0, sourceInMs = 0) }
+        _state.update { it.copy(syncStatus = SyncStatus.Idle, syncConfidence = 0f) }
+    }
 
     fun setOriginalVolume(volume: Float) = _state.update { it.copy(originalVolume = volume.coerceIn(0f, 1f)) }
 
-    fun runAutoSync() {
+    fun runAutoSync(clipId: String) {
         val current = _state.value
         val videoUri = current.sourceUri ?: return
-        val audioUri = current.audioTrackUri ?: return
+        val clip = current.audioClips.firstOrNull { it.id == clipId } ?: return
+        val audioUri = clip.uri ?: return
 
         syncJob?.cancel()
         _state.update { it.copy(syncStatus = SyncStatus.Analyzing) }
@@ -294,16 +304,19 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     it.copy(syncStatus = SyncStatus.NoMatch, syncConfidence = result?.confidence ?: 0f)
                 }
             } else {
-                _state.update {
-                    // A positive offset means the track runs ahead of the picture, so
-                    // we enter the file later; a negative one delays the cue instead.
-                    val offset = result.offsetMs
-                    it.copy(
-                        audioTrimStartMs = offset.coerceAtLeast(0L),
-                        audioPlacementMs = (-offset).coerceAtLeast(0L),
-                        syncStatus = SyncStatus.Matched,
-                        syncConfidence = result.confidence
+                // A positive offset means the track runs ahead of the picture, so we
+                // enter the file later; a negative one delays the cue instead.
+                val offset = result.offsetMs
+                updateAudioClip(clipId) { existing ->
+                    val newIn = offset.coerceAtLeast(0L)
+                    existing.copy(
+                        sourceInMs = newIn.coerceAtMost((existing.sourceDurationMs - MIN_CLIP_MS).coerceAtLeast(0L)),
+                        timelineStartMs = (-offset).coerceAtLeast(0L),
+                        sourceOutMs = existing.sourceOutMs.coerceAtLeast(newIn + MIN_CLIP_MS)
                     )
+                }
+                _state.update {
+                    it.copy(syncStatus = SyncStatus.Matched, syncConfidence = result.confidence)
                 }
             }
         }
@@ -369,7 +382,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     label = displayNameOf(uri) ?: "Clip ${current.videoClips.size + 1}",
                     sourceInMs = 0,
                     sourceOutMs = meta.durationMs,
-                    timelineStartMs = current.videoClips.sumOf { it.durationMs },
+                    timelineStartMs = current.videoClips.maxOfOrNull { c -> c.timelineEndMs } ?: 0L,
                     sourceDurationMs = meta.durationMs
                 )
                 current.copy(videoClips = current.videoClips + clip)
@@ -423,51 +436,54 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Timeline drag. Each lane writes back to whichever model owns it. */
     fun moveClip(clipId: String, deltaMs: Long) {
-        val current = _state.value
-        when {
-            clipId == AUDIO_CLIP_ID -> setAudioPlacement(current.audioPlacementMs + deltaMs)
-            current.textOverlays.any { it.id == clipId } -> shiftOverlay(clipId, deltaMs)
-            else -> mutateVideoTrack { it.withClipMoved(clipId, deltaMs) }
-        }
+        if (_state.value.textOverlays.any { it.id == clipId }) shiftOverlay(clipId, deltaMs)
+        else mutateTimeline { it.withClipMoved(clipId, deltaMs) }
     }
 
-    /** Timeline edge drag. */
+    /** Timeline edge drag - the handles on a selected clip. */
     fun trimClip(clipId: String, startDeltaMs: Long, endDeltaMs: Long) {
-        val current = _state.value
-        when {
-            clipId == AUDIO_CLIP_ID -> setAudioTrim(
-                current.audioTrimStartMs + startDeltaMs,
-                current.audioTrimEndMs + endDeltaMs
-            )
-            current.textOverlays.any { it.id == clipId } -> resizeOverlay(clipId, startDeltaMs, endDeltaMs)
-            else -> mutateVideoTrack { it.withClipTrimmed(clipId, startDeltaMs, endDeltaMs) }
-        }
+        if (_state.value.textOverlays.any { it.id == clipId }) resizeOverlay(clipId, startDeltaMs, endDeltaMs)
+        else mutateTimeline { it.withClipTrimmed(clipId, startDeltaMs, endDeltaMs) }
     }
 
-    fun splitAtPlayhead() = mutateVideoTrack { it.withSplitAtPlayhead() }
+    /**
+     * Razor cut at the playhead, on picture and sound alike. This used to be handed
+     * only the video clips, which is why a music bed could never be cut on the strip.
+     */
+    fun splitAtPlayhead() = mutateTimeline { it.withSplitAtPlayhead() }
 
     /** Pull the base track back end to end. Deliberate, never automatic. */
-    fun closeGaps() = mutateVideoTrack { it.rippleVideo() }
+    fun closeGaps() = mutateTimeline { it.rippleVideo() }
 
     fun deleteSelectedClip() {
         val selected = _state.value.selectedClipId ?: return
-        when {
-            selected == AUDIO_CLIP_ID -> setAudioTrack(null)
-            _state.value.textOverlays.any { it.id == selected } -> removeTextOverlay(selected)
-            else -> mutateVideoTrack { it.withClipRemoved(selected) }
-        }
+        if (_state.value.textOverlays.any { it.id == selected }) removeTextOverlay(selected)
+        else mutateTimeline { it.withClipRemoved(selected) }
         _state.update { it.copy(selectedClipId = null) }
     }
 
-    private fun mutateVideoTrack(block: (TimelineState) -> TimelineState) {
+    /**
+     * Runs a timeline operation over everything on the strip - picture and sound -
+     * and files the result back into whichever list owns each clip.
+     *
+     * The previous version built its TimelineState from the video clips alone, so
+     * split, delete and close-gaps silently did nothing to audio no matter what was
+     * selected. One list in, one list out, split by kind: a sound is now trimmed and
+     * cut by exactly the same code that trims and cuts a shot.
+     */
+    private fun mutateTimeline(block: (TimelineState) -> TimelineState) {
         _state.update { current ->
-            val track = TimelineState(
-                clips = current.videoClips,
+            val timeline = TimelineState(
+                clips = current.videoClips + current.audioClips,
                 selectedClipId = current.selectedClipId,
                 playheadMs = current.playheadMs
             )
-            val next = block(track)
-            current.copy(videoClips = next.videoClips, selectedClipId = next.selectedClipId)
+            val next = block(timeline)
+            current.copy(
+                videoClips = next.clips.filter { it.kind == ClipKind.Video },
+                audioClips = next.clips.filter { it.kind == ClipKind.Audio },
+                selectedClipId = next.selectedClipId
+            )
         }
         recomputeEstimate()
     }
@@ -626,6 +642,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     videoWaveform = pcm?.let { decoded -> WaveformBuilder.build(decoded) }
                 )
             }
+            restoreAudioWaveforms(snapshot.audioClips)
+        }
+    }
+
+    /** Redraws the lanes of a recovered edit without blocking the restore on it. */
+    private suspend fun restoreAudioWaveforms(clips: List<Clip>) {
+        clips.mapNotNull { it.uri }.distinct().forEach { uri ->
+            if (_state.value.audioWaveforms[uri.toString()] != null) return@forEach
+            val pcm = PcmDecoder.decodeMono(getApplication(), uri, maxDurationMs = 10 * 60_000L) ?: return@forEach
+            val wave = WaveformBuilder.build(pcm)
+            _state.update { it.copy(audioWaveforms = it.audioWaveforms + (uri.toString() to wave)) }
         }
     }
 
@@ -661,13 +688,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         contrast = snapshot.contrast,
         saturation = snapshot.saturation,
         pixelsPerSecond = snapshot.pixelsPerSecond,
-        audioTrackUri = snapshot.audioTrackUri,
-        audioTrackName = snapshot.audioTrackName,
-        audioTrackDurationMs = snapshot.audioTrackDurationMs,
-        audioTrimStartMs = snapshot.audioTrimStartMs,
-        audioTrimEndMs = snapshot.audioTrimEndMs,
-        audioPlacementMs = snapshot.audioPlacementMs,
-        audioVolume = snapshot.audioVolume,
+        audioClips = snapshot.audioClips,
         selectedClipId = null,
         failure = null
     )

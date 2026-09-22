@@ -69,7 +69,8 @@ fun TimelineEditor(
     val pps = state.pixelsPerSecond
     val contentWidth = maxOf(state.durationMs, 8_000L).onTimeline(pps) + 240.dp
     val overlayLayers = (state.layerCount downTo 1).toList()
-    val laneCount = overlayLayers.size + 3
+    val audioLanes = state.audioLanes.ifEmpty { listOf(emptyList()) }
+    val laneCount = overlayLayers.size + audioLanes.size + 2
 
     Row(modifier = modifier.fillMaxWidth().background(SquishColors.Background)) {
 
@@ -77,7 +78,7 @@ fun TimelineEditor(
             Spacer(modifier = Modifier.height(RULER_HEIGHT))
             overlayLayers.forEach { LaneBadge(Icons.Filled.Layers, SquishColors.Magenta) }
             LaneBadge(Icons.Filled.Videocam, SquishColors.Violet)
-            LaneBadge(Icons.Filled.MusicNote, SquishColors.Cyan)
+            audioLanes.forEach { LaneBadge(Icons.Filled.MusicNote, SquishColors.Cyan) }
             LaneBadge(Icons.Filled.TextFields, SquishColors.Amber)
         }
 
@@ -103,7 +104,9 @@ fun TimelineEditor(
                     onTrim = onTrim,
                     onTransitionTap = onTransitionTap
                 )
-                Lane(state.audioClips, state, SquishColors.Cyan, onSelect, onMove, onTrim)
+                audioLanes.forEach { lane ->
+                    Lane(lane, state, SquishColors.Cyan, onSelect, onMove, onTrim)
+                }
                 Lane(state.textClips, state, SquishColors.Amber, onSelect, onMove, onTrim)
             }
 
@@ -148,6 +151,14 @@ private fun Ruler(durationMs: Long, pixelsPerSecond: Float, onScrub: (Long) -> U
             .pointerInput(pixelsPerSecond) {
                 detectTapGestures { offset ->
                     latestScrub((offset.x / density / pixelsPerSecond * 1000f).toLong())
+                }
+            }
+            // Dragging the ruler scrubs. Tapping alone meant finding a frame took a
+            // series of guesses instead of one continuous movement.
+            .pointerInput(pixelsPerSecond) {
+                detectHorizontalDragGestures { change, _ ->
+                    change.consume()
+                    latestScrub((change.position.x / density / pixelsPerSecond * 1000f).toLong())
                 }
             }
     ) {
@@ -250,6 +261,11 @@ private fun ClipView(
     val latestSelect by rememberUpdatedState(onSelect)
     val width = clip.durationMs.onTimeline(pixelsPerSecond)
 
+    // A short clip must still be trimmable. Fixed 20dp handles covered a two-second
+    // clip completely at default zoom, so the grips scale down with the clip and
+    // never take more than a third of each end.
+    val handleWidth = minOf(HANDLE_WIDTH, width / 3f)
+
     Box(
         modifier = Modifier
             .offset(x = clip.timelineStartMs.onTimeline(pixelsPerSecond))
@@ -277,19 +293,32 @@ private fun ClipView(
                 }
             }
     ) {
-        Text(
-            text = clip.text ?: clip.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = SquishColors.TextPrimary,
-            maxLines = 1,
-            modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 8.dp)
-        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(horizontal = handleWidth + 3.dp)
+        ) {
+            Text(
+                text = clip.text ?: clip.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.TextPrimary,
+                maxLines = 1
+            )
+            if (width > 88.dp) {
+                Text(
+                    text = Timecode.format(clip.durationMs).removeSuffix(".000"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.TextPrimary.copy(alpha = 0.6f),
+                    maxLines = 1
+                )
+            }
+        }
 
         if (selected) {
-            TrimHandle(accent, Alignment.CenterStart) { delta ->
+            TrimHandle(accent, handleWidth, Alignment.CenterStart) { delta ->
                 latestTrim(clip.id, (delta / pixelsPerSecond * 1000f).toLong(), 0L)
             }
-            TrimHandle(accent, Alignment.CenterEnd) { delta ->
+            TrimHandle(accent, handleWidth, Alignment.CenterEnd) { delta ->
                 latestTrim(clip.id, 0L, (delta / pixelsPerSecond * 1000f).toLong())
             }
         }
@@ -300,6 +329,7 @@ private fun ClipView(
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.TrimHandle(
     accent: Color,
+    width: Dp,
     alignment: Alignment,
     onDragDp: (Float) -> Unit
 ) {
@@ -307,7 +337,7 @@ private fun androidx.compose.foundation.layout.BoxScope.TrimHandle(
     Box(
         modifier = Modifier
             .align(alignment)
-            .width(HANDLE_WIDTH)
+            .width(width)
             .fillMaxHeight()
             .background(accent)
             .pointerInput(alignment) {
@@ -339,27 +369,50 @@ fun TimelineActionBar(
     onZoomOut: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    val selected = state.selectedClip
+    val splittable = state.clips.any { it.spans(state.playheadMs) }
+
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                Timecode.format(state.playheadMs),
+                style = MaterialTheme.typography.labelLarge,
+                color = SquishColors.TextPrimary
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            MiniAction(
+                "✂ Cut",
+                if (splittable) SquishColors.Primary else SquishColors.TextMuted,
+                onSplit
+            )
+            MiniAction(
+                "Delete",
+                if (selected == null) SquishColors.TextMuted else SquishColors.Magenta,
+                onDelete
+            )
+            MiniAction("Close gaps", SquishColors.TextSecondary, onCloseGaps)
+            Spacer(modifier = Modifier.fillMaxWidth(0.02f))
+            MiniAction("−", SquishColors.TextSecondary, onZoomOut)
+            MiniAction("+", SquishColors.TextSecondary, onZoomIn)
+        }
+
+        // Says what the buttons will act on, because a razor that cuts the wrong
+        // track - or nothing at all - is worse than no razor.
         Text(
-            Timecode.format(state.playheadMs),
-            style = MaterialTheme.typography.labelLarge,
-            color = SquishColors.TextPrimary
+            when {
+                selected != null -> "${selected.label} selected · drag to move, drag its ends to trim"
+                splittable -> "Cut splits every track under the playhead"
+                else -> "Tap a clip to select it · drag the ruler to scrub"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = SquishColors.TextMuted,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 16.dp)
         )
-        Spacer(modifier = Modifier.width(4.dp))
-        MiniAction("Split", SquishColors.Primary, onSplit)
-        MiniAction(
-            "Delete",
-            if (state.selectedClip == null) SquishColors.TextMuted else SquishColors.Magenta,
-            onDelete
-        )
-        MiniAction("Close gaps", SquishColors.TextSecondary, onCloseGaps)
-        Spacer(modifier = Modifier.fillMaxWidth(0.02f))
-        MiniAction("−", SquishColors.TextSecondary, onZoomOut)
-        MiniAction("+", SquishColors.TextSecondary, onZoomIn)
     }
 }
 

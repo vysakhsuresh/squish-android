@@ -71,6 +71,12 @@ data class EditorUiState(
     val markers: List<Long> = emptyList(),
     val snapToMarkers: Boolean = true,
 
+    // Transport. [isPlaying] is what the user asked for; the preview engine obeys
+    // it. [scrubNonce] ticks on every deliberate jump so the engine can tell a
+    // playhead that moved *because* playback advanced from one the user dragged.
+    val isPlaying: Boolean = false,
+    val scrubNonce: Long = 0,
+
     val quality: Quality = Quality.Medium,
     val fitToSize: Boolean = false,
     val targetSizeMb: Int = 16,
@@ -92,24 +98,23 @@ data class EditorUiState(
     // trim, reorder and merge all operate on this list, and export renders it.
     val videoClips: List<Clip> = emptyList(),
 
-    // A second audio track: separately recorded sound, a music bed, a voiceover.
-    // Three numbers describe it completely -
-    //   audioTrimStartMs/EndMs : which slice of the audio file to use
-    //   audioPlacementMs       : where on the video timeline that slice begins
-    // Sync offset is simply the difference between the two, so aligning a clap and
-    // dropping a music cue at a chorus are the same operation underneath.
-    val audioTrackUri: Uri? = null,
-    val audioTrackDurationMs: Long = 0,
-    val audioTrackName: String? = null,
-    val audioTrimStartMs: Long = 0,
-    val audioTrimEndMs: Long = 0,
-    val audioPlacementMs: Long = 0,
-    val audioVolume: Float = 1f,
+    /**
+     * Every added sound: music, a voiceover, a second mic, as many as you like and
+     * overlapping freely. Each is an ordinary [Clip], which is the whole point -
+     * moving, trimming, splitting and deleting a sound is then the same code that
+     * does it to a picture, and a music bed can be cut to the beat on the strip
+     * exactly like a shot. This replaced seven loose fields that between them could
+     * only ever describe one track.
+     */
+    val audioClips: List<Clip> = emptyList(),
+
+    /** Waveforms cached per source file, so splitting a track costs no re-decode. */
+    val audioWaveforms: Map<String, Waveform> = emptyMap(),
+
     val syncStatus: SyncStatus = SyncStatus.Idle,
     val syncConfidence: Float = 0f,
 
     val videoWaveform: Waveform? = null,
-    val audioWaveform: Waveform? = null,
 
     val selectedClipId: String? = null,
     val pixelsPerSecond: Float = 42f,
@@ -127,22 +132,38 @@ data class EditorUiState(
     val isExporting: Boolean = false,
     val estimatedOutputBytes: Long = 0
 ) {
+    /**
+     * How long the finished video runs.
+     *
+     * This is where the last frame *lands*, not the sum of the clip lengths. Once
+     * clips can be dragged apart - which is what makes manual sync possible - a
+     * gap is part of the edit, and summing durations would report a video shorter
+     * than the one that actually gets written.
+     */
     val trimmedDurationMs: Long
         get() = if (videoClips.isEmpty()) (trimEndMs - trimStartMs).coerceAtLeast(0)
-        else videoClips.sumOf { it.durationMs }
+        else videoClips.maxOf { it.timelineEndMs }
+
+    /** The full span the preview has to cover, sound included. */
+    val timelineDurationMs: Long
+        get() = maxOf(
+            trimmedDurationMs,
+            audioClips.maxOfOrNull { it.timelineEndMs } ?: 0L,
+            textOverlays.maxOfOrNull { it.endMs } ?: 0L
+        )
 
     val frameMs: Long get() = Timecode.frameDurationMs(fps)
 
-    val hasSeparateAudio: Boolean get() = audioTrackUri != null
-
-    /** How long the chosen slice of the audio track runs. */
-    val audioSliceDurationMs: Long get() = (audioTrimEndMs - audioTrimStartMs).coerceAtLeast(0)
+    val hasSeparateAudio: Boolean get() = audioClips.isNotEmpty()
 
     /**
-     * At video time t the aligned audio sample sits at (t + audioOffsetMs).
-     * Positive means the track's content runs ahead of the picture.
+     * Which audio clip the Audio panel acts on: whatever is selected, falling back
+     * to the first, so the panel is never inert.
      */
-    val audioOffsetMs: Long get() = audioTrimStartMs - audioPlacementMs
+    val targetAudioClip: Clip?
+        get() = audioClips.firstOrNull { it.id == selectedClipId } ?: audioClips.firstOrNull()
+
+    fun waveformFor(clip: Clip): Waveform? = clip.uri?.let { audioWaveforms[it.toString()] }
 
     /** Whether any audio at all reaches the exported file. */
     val hasAnyAudio: Boolean get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio
@@ -150,27 +171,11 @@ data class EditorUiState(
 
 /**
  * The timeline the editor draws, assembled from the one authoritative copy of each
- * thing: the video track as stored, the separate audio track as its three numbers,
- * and captions as their time windows. Dragging a lane writes straight back to
- * whichever of those owns it, so nothing is ever mirrored into a second place.
+ * thing: the video track and the audio tracks as stored, and captions as their time
+ * windows. Dragging a lane writes straight back to whichever of those owns it, so
+ * nothing is ever mirrored into a second place.
  */
 fun EditorUiState.toTimeline(): TimelineState {
-    val audio = audioTrackUri?.let { uri ->
-        listOf(
-            Clip(
-                id = AUDIO_CLIP_ID,
-                kind = ClipKind.Audio,
-                uri = uri,
-                label = audioTrackName ?: "Audio",
-                sourceInMs = audioTrimStartMs,
-                sourceOutMs = audioTrimEndMs,
-                timelineStartMs = audioPlacementMs,
-                sourceDurationMs = audioTrackDurationMs,
-                volume = audioVolume
-            )
-        )
-    } ?: emptyList()
-
     val captions = textOverlays.map { overlay ->
         Clip(
             id = overlay.id,
@@ -185,11 +190,9 @@ fun EditorUiState.toTimeline(): TimelineState {
     }
 
     return TimelineState(
-        clips = videoClips + audio + captions,
+        clips = videoClips + audioClips + captions,
         selectedClipId = selectedClipId,
         playheadMs = playheadMs,
         pixelsPerSecond = pixelsPerSecond
     )
 }
-
-const val AUDIO_CLIP_ID = "squish-audio-track"
