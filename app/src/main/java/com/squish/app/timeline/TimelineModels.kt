@@ -68,7 +68,10 @@ data class Clip(
      * Green screen, when this clip has one. Only useful on an overlay layer -
      * keying the base track just reveals black.
      */
-    val chromaKey: ChromaKey? = null
+    val chromaKey: ChromaKey? = null,
+
+    /** Restricts the clip to a shape. Composes with [chromaKey] rather than replacing it. */
+    val mask: Mask? = null
 ) {
     val durationMs: Long get() = (sourceOutMs - sourceInMs).coerceAtLeast(0)
     val timelineEndMs: Long get() = timelineStartMs + durationMs

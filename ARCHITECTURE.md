@@ -35,7 +35,7 @@ app/src/main/java/com/squish/app/
 │                  (split, trim, move, ripple, transitions, layers)
 ├── editor/        EditorViewModel + one immutable EditorUiState, all Compose panels
 ├── media/         Everything that touches a codec
-│   ├── effects/            the look catalogue, grading maths and the key shader
+│   ├── effects/            the look catalogue, grading maths and the two shaders
 │   ├── VideoProcessor      export orchestration
 │   ├── CompositionFactory  A/B-roll sequences, transitions, overlay geometry
 │   ├── ProxyEngine         background 540p proxies for smooth scrubbing
@@ -174,6 +174,30 @@ sits 0.183 from digital blue and the screen's own shadows reach 0.178. That is
 physics rather than a bug, and the panel says so rather than letting you find out
 during a shoot.
 
+### Masking
+A second alpha shader rather than a branch inside the key one, so the two chain:
+keying writes a matte, masking multiplies into whatever alpha arrived. A clip can be
+keyed *and* masked and neither overwrites the other's work.
+
+All four shapes are signed distance functions in one shader. They differ only in how
+the distance is measured — once you have a signed distance, feathering, inverting
+and compositing are identical for all of them, and writing that four times is four
+places for the edges to stop matching.
+
+Rotation and corner rounding happen in **pixel-isotropic units**: the x axis is
+scaled by the frame's aspect before the shape is measured. Skip that and a turned
+rectangle shears into a rhombus on anything but a square frame, which is every frame
+anyone actually shoots. The frame's shape is only known in `configure`, so that is
+where the aspect uniform is set.
+
+There are no drag handles on the preview, deliberately. The mask is applied by the
+preview's own shader, so the sliders move the finished result live; handles would be
+a second, worse representation of something already on screen.
+
+Masks are static per clip for now. The shader can take its uniforms per frame — the
+hook is the same one the keyframe system uses — so animated reveals are a UI problem
+rather than a rendering one, and are scoped below rather than claimed.
+
 ### Keyframes, and the one hook that makes them possible
 Media3's per-frame effects are static: `Contrast`, `HslAdjustment` and `AlphaScale`
 are handed one value and keep it for the whole clip. `MatrixTransformation` is the
@@ -249,6 +273,8 @@ evict, rebuilt on demand.
 - Speed, rotation, crop with live framing guides
 - Text overlays with timing, colour, size and position
 - Chroma key with spill suppression, sampled from your own frame, live in preview
+- Shape masks — rectangle, ellipse, linear, mirror — feathered, rotatable,
+  invertible, composing with the key rather than replacing it
 - Keyframed motion: scale, position and rotation over time, with smooth, linear
   and hold easing, six one-tap presets, and live preview
 - Colour: brightness, contrast, saturation

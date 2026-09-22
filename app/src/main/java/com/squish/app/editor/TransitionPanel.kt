@@ -163,6 +163,7 @@ fun TransitionPanel(
         }
 
         if (isVideo && selected != null) {
+            MaskPanel(clip = selected, viewModel = viewModel)
             ChromaKeyPanel(clip = selected, playheadMs = state.playheadMs, viewModel = viewModel)
         }
     }

@@ -108,25 +108,29 @@ these back to `PlayerView` (which defaults to `SurfaceView`) and every dissolve,
 slide, wipe and picture-in-picture silently stops working while the code still
 looks correct.
 
-## The chroma key shader
+## The two custom shaders
 
-`media/effects/ChromaKeyEffect.kt` is the only file in the app that touches
-Media3's shader API — `BaseGlShaderProgram`, `GlProgram`, `GlUtil`, `Size`,
+`media/effects/ChromaKeyEffect.kt` and `media/effects/MaskEffect.kt` are the only
+files in the app that touch Media3's shader API — `BaseGlShaderProgram`, `GlProgram`, `GlUtil`, `Size`,
 `VideoFrameProcessingException`. It was written against the actual 1.5.1 sources
 rather than from memory, and its uniforms are cross-checked against the GLSL, but
 it is still the largest new API surface in the project.
 
-It is deliberately self-contained. If those signatures differ in the version you
-resolve:
+They are deliberately self-contained, and they share the same three call sites. If
+those signatures differ in the version you resolve, for each of the two effects:
 
-1. delete `media/effects/ChromaKeyEffect.kt`
-2. delete the two `clip.chromaKey?.let { add(ChromaKeyEffect(it)) }` lines — one in
-   `CompositionFactory.overlayEffects`, one in `VideoProcessor.editedClip`
-3. delete the `chroma?.let { add(ChromaKeyEffect(it)) }` line in
-   `PreviewEngine.applySurfaceEffects`
+1. delete the effect file
+2. delete its `?.let { add(...) }` line in `CompositionFactory.overlayEffects`
+3. delete its `?.let { add(...) }` line in `VideoProcessor.editedClip`
+4. delete its `?.let { add(...) }` line in `PreviewEngine.applySurfaceEffects`
 
-Everything else builds exactly as before; the panel still stores settings, they
+Everything else builds exactly as before; the panels still store settings, they
 simply stop being applied. The shader assets can stay where they are.
+
+Both shaders write **straight** (non-premultiplied) alpha, matching the convention
+Media3's own `AlphaScale` uses — which is the path already working in this app for
+overlay opacity. If edges fringe on a device, that convention is the first thing to
+check.
 
 Note that `BaseGlShaderProgram` was called `SingleFrameGlShaderProgram` before
 Media3 1.2 — if you ever move the module backwards, that is the rename to make.

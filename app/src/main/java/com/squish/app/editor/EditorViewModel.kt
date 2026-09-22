@@ -21,6 +21,8 @@ import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
+import com.squish.app.timeline.Mask
+import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.ClipKind
@@ -478,6 +480,40 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val uri = clip.uri ?: _state.value.sourceUri ?: return null
         val inClip = (clip.sourceInMs + (atMs - clip.timelineStartMs)).coerceIn(clip.sourceInMs, clip.sourceOutMs)
         return ThumbnailExtractor.frameAt(getApplication(), uri, inClip)
+    }
+
+    // ---- Masking --------------------------------------------------------------
+
+    fun setMask(clipId: String, mask: Mask?) = mutateTimeline { timeline ->
+        timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(mask = mask) else it })
+    }
+
+    fun updateMask(
+        clipId: String,
+        shape: MaskShape? = null,
+        centerX: Float? = null,
+        centerY: Float? = null,
+        width: Float? = null,
+        height: Float? = null,
+        rotation: Float? = null,
+        feather: Float? = null,
+        cornerRadius: Float? = null,
+        inverted: Boolean? = null
+    ) = mutateTimeline { timeline ->
+        val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+        val current = clip.mask ?: Mask()
+        val next = current.copy(
+            shape = shape ?: current.shape,
+            centerXFraction = (centerX ?: current.centerXFraction).coerceIn(-1.5f, 1.5f),
+            centerYFraction = (centerY ?: current.centerYFraction).coerceIn(-1.5f, 1.5f),
+            widthFraction = (width ?: current.widthFraction).coerceIn(0.02f, 2f),
+            heightFraction = (height ?: current.heightFraction).coerceIn(0.02f, 2f),
+            rotationDegrees = (rotation ?: current.rotationDegrees).coerceIn(-180f, 180f),
+            feather = (feather ?: current.feather).coerceIn(0.001f, 0.5f),
+            cornerRadius = (cornerRadius ?: current.cornerRadius).coerceIn(0f, 1f),
+            inverted = inverted ?: current.inverted
+        )
+        timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(mask = next) else it })
     }
 
     // ---- Motion and keyframes ---------------------------------------------------

@@ -9,6 +9,8 @@ import com.squish.app.editor.TextOverlayItem
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.Mask
+import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
 import com.squish.app.timeline.Transform
@@ -145,6 +147,19 @@ class ProjectAutosave(context: Context) {
         put("offsetYFraction", clip.offsetYFraction.toDouble())
         put("rotation", clip.rotation.toDouble())
         put("keyframes", JSONArray().apply { clip.keyframes.forEach { put(encodeKeyframe(it)) } })
+        clip.mask?.let { m ->
+            put("mask", JSONObject().apply {
+                put("shape", m.shape.name)
+                put("centerXFraction", m.centerXFraction.toDouble())
+                put("centerYFraction", m.centerYFraction.toDouble())
+                put("widthFraction", m.widthFraction.toDouble())
+                put("heightFraction", m.heightFraction.toDouble())
+                put("rotationDegrees", m.rotationDegrees.toDouble())
+                put("feather", m.feather.toDouble())
+                put("cornerRadius", m.cornerRadius.toDouble())
+                put("inverted", m.inverted)
+            })
+        }
         clip.chromaKey?.let { key ->
             put("chromaKey", JSONObject().apply {
                 put("keyColorArgb", key.keyColorArgb)
@@ -260,6 +275,19 @@ class ProjectAutosave(context: Context) {
                     smoothness = k.optDouble("smoothness", 0.1).toFloat(),
                     spill = k.optDouble("spill", 0.12).toFloat()
                 )
+            },
+            mask = json.optJSONObject("mask")?.let { m ->
+                Mask(
+                    shape = enumOrNull<MaskShape>(m.optString("shape")) ?: MaskShape.Ellipse,
+                    centerXFraction = m.optDouble("centerXFraction").toFloat(),
+                    centerYFraction = m.optDouble("centerYFraction").toFloat(),
+                    widthFraction = m.optDouble("widthFraction", 0.6).toFloat(),
+                    heightFraction = m.optDouble("heightFraction", 0.6).toFloat(),
+                    rotationDegrees = m.optDouble("rotationDegrees").toFloat(),
+                    feather = m.optDouble("feather", 0.04).toFloat(),
+                    cornerRadius = m.optDouble("cornerRadius").toFloat(),
+                    inverted = m.optBoolean("inverted")
+                )
             }
         )
     }
@@ -297,7 +325,7 @@ class ProjectAutosave(context: Context) {
 
     private companion object {
         /** Bump when the shape changes; older documents are then ignored rather than misread. */
-        const val FORMAT_VERSION = 5
+        const val FORMAT_VERSION = 6
     }
 }
 

@@ -38,6 +38,11 @@ recorder — the timbre is wildly different, the loudness shape is not.
   looking, not guessing.
 - **Exact seeking** in preview (`SeekParameters.EXACT`), so scrubbing lands on
   the frame rather than the nearest keyframe.
+- **Shape masks.** Rectangle, ellipse, linear and mirror, each feathered,
+  rotatable and invertible. Rotation is aspect-corrected, so a turned rectangle
+  stays a rectangle instead of shearing. Composes with the chroma key rather than
+  replacing it, and applied by the preview's own shader so the sliders move the
+  finished result.
 - **Chroma key with spill suppression.** Tap your actual screen in the frame to
   sample it — screen paint and cloth vary far too much for a canned colour to
   work. Keys in chroma only, so it holds through uneven lighting, and pulls the
@@ -159,7 +164,7 @@ against the Kotlin compiler but compiled for the first time on your machine.
 
 ## Not built yet
 
-Honest list, not silent omissions: masking, auto-captions,
+Honest list, not silent omissions: animated masks, auto-captions,
 stabilization, motion tracking, true 3D LUTs, per-clip looks, and keyframed
 opacity and colour (the transform hook Media3 gives does not cover those) — all scoped with
 real timescales in [ARCHITECTURE.md](ARCHITECTURE.md). Plus reverse clip (needs

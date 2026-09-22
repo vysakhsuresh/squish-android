@@ -25,6 +25,7 @@ import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.Quality
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
+import com.squish.app.media.effects.MaskEffect
 import com.squish.app.media.effects.Looks
 import com.squish.app.timeline.Clip
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -134,6 +135,7 @@ class VideoProcessor(private val context: Context) {
             val moved = clip.keyframes.isNotEmpty() || !clip.staticTransform.isIdentity
             val leading = buildList<Effect> {
                 clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
+                clip.mask?.let { add(MaskEffect(it)) }
                 if (moved) add(ClipTransformEffect(clip.keyframes, clip.staticTransform))
             }
             if (leading.isEmpty()) buildVideoEffects(state) else leading + buildVideoEffects(state)

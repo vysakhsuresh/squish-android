@@ -7,6 +7,7 @@ import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import com.squish.app.editor.EditorUiState
 import com.squish.app.media.effects.ChromaKeyEffect
+import com.squish.app.media.effects.MaskEffect
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.TransitionType
 
@@ -112,6 +113,10 @@ object CompositionFactory {
             // Keyed first, on the raw frame, so the matte is cut from the pixels the
             // camera saw rather than from a scaled and resampled copy of them.
             clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
+            // After the key, so the two mattes multiply rather than one replacing
+            // the other, and before the transform, so the shape is cut from the
+            // frame the camera saw rather than from a scaled copy of it.
+            clip.mask?.let { add(MaskEffect(it)) }
             add(ClipTransformEffect(clip.keyframes, clip.staticTransform))
             add(Presentation.createForWidthAndHeight(canvasWidth, canvasHeight, Presentation.LAYOUT_SCALE_TO_FIT))
             if (clip.opacity < 1f) add(AlphaScale(clip.opacity))

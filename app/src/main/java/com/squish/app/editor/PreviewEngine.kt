@@ -11,6 +11,7 @@ import androidx.media3.common.Effect
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.Grade
+import com.squish.app.media.effects.MaskEffect
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.TransitionType
@@ -212,13 +213,15 @@ class PreviewEngine(private val context: Context) {
     private fun applySurfaceEffects(surfaceKey: String, player: ExoPlayer, clip: Clip?) {
         val grade = appliedGrade
         val chroma = clip?.chromaKey
-        val signature = "$grade|$chroma"
+        val mask = clip?.mask
+        val signature = "$grade|$chroma|$mask"
         if (appliedEffects[surfaceKey] == signature) return
         appliedEffects[surfaceKey] = signature
 
         val effects = buildList<Effect> {
-            // Keyed first, on the raw frame, matching the export's order exactly.
+            // Keyed first, then masked, matching the export's order exactly.
             chroma?.let { add(ChromaKeyEffect(it)) }
+            mask?.let { add(MaskEffect(it)) }
             grade?.let { addAll(ColorGrade.effects(it)) }
         }
         // Guarded: setVideoEffects is unstable API, and a custom shader can fail to
