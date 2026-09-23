@@ -9,7 +9,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.squish.app.editor.EditorScreen
 import com.squish.app.export.ExportScreen
-import com.squish.app.history.HistoryScreen
+import com.squish.app.history.LibraryScreen
 import com.squish.app.home.HomeScreen
 import com.squish.app.settings.SettingsScreen
 import com.squish.app.tools.QuickTool
@@ -30,13 +30,20 @@ fun SquishNavHost() {
                     navController.navigate(Destination.Editor.buildRoute(Uri.encode(uri.toString())))
                 },
                 onOpenTool = { tool -> navController.navigate(Destination.QuickTool.buildRoute(tool.id)) },
-                onOpenHistory = { navController.navigate(Destination.History.route) },
+                onOpenLibrary = { navController.navigate(Destination.Library.route) },
                 onOpenSettings = { navController.navigate(Destination.Settings.route) }
             )
         }
 
-        composable(Destination.History.route) {
-            HistoryScreen(onBack = { navController.popBackStack() })
+        composable(Destination.Library.route) {
+            LibraryScreen(
+                onBack = { navController.popBackStack() },
+                onOpen = { path ->
+                    navController.navigate(
+                        Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Export"))
+                    )
+                }
+            )
         }
 
         composable(Destination.Settings.route) {

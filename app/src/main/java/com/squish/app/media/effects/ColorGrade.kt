@@ -14,6 +14,12 @@ object ColorGrade {
 
     fun effects(grade: Grade): List<Effect> {
         if (grade.isIdentity) return emptyList()
+
+        // A look with grain, a vignette or bloom in it does the whole grade in one
+        // shader pass. Splitting the colour work back out to the built-ins would
+        // mean four passes where one will do, over every frame.
+        if (grade.needsShader) return listOf(LookEffect(grade))
+
         val out = mutableListOf<Effect>()
 
         if (grade.hasChannelGain) {

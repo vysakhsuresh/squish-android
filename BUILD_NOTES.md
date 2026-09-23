@@ -172,6 +172,7 @@ kotlinc -nowarn -d /dev/null $(find app/src/main/java -name '*.kt') > log 2>&1
 python3 tools/check_unresolved.py log        # renamed / misspelled references
 python3 tools/check_modifier_imports.py      # Modifier extensions used unimported
 python3 tools/check_nesting.py               # a declaration swallowed by a stray brace
+python3 tools/check_shaders.py               # a shader and its Kotlin disagreeing about uniforms
 ```
 
 `check_unresolved.py` drops member accesses, names the file imports and names the

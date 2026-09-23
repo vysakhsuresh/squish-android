@@ -63,15 +63,16 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 accent = SquishColors.Magenta
             )
 
+            // Five families no longer divide evenly into a phone's width, so the
+            // row scrolls rather than squeezing "Essentials" down to an ellipsis.
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
             ) {
                 LookFamily.entries.forEach { entry ->
                     SelectableChip(
                         label = entry.label,
                         selected = family == entry,
-                        modifier = Modifier.weight(1f),
                         onClick = { family = entry }
                     )
                 }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -320,13 +321,16 @@ private fun ToolRail(selected: EditorTab, onSelect: (EditorTab) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier
                     .graphicsLayer { scaleX = scale; scaleY = scale }
+                    // One width for all nine. Sized by their labels, "Mix" came out
+                    // half the width of "Captions" and the row read as a ransom note.
+                    .width(RAIL_ITEM_WIDTH)
                     .clip(RoundedCornerShape(12.dp))
                     .then(
                         if (isSelected) Modifier.background(accentSweep(entry.accent))
                         else Modifier.background(SquishColors.Background)
                     )
                     .clickable { onSelect(entry) }
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .padding(vertical = 8.dp)
             ) {
                 Icon(
                     entry.icon,
@@ -334,8 +338,16 @@ private fun ToolRail(selected: EditorTab, onSelect: (EditorTab) -> Unit) {
                     tint = tint,
                     modifier = Modifier.size(18.dp)
                 )
-                Text(entry.label, style = MaterialTheme.typography.labelSmall, color = tint)
+                Text(
+                    entry.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tint,
+                    maxLines = 1
+                )
             }
         }
     }
 }
+
+/** Wide enough for "Captions", which is the longest label in the rail. */
+private val RAIL_ITEM_WIDTH = 74.dp

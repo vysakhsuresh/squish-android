@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -36,11 +38,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.squish.app.data.ExportRecord
-import com.squish.app.editor.Timecode
 import com.squish.app.tools.QuickTool
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.components.accentSweep
@@ -60,7 +61,7 @@ fun formatSize(bytes: Long): String {
 fun HomeScreen(
     onOpenEditor: (Uri) -> Unit,
     onOpenTool: (QuickTool) -> Unit,
-    onOpenHistory: () -> Unit,
+    onOpenLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
     viewModel: HomeViewModel = viewModel()
 ) {
@@ -123,36 +124,22 @@ fun HomeScreen(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Header("Quick tools", "One job, one tap")
                 QuickTool.entries.chunked(2).forEach { pair ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(TILE_HEIGHT)
+                    ) {
                         pair.forEach { tool ->
-                            ToolTile(tool = tool, modifier = Modifier.weight(1f)) { onOpenTool(tool) }
+                            ToolTile(
+                                tool = tool,
+                                modifier = Modifier.weight(1f).fillMaxHeight()
+                            ) { onOpenTool(tool) }
                         }
                         if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    Header("Recent", "Everything you have exported")
-                    Text(
-                        "See all",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = SquishColors.Cyan,
-                        modifier = Modifier.clickable(onClick = onOpenHistory)
-                    )
-                }
-
-                if (recent.isEmpty()) {
-                    EmptyRecent()
-                } else {
-                    recent.take(4).forEach { record -> RecentRow(record) }
-                }
-            }
+            LibraryDoor(count = recent.size, onClick = onOpenLibrary)
 
             Spacer(modifier = Modifier.height(28.dp))
         }
@@ -258,70 +245,69 @@ private fun ToolTile(tool: QuickTool, modifier: Modifier = Modifier, onClick: ()
             )
         }
         Text(tool.title, style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
-        Text(tool.blurb, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
-    }
-}
-
-@Composable
-private fun EmptyRecent() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(SquishColors.Surface)
-            .border(1.dp, SquishColors.Border, RoundedCornerShape(18.dp))
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Text("Nothing exported yet", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
         Text(
-            "Whatever you make lands here, with how much smaller it came out.",
+            tool.blurb,
             style = MaterialTheme.typography.bodySmall,
-            color = SquishColors.TextMuted
+            color = SquishColors.TextMuted,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
 
+/**
+ * The way into the library, as one row rather than a list that grows forever.
+ *
+ * It says how many are in there, which is the only thing the dashboard needs to
+ * tell you about work you have already finished.
+ */
 @Composable
-private fun RecentRow(record: ExportRecord) {
+private fun LibraryDoor(count: Int, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(SquishColors.Surface)
-            .border(1.dp, SquishColors.Border, RoundedCornerShape(16.dp))
-            .padding(14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .clip(RoundedCornerShape(18.dp))
+            .background(SquishColors.Violet.copy(alpha = 0.1f))
+            .border(1.dp, SquishColors.Violet.copy(alpha = 0.32f), RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                record.title,
-                style = MaterialTheme.typography.titleSmall,
-                color = SquishColors.TextPrimary,
-                maxLines = 1
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(accentSweep(SquishColors.Violet)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Filled.VideoLibrary,
+                contentDescription = null,
+                tint = SquishColors.Background,
+                modifier = Modifier.size(20.dp)
             )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Library", style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
             Text(
-                "${Timecode.format(record.durationMs)}  ·  ${formatSize(record.outputSizeBytes)}",
+                when (count) {
+                    0 -> "Everything you export lands here"
+                    1 -> "1 export · search and share"
+                    else -> "$count exports · search and share"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )
         }
-        SavingBadge(record)
+        Icon(
+            Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = null,
+            tint = SquishColors.Violet,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
-@Composable
-private fun SavingBadge(record: ExportRecord) {
-    if (record.originalSizeBytes <= 0 || record.outputSizeBytes >= record.originalSizeBytes) return
-    val saved = 100 - (record.outputSizeBytes * 100 / record.originalSizeBytes)
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(SquishColors.Cyan.copy(alpha = 0.16f))
-            .border(1.dp, SquishColors.Cyan.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp)
-    ) {
-        Text("−$saved%", style = MaterialTheme.typography.labelSmall, color = SquishColors.Cyan)
-    }
-}
+/** Two rows of text and a glyph, at a height that does not depend on the words. */
+private val TILE_HEIGHT = 138.dp

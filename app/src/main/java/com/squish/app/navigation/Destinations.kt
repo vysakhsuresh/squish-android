@@ -2,7 +2,7 @@ package com.squish.app.navigation
 
 sealed class Destination(val route: String) {
     data object Home : Destination("home")
-    data object History : Destination("history")
+    data object Library : Destination("library")
     data object Settings : Destination("settings")
 
     data object Editor : Destination("editor/{videoUri}") {
