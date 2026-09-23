@@ -11,9 +11,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import com.squish.app.ui.theme.SquishColors
 
 /**
- * Shows exactly what survives the crop, over the live preview: everything outside
- * the target frame is dimmed, with thirds guides inside it. Previously the aspect
- * ratio was a chip you picked blind and only saw after exporting.
+ * Thirds guides over the framed picture, and a dim over anything that is not it.
+ *
+ * The preview itself now crops, so the guides are the working part: this is where
+ * you put a face or a horizon, and a crop chosen without them is a crop chosen by
+ * feel. The dim covers the letterbox around the framed rectangle, which is the
+ * container's leftover space rather than discarded footage.
  */
 @Composable
 fun CropOverlay(

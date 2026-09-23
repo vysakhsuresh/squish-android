@@ -69,6 +69,8 @@ fun TimelinePreview(
     originalVolume: Float,
     grade: Grade,
     speed: Float,
+    rotationDegrees: Int,
+    cropRatio: Float?,
     sourceAspect: Float,
     playheadMs: Long,
     scrubNonce: Long,
@@ -87,7 +89,10 @@ fun TimelinePreview(
 
     // Positions and trims are read fresh every tick, so this only has to run when
     // the set of clips itself changes shape.
-    val editSignature = remember(videoClips, audioClips, captions, proxyUri, muteOriginal, originalVolume, grade, speed) {
+    val editSignature = remember(
+        videoClips, audioClips, captions, proxyUri, muteOriginal, originalVolume,
+        grade, speed, rotationDegrees, cropRatio
+    ) {
         videoClips.joinToString("|") {
             "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}" +
                 ":L${it.layer}:${it.opacity}:${it.staticTransform}" +
@@ -95,13 +100,14 @@ fun TimelinePreview(
                 ":K${it.keyframes}"
         } +
             "//" + audioClips.joinToString("|") { "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}:${it.volume}" } +
-            "//" + proxyUri + muteOriginal + originalVolume + grade + captions + speed
+            "//" + proxyUri + muteOriginal + originalVolume + grade + captions +
+            speed + rotationDegrees + cropRatio
     }
 
     LaunchedEffect(editSignature, fallbackUri) {
         engine.setTimeline(
             videoClips, audioClips, captions, fallbackUri, proxyUri,
-            muteOriginal, originalVolume, grade, speed
+            muteOriginal, originalVolume, grade, speed, rotationDegrees, cropRatio
         )
     }
 

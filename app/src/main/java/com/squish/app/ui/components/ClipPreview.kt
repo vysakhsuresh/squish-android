@@ -87,8 +87,13 @@ fun ClipPreview(
     // Where each source begins on the joined timeline, so a position in the
     // playlist can be read as one number and scrubbed as one bar.
     val offsets = remember(sources) {
+        val starts = ArrayList<Long>(sources.size)
         var cursor = 0L
-        sources.map { cursor.also { _ -> cursor += it.durationMs } }
+        for (source in sources) {
+            starts.add(cursor)
+            cursor += source.durationMs
+        }
+        starts
     }
 
     val endMs = if (rangeEndMs > rangeStartMs) rangeEndMs else totalMs

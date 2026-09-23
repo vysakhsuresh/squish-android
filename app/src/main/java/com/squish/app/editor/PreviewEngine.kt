@@ -5,6 +5,8 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.effect.Presentation
+import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
@@ -113,6 +115,17 @@ class PreviewEngine(private val context: Context) {
     private var appliedGrade: Grade? = null
 
     /**
+     * Framing, previewed rather than promised.
+     *
+     * Rotation and crop were export-only: the preview box changed shape when you
+     * chose 9:16, but the picture inside it did not, so the one thing the setting
+     * is for was the one thing you could not see until afterwards. These are the
+     * same two Media3 effects the exporter builds, in the same order.
+     */
+    private var rotationDegrees: Int = 0
+    private var cropRatio: Float? = null
+
+    /**
      * Playback rate, the same number the export hands SpeedChangeEffect and Sonic.
      *
      * Every player runs at it, added music included. Timeline time stays source
@@ -200,10 +213,13 @@ class PreviewEngine(private val context: Context) {
         muteOriginal: Boolean,
         originalVolume: Float,
         grade: Grade,
-        speed: Float
+        speed: Float,
+        rotationDegrees: Int,
+        cropRatio: Float?
     ) {
         this.captions = captions
         applySpeed(speed)
+        applyFraming(rotationDegrees, cropRatio)
         val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
 
         // Index parity, exactly as CompositionFactory deals the export's two rolls.
@@ -239,6 +255,15 @@ class PreviewEngine(private val context: Context) {
         // Positions every sound where the playhead already is, so the decoder is
         // warm and parked on the right sample before anyone presses play.
         primeAudio(positionMs)
+    }
+
+    /** Re-frames every surface, but only when the framing has actually changed. */
+    private fun applyFraming(rotation: Int, crop: Float?) {
+        if (rotation == rotationDegrees && crop == cropRatio) return
+        rotationDegrees = rotation
+        cropRatio = crop
+        // Every surface now disagrees with the chain it is running.
+        appliedEffects.clear()
     }
 
     /** Sets the rate on every player. Cheap and idempotent, so it runs on any change. */
@@ -289,7 +314,7 @@ class PreviewEngine(private val context: Context) {
             .filter { it.endMs > clip.timelineStartMs && it.startMs < clip.timelineEndMs }
             .map { it.shiftedInto(clip) }
 
-        val signature = "$grade|$chroma|$mask|$visible"
+        val signature = "$grade|$chroma|$mask|$visible|$rotationDegrees|$cropRatio"
         if (appliedEffects[surfaceKey] == signature) return
         appliedEffects[surfaceKey] = signature
 
@@ -298,6 +323,20 @@ class PreviewEngine(private val context: Context) {
             chroma?.let { add(ChromaKeyEffect(it)) }
             // The preview player holds the whole source file, so its clock is source time.
             mask?.let { add(MaskEffect(it, clip?.sourceInMs ?: 0L, timesAreSourceTime = true)) }
+            // Then framing, then colour - the exporter's order exactly. Grading
+            // before a crop would grade pixels that are about to be thrown away,
+            // which changes nothing visible but does change what is measured by
+            // anything averaging the frame.
+            if (rotationDegrees != 0) {
+                add(
+                    ScaleAndRotateTransformation.Builder()
+                        .setRotationDegrees(rotationDegrees.toFloat())
+                        .build()
+                )
+            }
+            cropRatio?.let {
+                add(Presentation.createForAspectRatio(it, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+            }
             grade?.let { addAll(ColorGrade.effects(it)) }
             if (visible.isNotEmpty()) {
                 // Captions were previously export-only, so a tracked one could not be

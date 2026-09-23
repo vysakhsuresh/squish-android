@@ -178,6 +178,8 @@ fun EditorScreen(
                     originalVolume = state.originalVolume,
                     grade = state.grade,
                     speed = state.speed,
+                    rotationDegrees = state.rotationDegrees,
+                    cropRatio = state.cropAspect.ratio,
                     sourceAspect = state.previewAspect,
                     playheadMs = state.playheadMs,
                     scrubNonce = state.scrubNonce,
