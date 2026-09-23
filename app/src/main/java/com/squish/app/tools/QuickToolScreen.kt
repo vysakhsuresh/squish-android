@@ -41,6 +41,20 @@ import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishPrimaryButton
 import com.squish.app.ui.components.SquishToggleSwitch
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.squish.app.timeline.Clip
+import com.squish.app.ui.components.OrderBadge
+import com.squish.app.ui.components.SectionHeading
+import com.squish.app.ui.components.SquishCard
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.Box
 import com.squish.app.ui.theme.SquishColors
 
 @Composable
@@ -57,8 +71,12 @@ fun QuickToolScreen(
     val pickVideo = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let(viewModel::load)
     }
-    val pickExtraClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let(viewModel::addClip)
+    // Merging is the one tool where picking several at once is the normal case, so
+    // it gets the multiple picker rather than the same trip repeated.
+    val pickMergeClips = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_MERGE_CLIPS)
+    ) { uris ->
+        viewModel.addMergeClips(uris)
     }
 
     fun launchPicker(launcher: (PickVisualMediaRequest) -> Unit) {
@@ -71,7 +89,16 @@ fun QuickToolScreen(
 
     // Straight to the picker: the tile tap already said what they want to do.
     LaunchedEffect(Unit) {
-        if (!state.hasSource) launchPicker { pickVideo.launch(it) }
+        if (state.hasSource) return@LaunchedEffect
+        if (tool == QuickTool.Merge) {
+            pickMergeClips.launch(
+                PickVisualMediaRequest.Builder()
+                    .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                    .build()
+            )
+        } else {
+            launchPicker { pickVideo.launch(it) }
+        }
     }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
@@ -108,20 +135,31 @@ fun QuickToolScreen(
             if (!state.hasSource) {
                 ToolCard {
                     Text(
-                        "Choose a video to get started.",
+                        if (tool == QuickTool.Merge) "Choose the videos you want joined — you can pick several at once."
+                        else "Choose a video to get started.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = SquishColors.TextSecondary
                     )
                     SquishOutlinedButton(
-                        text = "Choose video",
+                        text = if (tool == QuickTool.Merge) "Choose videos" else "Choose video",
                         modifier = Modifier.fillMaxWidth(),
-                        onClick = { launchPicker { request -> pickVideo.launch(request) } }
+                        onClick = {
+                            if (tool == QuickTool.Merge) {
+                                pickMergeClips.launch(
+                                    PickVisualMediaRequest.Builder()
+                                        .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                                        .build()
+                                )
+                            } else {
+                                launchPicker { request -> pickVideo.launch(request) }
+                            }
+                        }
                     )
                 }
                 return@Column
             }
 
-            ToolCard {
+            if (tool != QuickTool.Merge) ToolCard {
                 Text(
                     state.name ?: "Selected video",
                     style = MaterialTheme.typography.titleSmall,
@@ -153,7 +191,13 @@ fun QuickToolScreen(
                 QuickTool.Merge -> MergeControls(
                     state = state,
                     viewModel = viewModel,
-                    onAddClip = { launchPicker { request -> pickExtraClip.launch(request) } }
+                    onAddClips = {
+                        pickMergeClips.launch(
+                            PickVisualMediaRequest.Builder()
+                                .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                                .build()
+                        )
+                    }
                 )
             }
 
@@ -287,37 +331,122 @@ private fun TrimControls(state: QuickToolViewModel.UiState, viewModel: QuickTool
 private fun MergeControls(
     state: QuickToolViewModel.UiState,
     viewModel: QuickToolViewModel,
-    onAddClip: () -> Unit
+    onAddClips: () -> Unit
 ) {
-    ToolCard {
-        Text("Clips in order", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
-        Text("1. ${state.name ?: "First clip"}", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextSecondary)
-        state.extraClips.forEachIndexed { index, clip ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "${index + 2}. ${clip.label}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = SquishColors.TextSecondary,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    Timecode.format(clip.durationMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.TextMuted
-                )
-                Text(
-                    "Remove",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.Pink,
-                    modifier = Modifier.clickable { viewModel.removeClip(clip.id) }
-                )
+    SquishCard(accent = SquishColors.Violet) {
+        SectionHeading(
+            title = "Playing order",
+            subtitle = if (state.mergeClips.isEmpty()) "Nothing added yet"
+            else "${state.mergeClips.size} clips · ${Timecode.format(state.mergeDurationMs)} total",
+            icon = Icons.Filled.PlaylistPlay,
+            accent = SquishColors.Violet,
+            trailing = {
+                if (state.mergeClips.size > 1) {
+                    Text(
+                        "Clear",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.Pink,
+                        modifier = Modifier.clickable { viewModel.clearMerge() }
+                    )
+                }
             }
+        )
+
+        state.mergeClips.forEachIndexed { index, clip ->
+            MergeRow(
+                position = index + 1,
+                clip = clip,
+                isFirst = index == 0,
+                isLast = index == state.mergeClips.lastIndex,
+                onUp = { viewModel.moveMergeClip(clip.id, -1) },
+                onDown = { viewModel.moveMergeClip(clip.id, +1) },
+                onRemove = { viewModel.removeMergeClip(clip.id) }
+            )
         }
-        SquishOutlinedButton(text = "Add a clip", modifier = Modifier.fillMaxWidth(), onClick = onAddClip)
+
+        SquishOutlinedButton(
+            text = "Add more clips",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onAddClips
+        )
     }
 }
+
+/**
+ * One clip in the merge.
+ *
+ * The number and the start time are both shown because they answer different
+ * questions: the number says which comes next, the start time says where it lands
+ * in the finished video. Without either, a list of filenames tells you nothing
+ * about what you are about to render.
+ */
+@Composable
+private fun MergeRow(
+    position: Int,
+    clip: Clip,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onUp: () -> Unit,
+    onDown: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SquishColors.Background)
+            .border(1.dp, SquishColors.Border, RoundedCornerShape(12.dp))
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        OrderBadge(number = position, accent = SquishColors.Violet)
+
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                clip.label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = SquishColors.TextPrimary,
+                maxLines = 1
+            )
+            Text(
+                "${Timecode.format(clip.durationMs)}  ·  starts at ${Timecode.format(clip.timelineStartMs)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.TextMuted
+            )
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            MoveButton(Icons.Filled.KeyboardArrowUp, enabled = !isFirst, onClick = onUp)
+            MoveButton(Icons.Filled.KeyboardArrowDown, enabled = !isLast, onClick = onDown)
+        }
+
+        Icon(
+            Icons.Filled.Close,
+            contentDescription = "Remove ${clip.label}",
+            tint = SquishColors.Pink,
+            modifier = Modifier.size(18.dp).clickable(onClick = onRemove)
+        )
+    }
+}
+
+@Composable
+private fun MoveButton(icon: ImageVector, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(26.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (enabled) SquishColors.Surface else SquishColors.Background)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (enabled) SquishColors.TextSecondary else SquishColors.TextMuted.copy(alpha = 0.35f),
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+private const val MAX_MERGE_CLIPS = 20

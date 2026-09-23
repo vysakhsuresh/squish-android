@@ -20,7 +20,14 @@ Usage: kotlinc ... > log 2>&1 ; python3 tools/check_unresolved.py log
 """
 import re, sys, os, collections
 
-IGNORE = {"it", "this", "field", "value"}
+IGNORE = {
+    "it", "this", "field", "value",
+    # Desugared operators: `!in` reports `not`, `a in b` reports `contains`,
+    # `a..b` reports `rangeTo`, and so on. These name the syntax, not a mistake.
+    "not", "contains", "compareTo", "rangeTo", "inc", "dec", "unaryMinus",
+    "unaryPlus", "invoke", "iterator", "hasNext", "next", "getValue", "setValue",
+    "provideDelegate", "component1", "component2",
+}
 
 # Members of external scopes, called bare because their receiver is implicit.
 # Their receiver is what is really unresolved; listing them every run is noise.

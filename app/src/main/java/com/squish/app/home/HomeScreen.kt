@@ -33,6 +33,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squish.app.data.ExportRecord
 import com.squish.app.editor.Timecode
 import com.squish.app.tools.QuickTool
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.theme.SquishColors
 
@@ -82,12 +86,24 @@ fun HomeScreen(
                     SquishLogoMark(modifier = Modifier.size(34.dp))
                     Text("Squish", style = MaterialTheme.typography.displayLarge, color = SquishColors.TextPrimary)
                 }
-                Text(
-                    "Settings",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = SquishColors.TextSecondary,
-                    modifier = Modifier.clickable(onClick = onOpenSettings)
-                )
+                // A wheel rather than the word: it is the one control up here, and an
+                // icon leaves the wordmark to be the only text in the header.
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SquishColors.Surface)
+                        .border(1.dp, SquishColors.Border, RoundedCornerShape(12.dp))
+                        .clickable(onClick = onOpenSettings),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Settings,
+                        contentDescription = "Settings",
+                        tint = SquishColors.TextSecondary,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
             }
 
             EditorEntryCard(

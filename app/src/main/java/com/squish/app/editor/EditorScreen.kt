@@ -53,18 +53,29 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squish.app.timeline.TimelineActionBar
 import com.squish.app.timeline.TimelineEditor
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
 
-enum class EditorTab(val label: String, val icon: ImageVector) {
-    Trim("Trim", Icons.Filled.ContentCut),
-    Crop("Crop", Icons.Filled.Crop),
-    Speed("Speed", Icons.Filled.Speed),
-    Mix("Mix", Icons.Filled.Layers),
-    Motion("Motion", Icons.Filled.Animation),
-    Audio("Audio", Icons.Filled.GraphicEq),
-    Captions("Captions", Icons.Filled.ClosedCaption),
-    Effects("Effects", Icons.Filled.AutoAwesome),
-    Export("Export", Icons.Filled.FileUpload)
+/**
+ * The editor's tools. Each carries a colour, and it is the same colour its track
+ * wears on the timeline - so the rail is a legend for the strip above it rather
+ * than nine identically grey words.
+ */
+enum class EditorTab(val label: String, val icon: ImageVector, val accent: Color) {
+    Trim("Trim", Icons.Filled.ContentCut, SquishColors.Violet),
+    Crop("Crop", Icons.Filled.Crop, SquishColors.Violet),
+    Speed("Speed", Icons.Filled.Speed, SquishColors.Blue),
+    Mix("Mix", Icons.Filled.Layers, SquishColors.Magenta),
+    Motion("Motion", Icons.Filled.Animation, SquishColors.Amber),
+    Audio("Audio", Icons.Filled.GraphicEq, SquishColors.Cyan),
+    Captions("Captions", Icons.Filled.ClosedCaption, SquishColors.Amber),
+    Effects("Effects", Icons.Filled.AutoAwesome, SquishColors.Magenta),
+    Export("Export", Icons.Filled.FileUpload, SquishColors.Blue)
 }
 
 @Composable
@@ -271,26 +282,34 @@ private fun ToolRail(selected: EditorTab, onSelect: (EditorTab) -> Unit) {
     ) {
         EditorTab.entries.forEach { entry ->
             val isSelected = entry == selected
+            // A sprung nudge rather than a colour swap: at a glance down a row of
+            // nine, movement is what tells you which one you just pressed.
+            val scale by animateFloatAsState(if (isSelected) 1.06f else 1f, spring(), label = "tabScale")
+            val tint by animateColorAsState(
+                if (isSelected) SquishColors.Background else SquishColors.TextSecondary,
+                label = "tabTint"
+            )
+
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (isSelected) SquishColors.Primary else SquishColors.Background)
+                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                    .clip(RoundedCornerShape(12.dp))
+                    .then(
+                        if (isSelected) Modifier.background(accentSweep(entry.accent))
+                        else Modifier.background(SquishColors.Background)
+                    )
                     .clickable { onSelect(entry) }
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 Icon(
                     entry.icon,
                     contentDescription = entry.label,
-                    tint = if (isSelected) SquishColors.Background else SquishColors.TextSecondary,
+                    tint = tint,
                     modifier = Modifier.size(18.dp)
                 )
-                Text(
-                    entry.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isSelected) SquishColors.Background else SquishColors.TextSecondary
-                )
+                Text(entry.label, style = MaterialTheme.typography.labelSmall, color = tint)
             }
         }
     }

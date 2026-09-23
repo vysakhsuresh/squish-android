@@ -43,12 +43,19 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val targetSizeMb: Int = 16,
         val trimStartMs: Long = 0,
         val trimEndMs: Long = 0,
-        val extraClips: List<Clip> = emptyList(),
+        /**
+         * Every clip in a merge, in the order they will play. One list rather than
+         * "the source, plus some extras": with the first clip held apart, it could
+         * never be moved out of first place, which is exactly the thing anyone
+         * merging videos wants to do.
+         */
+        val mergeClips: List<Clip> = emptyList(),
         val isLoading: Boolean = false,
         val isExporting: Boolean = false,
         val estimatedOutputBytes: Long = 0
     ) {
         val hasSource: Boolean get() = sourceUri != null
+        val mergeDurationMs: Long get() = mergeClips.sumOf { it.durationMs }
         val selectedDurationMs: Long get() = (trimEndMs - trimStartMs).coerceAtLeast(0)
     }
 
@@ -84,36 +91,77 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    /** Probes each added clip so the merged timeline knows its real length. */
-    fun addClip(uri: Uri) {
+    /**
+     * Adds clips to a merge, keeping the list in playing order.
+     *
+     * Takes a list because the picker hands back a list: choosing six videos should
+     * be one trip through the gallery, not six.
+     */
+    fun addMergeClips(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         viewModelScope.launch {
-            val meta = ThumbnailExtractor.probe(getApplication(), uri)
-            _state.update { current ->
-                // Placed after everything already queued, the first clip included.
-                // Every appended clip used to land at zero, so a merge asked the
-                // compositor to stack them on top of one another instead of playing
-                // them one after another.
-                val start = maxOf(
-                    current.durationMs,
-                    current.extraClips.maxOfOrNull { it.timelineEndMs } ?: 0L
-                )
-                current.copy(
-                    extraClips = current.extraClips + Clip(
-                        kind = ClipKind.Video,
-                        uri = uri,
-                        label = displayNameOf(uri) ?: "Clip ${current.extraClips.size + 2}",
-                        sourceInMs = 0,
-                        sourceOutMs = meta.durationMs,
-                        timelineStartMs = start,
-                        sourceDurationMs = meta.durationMs
-                    )
+            val added = uris.map { uri ->
+                val meta = ThumbnailExtractor.probe(getApplication(), uri)
+                Clip(
+                    kind = ClipKind.Video,
+                    uri = uri,
+                    label = displayNameOf(uri) ?: "Clip",
+                    sourceInMs = 0,
+                    sourceOutMs = meta.durationMs,
+                    timelineStartMs = 0,
+                    sourceDurationMs = meta.durationMs
                 )
             }
+            _state.update { current -> current.withMerge(current.mergeClips + added) }
+            recomputeEstimate()
         }
     }
 
-    fun removeClip(clipId: String) =
-        _state.update { it.copy(extraClips = it.extraClips.filterNot { c -> c.id == clipId }) }
+    fun moveMergeClip(clipId: String, delta: Int) {
+        _state.update { current ->
+            val clips = current.mergeClips.toMutableList()
+            val from = clips.indexOfFirst { it.id == clipId }
+            val to = from + delta
+            if (from < 0 || to !in clips.indices) return@update current
+            clips.add(to, clips.removeAt(from))
+            current.withMerge(clips)
+        }
+        recomputeEstimate()
+    }
+
+    fun removeMergeClip(clipId: String) {
+        _state.update { current -> current.withMerge(current.mergeClips.filterNot { it.id == clipId }) }
+        recomputeEstimate()
+    }
+
+    fun clearMerge() {
+        _state.update { it.withMerge(emptyList()) }
+        recomputeEstimate()
+    }
+
+    /**
+     * Re-lays the list end to end and republishes the first clip as the screen's
+     * "source", so the header, the duration and the size all describe whatever now
+     * plays first. Start times are derived here and nowhere else, which is what
+     * keeps the numbers on screen and the numbers in the export the same.
+     */
+    private fun UiState.withMerge(clips: List<Clip>): UiState {
+        var cursor = 0L
+        val sequenced = clips.map { clip ->
+            val placed = clip.copy(timelineStartMs = cursor)
+            cursor += clip.durationMs
+            placed
+        }
+        val first = sequenced.firstOrNull()
+        return copy(
+            mergeClips = sequenced,
+            sourceUri = first?.uri,
+            name = first?.label,
+            durationMs = first?.durationMs ?: 0L,
+            trimStartMs = 0L,
+            trimEndMs = first?.durationMs ?: 0L
+        )
+    }
 
     fun setQuality(quality: Quality) {
         _state.update { it.copy(quality = quality, fitToSize = false) }
@@ -181,20 +229,9 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             fitToSize = tool == QuickTool.Compress && current.fitToSize,
             targetSizeMb = current.targetSizeMb,
             audioOnly = audioOnly,
-            videoClips = if (tool != QuickTool.Merge) emptyList() else buildList {
-                add(
-                    Clip(
-                        kind = ClipKind.Video,
-                        uri = sourceUri,
-                        label = current.name ?: "Clip 1",
-                        sourceInMs = 0,
-                        sourceOutMs = current.durationMs,
-                        timelineStartMs = 0,
-                        sourceDurationMs = current.durationMs
-                    )
-                )
-                addAll(current.extraClips)
-            }
+            // Already in order and already sequenced, so the export is simply the
+            // list as shown - there is no second place for the order to be decided.
+            videoClips = if (tool != QuickTool.Merge) emptyList() else current.mergeClips
         )
 
         viewModelScope.launch {

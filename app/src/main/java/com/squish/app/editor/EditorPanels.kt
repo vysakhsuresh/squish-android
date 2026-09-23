@@ -31,28 +31,28 @@ import com.squish.app.home.formatSize
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.squish.app.ui.components.SectionHeading
+import com.squish.app.ui.components.SquishCard
 import com.squish.app.ui.theme.SquishColors
 
 @Composable
-fun PanelSurface(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(SquishColors.Surface)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        content = content
-    )
-}
+fun PanelSurface(accent: Color? = null, content: @Composable ColumnScope.() -> Unit) =
+    SquishCard(accent = accent, content = content)
 
+/**
+ * A panel heading, optionally with its section's colour beside it. The icon is
+ * optional so the fifteen existing headings keep working untouched, and the ones
+ * where a glyph actually helps can opt in.
+ */
 @Composable
-fun PanelHeading(title: String, subtitle: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(title, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
-    }
-}
+fun PanelHeading(
+    title: String,
+    subtitle: String,
+    icon: ImageVector? = null,
+    accent: Color = SquishColors.Primary
+) = SectionHeading(title = title, subtitle = subtitle, icon = icon, accent = accent)
 
 // ---- Trim -------------------------------------------------------------------
 
