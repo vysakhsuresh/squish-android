@@ -3,6 +3,8 @@
 ColumnScope
 android
 androidx
+build
+curveTo
 mkdirs
 onDispose
 popUpTo
@@ -13,6 +15,7 @@ release
 seekTo
 setMediaItem
 setPackage
+setPlaybackSpeed
 setSeekParameters
 setSpan
 setSpeed

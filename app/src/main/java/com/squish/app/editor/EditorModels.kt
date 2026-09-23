@@ -2,6 +2,7 @@ package com.squish.app.editor
 
 import android.net.Uri
 import com.squish.app.data.ProjectSnapshot
+import com.squish.app.media.ExportProgress
 import com.squish.app.media.SquishError
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.effects.Looks
@@ -149,7 +150,7 @@ data class EditorUiState(
     val isPlaying: Boolean = false,
     val scrubNonce: Long = 0,
 
-    val quality: Quality = Quality.Medium,
+    val quality: Quality = Quality.Original,
     val fitToSize: Boolean = false,
     val targetSizeMb: Int = 16,
     val audioOnly: Boolean = false,
@@ -211,6 +212,8 @@ data class EditorUiState(
     val failure: SquishError? = null,
 
     val isExporting: Boolean = false,
+    /** What the encoder says it has done, while it is doing it. */
+    val exportProgress: ExportProgress = ExportProgress(),
     val estimatedOutputBytes: Long = 0
 ) {
     /**

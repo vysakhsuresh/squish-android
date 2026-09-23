@@ -11,6 +11,7 @@ import com.squish.app.data.SrtCue
 import com.squish.app.data.SrtFile
 import com.squish.app.data.SquishRepositories
 import com.squish.app.media.ExportPresets
+import com.squish.app.media.ExportProgress
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.SquishError
 import com.squish.app.media.GallerySaver
@@ -1170,15 +1171,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        _state.update { it.copy(isExporting = true, failure = null) }
+        _state.update { it.copy(isExporting = true, failure = null, exportProgress = ExportProgress()) }
 
         viewModelScope.launch {
             val outputDir = File(getApplication<Application>().getExternalFilesDir(null), "exports")
                 .apply { mkdirs() }
             val outputFile = File(outputDir, "squish_${System.currentTimeMillis()}.mp4")
 
-            val result = processor.export(current, outputFile)
-            _state.update { it.copy(isExporting = false) }
+            val result = processor.export(current, outputFile) { progress ->
+                _state.update { it.copy(exportProgress = progress) }
+            }
+            _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
 
             result.onSuccess { file ->
                 GallerySaver.publish(getApplication(), file)

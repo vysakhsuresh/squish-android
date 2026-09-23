@@ -10,6 +10,7 @@ import com.squish.app.data.SquishRepositories
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.Quality
 import com.squish.app.media.ExportPresets
+import com.squish.app.media.ExportProgress
 import com.squish.app.media.GallerySaver
 import com.squish.app.media.SquishError
 import com.squish.app.media.ThumbnailExtractor
@@ -37,6 +38,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val durationMs: Long = 0,
         val width: Int = 0,
         val height: Int = 0,
+        val rotationDegrees: Int = 0,
         val originalSizeBytes: Long = 0,
         val quality: Quality = Quality.Medium,
         val fitToSize: Boolean = false,
@@ -52,11 +54,28 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val mergeClips: List<Clip> = emptyList(),
         val isLoading: Boolean = false,
         val isExporting: Boolean = false,
+        val exportProgress: ExportProgress = ExportProgress(),
         val estimatedOutputBytes: Long = 0
     ) {
         val hasSource: Boolean get() = sourceUri != null
         val mergeDurationMs: Long get() = mergeClips.sumOf { it.durationMs }
         val selectedDurationMs: Long get() = (trimEndMs - trimStartMs).coerceAtLeast(0)
+
+        /**
+         * The shape the preview should be, with the container's rotation applied.
+         *
+         * A phone shoots 1080x1920 and tags it 90 degrees; reading width over
+         * height without that tag gives a landscape box for portrait footage, with
+         * the picture letterboxed inside it.
+         */
+        val previewAspect: Float
+            get() {
+                if (width <= 0 || height <= 0) return 16f / 9f
+                val turned = rotationDegrees % 180 != 0
+                val w = if (turned) height else width
+                val h = if (turned) width else height
+                return (w.toFloat() / h).coerceIn(0.4f, 2.5f)
+            }
     }
 
     private val _state = MutableStateFlow(UiState())
@@ -81,6 +100,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                     durationMs = meta.durationMs,
                     width = meta.width,
                     height = meta.height,
+                    rotationDegrees = meta.rotationDegrees,
                     originalSizeBytes = size,
                     trimStartMs = 0,
                     trimEndMs = meta.durationMs,
@@ -213,7 +233,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     fun export(tool: QuickTool, onResult: (String) -> Unit, onError: (String) -> Unit) {
         val current = _state.value
         val sourceUri = current.sourceUri ?: return
-        _state.update { it.copy(isExporting = true) }
+        _state.update { it.copy(isExporting = true, exportProgress = ExportProgress()) }
 
         val audioOnly = tool == QuickTool.ExtractAudio
         val editorState = EditorUiState(
@@ -223,8 +243,8 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             sourceWidth = current.width,
             sourceHeight = current.height,
             originalSizeBytes = current.originalSizeBytes,
-            trimStartMs = if (tool == QuickTool.Trim) current.trimStartMs else 0,
-            trimEndMs = if (tool == QuickTool.Trim) current.trimEndMs else current.durationMs,
+            trimStartMs = if (tool.usesRange) current.trimStartMs else 0,
+            trimEndMs = if (tool.usesRange) current.trimEndMs else current.durationMs,
             quality = current.quality,
             fitToSize = tool == QuickTool.Compress && current.fitToSize,
             targetSizeMb = current.targetSizeMb,
@@ -240,8 +260,10 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             val extension = if (audioOnly) "m4a" else "mp4"
             val outputFile = File(outputDir, "squish_${tool.id}_${System.currentTimeMillis()}.$extension")
 
-            val result = processor.export(editorState, outputFile)
-            _state.update { it.copy(isExporting = false) }
+            val result = processor.export(editorState, outputFile) { progress ->
+                _state.update { it.copy(exportProgress = progress) }
+            }
+            _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
 
             result.onSuccess { file ->
                 if (audioOnly) {

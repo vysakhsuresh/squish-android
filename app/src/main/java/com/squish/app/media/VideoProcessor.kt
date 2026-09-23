@@ -1,6 +1,7 @@
 package com.squish.app.media
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -18,6 +19,7 @@ import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import com.google.common.collect.ImmutableList
@@ -28,13 +30,83 @@ import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.MaskEffect
 import com.squish.app.media.effects.Looks
 import com.squish.app.timeline.Clip
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import kotlin.coroutines.resume
 
+/** How far along an export is, as the encoder itself reports it. */
+data class ExportProgress(
+    /** 0f..1f, or null while the encoder cannot yet say. */
+    val fraction: Float? = null,
+    val elapsedMs: Long = 0,
+    /**
+     * Projected from the rate so far, once there is enough of it to project from.
+     * Null early on rather than a wild number that halves every second.
+     */
+    val remainingMs: Long? = null
+)
+
 class VideoProcessor(private val context: Context) {
 
-    suspend fun export(state: EditorUiState, outputFile: File): Result<File> =
+    /**
+     * Runs an export, reporting progress until it finishes.
+     *
+     * Progress comes from the Transformer rather than from a timer: an encode is
+     * not linear in wall time, so a fake bar is a lie that gets found out on every
+     * long clip. [onProgress] is called on the caller's thread.
+     *
+     * Media3 requires getProgress on the thread that built the Transformer, which
+     * is this one, so the poll runs in the same coroutine rather than off it.
+     */
+    suspend fun export(
+        state: EditorUiState,
+        outputFile: File,
+        onProgress: (ExportProgress) -> Unit = {}
+    ): Result<File> = coroutineScope {
+        val started = SystemClock.elapsedRealtime()
+        val active = java.util.concurrent.atomic.AtomicReference<Transformer?>(null)
+
+        val poll = launch {
+            val holder = ProgressHolder()
+            while (isActive) {
+                val transformer = active.get()
+                if (transformer != null) {
+                    val elapsed = SystemClock.elapsedRealtime() - started
+                    val reported = runCatching { transformer.getProgress(holder) }
+                        .getOrDefault(Transformer.PROGRESS_STATE_UNAVAILABLE)
+                    val fraction = if (reported == Transformer.PROGRESS_STATE_AVAILABLE) {
+                        (holder.progress / 100f).coerceIn(0f, 1f)
+                    } else {
+                        null
+                    }
+                    // Only project once a twentieth of the work is done. Before
+                    // that the rate is mostly startup cost and the estimate swings
+                    // by minutes between ticks.
+                    val remaining = fraction
+                        ?.takeIf { it >= 0.05f }
+                        ?.let { ((elapsed / it) - elapsed).toLong().coerceAtLeast(0L) }
+                    onProgress(ExportProgress(fraction, elapsed, remaining))
+                }
+                delay(PROGRESS_POLL_MS)
+            }
+        }
+
+        try {
+            runExport(state, outputFile) { active.set(it) }
+        } finally {
+            poll.cancel()
+        }
+    }
+
+    private suspend fun runExport(
+        state: EditorUiState,
+        outputFile: File,
+        onTransformer: (Transformer) -> Unit
+    ): Result<File> =
         suspendCancellableCoroutine { continuation ->
             // The video track as the timeline holds it. Every clip carries its own
             // source window, so a split is just two clips over the same file and
@@ -96,6 +168,7 @@ class VideoProcessor(private val context: Context) {
                 .build()
 
             continuation.invokeOnCancellation { runCatching { transformer.cancel() } }
+            onTransformer(transformer)
 
             // start() validates the composition on the calling thread and throws
             // synchronously for a malformed one, which the listener never sees.
@@ -233,7 +306,7 @@ class VideoProcessor(private val context: Context) {
             items.add(
                 EditedMediaItem.Builder(padItem)
                     .setRemoveVideo(true)
-                    .setEffects(Effects(silentProcessors(), ImmutableList.of()))
+                    .setEffects(Effects(silentProcessors(state.speed), ImmutableList.of()))
                     .build()
             )
         }
@@ -250,7 +323,9 @@ class VideoProcessor(private val context: Context) {
         items.add(
             EditedMediaItem.Builder(trackItem)
                 .setRemoveVideo(true)
-                .setEffects(Effects(buildAudioProcessors(1f, clip.volume), ImmutableList.of()))
+                // The same rate the picture runs at. A cue left at 1x while the
+                // video is sped would slide a second further out every second.
+                .setEffects(Effects(buildAudioProcessors(state.speed, clip.volume), ImmutableList.of()))
                 .build()
         )
 
@@ -259,9 +334,18 @@ class VideoProcessor(private val context: Context) {
         return sequence.build()
     }
 
-    private fun silentProcessors(): ImmutableList<AudioProcessor> {
-        val silence = AudioMixing.gain(0f)
-        return if (silence == null) ImmutableList.of() else ImmutableList.of(silence)
+    /**
+     * The lead-in pad: silence, at the same rate as everything else.
+     *
+     * The pad is a source-time slice, so it has to shrink by the same factor the
+     * rest of the track does - otherwise speeding the edit up leaves the pad at
+     * full length and the cue starts late by however much was cut.
+     */
+    private fun silentProcessors(speed: Float): ImmutableList<AudioProcessor> {
+        val processors = mutableListOf<AudioProcessor>()
+        if (speed != 1f) processors.add(SonicAudioProcessor().apply { setSpeed(speed) })
+        AudioMixing.gain(0f)?.let { processors.add(it) }
+        return ImmutableList.copyOf(processors)
     }
 
     private fun buildVideoEffects(state: EditorUiState): ImmutableList<Effect> {
@@ -317,6 +401,11 @@ class VideoProcessor(private val context: Context) {
         }
 
         return ImmutableList.copyOf(effects)
+    }
+
+    private companion object {
+        /** Often enough to feel live, rare enough not to compete with the encoder. */
+        const val PROGRESS_POLL_MS = 200L
     }
 
     private fun buildAudioProcessors(speed: Float, volume: Float): ImmutableList<AudioProcessor> {

@@ -88,6 +88,7 @@ fun EditorScreen(
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     var tab by remember { mutableStateOf(EditorTab.Trim) }
+    var exportSheetOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(sourceUri) { viewModel.load(sourceUri) }
 
@@ -107,7 +108,8 @@ fun EditorScreen(
     }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(modifier = Modifier.fillMaxSize()) {
 
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
@@ -134,8 +136,11 @@ fun EditorScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(9.dp))
                         .background(if (state.isExporting) SquishColors.Surface else SquishColors.Primary)
+                        // Opens the sheet rather than firing: this is the one
+                        // irreversible, minutes-long action in the app, and it used
+                        // to be the only one with no confirmation.
                         .clickable(enabled = !state.isExporting && !state.isLoadingSource) {
-                            viewModel.export(onResult = onExported)
+                            exportSheetOpen = true
                         }
                         .padding(horizontal = 12.dp, vertical = 7.dp)
                 ) {
@@ -171,6 +176,7 @@ fun EditorScreen(
                     muteOriginal = state.muteOriginal,
                     originalVolume = state.originalVolume,
                     grade = state.grade,
+                    speed = state.speed,
                     sourceAspect = state.previewAspect,
                     playheadMs = state.playheadMs,
                     scrubNonce = state.scrubNonce,
@@ -273,6 +279,18 @@ fun EditorScreen(
             }
 
             ToolRail(selected = tab, onSelect = { tab = it })
+        }
+
+        if (exportSheetOpen) {
+            ExportSheet(
+                state = state,
+                viewModel = viewModel,
+                onDismiss = { exportSheetOpen = false },
+                onRender = {
+                    viewModel.export(onResult = onExported)
+                }
+            )
+        }
         }
     }
 }

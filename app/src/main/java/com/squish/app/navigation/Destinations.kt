@@ -13,7 +13,12 @@ sealed class Destination(val route: String) {
         fun buildRoute(toolId: String) = "tool/$toolId"
     }
 
-    data object Export : Destination("export/{resultPath}") {
-        fun buildRoute(encodedPath: String) = "export/$encodedPath"
+    /**
+      * The done screen. It carries what was done as well as what came out, because
+      * "Compress another video" after a merge is the app telling you it was not
+      * paying attention.
+      */
+    data object Export : Destination("export/{resultPath}/{job}") {
+        fun buildRoute(encodedPath: String, encodedJob: String) = "export/$encodedPath/$encodedJob"
     }
 }

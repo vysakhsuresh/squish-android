@@ -52,7 +52,9 @@ fun SquishNavHost() {
                 tool = tool,
                 onBack = { navController.popBackStack() },
                 onExported = { path ->
-                    navController.navigate(Destination.Export.buildRoute(Uri.encode(path))) {
+                    navController.navigate(
+                        Destination.Export.buildRoute(Uri.encode(path), Uri.encode(tool.title))
+                    ) {
                         popUpTo(Destination.Home.route)
                     }
                 },
@@ -73,7 +75,9 @@ fun SquishNavHost() {
                 sourceUri = Uri.parse(Uri.decode(encoded)),
                 onBack = { navController.popBackStack() },
                 onExported = { path ->
-                    navController.navigate(Destination.Export.buildRoute(Uri.encode(path))) {
+                    navController.navigate(
+                        Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Export"))
+                    ) {
                         popUpTo(Destination.Home.route)
                     }
                 }
@@ -82,11 +86,16 @@ fun SquishNavHost() {
 
         composable(
             route = Destination.Export.route,
-            arguments = listOf(navArgument("resultPath") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("resultPath") { type = NavType.StringType },
+                navArgument("job") { type = NavType.StringType }
+            )
         ) { backStackEntry ->
             val encoded = backStackEntry.arguments?.getString("resultPath").orEmpty()
+            val job = Uri.decode(backStackEntry.arguments?.getString("job").orEmpty())
             ExportScreen(
                 resultPath = Uri.decode(encoded),
+                jobLabel = job.ifBlank { "Export" },
                 onDone = {
                     navController.navigate(Destination.Home.route) {
                         popUpTo(Destination.Home.route) { inclusive = true }

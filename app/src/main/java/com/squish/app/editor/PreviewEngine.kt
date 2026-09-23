@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.Effect
@@ -112,6 +113,17 @@ class PreviewEngine(private val context: Context) {
     private var appliedGrade: Grade? = null
 
     /**
+     * Playback rate, the same number the export hands SpeedChangeEffect and Sonic.
+     *
+     * Every player runs at it, added music included. Timeline time stays source
+     * time - the playhead still sweeps the whole strip - it simply gets there in
+     * less wall time, which is exactly what the rendered file does. Speeding only
+     * the picture would put the sound a second further out with every second
+     * played.
+     */
+    private var speed: Float = 1f
+
+    /**
      * What each surface's effect chain currently is. Handing a player a new effect
      * list rebuilds its GL pipeline and drops frames, so it is only done when the
      * chain would actually differ - which for most clips is never.
@@ -125,7 +137,42 @@ class PreviewEngine(private val context: Context) {
         setSeekParameters(SeekParameters.EXACT)
         repeatMode = Player.REPEAT_MODE_OFF
         playWhenReady = false
+        setPlaybackSpeed(speed)
     }
+
+    /**
+     * A player for an added sound, built differently from a video surface on
+     * purpose. Two settings, and both of them are the reason music used to break
+     * up for the first few plays:
+     *
+     * - **CLOSEST_SYNC rather than EXACT.** An exact seek into a compressed audio
+     *   stream decodes and throws away everything from the previous sync sample to
+     *   land on the right frame. On a cold file that work lands in the same moment
+     *   playback is meant to start. Music does not need frame accuracy - a few
+     *   milliseconds is inaudible, and the offset controls exist for the rest.
+     * - **A short buffer-for-playback.** The default waits for 2.5 seconds of audio
+     *   before it will start. Starting from a quarter second means the decoder is
+     *   ahead of the playhead by the time the cue is due rather than racing it.
+     */
+    private fun newAudioPlayer() = ExoPlayer.Builder(context)
+        .setLoadControl(
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    /* minBufferMs = */ 2_000,
+                    /* maxBufferMs = */ 15_000,
+                    /* bufferForPlaybackMs = */ 250,
+                    /* bufferForPlaybackAfterRebufferMs = */ 500
+                )
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
+        )
+        .build()
+        .apply {
+            setSeekParameters(SeekParameters.CLOSEST_SYNC)
+            repeatMode = Player.REPEAT_MODE_OFF
+            playWhenReady = false
+            setPlaybackSpeed(speed)
+        }
 
     /**
      * The player for an overlay layer, created the first time that layer appears.
@@ -152,9 +199,11 @@ class PreviewEngine(private val context: Context) {
         proxyUri: Uri?,
         muteOriginal: Boolean,
         originalVolume: Float,
-        grade: Grade
+        grade: Grade,
+        speed: Float
     ) {
         this.captions = captions
+        applySpeed(speed)
         val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
 
         // Index parity, exactly as CompositionFactory deals the export's two rolls.
@@ -187,6 +236,20 @@ class PreviewEngine(private val context: Context) {
             audioClips.maxOfOrNull { it.timelineEndMs } ?: 0L
         )
         reconcileAudioPlayers()
+        // Positions every sound where the playhead already is, so the decoder is
+        // warm and parked on the right sample before anyone presses play.
+        primeAudio(positionMs)
+    }
+
+    /** Sets the rate on every player. Cheap and idempotent, so it runs on any change. */
+    private fun applySpeed(value: Float) {
+        val next = value.coerceAtLeast(0.05f)
+        if (next == speed) return
+        speed = next
+        baseA.setPlaybackSpeed(next)
+        baseB.setPlaybackSpeed(next)
+        overlayPlayers.values.forEach { it.setPlaybackSpeed(next) }
+        audioPlayers.values.forEach { it.setPlaybackSpeed(next) }
     }
 
     /**
@@ -256,7 +319,10 @@ class PreviewEngine(private val context: Context) {
         playing = true
         anchorTimelineMs = positionMs
         anchorWallMs = SystemClock.elapsedRealtime()
-        primed.clear()
+        // Not cleared. Clearing here is what used to make the first play the one
+        // that stuttered: every sound would seek from cold at the exact instant it
+        // was due. They were positioned when the timeline was set.
+        primeAudio(positionMs)
     }
 
     fun pause() {
@@ -272,11 +338,29 @@ class PreviewEngine(private val context: Context) {
         positionMs = timelineMs.coerceIn(0L, maxOf(durationMs, 0L))
         anchorTimelineMs = positionMs
         anchorWallMs = SystemClock.elapsedRealtime()
-        primed.clear()
         // Forces every surface to re-resolve its clip and seek, which is what makes
         // a scrub land on the right frame of the right shot on every layer at once.
         activeClip.clear()
         clockClipId = null
+        primeAudio(positionMs)
+    }
+
+    /**
+     * Parks every sound on the sample it will need, without starting it.
+     *
+     * Called on load, on seek and on play rather than at the moment a cue is due,
+     * because a seek is only free when nothing is waiting on it. This is the whole
+     * fix for music breaking up on the first few plays and settling down later: it
+     * settled because the file had become warm, so the answer is to warm it
+     * deliberately instead of hoping.
+     */
+    private fun primeAudio(t: Long) {
+        audioClips.forEach { clip ->
+            val player = audioPlayers[clip.id] ?: return@forEach
+            val into = (t - clip.timelineStartMs).coerceIn(0L, clip.durationMs.coerceAtLeast(0L))
+            player.seekTo((clip.sourceInMs + into).coerceAtLeast(0L))
+            primed.add(clip.id)
+        }
     }
 
     // ---- The clock --------------------------------------------------------------
@@ -297,7 +381,9 @@ class PreviewEngine(private val context: Context) {
             stalled -> positionMs
             driving && clockClip != null ->
                 clockClip.timelineStartMs + (clockPlayer.currentPosition - clockClip.sourceInMs)
-            else -> anchorTimelineMs + (now - anchorWallMs)
+            // Source time, so it advances at the rate the decoders are consuming
+            // it. At 2x a wall second is two seconds of the strip.
+            else -> anchorTimelineMs + ((now - anchorWallMs) * speed).toLong()
         }.coerceAtLeast(0L)
 
         if (playing && durationMs > 0 && t >= durationMs) {
@@ -483,9 +569,20 @@ class PreviewEngine(private val context: Context) {
     private fun syncAudio(t: Long, transportRunning: Boolean) {
         audioClips.forEach { clip ->
             val player = audioPlayers[clip.id] ?: return@forEach
+
             if (!covers(clip, t)) {
                 if (player.playWhenReady) player.pause()
-                primed.remove(clip.id)
+                // A cue coming up shortly is positioned now, while nothing is
+                // waiting on the seek, so it is buffered and parked on the right
+                // sample by the time it is due.
+                val untilDue = clip.timelineStartMs - t
+                if (untilDue in 1..PREROLL_MS && !primed.contains(clip.id)) {
+                    player.seekTo(clip.sourceInMs)
+                    primed.add(clip.id)
+                }
+                // Only a cue that is now behind us is worth re-priming, and only
+                // once we are past it far enough that a rewind is a real jump.
+                if (t >= clip.timelineEndMs || untilDue > PREROLL_MS) primed.remove(clip.id)
                 return@forEach
             }
 
@@ -493,10 +590,11 @@ class PreviewEngine(private val context: Context) {
             val wanted = (clip.sourceInMs + (t - clip.timelineStartMs)).coerceAtLeast(0L)
 
             if (!primed.contains(clip.id)) {
-                // One seek on the way in, then let it run on its own clock. Re-seeking
-                // to chase drift forces a re-buffer, the re-buffer causes more drift,
-                // and that drift triggers the next seek - a loop that sounds exactly
-                // like audio breaking up.
+                // Only reached when a cue was jumped into with no warning - a scrub
+                // straight into the middle of it. Everywhere else it is already
+                // parked, because chasing drift with seeks forces a re-buffer, the
+                // re-buffer causes more drift, and that drift triggers the next
+                // seek: a loop that sounds exactly like audio breaking up.
                 player.seekTo(wanted)
                 primed.add(clip.id)
             } else if (abs(player.currentPosition - wanted) > AUDIO_RESYNC_MS) {
@@ -522,7 +620,7 @@ class PreviewEngine(private val context: Context) {
             val existing = audioPlayers[clip.id]
             when {
                 existing == null -> {
-                    audioPlayers[clip.id] = newPlayer().apply {
+                    audioPlayers[clip.id] = newAudioPlayer().apply {
                         setMediaItem(MediaItem.fromUri(uri))
                         // Prepared the moment the track is added, so the first play
                         // is not also the first read off storage.
@@ -560,5 +658,8 @@ class PreviewEngine(private val context: Context) {
         /** Generous on purpose: correction is for a jump, not for playback. */
         const val AUDIO_RESYNC_MS = 400L
         const val VIDEO_RESYNC_MS = 120L
+
+        /** How far ahead of a cue its decoder is positioned and buffered. */
+        const val PREROLL_MS = 2_000L
     }
 }

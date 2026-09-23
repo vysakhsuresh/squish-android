@@ -55,6 +55,13 @@ enum class QuickTool(
         actionLabel = "Merge clips"
     );
 
+    /** Whether the job works on a chosen part of the source rather than all of it. */
+    val usesRange: Boolean get() = this == Trim || this == ExtractAudio
+
+    /** What the finished file is, said once so every screen agrees on the wording. */
+    val outputNoun: String
+        get() = if (this == ExtractAudio) "audio file" else "video"
+
     companion object {
         fun fromId(id: String?): QuickTool = entries.firstOrNull { it.id == id } ?: Compress
     }
