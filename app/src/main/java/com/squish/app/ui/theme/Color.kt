@@ -36,7 +36,6 @@ object SquishColors {
     val Primary = Blue
 
     // Semantic aliases used across the app
-    val Coral = Primary           // primary action
     val Teal = Cyan               // audio, savings, success
     val Purple = Violet           // video track, crop
     val Pink = Magenta            // destructive, effects

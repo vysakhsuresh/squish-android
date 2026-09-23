@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -34,7 +36,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.theme.SquishColors
@@ -61,22 +62,23 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
         }
     }
 
-    PanelSurface {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PanelHeading("Track an object", "Pin a caption or a layer to something moving")
-            if (tracking.track != null) {
-                Text(
-                    "Discard",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.Pink,
-                    modifier = Modifier.clickable { viewModel.clearTrack() }
-                )
+    PanelSurface(accent = SquishColors.Amber) {
+        PanelHeading(
+            "Track an object",
+            "Pin a caption or a layer to something moving",
+            icon = Icons.Filled.MyLocation,
+            accent = SquishColors.Amber,
+            trailing = {
+                if (tracking.track != null) {
+                    Text(
+                        "Discard",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.Pink,
+                        modifier = Modifier.clickable { viewModel.clearTrack() }
+                    )
+                }
             }
-        }
+        )
 
         val bitmap = frame
         if (bitmap != null && bitmap.width > 0) {

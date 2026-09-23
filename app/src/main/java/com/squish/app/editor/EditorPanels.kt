@@ -11,21 +11,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.squish.app.home.formatSize
 import com.squish.app.ui.components.SelectableChip
@@ -51,8 +52,15 @@ fun PanelHeading(
     title: String,
     subtitle: String,
     icon: ImageVector? = null,
-    accent: Color = SquishColors.Primary
-) = SectionHeading(title = title, subtitle = subtitle, icon = icon, accent = accent)
+    accent: Color = SquishColors.Primary,
+    trailing: @Composable (() -> Unit)? = null
+) = SectionHeading(
+    title = title,
+    subtitle = subtitle,
+    icon = icon,
+    accent = accent,
+    trailing = trailing
+)
 
 // ---- Trim -------------------------------------------------------------------
 
@@ -64,10 +72,12 @@ fun PrecisionTrimPanel(state: EditorUiState, viewModel: EditorViewModel) {
     val clip = viewModel.trimTargetClip(state)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        PanelSurface {
+        PanelSurface(accent = SquishColors.Violet) {
             PanelHeading(
                 "In and out points",
-                if (clip == null) "Add a clip to trim" else "Trimming ${clip.label}"
+                if (clip == null) "Add a clip to trim" else "Trimming ${clip.label}",
+                icon = Icons.Filled.ContentCut,
+                accent = SquishColors.Violet
             )
             TrimPointRow(
                 label = "In",
@@ -91,8 +101,13 @@ fun PrecisionTrimPanel(state: EditorUiState, viewModel: EditorViewModel) {
             )
         }
 
-        PanelSurface {
-            PanelHeading("Markers", "Drop a mark at the playhead and snap cuts to it")
+        PanelSurface(accent = SquishColors.Violet) {
+            PanelHeading(
+                "Markers",
+                "Drop a mark at the playhead and snap cuts to it",
+                icon = Icons.Filled.Flag,
+                accent = SquishColors.Violet
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 SquishOutlinedButton(
                     text = "Drop marker",
@@ -130,7 +145,7 @@ private fun TrimPointRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, style = MaterialTheme.typography.titleSmall, color = SquishColors.Coral, modifier = Modifier.width(30.dp))
+        Text(label, style = MaterialTheme.typography.titleSmall, color = SquishColors.Primary, modifier = Modifier.width(30.dp))
         Text(value, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary, modifier = Modifier.weight(1f))
         NudgeButton("◀", Modifier.width(44.dp), onNudgeBack)
         NudgeButton("▶", Modifier.width(44.dp), onNudgeForward)
@@ -142,8 +157,13 @@ private fun TrimPointRow(
 
 @Composable
 fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
-    PanelSurface {
-        PanelHeading("Shape", "Crop to the aspect ratio you are posting to")
+    PanelSurface(accent = SquishColors.Violet) {
+        PanelHeading(
+            "Shape",
+            "Crop to the aspect ratio you are posting to",
+            icon = Icons.Filled.AspectRatio,
+            accent = SquishColors.Violet
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             CropAspect.entries.forEach { aspect ->
                 SelectableChip(
@@ -173,8 +193,13 @@ fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
 @Composable
 fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
-    PanelSurface {
-        PanelHeading("Speed", "Pitch stays natural as the tempo changes")
+    PanelSurface(accent = SquishColors.Blue) {
+        PanelHeading(
+            "Speed",
+            "Pitch stays natural as the tempo changes",
+            icon = Icons.Filled.Speed,
+            accent = SquishColors.Blue
+        )
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text("Playback", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
             Text("${"%.2f".format(state.speed)}x", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
@@ -184,8 +209,8 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
             onValueChange = viewModel::setSpeed,
             valueRange = 0.5f..2f,
             colors = SliderDefaults.colors(
-                thumbColor = SquishColors.Coral,
-                activeTrackColor = SquishColors.Coral,
+                thumbColor = SquishColors.Primary,
+                activeTrackColor = SquishColors.Primary,
                 inactiveTrackColor = SquishColors.Border
             )
         )
@@ -209,8 +234,13 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
 @Composable
 fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        PanelSurface {
-            PanelHeading("Quality", "Bigger means sharper and heavier")
+        PanelSurface(accent = SquishColors.Blue) {
+            PanelHeading(
+                "Quality",
+                "Bigger means sharper and heavier",
+                icon = Icons.Filled.HighQuality,
+                accent = SquishColors.Blue
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Quality.entries.forEach { quality ->
                     SelectableChip(
@@ -226,15 +256,19 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
             }
         }
 
-        PanelSurface {
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                PanelHeading("Fit to a size", "We pick the bitrate for you")
-                SquishToggleSwitch(checked = state.fitToSize, onCheckedChange = viewModel::setFitToSize)
-            }
+        PanelSurface(accent = SquishColors.Blue) {
+            PanelHeading(
+                "Fit to a size",
+                "We pick the bitrate for you",
+                icon = Icons.Filled.Compress,
+                accent = SquishColors.Blue,
+                trailing = {
+                    SquishToggleSwitch(
+                        checked = state.fitToSize,
+                        onCheckedChange = viewModel::setFitToSize
+                    )
+                }
+            )
             if (state.fitToSize) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     listOf(16, 25, 50).forEach { mb ->
@@ -252,8 +286,13 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
 
         EstimateCard(state)
 
-        PanelSurface {
-            PanelHeading("Video track", "Played one after another, in order")
+        PanelSurface(accent = SquishColors.Blue) {
+            PanelHeading(
+                "Video track",
+                "Played one after another, in order",
+                icon = Icons.Filled.Movie,
+                accent = SquishColors.Blue
+            )
             state.videoClips.forEachIndexed { index, clip ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -281,7 +320,7 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
 
 @Composable
 fun EstimateCard(state: EditorUiState) {
-    PanelSurface {
+    PanelSurface(accent = SquishColors.Cyan) {
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text("Original", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
             Text(formatSize(state.originalSizeBytes), style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
@@ -327,14 +366,14 @@ fun OptionToggle(label: String, active: Boolean, modifier: Modifier = Modifier, 
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(if (active) SquishColors.Coral.copy(alpha = 0.15f) else SquishColors.Surface)
+            .background(if (active) SquishColors.Primary.copy(alpha = 0.15f) else SquishColors.Surface)
             .clickable { onClick(!active) }
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             label,
-            color = if (active) SquishColors.Coral else SquishColors.TextSecondary,
+            color = if (active) SquishColors.Primary else SquishColors.TextSecondary,
             style = MaterialTheme.typography.labelLarge
         )
     }

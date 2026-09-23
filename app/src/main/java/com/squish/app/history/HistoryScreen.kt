@@ -7,18 +7,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -30,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.squish.app.data.SquishRepositories
 import com.squish.app.home.formatSize
+import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.theme.SquishColors
 
 @Composable
@@ -39,18 +37,22 @@ fun HistoryScreen(onBack: () -> Unit) {
     val records by repository.records.collectAsState()
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack) { Text("← Back", color = SquishColors.TextPrimary) }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("History", style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                Text("History", style = MaterialTheme.typography.displayLarge, color = SquishColors.TextPrimary)
+                Text(
+                    "Everything you have exported",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SquishColors.TextMuted
+                )
             }
             if (records.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("Nothing squished yet.", color = SquishColors.TextMuted)
                 }
             } else {
-                LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 108.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(records) { record ->
                         Row(
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(SquishColors.Surface).padding(14.dp),
@@ -74,6 +76,12 @@ fun HistoryScreen(onBack: () -> Unit) {
                     }
                 }
             }
+        }
+        BackOrb(
+            accent = SquishColors.Blue,
+            onClick = onBack,
+            modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 24.dp)
+        )
         }
     }
 }

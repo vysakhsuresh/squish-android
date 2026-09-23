@@ -1,29 +1,16 @@
 package com.squish.app.settings
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,7 +19,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.squish.app.BuildConfig
@@ -42,6 +28,8 @@ import com.squish.app.ui.components.SectionHeading
 import com.squish.app.ui.components.SquishCard
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.components.SquishOutlinedButton
+import androidx.compose.material.icons.filled.AlternateEmail
+import com.squish.app.ui.components.SquishPage
 import com.squish.app.ui.theme.SquishColors
 
 @Composable
@@ -49,45 +37,62 @@ fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var proxyBytes by remember { mutableStateOf(ProxyEngine.cacheSizeBytes(context)) }
 
-    Scaffold(containerColor = SquishColors.Background) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = SquishColors.TextSecondary,
-                    modifier = Modifier.size(22.dp).clickable(onClick = onBack)
-                )
-                Text("Settings", style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
+    SquishPage(
+        title = "Settings",
+        subtitle = "About Squish, and what it keeps on your device",
+        onBack = onBack,
+        accent = SquishColors.Blue
+    ) {
+        AboutCard()
+        MakerCard()
+        PrivacyCard()
+        WhatItDoesCard()
+        StorageCard(
+            bytes = proxyBytes,
+            onClear = {
+                ProxyEngine.clearCache(context)
+                proxyBytes = ProxyEngine.cacheSizeBytes(context)
             }
+        )
+        LicencesCard()
+    }
+}
 
-            Column(
-                modifier = Modifier.padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                AboutCard()
-                PrivacyCard()
-                WhatItDoesCard()
-                StorageCard(
-                    bytes = proxyBytes,
-                    onClear = {
-                        ProxyEngine.clearCache(context)
-                        proxyBytes = ProxyEngine.cacheSizeBytes(context)
-                    }
-                )
-                LicencesCard()
-                Spacer(modifier = Modifier.height(28.dp))
-            }
-        }
+/**
+ * Who made it and how to reach them.
+ *
+ * The details below are placeholders on purpose: publishing a contact address is
+ * the maker's decision to make, not something to infer. Fill these in and the card
+ * is done.
+ */
+@Composable
+private fun MakerCard() {
+    SquishCard(accent = SquishColors.Cyan) {
+        SectionHeading(
+            title = "Made by Layerbit",
+            subtitle = "Get in touch",
+            icon = Icons.Filled.AlternateEmail,
+            accent = SquishColors.Cyan
+        )
+        Text(
+            "Squish is built by Layerbit. If something is broken, missing, or you have " +
+                "an idea for where it should go next, we would rather hear it than not.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextSecondary
+        )
+        ContactRow("Email", MAKER_EMAIL)
+        ContactRow("Web", MAKER_SITE)
+    }
+}
+
+@Composable
+private fun ContactRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
+        Text(value, style = MaterialTheme.typography.bodySmall, color = SquishColors.Cyan)
     }
 }
 
@@ -201,3 +206,8 @@ private fun Promise(text: String) {
         Text(text, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
     }
 }
+
+// Fill these in and the contact card is complete. Left as placeholders rather than
+// guessed at: an address published inside a shipped app is the maker's call.
+private const val MAKER_EMAIL = "hello@layerbit.com"
+private const val MAKER_SITE = "layerbit.com"

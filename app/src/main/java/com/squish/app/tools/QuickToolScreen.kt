@@ -9,17 +9,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RangeSlider
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,6 +49,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Box
+import com.squish.app.ui.components.SquishPage
 import com.squish.app.ui.theme.SquishColors
 
 @Composable
@@ -101,37 +96,12 @@ fun QuickToolScreen(
         }
     }
 
-    Scaffold(containerColor = SquishColors.Background) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Back",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = SquishColors.TextSecondary,
-                    modifier = Modifier.clickable(onClick = onBack)
-                )
-                Text(tool.title, style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
-                Spacer(modifier = Modifier.height(1.dp))
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(tool.title, style = MaterialTheme.typography.displayLarge, color = SquishColors.TextPrimary)
-                Text(tool.blurb, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextMuted)
-            }
-
+    SquishPage(
+        title = tool.title,
+        subtitle = tool.blurb,
+        onBack = onBack,
+        accent = tool.accent
+    ) {
             if (!state.hasSource) {
                 ToolCard {
                     Text(
@@ -219,7 +189,7 @@ fun QuickToolScreen(
                 Text(
                     "Need more control? Open in the full editor",
                     style = MaterialTheme.typography.labelLarge,
-                    color = SquishColors.Coral,
+                    color = SquishColors.Primary,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onOpenInEditor(uri) }
@@ -227,8 +197,6 @@ fun QuickToolScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-        }
     }
 }
 
@@ -309,8 +277,8 @@ private fun TrimControls(state: QuickToolViewModel.UiState, viewModel: QuickTool
                 },
                 valueRange = 0f..state.durationMs.toFloat(),
                 colors = SliderDefaults.colors(
-                    thumbColor = SquishColors.Coral,
-                    activeTrackColor = SquishColors.Coral,
+                    thumbColor = SquishColors.Primary,
+                    activeTrackColor = SquishColors.Primary,
                     inactiveTrackColor = SquishColors.Border
                 )
             )

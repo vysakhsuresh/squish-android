@@ -14,6 +14,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
+import com.squish.app.ui.components.AccentBadge
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
 import com.squish.app.ui.components.WaveformCanvas
@@ -46,47 +54,42 @@ fun AudioPanel(
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
         PanelCard {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Camera audio", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
-                    Text(
-                        if (state.sourceHasAudio) "The sound recorded with the video"
-                        else "This clip has no audio track",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SquishColors.TextMuted
+            PanelHeading(
+                "Camera audio",
+                if (state.sourceHasAudio) "The sound recorded with the video"
+                else "This clip has no audio track",
+                icon = Icons.Filled.Mic,
+                accent = SquishColors.Cyan,
+                trailing = {
+                    SquishToggleSwitch(
+                        checked = !state.muteOriginal,
+                        onCheckedChange = { viewModel.setMuteOriginal(!it) }
                     )
                 }
-                SquishToggleSwitch(
-                    checked = !state.muteOriginal,
-                    onCheckedChange = { viewModel.setMuteOriginal(!it) }
-                )
-            }
+            )
             if (!state.muteOriginal && state.sourceHasAudio) {
                 LabeledSlider("Level", state.originalVolume, 0f..1f, viewModel::setOriginalVolume)
             }
         }
 
         PanelCard {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Added tracks", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
-                Text(
-                    "${state.audioClips.size}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = SquishColors.Teal
-                )
-            }
+            PanelHeading(
+                "Added tracks",
+                "Music, voiceover, or a separate mic",
+                icon = Icons.Filled.MusicNote,
+                accent = SquishColors.Cyan,
+                trailing = {
+                    Text(
+                        "${state.audioClips.size}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = SquishColors.Cyan
+                    )
+                }
+            )
 
             if (state.audioClips.isEmpty()) {
                 Text(
-                    "Add music, a voiceover, or sound from a separate mic. Add as many as you like — they can overlap, and Squish can line any of them up with the picture for you.",
+                    "Add as many as you like — they can overlap, and Squish can line any of them up with the picture for you.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.TextSecondary
                 )
@@ -113,9 +116,10 @@ fun AudioPanel(
         PanelCard {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                AccentBadge(icon = Icons.Filled.GraphicEq, accent = SquishColors.Cyan)
                 Column(modifier = Modifier.weight(1f)) {
                     Text(target.label, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary, maxLines = 1)
                     SyncStatusLine(state)
@@ -137,11 +141,11 @@ fun AudioPanel(
         }
 
         PanelCard {
-            Text("Trim the track", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
-            Text(
-                "Which part of the audio file plays. The edges of the clip on the strip do the same thing.",
-                style = MaterialTheme.typography.bodySmall,
-                color = SquishColors.TextMuted
+            PanelHeading(
+                "Trim the track",
+                "Which part of the audio file plays — the same thing the clip's edges do",
+                icon = Icons.Filled.ContentCut,
+                accent = SquishColors.Cyan
             )
             AudioPointRow(
                 label = "In",
@@ -163,7 +167,12 @@ fun AudioPanel(
         }
 
         PanelCard {
-            Text("Place on the timeline", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
+            PanelHeading(
+                "Place on the timeline",
+                "Where this track starts",
+                icon = Icons.Filled.PlaylistPlay,
+                accent = SquishColors.Cyan
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -189,7 +198,12 @@ fun AudioPanel(
         }
 
         PanelCard {
-            Text("Align to picture", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
+            PanelHeading(
+                "Align to picture",
+                "Nudge it into sync, or let Squish find the match",
+                icon = Icons.Filled.Sync,
+                accent = SquishColors.Cyan
+            )
             val offsetMs = target.sourceInMs - target.timelineStartMs
             Box(
                 modifier = Modifier
@@ -269,17 +283,8 @@ private fun TrackRow(clip: Clip, selected: Boolean, onSelect: () -> Unit, onRemo
 }
 
 @Composable
-private fun PanelCard(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(SquishColors.Surface)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        content = content
-    )
-}
+private fun PanelCard(content: @Composable ColumnScope.() -> Unit) =
+    PanelSurface(accent = SquishColors.Cyan, content = content)
 
 @Composable
 private fun SyncStatusLine(state: EditorUiState) {

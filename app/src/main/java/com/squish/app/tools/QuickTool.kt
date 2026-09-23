@@ -1,6 +1,12 @@
 package com.squish.app.tools
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.squish.app.ui.theme.SquishColors
 
 /**
@@ -13,34 +19,39 @@ enum class QuickTool(
     val title: String,
     val blurb: String,
     val accent: Color,
+    val icon: ImageVector,
     val actionLabel: String
 ) {
     Compress(
         id = "compress",
         title = "Compress",
         blurb = "Shrink a video to a size you choose",
-        accent = SquishColors.Coral,
+        accent = SquishColors.Blue,
+        icon = Icons.Filled.Compress,
         actionLabel = "Compress video"
     ),
     Trim(
         id = "trim",
         title = "Trim",
         blurb = "Keep only the part you want",
-        accent = SquishColors.Teal,
+        accent = SquishColors.Cyan,
+        icon = Icons.Filled.ContentCut,
         actionLabel = "Trim video"
     ),
     ExtractAudio(
         id = "audio",
         title = "Extract audio",
         blurb = "Save the sound as an audio file",
-        accent = SquishColors.Yellow,
+        accent = SquishColors.Amber,
+        icon = Icons.Filled.MusicNote,
         actionLabel = "Extract audio"
     ),
     Merge(
         id = "merge",
         title = "Merge",
         blurb = "Join clips end to end",
-        accent = SquishColors.Purple,
+        accent = SquishColors.Magenta,
+        icon = Icons.Filled.PlaylistAdd,
         actionLabel = "Merge clips"
     );
 

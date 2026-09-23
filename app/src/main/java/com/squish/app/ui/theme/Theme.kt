@@ -6,7 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val SquishColorScheme = darkColorScheme(
-    primary = SquishColors.Coral,
+    primary = SquishColors.Primary,
     onPrimary = SquishColors.Background,
     secondary = SquishColors.Teal,
     onSecondary = SquishColors.Background,

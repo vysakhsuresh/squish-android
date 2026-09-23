@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -57,8 +60,13 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-        PanelSurface {
-            PanelHeading("Auto-captions", "Finds every line of speech and times it")
+        PanelSurface(accent = SquishColors.Amber) {
+            PanelHeading(
+                "Auto-captions",
+                "Finds every line of speech and times it",
+                icon = Icons.Filled.ClosedCaption,
+                accent = SquishColors.Amber
+            )
 
             val status = state.captions
             when {
@@ -136,22 +144,23 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             }
         }
 
-        PanelSurface {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                PanelHeading("Lines", "${state.textOverlays.size} on the timeline")
-                if (state.textOverlays.isNotEmpty()) {
-                    Text(
-                        "Clear all",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.clearCaptions() }
-                    )
+        PanelSurface(accent = SquishColors.Amber) {
+            PanelHeading(
+                "Lines",
+                "${state.textOverlays.size} on the timeline",
+                icon = Icons.Filled.Subtitles,
+                accent = SquishColors.Amber,
+                trailing = {
+                    if (state.textOverlays.isNotEmpty()) {
+                        Text(
+                            "Clear all",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SquishColors.Pink,
+                            modifier = Modifier.clickable { viewModel.clearCaptions() }
+                        )
+                    }
                 }
-            }
+            )
 
             if (state.textOverlays.isEmpty()) {
                 Text(

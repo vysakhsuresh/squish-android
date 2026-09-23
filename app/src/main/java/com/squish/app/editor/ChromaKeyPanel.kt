@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Colorize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,26 +49,28 @@ import com.squish.app.ui.theme.SquishColors
 fun ChromaKeyPanel(clip: Clip, playheadMs: Long, viewModel: EditorViewModel) {
     val key = clip.chromaKey
 
-    PanelSurface {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PanelHeading("Green screen", "Cut a color out of this layer")
-            if (key != null) {
-                Text(
-                    "Turn off",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.Pink,
-                    modifier = Modifier.clip(RoundedCornerShape(6.dp))
-                        .background(SquishColors.Background)
-                        .pointerInput(clip.id) {
-                            detectTapGestures { viewModel.setChromaKey(clip.id, null) }
-                        }
-                )
+    PanelSurface(accent = SquishColors.Magenta) {
+        PanelHeading(
+            "Green screen",
+            "Cut a color out of this layer",
+            icon = Icons.Filled.Colorize,
+            accent = SquishColors.Magenta,
+            trailing = {
+                if (key != null) {
+                    Text(
+                        "Turn off",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.Pink,
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                            .background(SquishColors.Background)
+                            .pointerInput(clip.id) {
+                                detectTapGestures { viewModel.setChromaKey(clip.id, null) }
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
-        }
+        )
 
         if (key == null) {
             Text(

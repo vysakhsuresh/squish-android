@@ -26,9 +26,9 @@ fun SquishPrimaryButton(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = SquishColors.Coral,
+            containerColor = SquishColors.Primary,
             contentColor = SquishColors.Background,
-            disabledContainerColor = SquishColors.Coral.copy(alpha = 0.4f),
+            disabledContainerColor = SquishColors.Primary.copy(alpha = 0.4f),
             disabledContentColor = SquishColors.Background.copy(alpha = 0.7f)
         ),
         contentPadding = PaddingValues(vertical = 16.dp)

@@ -22,7 +22,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.FileUpload
@@ -58,6 +57,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
 
@@ -114,13 +114,20 @@ fun EditorScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = SquishColors.TextSecondary,
-                    modifier = Modifier.size(22.dp).clickable(onClick = onBack)
-                )
-                Text("Edit", style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
+                BackOrb(accent = tab.accent, onClick = onBack, size = 40.dp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        state.videoClips.firstOrNull()?.label ?: "Your edit",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = SquishColors.TextPrimary,
+                        maxLines = 1
+                    )
+                    Text(
+                        "${state.videoClips.size} clips · ${Timecode.format(state.trimmedDurationMs)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.TextMuted
+                    )
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),

@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,27 +38,29 @@ import com.squish.app.ui.theme.SquishColors
 fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
     val mask = clip.mask
 
-    PanelSurface {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PanelHeading("Mask", "Show only part of this clip")
-            if (mask != null) {
-                Text(
-                    "Turn off",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.Pink,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(SquishColors.Background)
-                        .pointerInput(clip.id) {
-                            detectTapGestures { viewModel.setMask(clip.id, null) }
-                        }
-                )
+    PanelSurface(accent = SquishColors.Magenta) {
+        PanelHeading(
+            "Mask",
+            "Show only part of this clip",
+            icon = Icons.Filled.CenterFocusStrong,
+            accent = SquishColors.Magenta,
+            trailing = {
+                if (mask != null) {
+                    Text(
+                        "Turn off",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.Pink,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(SquishColors.Background)
+                            .pointerInput(clip.id) {
+                                detectTapGestures { viewModel.setMask(clip.id, null) }
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
-        }
+        )
 
         if (mask == null) {
             Text(

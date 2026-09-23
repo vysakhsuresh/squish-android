@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -39,13 +42,23 @@ fun TransitionPanel(
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
         if (selected == null) {
-            PanelSurface {
-                PanelHeading("Nothing selected", "Tap a clip on the timeline to give it a transition or float it over the picture")
+            PanelSurface(accent = SquishColors.Magenta) {
+                PanelHeading(
+                    "Nothing selected",
+                    "Tap a clip on the timeline to give it a transition or float it over the picture",
+                    icon = Icons.Filled.Layers,
+                    accent = SquishColors.Magenta
+                )
             }
         }
 
-        PanelSurface {
-            PanelHeading("Transition in", "How this shot arrives")
+        PanelSurface(accent = SquishColors.Magenta) {
+            PanelHeading(
+                "Transition in",
+                "How this shot arrives",
+                icon = Icons.Filled.Transform,
+                accent = SquishColors.Magenta
+            )
             if (!canTransition) {
                 Text(
                     when {
@@ -109,8 +122,13 @@ fun TransitionPanel(
             }
         }
 
-        PanelSurface {
-            PanelHeading("Layers", "Float a clip over the picture")
+        PanelSurface(accent = SquishColors.Magenta) {
+            PanelHeading(
+                "Layers",
+                "Float a clip over the picture",
+                icon = Icons.Filled.Layers,
+                accent = SquishColors.Magenta
+            )
             if (isVideo && selected != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

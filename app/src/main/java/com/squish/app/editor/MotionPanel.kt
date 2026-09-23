@@ -9,6 +9,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Animation
+import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.layout.size
@@ -38,8 +43,13 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
     val clip = state.targetVideoClip
 
     if (clip == null) {
-        PanelSurface {
-            PanelHeading("Nothing to move", "Add a clip to the timeline first")
+        PanelSurface(accent = SquishColors.Amber) {
+            PanelHeading(
+                "Nothing to move",
+                "Add a clip to the timeline first",
+                icon = Icons.Filled.Animation,
+                accent = SquishColors.Amber
+            )
         }
         return
     }
@@ -53,11 +63,13 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
         TrackPanel(state = state, clip = clip, viewModel = viewModel)
 
-        PanelSurface {
+        PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
                 clip.label,
                 if (animated) "${clip.keyframes.size} keys · moves while it plays"
-                else "Sitting still — add a move below"
+                else "Sitting still — add a move below",
+                icon = Icons.Filled.Animation,
+                accent = SquishColors.Amber
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
@@ -87,10 +99,12 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
             )
         }
 
-        PanelSurface {
+        PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
                 if (animated) "At ${Timecode.format(state.playheadMs)}" else "Placement",
-                if (animated) "Changing these sets a key at the playhead" else "Where the picture sits"
+                if (animated) "Changing these sets a key at the playhead" else "Where the picture sits",
+                icon = Icons.Filled.Transform,
+                accent = SquishColors.Amber
             )
             LabeledSlider("Scale", here.scale, 0.2f..3f) {
                 viewModel.setClipTransform(clip.id, scale = it)
@@ -106,22 +120,23 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
             }
         }
 
-        PanelSurface {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                PanelHeading("Keyframes", "Control points along the clip")
-                if (animated) {
-                    Text(
-                        "Clear",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.clearKeyframes(clip.id) }
-                    )
+        PanelSurface(accent = SquishColors.Amber) {
+            PanelHeading(
+                "Keyframes",
+                "Control points along the clip",
+                icon = Icons.Filled.Timer,
+                accent = SquishColors.Amber,
+                trailing = {
+                    if (animated) {
+                        Text(
+                            "Clear",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SquishColors.Pink,
+                            modifier = Modifier.clickable { viewModel.clearKeyframes(clip.id) }
+                        )
+                    }
                 }
-            }
+            )
 
             SquishOutlinedButton(
                 text = "Add key at playhead",
@@ -229,26 +244,24 @@ private fun KeyRow(
 private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
     val status = state.stabilize
 
-    PanelSurface {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PanelHeading(
-                "Stabilize",
-                if (clip.isStabilized) "Shake removed · ${clip.stabilizer.size} measurements"
-                else "Smooth out handheld shake"
-            )
-            if (clip.isStabilized) {
-                Text(
-                    "Remove",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.Pink,
-                    modifier = Modifier.clickable { viewModel.clearStabilization(clip.id) }
-                )
+    PanelSurface(accent = SquishColors.Amber) {
+        PanelHeading(
+            "Stabilize",
+            if (clip.isStabilized) "Shake removed · ${clip.stabilizer.size} measurements"
+            else "Smooth out handheld shake",
+            icon = Icons.Filled.Straighten,
+            accent = SquishColors.Amber,
+            trailing = {
+                if (clip.isStabilized) {
+                    Text(
+                        "Remove",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.Pink,
+                        modifier = Modifier.clickable { viewModel.clearStabilization(clip.id) }
+                    )
+                }
             }
-        }
+        )
 
         when {
             status.running -> {

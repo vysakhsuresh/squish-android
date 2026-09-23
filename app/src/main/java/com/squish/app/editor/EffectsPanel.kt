@@ -1,7 +1,6 @@
 package com.squish.app.editor
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -11,12 +10,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.FilterVintage
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,8 +55,13 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-        PanelSurface {
-            PanelHeading("Looks", "Tap to apply · tap again to clear")
+        PanelSurface(accent = SquishColors.Magenta) {
+            PanelHeading(
+                "Looks",
+                "Tap to apply · tap again to clear",
+                icon = Icons.Filled.AutoAwesome,
+                accent = SquishColors.Magenta
+            )
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -90,25 +97,31 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
         }
 
         if (state.lookId != null) {
-            PanelSurface {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    PanelHeading(active.label, "How far the look is dialled in")
-                    Text(
-                        "${(state.lookIntensity * 100).toInt()}%",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = SquishColors.Cyan
-                    )
-                }
+            PanelSurface(accent = SquishColors.Magenta) {
+                PanelHeading(
+                    active.label,
+                    "How far the look is dialled in",
+                    icon = Icons.Filled.FilterVintage,
+                    accent = SquishColors.Magenta,
+                    trailing = {
+                        Text(
+                            "${(state.lookIntensity * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = SquishColors.Cyan
+                        )
+                    }
+                )
                 LabeledSlider("Strength", state.lookIntensity, 0f..1f, viewModel::setLookIntensity)
             }
         }
 
-        PanelSurface {
-            PanelHeading("Adjust", "Refines whatever look is on, rather than replacing it")
+        PanelSurface(accent = SquishColors.Magenta) {
+            PanelHeading(
+                "Adjust",
+                "Refines whatever look is on, rather than replacing it",
+                icon = Icons.Filled.Tune,
+                accent = SquishColors.Magenta
+            )
             LabeledSlider("Brightness", state.brightness, -1f..1f, viewModel::setBrightness)
             LabeledSlider("Contrast", state.contrast, -1f..1f, viewModel::setContrast)
             LabeledSlider("Saturation", state.saturation, -1f..1f, viewModel::setSaturation)
