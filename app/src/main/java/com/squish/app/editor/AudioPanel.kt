@@ -53,6 +53,8 @@ fun AudioPanel(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
+        BeatPanel(state, viewModel)
+
         PanelCard {
             PanelHeading(
                 "Camera audio",

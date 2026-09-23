@@ -100,6 +100,35 @@ data class StabilizeProgress(
     val failed: Boolean = false
 )
 
+/**
+ * The pulse of whichever track was analysed.
+ *
+ * [beatsMs] is in **timeline** time, already mapped out of the analysed clip's
+ * source clock - so moving or ramping that clip afterwards leaves the beats where
+ * they were, which is wrong, and re-running the analysis is the fix. That is a
+ * deliberate trade: recomputing the grid on every drag would mean decoding the
+ * audio again on every drag.
+ */
+data class BeatProgress(
+    val running: Boolean = false,
+    val finished: Boolean = false,
+    val failed: Boolean = false,
+    val bpm: Float = 0f,
+    val confidence: Float = 0f,
+    val beatsMs: List<Long> = emptyList(),
+    val downbeatOffset: Int = 0,
+    /** Which clip was listened to, so the card can say so. */
+    val clipLabel: String = ""
+) {
+    val hasBeats: Boolean get() = beatsMs.size >= 2
+
+    /** Every nth beat from the downbeat: the cut points for "on the bar". */
+    fun every(n: Int): List<Long> {
+        if (n <= 1) return beatsMs
+        return beatsMs.filterIndexed { i, _ -> (i - downbeatOffset).mod(n) == 0 }
+    }
+}
+
 data class CaptionProgress(
     val running: Boolean = false,
     val stage: String = "",
@@ -174,6 +203,7 @@ data class EditorUiState(
     val stabilize: StabilizeProgress = StabilizeProgress(),
     val stabilizeStrength: Float = 0.5f,
     val tracking: TrackProgress = TrackProgress(),
+    val beats: BeatProgress = BeatProgress(),
 
     // The video track, in order. Seeded with the whole source clip on load; split,
     // trim, reorder and merge all operate on this list, and export renders it.

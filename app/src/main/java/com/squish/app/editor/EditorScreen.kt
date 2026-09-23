@@ -206,7 +206,9 @@ fun EditorScreen(
                 onTransitionTap = { clipId ->
                     viewModel.selectClip(clipId)
                     tab = EditorTab.Mix
-                }
+                },
+                markers = state.markers,
+                barMarkers = state.beats.every(4)
             )
 
             TimelineActionBar(

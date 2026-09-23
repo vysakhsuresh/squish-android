@@ -21,6 +21,7 @@ run() {
 }
 
 run looks      "$SRC/media/effects/Look.kt" tools/jvm/LookChecks.kt
+run beat       "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" tools/jvm/BeatChecks.kt
 run ramp       "$SRC/timeline/SpeedRamp.kt" tools/jvm/RampChecks.kt
 run slice      "$SRC/timeline/SpeedRamp.kt" tools/jvm/SliceChecks.kt
 run timeline   "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \

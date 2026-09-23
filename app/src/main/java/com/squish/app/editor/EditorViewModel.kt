@@ -18,6 +18,8 @@ import com.squish.app.media.GallerySaver
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.VideoProcessor
 import com.squish.app.media.audio.AudioSyncAnalyzer
+import com.squish.app.media.audio.BeatDetector
+import com.squish.app.media.audio.BeatMap
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.SpeechSegmenter
 import com.squish.app.media.audio.Transcriber
@@ -375,6 +377,131 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun toggleRotate() = _state.update { it.copy(rotationDegrees = (it.rotationDegrees + 90) % 360) }
 
     fun setCropAspect(aspect: CropAspect) = _state.update { it.copy(cropAspect = aspect) }
+
+    // ---- Beat detection ---------------------------------------------------------
+
+    private var beatJob: Job? = null
+
+    /**
+     * Finds the pulse of whichever sound the edit is built around.
+     *
+     * Prefers an added track - if someone has dropped music onto the timeline,
+     * that is the thing they are cutting to - and falls back to the camera audio,
+     * which is right for a performance shot with the music in the room.
+     */
+    fun detectBeats() {
+        val current = _state.value
+        if (current.beats.running) return
+
+        val target = current.audioClips.firstOrNull { it.id == current.selectedClipId }
+            ?: current.audioClips.firstOrNull()
+        val uri = target?.uri ?: current.sourceUri ?: return
+        val label = target?.label ?: "the camera audio"
+
+        beatJob?.cancel()
+        _state.update { it.copy(beats = BeatProgress(running = true, clipLabel = label)) }
+
+        beatJob = viewModelScope.launch {
+            val pcm = PcmDecoder.decodeMono(
+                context = getApplication(),
+                uri = uri,
+                targetSampleRate = BEAT_ANALYSIS_RATE,
+                maxDurationMs = BEAT_MAX_ANALYSIS_MS
+            )
+            if (pcm == null) {
+                _state.update { it.copy(beats = BeatProgress(finished = true, failed = true, clipLabel = label)) }
+                return@launch
+            }
+
+            val map = withContext(Dispatchers.Default) {
+                BeatDetector.detect(pcm.samples, pcm.sampleRate)
+            }
+            if (map.isEmpty) {
+                _state.update { it.copy(beats = BeatProgress(finished = true, failed = true, clipLabel = label)) }
+                return@launch
+            }
+
+            _state.update { it.copy(beats = map.toProgress(target, label)) }
+        }
+    }
+
+    /**
+     * Beat times moved out of the analysed clip's source clock and onto the
+     * timeline.
+     *
+     * The decoder always starts at the top of the file, so a beat's time is a
+     * source time; a music cue dragged to start ten seconds in has its beats ten
+     * seconds later than the analysis says. Mapping through the clip also puts
+     * them through its speed curve, which is the only way a ramped music bed's
+     * beats land where they are heard.
+     */
+    private fun BeatMap.toProgress(clip: Clip?, label: String): BeatProgress {
+        val onTimeline = if (clip == null) beatsMs else beatsMs.mapNotNull { at ->
+            val source = clip.sourceInMs + at
+            if (source < clip.sourceInMs || source > clip.sourceOutMs) null
+            else clip.timelineAtSource(source)
+        }
+        return BeatProgress(
+            finished = true,
+            bpm = bpm,
+            confidence = confidence,
+            beatsMs = onTimeline,
+            downbeatOffset = downbeatOffset,
+            clipLabel = label
+        )
+    }
+
+    /** The same pulse counted twice as fast, or half as fast. */
+    fun scaleBeats(faster: Boolean) = _state.update { current ->
+        val beats = current.beats
+        if (!beats.hasBeats) return@update current
+        val map = BeatMap(beats.beatsMs, beats.bpm, beats.confidence, beats.downbeatOffset)
+        val scaled = if (faster) map.doubled() else map.halved()
+        current.copy(
+            beats = beats.copy(
+                beatsMs = scaled.beatsMs,
+                bpm = scaled.bpm,
+                downbeatOffset = scaled.downbeatOffset
+            )
+        )
+    }
+
+    /** Moves which beat counts as the one on the bar. */
+    fun nudgeDownbeat() = _state.update { current ->
+        current.copy(beats = current.beats.copy(downbeatOffset = (current.beats.downbeatOffset + 1).mod(4)))
+    }
+
+    fun clearBeats() = _state.update { it.copy(beats = BeatProgress()) }
+
+    /**
+     * Drops a marker on every nth beat, so every edit that already snaps now snaps
+     * to the music: dragging a clip, setting an in point, moving a caption.
+     */
+    fun markBeats(everyN: Int) = _state.update { current ->
+        val beats = current.beats.every(everyN)
+        if (beats.isEmpty()) current
+        else current.copy(markers = beats.sorted().distinct(), snapToMarkers = true)
+    }
+
+    /**
+     * Cuts the video track on every nth beat.
+     *
+     * Applied back to front. Each cut renumbers the clips after it, so working
+     * forwards would have every subsequent position measured against a timeline
+     * that had already changed underneath it.
+     */
+    fun cutOnBeats(everyN: Int) {
+        val current = _state.value
+        val cuts = current.beats.every(everyN)
+            .filter { it > 0 }
+            .sortedDescending()
+        if (cuts.isEmpty()) return
+
+        cuts.forEach { at ->
+            mutateTimeline { timeline -> timeline.copy(playheadMs = at).withSplitAtPlayhead() }
+        }
+        _state.update { it.copy(selectedClipId = null) }
+    }
 
     // ---- Speed ----------------------------------------------------------------
 
@@ -1210,6 +1337,19 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Close enough to a butt cut that a retime should carry the next clip along. */
     private val TOUCHING_MS = 40L
+
+    /**
+     * The rate the beat analysis runs at, and how much of a track it will listen to.
+     *
+     * 8kHz is plenty: everything that marks a beat - kick, snare, hat - has ample
+     * energy below 4kHz, and halving the rate halves both the decode and the
+     * hundreds of thousands of butterflies the FFT does over a long track.
+     *
+     * Six minutes covers any song. Beyond that the tempo has almost certainly
+     * moved anyway, and the array would be twenty megabytes of floats.
+     */
+    private val BEAT_ANALYSIS_RATE = 8_000
+    private val BEAT_MAX_ANALYSIS_MS = 6 * 60 * 1000L
 
     private fun shiftOverlay(id: String, deltaMs: Long) {
         _state.update { current ->

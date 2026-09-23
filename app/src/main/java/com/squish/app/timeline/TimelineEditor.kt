@@ -64,7 +64,11 @@ fun TimelineEditor(
     onTrim: (String, Long, Long) -> Unit,
     onScrub: (Long) -> Unit,
     onTransitionTap: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Marks to snap to — the beat grid, or anything dropped by hand. */
+    markers: List<Long> = emptyList(),
+    /** Which of those start a bar, drawn taller so the phrasing is readable. */
+    barMarkers: List<Long> = emptyList()
 ) {
     val scroll = rememberScrollState()
     val pps = state.pixelsPerSecond
@@ -85,7 +89,13 @@ fun TimelineEditor(
 
         Box(modifier = Modifier.fillMaxWidth().horizontalScroll(scroll)) {
             Column(modifier = Modifier.width(contentWidth)) {
-                Ruler(durationMs = state.durationMs, pixelsPerSecond = pps, onScrub = onScrub)
+                Ruler(
+                    durationMs = state.durationMs,
+                    pixelsPerSecond = pps,
+                    markers = markers,
+                    barMarkers = barMarkers,
+                    onScrub = onScrub
+                )
                 overlayLayers.forEach { layer ->
                     Lane(
                         clips = state.clips.filter { it.kind == ClipKind.Video && it.layer == layer },
@@ -111,11 +121,29 @@ fun TimelineEditor(
                 Lane(state.textClips, state, SquishColors.Amber, onSelect, onMove, onTrim)
             }
 
+            // Beat lines run the full height, behind the playhead. A grid you can
+            // only see on the ruler tells you where the beats are; a grid that
+            // crosses the lanes tells you whether a cut is on one.
+            val laneHeight = RULER_HEIGHT + LANE_HEIGHT * laneCount
+            markers.forEach { at ->
+                val isBar = at in barMarkers
+                Box(
+                    modifier = Modifier
+                        .offset(x = at.onTimeline(pps))
+                        .width(1.dp)
+                        .height(laneHeight)
+                        .background(
+                            if (isBar) SquishColors.Cyan.copy(alpha = 0.42f)
+                            else SquishColors.Cyan.copy(alpha = 0.16f)
+                        )
+                )
+            }
+
             Box(
                 modifier = Modifier
                     .offset(x = state.playheadMs.onTimeline(pps))
                     .width(2.dp)
-                    .height(RULER_HEIGHT + LANE_HEIGHT * laneCount)
+                    .height(laneHeight)
                     .background(SquishColors.TextPrimary)
             )
         }
@@ -133,7 +161,13 @@ private fun LaneBadge(icon: ImageVector, tint: Color) {
 }
 
 @Composable
-private fun Ruler(durationMs: Long, pixelsPerSecond: Float, onScrub: (Long) -> Unit) {
+private fun Ruler(
+    durationMs: Long,
+    pixelsPerSecond: Float,
+    markers: List<Long>,
+    barMarkers: List<Long>,
+    onScrub: (Long) -> Unit
+) {
     val latestScrub by rememberUpdatedState(onScrub)
     // A tick every second is unreadable when zoomed out, so widen the step until
     // labels have room to breathe.
@@ -163,6 +197,18 @@ private fun Ruler(durationMs: Long, pixelsPerSecond: Float, onScrub: (Long) -> U
                 }
             }
     ) {
+        // Drawn first so the second ticks and their labels sit over them.
+        markers.forEach { at ->
+            val isBar = at in barMarkers
+            Box(
+                modifier = Modifier
+                    .offset(x = at.onTimeline(pixelsPerSecond))
+                    .width(if (isBar) 2.dp else 1.dp)
+                    .height(if (isBar) RULER_HEIGHT else RULER_HEIGHT * 0.5f)
+                    .background(SquishColors.Cyan.copy(alpha = if (isBar) 0.8f else 0.4f))
+            )
+        }
+
         var t = 0L
         while (t <= total) {
             val label = t
