@@ -1,15 +1,26 @@
 package com.squish.app.settings
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,6 +30,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.squish.app.BuildConfig
@@ -61,12 +74,18 @@ fun SettingsScreen(onBack: () -> Unit) {
 /**
  * Who made it and how to reach them.
  *
- * The details below are placeholders on purpose: publishing a contact address is
- * the maker's decision to make, not something to infer. Fill these in and the card
- * is done.
+ * Both rows open the right app rather than making anyone copy a string out by
+ * hand, and the email arrives with the version already in its subject - a bug
+ * report without a version number costs a round trip every time.
+ *
+ * Handing an address to another app is not a network call, so none of this needs
+ * the internet permission the privacy card promises Squish does not hold.
  */
 @Composable
 private fun MakerCard() {
+    val context = LocalContext.current
+    var unreachable by remember { mutableStateOf<String?>(null) }
+
     SquishCard(accent = SquishColors.Cyan) {
         SectionHeading(
             title = "Made by Layerbit",
@@ -80,19 +99,79 @@ private fun MakerCard() {
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextSecondary
         )
-        ContactRow("Email", MAKER_EMAIL)
-        ContactRow("Web", MAKER_SITE)
+
+        ContactRow(
+            icon = Icons.Filled.AlternateEmail,
+            label = "Email",
+            value = MAKER_EMAIL
+        ) {
+            val subject = "Squish ${BuildConfig.VERSION_NAME}"
+            unreachable = context.openOrNull(
+                Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$MAKER_EMAIL"))
+                    .putExtra(Intent.EXTRA_SUBJECT, subject),
+                ifMissing = "No email app installed — write to $MAKER_EMAIL"
+            )
+        }
+
+        ContactRow(
+            icon = Icons.Filled.Chat,
+            label = "WhatsApp",
+            value = MAKER_PHONE_DISPLAY
+        ) {
+            unreachable = context.openOrNull(
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$MAKER_PHONE_E164")),
+                ifMissing = "Nothing here can open WhatsApp — message $MAKER_PHONE_DISPLAY"
+            )
+        }
+
+        unreachable?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.Yellow)
+        }
     }
 }
 
+/**
+ * Starts an intent, and returns the message to show if nothing could handle it.
+ *
+ * Package visibility hides other apps from a query on Android 11 and up, so
+ * asking first would report "no email app" on a phone that has three. Starting it
+ * and catching the failure is the reading that is actually accurate.
+ */
+private fun Context.openOrNull(intent: Intent, ifMissing: String): String? = try {
+    startActivity(intent)
+    null
+} catch (_: ActivityNotFoundException) {
+    ifMissing
+}
+
 @Composable
-private fun ContactRow(label: String, value: String) {
+private fun ContactRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    onClick: () -> Unit
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SquishColors.Cyan.copy(alpha = 0.10f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
-        Text(value, style = MaterialTheme.typography.bodySmall, color = SquishColors.Cyan)
+        Icon(icon, contentDescription = null, tint = SquishColors.Cyan, modifier = Modifier.size(18.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+            Text(value, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+        }
+        Icon(
+            Icons.Filled.OpenInNew,
+            contentDescription = null,
+            tint = SquishColors.Cyan,
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
@@ -209,5 +288,8 @@ private fun Promise(text: String) {
 
 // Fill these in and the contact card is complete. Left as placeholders rather than
 // guessed at: an address published inside a shipped app is the maker's call.
-private const val MAKER_EMAIL = "hello@layerbit.com"
-private const val MAKER_SITE = "layerbit.com"
+private const val MAKER_EMAIL = "ceo@layerbit.co.in"
+
+/** What a person reads, and what wa.me needs: country code, no plus, no spaces. */
+private const val MAKER_PHONE_DISPLAY = "+91 62825 95823"
+private const val MAKER_PHONE_E164 = "916282595823"

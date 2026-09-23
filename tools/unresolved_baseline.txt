@@ -19,6 +19,7 @@ setSpeed
 setTimeline
 setVideoMimeType
 size
+startActivity
 timelineEndMs
 togglePlay
 update
