@@ -11,11 +11,28 @@ import kotlinx.coroutines.withContext
 
 data class VideoMeta(
     val durationMs: Long,
+    /** As stored in the file, before the container's rotation is applied. */
     val width: Int,
     val height: Int,
     val rotationDegrees: Int,
-    val fps: Float
-)
+    val fps: Float,
+    /** Whether the file carries sound at all. Unknown reads as yes. */
+    val hasAudio: Boolean = true
+) {
+    /**
+     * The shape the picture is actually seen in.
+     *
+     * A phone shoots portrait as a 1920x1080 stream with a 90 degree rotation tag
+     * on it, and every decoder turns it on the way out. Anything that asks the
+     * file how wide the video is and believes the answer ends up with a landscape
+     * frame for portrait footage - which is how a portrait export came out
+     * letterboxed into a landscape box with black down both sides.
+     */
+    val displayWidth: Int get() = if (quarterTurned) height else width
+    val displayHeight: Int get() = if (quarterTurned) width else height
+
+    private val quarterTurned: Boolean get() = rotationDegrees % 180 != 0
+}
 
 object ThumbnailExtractor {
 
@@ -33,8 +50,29 @@ object ThumbnailExtractor {
         } finally {
             retriever.release()
         }
-        base.copy(fps = probeFrameRate(context, uri) ?: 30f)
+
+        // The track format wins where it has an answer. MediaMetadataRetriever is
+        // documented loosely enough that whether its width is the coded width or
+        // the displayed one has varied by device and by version, and getting that
+        // backwards silently rotates every export. The extractor's width, height
+        // and rotation-degrees are unambiguous: coded, and the tag separately.
+        val track = probeVideoTrack(context, uri)
+        base.copy(
+            width = track?.width?.takeIf { it > 0 } ?: base.width,
+            height = track?.height?.takeIf { it > 0 } ?: base.height,
+            rotationDegrees = track?.rotation ?: base.rotationDegrees,
+            fps = track?.fps ?: 30f,
+            hasAudio = track?.hasAudio ?: true
+        )
     }
+
+    private data class TrackInfo(
+        val width: Int,
+        val height: Int,
+        val rotation: Int?,
+        val fps: Float?,
+        val hasAudio: Boolean
+    )
 
     /** Container duration for any media file, including audio-only tracks. */
     suspend fun probeDurationMs(context: Context, uri: Uri): Long = withContext(Dispatchers.IO) {
@@ -54,28 +92,56 @@ object ThumbnailExtractor {
      * video track format directly. Frame rate drives every precision control in
      * the editor, so guessing 30 everywhere would put nudges off on 24/60fps clips.
      */
-    private fun probeFrameRate(context: Context, uri: Uri): Float? {
+    private fun probeVideoTrack(context: Context, uri: Uri): TrackInfo? {
         val extractor = MediaExtractor()
         return try {
             extractor.setDataSource(context, uri, null)
-            var result: Float? = null
+            // One pass for both questions: the video track's shape, and whether
+            // there is any sound in the file at all. Asking separately would open
+            // the extractor twice for an answer it already had.
+            val hasAudio = (0 until extractor.trackCount).any { i ->
+                extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("audio/")
+            }
+
+            var result: TrackInfo? = null
             for (i in 0 until extractor.trackCount) {
                 val format = extractor.getTrackFormat(i)
-                if (format.getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/")) {
-                    if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
-                        result = runCatching { format.getInteger(MediaFormat.KEY_FRAME_RATE).toFloat() }
-                            .getOrElse { runCatching { format.getFloat(MediaFormat.KEY_FRAME_RATE) }.getOrNull() }
-                    }
-                    break
+                if (!format.getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/")) continue
+
+                val fps = if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
+                    runCatching { format.getInteger(MediaFormat.KEY_FRAME_RATE).toFloat() }
+                        .getOrElse { runCatching { format.getFloat(MediaFormat.KEY_FRAME_RATE) }.getOrNull() }
+                } else {
+                    null
                 }
+                result = TrackInfo(
+                    width = runCatching { format.getInteger(MediaFormat.KEY_WIDTH) }.getOrDefault(0),
+                    height = runCatching { format.getInteger(MediaFormat.KEY_HEIGHT) }.getOrDefault(0),
+                    // Not every container carries it, and a missing tag is not a
+                    // zero - the retriever's answer is better than inventing one.
+                    rotation = if (format.containsKey(KEY_ROTATION)) {
+                        runCatching { format.getInteger(KEY_ROTATION) }.getOrNull()
+                    } else {
+                        null
+                    },
+                    fps = fps?.takeIf { it > 1f && it < 1000f },
+                    hasAudio = hasAudio
+                )
+                break
             }
-            result?.takeIf { it > 1f && it < 1000f }
+            // An audio-only file has no video track, and still has to report that
+            // it has sound - otherwise extracting audio from an .m4a says it has
+            // none, which is the opposite of true.
+            result ?: TrackInfo(0, 0, null, null, hasAudio)
         } catch (t: Throwable) {
             null
         } finally {
             runCatching { extractor.release() }
         }
     }
+
+    /** MediaFormat.KEY_ROTATION, spelled out because it is API 23 and this is minSdk-safe. */
+    private const val KEY_ROTATION = "rotation-degrees"
 
     /**
      * One frame, scaled down, for sampling a color out of.

@@ -14,6 +14,7 @@ import com.squish.app.media.ExportProgress
 import com.squish.app.media.GallerySaver
 import com.squish.app.media.SquishError
 import com.squish.app.media.ThumbnailExtractor
+import com.squish.app.media.VideoMeta
 import com.squish.app.media.VideoProcessor
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
@@ -38,8 +39,8 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val durationMs: Long = 0,
         val width: Int = 0,
         val height: Int = 0,
-        val rotationDegrees: Int = 0,
         val originalSizeBytes: Long = 0,
+        val hasAudio: Boolean = true,
         val quality: Quality = Quality.Medium,
         val fitToSize: Boolean = false,
         val targetSizeMb: Int = 16,
@@ -62,19 +63,28 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val selectedDurationMs: Long get() = (trimEndMs - trimStartMs).coerceAtLeast(0)
 
         /**
-         * The shape the preview should be, with the container's rotation applied.
+         * How long the finished file runs.
          *
-         * A phone shoots 1080x1920 and tags it 90 degrees; reading width over
-         * height without that tag gives a landscape box for portrait footage, with
-         * the picture letterboxed inside it.
+         * A merge is the whole list; everything else is the selected range. The
+         * estimate used the selected range for both, and since a merge's range is
+         * only ever the *first* clip, joining four videos was estimated at the
+         * weight of the shortest one - which also made the free-space check
+         * nonsense, because it was checking for a fiftieth of what would be written.
+         */
+        val exportDurationMs: Long
+            get() = if (mergeClips.isNotEmpty()) mergeDurationMs else selectedDurationMs
+
+        /**
+         * The shape the preview should be.
+         *
+         * [width] and [height] are already the displayed size - the rotation tag is
+         * applied when the file is probed, in one place, rather than by everything
+         * that wants to know how wide the picture is.
          */
         val previewAspect: Float
             get() {
                 if (width <= 0 || height <= 0) return 16f / 9f
-                val turned = rotationDegrees % 180 != 0
-                val w = if (turned) height else width
-                val h = if (turned) width else height
-                return (w.toFloat() / h).coerceIn(0.4f, 2.5f)
+                return (width.toFloat() / height).coerceIn(0.4f, 2.5f)
             }
     }
 
@@ -84,23 +94,31 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     private val processor = VideoProcessor(application)
     private val historyRepository = SquishRepositories.history(application)
 
+    /**
+     * What was measured about each clip added to a merge.
+     *
+     * Kept here rather than on [UiState] because it is not something the screen
+     * draws - it exists so that reordering or removing a clip can recompute the
+     * output's shape and weight without probing every file again.
+     */
+    private val mergeMeta = HashMap<String, VideoMeta>()
+    private val mergeSizes = HashMap<String, Long>()
+
     fun load(uri: Uri) {
         if (_state.value.sourceUri == uri) return
         _state.update { it.copy(sourceUri = uri, isLoading = true) }
 
         viewModelScope.launch {
             val meta = ThumbnailExtractor.probe(getApplication(), uri)
-            val size = runCatching {
-                getApplication<Application>().contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
-            }.getOrDefault(0L)
+            val size = fileSizeOf(uri)
 
             _state.update {
                 it.copy(
                     name = displayNameOf(uri),
                     durationMs = meta.durationMs,
-                    width = meta.width,
-                    height = meta.height,
-                    rotationDegrees = meta.rotationDegrees,
+                    width = meta.displayWidth,
+                    height = meta.displayHeight,
+                    hasAudio = meta.hasAudio,
                     originalSizeBytes = size,
                     trimStartMs = 0,
                     trimEndMs = meta.durationMs,
@@ -122,7 +140,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val added = uris.map { uri ->
                 val meta = ThumbnailExtractor.probe(getApplication(), uri)
-                Clip(
+                val clip = Clip(
                     kind = ClipKind.Video,
                     uri = uri,
                     label = displayNameOf(uri) ?: "Clip",
@@ -131,6 +149,11 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                     timelineStartMs = 0,
                     sourceDurationMs = meta.durationMs
                 )
+                // The frame size was being probed and thrown away, which is what
+                // made every merge export with no output resolution set at all.
+                mergeMeta[clip.id] = meta
+                mergeSizes[clip.id] = fileSizeOf(uri)
+                clip
             }
             _state.update { current -> current.withMerge(current.mergeClips + added) }
             recomputeEstimate()
@@ -150,11 +173,15 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun removeMergeClip(clipId: String) {
+        mergeMeta.remove(clipId)
+        mergeSizes.remove(clipId)
         _state.update { current -> current.withMerge(current.mergeClips.filterNot { it.id == clipId }) }
         recomputeEstimate()
     }
 
     fun clearMerge() {
+        mergeMeta.clear()
+        mergeSizes.clear()
         _state.update { it.withMerge(emptyList()) }
         recomputeEstimate()
     }
@@ -173,11 +200,21 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             placed
         }
         val first = sequenced.firstOrNull()
+        // The output takes the shape of whatever plays first, and everything else
+        // is fitted into it. Without these the exporter had no idea what size to
+        // write, so four clips of four different shapes went into one sequence
+        // with nothing reconciling them.
+        val lead = first?.let { mergeMeta[it.id] }
         return copy(
             mergeClips = sequenced,
             sourceUri = first?.uri,
             name = first?.label,
             durationMs = first?.durationMs ?: 0L,
+            width = lead?.displayWidth ?: 0,
+            height = lead?.displayHeight ?: 0,
+            // Every file that goes in, so the finished screen can say what the
+            // merge actually saved instead of comparing against zero.
+            originalSizeBytes = sequenced.sumOf { mergeSizes[it.id] ?: 0L },
             trimStartMs = 0L,
             trimEndMs = first?.durationMs ?: 0L
         )
@@ -213,16 +250,21 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val bitrate = if (current.fitToSize) {
             ExportPresets.bitrateForTargetSize(
                 current.targetSizeMb * 1_000_000L,
-                current.selectedDurationMs,
+                current.exportDurationMs,
                 true
             )
         } else {
             ExportPresets.bitrateFor(current.quality)
         }
-        val seconds = current.selectedDurationMs / 1000.0
+        val seconds = current.exportDurationMs / 1000.0
         val bits = bitrate * seconds + ExportPresets.AUDIO_BITRATE_BPS * seconds
         _state.update { it.copy(estimatedOutputBytes = (bits / 8).toLong()) }
     }
+
+    private fun fileSizeOf(uri: Uri): Long = runCatching {
+        getApplication<Application>().contentResolver
+            .openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
+    }.getOrDefault(0L)
 
     private fun displayNameOf(uri: Uri): String? = runCatching {
         getApplication<Application>().contentResolver
@@ -233,7 +275,6 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     fun export(tool: QuickTool, onResult: (String) -> Unit, onError: (String) -> Unit) {
         val current = _state.value
         val sourceUri = current.sourceUri ?: return
-        _state.update { it.copy(isExporting = true, exportProgress = ExportProgress()) }
 
         val audioOnly = tool == QuickTool.ExtractAudio
         val editorState = EditorUiState(
@@ -249,10 +290,30 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             fitToSize = tool == QuickTool.Compress && current.fitToSize,
             targetSizeMb = current.targetSizeMb,
             audioOnly = audioOnly,
+            // Checked rather than assumed, so extracting audio from a silent clip
+            // fails immediately with a sentence about it instead of after a full
+            // encode with a code nobody can read.
+            sourceHasAudio = current.hasAudio,
             // Already in order and already sequenced, so the export is simply the
             // list as shown - there is no second place for the order to be decided.
-            videoClips = if (tool != QuickTool.Merge) emptyList() else current.mergeClips
+            videoClips = if (tool != QuickTool.Merge) emptyList()
+            else current.mergeClips.filter { it.sourceSpanMs > 0 }
         )
+
+        if (tool == QuickTool.Merge && editorState.videoClips.isEmpty()) {
+            onError("Nothing to merge. Every clip came back with no length — pick them again.")
+            return
+        }
+
+        // The same checks the editor runs. They were never run here, so a merge
+        // whose third file had been deleted since it was picked spent two minutes
+        // encoding before finding out.
+        SquishError.preflight(getApplication(), editorState, current.estimatedOutputBytes)?.let { problem ->
+            onError("${problem.title}. ${problem.fix}")
+            return
+        }
+
+        _state.update { it.copy(isExporting = true, exportProgress = ExportProgress()) }
 
         viewModelScope.launch {
             val outputDir = File(getApplication<Application>().getExternalFilesDir(null), "exports")
@@ -274,7 +335,11 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                 historyRepository.add(
                     ExportRecord(
                         id = UUID.randomUUID().toString(),
-                        title = current.name ?: tool.title,
+                        title = if (tool == QuickTool.Merge) {
+                            "${current.mergeClips.size} clips merged"
+                        } else {
+                            current.name ?: tool.title
+                        },
                         outputPath = file.absolutePath,
                         originalSizeBytes = current.originalSizeBytes,
                         outputSizeBytes = file.length(),

@@ -115,8 +115,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             _state.update {
                 it.copy(
                     durationMs = meta.durationMs,
-                    sourceWidth = meta.width,
-                    sourceHeight = meta.height,
+                    // The shape the picture is seen in, not the shape it is stored
+                    // in. A portrait clip is a 1920x1080 stream with a rotation tag;
+                    // taking the stored numbers made the preview box landscape and
+                    // letterboxed the export into a landscape frame.
+                    sourceWidth = meta.displayWidth,
+                    sourceHeight = meta.displayHeight,
+                    sourceHasAudio = meta.hasAudio,
                     fps = meta.fps,
                     trimStartMs = 0L,
                     trimEndMs = meta.durationMs,
@@ -137,12 +142,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             }
             recomputeEstimate()
             offerRecovery(recoverable, uri)
-            startProxy(uri, meta.width, meta.height)
+            startProxy(uri, meta.displayWidth, meta.displayHeight)
 
             val pcm = PcmDecoder.decodeMono(getApplication(), uri)
             _state.update {
                 it.copy(
-                    sourceHasAudio = pcm != null,
+                    // A failed decode is not proof of silence - decodeMono gives up
+                    // for plenty of reasons that are not "there is no audio here" -
+                    // so it can confirm a track but never deny one. The container
+                    // already answered that question when the file was probed.
+                    sourceHasAudio = it.sourceHasAudio || pcm != null,
                     videoWaveform = pcm?.let { decoded -> WaveformBuilder.build(decoded) }
                 )
             }
@@ -1495,14 +1504,20 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             // can come back through a different provider with a different rotation.
             val meta = ThumbnailExtractor.probe(getApplication(), snapshot.sourceUri)
             loadedUri = snapshot.sourceUri
-            _state.update { it.applying(snapshot, meta.durationMs, meta.width, meta.height, meta.fps) }
+            _state.update {
+                it.applying(snapshot, meta.durationMs, meta.displayWidth, meta.displayHeight, meta.fps)
+            }
             recomputeEstimate()
-            startProxy(snapshot.sourceUri, meta.width, meta.height)
+            startProxy(snapshot.sourceUri, meta.displayWidth, meta.displayHeight)
 
             val pcm = PcmDecoder.decodeMono(getApplication(), snapshot.sourceUri)
             _state.update {
                 it.copy(
-                    sourceHasAudio = pcm != null,
+                    // A failed decode is not proof of silence - decodeMono gives up
+                    // for plenty of reasons that are not "there is no audio here" -
+                    // so it can confirm a track but never deny one. The container
+                    // already answered that question when the file was probed.
+                    sourceHasAudio = it.sourceHasAudio || pcm != null,
                     videoWaveform = pcm?.let { decoded -> WaveformBuilder.build(decoded) }
                 )
             }

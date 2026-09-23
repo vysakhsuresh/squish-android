@@ -132,7 +132,15 @@ class VideoProcessor(private val context: Context) {
             // land in the same output without any of them being a special case.
             sequences.addAll(buildAudioSequences(state, headSourceIn, timelineDuration))
 
-            val composition = Composition.Builder(ImmutableList.copyOf(sequences)).build()
+            val composition = Composition.Builder(ImmutableList.copyOf(sequences))
+                .setEffects(compositionEffects(state))
+                // Silence is generated for whatever stretch has no sound in it.
+                // Without this, a run of clips where only some carry an audio
+                // track is an inconsistent composition, and Media3 gives up on it
+                // with a code that carries no explanation - which is exactly what
+                // "Export stopped unexpectedly" was.
+                .experimentalSetForceAudioTrack(needsForcedAudio(state))
+                .build()
 
             val bitrate = if (state.fitToSize) {
                 ExportPresets.bitrateForTargetSize(
@@ -176,6 +184,72 @@ class VideoProcessor(private val context: Context) {
             runCatching { transformer.start(composition, outputFile.absolutePath) }
                 .onFailure { if (continuation.isActive) continuation.resume(Result.failure(it)) }
         }
+
+    /**
+     * Effects that apply to the whole composition rather than to one clip.
+     *
+     * This is where a merge gets its frame size. Several files joined end to end
+     * are almost never the same shape - a gallery holds portrait and landscape
+     * side by side - and nothing in a cuts-only sequence reconciles them unless
+     * something says what the output is. Per-clip Presentation was not enough:
+     * it was skipped entirely at Original quality, and skipped again whenever the
+     * source dimensions were unknown, which for a merge they always were.
+     *
+     * A single export needs none of this. Its own frame size is the answer, and
+     * an extra pass over every frame to restate it is a waste.
+     */
+    private fun compositionEffects(state: EditorUiState): Effects {
+        if (!isMultiSource(state) || state.audioOnly) return Effects.EMPTY
+        val size = outputSize(state) ?: return Effects.EMPTY
+        return Effects(
+            ImmutableList.of(),
+            ImmutableList.of(
+                // Fit rather than crop: a landscape clip in a portrait merge is
+                // letterboxed, not cut in half. Losing half of someone's footage
+                // to an automatic decision would be the worse surprise.
+                Presentation.createForWidthAndHeight(
+                    size.width,
+                    size.height,
+                    Presentation.LAYOUT_SCALE_TO_FIT
+                )
+            )
+        )
+    }
+
+    /**
+     * The frame the whole composition is drawn into: the leading clip's shape, at
+     * the chosen quality. Null when nothing measured it, in which case forcing a
+     * guessed size would be worse than letting Media3 decide.
+     */
+    private fun outputSize(state: EditorUiState): ExportPresets.Resolution? {
+        val quarterTurned = state.rotationDegrees % 180 != 0
+        val width = if (quarterTurned) state.sourceHeight else state.sourceWidth
+        val height = if (quarterTurned) state.sourceWidth else state.sourceHeight
+        if (width <= 0 || height <= 0) return null
+
+        val resolution = ExportPresets.resolutionFor(state.quality, width, height)
+        if (resolution.width <= 0 || resolution.height <= 0) return null
+        // Encoders want even dimensions, and a scaled odd number is how you get a
+        // configuration failure on one device and not another.
+        return ExportPresets.Resolution(
+            width = (resolution.width / 2) * 2,
+            height = (resolution.height / 2) * 2
+        )
+    }
+
+    /** More than one file in the video track: the case that has to be reconciled. */
+    private fun isMultiSource(state: EditorUiState): Boolean =
+        state.videoClips.mapNotNull { it.uri }.distinct().size > 1
+
+    /**
+     * Whether the output must carry an audio track whatever the inputs do.
+     *
+     * Any time the sources might disagree about having sound: several files, or a
+     * separate cue mixed over the top. Forcing it on a single silent clip would
+     * add a pointless track, so that case is left alone.
+     */
+    private fun needsForcedAudio(state: EditorUiState): Boolean =
+        !state.audioOnly && (isMultiSource(state) || state.audioClips.isNotEmpty())
 
     /**
      * The separate audio track, positioned on the output timeline.

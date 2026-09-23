@@ -95,6 +95,34 @@ sealed class SquishError(
         cause = cause
     )
 
+    class MixedSources(cause: Throwable? = null) : SquishError(
+        title = "These clips don't fit together",
+        detail = "The pipeline rejected the composition before it started. That almost always means the clips disagree about something structural — most often frame size or orientation, with a portrait clip and a landscape one in the same merge.",
+        fix = "Remove one clip at a time to find the odd one out, or export at a fixed quality rather than Original so everything is scaled to one size.",
+        cause = cause
+    )
+
+    class FrameProcessingFailed(cause: Throwable? = null) : SquishError(
+        title = "The GPU gave up mid-render",
+        detail = "A frame went into the effect chain and did not come out. This is the graphics driver refusing something — a shader, an unusual frame size, or simply too much at once.",
+        fix = "Turn off the film looks and any mask or green screen, then export again. If that works, add them back one at a time.",
+        cause = cause
+    )
+
+    class AudioProcessingFailed(cause: Throwable? = null) : SquishError(
+        title = "Something went wrong with the sound",
+        detail = "The audio pipeline stopped. With several clips joined together this usually means one of them has no audio track, or a sample rate the others do not share.",
+        fix = "Mute the clip audio and export again to confirm it is the sound, then replace or remove the odd track.",
+        cause = cause
+    )
+
+    class MuxingFailed(cause: Throwable? = null) : SquishError(
+        title = "Couldn't write the finished file",
+        detail = "Everything encoded, and then writing it into an MP4 failed. The frames were fine; the container was not.",
+        fix = "Check there is free space, then export again. A shorter export will also tell you whether it is a size limit.",
+        cause = cause
+    )
+
     class Unknown(cause: Throwable?) : SquishError(
         title = "Export stopped unexpectedly",
         detail = cause?.message?.takeIf { it.isNotBlank() }
@@ -115,7 +143,8 @@ sealed class SquishError(
             if (state.trimmedDurationMs <= 0L) return NothingToExport()
             if (state.audioOnly && !state.sourceHasAudio && !state.hasSeparateAudio) return NoAudioTrack()
 
-            if (!canRead(context, state.sourceUri)) return FileUnreadable()
+            val sources = (state.videoClips.mapNotNull { it.uri } + state.sourceUri).distinct()
+            if (sources.any { !canRead(context, it) }) return FileUnreadable()
 
             val needed = (estimatedBytes * SPACE_HEADROOM).toLong().coerceAtLeast(MIN_SPACE_BYTES)
             val free = freeBytes(context.filesDir)
@@ -146,15 +175,24 @@ sealed class SquishError(
             }
         }
 
-        private fun fromExport(e: ExportException): SquishError = when (e.errorCode) {
-            CODE_IO_FILE_NOT_FOUND, CODE_IO_NO_PERMISSION -> FileUnreadable(e)
-            CODE_DECODING_FORMAT_UNSUPPORTED -> UnsupportedCodec(codecHintOf(e), e)
-            CODE_ENCODING_FORMAT_UNSUPPORTED -> ResolutionTooHigh(e)
-            CODE_ENCODER_INIT_FAILED -> EncoderUnavailable(e)
-            in BAND_IO -> FileUnreadable(e)
-            in BAND_DECODING -> UnsupportedCodec(codecHintOf(e), e)
-            in BAND_ENCODING -> EncoderUnavailable(e)
-            else -> if (e.cause is OutOfMemoryError) OutOfMemory(e) else Unknown(e)
+        private fun fromExport(e: ExportException): SquishError = when {
+            e.cause is OutOfMemoryError -> OutOfMemory(e)
+            else -> when (e.errorCode) {
+                CODE_IO_FILE_NOT_FOUND, CODE_IO_NO_PERMISSION -> FileUnreadable(e)
+                CODE_DECODING_FORMAT_UNSUPPORTED -> UnsupportedCodec(codecHintOf(e), e)
+                CODE_ENCODING_FORMAT_UNSUPPORTED -> ResolutionTooHigh(e)
+                CODE_ENCODER_INIT_FAILED -> EncoderUnavailable(e)
+                // A composition the pipeline refused to start. The commonest
+                // reason by far is inputs that disagree with each other.
+                CODE_FAILED_RUNTIME_CHECK -> MixedSources(e)
+                in BAND_IO -> FileUnreadable(e)
+                in BAND_DECODING -> UnsupportedCodec(codecHintOf(e), e)
+                in BAND_ENCODING -> EncoderUnavailable(e)
+                in BAND_VIDEO_FRAME -> FrameProcessingFailed(e)
+                in BAND_AUDIO -> AudioProcessingFailed(e)
+                in BAND_MUXING -> MuxingFailed(e)
+                else -> Unknown(e)
+            }
         }
 
         /** Pulls a codec name out of the message when Media3 put one there. */
@@ -184,10 +222,18 @@ sealed class SquishError(
         private const val CODE_DECODING_FORMAT_UNSUPPORTED = 3003
         private const val CODE_ENCODER_INIT_FAILED = 4001
         private const val CODE_ENCODING_FORMAT_UNSUPPORTED = 4003
+        private const val CODE_FAILED_RUNTIME_CHECK = 1001
 
+        // Four of these bands used to be missing, and everything in them landed on
+        // "Export stopped unexpectedly. Try once more." - advice that was no help
+        // at all for a merge, which fails in exactly these bands and fails the
+        // same way on every retry.
         private val BAND_IO = 2000..2999
         private val BAND_DECODING = 3000..3999
         private val BAND_ENCODING = 4000..4999
+        private val BAND_VIDEO_FRAME = 5000..5999
+        private val BAND_AUDIO = 6000..6999
+        private val BAND_MUXING = 7000..7999
 
         private val CODEC_NAMES = listOf("HEVC", "H.265", "VP9", "AV1", "Dolby Vision", "ProRes", "MPEG-4")
 
