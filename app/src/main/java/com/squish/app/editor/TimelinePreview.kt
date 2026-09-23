@@ -68,7 +68,6 @@ fun TimelinePreview(
     muteOriginal: Boolean,
     originalVolume: Float,
     grade: Grade,
-    speed: Float,
     rotationDegrees: Int,
     cropRatio: Float?,
     sourceAspect: Float,
@@ -91,7 +90,7 @@ fun TimelinePreview(
     // the set of clips itself changes shape.
     val editSignature = remember(
         videoClips, audioClips, captions, proxyUri, muteOriginal, originalVolume,
-        grade, speed, rotationDegrees, cropRatio
+        grade, rotationDegrees, cropRatio
     ) {
         videoClips.joinToString("|") {
             "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}" +
@@ -101,13 +100,17 @@ fun TimelinePreview(
         } +
             "//" + audioClips.joinToString("|") { "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}:${it.volume}" } +
             "//" + proxyUri + muteOriginal + originalVolume + grade + captions +
-            speed + rotationDegrees + cropRatio
+            rotationDegrees + cropRatio +
+            // Speed is a clip property now, so a ramp edit has to reach the engine
+            // through the same signature every other clip edit does.
+            videoClips.joinToString("|") { it.speedRamp.toString() } +
+            audioClips.joinToString("|") { it.speedRamp.toString() }
     }
 
     LaunchedEffect(editSignature, fallbackUri) {
         engine.setTimeline(
             videoClips, audioClips, captions, fallbackUri, proxyUri,
-            muteOriginal, originalVolume, grade, speed, rotationDegrees, cropRatio
+            muteOriginal, originalVolume, grade, rotationDegrees, cropRatio
         )
     }
 

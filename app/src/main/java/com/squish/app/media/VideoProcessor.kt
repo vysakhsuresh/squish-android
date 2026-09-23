@@ -6,7 +6,7 @@ import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.AudioProcessor
-import androidx.media3.common.audio.SonicAudioProcessor
+import androidx.media3.common.audio.SpeedChangingAudioProcessor
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.ScaleAndRotateTransformation
@@ -212,7 +212,8 @@ class VideoProcessor(private val context: Context) {
                 clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
                 if (moved) add(ClipTransformEffect(clip.keyframes, clip.staticTransform, clip.stabilizer, clip.sourceInMs))
             }
-            if (leading.isEmpty()) buildVideoEffects(state) else leading + buildVideoEffects(state)
+            val timed = leading + speedEffects(clip)
+            if (timed.isEmpty()) buildVideoEffects(state) else timed + buildVideoEffects(state)
         }
 
         return EditedMediaItem.Builder(item)
@@ -220,11 +221,26 @@ class VideoProcessor(private val context: Context) {
             .setRemoveVideo(state.audioOnly)
             .setEffects(
                 Effects(
-                    if (clip.isOverlay) ImmutableList.of() else buildAudioProcessors(state.speed, state.originalVolume),
+                    if (clip.isOverlay) ImmutableList.of()
+                    else buildAudioProcessors(clip, state.originalVolume),
                     ImmutableList.copyOf(effects)
                 )
             )
             .build()
+    }
+
+    /**
+     * The clip's retime, for the picture.
+     *
+     * An unramped clip at 1x gets nothing at all rather than a no-op effect: every
+     * entry here is a pass over every frame, and SpeedChangeEffect can only skip
+     * itself when its provider reports one rate and no upcoming change.
+     */
+    private fun speedEffects(clip: Clip): List<Effect> {
+        if (clip.speedRamp.isIdentity) return emptyList()
+        val segments = clip.speedRamp.segments(clip.sourceSpanMs)
+        if (segments.isEmpty()) return emptyList()
+        return listOf(SpeedChangeEffect(RampSpeedProvider(segments)))
     }
 
     private fun editedVideo(
@@ -248,7 +264,8 @@ class VideoProcessor(private val context: Context) {
             .setRemoveVideo(state.audioOnly)
             .setEffects(
                 Effects(
-                    buildAudioProcessors(state.speed, state.originalVolume),
+                    // No clip, so no ramp: this path is the whole file, untimed.
+                    gainOnly(state.originalVolume),
                     if (state.audioOnly) ImmutableList.of() else buildVideoEffects(state)
                 )
             )
@@ -306,7 +323,7 @@ class VideoProcessor(private val context: Context) {
             items.add(
                 EditedMediaItem.Builder(padItem)
                     .setRemoveVideo(true)
-                    .setEffects(Effects(silentProcessors(state.speed), ImmutableList.of()))
+                    .setEffects(Effects(silentProcessors(), ImmutableList.of()))
                     .build()
             )
         }
@@ -323,9 +340,10 @@ class VideoProcessor(private val context: Context) {
         items.add(
             EditedMediaItem.Builder(trackItem)
                 .setRemoveVideo(true)
-                // The same rate the picture runs at. A cue left at 1x while the
-                // video is sped would slide a second further out every second.
-                .setEffects(Effects(buildAudioProcessors(state.speed, clip.volume), ImmutableList.of()))
+                // A sound's own ramp, which is almost always none. Speed is a
+                // property of a clip now, so a slowed shot no longer drags the
+                // music with it - which was never what anyone wanted.
+                .setEffects(Effects(buildAudioProcessors(clip, clip.volume), ImmutableList.of()))
                 .build()
         )
 
@@ -335,17 +353,14 @@ class VideoProcessor(private val context: Context) {
     }
 
     /**
-     * The lead-in pad: silence, at the same rate as everything else.
+     * The lead-in pad: silence, one second of it per second of timeline.
      *
-     * The pad is a source-time slice, so it has to shrink by the same factor the
-     * rest of the track does - otherwise speeding the edit up leaves the pad at
-     * full length and the cue starts late by however much was cut.
+     * The pad's length is read off the timeline, and the timeline is in played
+     * time now, so the slice is already the right length and nothing retimes it.
      */
-    private fun silentProcessors(speed: Float): ImmutableList<AudioProcessor> {
-        val processors = mutableListOf<AudioProcessor>()
-        if (speed != 1f) processors.add(SonicAudioProcessor().apply { setSpeed(speed) })
-        AudioMixing.gain(0f)?.let { processors.add(it) }
-        return ImmutableList.copyOf(processors)
+    private fun silentProcessors(): ImmutableList<AudioProcessor> {
+        val silence = AudioMixing.gain(0f)
+        return if (silence == null) ImmutableList.of() else ImmutableList.of(silence)
     }
 
     private fun buildVideoEffects(state: EditorUiState): ImmutableList<Effect> {
@@ -375,8 +390,6 @@ class VideoProcessor(private val context: Context) {
                 )
             }
         }
-
-        if (state.speed != 1f) effects.add(SpeedChangeEffect(state.speed))
 
         // The chosen look and the manual sliders, folded into one set of moves and
         // built by the same code the preview uses - so the graded frame on screen
@@ -408,13 +421,29 @@ class VideoProcessor(private val context: Context) {
         const val PROGRESS_POLL_MS = 200L
     }
 
-    private fun buildAudioProcessors(speed: Float, volume: Float): ImmutableList<AudioProcessor> {
+    /**
+     * A clip's sound: retimed by its own ramp, then set to its level.
+     *
+     * SpeedChangingAudioProcessor takes the same provider the picture does, from
+     * the same segments, so the two cannot end up different lengths. It preserves
+     * pitch, which is the only reason a ramp is usable on anything with a voice in
+     * it - a rate change without it is a slide whistle.
+     */
+    private fun buildAudioProcessors(clip: Clip, volume: Float): ImmutableList<AudioProcessor> {
         val processors = mutableListOf<AudioProcessor>()
-        if (speed != 1f) {
-            // Tempo only, pitch preserved.
-            processors.add(SonicAudioProcessor().apply { setSpeed(speed) })
+        if (!clip.speedRamp.isIdentity) {
+            val segments = clip.speedRamp.segments(clip.sourceSpanMs)
+            if (segments.isNotEmpty()) {
+                processors.add(SpeedChangingAudioProcessor(RampSpeedProvider(segments)))
+            }
         }
         AudioMixing.gain(volume)?.let { processors.add(it) }
         return ImmutableList.copyOf(processors)
+    }
+
+    /** Level only, for the one path that has no clip to read a ramp from. */
+    private fun gainOnly(volume: Float): ImmutableList<AudioProcessor> {
+        val gain = AudioMixing.gain(volume)
+        return if (gain == null) ImmutableList.of() else ImmutableList.of(gain)
     }
 }

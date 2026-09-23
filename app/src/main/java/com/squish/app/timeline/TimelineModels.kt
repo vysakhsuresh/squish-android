@@ -42,7 +42,15 @@ data class Clip(
     val timelineStartMs: Long,
     val sourceDurationMs: Long = sourceOutMs,
     val volume: Float = 1f,
-    val speed: Float = 1f,
+
+    /**
+     * How fast this clip plays, and where that changes across it.
+     *
+     * Per clip rather than per project, which is the whole difference between a
+     * setting and an edit: one shot can go to quarter speed on the landing while
+     * everything around it stays where it was.
+     */
+    val speedRamp: SpeedRamp = SpeedRamp(),
     val text: String? = null,
 
     /** Transition into this clip from whatever precedes it on the same layer. */
@@ -80,10 +88,41 @@ data class Clip(
      */
     val stabilizer: List<Keyframe> = emptyList()
 ) {
-    val durationMs: Long get() = (sourceOutMs - sourceInMs).coerceAtLeast(0)
+    /** How much of the file this clip covers. Unaffected by how fast it plays. */
+    val sourceSpanMs: Long get() = (sourceOutMs - sourceInMs).coerceAtLeast(0)
+
+    /**
+     * How long the clip takes to play, which is what the strip draws and what the
+     * exported file contains.
+     *
+     * Source span and played length stopped being the same number the moment speed
+     * became per-clip: half speed is twice the strip. Everything downstream reads
+     * this, so a ramp moves the clips after it without any of them knowing why.
+     */
+    val durationMs: Long get() = speedRamp.outputDurationMs(sourceSpanMs)
+
     val timelineEndMs: Long get() = timelineStartMs + durationMs
     fun spans(ms: Long): Boolean = ms > timelineStartMs && ms < timelineEndMs
     val isOverlay: Boolean get() = layer > 0
+
+    /** The source frame on screen at a moment of the timeline. */
+    fun sourceAt(timelineMs: Long): Long {
+        val local = (timelineMs - timelineStartMs).coerceAtLeast(0L)
+        return sourceInMs + speedRamp.sourceOffsetAt(local, sourceSpanMs)
+    }
+
+    /** How fast the clip is playing at a moment of the timeline. */
+    fun speedAt(timelineMs: Long): Float {
+        val local = (timelineMs - timelineStartMs).coerceAtLeast(0L)
+        return speedRamp.speedAt(speedRamp.sourceOffsetAt(local, sourceSpanMs))
+    }
+
+    /** Where a timeline moment lands in the played clip, and where that is in the file. */
+    fun timelineAtSource(sourceMs: Long): Long =
+        timelineStartMs + speedRamp.outputOffsetAt(
+            (sourceMs - sourceInMs).coerceAtLeast(0L),
+            sourceSpanMs
+        )
 
     /** Where the picture sits when nothing is animating it. */
     val staticTransform: Transform
@@ -93,10 +132,18 @@ data class Clip(
 
     val isStabilized: Boolean get() = stabilizer.isNotEmpty()
 
-    /** The transform at a moment on the timeline, stabilization included. */
+    /**
+     * The transform at a moment on the timeline, stabilization included.
+     *
+     * The two clocks are deliberately different. Keyframes are a move the editor
+     * drew over the *played* clip, so they run on played time and a ramp carries
+     * them with it. Stabilization is a measurement of a particular frame of the
+     * file, so it runs on source time - handing it played time would apply one
+     * frame's shake correction to a completely different frame.
+     */
     fun transformAt(timelineMs: Long): Transform {
         val local = timelineMs - timelineStartMs
-        return composeTransform(keyframes, staticTransform, stabilizer, local, sourceInMs + local)
+        return composeTransform(keyframes, staticTransform, stabilizer, local, sourceAt(timelineMs))
     }
 }
 
@@ -264,12 +311,22 @@ fun TimelineState.withClipTrimmed(clipId: String, startDeltaMs: Long, endDeltaMs
     val maxOut = if (clip.sourceDurationMs > 0) clip.sourceDurationMs else clip.sourceOutMs + endDeltaMs
     val newOut = (clip.sourceOutMs + endDeltaMs).coerceIn(newIn + MIN_CLIP_MS, maxOut)
 
+    // How far into the *played* clip the new head sits. Not the same as how far
+    // into the file it sits: trimming 100ms off a half-speed shot removes 200ms
+    // from the timeline, and using the source figure would leave the clip sitting
+    // in the wrong place by the difference.
+    val playedShift = clip.speedRamp.outputOffsetAt(newIn - clip.sourceInMs, clip.sourceSpanMs)
+
     val trimmed = clip.copy(
         sourceInMs = newIn,
         sourceOutMs = newOut,
+        // The curve is anchored to the source window, so it moves with it -
+        // otherwise the ramp stays put in the file while the footage slides
+        // underneath it.
+        speedRamp = clip.speedRamp.sliced(newIn - clip.sourceInMs, newOut - clip.sourceInMs),
         // Dragging the head in moves the clip's start with it, so the frames you
         // keep stay put on the timeline instead of sliding under the playhead.
-        timelineStartMs = (clip.timelineStartMs + (newIn - clip.sourceInMs)).coerceAtLeast(0L)
+        timelineStartMs = (clip.timelineStartMs + playedShift).coerceAtLeast(0L)
     )
     return copy(clips = clips.map { if (it.id == clipId) trimmed else it })
 }
@@ -280,19 +337,32 @@ fun TimelineState.withClipTrimmed(clipId: String, startDeltaMs: Long, endDeltaMs
  */
 fun TimelineState.withSplitAtPlayhead(): TimelineState {
     val cut = playheadMs
-    val victims = clips.filter { it.spans(cut) && it.durationMs > MIN_CLIP_MS * 2 }
+    val victims = clips.filter { it.spans(cut) && it.sourceSpanMs > MIN_CLIP_MS * 2 }
     if (victims.isEmpty()) return this
 
     val rebuilt = clips.flatMap { clip ->
         if (clip !in victims) listOf(clip)
         else {
-            val offset = cut - clip.timelineStartMs
+            // The playhead is in played time; the cut has to land on a frame of
+            // the file. On a ramped clip those are different numbers, and using
+            // the played offset as a source offset cuts the wrong frame by
+            // however much the ramp has bent time up to that point.
+            val played = cut - clip.timelineStartMs
+            val offset = clip.speedRamp
+                .sourceOffsetAt(played, clip.sourceSpanMs)
+                .coerceIn(MIN_CLIP_MS, (clip.sourceSpanMs - MIN_CLIP_MS).coerceAtLeast(MIN_CLIP_MS))
+            val span = clip.sourceSpanMs
+
             listOf(
-                clip.copy(sourceOutMs = clip.sourceInMs + offset),
+                clip.copy(
+                    sourceOutMs = clip.sourceInMs + offset,
+                    speedRamp = clip.speedRamp.sliced(0L, offset)
+                ),
                 clip.copy(
                     id = UUID.randomUUID().toString(),
                     sourceInMs = clip.sourceInMs + offset,
-                    timelineStartMs = cut
+                    timelineStartMs = cut,
+                    speedRamp = clip.speedRamp.sliced(offset, span)
                 )
             )
         }

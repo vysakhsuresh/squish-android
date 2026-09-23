@@ -173,6 +173,7 @@ python3 tools/check_unresolved.py log        # renamed / misspelled references
 python3 tools/check_modifier_imports.py      # Modifier extensions used unimported
 python3 tools/check_nesting.py               # a declaration swallowed by a stray brace
 python3 tools/check_shaders.py               # a shader and its Kotlin disagreeing about uniforms
+KOTLINC=<path>/kotlinc tools/jvm/run.sh      # runs the speed and grade maths for real
 ```
 
 `check_unresolved.py` drops member accesses, names the file imports and names the

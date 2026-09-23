@@ -16,6 +16,8 @@ import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
+import com.squish.app.timeline.SpeedPoint
+import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
@@ -117,7 +119,6 @@ class ProjectAutosave(context: Context) {
         put("originalVolume", state.originalVolume.toDouble())
         put("rotationDegrees", state.rotationDegrees)
         put("cropAspect", state.cropAspect.name)
-        put("speed", state.speed.toDouble())
         put("brightness", state.brightness.toDouble())
         put("contrast", state.contrast.toDouble())
         put("saturation", state.saturation.toDouble())
@@ -140,7 +141,17 @@ class ProjectAutosave(context: Context) {
         put("timelineStartMs", clip.timelineStartMs)
         put("sourceDurationMs", clip.sourceDurationMs)
         put("volume", clip.volume.toDouble())
-        put("speed", clip.speed.toDouble())
+        put(
+            "speedPoints",
+            JSONArray().apply {
+                clip.speedRamp.ordered.forEach { point ->
+                    put(JSONObject().apply {
+                        put("atMs", point.atMs)
+                        put("speed", point.speed.toDouble())
+                    })
+                }
+            }
+        )
         put("transitionType", clip.transitionIn.type.name)
         put("transitionMs", clip.transitionIn.durationMs)
         put("layer", clip.layer)
@@ -262,7 +273,6 @@ class ProjectAutosave(context: Context) {
             originalVolume = json.optDouble("originalVolume", 1.0).toFloat(),
             rotationDegrees = json.optInt("rotationDegrees"),
             cropAspect = enumOrNull<CropAspect>(json.optString("cropAspect")) ?: CropAspect.Original,
-            speed = json.optDouble("speed", 1.0).toFloat(),
             brightness = json.optDouble("brightness").toFloat(),
             contrast = json.optDouble("contrast").toFloat(),
             saturation = json.optDouble("saturation").toFloat(),
@@ -270,6 +280,26 @@ class ProjectAutosave(context: Context) {
             lookIntensity = json.optDouble("lookIntensity", 1.0).toFloat(),
             pixelsPerSecond = json.optDouble("pixelsPerSecond", 42.0).toFloat()
         )
+    }
+
+    /**
+     * A clip's speed curve.
+     *
+     * Falls back to the single "speed" number a project saved before ramps existed
+     * would carry, read as a flat curve. A recovery offer that silently dropped
+     * someone's speed change would be worse than not offering one.
+     */
+    private fun decodeRamp(json: JSONObject): SpeedRamp {
+        val array = json.optJSONArray("speedPoints")
+        if (array != null && array.length() > 0) {
+            val points = (0 until array.length()).mapNotNull { i ->
+                val entry = array.optJSONObject(i) ?: return@mapNotNull null
+                SpeedPoint(entry.optLong("atMs"), entry.optDouble("speed", 1.0).toFloat())
+            }
+            if (points.isNotEmpty()) return SpeedRamp(points)
+        }
+        val legacy = json.optDouble("speed", 1.0).toFloat()
+        return if (legacy == 1f) SpeedRamp() else SpeedRamp.flat(legacy)
     }
 
     private fun decodeClip(json: JSONObject?, kind: ClipKind): Clip? {
@@ -284,7 +314,7 @@ class ProjectAutosave(context: Context) {
             timelineStartMs = json.optLong("timelineStartMs"),
             sourceDurationMs = json.optLong("sourceDurationMs"),
             volume = json.optDouble("volume", 1.0).toFloat(),
-            speed = json.optDouble("speed", 1.0).toFloat(),
+            speedRamp = decodeRamp(json),
             transitionIn = Transition(
                 type = enumOrNull<TransitionType>(json.optString("transitionType")) ?: TransitionType.None,
                 durationMs = json.optLong("transitionMs", 500L)
@@ -414,7 +444,6 @@ data class ProjectSnapshot(
     val originalVolume: Float,
     val rotationDegrees: Int,
     val cropAspect: CropAspect,
-    val speed: Float,
     val brightness: Float,
     val contrast: Float,
     val saturation: Float,

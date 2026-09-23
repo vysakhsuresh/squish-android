@@ -159,7 +159,6 @@ data class EditorUiState(
     val originalVolume: Float = 1f,
     val rotationDegrees: Int = 0,
     val cropAspect: CropAspect = CropAspect.Original,
-    val speed: Float = 1f,
 
     val brightness: Float = 0f,
     val contrast: Float = 0f,

@@ -126,15 +126,15 @@ class PreviewEngine(private val context: Context) {
     private var cropRatio: Float? = null
 
     /**
-     * Playback rate, the same number the export hands SpeedChangeEffect and Sonic.
+     * What rate each surface is currently running at.
      *
-     * Every player runs at it, added music included. Timeline time stays source
-     * time - the playhead still sweeps the whole strip - it simply gets there in
-     * less wall time, which is exactly what the rendered file does. Speeding only
-     * the picture would put the sound a second further out with every second
-     * played.
+     * Speed is a property of a clip now, so it changes as the playhead crosses
+     * from one shot to the next and again continuously through a ramp. Tracked per
+     * surface because ExoPlayer's setPlaybackSpeed is not free: pushing the same
+     * number sixteen times a second would restart the audio stretcher on every
+     * tick and turn a ramp into a rattle.
      */
-    private var speed: Float = 1f
+    private val appliedSpeed = HashMap<String, Float>()
 
     /**
      * What each surface's effect chain currently is. Handing a player a new effect
@@ -150,7 +150,6 @@ class PreviewEngine(private val context: Context) {
         setSeekParameters(SeekParameters.EXACT)
         repeatMode = Player.REPEAT_MODE_OFF
         playWhenReady = false
-        setPlaybackSpeed(speed)
     }
 
     /**
@@ -184,7 +183,6 @@ class PreviewEngine(private val context: Context) {
             setSeekParameters(SeekParameters.CLOSEST_SYNC)
             repeatMode = Player.REPEAT_MODE_OFF
             playWhenReady = false
-            setPlaybackSpeed(speed)
         }
 
     /**
@@ -213,12 +211,10 @@ class PreviewEngine(private val context: Context) {
         muteOriginal: Boolean,
         originalVolume: Float,
         grade: Grade,
-        speed: Float,
         rotationDegrees: Int,
         cropRatio: Float?
     ) {
         this.captions = captions
-        applySpeed(speed)
         applyFraming(rotationDegrees, cropRatio)
         val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
 
@@ -266,15 +262,16 @@ class PreviewEngine(private val context: Context) {
         appliedEffects.clear()
     }
 
-    /** Sets the rate on every player. Cheap and idempotent, so it runs on any change. */
-    private fun applySpeed(value: Float) {
-        val next = value.coerceAtLeast(0.05f)
-        if (next == speed) return
-        speed = next
-        baseA.setPlaybackSpeed(next)
-        baseB.setPlaybackSpeed(next)
-        overlayPlayers.values.forEach { it.setPlaybackSpeed(next) }
-        audioPlayers.values.forEach { it.setPlaybackSpeed(next) }
+    /**
+     * Puts one player at the rate its clip calls for, if that has moved enough to
+     * be worth the interruption. A thousandth is well under what anyone can hear.
+     */
+    private fun setSpeed(key: String, player: ExoPlayer, wanted: Float) {
+        val safe = wanted.coerceIn(0.1f, 10f)
+        val current = appliedSpeed[key]
+        if (current != null && abs(current - safe) < 0.001f) return
+        appliedSpeed[key] = safe
+        runCatching { player.setPlaybackSpeed(safe) }
     }
 
     /**
@@ -396,8 +393,8 @@ class PreviewEngine(private val context: Context) {
     private fun primeAudio(t: Long) {
         audioClips.forEach { clip ->
             val player = audioPlayers[clip.id] ?: return@forEach
-            val into = (t - clip.timelineStartMs).coerceIn(0L, clip.durationMs.coerceAtLeast(0L))
-            player.seekTo((clip.sourceInMs + into).coerceAtLeast(0L))
+            val at = t.coerceIn(clip.timelineStartMs, clip.timelineEndMs.coerceAtLeast(clip.timelineStartMs))
+            player.seekTo(clip.sourceAt(at).coerceAtLeast(0L))
             primed.add(clip.id)
         }
     }
@@ -418,11 +415,13 @@ class PreviewEngine(private val context: Context) {
             // Waiting on a decoder is not time passing. Holding the clock keeps
             // sound and picture together through a stall.
             stalled -> positionMs
+            // Mapped back through the clip's own curve, so the playhead tracks a
+            // ramp instead of racing it and then waiting.
             driving && clockClip != null ->
-                clockClip.timelineStartMs + (clockPlayer.currentPosition - clockClip.sourceInMs)
-            // Source time, so it advances at the rate the decoders are consuming
-            // it. At 2x a wall second is two seconds of the strip.
-            else -> anchorTimelineMs + ((now - anchorWallMs) * speed).toLong()
+                clockClip.timelineAtSource(clockPlayer.currentPosition)
+            // The timeline is played time, so it runs at wall time. Speed lives
+            // inside each clip's length rather than on the clock.
+            else -> anchorTimelineMs + (now - anchorWallMs)
         }.coerceAtLeast(0L)
 
         if (playing && durationMs > 0 && t >= durationMs) {
@@ -569,7 +568,8 @@ class PreviewEngine(private val context: Context) {
 
         val source = playbackUriFor(clip) ?: return
         applySurfaceEffects(key, player, clip)
-        val wanted = (clip.sourceInMs + (t - clip.timelineStartMs)).coerceAtLeast(0L)
+        setSpeed(key, player, clip.speedAt(t))
+        val wanted = clip.sourceAt(t).coerceAtLeast(0L)
 
         when {
             loadedUri[key] != source.toString() -> {
@@ -616,6 +616,7 @@ class PreviewEngine(private val context: Context) {
                 // sample by the time it is due.
                 val untilDue = clip.timelineStartMs - t
                 if (untilDue in 1..PREROLL_MS && !primed.contains(clip.id)) {
+                    setSpeed(clip.id, player, clip.speedAt(clip.timelineStartMs))
                     player.seekTo(clip.sourceInMs)
                     primed.add(clip.id)
                 }
@@ -626,7 +627,8 @@ class PreviewEngine(private val context: Context) {
             }
 
             player.volume = clip.volume
-            val wanted = (clip.sourceInMs + (t - clip.timelineStartMs)).coerceAtLeast(0L)
+            setSpeed(clip.id, player, clip.speedAt(t))
+            val wanted = clip.sourceAt(t).coerceAtLeast(0L)
 
             if (!primed.contains(clip.id)) {
                 // Only reached when a cue was jumped into with no warning - a scrub
@@ -687,6 +689,7 @@ class PreviewEngine(private val context: Context) {
         audioPlayers.clear()
         audioSources.clear()
         primed.clear()
+        appliedSpeed.clear()
     }
 
     private companion object {

@@ -33,6 +33,8 @@ import com.squish.app.timeline.Mask
 import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.MIN_CLIP_MS
+import com.squish.app.timeline.RampShape
+import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TimelineState
@@ -167,11 +169,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val clip = trimTargetClip(current) ?: return
         val snapped = if (current.snapToMarkers) snapToNearbyMarker(current.playheadMs, current)
         else current.playheadMs
-        val offsetInClip = Timecode.quantize(snapped - clip.timelineStartMs, current.fps)
+        // The playhead is played time; trimClip moves source points. On a ramped
+        // clip those diverge, so setting the out point to the playhead without
+        // this would cut somewhere else entirely - further in on a slowed shot,
+        // further out on a sped one.
+        val played = Timecode.quantize(snapped - clip.timelineStartMs, current.fps)
+        val intoSource = clip.speedRamp.sourceOffsetAt(played, clip.sourceSpanMs)
         if (isStart) {
-            trimClip(clip.id, offsetInClip, 0L)
+            trimClip(clip.id, intoSource, 0L)
         } else {
-            trimClip(clip.id, 0L, offsetInClip - clip.durationMs)
+            trimClip(clip.id, 0L, intoSource - clip.sourceSpanMs)
         }
     }
 
@@ -369,7 +376,105 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setCropAspect(aspect: CropAspect) = _state.update { it.copy(cropAspect = aspect) }
 
-    fun setSpeed(speed: Float) = _state.update { it.copy(speed = speed) }
+    // ---- Speed ----------------------------------------------------------------
+
+    /**
+     * Which clip the speed controls act on.
+     *
+     * Whatever is selected, of either kind. A sound can be ramped too - pitching a
+     * music bed up into a drop is the same operation as ramping a shot, and making
+     * it a special case would mean writing it twice.
+     */
+    fun speedTargetClip(current: EditorUiState = _state.value): Clip? =
+        (current.videoClips + current.audioClips).firstOrNull { it.id == current.selectedClipId }
+            ?: current.videoClips.firstOrNull()
+
+    /**
+     * Retimes a clip, and closes up behind it.
+     *
+     * A clip's length on the strip is derived from its ramp, so changing the ramp
+     * moves where everything after it starts. Leaving those in place would open a
+     * gap on a speed-up and overlap on a slow-down - and an overlap on the base
+     * track is read as a transition, so slowing one shot would quietly dissolve it
+     * into the next.
+     */
+    private fun retime(clipId: String, ramp: SpeedRamp) {
+        mutateTimeline { timeline ->
+            val target = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+            val updated = timeline.clips.map { if (it.id == clipId) it.copy(speedRamp = ramp) else it }
+            timeline.copy(clips = resequenceAfterRetime(updated, target))
+        }
+    }
+
+    /**
+     * Re-lays the clips that shared a lane with the retimed one.
+     *
+     * Only the ones after it, only on its own layer and kind, and only when they
+     * were butted up against what came before - a clip the editor deliberately
+     * placed in a gap stays where it was put. Anything else would make a speed
+     * change silently rearrange an edit someone had already timed by hand.
+     */
+    private fun resequenceAfterRetime(clips: List<Clip>, target: Clip): List<Clip> {
+        val lane = clips
+            .filter { it.kind == target.kind && it.layer == target.layer }
+            .sortedBy { it.timelineStartMs }
+        val startIndex = lane.indexOfFirst { it.id == target.id }
+        if (startIndex < 0) return clips
+
+        val moved = HashMap<String, Long>()
+        // Where the retimed clip now ends, and where it used to. The first is what
+        // the followers are moved to; the second is what decides which of them
+        // were following in the first place.
+        var cursor = lane[startIndex].timelineEndMs
+        var previousEnd = target.timelineEndMs
+
+        for (i in startIndex + 1 until lane.size) {
+            val next = lane[i]
+            // A gap the editor put there is part of the edit. Only a butt cut,
+            // within a frame or so, is treated as "follows on from".
+            if (next.timelineStartMs - previousEnd > TOUCHING_MS) break
+            moved[next.id] = cursor
+            previousEnd = next.timelineEndMs
+            cursor += next.durationMs
+        }
+
+        return clips.map { clip -> moved[clip.id]?.let { clip.copy(timelineStartMs = it) } ?: clip }
+    }
+
+    /** One rate across the whole clip, which is what the slider and presets set. */
+    fun setClipSpeed(clipId: String, speed: Float) = retime(clipId, SpeedRamp.flat(speed))
+
+    /** Lays a ready-made ramp across the clip. */
+    fun applyRampShape(clipId: String, shape: RampShape) {
+        val clip = _state.value.let { current ->
+            (current.videoClips + current.audioClips).firstOrNull { it.id == clipId }
+        } ?: return
+        retime(clipId, SpeedRamp.preset(shape, clip.sourceSpanMs))
+    }
+
+    /** Adds or moves a control point, at the source frame under the playhead. */
+    fun setSpeedPointAtPlayhead(clipId: String, speed: Float) {
+        val current = _state.value
+        val clip = (current.videoClips + current.audioClips).firstOrNull { it.id == clipId } ?: return
+        // The playhead is in played time; a point is anchored in source time, so
+        // that editing the curve elsewhere does not drag this point along with it.
+        val at = (clip.sourceAt(current.playheadMs) - clip.sourceInMs).coerceIn(0L, clip.sourceSpanMs)
+        val base = if (clip.speedRamp.ordered.isEmpty()) {
+            SpeedRamp.flat(1f)
+        } else {
+            clip.speedRamp
+        }
+        retime(clipId, base.withPoint(at, speed, clip.sourceSpanMs))
+    }
+
+    fun removeSpeedPoint(clipId: String, atMs: Long) {
+        val clip = _state.value.let { current ->
+            (current.videoClips + current.audioClips).firstOrNull { it.id == clipId }
+        } ?: return
+        retime(clipId, clip.speedRamp.withoutPoint(atMs))
+    }
+
+    fun clearSpeed(clipId: String) = retime(clipId, SpeedRamp())
 
     /**
      * Picks a look. Choosing the same one again clears it, so the chip you just
@@ -1103,6 +1208,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         recomputeEstimate()
     }
 
+    /** Close enough to a butt cut that a retime should carry the next clip along. */
+    private val TOUCHING_MS = 40L
+
     private fun shiftOverlay(id: String, deltaMs: Long) {
         _state.update { current ->
             current.copy(
@@ -1299,7 +1407,6 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         originalVolume = snapshot.originalVolume,
         rotationDegrees = snapshot.rotationDegrees,
         cropAspect = snapshot.cropAspect,
-        speed = snapshot.speed,
         brightness = snapshot.brightness,
         contrast = snapshot.contrast,
         saturation = snapshot.saturation,

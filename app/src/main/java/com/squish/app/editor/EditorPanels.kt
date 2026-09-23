@@ -18,7 +18,6 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -185,44 +184,6 @@ fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 Text("${state.rotationDegrees}°", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
             }
             SquishOutlinedButton(text = "Rotate 90°", onClick = { viewModel.toggleRotate() })
-        }
-    }
-}
-
-// ---- Speed ------------------------------------------------------------------
-
-@Composable
-fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
-    PanelSurface(accent = SquishColors.Blue) {
-        PanelHeading(
-            "Speed",
-            "Pitch stays natural as the tempo changes",
-            icon = Icons.Filled.Speed,
-            accent = SquishColors.Blue
-        )
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("Playback", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
-            Text("${"%.2f".format(state.speed)}x", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
-        }
-        Slider(
-            value = state.speed,
-            onValueChange = viewModel::setSpeed,
-            valueRange = 0.5f..2f,
-            colors = SliderDefaults.colors(
-                thumbColor = SquishColors.Primary,
-                activeTrackColor = SquishColors.Primary,
-                inactiveTrackColor = SquishColors.Border
-            )
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            listOf(0.5f, 1f, 1.5f, 2f).forEach { preset ->
-                SelectableChip(
-                    label = "${"%.1f".format(preset)}x",
-                    selected = state.speed == preset,
-                    modifier = Modifier.weight(1f),
-                    onClick = { viewModel.setSpeed(preset) }
-                )
-            }
         }
     }
 }

@@ -315,6 +315,28 @@ private fun ClipView(
             }
         }
 
+        // A retimed clip says so on the strip. Its length already tells you
+        // something changed, but not what - and "this is 1.7 seconds long" is not
+        // the same information as "this is running at half speed".
+        if (!clip.speedRamp.isIdentity && width > 52.dp) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 3.dp, end = handleWidth + 3.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(SquishColors.Background.copy(alpha = 0.72f))
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
+            ) {
+                Text(
+                    text = if (clip.speedRamp.isRamped) "ramp"
+                    else "${"%.2f".format(clip.speedRamp.flatSpeed).trimEnd('0').trimEnd('.')}x",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Cyan,
+                    maxLines = 1
+                )
+            }
+        }
+
         // Keyframes, where they sit along the clip. An animated shot should be
         // readable as animated from the strip, without opening a panel.
         clip.keyframes.forEach { key ->
