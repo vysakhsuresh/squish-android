@@ -157,6 +157,34 @@ data class RecoveryOffer(val snapshot: ProjectSnapshot) {
     val durationMs: Long get() = snapshot.totalDurationMs
 }
 
+/**
+ * The part of the editor an undo should put back.
+ *
+ * Deliberately not the whole [EditorUiState]. Restoring that would drag the
+ * playhead, the zoom, the scroll position and any analysis in flight backwards
+ * with it, which is not what anyone means by undo — press it after a cut and the
+ * playhead should stay where you are looking.
+ *
+ * Every field is an immutable list or a primitive, so a snapshot costs a handful
+ * of references rather than a copy of the edit.
+ */
+data class EditSnapshot(
+    val videoClips: List<Clip>,
+    val audioClips: List<Clip>,
+    val textOverlays: List<TextOverlayItem>,
+    val markers: List<Long>,
+    val selectedClipId: String?,
+    val muteOriginal: Boolean,
+    val originalVolume: Float,
+    val rotationDegrees: Int,
+    val cropAspect: CropAspect,
+    val lookId: String?,
+    val lookIntensity: Float,
+    val brightness: Float,
+    val contrast: Float,
+    val saturation: Float
+)
+
 data class EditorUiState(
     val sourceUri: Uri? = null,
     val isLoadingSource: Boolean = true,
@@ -238,6 +266,10 @@ data class EditorUiState(
      */
     val fitNonce: Long = 0,
 
+    /** What pressing undo would reverse, or null when there is nothing to. */
+    val undoLabel: String? = null,
+    val redoLabel: String? = null,
+
     // Proxy media. The preview plays [proxyUri] when it exists; export never does.
     val proxyUri: Uri? = null,
     val proxyStatus: ProxyStatus = ProxyStatus.NotNeeded,
@@ -289,6 +321,43 @@ data class EditorUiState(
             return if (quarterTurned) sourceHeight.toFloat() / sourceWidth
             else sourceWidth.toFloat() / sourceHeight
         }
+
+    /** Everything an undo would restore, as it stands. */
+    val editSnapshot: EditSnapshot
+        get() = EditSnapshot(
+            videoClips = videoClips,
+            audioClips = audioClips,
+            textOverlays = textOverlays,
+            markers = markers,
+            selectedClipId = selectedClipId,
+            muteOriginal = muteOriginal,
+            originalVolume = originalVolume,
+            rotationDegrees = rotationDegrees,
+            cropAspect = cropAspect,
+            lookId = lookId,
+            lookIntensity = lookIntensity,
+            brightness = brightness,
+            contrast = contrast,
+            saturation = saturation
+        )
+
+    /** The same fields put back, leaving the playhead and the zoom where they are. */
+    fun restoring(snapshot: EditSnapshot): EditorUiState = copy(
+        videoClips = snapshot.videoClips,
+        audioClips = snapshot.audioClips,
+        textOverlays = snapshot.textOverlays,
+        markers = snapshot.markers,
+        selectedClipId = snapshot.selectedClipId,
+        muteOriginal = snapshot.muteOriginal,
+        originalVolume = snapshot.originalVolume,
+        rotationDegrees = snapshot.rotationDegrees,
+        cropAspect = snapshot.cropAspect,
+        lookId = snapshot.lookId,
+        lookIntensity = snapshot.lookIntensity,
+        brightness = snapshot.brightness,
+        contrast = snapshot.contrast,
+        saturation = snapshot.saturation
+    )
 
     /** The look and the manual sliders folded together - what the GPU is asked for. */
     val grade: Grade

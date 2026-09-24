@@ -23,6 +23,7 @@ import com.squish.app.media.audio.BeatMap
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.SpeechSegmenter
 import com.squish.app.media.audio.Transcriber
+import com.squish.app.media.video.FilmstripLoader
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.Stabilizer
 import com.squish.app.media.video.TrackRunner
@@ -270,7 +271,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---- Markers --------------------------------------------------------------
 
-    fun addMarkerAtPlayhead() {
+    fun addMarkerAtPlayhead() = record("Add marker") {
         val position = _state.value.playheadMs
         _state.update { current ->
             if (current.markers.any { abs(it - position) < current.frameMs }) current
@@ -278,7 +279,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun clearMarkers() = _state.update { it.copy(markers = emptyList()) }
+    fun clearMarkers() = record("Clear markers") {
+        _state.update { it.copy(markers = emptyList()) }
+    }
 
     fun setSnapToMarkers(enabled: Boolean) = _state.update { it.copy(snapToMarkers = enabled) }
 
@@ -329,7 +332,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun removeAudioClip(clipId: String) {
+    fun removeAudioClip(clipId: String) = record("Remove sound") {
         _state.update { current ->
             current.copy(
                 audioClips = current.audioClips.filterNot { it.id == clipId },
@@ -388,7 +391,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(syncStatus = SyncStatus.Idle, syncConfidence = 0f) }
     }
 
-    fun setOriginalVolume(volume: Float) = _state.update { it.copy(originalVolume = volume.coerceIn(0f, 1f)) }
+    fun setOriginalVolume(volume: Float) = record("Camera level") {
+        _state.update { it.copy(originalVolume = volume.coerceIn(0f, 1f)) }
+    }
 
     fun runAutoSync(clipId: String) {
         val current = _state.value
@@ -441,14 +446,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         recomputeEstimate()
     }
 
-    fun setMuteOriginal(muted: Boolean) {
+    fun setMuteOriginal(muted: Boolean) = record("Camera audio") {
         _state.update { it.copy(muteOriginal = muted) }
         recomputeEstimate()
     }
 
-    fun toggleRotate() = _state.update { it.copy(rotationDegrees = (it.rotationDegrees + 90) % 360) }
+    fun toggleRotate() = record("Rotate") {
+        _state.update { it.copy(rotationDegrees = (it.rotationDegrees + 90) % 360) }
+    }
 
-    fun setCropAspect(aspect: CropAspect) = _state.update { it.copy(cropAspect = aspect) }
+    fun setCropAspect(aspect: CropAspect) = record("Crop") {
+        _state.update { it.copy(cropAspect = aspect) }
+    }
 
     /** A file to run a frame analysis over, and the frame size it will produce. */
     private data class AnalysisSource(val uri: Uri, val width: Int, val height: Int)
@@ -572,10 +581,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * Drops a marker on every nth beat, so every edit that already snaps now snaps
      * to the music: dragging a clip, setting an in point, moving a caption.
      */
-    fun markBeats(everyN: Int) = _state.update { current ->
-        val beats = current.beats.every(everyN)
-        if (beats.isEmpty()) current
-        else current.copy(markers = beats.sorted().distinct(), snapToMarkers = true)
+    fun markBeats(everyN: Int) = record("Mark beats") {
+        _state.update { current ->
+            val beats = current.beats.every(everyN)
+            if (beats.isEmpty()) current
+            else current.copy(markers = beats.sorted().distinct(), snapToMarkers = true)
+        }
     }
 
     /**
@@ -592,10 +603,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             .sortedDescending()
         if (cuts.isEmpty()) return
 
-        cuts.forEach { at ->
-            mutateTimeline { timeline -> timeline.copy(playheadMs = at).withSplitAtPlayhead() }
+        // One step for the whole run, not one per cut. Cutting a track on forty
+        // beats and then pressing undo forty times is not undo.
+        record("Cut on the beat") {
+            cuts.forEach { at ->
+                mutateTimeline { timeline -> timeline.copy(playheadMs = at).withSplitAtPlayhead() }
+            }
+            _state.update { it.copy(selectedClipId = null) }
         }
-        _state.update { it.copy(selectedClipId = null) }
     }
 
     // ---- Speed ----------------------------------------------------------------
@@ -664,14 +679,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** One rate across the whole clip, which is what the slider and presets set. */
-    fun setClipSpeed(clipId: String, speed: Float) = retime(clipId, SpeedRamp.flat(speed))
+    fun setClipSpeed(clipId: String, speed: Float) = record("Speed") {
+        retime(clipId, SpeedRamp.flat(speed))
+    }
 
     /** Lays a ready-made ramp across the clip. */
     fun applyRampShape(clipId: String, shape: RampShape) {
         val clip = _state.value.let { current ->
             (current.videoClips + current.audioClips).firstOrNull { it.id == clipId }
         } ?: return
-        retime(clipId, SpeedRamp.preset(shape, clip.sourceSpanMs))
+        record("Speed ramp") { retime(clipId, SpeedRamp.preset(shape, clip.sourceSpanMs)) }
     }
 
     /** Adds or moves a control point, at the source frame under the playhead. */
@@ -696,23 +713,37 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         retime(clipId, clip.speedRamp.withoutPoint(atMs))
     }
 
-    fun clearSpeed(clipId: String) = retime(clipId, SpeedRamp())
+    fun clearSpeed(clipId: String) = record("Reset speed") {
+        retime(clipId, SpeedRamp())
+    }
 
     /**
      * Picks a look. Choosing the same one again clears it, so the chip you just
      * tapped is also the way back to the untouched picture.
      */
-    fun setLook(lookId: String?) = _state.update { current ->
-        val next = if (lookId == null || lookId == current.lookId) null else lookId
-        current.copy(lookId = next, lookIntensity = if (next == null) 1f else current.lookIntensity)
+    fun setLook(lookId: String?) = record("Look") {
+        _state.update { current ->
+            val next = if (lookId == null || lookId == current.lookId) null else lookId
+            current.copy(
+                lookId = next,
+                lookIntensity = if (next == null) 1f else current.lookIntensity
+            )
+        }
     }
 
-    fun setLookIntensity(value: Float) =
+    fun setLookIntensity(value: Float) = record("Look strength") {
         _state.update { it.copy(lookIntensity = value.coerceIn(0f, 1f)) }
+    }
 
-    fun setBrightness(value: Float) = _state.update { it.copy(brightness = value) }
-    fun setContrast(value: Float) = _state.update { it.copy(contrast = value) }
-    fun setSaturation(value: Float) = _state.update { it.copy(saturation = value) }
+    fun setBrightness(value: Float) = record("Brightness") {
+        _state.update { it.copy(brightness = value) }
+    }
+    fun setContrast(value: Float) = record("Contrast") {
+        _state.update { it.copy(contrast = value) }
+    }
+    fun setSaturation(value: Float) = record("Saturation") {
+        _state.update { it.copy(saturation = value) }
+    }
 
     /**
      * A blank line starting at the playhead. Spanning the whole clip - which is what
@@ -1390,13 +1421,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun zoomOut() = _state.update { it.copy(pixelsPerSecond = it.toTimeline().zoomedBy(1f / 1.35f).pixelsPerSecond) }
 
     /** Timeline drag. Each lane writes back to whichever model owns it. */
-    fun moveClip(clipId: String, deltaMs: Long) {
+    // Labelled per clip so dragging one, then another, is two steps — but the
+    // hundred frames of a single drag are one.
+    fun moveClip(clipId: String, deltaMs: Long) = record("Move $clipId") {
         if (_state.value.textOverlays.any { it.id == clipId }) shiftOverlay(clipId, deltaMs)
         else mutateTimeline { it.withClipMoved(clipId, deltaMs) }
     }
 
     /** Timeline edge drag - the handles on a selected clip. */
-    fun trimClip(clipId: String, startDeltaMs: Long, endDeltaMs: Long) {
+    fun trimClip(clipId: String, startDeltaMs: Long, endDeltaMs: Long) = record("Trim $clipId") {
         if (_state.value.textOverlays.any { it.id == clipId }) resizeOverlay(clipId, startDeltaMs, endDeltaMs)
         else mutateTimeline { it.withClipTrimmed(clipId, startDeltaMs, endDeltaMs) }
     }
@@ -1405,16 +1438,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * Razor cut at the playhead, on picture and sound alike. This used to be handed
      * only the video clips, which is why a music bed could never be cut on the strip.
      */
-    fun splitAtPlayhead() = mutateTimeline { it.withSplitAtPlayhead() }
+    fun splitAtPlayhead() = record("Cut") { mutateTimeline { it.withSplitAtPlayhead() } }
 
     /** Pull the base track back end to end. Deliberate, never automatic. */
-    fun closeGaps() = mutateTimeline { it.rippleVideo() }
+    fun closeGaps() = record("Close gaps") { mutateTimeline { it.rippleVideo() } }
 
     fun deleteSelectedClip() {
         val selected = _state.value.selectedClipId ?: return
-        if (_state.value.textOverlays.any { it.id == selected }) removeTextOverlay(selected)
-        else mutateTimeline { it.withClipRemoved(selected) }
-        _state.update { it.copy(selectedClipId = null) }
+        record("Delete") {
+            if (_state.value.textOverlays.any { it.id == selected }) removeTextOverlay(selected)
+            else mutateTimeline { it.withClipRemoved(selected) }
+            _state.update { it.copy(selectedClipId = null) }
+        }
     }
 
     /**
@@ -1426,6 +1461,43 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * selected. One list in, one list out, split by kind: a sound is now trimmed and
      * cut by exactly the same code that trims and cuts a shot.
      */
+    // ---- Undo -------------------------------------------------------------------
+
+    private val history = UndoStack<EditSnapshot>()
+
+    /**
+     * Records where the edit was, then makes the change.
+     *
+     * Every destructive gesture goes through here. [label] names the edit for the
+     * button and, just as importantly, groups a continuing gesture: sixty ticks
+     * of one slider drag arrive under the same name inside the coalescing window
+     * and become one step, so undo lands before the drag rather than one frame
+     * into it.
+     */
+    private fun record(label: String, change: () -> Unit) {
+        history.record(label, _state.value.editSnapshot, System.currentTimeMillis())
+        change()
+        publishHistory()
+    }
+
+    private fun publishHistory() = _state.update {
+        it.copy(undoLabel = history.undoLabel, redoLabel = history.redoLabel)
+    }
+
+    fun undo() {
+        val restored = history.undo(_state.value.editSnapshot) ?: return
+        _state.update { it.restoring(restored) }
+        publishHistory()
+        recomputeEstimate()
+    }
+
+    fun redo() {
+        val restored = history.redo(_state.value.editSnapshot) ?: return
+        _state.update { it.restoring(restored) }
+        publishHistory()
+        recomputeEstimate()
+    }
+
     private fun mutateTimeline(block: (TimelineState) -> TimelineState) {
         _state.update { current ->
             val timeline = TimelineState(
@@ -1710,6 +1782,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
         }
+    }
+
+    /**
+     * The filmstrip's thumbnails belong to the project that was open, not to the
+     * app. Holding twelve megabytes of frames from a video the user has finished
+     * with is exactly the kind of quiet growth that turns into a crash on the
+     * next big import.
+     */
+    override fun onCleared() {
+        super.onCleared()
+        FilmstripLoader.evictAll()
     }
 
     private companion object {

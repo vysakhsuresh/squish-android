@@ -224,6 +224,10 @@ fun EditorScreen(
                 onFit = viewModel::fitTimeline,
                 onGoToStart = viewModel::scrubToStart,
                 onGoToEnd = viewModel::scrubToEnd,
+                onUndo = viewModel::undo,
+                onRedo = viewModel::redo,
+                undoLabel = state.undoLabel,
+                redoLabel = state.redoLabel,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 

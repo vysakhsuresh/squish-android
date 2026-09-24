@@ -1,6 +1,5 @@
 package com.squish.app.media.video
 
-import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 

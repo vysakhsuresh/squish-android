@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,7 +33,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -102,11 +105,18 @@ fun TimelineEditor(
     val scroll = rememberScrollState()
     val density = LocalDensity.current
     val pps = state.pixelsPerSecond
+    // Read fresh inside the gesture: the pointerInput block is keyed on Unit so
+    // it survives a zoom, and a captured value would go stale on the first pinch.
+    val latestZoomTo by rememberUpdatedState(onZoomTo)
+    val latestPps by rememberUpdatedState(pps)
     val contentWidth = maxOf(state.durationMs, 8_000L).onTimeline(pps) + 240.dp
 
     // The strip's own width in pixels, which is what makes following and fitting
     // possible. Zero until the first layout pass, and every use guards for that.
     var viewportPx by remember { mutableIntStateOf(0) }
+
+    /** The zoom the strip was last laid out at, so a pinch knows what it changed from. */
+    var previousPps by remember { mutableFloatStateOf(pps) }
 
     /**
      * Fits the whole edit across the strip.
@@ -148,6 +158,32 @@ fun TimelineEditor(
         val clamped = target.toInt().coerceIn(0, scroll.maxValue)
         if (clamped != scroll.value) scroll.scrollTo(clamped)
     }
+    /**
+     * Holds the playhead still through a zoom.
+     *
+     * Scroll is in pixels and the content's width changes with the zoom, so a
+     * pinch that did nothing else would slide whatever you were looking at off
+     * the screen - the further along the edit you were, the further it would go.
+     * Keeping the playhead at the same place on screen is what makes a pinch feel
+     * like zooming rather than like being thrown.
+     *
+     * A frame is waited for first: the effect runs before the new, wider content
+     * has been laid out, and `scrollTo` clamps against a `maxValue` that is still
+     * the old one.
+     */
+    LaunchedEffect(pps) {
+        val previous = previousPps
+        previousPps = pps
+        if (previous <= 0f || previous == pps || viewportPx <= 0 || isPlaying) return@LaunchedEffect
+        val before = with(density) { state.playheadMs.onTimeline(previous).toPx() } - scroll.value
+        // Off screen to begin with: the follow effect above has already decided
+        // where the strip should land, and re-anchoring would only undo it.
+        if (before < 0f || before > viewportPx) return@LaunchedEffect
+        withFrameNanos { }
+        val after = with(density) { state.playheadMs.onTimeline(pps).toPx() }
+        scroll.scrollTo((after - before).toInt().coerceIn(0, scroll.maxValue))
+    }
+
     val overlayLayers = (state.layerCount downTo 1).toList()
     val audioLanes = state.audioLanes.ifEmpty { listOf(emptyList()) }
     val laneCount = overlayLayers.size + audioLanes.size + 2
@@ -166,6 +202,23 @@ fun TimelineEditor(
             modifier = Modifier
                 .fillMaxWidth()
                 .onSizeChanged { viewportPx = it.width }
+                // Pinch to zoom, anchored on the playhead.
+                //
+                // Ahead of horizontalScroll in the chain, because a scroll that
+                // saw the gesture first would consume it and the pinch would
+                // never arrive. detectTransformGestures reports pan as well, and
+                // it is deliberately ignored: panning is the scroll's job and
+                // doing both here would fight it.
+                //
+                // Anchored rather than free because a zoom that keeps the left
+                // edge still throws whatever you were looking at off the screen -
+                // the playhead is where your attention is, so it stays put.
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, _, zoom, _ ->
+                        if (zoom == 1f) return@detectTransformGestures
+                        latestZoomTo((latestPps * zoom).coerceIn(MIN_PPS, MAX_PPS))
+                    }
+                }
                 .horizontalScroll(scroll)
         ) {
             Column(modifier = Modifier.width(contentWidth)) {
@@ -493,10 +546,44 @@ private fun ClipView(
                 }
             }
     ) {
+        // The clip's own frames, under everything else it draws. Only a video
+        // clip has any: an audio clip's picture is its waveform and a caption's
+        // is its words, both of which it already shows.
+        val strip = clip.uri?.takeIf { clip.kind == ClipKind.Video }
+        if (strip != null) {
+            Filmstrip(
+                uri = strip,
+                sourceInMs = clip.sourceInMs,
+                sourceOutMs = clip.sourceOutMs,
+                widthDp = width.value,
+                modifier = Modifier.matchParentSize()
+            )
+            // A wash of the lane's colour over the frames. Without it the strip
+            // stops saying which lane it is on - and the lane colours are how a
+            // floating layer is told from the base picture at a glance.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(accent.copy(alpha = if (selected) 0.36f else 0.24f))
+            )
+        }
+
         Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .padding(horizontal = handleWidth + 3.dp)
+                // Over pictures the label needs its own ground to stand on; over
+                // flat colour it does not, and a chip there would just be clutter.
+                .then(
+                    if (strip != null) {
+                        Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(SquishColors.Background.copy(alpha = 0.6f))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    } else {
+                        Modifier
+                    }
+                )
         ) {
             Text(
                 text = clip.text ?: clip.label,
@@ -606,6 +693,10 @@ fun TimelineActionBar(
     onFit: () -> Unit,
     onGoToStart: () -> Unit,
     onGoToEnd: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    undoLabel: String?,
+    redoLabel: String?,
     modifier: Modifier = Modifier
 ) {
     val selected = state.selectedClip
@@ -623,6 +714,18 @@ fun TimelineActionBar(
                 color = SquishColors.TextPrimary
             )
             Spacer(modifier = Modifier.width(4.dp))
+            // First in the row, because the thing you reach for after a mistake
+            // should not be the thing you have to look for.
+            MiniAction(
+                "↶",
+                if (undoLabel == null) SquishColors.TextMuted else SquishColors.Cyan,
+                onUndo
+            )
+            MiniAction(
+                "↷",
+                if (redoLabel == null) SquishColors.TextMuted else SquishColors.Cyan,
+                onRedo
+            )
             MiniAction(
                 "✂ Cut",
                 if (splittable) SquishColors.Primary else SquishColors.TextMuted,
@@ -650,9 +753,13 @@ fun TimelineActionBar(
         // track - or nothing at all - is worse than no razor.
         Text(
             when {
+                // What undo would reverse, when there is one, because a button
+                // marked only "↶" is a button you press and then look at the
+                // screen to find out what happened.
+                undoLabel != null -> "Undo: $undoLabel · tap anywhere to move the playhead"
                 selected != null -> "${selected.label} selected · drag to move, drag its ends to trim"
                 splittable -> "Cut splits every track under the playhead"
-                else -> "Tap a clip to select it · drag the ruler to scrub"
+                else -> "Tap anywhere to move the playhead · pinch to zoom"
             },
             style = MaterialTheme.typography.labelSmall,
             color = SquishColors.TextMuted,

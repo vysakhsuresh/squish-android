@@ -13,6 +13,7 @@ prepare
 put
 putExtra
 release
+restoring
 seekTo
 setMediaItem
 setPackage

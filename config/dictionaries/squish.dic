@@ -6,6 +6,8 @@ colourist
 decodable
 downbeat
 downbeats
+filmstrip
+filmstrips
 halation
 keyer
 keyframe
@@ -29,13 +31,20 @@ pixelation
 playhead
 playheads
 preroll
+quantise
+quantised
+quantising
 razors
 rebuffer
+resample
+resamples
+resampling
 resequenced
 retime
 retimed
 retimes
 retiming
+scrim
 scrub
 scrubbing
 scrubs
@@ -50,6 +59,7 @@ transcoding
 transmux
 transmuxed
 transmuxing
+undoable
 vignette
 vignetting
 waveform

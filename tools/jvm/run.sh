@@ -24,6 +24,8 @@ run looks      "$SRC/media/effects/Look.kt" tools/jvm/LookChecks.kt
 run frames     "$SRC/media/video/FrameBatch.kt" tools/jvm/stub/Bitmap.kt \
                tools/jvm/stub/MediaMetadataRetriever.kt tools/jvm/FrameBatchChecks.kt
 run beat       "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" tools/jvm/BeatChecks.kt
+run filmstrip  "$SRC/media/video/Filmstrip.kt" tools/jvm/FilmstripChecks.kt
+run undo       "$SRC/editor/UndoStack.kt" tools/jvm/UndoChecks.kt
 run ramp       "$SRC/timeline/SpeedRamp.kt" tools/jvm/RampChecks.kt
 run slice      "$SRC/timeline/SpeedRamp.kt" tools/jvm/SliceChecks.kt
 run timeline   "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
