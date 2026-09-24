@@ -210,6 +210,9 @@ python3 tools/check_modifier_imports.py      # Modifier extensions used unimport
 python3 tools/check_nesting.py               # a declaration swallowed by a stray brace
 python3 tools/check_shaders.py               # a shader and its Kotlin disagreeing about uniforms
 python3 tools/check_dependencies.py          # a library imported but never declared
+
+The spellchecker's vocabulary lives in `config/dictionaries/` — see the README
+there if the IDE is still reporting playhead and luma as typos.
 KOTLINC=<path>/kotlinc tools/jvm/run.sh      # runs the speed and grade maths for real
 ```
 
