@@ -36,6 +36,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squish.app.data.DraftSummary
 import com.squish.app.tools.QuickTool
+import com.squish.app.ui.components.ConfirmDialog
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
@@ -77,6 +81,10 @@ fun HomeScreen(
     val pickForEditor = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let(onOpenEditor)
     }
+
+    // A draft is unfinished work, which makes discarding it the most expensive
+    // tap on this screen - and it sits one thumb-width from "open". It asks first.
+    var pendingDiscard by remember { mutableStateOf<DraftSummary?>(null) }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
         Column(
@@ -126,7 +134,7 @@ fun HomeScreen(
                         DraftRow(
                             draft = draft,
                             onOpen = { onOpenEditor(draft.sourceUri) },
-                            onDiscard = { viewModel.discardDraft(draft.id) }
+                            onDiscard = { pendingDiscard = draft }
                         )
                     }
                 }
@@ -164,6 +172,23 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
         }
+    }
+
+    pendingDiscard?.let { draft ->
+        ConfirmDialog(
+            title = "Discard \"${draft.title}\"?",
+            body = "This throws away the edit in progress - " +
+                "${draft.clipCount} ${if (draft.clipCount == 1) "clip" else "clips"}, " +
+                "with every cut, look and caption on it.",
+            caution = "There is no undo and no bin to fetch it back from. " +
+                "Your original video is untouched; the edit built on it is not.",
+            confirmLabel = "Discard",
+            onConfirm = {
+                viewModel.discardDraft(draft.id)
+                pendingDiscard = null
+            },
+            onDismiss = { pendingDiscard = null }
+        )
     }
 }
 

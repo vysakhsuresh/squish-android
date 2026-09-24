@@ -57,6 +57,7 @@ import com.squish.app.export.ShareUtils
 import com.squish.app.home.formatSize
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.ui.components.BackOrb
+import com.squish.app.ui.components.ConfirmDialog
 import com.squish.app.ui.theme.SquishColors
 import java.io.File
 
@@ -77,6 +78,10 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val repository = remember(context) { SquishRepositories.history(context) }
     val records by repository.records.collectAsState()
     var query by remember { mutableStateOf("") }
+
+    // Nothing is deleted from a tap. The tap only names what a second, deliberate
+    // press would destroy, and the dialogue below says plainly that it is final.
+    var pendingDelete by remember { mutableStateOf<ExportRecord?>(null) }
 
     val shown = remember(records, query) {
         if (query.isBlank()) records
@@ -126,7 +131,7 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                                 record = record,
                                 onOpen = { onOpen(record.outputPath) },
                                 onShare = { ShareUtils.share(context, record.outputPath, null) },
-                                onRemove = { repository.remove(record.id) }
+                                onRemove = { pendingDelete = record }
                             )
                         }
                     }
@@ -139,6 +144,28 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 24.dp)
             )
         }
+    }
+
+    pendingDelete?.let { record ->
+        val fileStillHere = remember(record.id) { File(record.outputPath).exists() }
+        ConfirmDialog(
+            title = "Delete \"${record.title}\"?",
+            body = if (fileStillHere) {
+                "This removes it from your library and deletes the video from " +
+                    "Squish's own storage."
+            } else {
+                "The file behind this one is already gone from this phone. " +
+                    "Deleting clears the entry that is left."
+            },
+            caution = "There is no undo and no bin to fetch it back from. " +
+                "A copy you already saved to your phone's gallery stays where it is.",
+            confirmLabel = "Delete",
+            onConfirm = {
+                repository.delete(record.id)
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null }
+        )
     }
 }
 

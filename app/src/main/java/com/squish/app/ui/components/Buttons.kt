@@ -54,3 +54,30 @@ fun SquishOutlinedButton(
         Text(text, style = MaterialTheme.typography.labelLarge)
     }
 }
+
+/**
+ * The button that actually destroys something.
+ *
+ * Its own colour, because a delete that looks like every other button gets
+ * pressed like every other button. Paired with [SquishOutlinedButton] carrying
+ * the way out, never on its own.
+ */
+@Composable
+fun SquishDangerButton(
+    text: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = SquishColors.Pink,
+            contentColor = SquishColors.Background
+        ),
+        contentPadding = PaddingValues(vertical = 14.dp)
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge)
+    }
+}

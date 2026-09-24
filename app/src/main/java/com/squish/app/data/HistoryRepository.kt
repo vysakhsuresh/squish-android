@@ -23,10 +23,27 @@ class HistoryRepository(context: Context) {
         persist(updated)
     }
 
-    fun remove(id: String) {
+    /**
+     * Forgets an export, and deletes the file it points at.
+     *
+     * Both, because either on its own is a lie. Exports live in the app's own
+     * external directory, which nothing but this list can reach - dropping the
+     * record and leaving the file behind would tell the user the video is gone
+     * while it quietly went on occupying a gigabyte of their phone, invisibly and
+     * forever. Deleting the file and keeping the record would leave a row that
+     * opens nothing.
+     *
+     * A copy the user separately saved to their gallery is theirs and is not
+     * touched: it lives in MediaStore under Movies/Squish, this app does not own
+     * it, and nobody expects clearing a list inside an app to reach out into their
+     * camera roll. The confirmation says so before any of this happens.
+     */
+    fun delete(id: String) {
+        val record = _records.value.firstOrNull { it.id == id }
         val updated = _records.value.filterNot { it.id == id }
         _records.value = updated
         persist(updated)
+        record?.let { runCatching { File(it.outputPath).delete() } }
     }
 
     private fun loadFromDisk(): List<ExportRecord> {
