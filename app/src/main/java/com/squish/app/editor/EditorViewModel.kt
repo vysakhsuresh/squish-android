@@ -90,7 +90,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             while (true) {
                 delay(AUTOSAVE_INTERVAL)
                 val current = _state.value
-                if (!current.isExporting) autosave.save(current)
+                if (current.isExporting) continue
+                // Off the main thread. viewModelScope is Main, so encoding the
+                // timeline to JSON and fsyncing it were both happening on the
+                // frame loop, every second and a half, for the whole session -
+                // which is exactly the kind of thing that makes a scrub stutter
+                // for no visible reason.
+                withContext(Dispatchers.IO) { autosave.save(current) }
             }
         }
     }
@@ -102,7 +108,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         // Read before anything else writes. The autosave timer is already running,
         // and once this session starts saving it will overwrite the very document
         // we might need to recover.
-        val recoverable = autosave.peek()
+        val recoverable = autosave.peek(uri)
 
         _state.update { it.copy(sourceUri = uri, isLoadingSource = true) }
 
@@ -127,6 +133,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     trimStartMs = 0L,
                     trimEndMs = meta.durationMs,
                     isLoadingSource = false,
+                    // Fitted the moment the clip is known. At the default zoom a
+                    // ten-minute video is twenty-five thousand dp of strip, so it
+                    // opened somewhere off the right-hand edge and stayed there.
+                    fitNonce = it.fitNonce + 1,
                     originalSizeBytes = originalSize,
                     videoClips = listOf(
                         Clip(
@@ -203,9 +213,58 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * nonce is what tells the preview engine to actually go there, which is how a
      * scrub is distinguished from the playhead simply moving on its own.
      */
-    fun scrubTo(ms: Long) = _state.update {
-        it.copy(playheadMs = ms.coerceIn(0L, it.timelineDurationMs), scrubNonce = it.scrubNonce + 1)
+    /**
+     * Moves the playhead, pulling it onto anything it lands near.
+     *
+     * A finger on a phone screen is about nine millimetres wide and a frame at
+     * a normal zoom is well under one, so landing exactly on a cut by aim alone
+     * is not a thing anyone can do. Snapping makes the common intentions — the
+     * start of a shot, the end of one, a beat, a marker — free, and a drag of
+     * more than the threshold still goes wherever it is put.
+     */
+    fun scrubTo(ms: Long) = _state.update { current ->
+        val target = ms.coerceIn(0L, current.timelineDurationMs)
+        val snapped = if (current.snapToMarkers) snapToAnything(target, current) else target
+        current.copy(playheadMs = snapped, scrubNonce = current.scrubNonce + 1)
     }
+
+    /** Jump straight to either end, which is otherwise a long drag on a long edit. */
+    fun scrubToStart() = scrubTo(0L)
+
+    fun scrubToEnd() = _state.update {
+        it.copy(playheadMs = it.timelineDurationMs, scrubNonce = it.scrubNonce + 1)
+    }
+
+    /**
+     * The nearest thing worth landing on: a clip edge, a marker, or the start.
+     *
+     * Clip edges are included because they are what people actually aim at. A
+     * marker grid exists only if someone made one; the cuts are always there.
+     */
+    private fun snapToAnything(ms: Long, current: EditorUiState): Long {
+        val threshold = snapThreshold(current)
+        val candidates = sequence {
+            yield(0L)
+            yield(current.timelineDurationMs)
+            current.markers.forEach { yield(it) }
+            (current.videoClips + current.audioClips).forEach { clip ->
+                yield(clip.timelineStartMs)
+                yield(clip.timelineEndMs)
+            }
+        }
+        val nearest = candidates.minByOrNull { abs(it - ms) } ?: return ms
+        return if (abs(nearest - ms) <= threshold) nearest else ms
+    }
+
+    /**
+     * How close counts as near, in milliseconds.
+     *
+     * Derived from the zoom rather than the clip length: what matters is how far
+     * the finger moved on screen, and eight device-independent pixels is about a
+     * third of a fingertip whatever the timeline is showing.
+     */
+    private fun snapThreshold(current: EditorUiState): Long =
+        (SNAP_DP / current.pixelsPerSecond * 1000f).toLong().coerceIn(20L, 500L)
 
     fun setPlaying(playing: Boolean) = _state.update { it.copy(isPlaying = playing) }
 
@@ -224,10 +283,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun setSnapToMarkers(enabled: Boolean) = _state.update { it.copy(snapToMarkers = enabled) }
 
     private fun snapToNearbyMarker(ms: Long, current: EditorUiState): Long {
-        val threshold = (current.durationMs / 100).coerceIn(40L, 400L)
+        val threshold = snapThreshold(current)
         val nearest = current.markers.minByOrNull { abs(it - ms) } ?: return ms
         return if (abs(nearest - ms) <= threshold) nearest else ms
     }
+
+    /** A third of a fingertip, in dp. */
+    private val SNAP_DP = 8f
 
     // ---- Sound ----------------------------------------------------------------
 
@@ -1316,6 +1378,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         return (without + key).sortedBy { it.atMs }
     }
 
+    /** Sets the zoom directly, which is how the strip answers a fit request. */
+    fun setPixelsPerSecond(value: Float) =
+        _state.update { it.copy(pixelsPerSecond = value.coerceIn(2f, 400f)) }
+
+    /** Asks the strip to fit the whole edit across its width. */
+    fun fitTimeline() = _state.update { it.copy(fitNonce = it.fitNonce + 1) }
+
     fun zoomIn() = _state.update { it.copy(pixelsPerSecond = it.toTimeline().zoomedBy(1.35f).pixelsPerSecond) }
 
     fun zoomOut() = _state.update { it.copy(pixelsPerSecond = it.toTimeline().zoomedBy(1f / 1.35f).pixelsPerSecond) }
@@ -1487,7 +1556,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 // The work is in the gallery now, so there is nothing left to
                 // recover and no reason to offer it on the next launch.
-                autosave.markCompleted()
+                autosave.markCompleted(sourceUri)
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
                 _state.update { it.copy(failure = SquishError.from(throwable)) }
@@ -1521,7 +1590,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun dismissRecovery() {
-        autosave.clear()
+        _state.value.recovery?.snapshot?.sourceUri?.let { autosave.clear(it) }
         _state.update { it.copy(recovery = null) }
     }
 
@@ -1574,6 +1643,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     ): EditorUiState = copy(
         sourceUri = snapshot.sourceUri,
         isLoadingSource = false,
+        fitNonce = fitNonce + 1,
         durationMs = durationMs,
         sourceWidth = width,
         sourceHeight = height,

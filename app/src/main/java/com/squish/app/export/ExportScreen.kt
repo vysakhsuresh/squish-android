@@ -186,7 +186,8 @@ fun ExportScreen(resultPath: String, jobLabel: String, onDone: () -> Unit) {
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     ShareTarget("WhatsApp", ShareGlyphs.WhatsApp, WHATSAPP_GREEN) {
                         if (!ShareUtils.share(context, resultPath, "com.whatsapp")) {
@@ -198,10 +199,10 @@ fun ExportScreen(resultPath: String, jobLabel: String, onDone: () -> Unit) {
                             notice = "Nothing on this phone can share that."
                         }
                     }
-                    ShareTarget("Email", Icons.Filled.MailOutline, SquishColors.Blue) {
+                    ShareTarget("Mail", Icons.Filled.MailOutline, SquishColors.Blue) {
                         sendByEmail(context, resultPath, isAudio) { notice = it }
                     }
-                    ShareTarget("More", Icons.Filled.MoreHoriz, SquishColors.Violet) {
+                    ShareTarget("More apps", Icons.Filled.MoreHoriz, SquishColors.Violet) {
                         if (!ShareUtils.share(context, resultPath, null)) {
                             notice = "Nothing on this phone can share that."
                         }
@@ -271,28 +272,32 @@ private fun SavedToCard(isAudio: Boolean, fileName: String) {
     }
 }
 
+/**
+ * One place to send the file, as a mark rather than a caption.
+ *
+ * The name is not printed. A row that reads WhatsApp / Instagram / Email / More
+ * puts two companies' names in Squish's own type, on Squish's own screen, which
+ * is not something to do lightly and not something anyone needs: the marks are
+ * recognisable at a glance and the colours carry them. The name stays as the
+ * content description, so a screen reader announces it and nobody navigating by
+ * touch loses anything.
+ */
 @Composable
 private fun ShareTarget(label: String, icon: ImageVector, color: Color, onClick: () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+    Box(
+        modifier = Modifier
+            .size(56.dp)
+            .clip(CircleShape)
+            .background(color)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .size(54.dp)
-                .clip(CircleShape)
-                .background(color)
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                icon,
-                contentDescription = label,
-                tint = Color.White,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-        Text(label, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextSecondary)
+        Icon(
+            icon,
+            contentDescription = "Share to $label",
+            tint = Color.White,
+            modifier = Modifier.size(27.dp)
+        )
     }
 }
 

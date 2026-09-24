@@ -229,6 +229,14 @@ data class EditorUiState(
 
     val selectedClipId: String? = null,
     val pixelsPerSecond: Float = 42f,
+    /**
+     * Bumped to ask the strip to fit the whole edit across its width.
+     *
+     * A request rather than a value, because only the strip knows how wide it is.
+     * It answers by calling back with a zoom, which is the one piece of layout
+     * the view model cannot work out for itself.
+     */
+    val fitNonce: Long = 0,
 
     // Proxy media. The preview plays [proxyUri] when it exists; export never does.
     val proxyUri: Uri? = null,

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,8 +31,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,8 +44,10 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.squish.app.editor.Timecode
 import com.squish.app.ui.theme.SquishColors
 
@@ -48,6 +55,19 @@ private val LANE_HEIGHT = 54.dp
 private val GUTTER = 34.dp
 private val RULER_HEIGHT = 26.dp
 private val HANDLE_WIDTH = 20.dp
+
+/** Wide enough for a fingertip; the line itself stays two pixels. */
+private val PLAYHEAD_HEAD = 18.dp
+
+/** Where the playhead sits while the strip follows it: a third in, not centred. */
+private const val FOLLOW_ANCHOR = 0.33f
+
+/** How close to the right edge counts as "about to leave the screen". */
+private const val EDGE_MARGIN_PX = 48f
+
+/** Zoom limits. Below the first a second is invisible; above it a frame is a mile. */
+private const val MIN_PPS = 2f
+private const val MAX_PPS = 400f
 
 private fun Long.onTimeline(pixelsPerSecond: Float): Dp = (this / 1000f * pixelsPerSecond).dp
 
@@ -68,11 +88,66 @@ fun TimelineEditor(
     /** Marks to snap to — the beat grid, or anything dropped by hand. */
     markers: List<Long> = emptyList(),
     /** Which of those start a bar, drawn taller so the phrasing is readable. */
-    barMarkers: List<Long> = emptyList()
+    barMarkers: List<Long> = emptyList(),
+    /** True while the transport is running, which is when the strip follows along. */
+    isPlaying: Boolean = false,
+    /**
+     * Bumped to ask the strip to fit the whole edit across its width. Only the
+     * strip knows how wide it is, so the zoom has to be computed here and handed
+     * back rather than worked out by whoever wants it.
+     */
+    fitNonce: Long = 0L,
+    onZoomTo: (Float) -> Unit = {}
 ) {
     val scroll = rememberScrollState()
+    val density = LocalDensity.current
     val pps = state.pixelsPerSecond
     val contentWidth = maxOf(state.durationMs, 8_000L).onTimeline(pps) + 240.dp
+
+    // The strip's own width in pixels, which is what makes following and fitting
+    // possible. Zero until the first layout pass, and every use guards for that.
+    var viewportPx by remember { mutableIntStateOf(0) }
+
+    /**
+     * Fits the whole edit across the strip.
+     *
+     * A ten-minute clip at the default zoom is twenty-five thousand dp of
+     * timeline, which is why it ran off to the right and stayed there. Fitting is
+     * the answer to seeing all of it; following, below, is the answer to seeing
+     * the part that is playing.
+     */
+    LaunchedEffect(fitNonce, viewportPx, state.durationMs) {
+        if (fitNonce <= 0L || viewportPx <= 0) return@LaunchedEffect
+        val seconds = (state.durationMs / 1000f).coerceAtLeast(1f)
+        val usableDp = with(density) { viewportPx.toDp().value } - 24f
+        if (usableDp <= 0f) return@LaunchedEffect
+        onZoomTo((usableDp / seconds).coerceIn(MIN_PPS, MAX_PPS))
+    }
+
+    /**
+     * Keeps the playhead on screen.
+     *
+     * While playing, the strip is pulled along so the playhead sits a third of
+     * the way across and the picture moves underneath it - which is what an NLE
+     * does, and what stops a long edit playing off the right-hand edge within
+     * seconds. While paused it only intervenes when the playhead has left the
+     * viewport, so scrolling by hand to look at something is not fought.
+     */
+    LaunchedEffect(state.playheadMs, isPlaying, viewportPx, pps) {
+        if (viewportPx <= 0) return@LaunchedEffect
+        val playheadPx = with(density) { state.playheadMs.onTimeline(pps).toPx() }
+        val visible = playheadPx - scroll.value
+
+        val target = when {
+            isPlaying -> playheadPx - viewportPx * FOLLOW_ANCHOR
+            visible < 0f -> playheadPx - viewportPx * FOLLOW_ANCHOR
+            visible > viewportPx - EDGE_MARGIN_PX -> playheadPx - viewportPx * FOLLOW_ANCHOR
+            else -> return@LaunchedEffect
+        }
+
+        val clamped = target.toInt().coerceIn(0, scroll.maxValue)
+        if (clamped != scroll.value) scroll.scrollTo(clamped)
+    }
     val overlayLayers = (state.layerCount downTo 1).toList()
     val audioLanes = state.audioLanes.ifEmpty { listOf(emptyList()) }
     val laneCount = overlayLayers.size + audioLanes.size + 2
@@ -87,7 +162,12 @@ fun TimelineEditor(
             LaneBadge(Icons.Filled.TextFields, SquishColors.Amber)
         }
 
-        Box(modifier = Modifier.fillMaxWidth().horizontalScroll(scroll)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .onSizeChanged { viewportPx = it.width }
+                .horizontalScroll(scroll)
+        ) {
             Column(modifier = Modifier.width(contentWidth)) {
                 Ruler(
                     durationMs = state.durationMs,
@@ -103,7 +183,8 @@ fun TimelineEditor(
                         accent = SquishColors.Magenta,
                         onSelect = onSelect,
                         onMove = onMove,
-                        onTrim = onTrim
+                        onTrim = onTrim,
+                        onScrub = onScrub
                     )
                 }
                 Lane(
@@ -113,12 +194,13 @@ fun TimelineEditor(
                     onSelect = onSelect,
                     onMove = onMove,
                     onTrim = onTrim,
+                    onScrub = onScrub,
                     onTransitionTap = onTransitionTap
                 )
                 audioLanes.forEach { lane ->
-                    Lane(lane, state, SquishColors.Cyan, onSelect, onMove, onTrim)
+                    Lane(lane, state, SquishColors.Cyan, onSelect, onMove, onTrim, onScrub)
                 }
-                Lane(state.textClips, state, SquishColors.Amber, onSelect, onMove, onTrim)
+                Lane(state.textClips, state, SquishColors.Amber, onSelect, onMove, onTrim, onScrub)
             }
 
             // Beat lines run the full height, behind the playhead. A grid you can
@@ -139,14 +221,63 @@ fun TimelineEditor(
                 )
             }
 
-            Box(
-                modifier = Modifier
-                    .offset(x = state.playheadMs.onTimeline(pps))
-                    .width(2.dp)
-                    .height(laneHeight)
-                    .background(SquishColors.TextPrimary)
+            Playhead(
+                atMs = state.playheadMs,
+                pixelsPerSecond = pps,
+                height = laneHeight,
+                onScrub = onScrub
             )
         }
+    }
+}
+
+/**
+ * The playhead, with something to take hold of.
+ *
+ * A two-pixel line is a fine thing to read a position off and a hopeless thing to
+ * aim a finger at. The head on top is the target: wide enough to grab, tall
+ * enough to see, and draggable, so positioning the playhead is one movement
+ * rather than a series of taps at the ruler hoping to land on the right frame.
+ */
+@Composable
+private fun BoxScope.Playhead(
+    atMs: Long,
+    pixelsPerSecond: Float,
+    height: Dp,
+    onScrub: (Long) -> Unit
+) {
+    val latestScrub by rememberUpdatedState(onScrub)
+    val x = atMs.onTimeline(pixelsPerSecond)
+
+    Column(
+        modifier = Modifier
+            .offset(x = x - PLAYHEAD_HEAD / 2)
+            .width(PLAYHEAD_HEAD)
+            .zIndex(2f)
+            // The whole column drags, head and line alike, so a finger that lands
+            // slightly low still moves it.
+            .pointerInput(pixelsPerSecond) {
+                detectHorizontalDragGestures { change, dragAmount ->
+                    change.consume()
+                    val deltaMs = (dragAmount / density / pixelsPerSecond * 1000f).toLong()
+                    latestScrub((atMs + deltaMs).coerceAtLeast(0L))
+                }
+            },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .width(PLAYHEAD_HEAD)
+                .height(PLAYHEAD_HEAD * 0.62f)
+                .clip(RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp, bottomStart = 2.dp, bottomEnd = 7.dp))
+                .background(SquishColors.TextPrimary)
+        )
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .height(height - PLAYHEAD_HEAD * 0.62f)
+                .background(SquishColors.TextPrimary)
+        )
     }
 }
 
@@ -233,13 +364,25 @@ private fun Lane(
     onSelect: (String?) -> Unit,
     onMove: (String, Long) -> Unit,
     onTrim: (String, Long, Long) -> Unit,
+    onScrub: (Long) -> Unit,
     onTransitionTap: ((String) -> Unit)? = null
 ) {
+    val latestScrub by rememberUpdatedState(onScrub)
+    val pps = state.pixelsPerSecond
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(LANE_HEIGHT)
             .padding(vertical = 3.dp)
+            // A tap on empty track is a tap on a moment, so it moves the playhead
+            // there. Only the bare lane: a clip handles its own tap, because that
+            // one also has to select.
+            .pointerInput(pps) {
+                detectTapGestures { offset ->
+                    latestScrub((offset.x / density / pps * 1000f).toLong().coerceAtLeast(0L))
+                }
+            }
     ) {
         clips.forEach { clip ->
             ClipView(
@@ -249,7 +392,8 @@ private fun Lane(
                 accent = accent,
                 onSelect = onSelect,
                 onMove = onMove,
-                onTrim = onTrim
+                onTrim = onTrim,
+                onScrub = onScrub
             )
         }
 
@@ -301,11 +445,13 @@ private fun ClipView(
     accent: Color,
     onSelect: (String?) -> Unit,
     onMove: (String, Long) -> Unit,
-    onTrim: (String, Long, Long) -> Unit
+    onTrim: (String, Long, Long) -> Unit,
+    onScrub: (Long) -> Unit
 ) {
     val latestMove by rememberUpdatedState(onMove)
     val latestTrim by rememberUpdatedState(onTrim)
     val latestSelect by rememberUpdatedState(onSelect)
+    val latestScrub by rememberUpdatedState(onScrub)
     val width = clip.durationMs.onTimeline(pixelsPerSecond)
 
     // A short clip must still be trimmable. Fixed 20dp handles covered a two-second
@@ -328,8 +474,15 @@ private fun ClipView(
             // Tap handled as a gesture rather than Modifier.clickable: clickable sat
             // ahead of the drag detector in the chain and swallowed the drag, which
             // is why clips could be selected but never moved.
-            .pointerInput(clip.id) {
-                detectTapGestures { latestSelect(clip.id) }
+            .pointerInput(clip.id, pixelsPerSecond) {
+                // Selects the clip *and* goes to the moment that was tapped. On a
+                // phone the strip is the only place to aim at a frame, so a tap
+                // that only selects wastes the one gesture there is room for.
+                detectTapGestures { offset ->
+                    latestSelect(clip.id)
+                    val into = (offset.x / density / pixelsPerSecond * 1000f).toLong()
+                    latestScrub((clip.timelineStartMs + into).coerceAtLeast(0L))
+                }
             }
             .pointerInput(clip.id, pixelsPerSecond) {
                 detectHorizontalDragGestures(
@@ -450,6 +603,9 @@ fun TimelineActionBar(
     onCloseGaps: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
+    onFit: () -> Unit,
+    onGoToStart: () -> Unit,
+    onGoToEnd: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val selected = state.selectedClip
@@ -478,9 +634,16 @@ fun TimelineActionBar(
                 onDelete
             )
             MiniAction("Close gaps", SquishColors.TextSecondary, onCloseGaps)
+            // A long edit is a long drag otherwise, and the two ends are where
+            // people go most.
+            MiniAction("⇤", SquishColors.TextSecondary, onGoToStart)
+            MiniAction("⇥", SquishColors.TextSecondary, onGoToEnd)
             Spacer(modifier = Modifier.fillMaxWidth(0.02f))
             MiniAction("−", SquishColors.TextSecondary, onZoomOut)
             MiniAction("+", SquishColors.TextSecondary, onZoomIn)
+            // The way back when the strip has been zoomed into a corner of a long
+            // edit, which on a phone is most of the time.
+            MiniAction("Fit", SquishColors.Cyan, onFit)
         }
 
         // Says what the buttons will act on, because a razor that cuts the wrong

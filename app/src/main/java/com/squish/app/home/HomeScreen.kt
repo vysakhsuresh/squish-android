@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
@@ -31,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
@@ -42,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.squish.app.data.DraftSummary
 import com.squish.app.tools.QuickTool
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.components.accentSweep
@@ -66,6 +70,10 @@ fun HomeScreen(
     viewModel: HomeViewModel = viewModel()
 ) {
     val recent by viewModel.recentExports.collectAsState()
+    val drafts by viewModel.drafts.collectAsState()
+    // Re-read on every return to the dashboard, so an edit left five minutes ago
+    // is here rather than whatever the list happened to hold at launch.
+    LaunchedEffect(Unit) { viewModel.refreshDrafts() }
     val pickForEditor = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let(onOpenEditor)
     }
@@ -108,6 +116,19 @@ fun HomeScreen(
                         tint = SquishColors.TextSecondary,
                         modifier = Modifier.size(19.dp)
                     )
+                }
+            }
+
+            if (drafts.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Header("Pick up where you left off", "Saved automatically as you work")
+                    drafts.take(3).forEach { draft ->
+                        DraftRow(
+                            draft = draft,
+                            onOpen = { onOpenEditor(draft.sourceUri) },
+                            onDiscard = { viewModel.discardDraft(draft.id) }
+                        )
+                    }
                 }
             }
 
@@ -215,6 +236,86 @@ private fun EditorHero(onClick: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+/**
+ * An edit that was left unfinished.
+ *
+ * Every timeline is written to disk as it is built, so leaving the app — or being
+ * killed by it, which is what happens to video editors the moment they go to the
+ * background — costs at most a second and a half. This row is that safety net
+ * made visible, because a recovery nobody knows about is not one.
+ */
+@Composable
+private fun DraftRow(draft: DraftSummary, onOpen: () -> Unit, onDiscard: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(SquishColors.Cyan.copy(alpha = 0.08f))
+            .border(1.dp, SquishColors.Cyan.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+            .clickable(onClick = onOpen)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(11.dp))
+                .background(SquishColors.Cyan.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Filled.Edit,
+                contentDescription = null,
+                tint = SquishColors.Cyan,
+                modifier = Modifier.size(17.dp)
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                draft.title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = SquishColors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                buildString {
+                    append(draft.clipCount)
+                    append(if (draft.clipCount == 1) " clip · " else " clips · ")
+                    append(agoOf(draft.savedAtMillis))
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.TextMuted
+            )
+        }
+
+        Icon(
+            Icons.Filled.Close,
+            contentDescription = "Discard this draft",
+            tint = SquishColors.TextMuted,
+            modifier = Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .clickable(onClick = onDiscard)
+                .padding(7.dp)
+        )
+    }
+}
+
+/** "4 minutes ago" — the only thing anyone wants to know about a draft's age. */
+private fun agoOf(millis: Long): String {
+    val elapsed = (System.currentTimeMillis() - millis).coerceAtLeast(0L)
+    val minutes = elapsed / 60_000
+    return when {
+        minutes < 1 -> "just now"
+        minutes < 60 -> "$minutes min ago"
+        minutes < 1_440 -> "${minutes / 60} h ago"
+        else -> "${minutes / 1_440} d ago"
     }
 }
 

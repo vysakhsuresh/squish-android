@@ -40,12 +40,41 @@ import java.io.FileOutputStream
  * matter when the process dies. The previous version is kept alongside as a second
  * parachute in case the JSON itself is ever unreadable.
  */
+/** One saved edit, as a list needs to know about it — without reading the edit. */
+data class DraftSummary(
+    val id: String,
+    val title: String,
+    val sourceUri: Uri,
+    val durationMs: Long,
+    val clipCount: Int,
+    val savedAtMillis: Long
+)
+
 class ProjectAutosave(context: Context) {
 
     private val dir = File(context.filesDir, "projects").apply { mkdirs() }
-    private val live = File(dir, "current.json")
-    private val backup = File(dir, "current.bak.json")
-    private val scratch = File(dir, "current.tmp.json")
+
+    /**
+     * One draft per source video, keyed by its URI.
+     *
+     * That is the unit anyone thinks in — "the edit I was doing on that clip" —
+     * and it means reopening a video picks its work back up rather than offering
+     * a list of anonymous sessions. Previously there was a single slot called
+     * `current`, so opening a second video silently destroyed the first one's
+     * work the moment anything moved.
+     */
+    private fun slotFor(uri: Uri): String = "p" + uri.toString().hashCode().toUInt().toString(16)
+
+    private fun liveFile(slot: String) = File(dir, "$slot.json")
+    private fun backupFile(slot: String) = File(dir, "$slot.bak.json")
+    private fun scratchFile(slot: String) = File(dir, "$slot.tmp.json")
+
+    /**
+     * A few hundred bytes written beside each draft: enough to list every draft
+     * without parsing any of them. A drafts list that had to decode a dozen full
+     * timelines to draw itself would be slower than the editor it leads to.
+     */
+    private fun metaFile(slot: String) = File(dir, "$slot.meta.json")
 
     /** Cheap change detector, so an idle editor never touches the disk. */
     @Volatile
@@ -56,7 +85,12 @@ class ProjectAutosave(context: Context) {
      * on a timer; it is a no-op when nothing moved.
      */
     fun save(state: EditorUiState): Boolean {
-        if (state.sourceUri == null || state.isLoadingSource) return false
+        val uri = state.sourceUri ?: return false
+        if (state.isLoadingSource) return false
+        val slot = slotFor(uri)
+        val live = liveFile(slot)
+        val backup = backupFile(slot)
+        val scratch = scratchFile(slot)
 
         // The signature is taken from the edit alone. Stamping the time first would
         // make every tick look like a change and turn "save when something moved"
@@ -80,24 +114,78 @@ class ProjectAutosave(context: Context) {
             check(scratch.renameTo(live)) { "atomic rename refused" }
         }.isSuccess
 
-        if (ok) lastSignature = signature
+        if (ok) {
+            lastSignature = signature
+            writeMeta(slot, state, uri)
+        }
         return ok
     }
 
-    /** A recoverable session, if one survived. */
-    fun peek(): ProjectSnapshot? = read(live) ?: read(backup)
-
-    fun clear() {
-        lastSignature = null
-        listOf(live, backup, scratch).forEach { runCatching { it.delete() } }
+    /** A recoverable session for this video, if one survived. */
+    fun peek(uri: Uri): ProjectSnapshot? {
+        val slot = slotFor(uri)
+        return read(liveFile(slot)) ?: read(backupFile(slot))
     }
+
+    /**
+     * Every draft, newest first, read from the sidecars alone.
+     *
+     * A draft whose source video has been deleted from the device is dropped as
+     * it is found: it can never be reopened, and leaving it in the list is an
+     * offer that fails when taken.
+     */
+    fun drafts(): List<DraftSummary> = runCatching {
+        // listFiles(lambda) is ambiguous between FileFilter and FilenameFilter,
+        // so the filtering happens after, on a plainly typed array.
+        val files: Array<File> = dir.listFiles() ?: return@runCatching emptyList()
+        files.filter { it.name.endsWith(".meta.json") }
+            .mapNotNull { readMeta(it) }
+            .filter { liveFile(it.id).exists() }
+            .sortedByDescending { it.savedAtMillis }
+    }.getOrDefault(emptyList())
+
+    fun delete(slot: String) {
+        lastSignature = null
+        listOf(liveFile(slot), backupFile(slot), scratchFile(slot), metaFile(slot))
+            .forEach { runCatching { it.delete() } }
+    }
+
+    fun clear(uri: Uri) = delete(slotFor(uri))
+
+    private fun writeMeta(slot: String, state: EditorUiState, uri: Uri) {
+        runCatching {
+            metaFile(slot).writeText(
+                JSONObject().apply {
+                    put("id", slot)
+                    put("title", state.videoClips.firstOrNull()?.label ?: "Untitled edit")
+                    put("uri", uri.toString())
+                    put("durationMs", state.trimmedDurationMs)
+                    put("clipCount", state.videoClips.size)
+                    put("savedAtMillis", System.currentTimeMillis())
+                }.toString()
+            )
+        }
+    }
+
+    private fun readMeta(file: File): DraftSummary? = runCatching {
+        val json = JSONObject(file.readText())
+        val uri = json.optString("uri").takeIf { it.isNotBlank() } ?: return null
+        DraftSummary(
+            id = json.optString("id").takeIf { it.isNotBlank() } ?: return null,
+            title = json.optString("title", "Untitled edit"),
+            sourceUri = Uri.parse(uri),
+            durationMs = json.optLong("durationMs"),
+            clipCount = json.optInt("clipCount", 1),
+            savedAtMillis = json.optLong("savedAtMillis")
+        )
+    }.getOrNull()
 
     /**
      * Marks the current edit as finished. Called after a successful export: the
      * work reached the gallery, so there is nothing left to recover and offering
      * to restore it on next launch would only confuse.
      */
-    fun markCompleted() = clear()
+    fun markCompleted(uri: Uri) = clear(uri)
 
     private fun read(file: File): ProjectSnapshot? {
         if (!file.exists()) return null

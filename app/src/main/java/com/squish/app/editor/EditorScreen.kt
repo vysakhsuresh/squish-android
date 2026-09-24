@@ -208,7 +208,10 @@ fun EditorScreen(
                     tab = EditorTab.Mix
                 },
                 markers = state.markers,
-                barMarkers = state.beats.every(4)
+                barMarkers = state.beats.every(4),
+                isPlaying = state.isPlaying,
+                fitNonce = state.fitNonce,
+                onZoomTo = viewModel::setPixelsPerSecond
             )
 
             TimelineActionBar(
@@ -218,6 +221,9 @@ fun EditorScreen(
                 onCloseGaps = viewModel::closeGaps,
                 onZoomIn = viewModel::zoomIn,
                 onZoomOut = viewModel::zoomOut,
+                onFit = viewModel::fitTimeline,
+                onGoToStart = viewModel::scrubToStart,
+                onGoToEnd = viewModel::scrubToEnd,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
