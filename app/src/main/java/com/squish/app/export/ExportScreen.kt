@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import com.squish.app.data.SquishRepositories
 import com.squish.app.home.formatSize
 import com.squish.app.ui.components.BackOrb
@@ -309,7 +310,7 @@ private fun sendByEmail(
     onProblem: (String) -> Unit
 ) {
     val uri = runCatching {
-        androidx.core.content.FileProvider.getUriForFile(
+        FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
             File(path)

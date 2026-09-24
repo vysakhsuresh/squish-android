@@ -1,7 +1,10 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.ui.components
 
 import android.net.Uri
 import android.view.TextureView
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -33,15 +36,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.squish.app.editor.Timecode
 import com.squish.app.ui.theme.SquishColors
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 
 /** One source in a preview, with the length the caller already probed. */
@@ -143,7 +150,7 @@ fun ClipPreview(
                     positionMs = at
                 }
             }
-            delay(TICK_MS)
+            delay(TICK)
         }
     }
 
@@ -268,7 +275,7 @@ private fun ScrubBar(
         return
     }
 
-    androidx.compose.foundation.Canvas(
+    Canvas(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(28f)
@@ -280,24 +287,24 @@ private fun ScrubBar(
 
         drawLine(
             color = SquishColors.Border,
-            start = androidx.compose.ui.geometry.Offset(0f, midY),
-            end = androidx.compose.ui.geometry.Offset(size.width, midY),
+            start = Offset(0f, midY),
+            end = Offset(size.width, midY),
             strokeWidth = h * 0.45f,
-            cap = androidx.compose.ui.graphics.StrokeCap.Round
+            cap = StrokeCap.Round
         )
 
         val x0 = size.width * (startMs.toFloat() / totalMs)
         val x1 = size.width * (endMs.toFloat() / totalMs)
         drawLine(
             color = accent.copy(alpha = 0.45f),
-            start = androidx.compose.ui.geometry.Offset(x0, midY),
-            end = androidx.compose.ui.geometry.Offset(x1, midY),
+            start = Offset(x0, midY),
+            end = Offset(x1, midY),
             strokeWidth = h * 0.45f,
-            cap = androidx.compose.ui.graphics.StrokeCap.Round
+            cap = StrokeCap.Round
         )
 
         val px = size.width * (positionMs.toFloat() / totalMs)
-        drawCircle(color = accent, radius = h * 0.42f, center = androidx.compose.ui.geometry.Offset(px, midY))
+        drawCircle(color = accent, radius = h * 0.42f, center = Offset(px, midY))
     }
 }
 
@@ -319,4 +326,5 @@ private fun Modifier.pointerScrub(totalMs: Long, onScrub: (Long) -> Unit): Modif
         }
     )
 
-private const val TICK_MS = 60L
+/** Sixteen a second. A scrub bar does not need a frame's worth of precision. */
+private val TICK = 60.milliseconds

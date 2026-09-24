@@ -410,7 +410,7 @@ private fun ClipView(
 
 /** Receives drag in dp so the caller only has to convert time. */
 @Composable
-private fun androidx.compose.foundation.layout.BoxScope.TrimHandle(
+private fun BoxScope.TrimHandle(
     accent: Color,
     width: Dp,
     alignment: Alignment,

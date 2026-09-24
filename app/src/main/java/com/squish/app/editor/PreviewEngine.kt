@@ -1,3 +1,5 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.editor
 
 import android.content.Context
@@ -5,6 +7,7 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.exoplayer.DefaultLoadControl

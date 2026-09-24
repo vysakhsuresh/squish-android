@@ -87,8 +87,8 @@ data class Mask(
 
     /**
      * The shape's center at a moment of the source, following its track if it has
-     * one. Track fractions run 0..1 across the frame; the shader's center runs
-     * -1..1 from the middle.
+     * one. Track fractions run 0 to 1 across the frame; the shader's center runs
+     * -1 to 1 from the middle.
      */
     fun centerAt(sourceMs: Long): Pair<Float, Float> {
         val sample = track?.sampleAt(sourceMs)

@@ -1,3 +1,5 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.editor
 
 import android.net.Uri
@@ -40,10 +42,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.squish.app.media.effects.Grade
 import com.squish.app.timeline.Clip
 import com.squish.app.ui.theme.SquishColors
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 
 /**
@@ -126,7 +130,7 @@ fun TimelinePreview(
                 if (next.isPlaying != frame.isPlaying) latestPlaying(next.isPlaying)
                 frame = next
             }
-            delay(TICK_MS)
+            delay(TICK)
         }
     }
 
@@ -287,4 +291,5 @@ private fun Transport(frame: PreviewFrame, onToggle: () -> Unit, modifier: Modif
     }
 }
 
-private const val TICK_MS = 33L
+/** A frame at 30fps: fast enough that the playhead does not visibly step. */
+private val TICK = 33.milliseconds

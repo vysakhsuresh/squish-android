@@ -29,15 +29,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        // Media3 marks Transformer, the effect pipeline and most of ExoPlayer
-        // @UnstableApi, which is an opt-in *error* by default. This app is built on
-        // those APIs end to end, so opt in once here rather than annotating every
-        // file that touches Media3.
-        freeCompilerArgs += "-opt-in=androidx.media3.common.util.UnstableApi"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -45,6 +36,29 @@ android {
 
     packaging {
         resources.excludes.add("/META-INF/{AL2.0,LGPL2.1}")
+    }
+}
+
+/**
+ * Kotlin settings live here rather than in `android { kotlinOptions { } }`.
+ *
+ * That block is a deprecated shim under the Kotlin 2.x Gradle plugin, and
+ * `freeCompilerArgs +=` inside it is not reliably carried through to the compile
+ * tasks - which is how this project spent a while believing it had opted in to
+ * Media3's unstable API while every file that touched Transformer was failing to
+ * compile. `kotlin { compilerOptions { } }` is the authoritative DSL.
+ *
+ * Every Media3 file also carries its own `@file:OptIn`, so the opt-in does not
+ * depend on the build script being wired correctly at all.
+ */
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+
+        // Media3 marks Transformer, the effect pipeline and most of ExoPlayer
+        // @UnstableApi, which is an opt-in *error* rather than a warning. This app
+        // is built on those APIs end to end.
+        optIn.add("androidx.media3.common.util.UnstableApi")
     }
 }
 

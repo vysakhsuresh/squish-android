@@ -1,10 +1,14 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.media
 
 import android.content.Context
 import android.net.Uri
 import android.os.StatFs
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.ExportException
 import com.squish.app.editor.EditorUiState
+import com.squish.app.editor.Quality
 import java.io.File
 
 /**
@@ -151,7 +155,7 @@ sealed class SquishError(
             if (free in 1 until needed) return NotEnoughSpace(needed, free)
 
             val pixels = state.sourceWidth.toLong() * state.sourceHeight.toLong()
-            if (pixels > HUGE_FRAME_PIXELS && state.quality == com.squish.app.editor.Quality.Original) {
+            if (pixels > HUGE_FRAME_PIXELS && state.quality == Quality.Original) {
                 return SourceTooLarge(pixels)
             }
             return null

@@ -1,7 +1,10 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.media
 
 import androidx.media3.common.C
 import androidx.media3.common.audio.SpeedProvider
+import androidx.media3.common.util.UnstableApi
 import com.squish.app.timeline.SpeedSegment
 
 /**

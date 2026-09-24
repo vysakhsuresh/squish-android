@@ -15,7 +15,7 @@ data class BeatMap(
     val beatsMs: List<Long> = emptyList(),
     val bpm: Float = 0f,
     /**
-     * 0..1. How periodic the music actually was, not how sure the tracker is that
+     * From 0 to 1. How periodic the music actually was, not how sure the tracker is
      * it followed its own guess. Something with no pulse in it scores low here
      * however neatly the beats came out, which is the only useful thing to show
      * someone before they cut forty clips to it.
@@ -100,7 +100,7 @@ object BeatDetector {
     /**
      * Finds the beats in mono PCM.
      *
-     * @param samples mono float PCM, nominally -1..1.
+     * @param samples mono float PCM, nominally -1 to 1.
      * @param sampleRate its rate. The analysis is rate-agnostic; 8kHz is plenty,
      *   since everything that marks a beat has energy well below 4kHz.
      */

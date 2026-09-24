@@ -1,15 +1,18 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.media
 
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.TextOverlay
 import com.squish.app.editor.TextOverlayItem
 
 /**
- * Burns one caption into the exported video for its [TextOverlayItem.startMs]..[endMs]
+ * Burns one caption into the exported video between its [TextOverlayItem.startMs] and [endMs]
  * window. Verify this against the Media3 version pinned in libs.versions.toml on first
  * build - TextOverlay/OverlaySettings' exact anchor API shifted a couple of times across
  * Media3 1.3/1.4 minor releases, and this sandbox couldn't compile-check it (see README).

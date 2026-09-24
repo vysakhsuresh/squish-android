@@ -58,6 +58,13 @@ ALLOWED_TRANSITIVE = ("com.google.common.",)
 IMPORT = re.compile(r"^import\s+([A-Za-z0-9_.]+)", re.MULTILINE)
 DECLARED = re.compile(r"(?:implementation|debugImplementation|api)\(libs\.([A-Za-z0-9_.]+)\)")
 
+# Media3 marks Transformer, the effect pipeline and most of ExoPlayer @UnstableApi
+# at ERROR level, so a file that touches it and has not opted in does not compile.
+# The Gradle-wide opt-in covers it too, but that is one line in a build script that
+# has already been silently wrong once, and a file annotation cannot be.
+OPT_IN_REQUIRED = "androidx.media3"
+OPT_IN_MARKER = "@file:OptIn(UnstableApi::class)"
+
 
 def provider_of(fqn: str) -> str | None:
     """The alias expected to provide this import, by longest matching prefix."""
@@ -78,9 +85,13 @@ def main() -> int:
 
     needed: dict[str, str] = {}      # alias -> an import that needs it
     unmapped: dict[str, str] = {}    # import prefix -> the file that used it
+    unmarked: list[str] = []         # files using Media3 without opting in
 
     for path in sorted(SOURCE.rglob("*.kt")):
-        for fqn in IMPORT.findall(path.read_text()):
+        text = path.read_text()
+        if OPT_IN_REQUIRED in text and OPT_IN_MARKER not in text:
+            unmarked.append(str(path))
+        for fqn in IMPORT.findall(text):
             if fqn.startswith(PLATFORM_PREFIXES) or fqn.startswith(ALLOWED_TRANSITIVE):
                 continue
             alias = provider_of(fqn)
@@ -98,12 +109,14 @@ def main() -> int:
             )
     for prefix, path in sorted(unmapped.items()):
         problems.append(f"{path}: imports {prefix}.*, which this checker has no entry for")
+    for path in sorted(unmarked):
+        problems.append(f"{path}: uses Media3 without `{OPT_IN_MARKER}` above its package line")
 
     if problems:
         for problem in problems:
             print(problem)
         return 1
-    print(f"every imported library is declared ({len(needed)} of them)")
+    print(f"every imported library is declared ({len(needed)}), and every Media3 file opts in")
     return 0
 
 

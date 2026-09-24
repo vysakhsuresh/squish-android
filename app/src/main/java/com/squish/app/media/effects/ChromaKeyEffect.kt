@@ -1,3 +1,5 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.media.effects
 
 import android.content.Context
@@ -6,6 +8,7 @@ import androidx.media3.common.VideoFrameProcessingException
 import androidx.media3.common.util.GlProgram
 import androidx.media3.common.util.GlUtil
 import androidx.media3.common.util.Size
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram

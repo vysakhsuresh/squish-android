@@ -1,6 +1,9 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.media
 
 import android.graphics.Matrix
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.MatrixTransformation
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.Transform

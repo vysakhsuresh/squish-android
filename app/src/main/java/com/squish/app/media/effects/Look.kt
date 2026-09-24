@@ -23,7 +23,7 @@ enum class LookFamily(val label: String) {
  * shader pipeline that cannot be verified without a device. Real 3D LUTs are the
  * right next step; this is the honest version of that idea which ships working.
  *
- * Every parameter is normalized to -1..1 or a multiplier around 1, so a look can be
+ * Every parameter is normalized to -1 through 1, or a multiplier around 1, so a look can be
  * dialled continuously between "off" and "full" ([atIntensity]).
  */
 data class Look(

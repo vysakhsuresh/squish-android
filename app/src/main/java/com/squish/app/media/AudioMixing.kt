@@ -1,8 +1,11 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.media
 
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
+import androidx.media3.common.util.UnstableApi
 
 /**
  * Per-track gain, so the original camera audio and a separate track can be balanced

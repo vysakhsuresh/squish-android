@@ -51,6 +51,7 @@ import com.squish.app.timeline.withClipRemoved
 import com.squish.app.timeline.withClipTrimmed
 import com.squish.app.timeline.withSplitAtPlayhead
 import com.squish.app.timeline.zoomedBy
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -87,7 +88,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         // worst case after a kill is a second and a half of lost work.
         viewModelScope.launch {
             while (true) {
-                delay(AUTOSAVE_INTERVAL_MS)
+                delay(AUTOSAVE_INTERVAL)
                 val current = _state.value
                 if (!current.isExporting) autosave.save(current)
             }
@@ -1049,8 +1050,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 atMs = (sample.atMs - layer.timelineStartMs).coerceAtLeast(0L),
                 transform = Transform(
                     scale = layer.scale * sample.scale,
-                    // Track fractions run 0..1 across the frame; transform offsets
-                    // run -1..1 from the center.
+                    // Track fractions run 0 to 1 across the frame; transform
+                    // offsets run -1 to 1 from the center.
                     offsetXFraction = (sample.xFraction - 0.5f) * 2f,
                     offsetYFraction = (sample.yFraction - 0.5f) * 2f,
                     rotationDegrees = layer.rotation
@@ -1614,7 +1615,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private companion object {
         const val MIN_SYNC_CONFIDENCE = 0.28f
-        const val AUTOSAVE_INTERVAL_MS = 1_500L
+        val AUTOSAVE_INTERVAL = 1_500.milliseconds
         const val DEFAULT_CAPTION_MS = 2_000L
     }
 }

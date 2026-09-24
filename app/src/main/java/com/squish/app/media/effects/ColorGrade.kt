@@ -1,6 +1,9 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.media.effects
 
 import androidx.media3.common.Effect
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Contrast
 import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.RgbAdjustment

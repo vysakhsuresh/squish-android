@@ -1,5 +1,9 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.media
 
+import androidx.media3.common.Effect
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.AlphaScale
 import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
@@ -107,7 +111,7 @@ object CompositionFactory {
      * Scale, position and rotation are one matrix rather than several effects,
      * which is also what lets them be animated: see ClipTransformEffect.
      */
-    fun overlayEffects(clip: Clip, canvasWidth: Int, canvasHeight: Int): List<androidx.media3.common.Effect> {
+    fun overlayEffects(clip: Clip, canvasWidth: Int, canvasHeight: Int): List<Effect> {
         if (!clip.isOverlay || canvasWidth <= 0 || canvasHeight <= 0) return emptyList()
         return buildList {
             // Keyed first, on the raw frame, so the matte is cut from the pixels the

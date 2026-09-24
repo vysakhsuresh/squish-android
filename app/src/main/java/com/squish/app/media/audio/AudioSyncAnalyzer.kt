@@ -65,7 +65,7 @@ object AudioSyncAnalyzer {
 
     /**
      * Normalized cross-correlation over a lag range. Returns the winning lag (in
-     * buckets) and a 0..1 confidence, or null if nothing correlated meaningfully.
+     * buckets) and a confidence from 0 to 1, or null if nothing correlated meaningfully.
      */
     private fun bestLag(ref: FloatArray, ext: FloatArray, minLag: Int, maxLag: Int): Pair<Int, Float>? {
         var winner = 0

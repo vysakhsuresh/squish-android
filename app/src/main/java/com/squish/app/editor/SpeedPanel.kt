@@ -313,7 +313,7 @@ private fun lengthLine(clip: Clip): String {
  * Speed to slider position, logarithmically.
  *
  * Half and double sit the same distance either side of the middle, which is how
- * anyone thinks about rate. On a linear 0.1..10 track, 1x sits at a tenth and
+ * anyone thinks about rate. On a linear 0.1-to-10 track, 1x sits at a tenth and
  * everything slower than normal is crushed into the first ninth of the travel.
  */
 private fun speedToSlider(speed: Float): Float {

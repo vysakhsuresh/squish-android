@@ -1,3 +1,5 @@
+@file:OptIn(UnstableApi::class)
+
 package com.squish.app.media
 
 import android.content.Context
@@ -7,6 +9,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.SpeedChangingAudioProcessor
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.ScaleAndRotateTransformation
@@ -30,6 +33,7 @@ import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.MaskEffect
 import com.squish.app.media.effects.Looks
 import com.squish.app.timeline.Clip
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -91,7 +95,7 @@ class VideoProcessor(private val context: Context) {
                         ?.let { ((elapsed / it) - elapsed).toLong().coerceAtLeast(0L) }
                     onProgress(ExportProgress(fraction, elapsed, remaining))
                 }
-                delay(PROGRESS_POLL_MS)
+                delay(PROGRESS_POLL)
             }
         }
 
@@ -201,19 +205,21 @@ class VideoProcessor(private val context: Context) {
     private fun compositionEffects(state: EditorUiState): Effects {
         if (!isMultiSource(state) || state.audioOnly) return Effects.EMPTY
         val size = outputSize(state) ?: return Effects.EMPTY
-        return Effects(
-            ImmutableList.of(),
-            ImmutableList.of(
-                // Fit rather than crop: a landscape clip in a portrait merge is
-                // letterboxed, not cut in half. Losing half of someone's footage
-                // to an automatic decision would be the worse surprise.
-                Presentation.createForWidthAndHeight(
-                    size.width,
-                    size.height,
-                    Presentation.LAYOUT_SCALE_TO_FIT
-                )
+
+        // Widened at the declaration, for the same reason the caption overlays are:
+        // Effects takes List<Effect>, Java generics are invariant, and a list
+        // inferred as ImmutableList<Presentation> will not do.
+        val framing: List<Effect> = listOf(
+            // Fit rather than crop: a landscape clip in a portrait merge is
+            // letterboxed, not cut in half. Losing half of someone's footage to an
+            // automatic decision would be the worst surprise of the two.
+            Presentation.createForWidthAndHeight(
+                size.width,
+                size.height,
+                Presentation.LAYOUT_SCALE_TO_FIT
             )
         )
+        return Effects(ImmutableList.of(), ImmutableList.copyOf(framing))
     }
 
     /**
@@ -261,7 +267,7 @@ class VideoProcessor(private val context: Context) {
      * audio track to borrow, the cue starts with the clip instead.
      */
     /** One timeline clip, with the look applied and overlay geometry if it floats. */
-    private fun editedClip(state: EditorUiState, clip: com.squish.app.timeline.Clip): EditedMediaItem {
+    private fun editedClip(state: EditorUiState, clip: Clip): EditedMediaItem {
         val item = MediaItem.Builder()
             .setUri(clip.uri ?: state.sourceUri)
             .setClippingConfiguration(
@@ -492,7 +498,7 @@ class VideoProcessor(private val context: Context) {
 
     private companion object {
         /** Often enough to feel live, rare enough not to compete with the encoder. */
-        const val PROGRESS_POLL_MS = 200L
+        val PROGRESS_POLL = 200.milliseconds
     }
 
     /**

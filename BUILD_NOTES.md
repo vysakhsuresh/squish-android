@@ -209,7 +209,8 @@ python3 tools/check_unresolved.py log        # renamed / misspelled references
 python3 tools/check_modifier_imports.py      # Modifier extensions used unimported
 python3 tools/check_nesting.py               # a declaration swallowed by a stray brace
 python3 tools/check_shaders.py               # a shader and its Kotlin disagreeing about uniforms
-python3 tools/check_dependencies.py          # a library imported but never declared
+python3 tools/check_dependencies.py          # a library imported but never declared,
+                                             #   and a Media3 file that has not opted in
 
 The spellchecker's vocabulary lives in `config/dictionaries/` — see the README
 there if the IDE is still reporting playhead and luma as typos.
