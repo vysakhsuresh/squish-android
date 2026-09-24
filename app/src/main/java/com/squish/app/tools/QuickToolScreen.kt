@@ -100,7 +100,18 @@ fun QuickToolScreen(
     }
 
     // Straight to the picker: the tile tap already said what they want to do.
-    LaunchedEffect(Unit) { if (!state.hasSource) openPicker() }
+    //
+    // Unless there is a session to pick back up. Six videos chosen and ordered for
+    // a merge is ten minutes of work, and throwing the picker over the top of it
+    // would mean starting that again - the very thing the draft exists to prevent.
+    LaunchedEffect(tool) {
+        val draft = viewModel.begin(tool)
+        if (draft != null) {
+            viewModel.restore(draft)
+        } else if (!state.hasSource) {
+            openPicker()
+        }
+    }
 
     SquishPage(
         title = tool.title,

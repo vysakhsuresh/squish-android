@@ -47,7 +47,16 @@ data class DraftSummary(
     val sourceUri: Uri,
     val durationMs: Long,
     val clipCount: Int,
-    val savedAtMillis: Long
+    val savedAtMillis: Long,
+    /**
+     * Which quick tool this is a draft of, or null for a timeline in the editor.
+     *
+     * The two live in different stores and are restored by different code, but on
+     * the dashboard they are one list: the person who left a merge half-set-up and
+     * the person who left a cut half-made both came back for the same reason, and
+     * sorting their work into two piles by which screen made it would help nobody.
+     */
+    val toolId: String? = null
 )
 
 class ProjectAutosave(context: Context) {

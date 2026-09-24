@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.SquishRepositories
+import com.squish.app.data.ToolDraft
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.Quality
 import com.squish.app.media.ExportPresets
@@ -18,13 +19,18 @@ import com.squish.app.media.VideoMeta
 import com.squish.app.media.VideoProcessor
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
+import java.io.File
+import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.File
-import java.util.UUID
+import kotlinx.coroutines.withContext
 
 /**
  * Drives the one-job tools. They share the editor's export pipeline - a quick
@@ -103,6 +109,100 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      */
     private val mergeMeta = HashMap<String, VideoMeta>()
     private val mergeSizes = HashMap<String, Long>()
+
+    private val autosave = SquishRepositories.toolAutosave(application)
+
+    /** Which tool this screen is, so a save knows what it is a draft of. */
+    private var tool: QuickTool? = null
+
+    /**
+     * Starts saving this tool's session, and hands back the one it left behind.
+     *
+     * Called once, as the screen opens. The ticker is the editor's: a fixed
+     * interval, a no-op when nothing changed, and never on the frame loop. What is
+     * saved is only the choices - which files, in which order, where the handles
+     * are - so the cost of a tick is a short string comparison.
+     */
+    suspend fun begin(tool: QuickTool): ToolDraft? {
+        if (this.tool != null) return null
+        this.tool = tool
+
+        viewModelScope.launch {
+            while (true) {
+                delay(AUTOSAVE_INTERVAL)
+                val current = _state.value
+                if (current.isExporting || current.isLoading) continue
+                withContext(Dispatchers.IO) { autosave.save(draftOf(tool, current)) }
+            }
+        }
+
+        return withContext(Dispatchers.IO) { autosave.peek(tool.id) }
+    }
+
+    private fun draftOf(tool: QuickTool, state: UiState) = ToolDraft(
+        toolId = tool.id,
+        title = if (tool == QuickTool.Merge) {
+            "${state.mergeClips.size} clips to merge"
+        } else {
+            state.name ?: tool.title
+        },
+        uris = if (tool == QuickTool.Merge) {
+            state.mergeClips.mapNotNull { it.uri }
+        } else {
+            listOfNotNull(state.sourceUri)
+        },
+        durationMs = state.exportDurationMs,
+        trimStartMs = state.trimStartMs,
+        trimEndMs = state.trimEndMs,
+        quality = state.quality.name,
+        fitToSize = state.fitToSize,
+        targetSizeMb = state.targetSizeMb,
+        savedAtMillis = System.currentTimeMillis()
+    )
+
+    /**
+     * Puts a saved session back.
+     *
+     * The files are re-probed rather than restored from the draft: their lengths
+     * and shapes are facts about the media, and a file that changed - or went
+     * away - underneath a draft must not be described by what was true yesterday.
+     * The trim is applied after the probe for the same reason, clamped to the
+     * length the file actually turned out to have.
+     */
+    fun restore(draft: ToolDraft) {
+        val tool = QuickTool.fromId(draft.toolId)
+        _state.update {
+            it.copy(
+                quality = runCatching { Quality.valueOf(draft.quality) }.getOrDefault(it.quality),
+                fitToSize = draft.fitToSize,
+                targetSizeMb = draft.targetSizeMb
+            )
+        }
+
+        if (tool == QuickTool.Merge) {
+            addMergeClips(draft.uris)
+            return
+        }
+
+        val uri = draft.uris.firstOrNull() ?: return
+        viewModelScope.launch {
+            load(uri)
+            // load() marks itself loading before it returns and probes on its own
+            // coroutine, resetting the handles to the whole clip when it lands. So
+            // the saved range can only go on afterwards - and it waits on the state
+            // flow itself rather than on a fixed delay, because how long a probe
+            // takes is a property of the file, not something to guess at.
+            _state.first { !it.isLoading && it.sourceUri == uri }
+            if (draft.trimEndMs > draft.trimStartMs) {
+                setTrim(draft.trimStartMs, draft.trimEndMs)
+            }
+        }
+    }
+
+    /** The session is finished - it produced a file, so there is nothing to resume. */
+    private fun clearDraft() {
+        tool?.let { autosave.clear(it.id) }
+    }
 
     fun load(uri: Uri) {
         if (_state.value.sourceUri == uri) return
@@ -349,6 +449,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                         createdAtMillis = System.currentTimeMillis()
                     )
                 )
+                clearDraft()
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
                 // Same typed vocabulary as the editor, so a failure reads the same
@@ -357,5 +458,10 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                 onError("${problem.title}. ${problem.fix}")
             }
         }
+    }
+
+    private companion object {
+        /** The editor's interval. A tool session changes far less often than a timeline. */
+        val AUTOSAVE_INTERVAL = 1_500.milliseconds
     }
 }

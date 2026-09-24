@@ -2,8 +2,8 @@ package com.squish.app.navigation
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -18,21 +18,24 @@ import com.squish.app.tools.QuickTool
 import com.squish.app.tools.QuickToolScreen
 
 /**
- * Runs [block] only while this screen is still the one on top.
+ * Runs [block] only while this screen is still the one on top of the back stack.
  *
- * A second tap that lands before the first navigation has finished is the reason
- * the editor crashed on a double press of back. Two pops go through, the second
- * one from a screen that is already on its way out; the entry it belonged to is
- * destroyed, and the screen composing against it asks for a view model that no
- * longer has anywhere to live. The whole navigation graph is routed through this
- * so no screen has to remember to guard itself.
+ * A second tap that lands before the first navigation has happened is why the
+ * editor crashed on a double press of back. Two pops go through, the second from
+ * a screen already on its way out; the entry it belonged to is destroyed, and the
+ * screen composing against it asks for a view model that no longer has anywhere
+ * to live. The whole graph routes through this so no screen has to guard itself.
  *
- * The check is the lifecycle rather than a timer, because what makes the second
- * tap wrong is not that it was fast - it is that the screen it came from had
- * already left.
+ * The test is the back stack, not the lifecycle. Checking `RESUMED` looked
+ * equivalent and was not: a result handed back by the photo picker arrives while
+ * the activity is still on its way to resumed, so the entry is merely STARTED and
+ * every "open this in the editor" was dropped on the floor. Whether this screen
+ * is still the top of the stack is the thing actually being asked, it is true the
+ * instant a picker returns, and it goes false the moment the first pop lands -
+ * which is the whole point.
  */
-private inline fun NavBackStackEntry.once(block: () -> Unit) {
-    if (lifecycle.currentState == Lifecycle.State.RESUMED) block()
+private inline fun NavController.fromTopOf(entry: NavBackStackEntry, block: () -> Unit) {
+    if (currentBackStackEntry === entry) block()
 }
 
 @Composable
@@ -47,23 +50,23 @@ fun SquishNavHost() {
         composable(Destination.Home.route) { entry ->
             HomeScreen(
                 onOpenEditor = { uri ->
-                    entry.once {
+                    navController.fromTopOf(entry) {
                         navController.navigate(Destination.Editor.buildRoute(Uri.encode(uri.toString())))
                     }
                 },
                 onOpenTool = { tool ->
-                    entry.once { navController.navigate(Destination.QuickTool.buildRoute(tool.id)) }
+                    navController.fromTopOf(entry) { navController.navigate(Destination.QuickTool.buildRoute(tool.id)) }
                 },
-                onOpenLibrary = { entry.once { navController.navigate(Destination.Library.route) } },
-                onOpenSettings = { entry.once { navController.navigate(Destination.Settings.route) } }
+                onOpenLibrary = { navController.fromTopOf(entry) { navController.navigate(Destination.Library.route) } },
+                onOpenSettings = { navController.fromTopOf(entry) { navController.navigate(Destination.Settings.route) } }
             )
         }
 
         composable(Destination.Library.route) { entry ->
             LibraryScreen(
-                onBack = { entry.once { navController.popBackStack() } },
+                onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onOpen = { path ->
-                    entry.once {
+                    navController.fromTopOf(entry) {
                         navController.navigate(
                             Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Export"))
                         )
@@ -73,7 +76,7 @@ fun SquishNavHost() {
         }
 
         composable(Destination.Settings.route) { entry ->
-            SettingsScreen(onBack = { entry.once { navController.popBackStack() } })
+            SettingsScreen(onBack = { navController.fromTopOf(entry) { navController.popBackStack() } })
         }
 
         composable(
@@ -83,9 +86,9 @@ fun SquishNavHost() {
             val tool = QuickTool.fromId(entry.arguments?.getString("toolId"))
             QuickToolScreen(
                 tool = tool,
-                onBack = { entry.once { navController.popBackStack() } },
+                onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onExported = { path ->
-                    entry.once {
+                    navController.fromTopOf(entry) {
                         navController.navigate(
                             Destination.Export.buildRoute(Uri.encode(path), Uri.encode(tool.title))
                         ) {
@@ -94,7 +97,7 @@ fun SquishNavHost() {
                     }
                 },
                 onOpenInEditor = { uri ->
-                    entry.once {
+                    navController.fromTopOf(entry) {
                         navController.navigate(
                             Destination.Editor.buildRoute(Uri.encode(uri.toString()))
                         ) {
@@ -112,9 +115,9 @@ fun SquishNavHost() {
             val encoded = entry.arguments?.getString("videoUri").orEmpty()
             EditorScreen(
                 sourceUri = Uri.parse(Uri.decode(encoded)),
-                onBack = { entry.once { navController.popBackStack() } },
+                onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onExported = { path ->
-                    entry.once {
+                    navController.fromTopOf(entry) {
                         navController.navigate(
                             Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Export"))
                         ) {
@@ -138,7 +141,7 @@ fun SquishNavHost() {
                 resultPath = Uri.decode(encoded),
                 jobLabel = job.ifBlank { "Export" },
                 onDone = {
-                    entry.once {
+                    navController.fromTopOf(entry) {
                         navController.navigate(Destination.Home.route) {
                             popUpTo(Destination.Home.route) { inclusive = true }
                         }

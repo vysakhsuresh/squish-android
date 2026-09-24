@@ -18,6 +18,9 @@ object SquishRepositories {
     @Volatile
     private var autosaveStore: ProjectAutosave? = null
 
+    @Volatile
+    private var toolAutosaveStore: ToolAutosave? = null
+
     fun history(context: Context): HistoryRepository =
         historyRepository ?: synchronized(this) {
             historyRepository ?: HistoryRepository(context.applicationContext).also { historyRepository = it }
@@ -26,5 +29,10 @@ object SquishRepositories {
     fun autosave(context: Context): ProjectAutosave =
         autosaveStore ?: synchronized(this) {
             autosaveStore ?: ProjectAutosave(context.applicationContext).also { autosaveStore = it }
+        }
+
+    fun toolAutosave(context: Context): ToolAutosave =
+        toolAutosaveStore ?: synchronized(this) {
+            toolAutosaveStore ?: ToolAutosave(context.applicationContext).also { toolAutosaveStore = it }
         }
 }

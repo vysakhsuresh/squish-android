@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
@@ -140,7 +141,12 @@ fun HomeScreen(
                     drafts.take(3).forEach { draft ->
                         DraftRow(
                             draft = draft,
-                            onOpen = { onOpenEditor(draft.sourceUri) },
+                            onOpen = {
+                                // A tool draft reopens its tool, which restores
+                                // itself; an edit reopens the video it was of.
+                                val tool = draft.toolId?.let { QuickTool.fromId(it) }
+                                if (tool != null) onOpenTool(tool) else onOpenEditor(draft.sourceUri)
+                            },
                             onPreview = { previewingDraft = draft },
                             onDiscard = { pendingDiscard = draft }
                         )
@@ -193,7 +199,8 @@ fun HomeScreen(
             actionLabel = "Continue",
             onAction = {
                 previewingDraft = null
-                onOpenEditor(draft.sourceUri)
+                val tool = draft.toolId?.let { QuickTool.fromId(it) }
+                if (tool != null) onOpenTool(tool) else onOpenEditor(draft.sourceUri)
             },
             onDismiss = { previewingDraft = null }
         )
@@ -202,14 +209,20 @@ fun HomeScreen(
     pendingDiscard?.let { draft ->
         ConfirmDialog(
             title = "Discard \"${draft.title}\"?",
-            body = "This throws away the edit in progress - " +
-                "${draft.clipCount} ${if (draft.clipCount == 1) "clip" else "clips"}, " +
-                "with every cut, look and caption on it.",
+            body = draft.toolId?.let { id ->
+                "This throws away the ${QuickTool.fromId(id).title.lowercase()} you had " +
+                    "set up - ${draft.clipCount} " +
+                    "${if (draft.clipCount == 1) "file" else "files"}, and the settings on them."
+            } ?: (
+                "This throws away the edit in progress - " +
+                    "${draft.clipCount} ${if (draft.clipCount == 1) "clip" else "clips"}, " +
+                    "with every cut, look and caption on it."
+                ),
             caution = "There is no undo and no bin to fetch it back from. " +
                 "Your original video is untouched; the edit built on it is not.",
             confirmLabel = "Discard",
             onConfirm = {
-                viewModel.discardDraft(draft.id)
+                viewModel.discardDraft(draft)
                 pendingDiscard = null
             },
             onDismiss = { pendingDiscard = null }
@@ -323,7 +336,7 @@ private fun DraftRow(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                Icons.Filled.Edit,
+                if (draft.toolId != null) Icons.Filled.Bolt else Icons.Filled.Edit,
                 contentDescription = null,
                 tint = SquishColors.Cyan,
                 modifier = Modifier.size(17.dp)
@@ -340,6 +353,10 @@ private fun DraftRow(
             )
             Text(
                 buildString {
+                    draft.toolId?.let {
+                        append(QuickTool.fromId(it).title)
+                        append(" · ")
+                    }
                     append(draft.clipCount)
                     append(if (draft.clipCount == 1) " clip · " else " clips · ")
                     append(agoOf(draft.savedAtMillis))

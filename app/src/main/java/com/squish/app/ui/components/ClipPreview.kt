@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -115,17 +116,34 @@ fun ClipPreview(
 
     DisposableEffect(player) { onDispose { player.release() } }
 
+    // Read through state that is kept current, never captured directly.
+    //
+    // The ticker below is a `LaunchedEffect` keyed on the player, so it starts once
+    // and runs for the life of the preview with whatever these were on the *first*
+    // composition. On the first composition there is a source but no measured
+    // duration yet - the probe is still running - so every one of them was zero,
+    // and they stayed zero for the rest of the session. The effect of that was a
+    // preview that would not play: the loop compared the position against an end
+    // point of zero, decided the clip had finished, and paused it again within a
+    // frame of every press of play. Reading through `rememberUpdatedState` means
+    // the loop sees the real numbers the moment the probe returns them.
+    val latestCount by rememberUpdatedState(sources.size)
+    val latestOffsets by rememberUpdatedState(offsets)
+    val latestTotal by rememberUpdatedState(totalMs)
+    val latestStart by rememberUpdatedState(startMs)
+    val latestEnd by rememberUpdatedState(endMs)
+
     fun jointPosition(): Long {
-        val index = player.currentMediaItemIndex.coerceIn(0, (sources.size - 1).coerceAtLeast(0))
-        val base = offsets.getOrElse(index) { 0L }
-        return (base + player.currentPosition).coerceIn(0L, totalMs)
+        val index = player.currentMediaItemIndex.coerceIn(0, (latestCount - 1).coerceAtLeast(0))
+        val base = latestOffsets.getOrElse(index) { 0L }
+        return (base + player.currentPosition).coerceIn(0L, latestTotal)
     }
 
     fun seekJoint(target: Long) {
-        if (sources.isEmpty()) return
-        val clamped = target.coerceIn(0L, totalMs)
-        val index = offsets.indexOfLast { it <= clamped }.coerceAtLeast(0)
-        player.seekTo(index, clamped - offsets[index])
+        if (latestCount == 0) return
+        val clamped = target.coerceIn(0L, latestTotal)
+        val index = latestOffsets.indexOfLast { it <= clamped }.coerceAtLeast(0)
+        player.seekTo(index, clamped - latestOffsets[index])
         positionMs = clamped
     }
 
@@ -142,10 +160,11 @@ fun ClipPreview(
             if (live) {
                 val at = jointPosition()
                 // The range is the edit. Running past its out point would preview
-                // footage the render is about to drop.
-                if (at >= endMs) {
+                // footage the render is about to drop. An end point of zero means
+                // nothing has been measured yet, and is not a clip that has ended.
+                if (latestEnd > 0L && at >= latestEnd) {
                     player.pause()
-                    seekJoint(startMs)
+                    seekJoint(latestStart)
                 } else {
                     positionMs = at
                 }
@@ -159,7 +178,12 @@ fun ClipPreview(
             player.pause()
         } else {
             val at = jointPosition()
-            if (at < startMs || at >= endMs - 40L) seekJoint(startMs)
+            // Rewind to the head only when the playhead is genuinely outside the
+            // range. With an unmeasured clip that test used to be true of every
+            // position, so play seeked to zero and the loop stopped it again.
+            if (latestEnd > 0L && (at < latestStart || at >= latestEnd - 40L)) {
+                seekJoint(latestStart)
+            }
             player.play()
         }
         playing = player.isPlaying
