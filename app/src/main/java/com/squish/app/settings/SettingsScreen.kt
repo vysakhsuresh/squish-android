@@ -1,10 +1,13 @@
 package com.squish.app.settings
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,10 +17,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.LocalCafe
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Icon
@@ -41,7 +47,6 @@ import com.squish.app.ui.components.SectionHeading
 import com.squish.app.ui.components.SquishCard
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.components.SquishOutlinedButton
-import androidx.compose.material.icons.filled.AlternateEmail
 import com.squish.app.ui.components.SquishPage
 import com.squish.app.ui.theme.SquishColors
 
@@ -58,6 +63,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     ) {
         AboutCard()
         MakerCard()
+        SupportCard()
         PrivacyCard()
         WhatItDoesCard()
         StorageCard(
@@ -100,28 +106,45 @@ private fun MakerCard() {
             color = SquishColors.TextSecondary
         )
 
-        ContactRow(
-            icon = Icons.Filled.AlternateEmail,
-            label = "Email",
-            value = MAKER_EMAIL
+        // Two tiles, no addresses. The address and the number are what the tap
+        // is for, not what the screen is for: printing them puts a live mailbox
+        // and a live phone number in front of every screenshot, scraper and
+        // shoulder, and buys the reader nothing they could not get by tapping.
+        // If nothing on the phone can take the tap, it goes to the clipboard -
+        // still reachable, still not on display.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            val subject = "Squish ${BuildConfig.VERSION_NAME}"
-            unreachable = context.openOrNull(
-                Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$MAKER_EMAIL"))
-                    .putExtra(Intent.EXTRA_SUBJECT, subject),
-                ifMissing = "No email app installed — write to $MAKER_EMAIL"
-            )
-        }
+            ContactTile(
+                icon = Icons.Filled.MailOutline,
+                label = "Email us",
+                hint = "Opens your mail app",
+                modifier = Modifier.weight(1f)
+            ) {
+                val subject = "Squish ${BuildConfig.VERSION_NAME}"
+                unreachable = context.openOrCopy(
+                    intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$MAKER_EMAIL"))
+                        .putExtra(Intent.EXTRA_SUBJECT, subject),
+                    clip = MAKER_EMAIL,
+                    clipLabel = "Layerbit email",
+                    ifMissing = "No mail app here — the address is on your clipboard"
+                )
+            }
 
-        ContactRow(
-            icon = Icons.Filled.Chat,
-            label = "WhatsApp",
-            value = MAKER_PHONE_DISPLAY
-        ) {
-            unreachable = context.openOrNull(
-                Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$MAKER_PHONE_E164")),
-                ifMissing = "Nothing here can open WhatsApp — message $MAKER_PHONE_DISPLAY"
-            )
+            ContactTile(
+                icon = Icons.Filled.ChatBubbleOutline,
+                label = "Message us",
+                hint = "Opens your chat app",
+                modifier = Modifier.weight(1f)
+            ) {
+                unreachable = context.openOrCopy(
+                    intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$MAKER_PHONE_E164")),
+                    clip = MAKER_PHONE_E164,
+                    clipLabel = "Layerbit number",
+                    ifMissing = "Nothing here can open that chat — the number is on your clipboard"
+                )
+            }
         }
 
         unreachable?.let {
@@ -131,47 +154,139 @@ private fun MakerCard() {
 }
 
 /**
- * Starts an intent, and returns the message to show if nothing could handle it.
+ * Starts an intent; if nothing can take it, puts the detail on the clipboard.
  *
  * Package visibility hides other apps from a query on Android 11 and up, so
- * asking first would report "no email app" on a phone that has three. Starting it
+ * asking first would report "no mail app" on a phone that has three. Starting it
  * and catching the failure is the reading that is actually accurate.
+ *
+ * The clipboard is the fallback rather than printing the address on screen: a
+ * phone with no mail app still needs a way to reach it, and the way to reach it
+ * does not have to be legible to everyone looking at the phone.
  */
-private fun Context.openOrNull(intent: Intent, ifMissing: String): String? = try {
+private fun Context.openOrCopy(
+    intent: Intent,
+    clip: String,
+    clipLabel: String,
+    ifMissing: String
+): String? = try {
     startActivity(intent)
+    null
+} catch (_: ActivityNotFoundException) {
+    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    clipboard?.setPrimaryClip(ClipData.newPlainText(clipLabel, clip))
+    ifMissing
+}
+
+/** Opens a link in whatever the phone uses for the web. */
+private fun Context.openLink(url: String, ifMissing: String): String? = try {
+    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     null
 } catch (_: ActivityNotFoundException) {
     ifMissing
 }
 
+/**
+ * One way of getting in touch, as a target rather than a transcript.
+ *
+ * Square-ish and side by side, because the two are equal choices - a list with
+ * the address written out made one of them look like the real one and the other
+ * like a footnote.
+ */
 @Composable
-private fun ContactRow(
+private fun ContactTile(
     icon: ImageVector,
     label: String,
-    value: String,
+    hint: String,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
             .background(SquishColors.Cyan.copy(alpha = 0.10f))
+            .border(1.dp, SquishColors.Cyan.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Icon(icon, contentDescription = null, tint = SquishColors.Cyan, modifier = Modifier.size(18.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
-            Text(value, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+        Icon(icon, contentDescription = null, tint = SquishColors.Cyan, modifier = Modifier.size(20.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+            Text(hint, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
         }
-        Icon(
-            Icons.Filled.OpenInNew,
-            contentDescription = null,
-            tint = SquishColors.Cyan,
-            modifier = Modifier.size(16.dp)
+    }
+}
+
+/**
+ * A tip jar, and nothing more than one.
+ *
+ * Squish has no subscription, no advertisements, no paid tier and no telemetry
+ * to sell, which is a position worth keeping and also one that pays for nothing.
+ * So: an entirely optional way to help, on a card that never nags, never counts
+ * down, and never appears anywhere but here. Nothing in the app is locked behind
+ * it and nothing about the app changes if it is never tapped - the moment a tip
+ * jar starts withholding something it has stopped being a tip jar.
+ */
+@Composable
+private fun SupportCard() {
+    val context = LocalContext.current
+    var unreachable by remember { mutableStateOf<String?>(null) }
+
+    SquishCard(accent = SquishColors.Amber) {
+        SectionHeading(
+            title = "Buy us a coffee",
+            subtitle = "Optional, always",
+            icon = Icons.Filled.LocalCafe,
+            accent = SquishColors.Amber
         )
+        Text(
+            "Squish is free, has no advertisements and asks for nothing about you. " +
+                "If it saved you an evening and you feel like putting something in the " +
+                "jar, it goes straight into the next build. If not, nothing here changes.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextSecondary
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(SquishColors.Amber.copy(alpha = 0.12f))
+                .border(1.dp, SquishColors.Amber.copy(alpha = 0.28f), RoundedCornerShape(12.dp))
+                .clickable {
+                    unreachable = context.openLink(
+                        SUPPORT_URL,
+                        ifMissing = "No browser here to open that with"
+                    )
+                }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                Icons.Filled.LocalCafe,
+                contentDescription = null,
+                tint = SquishColors.Amber,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                "Buy us a coffee",
+                style = MaterialTheme.typography.bodyMedium,
+                color = SquishColors.TextPrimary,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                Icons.Filled.OpenInNew,
+                contentDescription = null,
+                tint = SquishColors.Amber,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        unreachable?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.Yellow)
+        }
     }
 }
 
@@ -293,3 +408,12 @@ private const val MAKER_EMAIL = "ceo@layerbit.co.in"
 /** What a person reads, and what wa.me needs: country code, no plus, no spaces. */
 private const val MAKER_PHONE_DISPLAY = "+91 62825 95823"
 private const val MAKER_PHONE_E164 = "916282595823"
+
+/**
+ * The tip jar's page.
+ *
+ * Change this to the real handle before shipping - it is the one string on this
+ * screen that cannot be checked from inside the app, and a support link that goes
+ * to a 404 is worse than no support link.
+ */
+private const val SUPPORT_URL = "https://buymeacoffee.com/layerbit"

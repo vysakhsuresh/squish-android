@@ -88,6 +88,18 @@ class PreviewEngine(private val context: Context) {
     val baseA: ExoPlayer = newPlayer()
     val baseB: ExoPlayer = newPlayer()
 
+    /**
+     * True once [release] has run.
+     *
+     * ExoPlayer throws on almost anything asked of it after release, and there is
+     * no way to ask it whether it has been released. Leaving the editor tears this
+     * down while a tick, a seek or a tap on the picture may still be in flight, so
+     * every way in checks this first. The alternative is a crash on the way out of
+     * the screen, which is the worst possible moment for one - the work is done and
+     * the user is already leaving.
+     */
+    private var released = false
+
     private val overlayPlayers = LinkedHashMap<Int, ExoPlayer>()
     private val audioPlayers = LinkedHashMap<String, ExoPlayer>()
     private val audioSources = HashMap<String, String>()
@@ -217,6 +229,7 @@ class PreviewEngine(private val context: Context) {
         rotationDegrees: Int,
         cropRatio: Float?
     ) {
+        if (released) return
         this.captions = captions
         applyFraming(rotationDegrees, cropRatio)
         val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
@@ -354,6 +367,7 @@ class PreviewEngine(private val context: Context) {
     // ---- Transport --------------------------------------------------------------
 
     fun play() {
+        if (released) return
         if (durationMs > 0 && positionMs >= durationMs) seekTo(0)
         playing = true
         anchorTimelineMs = positionMs
@@ -365,15 +379,20 @@ class PreviewEngine(private val context: Context) {
     }
 
     fun pause() {
+        if (released) return
         playing = false
         baseA.pause(); baseB.pause()
         overlayPlayers.values.forEach { it.pause() }
         audioPlayers.values.forEach { it.pause() }
     }
 
-    fun togglePlay() = if (playing) pause() else play()
+    fun togglePlay() {
+        if (released) return
+        if (playing) pause() else play()
+    }
 
     fun seekTo(timelineMs: Long) {
+        if (released) return
         positionMs = timelineMs.coerceIn(0L, maxOf(durationMs, 0L))
         anchorTimelineMs = positionMs
         anchorWallMs = SystemClock.elapsedRealtime()
@@ -405,6 +424,7 @@ class PreviewEngine(private val context: Context) {
     // ---- The clock --------------------------------------------------------------
 
     fun tick(): PreviewFrame {
+        if (released) return PreviewFrame()
         val now = SystemClock.elapsedRealtime()
 
         val clockPlayer = if (clockKey == KEY_A) baseA else baseB
@@ -684,6 +704,8 @@ class PreviewEngine(private val context: Context) {
     }
 
     fun release() {
+        if (released) return
+        released = true
         baseA.release()
         baseB.release()
         overlayPlayers.values.forEach { it.release() }

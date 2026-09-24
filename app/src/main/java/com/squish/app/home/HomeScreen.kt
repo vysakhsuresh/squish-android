@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
@@ -51,6 +52,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squish.app.data.DraftSummary
 import com.squish.app.tools.QuickTool
 import com.squish.app.ui.components.ConfirmDialog
+import com.squish.app.ui.components.VideoPreviewSheet
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
@@ -85,6 +87,11 @@ fun HomeScreen(
     // A draft is unfinished work, which makes discarding it the most expensive
     // tap on this screen - and it sits one thumb-width from "open". It asks first.
     var pendingDiscard by remember { mutableStateOf<DraftSummary?>(null) }
+
+    // What a draft is called says nothing about what is in it. Being able to look
+    // before committing to reopening it is the difference between three drafts
+    // being a safety net and being three things to sort out later.
+    var previewingDraft by remember { mutableStateOf<DraftSummary?>(null) }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
         Column(
@@ -134,6 +141,7 @@ fun HomeScreen(
                         DraftRow(
                             draft = draft,
                             onOpen = { onOpenEditor(draft.sourceUri) },
+                            onPreview = { previewingDraft = draft },
                             onDiscard = { pendingDiscard = draft }
                         )
                     }
@@ -172,6 +180,23 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
         }
+    }
+
+    previewingDraft?.let { draft ->
+        VideoPreviewSheet(
+            title = draft.title,
+            subtitle = "${draft.clipCount} ${if (draft.clipCount == 1) "clip" else "clips"} · " +
+                "saved ${agoOf(draft.savedAtMillis)}",
+            uri = draft.sourceUri,
+            durationMs = draft.durationMs,
+            accent = SquishColors.Cyan,
+            actionLabel = "Continue",
+            onAction = {
+                previewingDraft = null
+                onOpenEditor(draft.sourceUri)
+            },
+            onDismiss = { previewingDraft = null }
+        )
     }
 
     pendingDiscard?.let { draft ->
@@ -273,7 +298,12 @@ private fun EditorHero(onClick: () -> Unit) {
  * made visible, because a recovery nobody knows about is not one.
  */
 @Composable
-private fun DraftRow(draft: DraftSummary, onOpen: () -> Unit, onDiscard: () -> Unit) {
+private fun DraftRow(
+    draft: DraftSummary,
+    onOpen: () -> Unit,
+    onPreview: () -> Unit,
+    onDiscard: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -318,6 +348,17 @@ private fun DraftRow(draft: DraftSummary, onOpen: () -> Unit, onDiscard: () -> U
                 color = SquishColors.TextMuted
             )
         }
+
+        Icon(
+            Icons.Filled.PlayArrow,
+            contentDescription = "Preview this draft",
+            tint = SquishColors.Cyan,
+            modifier = Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .clickable(onClick = onPreview)
+                .padding(7.dp)
+        )
 
         Icon(
             Icons.Filled.Close,

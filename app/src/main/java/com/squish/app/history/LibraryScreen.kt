@@ -58,6 +58,7 @@ import com.squish.app.home.formatSize
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.ConfirmDialog
+import com.squish.app.ui.components.VideoPreviewSheet
 import com.squish.app.ui.theme.SquishColors
 import java.io.File
 
@@ -82,6 +83,10 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     // Nothing is deleted from a tap. The tap only names what a second, deliberate
     // press would destroy, and the dialogue below says plainly that it is final.
     var pendingDelete by remember { mutableStateOf<ExportRecord?>(null) }
+
+    // Watching one does not leave the list. The row that opened it is still under
+    // the sheet, and the list is still scrolled exactly where it was.
+    var previewing by remember { mutableStateOf<ExportRecord?>(null) }
 
     val shown = remember(records, query) {
         if (query.isBlank()) records
@@ -130,6 +135,7 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                             LibraryRow(
                                 record = record,
                                 onOpen = { onOpen(record.outputPath) },
+                                onPreview = { previewing = record },
                                 onShare = { ShareUtils.share(context, record.outputPath, null) },
                                 onRemove = { pendingDelete = record }
                             )
@@ -144,6 +150,29 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 24.dp)
             )
         }
+    }
+
+    previewing?.let { record ->
+        VideoPreviewSheet(
+            title = record.title,
+            subtitle = "${Timecode.format(record.durationMs).removeSuffix(".000")}  ·  " +
+                formatSize(record.outputSizeBytes),
+            uri = android.net.Uri.fromFile(File(record.outputPath)),
+            durationMs = record.durationMs,
+            accent = SquishColors.Violet,
+            // Recorded at export time, so there is nothing to measure off the file.
+            aspect = if (record.width > 0 && record.height > 0) {
+                record.width.toFloat() / record.height
+            } else {
+                0f
+            },
+            actionLabel = "Open",
+            onAction = {
+                previewing = null
+                onOpen(record.outputPath)
+            },
+            onDismiss = { previewing = null }
+        )
     }
 
     pendingDelete?.let { record ->
@@ -240,6 +269,7 @@ private fun EmptyState(title: String, body: String) {
 private fun LibraryRow(
     record: ExportRecord,
     onOpen: () -> Unit,
+    onPreview: () -> Unit,
     onShare: () -> Unit,
     onRemove: () -> Unit
 ) {
@@ -329,6 +359,7 @@ private fun LibraryRow(
         }
 
         if (exists) {
+            RowAction(Icons.Filled.PlayArrow, "Preview ${record.title}", SquishColors.Violet, onPreview)
             RowAction(Icons.Filled.Share, "Share ${record.title}", SquishColors.Cyan, onShare)
         }
         RowAction(Icons.Filled.DeleteOutline, "Remove ${record.title}", SquishColors.Pink, onRemove)

@@ -5,7 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +46,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -73,6 +76,71 @@ private const val MIN_PPS = 2f
 private const val MAX_PPS = 400f
 
 private fun Long.onTimeline(pixelsPerSecond: Float): Dp = (this / 1000f * pixelsPerSecond).dp
+
+/**
+ * How far two fingers must change their spread before it counts as a pinch.
+ *
+ * Fingers resting on glass are never quite still, and a detector that acted on
+ * every pixel of that made the strip shiver in place.
+ */
+private const val PINCH_SLOP_PX = 12f
+
+/**
+ * A pinch, and nothing but a pinch.
+ *
+ * This replaces `detectTransformGestures`, which was the wrong tool and broke the
+ * strip badly. That detector treats a one-finger drag as a pan: once the drag
+ * passes touch slop it consumes every event, so the scroll never moved, a clip
+ * could not be dragged, and the playhead could not be taken hold of - it only
+ * ever answered on the attempts where the gesture happened to start somewhere the
+ * detector had already given up on. It also reports a zoom factor that is not
+ * exactly 1 for a single pointer, which is what made the timeline shiver and
+ * jump scale under a finger that was only trying to scrub.
+ *
+ * So: nothing happens until a second finger is down, and while only one is down
+ * no event is consumed at all - this detector is invisible to the scroll, the
+ * clips and the playhead. Two fingers are unambiguous, and only then are the
+ * events taken, so the scroll underneath does not pan while the zoom happens.
+ *
+ * [onZoom] receives a ratio - above one for spreading, below for pinching in.
+ */
+private suspend fun PointerInputScope.detectPinch(onZoom: (Float) -> Unit) {
+    awaitEachGesture {
+        // The initial pass, so this is offered the gesture before the scroll that
+        // wraps it. Nothing is consumed here: at one finger there is no pinch.
+        var spread = 0f
+        var engaged = false
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val down = event.changes.filter { it.pressed }
+            if (down.isEmpty()) break
+
+            if (down.size < 2) {
+                // Back to one finger, mid-gesture. Forget the span rather than
+                // measure the next one against it, or lifting one finger of a
+                // pinch would read as an enormous sudden zoom.
+                spread = 0f
+                engaged = false
+                continue
+            }
+
+            val distance = (down[0].position - down[1].position).getDistance()
+            if (distance <= 0f) continue
+
+            if (spread <= 0f) {
+                spread = distance
+                continue
+            }
+
+            if (!engaged && kotlin.math.abs(distance - spread) < PINCH_SLOP_PX) continue
+            engaged = true
+
+            onZoom(distance / spread)
+            spread = distance
+            down.forEach { if (it.positionChanged()) it.consume() }
+        }
+    }
+}
 
 /**
  * A real multi-track timeline: clips can be selected, dragged, trimmed at either
@@ -204,18 +272,13 @@ fun TimelineEditor(
                 .onSizeChanged { viewportPx = it.width }
                 // Pinch to zoom, anchored on the playhead.
                 //
-                // Ahead of horizontalScroll in the chain, because a scroll that
-                // saw the gesture first would consume it and the pinch would
-                // never arrive. detectTransformGestures reports pan as well, and
-                // it is deliberately ignored: panning is the scroll's job and
-                // doing both here would fight it.
-                //
-                // Anchored rather than free because a zoom that keeps the left
-                // edge still throws whatever you were looking at off the screen -
-                // the playhead is where your attention is, so it stays put.
+                // Ahead of horizontalScroll in the chain so it sees the gesture on
+                // the initial pass, before the scroll can claim it. Anchored rather
+                // than free because a zoom that keeps the left edge still throws
+                // whatever you were looking at off the screen - the playhead is
+                // where your attention is, so it stays put.
                 .pointerInput(Unit) {
-                    detectTransformGestures { _, _, zoom, _ ->
-                        if (zoom == 1f) return@detectTransformGestures
+                    detectPinch { zoom ->
                         latestZoomTo((latestPps * zoom).coerceIn(MIN_PPS, MAX_PPS))
                     }
                 }

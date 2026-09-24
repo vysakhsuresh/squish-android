@@ -2,6 +2,8 @@ package com.squish.app.navigation
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.Lifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -15,6 +17,24 @@ import com.squish.app.settings.SettingsScreen
 import com.squish.app.tools.QuickTool
 import com.squish.app.tools.QuickToolScreen
 
+/**
+ * Runs [block] only while this screen is still the one on top.
+ *
+ * A second tap that lands before the first navigation has finished is the reason
+ * the editor crashed on a double press of back. Two pops go through, the second
+ * one from a screen that is already on its way out; the entry it belonged to is
+ * destroyed, and the screen composing against it asks for a view model that no
+ * longer has anywhere to live. The whole navigation graph is routed through this
+ * so no screen has to remember to guard itself.
+ *
+ * The check is the lifecycle rather than a timer, because what makes the second
+ * tap wrong is not that it was fast - it is that the screen it came from had
+ * already left.
+ */
+private inline fun NavBackStackEntry.once(block: () -> Unit) {
+    if (lifecycle.currentState == Lifecycle.State.RESUMED) block()
+}
+
 @Composable
 fun SquishNavHost() {
     val navController = rememberNavController()
@@ -24,50 +44,62 @@ fun SquishNavHost() {
     // splash meant the same mark animated twice, back to back.
     NavHost(navController = navController, startDestination = Destination.Home.route) {
 
-        composable(Destination.Home.route) {
+        composable(Destination.Home.route) { entry ->
             HomeScreen(
                 onOpenEditor = { uri ->
-                    navController.navigate(Destination.Editor.buildRoute(Uri.encode(uri.toString())))
+                    entry.once {
+                        navController.navigate(Destination.Editor.buildRoute(Uri.encode(uri.toString())))
+                    }
                 },
-                onOpenTool = { tool -> navController.navigate(Destination.QuickTool.buildRoute(tool.id)) },
-                onOpenLibrary = { navController.navigate(Destination.Library.route) },
-                onOpenSettings = { navController.navigate(Destination.Settings.route) }
+                onOpenTool = { tool ->
+                    entry.once { navController.navigate(Destination.QuickTool.buildRoute(tool.id)) }
+                },
+                onOpenLibrary = { entry.once { navController.navigate(Destination.Library.route) } },
+                onOpenSettings = { entry.once { navController.navigate(Destination.Settings.route) } }
             )
         }
 
-        composable(Destination.Library.route) {
+        composable(Destination.Library.route) { entry ->
             LibraryScreen(
-                onBack = { navController.popBackStack() },
+                onBack = { entry.once { navController.popBackStack() } },
                 onOpen = { path ->
-                    navController.navigate(
-                        Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Export"))
-                    )
+                    entry.once {
+                        navController.navigate(
+                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Export"))
+                        )
+                    }
                 }
             )
         }
 
-        composable(Destination.Settings.route) {
-            SettingsScreen(onBack = { navController.popBackStack() })
+        composable(Destination.Settings.route) { entry ->
+            SettingsScreen(onBack = { entry.once { navController.popBackStack() } })
         }
 
         composable(
             route = Destination.QuickTool.route,
             arguments = listOf(navArgument("toolId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val tool = QuickTool.fromId(backStackEntry.arguments?.getString("toolId"))
+        ) { entry ->
+            val tool = QuickTool.fromId(entry.arguments?.getString("toolId"))
             QuickToolScreen(
                 tool = tool,
-                onBack = { navController.popBackStack() },
+                onBack = { entry.once { navController.popBackStack() } },
                 onExported = { path ->
-                    navController.navigate(
-                        Destination.Export.buildRoute(Uri.encode(path), Uri.encode(tool.title))
-                    ) {
-                        popUpTo(Destination.Home.route)
+                    entry.once {
+                        navController.navigate(
+                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode(tool.title))
+                        ) {
+                            popUpTo(Destination.Home.route)
+                        }
                     }
                 },
                 onOpenInEditor = { uri ->
-                    navController.navigate(Destination.Editor.buildRoute(Uri.encode(uri.toString()))) {
-                        popUpTo(Destination.Home.route)
+                    entry.once {
+                        navController.navigate(
+                            Destination.Editor.buildRoute(Uri.encode(uri.toString()))
+                        ) {
+                            popUpTo(Destination.Home.route)
+                        }
                     }
                 }
             )
@@ -76,16 +108,18 @@ fun SquishNavHost() {
         composable(
             route = Destination.Editor.route,
             arguments = listOf(navArgument("videoUri") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val encoded = backStackEntry.arguments?.getString("videoUri").orEmpty()
+        ) { entry ->
+            val encoded = entry.arguments?.getString("videoUri").orEmpty()
             EditorScreen(
                 sourceUri = Uri.parse(Uri.decode(encoded)),
-                onBack = { navController.popBackStack() },
+                onBack = { entry.once { navController.popBackStack() } },
                 onExported = { path ->
-                    navController.navigate(
-                        Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Export"))
-                    ) {
-                        popUpTo(Destination.Home.route)
+                    entry.once {
+                        navController.navigate(
+                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Export"))
+                        ) {
+                            popUpTo(Destination.Home.route)
+                        }
                     }
                 }
             )
@@ -97,15 +131,17 @@ fun SquishNavHost() {
                 navArgument("resultPath") { type = NavType.StringType },
                 navArgument("job") { type = NavType.StringType }
             )
-        ) { backStackEntry ->
-            val encoded = backStackEntry.arguments?.getString("resultPath").orEmpty()
-            val job = Uri.decode(backStackEntry.arguments?.getString("job").orEmpty())
+        ) { entry ->
+            val encoded = entry.arguments?.getString("resultPath").orEmpty()
+            val job = Uri.decode(entry.arguments?.getString("job").orEmpty())
             ExportScreen(
                 resultPath = Uri.decode(encoded),
                 jobLabel = job.ifBlank { "Export" },
                 onDone = {
-                    navController.navigate(Destination.Home.route) {
-                        popUpTo(Destination.Home.route) { inclusive = true }
+                    entry.once {
+                        navController.navigate(Destination.Home.route) {
+                            popUpTo(Destination.Home.route) { inclusive = true }
+                        }
                     }
                 }
             )
