@@ -43,8 +43,17 @@ object ProxyEngine {
     /** Footage below this needs no help; making a proxy would cost more than it saves. */
     private const val PROXY_THRESHOLD_LONG_EDGE = 1920
 
-    private const val PROXY_HEIGHT = 540
+    const val PROXY_HEIGHT = 540
     private const val PROXY_BITRATE = 2_500_000
+
+    /**
+     * The widest a proxy frame can be, for anyone budgeting memory against it.
+     *
+     * The height is fixed and the width follows the source's aspect, so the
+     * widest case is an unusually wide frame rather than a typical one - which is
+     * the right way round for a budget.
+     */
+    const val PROXY_WIDTH_HINT = 1280
 
     fun isWorthProxying(width: Int, height: Int): Boolean =
         maxOf(width, height) > PROXY_THRESHOLD_LONG_EDGE

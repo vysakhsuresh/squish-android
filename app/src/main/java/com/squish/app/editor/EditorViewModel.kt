@@ -388,6 +388,29 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setCropAspect(aspect: CropAspect) = _state.update { it.copy(cropAspect = aspect) }
 
+    /** A file to run a frame analysis over, and the frame size it will produce. */
+    private data class AnalysisSource(val uri: Uri, val width: Int, val height: Int)
+
+    /**
+     * Which copy of a clip the motion analyses should read.
+     *
+     * The proxy, whenever one exists. Both analyses downsample every frame they
+     * decode to a few hundred pixels across before looking at it, so decoding a
+     * 33-megabyte 4K frame to measure a 320-pixel one is thirty times the memory
+     * and thirty times the wait for an identical answer. The proxy has the same
+     * frame count and frame rate, so indices and timings carry over unchanged.
+     *
+     * Falls back to the original when no proxy has been built yet, which is safe
+     * now that the batch size is budgeted against the frame size.
+     */
+    private fun analysisSourceFor(uri: Uri, current: EditorUiState): AnalysisSource {
+        val proxy = current.proxyUri
+        if (proxy != null && uri == current.sourceUri) {
+            return AnalysisSource(proxy, ProxyEngine.PROXY_WIDTH_HINT, ProxyEngine.PROXY_HEIGHT)
+        }
+        return AnalysisSource(uri, current.sourceWidth, current.sourceHeight)
+    }
+
     // ---- Beat detection ---------------------------------------------------------
 
     private var beatJob: Job? = null
@@ -943,9 +966,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         trackJob = viewModelScope.launch {
+            val analysis = analysisSourceFor(uri, current)
             val result = TrackRunner.track(
                 context = getApplication(),
-                uri = uri,
+                uri = analysis.uri,
+                sourceWidth = analysis.width,
+                sourceHeight = analysis.height,
                 fps = current.fps,
                 fromMs = clip.sourceInMs,
                 toMs = clip.sourceOutMs,
@@ -1091,9 +1117,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(stabilize = StabilizeProgress(running = true)) }
 
         stabilizeJob = viewModelScope.launch {
+            val analysis = analysisSourceFor(uri, current)
             val result = Stabilizer.analyze(
                 context = getApplication(),
-                uri = uri,
+                uri = analysis.uri,
+                sourceWidth = analysis.width,
+                sourceHeight = analysis.height,
                 fps = current.fps,
                 fromMs = clip.sourceInMs,
                 toMs = clip.sourceOutMs,

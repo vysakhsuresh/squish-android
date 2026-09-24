@@ -21,7 +21,6 @@ object TrackRunner {
 
     private const val ANALYSIS_WIDTH = 320
     private const val MAX_FRAMES = 1_200
-    private const val BATCH = 10
 
     /** How far the object may move between frames, in analysis pixels. */
     private const val SEARCH_RADIUS = 16
@@ -29,6 +28,9 @@ object TrackRunner {
     suspend fun track(
         context: Context,
         uri: Uri,
+        /** Frame size, so the decode batch can be budgeted against it. */
+        sourceWidth: Int,
+        sourceHeight: Int,
         fps: Float,
         fromMs: Long,
         toMs: Long,
@@ -60,74 +62,69 @@ object TrackRunner {
             val samples = mutableListOf<TrackSample>()
             var pixelBuffer: IntArray? = null
 
-            var index = firstIndex
-            while (index <= lastIndex) {
-                coroutineContext.ensureActive()
+            val perCall = FrameBatch.framesPerCall(sourceWidth, sourceHeight)
 
-                val count = minOf(BATCH * stride, lastIndex - index + 1)
-                val frames: List<Bitmap>? =
-                    runCatching { retriever.getFramesAtIndex(index, count) }.getOrNull()
-                if (frames.isNullOrEmpty()) break
-
-                frames.forEachIndexed { offset, bitmap ->
-                    if ((offset % stride) == 0) {
-                        if (analysisWidth == 0) {
-                            analysisWidth = ANALYSIS_WIDTH
-                            analysisHeight = (ANALYSIS_WIDTH.toFloat() * bitmap.height / bitmap.width)
-                                .roundToInt().coerceAtLeast(64)
-                        }
-
-                        val buffer = pixelBuffer.let {
-                            val needed = bitmap.width * bitmap.height
-                            if (it != null && it.size >= needed) it
-                            else IntArray(needed).also { made -> pixelBuffer = made }
-                        }
-                        bitmap.getPixels(buffer, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-                        val luma = MotionEstimator.toLuma(
-                            buffer, bitmap.width, bitmap.height, analysisWidth, analysisHeight
-                        )
-
-                        val atMs = ((index + offset) / frameRate * 1000.0).toLong()
-
-                        if (tracker == null) {
-                            // Odd sizes only: a centered patch needs a middle pixel.
-                            val size = (boxFraction * analysisWidth).roundToInt()
-                                .coerceIn(12, 96).let { if (it % 2 == 0) it + 1 else it }
-                            x = startXFraction * analysisWidth
-                            y = startYFraction * analysisHeight
-                            val template = cut(luma, x.roundToInt(), y.roundToInt(), size)
-                            if (template != null) {
-                                tracker = ObjectTracker(template, size, size)
-                                samples.add(
-                                    TrackSample(atMs, startXFraction, startYFraction, 1f, 1f)
-                                )
-                            }
-                        } else {
-                            val step = tracker!!.step(luma, x, y, SEARCH_RADIUS)
-                            // A lost object is not chased. Holding the last good
-                            // position lets the tracker pick the object back up when
-                            // it reappears, where following a bad match walks the
-                            // template onto the background and never recovers.
-                            if (step.confidence >= MotionTrack.LOST_BELOW) {
-                                x = step.x
-                                y = step.y
-                            }
-                            samples.add(
-                                TrackSample(
-                                    atMs = atMs,
-                                    xFraction = x / analysisWidth,
-                                    yFraction = y / analysisHeight,
-                                    scale = step.scale,
-                                    confidence = step.confidence
-                                )
-                            )
-                        }
-                    }
-                    bitmap.recycle()
+            FrameBatch.forEachFrame(
+                retriever = retriever,
+                firstIndex = firstIndex,
+                lastIndex = lastIndex,
+                stride = stride,
+                perCall = perCall,
+                onBatch = {
+                    coroutineContext.ensureActive()
+                    onProgress(samples.size, span / stride)
+                }
+            ) { frameIndex, bitmap ->
+                if (analysisWidth == 0) {
+                    analysisWidth = ANALYSIS_WIDTH
+                    analysisHeight = (ANALYSIS_WIDTH.toFloat() * bitmap.height / bitmap.width)
+                        .roundToInt().coerceAtLeast(64)
                 }
 
-                index += count
-                onProgress(samples.size, span / stride)
+                val buffer = pixelBuffer.let {
+                    val needed = bitmap.width * bitmap.height
+                    if (it != null && it.size >= needed) it
+                    else IntArray(needed).also { made -> pixelBuffer = made }
+                }
+                bitmap.getPixels(buffer, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                val luma = MotionEstimator.toLuma(
+                    buffer, bitmap.width, bitmap.height, analysisWidth, analysisHeight
+                )
+
+                val atMs = (frameIndex / frameRate * 1000.0).toLong()
+
+                val current = tracker
+                if (current == null) {
+                    // Odd sizes only: a centered patch needs a middle pixel.
+                    val size = (boxFraction * analysisWidth).roundToInt()
+                        .coerceIn(12, 96).let { if (it % 2 == 0) it + 1 else it }
+                    x = startXFraction * analysisWidth
+                    y = startYFraction * analysisHeight
+                    val template = cut(luma, x.roundToInt(), y.roundToInt(), size)
+                    if (template != null) {
+                        tracker = ObjectTracker(template, size, size)
+                        samples.add(TrackSample(atMs, startXFraction, startYFraction, 1f, 1f))
+                    }
+                } else {
+                    val step = current.step(luma, x, y, SEARCH_RADIUS)
+                    // A lost object is not chased. Holding the last good position
+                    // lets the tracker pick the object back up when it reappears,
+                    // where following a bad match walks the template onto the
+                    // background and never recovers.
+                    if (step.confidence >= MotionTrack.LOST_BELOW) {
+                        x = step.x
+                        y = step.y
+                    }
+                    samples.add(
+                        TrackSample(
+                            atMs = atMs,
+                            xFraction = x / analysisWidth,
+                            yFraction = y / analysisHeight,
+                            scale = step.scale,
+                            confidence = step.confidence
+                        )
+                    )
+                }
             }
 
             if (samples.size < 2) null else MotionTrack(samples)

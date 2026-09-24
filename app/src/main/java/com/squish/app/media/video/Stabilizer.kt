@@ -33,12 +33,13 @@ object Stabilizer {
     /** Beyond this the analysis strides frames rather than running forever. */
     private const val MAX_FRAMES = 1_800
 
-    /** Frames decoded per call. Small: these arrive as full-size bitmaps. */
-    private const val BATCH = 12
 
     suspend fun analyze(
         context: Context,
         uri: Uri,
+        /** Frame size, so the decode batch can be budgeted against it. */
+        sourceWidth: Int,
+        sourceHeight: Int,
         fps: Float,
         fromMs: Long,
         toMs: Long,
@@ -71,42 +72,33 @@ object Stabilizer {
             val motions = mutableListOf<FrameMotion>()
             val times = mutableListOf<Long>()
 
-            var index = firstIndex
             var pixelBuffer: IntArray? = null
+            val perCall = FrameBatch.framesPerCall(sourceWidth, sourceHeight)
 
-            while (index <= lastIndex) {
-                coroutineContext.ensureActive()
-
-                val count = minOf(BATCH * stride, lastIndex - index + 1)
-                // Typed explicitly: getFramesAtIndex is a Java call, so its result is a
-                // platform type and an inferred val would carry that ambiguity onward.
-                val frames: List<Bitmap>? =
-                    runCatching { retriever.getFramesAtIndex(index, count) }.getOrNull()
-                if (frames.isNullOrEmpty()) break
-
-                frames.forEachIndexed { offset, bitmap ->
-                    if ((offset % stride) == 0) {
-                        if (analysisWidth == 0) {
-                            val size = MotionEstimator.analysisSize(bitmap.width, bitmap.height)
-                            analysisWidth = size.first
-                            analysisHeight = size.second
-                        }
-                        val luma = toLuma(bitmap, analysisWidth, analysisHeight) { needed ->
-                            val existing = pixelBuffer
-                            if (existing != null && existing.size >= needed) existing
-                            else IntArray(needed).also { pixelBuffer = it }
-                        }
-                        previous?.let { motions.add(MotionEstimator.estimate(it, luma)) }
-                        if (previous != null) {
-                            times.add(((index + offset) / frameRate * 1000.0).toLong())
-                        }
-                        previous = luma
-                    }
-                    bitmap.recycle()
+            FrameBatch.forEachFrame(
+                retriever = retriever,
+                firstIndex = firstIndex,
+                lastIndex = lastIndex,
+                stride = stride,
+                perCall = perCall,
+                onBatch = {
+                    coroutineContext.ensureActive()
+                    onProgress(motions.size, span / stride)
                 }
-
-                index += count
-                onProgress(motions.size, span / stride)
+            ) { frameIndex, bitmap ->
+                if (analysisWidth == 0) {
+                    val size = MotionEstimator.analysisSize(bitmap.width, bitmap.height)
+                    analysisWidth = size.first
+                    analysisHeight = size.second
+                }
+                val luma = toLuma(bitmap, analysisWidth, analysisHeight) { needed ->
+                    val existing = pixelBuffer
+                    if (existing != null && existing.size >= needed) existing
+                    else IntArray(needed).also { pixelBuffer = it }
+                }
+                previous?.let { motions.add(MotionEstimator.estimate(it, luma)) }
+                if (previous != null) times.add((frameIndex / frameRate * 1000.0).toLong())
+                previous = luma
             }
 
             if (motions.size < 4 || analysisWidth == 0) return@withContext null
