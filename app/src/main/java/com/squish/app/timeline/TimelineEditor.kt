@@ -37,6 +37,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -186,6 +187,9 @@ fun TimelineEditor(
     /** The zoom the strip was last laid out at, so a pinch knows what it changed from. */
     var previousPps by remember { mutableFloatStateOf(pps) }
 
+    /** True while the playhead is being dragged, which nothing else may interrupt. */
+    var scrubbing by remember { mutableStateOf(false) }
+
     /**
      * Fits the whole edit across the strip.
      *
@@ -211,8 +215,13 @@ fun TimelineEditor(
      * seconds. While paused it only intervenes when the playhead has left the
      * viewport, so scrolling by hand to look at something is not fought.
      */
-    LaunchedEffect(state.playheadMs, isPlaying, viewportPx, pps) {
+    LaunchedEffect(state.playheadMs, isPlaying, viewportPx, pps, scrubbing) {
         if (viewportPx <= 0) return@LaunchedEffect
+        // Never while a finger is on the playhead. Following moves the board, and
+        // moving the board under a finger that is itself moving means the two chase
+        // each other - the strip lurches, the playhead lands nowhere near where it
+        // was let go, and the position jumps by seconds at a time.
+        if (scrubbing) return@LaunchedEffect
         val playheadPx = with(density) { state.playheadMs.onTimeline(pps).toPx() }
         val visible = playheadPx - scroll.value
 
@@ -341,7 +350,8 @@ fun TimelineEditor(
                 atMs = state.playheadMs,
                 pixelsPerSecond = pps,
                 height = laneHeight,
-                onScrub = onScrub
+                onScrub = onScrub,
+                onScrubbingChange = { scrubbing = it }
             )
         }
     }
@@ -360,9 +370,12 @@ private fun BoxScope.Playhead(
     atMs: Long,
     pixelsPerSecond: Float,
     height: Dp,
-    onScrub: (Long) -> Unit
+    onScrub: (Long) -> Unit,
+    onScrubbingChange: (Boolean) -> Unit
 ) {
     val latestScrub by rememberUpdatedState(onScrub)
+    val latestScrubbing by rememberUpdatedState(onScrubbingChange)
+    val latestAtMs by rememberUpdatedState(atMs)
     val x = atMs.onTimeline(pixelsPerSecond)
 
     Column(
@@ -372,11 +385,34 @@ private fun BoxScope.Playhead(
             .zIndex(2f)
             // The whole column drags, head and line alike, so a finger that lands
             // slightly low still moves it.
+            //
+            // The gesture keeps its own running position rather than adding each
+            // delta to wherever the playhead currently is. It has to: `dragAmount`
+            // is one event's movement, not the gesture's, and this block is keyed
+            // on the zoom so it does not restart when the playhead moves - which
+            // meant every event computed "where the playhead was when I grabbed it,
+            // plus three pixels", over and over. The playhead sat a few
+            // milliseconds from where it started and jittered there while the
+            // finger travelled the width of the screen, which is exactly what
+            // "I cannot move the play header" looks like.
+            //
+            // Kept as a float, because at a high zoom one pixel is under two
+            // milliseconds and rounding every event to a whole one would lose most
+            // of a slow drag.
             .pointerInput(pixelsPerSecond) {
-                detectHorizontalDragGestures { change, dragAmount ->
+                var positionMs = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        positionMs = latestAtMs.toFloat()
+                        latestScrubbing(true)
+                    },
+                    onDragEnd = { latestScrubbing(false) },
+                    onDragCancel = { latestScrubbing(false) }
+                ) { change, dragAmount ->
                     change.consume()
-                    val deltaMs = (dragAmount / density / pixelsPerSecond * 1000f).toLong()
-                    latestScrub((atMs + deltaMs).coerceAtLeast(0L))
+                    positionMs += dragAmount / density / pixelsPerSecond * 1000f
+                    positionMs = positionMs.coerceAtLeast(0f)
+                    latestScrub(positionMs.toLong())
                 }
             },
         horizontalAlignment = Alignment.CenterHorizontally
@@ -491,6 +527,12 @@ private fun Lane(
             .fillMaxWidth()
             .height(LANE_HEIGHT)
             .padding(vertical = 3.dp)
+            // A lane with nothing on it still has to look like a lane. Without
+            // this the audio and caption tracks were bare background, so the
+            // playhead read as a line dangling into empty space under the one
+            // clip rather than as a line crossing three tracks.
+            .clip(RoundedCornerShape(7.dp))
+            .background(accent.copy(alpha = 0.05f))
             // A tap on empty track is a tap on a moment, so it moves the playhead
             // there. Only the bare lane: a clip handles its own tap, because that
             // one also has to select.
@@ -600,12 +642,24 @@ private fun ClipView(
                     latestScrub((clip.timelineStartMs + into).coerceAtLeast(0L))
                 }
             }
+            // The leftover fraction is carried between events rather than thrown
+            // away. Zoomed in, one pixel is a fraction of a millisecond, and
+            // rounding each event on its own turned most of a slow drag into zero.
             .pointerInput(clip.id, pixelsPerSecond) {
+                var carriedMs = 0f
                 detectHorizontalDragGestures(
-                    onDragStart = { latestSelect(clip.id) }
+                    onDragStart = {
+                        carriedMs = 0f
+                        latestSelect(clip.id)
+                    }
                 ) { change, dragAmount ->
                     change.consume()
-                    latestMove(clip.id, (dragAmount / density / pixelsPerSecond * 1000f).toLong())
+                    carriedMs += dragAmount / density / pixelsPerSecond * 1000f
+                    val wholeMs = carriedMs.toLong()
+                    if (wholeMs != 0L) {
+                        carriedMs -= wholeMs
+                        latestMove(clip.id, wholeMs)
+                    }
                 }
             }
     ) {

@@ -24,10 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
@@ -38,8 +35,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,10 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.squish.app.data.DraftSummary
 import com.squish.app.tools.QuickTool
-import com.squish.app.ui.components.ConfirmDialog
-import com.squish.app.ui.components.VideoPreviewSheet
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
@@ -73,6 +65,7 @@ fun HomeScreen(
     onOpenEditor: (Uri) -> Unit,
     onOpenTool: (QuickTool) -> Unit,
     onOpenLibrary: () -> Unit,
+    onOpenDrafts: () -> Unit,
     onOpenSettings: () -> Unit,
     viewModel: HomeViewModel = viewModel()
 ) {
@@ -85,14 +78,7 @@ fun HomeScreen(
         uri?.let(onOpenEditor)
     }
 
-    // A draft is unfinished work, which makes discarding it the most expensive
-    // tap on this screen - and it sits one thumb-width from "open". It asks first.
-    var pendingDiscard by remember { mutableStateOf<DraftSummary?>(null) }
 
-    // What a draft is called says nothing about what is in it. Being able to look
-    // before committing to reopening it is the difference between three drafts
-    // being a safety net and being three things to sort out later.
-    var previewingDraft by remember { mutableStateOf<DraftSummary?>(null) }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
         Column(
@@ -135,23 +121,12 @@ fun HomeScreen(
                 }
             }
 
+            // One door, not a list. Stacking every unfinished thing here made the
+            // dashboard longer the more work was outstanding - which is exactly
+            // backwards, and the same mistake the export history made before it
+            // moved out to a screen of its own.
             if (drafts.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Header("Pick up where you left off", "Saved automatically as you work")
-                    drafts.take(3).forEach { draft ->
-                        DraftRow(
-                            draft = draft,
-                            onOpen = {
-                                // A tool draft reopens its tool, which restores
-                                // itself; an edit reopens the video it was of.
-                                val tool = draft.toolId?.let { QuickTool.fromId(it) }
-                                if (tool != null) onOpenTool(tool) else onOpenEditor(draft.sourceUri)
-                            },
-                            onPreview = { previewingDraft = draft },
-                            onDiscard = { pendingDiscard = draft }
-                        )
-                    }
-                }
+                DraftsDoor(count = drafts.size, onClick = onOpenDrafts)
             }
 
             EditorHero(
@@ -186,47 +161,6 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
         }
-    }
-
-    previewingDraft?.let { draft ->
-        VideoPreviewSheet(
-            title = draft.title,
-            subtitle = "${draft.clipCount} ${if (draft.clipCount == 1) "clip" else "clips"} · " +
-                "saved ${agoOf(draft.savedAtMillis)}",
-            uri = draft.sourceUri,
-            durationMs = draft.durationMs,
-            accent = SquishColors.Cyan,
-            actionLabel = "Continue",
-            onAction = {
-                previewingDraft = null
-                val tool = draft.toolId?.let { QuickTool.fromId(it) }
-                if (tool != null) onOpenTool(tool) else onOpenEditor(draft.sourceUri)
-            },
-            onDismiss = { previewingDraft = null }
-        )
-    }
-
-    pendingDiscard?.let { draft ->
-        ConfirmDialog(
-            title = "Discard \"${draft.title}\"?",
-            body = draft.toolId?.let { id ->
-                "This throws away the ${QuickTool.fromId(id).title.lowercase()} you had " +
-                    "set up - ${draft.clipCount} " +
-                    "${if (draft.clipCount == 1) "file" else "files"}, and the settings on them."
-            } ?: (
-                "This throws away the edit in progress - " +
-                    "${draft.clipCount} ${if (draft.clipCount == 1) "clip" else "clips"}, " +
-                    "with every cut, look and caption on it."
-                ),
-            caution = "There is no undo and no bin to fetch it back from. " +
-                "Your original video is untouched; the edit built on it is not.",
-            confirmLabel = "Discard",
-            onConfirm = {
-                viewModel.discardDraft(draft)
-                pendingDiscard = null
-            },
-            onDismiss = { pendingDiscard = null }
-        )
     }
 }
 
@@ -302,96 +236,8 @@ private fun EditorHero(onClick: () -> Unit) {
     }
 }
 
-/**
- * An edit that was left unfinished.
- *
- * Every timeline is written to disk as it is built, so leaving the app — or being
- * killed by it, which is what happens to video editors the moment they go to the
- * background — costs at most a second and a half. This row is that safety net
- * made visible, because a recovery nobody knows about is not one.
- */
-@Composable
-private fun DraftRow(
-    draft: DraftSummary,
-    onOpen: () -> Unit,
-    onPreview: () -> Unit,
-    onDiscard: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(SquishColors.Cyan.copy(alpha = 0.08f))
-            .border(1.dp, SquishColors.Cyan.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-            .clickable(onClick = onOpen)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(11.dp))
-                .background(SquishColors.Cyan.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                if (draft.toolId != null) Icons.Filled.Bolt else Icons.Filled.Edit,
-                contentDescription = null,
-                tint = SquishColors.Cyan,
-                modifier = Modifier.size(17.dp)
-            )
-        }
-
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                draft.title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = SquishColors.TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                buildString {
-                    draft.toolId?.let {
-                        append(QuickTool.fromId(it).title)
-                        append(" · ")
-                    }
-                    append(draft.clipCount)
-                    append(if (draft.clipCount == 1) " clip · " else " clips · ")
-                    append(agoOf(draft.savedAtMillis))
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = SquishColors.TextMuted
-            )
-        }
-
-        Icon(
-            Icons.Filled.PlayArrow,
-            contentDescription = "Preview this draft",
-            tint = SquishColors.Cyan,
-            modifier = Modifier
-                .size(30.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .clickable(onClick = onPreview)
-                .padding(7.dp)
-        )
-
-        Icon(
-            Icons.Filled.Close,
-            contentDescription = "Discard this draft",
-            tint = SquishColors.TextMuted,
-            modifier = Modifier
-                .size(30.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .clickable(onClick = onDiscard)
-                .padding(7.dp)
-        )
-    }
-}
-
 /** "4 minutes ago" — the only thing anyone wants to know about a draft's age. */
-private fun agoOf(millis: Long): String {
+internal fun agoOf(millis: Long): String {
     val elapsed = (System.currentTimeMillis() - millis).coerceAtLeast(0L)
     val minutes = elapsed / 60_000
     return when {
@@ -488,6 +334,62 @@ private fun LibraryDoor(count: Int, onClick: () -> Unit) {
             Icons.AutoMirrored.Filled.ArrowForward,
             contentDescription = null,
             tint = SquishColors.Violet,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+/**
+ * The way in to everything left half-done.
+ *
+ * Deliberately the same shape as the library's door, because they are the same
+ * kind of thing: a pile of your own work that belongs on a screen of its own
+ * rather than stacked on the one you start from.
+ */
+@Composable
+private fun DraftsDoor(count: Int, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(SquishColors.Cyan.copy(alpha = 0.09f))
+            .border(1.dp, SquishColors.Cyan.copy(alpha = 0.32f), RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(accentSweep(SquishColors.Cyan)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Filled.Edit,
+                contentDescription = null,
+                tint = SquishColors.Background,
+                modifier = Modifier.size(19.dp)
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "Pick up where you left off",
+                style = MaterialTheme.typography.titleMedium,
+                color = SquishColors.TextPrimary
+            )
+            Text(
+                if (count == 1) "1 unfinished · saved automatically"
+                else "$count unfinished · saved automatically",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.TextMuted
+            )
+        }
+        Icon(
+            Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = null,
+            tint = SquishColors.Cyan,
             modifier = Modifier.size(18.dp)
         )
     }

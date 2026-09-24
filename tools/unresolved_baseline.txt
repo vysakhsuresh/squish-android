@@ -6,6 +6,7 @@ androidx
 awaitPointerEvent
 build
 curveTo
+getBackStackEntry
 getSystemService
 id
 lifecycle

@@ -2,6 +2,11 @@ package com.squish.app.navigation
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import androidx.navigation.NavType
@@ -11,8 +16,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.squish.app.editor.EditorScreen
 import com.squish.app.export.ExportScreen
+import com.squish.app.history.DraftsScreen
 import com.squish.app.history.LibraryScreen
 import com.squish.app.home.HomeScreen
+import com.squish.app.home.HomeViewModel
 import com.squish.app.settings.SettingsScreen
 import com.squish.app.tools.QuickTool
 import com.squish.app.tools.QuickToolScreen
@@ -58,6 +65,7 @@ fun SquishNavHost() {
                     navController.fromTopOf(entry) { navController.navigate(Destination.QuickTool.buildRoute(tool.id)) }
                 },
                 onOpenLibrary = { navController.fromTopOf(entry) { navController.navigate(Destination.Library.route) } },
+                onOpenDrafts = { navController.fromTopOf(entry) { navController.navigate(Destination.Drafts.route) } },
                 onOpenSettings = { navController.fromTopOf(entry) { navController.navigate(Destination.Settings.route) } }
             )
         }
@@ -72,6 +80,38 @@ fun SquishNavHost() {
                         )
                     }
                 }
+            )
+        }
+
+        composable(Destination.Drafts.route) { entry ->
+            // The dashboard's view model owns the draft list and the discarding, so
+            // this screen reads from that same instance rather than opening the
+            // stores a second time - two readers of one folder would disagree the
+            // moment either of them deleted anything.
+            val homeEntry = remember(entry) { navController.getBackStackEntry(Destination.Home.route) }
+            val homeViewModel: HomeViewModel = viewModel(homeEntry)
+            val drafts by homeViewModel.drafts.collectAsState()
+
+            // Re-read on arrival: something may have been finished or thrown away
+            // since the dashboard last looked.
+            LaunchedEffect(Unit) { homeViewModel.refreshDrafts() }
+
+            DraftsScreen(
+                drafts = drafts,
+                onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
+                onOpenEdit = { draft ->
+                    navController.fromTopOf(entry) {
+                        navController.navigate(
+                            Destination.Editor.buildRoute(Uri.encode(draft.sourceUri.toString()))
+                        )
+                    }
+                },
+                onOpenTool = { tool ->
+                    navController.fromTopOf(entry) {
+                        navController.navigate(Destination.QuickTool.buildRoute(tool.id))
+                    }
+                },
+                onDiscard = homeViewModel::discardDraft
             )
         }
 
