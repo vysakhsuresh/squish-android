@@ -69,6 +69,42 @@ bugs rather than API mismatches: the PCM decoder, waveform builder, sync
 cross-correlation, frame-rate probe, thumbnail extraction, MediaStore gallery
 publishing, the JSON history store, and every Compose screen.
 
+## "Cannot access class androidx.compose.runtime.internal.ComposableFunction1"
+
+If this appears, read past it - the errors under it are all consequences and
+none of them are real:
+
+```
+Cannot access class 'androidx.compose.runtime.internal.ComposableFunction1'.
+Argument type mismatch: actual '() -> Unit', expected 'ComposableFunction1<RowScope, Unit>'
+Unresolved reference 'weight'
+Unresolved reference 'padding'
+```
+
+`ComposableFunction1` is how the Compose compiler spells a `@Composable` lambda
+that takes one argument - which is every `Row { }`, because its content slot is
+`@Composable RowScope.() -> Unit`. When the compiler cannot find that class, no
+`Row` can form its content type, so its trailing lambda "mismatches", so nothing
+inside has a `RowScope` receiver, so `Modifier.weight` is unresolved. One missing
+class, four kinds of error, none of them where the problem is.
+
+It means the Compose **runtime** on the compile classpath is older than the
+Compose **compiler** being used. Which side is stale:
+
+```
+./gradlew :app:dependencies --configuration debugCompileClasspath | grep compose
+```
+
+- If Gradle builds fine and only the IDE shows these, the IDE is analysing with
+  its own bundled Kotlin plugin, which is newer than `kotlin` in
+  `libs.versions.toml`. Raise the project to match it.
+- If Gradle fails too, raise `composeBom` until the runtime is new enough for
+  the `kotlin` version in use, and raise them together.
+
+Whichever way: `materialIconsExtended` is pinned on purpose. It was deprecated at
+Compose 1.7 and is not published past 1.7.8, so a BOM from 2025 onward leaves it
+with no version and the build fails somewhere nobody edited.
+
 ## First run checklist
 
 1. `./gradlew assembleDebug`
@@ -173,6 +209,7 @@ python3 tools/check_unresolved.py log        # renamed / misspelled references
 python3 tools/check_modifier_imports.py      # Modifier extensions used unimported
 python3 tools/check_nesting.py               # a declaration swallowed by a stray brace
 python3 tools/check_shaders.py               # a shader and its Kotlin disagreeing about uniforms
+python3 tools/check_dependencies.py          # a library imported but never declared
 KOTLINC=<path>/kotlinc tools/jvm/run.sh      # runs the speed and grade maths for real
 ```
 

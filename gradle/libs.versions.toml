@@ -6,6 +6,10 @@ coreSplashscreen = "1.0.1"
 lifecycle = "2.8.6"
 activityCompose = "1.9.2"
 composeBom = "2024.09.02"
+# Pinned rather than taken from the BOM. material-icons-extended was deprecated
+# at Compose 1.7 and stops being published after 1.7.8, so a later BOM leaves it
+# with no version at all and the build fails on a line nobody touched.
+materialIconsExtended = "1.7.8"
 navigationCompose = "2.8.1"
 media3 = "1.5.1"
 
@@ -21,7 +25,17 @@ androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
-androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "materialIconsExtended" }
+
+# Declared because the app uses them directly - hundreds of imports each - rather
+# than left to arrive behind material3 and ui. A transitive dependency is a
+# dependency somebody else chose, and when the version it lands on is out of step
+# with the Compose compiler the failure reads as nonsense: "Cannot access class
+# androidx.compose.runtime.internal.ComposableFunction1", and then every Row in
+# the file loses its scope so Modifier.weight and Modifier.padding go unresolved.
+androidx-compose-runtime = { group = "androidx.compose.runtime", name = "runtime" }
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+androidx-compose-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 media3-transformer = { group = "androidx.media3", name = "media3-transformer", version.ref = "media3" }
 media3-effect = { group = "androidx.media3", name = "media3-effect", version.ref = "media3" }

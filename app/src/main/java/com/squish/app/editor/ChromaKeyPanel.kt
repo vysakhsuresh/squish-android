@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.get
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.ui.components.SelectableChip
@@ -179,7 +180,7 @@ private fun FrameSampler(
                             .coerceIn(0, bitmap.width - 1)
                         val py = (offset.y / size.height * bitmap.height).toInt()
                             .coerceIn(0, bitmap.height - 1)
-                        viewModel.updateChromaKey(clip.id, keyColorArgb = bitmap.getPixel(px, py))
+                        viewModel.updateChromaKey(clip.id, keyColorArgb = bitmap[px, py])
                     }
                 }
         )

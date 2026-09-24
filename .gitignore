@@ -1,7 +1,13 @@
 *.iml
 .gradle
 /local.properties
-/.idea
+# Ignore the IDE's own state, but keep the shared spelling dictionary: the words
+# in it are the vocabulary of the thing being built - playhead, luma, muxing,
+# keyframe - and without it every developer sees the same few hundred fake typos.
+# The glob has to be /.idea/* rather than /.idea, because git will not look
+# inside an ignored directory to honour a negation underneath it.
+/.idea/*
+!/.idea/dictionaries
 .DS_Store
 /build
 /captures
