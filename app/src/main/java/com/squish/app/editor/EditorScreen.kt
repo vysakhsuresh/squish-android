@@ -59,6 +59,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
@@ -89,7 +90,16 @@ fun EditorScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    var tab by remember { mutableStateOf(EditorTab.Trim) }
+    /**
+     * Which tool panel is open, or none.
+     *
+     * None, to begin with. The editor used to open with the trim panel already
+     * down, which cost a third of the screen before anything had been asked for
+     * and made the whole thing feel cramped from the first frame. What matters on
+     * arrival is the picture, the strip, and the handful of actions under it;
+     * a panel is something you ask for.
+     */
+    var tab by remember { mutableStateOf<EditorTab?>(null) }
     var exportSheetOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(sourceUri) { viewModel.load(sourceUri) }
@@ -118,7 +128,7 @@ fun EditorScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BackOrb(accent = tab.accent, onClick = onBack, size = 40.dp)
+                BackOrb(accent = tab?.accent ?: SquishColors.Violet, onClick = onBack, size = 40.dp)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         state.videoClips.firstOrNull()?.label ?: "Your edit",
@@ -274,6 +284,9 @@ fun EditorScreen(
                     .padding(horizontal = 16.dp)
             ) {
                 when (tab) {
+                    // Nothing open. The room goes back to the strip, and the row
+                    // of tools below says what is available without taking any.
+                    null -> IdleHint(hasSelection = state.selectedClipId != null)
                     EditorTab.Trim -> PrecisionTrimPanel(state, viewModel)
                     EditorTab.Crop -> CropPanel(state, viewModel)
                     EditorTab.Speed -> SpeedPanel(state, viewModel)
@@ -311,7 +324,9 @@ fun EditorScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            ToolRail(selected = tab, onSelect = { tab = it })
+            // Tapping the open tool closes it, which is the only way back to a
+            // screen with nothing on it once something has been opened.
+            ToolRail(selected = tab, onSelect = { tab = if (tab == it) null else it })
         }
 
         if (exportSheetOpen) {
@@ -328,8 +343,36 @@ fun EditorScreen(
     }
 }
 
+/**
+ * What the empty space below the strip says when no tool is open.
+ *
+ * Quiet on purpose. The point of opening with nothing down is that the screen is
+ * not full; filling the gap with a panel of suggestions would give the space
+ * straight back. One line naming the next useful thing, and nothing else.
+ */
 @Composable
-private fun ToolRail(selected: EditorTab, onSelect: (EditorTab) -> Unit) {
+private fun IdleHint(hasSelection: Boolean) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            if (hasSelection) "Pick a tool to change this clip" else "Pick a tool to start",
+            style = MaterialTheme.typography.bodyMedium,
+            color = SquishColors.TextSecondary
+        )
+        Text(
+            "Cut, delete and undo are above the strip — a tool opens only when you ask for it.",
+            style = MaterialTheme.typography.labelSmall,
+            color = SquishColors.TextMuted,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun ToolRail(selected: EditorTab?, onSelect: (EditorTab) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

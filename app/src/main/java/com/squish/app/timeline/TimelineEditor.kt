@@ -16,11 +16,9 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,8 +27,18 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.FirstPage
+import androidx.compose.material.icons.filled.FitScreen
+import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
@@ -100,9 +108,8 @@ private const val MAX_PPS = ZOOM_MAX
 /** Empty run past the end of the edit, so the last clip is not against the edge. */
 private const val TAIL_DP = 240f
 
-/** One height and one floor for every button on the strip's action bar. */
-private val MINI_ACTION_HEIGHT = 34.dp
-private val MINI_ACTION_MIN_WIDTH = 44.dp
+/** One square for every button on the strip's action bar. */
+private val MINI_ACTION_SIZE = 38.dp
 
 /**
  * How far two fingers must change their spread before it counts as a pinch.
@@ -998,38 +1005,47 @@ fun TimelineActionBar(
             // First in the row, because the thing you reach for after a mistake
             // should not be the thing you have to look for.
             MiniAction(
-                "↶",
+                Icons.AutoMirrored.Filled.Undo,
+                "Undo${undoLabel?.let { ": $it" } ?: ""}",
                 if (undoLabel == null) SquishColors.TextMuted else SquishColors.Cyan,
                 onUndo
             )
             MiniAction(
-                "↷",
+                Icons.AutoMirrored.Filled.Redo,
+                "Redo${redoLabel?.let { ": $it" } ?: ""}",
                 if (redoLabel == null) SquishColors.TextMuted else SquishColors.Cyan,
                 onRedo
             )
             MiniAction(
-                "✂ Cut",
+                Icons.Filled.ContentCut,
+                "Cut at the playhead",
                 if (splittable) SquishColors.Primary else SquishColors.TextMuted,
                 onSplit
             )
             MiniAction(
-                "Delete",
+                Icons.Filled.DeleteOutline,
+                "Delete the selected clip",
                 if (selected == null) SquishColors.TextMuted else SquishColors.Magenta,
                 onDelete
             )
-            MiniAction("Close gaps", SquishColors.TextSecondary, onCloseGaps)
+            MiniAction(
+                Icons.Filled.Compress,
+                "Close the gaps between clips",
+                SquishColors.TextSecondary,
+                onCloseGaps
+            )
             // A long edit is a long drag otherwise, and the two ends are where
             // people go most.
-            MiniAction("⇤", SquishColors.TextSecondary, onGoToStart)
-            MiniAction("⇥", SquishColors.TextSecondary, onGoToEnd)
+            MiniAction(Icons.Filled.FirstPage, "Go to the start", SquishColors.TextSecondary, onGoToStart)
+            MiniAction(Icons.Filled.LastPage, "Go to the end", SquishColors.TextSecondary, onGoToEnd)
             // A gap, not a fraction: inside a scrolling row the width is
             // unbounded, and a proportion of infinity measures nothing.
             Spacer(modifier = Modifier.width(10.dp))
-            MiniAction("−", SquishColors.TextSecondary, onZoomOut)
-            MiniAction("+", SquishColors.TextSecondary, onZoomIn)
+            MiniAction(Icons.Filled.Remove, "Zoom out", SquishColors.TextSecondary, onZoomOut)
+            MiniAction(Icons.Filled.Add, "Zoom in", SquishColors.TextSecondary, onZoomIn)
             // The way back when the strip has been zoomed into a corner of a long
             // edit, which on a phone is most of the time.
-            MiniAction("Fit", SquishColors.Cyan, onFit)
+            MiniAction(Icons.Filled.FitScreen, "Fit the whole edit on screen", SquishColors.Cyan, onFit)
         }
 
         // Says what the buttons will act on, because a razor that cuts the wrong
@@ -1055,31 +1071,37 @@ fun TimelineActionBar(
 /**
  * One action on the strip's bar.
  *
- * A common height and a floor under the width, so the row reads as a set of
- * controls rather than as text of assorted lengths with boxes drawn round it -
- * and so a one-character button like the zoom pair is still something a thumb
- * can find. The label is pinned to a single line: given less room than it wanted
- * it used to wrap, which is how a two-word button became two lines tall and
- * shifted everything below it.
+ * A glyph rather than a word, and every one the same square. Scissors mean cut
+ * and a bin means delete in every editor anyone has ever used, so the words were
+ * buying width to say what the picture says faster - and words of different
+ * lengths made a row of controls read as a ransom note. The characters that stood
+ * in for some of them before ("↶", "⇤", "✂ Cut") were worse than either: glyphs
+ * the font may or may not carry, at whatever size it happened to set them.
+ *
+ * [description] is not decoration. It is what a screen reader announces and what
+ * a long press shows, so it says what the button does rather than naming it -
+ * "Cut at the playhead", not "Cut".
  */
 @Composable
-private fun MiniAction(label: String, tint: Color, onClick: () -> Unit) {
+private fun MiniAction(
+    icon: ImageVector,
+    description: String,
+    tint: Color,
+    onClick: () -> Unit
+) {
     Box(
         modifier = Modifier
-            .heightIn(min = MINI_ACTION_HEIGHT)
-            .defaultMinSize(minWidth = MINI_ACTION_MIN_WIDTH)
-            .clip(RoundedCornerShape(8.dp))
+            .size(MINI_ACTION_SIZE)
+            .clip(RoundedCornerShape(10.dp))
             .background(SquishColors.Surface)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = tint,
-            maxLines = 1,
-            softWrap = false
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = tint,
+            modifier = Modifier.size(18.dp)
         )
     }
 }
