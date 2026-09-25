@@ -3,26 +3,28 @@ package com.squish.app.timeline
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MusicNote
@@ -33,7 +35,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -41,6 +42,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,8 +51,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
-import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -86,6 +89,10 @@ private const val MAX_PPS = 400f
 
 /** Empty run past the end of the edit, so the last clip is not against the edge. */
 private const val TAIL_DP = 240f
+
+/** One height and one floor for every button on the strip's action bar. */
+private val MINI_ACTION_HEIGHT = 34.dp
+private val MINI_ACTION_MIN_WIDTH = 44.dp
 
 private fun Long.onTimeline(pixelsPerSecond: Float): Dp = (this / 1000f * pixelsPerSecond).dp
 
@@ -880,10 +887,36 @@ fun TimelineActionBar(
         ) {
             Text(
                 Timecode.format(state.playheadMs),
-                style = MaterialTheme.typography.labelLarge,
-                color = SquishColors.TextPrimary
+                // Tabular figures: every digit the same width, so a running
+                // timecode does not change width thirty times a second. With
+                // proportional digits a 1 is narrower than a 0, the readout
+                // breathed in and out as it counted, and everything to the right
+                // of it was pushed back and forth - which is what made the bar
+                // look unstable while a video played.
+                style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                color = SquishColors.TextPrimary,
+                maxLines = 1,
+                softWrap = false,
+                // A floor rather than a fixed width, so a long edit that needs
+                // three digits of minutes is not clipped.
+                modifier = Modifier.widthIn(min = 76.dp)
             )
-            Spacer(modifier = Modifier.width(4.dp))
+        }
+
+        // The actions scroll rather than compete for the width.
+        //
+        // Eleven buttons do not fit across a phone, so the row was compressing
+        // them, and "Close gaps" was the one that gave - wrapping to two lines and
+        // back as the timecode beside it changed width. Nothing here is squeezed
+        // any more: each button is its own size and the row slides.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             // First in the row, because the thing you reach for after a mistake
             // should not be the thing you have to look for.
             MiniAction(
@@ -911,7 +944,9 @@ fun TimelineActionBar(
             // people go most.
             MiniAction("⇤", SquishColors.TextSecondary, onGoToStart)
             MiniAction("⇥", SquishColors.TextSecondary, onGoToEnd)
-            Spacer(modifier = Modifier.fillMaxWidth(0.02f))
+            // A gap, not a fraction: inside a scrolling row the width is
+            // unbounded, and a proportion of infinity measures nothing.
+            Spacer(modifier = Modifier.width(10.dp))
             MiniAction("−", SquishColors.TextSecondary, onZoomOut)
             MiniAction("+", SquishColors.TextSecondary, onZoomIn)
             // The way back when the strip has been zoomed into a corner of a long
@@ -939,15 +974,34 @@ fun TimelineActionBar(
     }
 }
 
+/**
+ * One action on the strip's bar.
+ *
+ * A common height and a floor under the width, so the row reads as a set of
+ * controls rather than as text of assorted lengths with boxes drawn round it -
+ * and so a one-character button like the zoom pair is still something a thumb
+ * can find. The label is pinned to a single line: given less room than it wanted
+ * it used to wrap, which is how a two-word button became two lines tall and
+ * shifted everything below it.
+ */
 @Composable
 private fun MiniAction(label: String, tint: Color, onClick: () -> Unit) {
     Box(
         modifier = Modifier
+            .heightIn(min = MINI_ACTION_HEIGHT)
+            .defaultMinSize(minWidth = MINI_ACTION_MIN_WIDTH)
             .clip(RoundedCornerShape(8.dp))
             .background(SquishColors.Surface)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = tint)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }

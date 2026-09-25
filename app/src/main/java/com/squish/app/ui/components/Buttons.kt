@@ -31,9 +31,9 @@ fun SquishPrimaryButton(
             disabledContainerColor = SquishColors.Primary.copy(alpha = 0.4f),
             disabledContentColor = SquishColors.Background.copy(alpha = 0.7f)
         ),
-        contentPadding = PaddingValues(vertical = 16.dp)
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp)
     ) {
-        Text(text, style = MaterialTheme.typography.titleMedium)
+        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1)
     }
 }
 
@@ -49,9 +49,9 @@ fun SquishOutlinedButton(
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.5.dp, SquishColors.Border),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = SquishColors.TextSecondary),
-        contentPadding = PaddingValues(vertical = 14.dp)
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
     ) {
-        Text(text, style = MaterialTheme.typography.labelLarge)
+        Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }
 
@@ -76,8 +76,8 @@ fun SquishDangerButton(
             containerColor = SquishColors.Pink,
             contentColor = SquishColors.Background
         ),
-        contentPadding = PaddingValues(vertical = 14.dp)
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
     ) {
-        Text(text, style = MaterialTheme.typography.labelLarge)
+        Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }

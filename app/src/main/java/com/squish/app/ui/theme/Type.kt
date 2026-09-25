@@ -35,3 +35,18 @@ val SquishTypography = Typography(
     labelMedium = TextStyle(fontFamily = SpaceGrotesk, fontWeight = FontWeight.Medium, fontSize = 12.sp),
     labelSmall = TextStyle(fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
 )
+
+/**
+ * The same style, with digits that all take the same width.
+ *
+ * For any number that changes while you watch it - a running timecode, a
+ * countdown, a percentage. Ordinary typefaces set a 1 narrower than a 0, so a
+ * readout counting upwards changes width several times a second and shoves
+ * whatever sits beside it back and forth. On the editor's action bar that was
+ * enough to squeeze a two-word button into two lines and back again, which read
+ * as the whole app being unstable while a video played.
+ *
+ * `tnum` is an OpenType feature every font Android ships supports; on a face that
+ * does not, it is ignored and nothing breaks.
+ */
+fun TextStyle.tabularFigures(): TextStyle = copy(fontFeatureSettings = "tnum")

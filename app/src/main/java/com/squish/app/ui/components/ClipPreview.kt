@@ -49,6 +49,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.squish.app.editor.Timecode
 import com.squish.app.ui.theme.SquishColors
+import com.squish.app.ui.theme.tabularFigures
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 
@@ -270,8 +271,9 @@ fun ClipPreview(
 
             Text(
                 Timecode.format((positionMs - startMs).coerceAtLeast(0L)),
-                style = MaterialTheme.typography.labelSmall,
-                color = SquishColors.TextSecondary
+                style = MaterialTheme.typography.labelSmall.tabularFigures(),
+                color = SquishColors.TextSecondary,
+                maxLines = 1
             )
         }
     }

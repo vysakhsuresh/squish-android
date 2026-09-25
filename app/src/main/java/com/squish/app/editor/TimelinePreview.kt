@@ -47,6 +47,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.squish.app.media.effects.Grade
 import com.squish.app.timeline.Clip
 import com.squish.app.ui.theme.SquishColors
+import com.squish.app.ui.theme.tabularFigures
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 
@@ -280,8 +281,9 @@ private fun Transport(frame: PreviewFrame, onToggle: () -> Unit, modifier: Modif
 
         Text(
             Timecode.format(frame.positionMs),
-            style = MaterialTheme.typography.labelLarge,
-            color = SquishColors.TextPrimary
+            style = MaterialTheme.typography.labelLarge.tabularFigures(),
+            color = SquishColors.TextPrimary,
+            maxLines = 1
         )
         Text(
             "/ ${Timecode.format(frame.durationMs)}",

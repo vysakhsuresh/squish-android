@@ -84,8 +84,8 @@ fun RecoveryBanner(
             .clip(RoundedCornerShape(12.dp))
             .background(SquishColors.SurfaceElevated)
             .border(1.dp, SquishColors.Amber, RoundedCornerShape(12.dp))
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -113,9 +113,24 @@ fun RecoveryBanner(
             color = SquishColors.TextSecondary
         )
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SquishOutlinedButton(text = "Restore it", onClick = onRestore)
-            SquishOutlinedButton(text = "Start fresh", onClick = onDiscard)
+        // Two equal halves of the card's width, not two boxes cut to the length of
+        // their own words. These are the same kind of choice as each other and
+        // sizing them by their labels made "Restore it" look like the smaller one,
+        // which is the opposite of what it is.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SquishOutlinedButton(
+                text = "Restore it",
+                modifier = Modifier.weight(1f),
+                onClick = onRestore
+            )
+            SquishOutlinedButton(
+                text = "Start fresh",
+                modifier = Modifier.weight(1f),
+                onClick = onDiscard
+            )
         }
     }
 }
