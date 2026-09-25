@@ -207,14 +207,24 @@ fun EditorScreen(
                     // against the frame rather than against the whole box.
                     pictureOverlay = {
                         // Live framing while cropping, so the ratio is never
-                        // chosen blind - and now with the part being cropped away
+                        // chosen blind - and with the part being cropped away
                         // still on screen, dimmed, which is the only way to see
                         // what a crop is actually costing.
-                        if (tab == EditorTab.Crop || state.cropAspect != CropAspect.Original) {
-                            CropOverlay(
-                                aspect = state.cropAspect,
+                        when {
+                            state.cropAspect == CropAspect.Custom -> CustomCropOverlay(
+                                rect = state.cropRect,
+                                // Live while dragging, recorded once at the end:
+                                // the view model coalesces, so a gesture is one
+                                // undo step rather than one per frame of movement.
+                                onChange = viewModel::setCropRect,
+                                onCommit = { viewModel.setCropRect(state.cropRect) },
                                 modifier = Modifier.fillMaxSize()
                             )
+                            tab == EditorTab.Crop || state.cropAspect != CropAspect.Original ->
+                                CropOverlay(
+                                    aspect = state.cropAspect,
+                                    modifier = Modifier.fillMaxSize()
+                                )
                         }
                     }
                 )

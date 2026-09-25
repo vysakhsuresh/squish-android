@@ -1,5 +1,8 @@
 package com.squish.app.timeline
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +13,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberScrollableState
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -59,6 +64,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
@@ -1007,26 +1013,30 @@ fun TimelineActionBar(
             MiniAction(
                 Icons.AutoMirrored.Filled.Undo,
                 "Undo${undoLabel?.let { ": $it" } ?: ""}",
-                if (undoLabel == null) SquishColors.TextMuted else SquishColors.Cyan,
-                onUndo
+                SquishColors.Cyan,
+                onUndo,
+                enabled = undoLabel != null
             )
             MiniAction(
                 Icons.AutoMirrored.Filled.Redo,
                 "Redo${redoLabel?.let { ": $it" } ?: ""}",
-                if (redoLabel == null) SquishColors.TextMuted else SquishColors.Cyan,
-                onRedo
+                SquishColors.Cyan,
+                onRedo,
+                enabled = redoLabel != null
             )
             MiniAction(
                 Icons.Filled.ContentCut,
                 "Cut at the playhead",
-                if (splittable) SquishColors.Primary else SquishColors.TextMuted,
-                onSplit
+                SquishColors.Primary,
+                onSplit,
+                enabled = splittable
             )
             MiniAction(
                 Icons.Filled.DeleteOutline,
                 "Delete the selected clip",
-                if (selected == null) SquishColors.TextMuted else SquishColors.Magenta,
-                onDelete
+                SquishColors.Magenta,
+                onDelete,
+                enabled = selected != null
             )
             MiniAction(
                 Icons.Filled.Compress,
@@ -1087,21 +1097,54 @@ private fun MiniAction(
     icon: ImageVector,
     description: String,
     tint: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    /**
+     * Whether the button would do anything right now.
+     *
+     * Live buttons are lit in their own colour and dead ones sink into the bar,
+     * and both states move when they change. A row where undo looks the same
+     * whether or not there is anything to undo makes you press it to find out.
+     */
+    enabled: Boolean = true
 ) {
+    val fill by animateColorAsState(
+        if (enabled) tint.copy(alpha = 0.16f) else SquishColors.Surface,
+        label = "actionFill"
+    )
+    val edge by animateColorAsState(
+        if (enabled) tint.copy(alpha = 0.45f) else SquishColors.Border.copy(alpha = 0.4f),
+        label = "actionEdge"
+    )
+    val glyph by animateColorAsState(
+        if (enabled) tint else SquishColors.TextMuted.copy(alpha = 0.55f),
+        label = "actionGlyph"
+    )
+    // A press that visibly gives is the difference between a control and a
+    // picture of one. Sprung rather than linear, so it settles rather than stops.
+    val interactions = remember { MutableInteractionSource() }
+    val pressed by interactions.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.88f else 1f, spring(), label = "actionScale")
+
     Box(
         modifier = Modifier
             .size(MINI_ACTION_SIZE)
-            .clip(RoundedCornerShape(10.dp))
-            .background(SquishColors.Surface)
-            .clickable(onClick = onClick),
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(RoundedCornerShape(12.dp))
+            .background(fill)
+            .border(1.dp, edge, RoundedCornerShape(12.dp))
+            .clickable(
+                interactionSource = interactions,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick
+            ),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             icon,
             contentDescription = description,
-            tint = tint,
-            modifier = Modifier.size(18.dp)
+            tint = glyph,
+            modifier = Modifier.size(19.dp)
         )
     }
 }

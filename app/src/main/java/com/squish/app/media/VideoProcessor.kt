@@ -10,6 +10,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.SpeedChangingAudioProcessor
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Crop
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.ScaleAndRotateTransformation
@@ -26,6 +27,7 @@ import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import com.google.common.collect.ImmutableList
+import com.squish.app.editor.CropAspect
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.Quality
 import com.squish.app.media.effects.ChromaKeyEffect
@@ -454,8 +456,17 @@ class VideoProcessor(private val context: Context) {
             )
         }
 
-        state.cropAspect.ratio?.let { ratio ->
-            effects.add(Presentation.createForAspectRatio(ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+        // A hand-drawn crop is a rectangle, so it is cut rather than fitted: a
+        // Presentation can only take the middle of the frame at a given shape,
+        // which is exactly the limitation the custom crop exists to remove.
+        val crop = state.effectiveCrop
+        if (state.cropAspect == CropAspect.Custom && !crop.isFull) {
+            val ndc = crop.toNdc()
+            effects.add(Crop(ndc[0], ndc[1], ndc[2], ndc[3]))
+        } else {
+            state.cropAspect.ratio?.let { ratio ->
+                effects.add(Presentation.createForAspectRatio(ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+            }
         }
 
         if (state.quality != Quality.Original && !state.fitToSize) {

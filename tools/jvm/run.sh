@@ -21,6 +21,8 @@ run() {
 }
 
 run looks      "$SRC/media/effects/Look.kt" tools/jvm/LookChecks.kt
+run lookpreview "$SRC/media/effects/Look.kt" "$SRC/media/effects/LookPreview.kt" tools/jvm/LookPreviewChecks.kt
+run crop       "$SRC/editor/CropRect.kt" tools/jvm/CropChecks.kt
 run frames     "$SRC/media/video/FrameBatch.kt" tools/jvm/stub/Bitmap.kt \
                tools/jvm/stub/MediaMetadataRetriever.kt tools/jvm/FrameBatchChecks.kt
 run beat       "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" tools/jvm/BeatChecks.kt

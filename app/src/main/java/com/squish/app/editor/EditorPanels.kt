@@ -2,6 +2,7 @@ package com.squish.app.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
@@ -163,16 +165,29 @@ fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
             icon = Icons.Filled.AspectRatio,
             accent = SquishColors.Violet
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        // Five now that Custom is one of them, which is one more than fits across
+        // a phone at a readable size, so the row scrolls rather than squeezing
+        // "Original" into an ellipsis.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
             CropAspect.entries.forEach { aspect ->
                 SelectableChip(
                     label = aspect.label,
                     selected = state.cropAspect == aspect,
                     accentColor = SquishColors.Purple,
-                    modifier = Modifier.weight(1f),
                     onClick = { viewModel.setCropAspect(aspect) }
                 )
             }
+        }
+
+        if (state.cropAspect == CropAspect.Custom) {
+            Text(
+                "Drag the corners on the picture. The dimmed part is what goes.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.TextMuted
+            )
         }
         Row(
             modifier = Modifier.fillMaxWidth(),

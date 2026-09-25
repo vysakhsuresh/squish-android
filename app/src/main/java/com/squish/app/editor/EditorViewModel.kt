@@ -458,7 +458,29 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setCropAspect(aspect: CropAspect) = record("Crop") {
-        _state.update { it.copy(cropAspect = aspect) }
+        _state.update { current ->
+            // Switching to Custom starts from whatever was already framed, not
+            // from the whole picture. Having chosen a square and then wanting it
+            // moved off centre, being handed the full frame back means doing the
+            // work twice.
+            val rect = if (aspect == CropAspect.Custom) {
+                current.effectiveCrop.takeIf { !it.isFull }
+                    ?: CropRect.centred(1f, current.sourceFrameAspect)
+            } else {
+                current.cropRect
+            }
+            current.copy(cropAspect = aspect, cropRect = rect)
+        }
+    }
+
+    /**
+     * Moves the hand-drawn crop.
+     *
+     * Not recorded per drag event - `record` coalesces inside its window, so one
+     * gesture is one undo step rather than one per frame of movement.
+     */
+    fun setCropRect(rect: CropRect) = record("Crop") {
+        _state.update { it.copy(cropAspect = CropAspect.Custom, cropRect = rect) }
     }
 
     /** A file to run a frame analysis over, and the frame size it will produce. */

@@ -21,7 +21,18 @@ enum class CropAspect(val label: String, val ratio: Float?) {
     Original("Original", null),
     Portrait("9:16", 9f / 16f),
     Square("1:1", 1f),
-    Landscape("16:9", 16f / 9f)
+    Landscape("16:9", 16f / 9f),
+
+    /**
+     * Drawn by hand on the picture.
+     *
+     * Has no ratio of its own: its shape is whatever rectangle was dragged, which
+     * lives in [EditorUiState.cropRect]. The fixed ratios answer "what am I
+     * posting to" and this answers "what is the shot" - different questions, and
+     * only the first had a control. Cropping to a square took the middle square
+     * whether or not the subject was in the middle.
+     */
+    Custom("Custom", null)
 }
 
 data class TextOverlayItem(
@@ -178,6 +189,7 @@ data class EditSnapshot(
     val originalVolume: Float,
     val rotationDegrees: Int,
     val cropAspect: CropAspect,
+    val cropRect: CropRect,
     val lookId: String?,
     val lookIntensity: Float,
     val brightness: Float,
@@ -255,6 +267,9 @@ data class EditorUiState(
 
     val videoWaveform: Waveform? = null,
 
+    /** The hand-drawn crop, used when [cropAspect] is [CropAspect.Custom]. */
+    val cropRect: CropRect = CropRect(),
+
     val selectedClipId: String? = null,
     val pixelsPerSecond: Float = 42f,
     /**
@@ -315,8 +330,17 @@ data class EditorUiState(
      */
     val previewAspect: Float
         get() {
+            if (cropAspect == CropAspect.Custom) return cropRect.aspect(sourceFrameAspect)
             cropAspect.ratio?.let { return it }
             return sourceFrameAspect
+        }
+
+    /** The rectangle actually kept, whichever way the crop was chosen. */
+    val effectiveCrop: CropRect
+        get() = when {
+            cropAspect == CropAspect.Custom -> cropRect
+            cropAspect.ratio != null -> CropRect.centred(cropAspect.ratio, sourceFrameAspect)
+            else -> CropRect()
         }
 
     /**
@@ -347,6 +371,7 @@ data class EditorUiState(
             originalVolume = originalVolume,
             rotationDegrees = rotationDegrees,
             cropAspect = cropAspect,
+            cropRect = cropRect,
             lookId = lookId,
             lookIntensity = lookIntensity,
             brightness = brightness,
@@ -365,6 +390,7 @@ data class EditorUiState(
         originalVolume = snapshot.originalVolume,
         rotationDegrees = snapshot.rotationDegrees,
         cropAspect = snapshot.cropAspect,
+        cropRect = snapshot.cropRect,
         lookId = snapshot.lookId,
         lookIntensity = snapshot.lookIntensity,
         brightness = snapshot.brightness,

@@ -1,6 +1,7 @@
 package com.squish.app.editor
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -31,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.squish.app.media.effects.Look
@@ -52,6 +55,11 @@ import com.squish.app.ui.theme.SquishColors
 fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
     var family by remember { mutableStateOf(LookFamily.Essentials) }
     val active = Looks.byId(state.lookId)
+
+    // Every look previewed on the frame you are stopped on, which is how the
+    // choice is actually made - a swatch tells you a look is warm, the shot tells
+    // you whether warm is right for this face, in this light.
+    val frame = rememberLookFrame(state.sourceUri, state.playheadMs)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
@@ -85,6 +93,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             ) {
                 shown.forEach { look ->
                     LookChip(
+                        frame = frame,
                         look = look,
                         // The chip previews at the strength you have dialled in, so
                         // the row re-reads correctly instead of advertising full
@@ -131,9 +140,20 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
 }
 
 @Composable
-private fun LookChip(look: Look, intensity: Float, selected: Boolean, onClick: () -> Unit) {
+private fun LookChip(
+    frame: LookFrame?,
+    look: Look,
+    intensity: Float,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    // The swatch is the fallback, not the design. It is what shows for the second
+    // before the frame arrives, and for an audio-only or unreadable source.
     val stops = remember(look.id, intensity) {
         Looks.swatch(look, intensity).map { Color(it) }
+    }
+    val preview = remember(frame, look.id, intensity) {
+        frame?.graded(look.atIntensity(intensity))
     }
 
     Column(
@@ -151,8 +171,17 @@ private fun LookChip(look: Look, intensity: Float, selected: Boolean, onClick: (
                     shape = RoundedCornerShape(10.dp)
                 )
         ) {
-            Canvas(modifier = Modifier.fillMaxSize().padding(2.dp)) {
-                drawRect(brush = Brush.verticalGradient(stops))
+            if (preview != null) {
+                Image(
+                    bitmap = preview.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().padding(2.dp).clip(RoundedCornerShape(8.dp))
+                )
+            } else {
+                Canvas(modifier = Modifier.fillMaxSize().padding(2.dp)) {
+                    drawRect(brush = Brush.verticalGradient(stops))
+                }
             }
         }
         Text(
