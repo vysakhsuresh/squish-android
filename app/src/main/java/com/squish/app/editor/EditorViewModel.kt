@@ -1684,7 +1684,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 it.applying(snapshot, meta.durationMs, meta.displayWidth, meta.displayHeight, meta.fps)
             }
             recomputeEstimate()
-            startProxy(snapshot.sourceUri, meta.displayWidth, meta.displayHeight)
+            startProxy(snapshot.sourceUri, meta.displayWidth, meta.displayHeight, meta.durationMs)
 
             val pcm = PcmDecoder.decodeMono(getApplication(), snapshot.sourceUri)
             _state.update {

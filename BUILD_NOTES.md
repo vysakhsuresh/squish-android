@@ -206,6 +206,7 @@ they catch the class of error that a sandbox build cannot.
 ```
 kotlinc -nowarn -d /dev/null $(find app/src/main/java -name '*.kt') > log 2>&1
 python3 tools/check_unresolved.py log        # renamed / misspelled references
+python3 tools/check_calls.py log             # a signature changed, a caller left behind
 python3 tools/check_modifier_imports.py      # Modifier extensions used unimported
 python3 tools/check_nesting.py               # a declaration swallowed by a stray brace
 python3 tools/check_shaders.py               # a shader and its Kotlin disagreeing about uniforms
@@ -221,6 +222,16 @@ KOTLINC=<path>/kotlinc tools/jvm/run.sh      # runs the speed and grade maths fo
 file declares, leaving bare references to things that do not exist. Known
 unresolvable names live in `tools/unresolved_baseline.txt`; regenerate it with
 `--write-baseline` after a dependency change.
+
+`check_calls.py` reads the three arity errors out of the same log: an argument
+missing, an argument too many, a name that is not a parameter. It exists because
+adding a parameter and missing one of the callers is invisible to everything else
+here — the file parses, every name resolves, the imports are all present — and
+because the error was already in the log when `startProxy` gained a `durationMs`
+and the recovery path did not. It was being filtered out with the thousands of
+unresolved-reference lines, on the assumption that everything in that log was
+noise. Argument *type* mismatches were tried here too and are pure cascade, so
+they are not looked at.
 
 `check_modifier_imports.py` exists because a missing extension import shows up as
 an unresolved *member*, which the first script deliberately ignores. It learns each
