@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -160,14 +161,21 @@ fun EditorScreen(
                 return@Column
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .padding(horizontal = 12.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(SquishColors.Surface)
-            ) {
+            // The preview takes its height from the footage, inside limits. A
+            // portrait clip in a fixed landscape box was showing its middle third
+            // and hiding the rest; see PreviewBox for what the limits are for.
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                val frameAspect = state.sourceFrameAspect
+                val boxHeight = PreviewBox.heightDp(frameAspect, maxWidth.value).dp
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(boxHeight)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(SquishColors.Surface),
+                    contentAlignment = Alignment.Center
+                ) {
                 TimelinePreview(
                     videoClips = state.videoClips,
                     audioClips = state.audioClips,
@@ -179,16 +187,27 @@ fun EditorScreen(
                     grade = state.grade,
                     rotationDegrees = state.rotationDegrees,
                     cropRatio = state.cropAspect.ratio,
-                    sourceAspect = state.previewAspect,
+                    sourceAspect = state.sourceFrameAspect,
                     playheadMs = state.playheadMs,
                     scrubNonce = state.scrubNonce,
                     onPositionChange = viewModel::setPlayhead,
                     onPlayingChange = viewModel::setPlaying,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    // Inside the picture, so the crop rectangle is measured
+                    // against the frame rather than against the whole box.
+                    pictureOverlay = {
+                        // Live framing while cropping, so the ratio is never
+                        // chosen blind - and now with the part being cropped away
+                        // still on screen, dimmed, which is the only way to see
+                        // what a crop is actually costing.
+                        if (tab == EditorTab.Crop || state.cropAspect != CropAspect.Original) {
+                            CropOverlay(
+                                aspect = state.cropAspect,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
                 )
-                // Live framing while cropping, so the ratio is never chosen blind.
-                if (tab == EditorTab.Crop || state.cropAspect != CropAspect.Original) {
-                    CropOverlay(aspect = state.cropAspect, modifier = Modifier.fillMaxSize())
                 }
             }
 

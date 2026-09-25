@@ -1,79 +1,15 @@
 package com.squish.app.timeline
 
 /**
- * How wide the strip is allowed to get, and what zoom that leaves.
+ * How often to put a mark on the ruler.
  *
- * Compose lays out in pixels held in a packed long, and any dimension at or above
- * 262,143 is refused outright - `Constraints` throws rather than clamping. The
- * timeline is one very wide row, so its width is seconds times zoom times screen
- * density, and nothing in that product knew about the ceiling.
- *
- * A three-hour import at the default forty-two pixels a second on a two-times
- * screen asks for nine hundred thousand pixels. That is not a slow layout or a
- * memory problem - it is an immediate exception on the first frame the editor
- * composes, which is why the app died on import however much memory the device
- * had and whatever the earlier frame-decoding fixes did.
- *
- * Kept here, apart from the composable, because it is arithmetic and arithmetic
- * can be executed. The check suite runs the real numbers for everything from a
- * ten-second clip to an eight-hour one across the densities Android ships.
+ * Once held the width budget that kept a long timeline from overflowing Compose's
+ * layout limits. That budget is gone: the strip is windowed now, so only a
+ * screenful is ever laid out and no length of video can overflow anything. What
+ * remains is the one thing that still scales with the length of the edit rather
+ * than the size of the screen - how many ticks a ruler asks for.
  */
 object TimelineSpan {
-
-    /** The value Compose refuses at. Taken from `Constraints`, not guessed. */
-    const val HARD_LIMIT_PX = 262_143
-
-    /**
-     * What the strip may actually use.
-     *
-     * Short of the ceiling on purpose. The ceiling is where it throws; a budget
-     * that sat exactly on it would depend on every future caller rounding the
-     * same way this one does.
-     */
-    const val WIDTH_BUDGET_PX = 240_000
-
-    /**
-     * The most zoom this timeline can carry without overflowing the budget.
-     *
-     * [tailDp] is the empty run past the end of the edit, which is part of the
-     * laid-out width and so part of what has to fit.
-     */
-    fun maxPixelsPerSecond(durationMs: Long, density: Float, tailDp: Float): Float {
-        if (density <= 0f) return Float.MAX_VALUE
-        val seconds = (durationMs / 1000f)
-        if (seconds <= 0f) return Float.MAX_VALUE
-        val budgetDp = WIDTH_BUDGET_PX / density - tailDp
-        if (budgetDp <= 0f) return 0f
-        return budgetDp / seconds
-    }
-
-    /**
-     * The zoom to actually lay out at: what was asked for, or as much of it as
-     * fits, but never below [floor] - a strip zoomed to nothing is no more use
-     * than one that crashes, and at that point the tail is what to give up.
-     */
-    fun safePixelsPerSecond(
-        requested: Float,
-        durationMs: Long,
-        density: Float,
-        tailDp: Float,
-        floor: Float
-    ): Float {
-        val ceiling = maxPixelsPerSecond(durationMs, density, tailDp)
-        if (requested <= ceiling) return requested
-        return maxOf(ceiling, floor)
-    }
-
-    /**
-     * The width the strip will be laid out at, in dp, clamped so it can never be
-     * refused - including when [floor] above had to win.
-     */
-    fun contentWidthDp(durationMs: Long, pixelsPerSecond: Float, density: Float, tailDp: Float): Float {
-        val seconds = (durationMs / 1000f).coerceAtLeast(0f)
-        val wanted = seconds * pixelsPerSecond + tailDp
-        if (density <= 0f) return wanted
-        return wanted.coerceAtMost(WIDTH_BUDGET_PX / density)
-    }
 
     /**
      * The most ruler ticks worth laying out.
@@ -103,19 +39,23 @@ object TimelineSpan {
      * How often to put a mark on the ruler.
      *
      * Two demands at once, and the coarser wins. [readableStepMs] is what the zoom
-     * can show without labels colliding; the count is what the timeline's length
-     * can afford. A short clip is governed by the first, a long one by the second.
+     * can show without labels colliding; the count is what fits.
+     *
+     * [visibleMs] is how much footage is on screen, not how long the video is.
+     * Those were the same thing when the whole strip was laid out at once; they
+     * are not now, and using the length would give a three-hour video a two-hour
+     * tick step even zoomed in to a single frame.
      */
-    fun rulerStepMs(durationMs: Long, readableStepMs: Long): Long {
-        val total = durationMs.coerceAtLeast(1L)
+    fun rulerStepMs(visibleMs: Long, readableStepMs: Long): Long {
+        val total = visibleMs.coerceAtLeast(1L)
         val affordable = (total + MAX_TICKS - 1) / MAX_TICKS
         val wanted = maxOf(readableStepMs, affordable)
         return STEPS_MS.firstOrNull { it >= wanted } ?: STEPS_MS.last()
     }
 
-    /** How many ticks [rulerStepMs] will actually produce. */
-    fun tickCount(durationMs: Long, stepMs: Long): Int {
+    /** How many ticks [rulerStepMs] will actually produce over a visible span. */
+    fun tickCount(visibleMs: Long, stepMs: Long): Int {
         if (stepMs <= 0L) return 0
-        return (durationMs.coerceAtLeast(0L) / stepMs).toInt() + 1
+        return (visibleMs.coerceAtLeast(0L) / stepMs).toInt() + 1
     }
 }

@@ -1,5 +1,6 @@
 # Names kotlinc cannot resolve without the Android SDK, and which are
 # not real mistakes. Regenerate with --write-baseline after a dependency change.
+BoxScope
 ColumnScope
 android
 androidx
@@ -10,6 +11,7 @@ getBackStackEntry
 getSystemService
 id
 lifecycle
+maxWidth
 mkdirs
 onDispose
 popUpTo

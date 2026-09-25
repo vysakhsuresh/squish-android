@@ -3,9 +3,12 @@ package com.squish.app.timeline
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,10 +45,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -76,7 +79,14 @@ private const val FOLLOW_ANCHOR = 0.33f
 private const val EDGE_MARGIN_PX = 48f
 
 /**
- * Zoom limits. Above the second a frame is a mile wide.
+ * Zoom limits.
+ *
+ * The ceiling was four hundred, and before the strip was windowed it could not
+ * safely be more: zoom times length was a layout width, and a long video at a
+ * deep zoom was a number Compose refuses. Only a screenful is laid out now, so
+ * the ceiling is a question of what is useful rather than what survives - two
+ * thousand pixels a second puts a 30fps frame about seventy pixels wide, which
+ * is enough to cut on.
  *
  * The floor is deliberately far below anything anyone would choose by hand. It is
  * not a zoom to work at - it is what "fit the whole edit" needs in order to mean
@@ -84,8 +94,8 @@ private const val EDGE_MARGIN_PX = 48f
  * pixel per second, and a floor of two silently left the fit showing a sixtieth
  * of the timeline while claiming to show all of it.
  */
-private const val MIN_PPS = 0.05f
-private const val MAX_PPS = 400f
+private const val MIN_PPS = ZOOM_MIN
+private const val MAX_PPS = ZOOM_MAX
 
 /** Empty run past the end of the edit, so the last clip is not against the edge. */
 private const val TAIL_DP = 240f
@@ -93,8 +103,6 @@ private const val TAIL_DP = 240f
 /** One height and one floor for every button on the strip's action bar. */
 private val MINI_ACTION_HEIGHT = 34.dp
 private val MINI_ACTION_MIN_WIDTH = 44.dp
-
-private fun Long.onTimeline(pixelsPerSecond: Float): Dp = (this / 1000f * pixelsPerSecond).dp
 
 /**
  * How far two fingers must change their spread before it counts as a pinch.
@@ -189,66 +197,79 @@ fun TimelineEditor(
     fitNonce: Long = 0L,
     onZoomTo: (Float) -> Unit = {}
 ) {
-    val scroll = rememberScrollState()
     val density = LocalDensity.current
+    val totalMs = maxOf(state.durationMs, 8_000L)
 
-    /**
-     * The zoom the strip is actually laid out at.
-     *
-     * Not always the zoom that was asked for. Compose refuses any dimension of
-     * 262,143 pixels or more - it throws rather than clamping - and this strip is
-     * one very wide row whose width is seconds times zoom times density. A
-     * three-hour import at the default zoom asks for nine hundred thousand
-     * pixels, so the editor died on the first frame it composed, whatever the
-     * device's memory. Everything below reads this rather than the state, so the
-     * ruler, the clips, the markers and the playhead all agree on one scale.
-     */
-    val pps = TimelineSpan.safePixelsPerSecond(
-        requested = state.pixelsPerSecond,
-        durationMs = maxOf(state.durationMs, 8_000L),
-        density = density.density,
-        tailDp = TAIL_DP,
-        floor = MIN_PPS
-    )
-    // Read fresh inside the gesture: the pointerInput block is keyed on Unit so
-    // it survives a zoom, and a captured value would go stale on the first pinch.
-    val latestZoomTo by rememberUpdatedState(onZoomTo)
-    val latestPps by rememberUpdatedState(pps)
-    val latestMaxPps by rememberUpdatedState(
-        TimelineSpan.maxPixelsPerSecond(maxOf(state.durationMs, 8_000L), density.density, TAIL_DP)
-    )
-    val contentWidth = TimelineSpan.contentWidthDp(
-        durationMs = maxOf(state.durationMs, 8_000L),
-        pixelsPerSecond = pps,
-        density = density.density,
-        tailDp = TAIL_DP
-    ).dp
-
-    // The strip's own width in pixels, which is what makes following and fitting
-    // possible. Zero until the first layout pass, and every use guards for that.
+    // The strip's own width in pixels. Zero until the first layout pass, and
+    // every use guards for that.
     var viewportPx by remember { mutableIntStateOf(0) }
 
+    /**
+     * Where the left edge of the view is, as a moment in the edit.
+     *
+     * The strip is no longer laid out whole. It used to be one row as wide as the
+     * entire timeline inside a scroll container, which is the obvious way to build
+     * it and does not survive a long video: Compose refuses any dimension of
+     * 262,143 pixels or more, and three hours at a working zoom is nine hundred
+     * thousand. Budgeting the zoom kept it alive at the cost of precision - three
+     * hours could only be shown at about eleven pixels a second.
+     *
+     * Now only what is on screen is built, so what it costs to lay out does not
+     * depend on how long the video is, and the zoom ceiling is gone: a three-hour
+     * clip zooms to the frame exactly like a three-second one.
+     */
+    var scrollMs by remember { mutableStateOf(0.0) }
+
+    val window = TimelineWindow(
+        pixelsPerSecond = state.pixelsPerSecond.coerceIn(MIN_PPS, MAX_PPS),
+        scrollMs = scrollMs,
+        density = density.density,
+        viewportPx = viewportPx
+    )
+
+    // Read fresh inside gestures: the pointerInput blocks are keyed on Unit so
+    // they survive a zoom, and a captured value would go stale on the first pinch.
+    val latestZoomTo by rememberUpdatedState(onZoomTo)
+    val latestWindow by rememberUpdatedState(window)
+
     /** The zoom the strip was last laid out at, so a pinch knows what it changed from. */
-    var previousPps by remember { mutableFloatStateOf(pps) }
+    var previousPps by remember { mutableFloatStateOf(window.pixelsPerSecond) }
 
     /** True while the playhead is being dragged, which nothing else may interrupt. */
     var scrubbing by remember { mutableStateOf(false) }
 
+    fun scrollTo(ms: Double) {
+        scrollMs = ms.coerceIn(0.0, latestWindow.maxScrollMs(totalMs, TAIL_DP))
+    }
+
+    /**
+     * Dragging the strip moves the view.
+     *
+     * Its own scroll rather than `horizontalScroll`, because that one needs the
+     * content to really be as wide as the timeline - which is the thing that could
+     * not be laid out. This converts the drag to time and moves the window, so the
+     * distance scrolled is bounded by the length of the video rather than by the
+     * length times the zoom.
+     */
+    val scrollable = rememberScrollableState { deltaPx ->
+        val before = scrollMs
+        scrollTo(before - latestWindow.msForPx(deltaPx))
+        latestWindow.pxForMs(before - scrollMs)
+    }
+
     /**
      * Fits the whole edit across the strip.
      *
-     * A ten-minute clip at the default zoom is twenty-five thousand dp of
-     * timeline, which is why it ran off to the right and stayed there. Fitting is
-     * the answer to seeing all of it; following, below, is the answer to seeing
-     * the part that is playing.
+     * Fitting is the answer to seeing all of it; following, below, is the answer
+     * to seeing the part that is playing.
      */
     LaunchedEffect(fitNonce, viewportPx, state.durationMs) {
         if (fitNonce <= 0L || viewportPx <= 0) return@LaunchedEffect
-        val seconds = (state.durationMs / 1000f).coerceAtLeast(1f)
+        val seconds = (totalMs / 1000f).coerceAtLeast(0.001f)
         val usableDp = with(density) { viewportPx.toDp().value } - 24f
         if (usableDp <= 0f) return@LaunchedEffect
-        val ceiling = TimelineSpan.maxPixelsPerSecond(state.durationMs, density.density, TAIL_DP)
-        onZoomTo((usableDp / seconds).coerceIn(MIN_PPS, minOf(MAX_PPS, ceiling).coerceAtLeast(MIN_PPS)))
+        scrollTo(0.0)
+        onZoomTo((usableDp / seconds).coerceIn(MIN_PPS, MAX_PPS))
     }
 
     /**
@@ -260,50 +281,48 @@ fun TimelineEditor(
      * seconds. While paused it only intervenes when the playhead has left the
      * viewport, so scrolling by hand to look at something is not fought.
      */
-    LaunchedEffect(state.playheadMs, isPlaying, viewportPx, pps, scrubbing) {
+    LaunchedEffect(state.playheadMs, isPlaying, viewportPx, window.pixelsPerSecond, scrubbing) {
         if (viewportPx <= 0) return@LaunchedEffect
         // Never while a finger is on the playhead. Following moves the board, and
         // moving the board under a finger that is itself moving means the two chase
-        // each other - the strip lurches, the playhead lands nowhere near where it
-        // was let go, and the position jumps by seconds at a time.
+        // each other - the strip lurches and the position jumps by seconds.
         if (scrubbing) return@LaunchedEffect
-        val playheadPx = with(density) { state.playheadMs.onTimeline(pps).toPx() }
-        val visible = playheadPx - scroll.value
 
-        val target = when {
-            isPlaying -> playheadPx - viewportPx * FOLLOW_ANCHOR
-            visible < 0f -> playheadPx - viewportPx * FOLLOW_ANCHOR
-            visible > viewportPx - EDGE_MARGIN_PX -> playheadPx - viewportPx * FOLLOW_ANCHOR
-            else -> return@LaunchedEffect
-        }
+        val visible = window.xPx(state.playheadMs)
+        val needsMoving = isPlaying || visible < 0f || visible > viewportPx - EDGE_MARGIN_PX
+        if (!needsMoving) return@LaunchedEffect
 
-        val clamped = target.toInt().coerceIn(0, scroll.maxValue)
-        if (clamped != scroll.value) scroll.scrollTo(clamped)
+        scrollTo(state.playheadMs - window.msForPx(viewportPx * FOLLOW_ANCHOR))
     }
+
     /**
-     * Holds the playhead still through a zoom.
+     * Holds a moment still through a zoom.
      *
-     * Scroll is in pixels and the content's width changes with the zoom, so a
-     * pinch that did nothing else would slide whatever you were looking at off
-     * the screen - the further along the edit you were, the further it would go.
-     * Keeping the playhead at the same place on screen is what makes a pinch feel
-     * like zooming rather than like being thrown.
-     *
-     * A frame is waited for first: the effect runs before the new, wider content
-     * has been laid out, and `scrollTo` clamps against a `maxValue` that is still
-     * the old one.
+     * A zoom that keeps the left edge where it is throws whatever you were looking
+     * at off the screen, and the further into the edit you are the further it
+     * goes. The playhead is where your attention is, so it stays put - unless it
+     * is off screen, in which case the middle of what you *are* looking at does.
      */
-    LaunchedEffect(pps) {
+    LaunchedEffect(window.pixelsPerSecond) {
         val previous = previousPps
-        previousPps = pps
-        if (previous <= 0f || previous == pps || viewportPx <= 0 || isPlaying) return@LaunchedEffect
-        val before = with(density) { state.playheadMs.onTimeline(previous).toPx() } - scroll.value
-        // Off screen to begin with: the follow effect above has already decided
-        // where the strip should land, and re-anchoring would only undo it.
-        if (before < 0f || before > viewportPx) return@LaunchedEffect
-        withFrameNanos { }
-        val after = with(density) { state.playheadMs.onTimeline(pps).toPx() }
-        scroll.scrollTo((after - before).toInt().coerceIn(0, scroll.maxValue))
+        previousPps = window.pixelsPerSecond
+        if (previous <= 0f || previous == window.pixelsPerSecond || viewportPx <= 0) {
+            return@LaunchedEffect
+        }
+        val before = window.copy(pixelsPerSecond = previous)
+        val playheadPx = before.xPx(state.playheadMs)
+        val anchorMs = if (playheadPx in 0f..viewportPx.toFloat()) {
+            state.playheadMs
+        } else {
+            before.msAt(viewportPx / 2f)
+        }
+        scrollTo(before.zoomedTo(window.pixelsPerSecond, anchorMs, totalMs, TAIL_DP).scrollMs)
+    }
+
+    // Keeps the view inside the edit when the edit gets shorter, or the zoom
+    // coarser - either can leave the window parked past the end of everything.
+    LaunchedEffect(totalMs, window.pixelsPerSecond, viewportPx) {
+        scrollTo(scrollMs)
     }
 
     val overlayLayers = (state.layerCount downTo 1).toList()
@@ -324,28 +343,25 @@ fun TimelineEditor(
             modifier = Modifier
                 .fillMaxWidth()
                 .onSizeChanged { viewportPx = it.width }
-                // Pinch to zoom, anchored on the playhead.
-                //
-                // Ahead of horizontalScroll in the chain so it sees the gesture on
-                // the initial pass, before the scroll can claim it. Anchored rather
-                // than free because a zoom that keeps the left edge still throws
-                // whatever you were looking at off the screen - the playhead is
-                // where your attention is, so it stays put.
+                // Pinch ahead of the scroll in the chain, so it sees the gesture on
+                // the initial pass before the scroll can claim it.
                 .pointerInput(Unit) {
                     detectPinch { zoom ->
-                        // Against the same ceiling the layout uses, so a pinch that
-                        // cannot be honoured stops at the edge rather than storing a
-                        // zoom the strip then quietly refuses to draw.
-                        val ceiling = minOf(latestMaxPps, MAX_PPS).coerceAtLeast(MIN_PPS)
-                        latestZoomTo((latestPps * zoom).coerceIn(MIN_PPS, ceiling))
+                        latestZoomTo(
+                            (latestWindow.pixelsPerSecond * zoom).coerceIn(MIN_PPS, MAX_PPS)
+                        )
                     }
                 }
-                .horizontalScroll(scroll)
+                .scrollable(state = scrollable, orientation = Orientation.Horizontal)
+                // Nothing may be drawn outside the strip. Clips now extend past
+                // both edges by design - only the visible part of one is built -
+                // and without this the overhang would paint over the gutter.
+                .clipToBounds()
         ) {
-            Column(modifier = Modifier.width(contentWidth)) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Ruler(
-                    durationMs = state.durationMs,
-                    pixelsPerSecond = pps,
+                    durationMs = totalMs,
+                    window = window,
                     markers = markers,
                     barMarkers = barMarkers,
                     onScrub = onScrub
@@ -354,7 +370,7 @@ fun TimelineEditor(
                     Lane(
                         clips = state.clips.filter { it.kind == ClipKind.Video && it.layer == layer },
                         state = state,
-                        pps = pps,
+                        window = window,
                         accent = SquishColors.Magenta,
                         onSelect = onSelect,
                         onMove = onMove,
@@ -365,7 +381,7 @@ fun TimelineEditor(
                 Lane(
                     clips = state.baseVideoClips,
                     state = state,
-                    pps = pps,
+                    window = window,
                     accent = SquishColors.Violet,
                     onSelect = onSelect,
                     onMove = onMove,
@@ -374,9 +390,9 @@ fun TimelineEditor(
                     onTransitionTap = onTransitionTap
                 )
                 audioLanes.forEach { lane ->
-                    Lane(lane, state, pps, SquishColors.Cyan, onSelect, onMove, onTrim, onScrub)
+                    Lane(lane, state, window, SquishColors.Cyan, onSelect, onMove, onTrim, onScrub)
                 }
-                Lane(state.textClips, state, pps, SquishColors.Amber, onSelect, onMove, onTrim, onScrub)
+                Lane(state.textClips, state, window, SquishColors.Amber, onSelect, onMove, onTrim, onScrub)
             }
 
             // Beat lines run the full height, behind the playhead. A grid you can
@@ -384,10 +400,11 @@ fun TimelineEditor(
             // crosses the lanes tells you whether a cut is on one.
             val laneHeight = RULER_HEIGHT + LANE_HEIGHT * laneCount
             markers.forEach { at ->
+                if (!window.intersects(at, at)) return@forEach
                 val isBar = at in barMarkers
                 Box(
                     modifier = Modifier
-                        .offset(x = at.onTimeline(pps))
+                        .offset(x = window.xDp(at).dp)
                         .width(1.dp)
                         .height(laneHeight)
                         .background(
@@ -399,7 +416,7 @@ fun TimelineEditor(
 
             Playhead(
                 atMs = state.playheadMs,
-                pixelsPerSecond = pps,
+                window = window,
                 height = laneHeight,
                 onScrub = onScrub,
                 onScrubbingChange = { scrubbing = it }
@@ -419,7 +436,7 @@ fun TimelineEditor(
 @Composable
 private fun BoxScope.Playhead(
     atMs: Long,
-    pixelsPerSecond: Float,
+    window: TimelineWindow,
     height: Dp,
     onScrub: (Long) -> Unit,
     onScrubbingChange: (Boolean) -> Unit
@@ -427,7 +444,9 @@ private fun BoxScope.Playhead(
     val latestScrub by rememberUpdatedState(onScrub)
     val latestScrubbing by rememberUpdatedState(onScrubbingChange)
     val latestAtMs by rememberUpdatedState(atMs)
-    val x = atMs.onTimeline(pixelsPerSecond)
+    val latestWindow by rememberUpdatedState(window)
+    val pixelsPerSecond = window.pixelsPerSecond
+    val x = window.xDp(atMs).dp
 
     Column(
         modifier = Modifier
@@ -461,7 +480,7 @@ private fun BoxScope.Playhead(
                     onDragCancel = { latestScrubbing(false) }
                 ) { change, dragAmount ->
                     change.consume()
-                    positionMs += dragAmount / density / pixelsPerSecond * 1000f
+                    positionMs += latestWindow.msForPx(dragAmount).toFloat()
                     positionMs = positionMs.coerceAtLeast(0f)
                     latestScrub(positionMs.toLong())
                 }
@@ -497,12 +516,14 @@ private fun LaneBadge(icon: ImageVector, tint: Color) {
 @Composable
 private fun Ruler(
     durationMs: Long,
-    pixelsPerSecond: Float,
+    window: TimelineWindow,
     markers: List<Long>,
     barMarkers: List<Long>,
     onScrub: (Long) -> Unit
 ) {
     val latestScrub by rememberUpdatedState(onScrub)
+    val latestWindow by rememberUpdatedState(window)
+    val pixelsPerSecond = window.pixelsPerSecond
     val total = maxOf(durationMs, 8_000L)
     // A tick every second is unreadable when zoomed out, so widen the step until
     // labels have room to breathe - and widen it again if the timeline is long
@@ -513,42 +534,49 @@ private fun Ruler(
         pixelsPerSecond >= 18f -> 5_000L
         else -> 10_000L
     }
-    val stepMs = TimelineSpan.rulerStepMs(total, readableStepMs)
+    // Against what is on screen, not how long the video is. Only the visible
+    // ticks are built now, so the length of the edit no longer has a say in how
+    // finely it can be marked.
+    val stepMs = TimelineSpan.rulerStepMs(window.viewportMs, readableStepMs)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(RULER_HEIGHT)
-            .pointerInput(pixelsPerSecond) {
-                detectTapGestures { offset ->
-                    latestScrub((offset.x / density / pixelsPerSecond * 1000f).toLong())
-                }
+            .pointerInput(Unit) {
+                detectTapGestures { offset -> latestScrub(latestWindow.msAt(offset.x)) }
             }
             // Dragging the ruler scrubs. Tapping alone meant finding a frame took a
             // series of guesses instead of one continuous movement.
-            .pointerInput(pixelsPerSecond) {
+            .pointerInput(Unit) {
                 detectHorizontalDragGestures { change, _ ->
                     change.consume()
-                    latestScrub((change.position.x / density / pixelsPerSecond * 1000f).toLong())
+                    latestScrub(latestWindow.msAt(change.position.x))
                 }
             }
     ) {
         // Drawn first so the second ticks and their labels sit over them.
         markers.forEach { at ->
+            if (!window.intersects(at, at)) return@forEach
             val isBar = at in barMarkers
             Box(
                 modifier = Modifier
-                    .offset(x = at.onTimeline(pixelsPerSecond))
+                    .offset(x = window.xDp(at).dp)
                     .width(if (isBar) 2.dp else 1.dp)
                     .height(if (isBar) RULER_HEIGHT else RULER_HEIGHT * 0.5f)
                     .background(SquishColors.Cyan.copy(alpha = if (isBar) 0.8f else 0.4f))
             )
         }
 
-        var t = 0L
-        while (t <= total) {
+        // Only the ticks on screen. The ruler used to build one column, line and
+        // label for every step across the whole timeline whether or not any of it
+        // was visible - a thousand of them at three hours, ten thousand zoomed in.
+        var t = (window.firstDrawnMs / stepMs) * stepMs
+        if (t < 0L) t = 0L
+        val lastTick = minOf(total, window.lastDrawnMs)
+        while (t <= lastTick) {
             val label = t
-            Column(modifier = Modifier.offset(x = label.onTimeline(pixelsPerSecond))) {
+            Column(modifier = Modifier.offset(x = window.xDp(label).dp)) {
                 Box(modifier = Modifier.width(1.dp).height(6.dp).background(SquishColors.Border))
                 Text(
                     Timecode.format(label).removeSuffix(".000"),
@@ -566,13 +594,11 @@ private fun Lane(
     clips: List<Clip>,
     state: TimelineState,
     /**
-     * The zoom the strip is being laid out at, which is not always the one in the
-     * state - see the clamp in [TimelineEditor]. Passed in rather than read from
-     * the state here, because a lane that disagreed with the ruler above it about
-     * the scale would put every clip in the wrong place, and a lane that used the
-     * unclamped value would lay out a clip too wide for Compose to accept.
+     * Where the view is and how big it is. Passed in rather than read from the
+     * state, because a lane that disagreed with the ruler above it about the scale
+     * or the scroll would put every clip in the wrong place.
      */
-    pps: Float,
+    window: TimelineWindow,
     accent: Color,
     onSelect: (String?) -> Unit,
     onMove: (String, Long) -> Unit,
@@ -581,6 +607,7 @@ private fun Lane(
     onTransitionTap: ((String) -> Unit)? = null
 ) {
     val latestScrub by rememberUpdatedState(onScrub)
+    val latestWindow by rememberUpdatedState(window)
 
     Box(
         modifier = Modifier
@@ -596,17 +623,18 @@ private fun Lane(
             // A tap on empty track is a tap on a moment, so it moves the playhead
             // there. Only the bare lane: a clip handles its own tap, because that
             // one also has to select.
-            .pointerInput(pps) {
-                detectTapGestures { offset ->
-                    latestScrub((offset.x / density / pps * 1000f).toLong().coerceAtLeast(0L))
-                }
+            .pointerInput(Unit) {
+                detectTapGestures { offset -> latestScrub(latestWindow.msAt(offset.x)) }
             }
     ) {
         clips.forEach { clip ->
+            // Off-screen clips are not built at all. This is what makes a timeline
+            // of a hundred cuts cost the same to lay out as one of three.
+            if (!window.intersects(clip.timelineStartMs, clip.timelineEndMs)) return@forEach
             ClipView(
                 clip = clip,
                 selected = clip.id == state.selectedClipId,
-                pixelsPerSecond = pps,
+                window = window,
                 accent = accent,
                 onSelect = onSelect,
                 onMove = onMove,
@@ -619,9 +647,10 @@ private fun Lane(
         // join rather than a hunt through a menu.
         onTransitionTap?.let { tap ->
             clips.drop(1).forEach { clip ->
+                if (!window.intersects(clip.timelineStartMs, clip.timelineStartMs)) return@forEach
                 TransitionBadge(
                     clip = clip,
-                    pixelsPerSecond = pps,
+                    window = window,
                     onTap = { tap(clip.id) }
                 )
             }
@@ -630,11 +659,11 @@ private fun Lane(
 }
 
 @Composable
-private fun BoxScope.TransitionBadge(clip: Clip, pixelsPerSecond: Float, onTap: () -> Unit) {
+private fun BoxScope.TransitionBadge(clip: Clip, window: TimelineWindow, onTap: () -> Unit) {
     val active = clip.transitionIn.isActive
     Box(
         modifier = Modifier
-            .offset(x = clip.timelineStartMs.onTimeline(pixelsPerSecond) - 9.dp)
+            .offset(x = window.xDp(clip.timelineStartMs).dp - 9.dp)
             .align(Alignment.CenterStart)
             .size(18.dp)
             .clip(RoundedCornerShape(5.dp))
@@ -659,7 +688,7 @@ private fun BoxScope.TransitionBadge(clip: Clip, pixelsPerSecond: Float, onTap: 
 private fun ClipView(
     clip: Clip,
     selected: Boolean,
-    pixelsPerSecond: Float,
+    window: TimelineWindow,
     accent: Color,
     onSelect: (String?) -> Unit,
     onMove: (String, Long) -> Unit,
@@ -670,7 +699,25 @@ private fun ClipView(
     val latestTrim by rememberUpdatedState(onTrim)
     val latestSelect by rememberUpdatedState(onSelect)
     val latestScrub by rememberUpdatedState(onScrub)
-    val width = clip.durationMs.onTimeline(pixelsPerSecond)
+    val latestWindow by rememberUpdatedState(window)
+
+    /**
+     * The part of this clip that is on screen, and only that.
+     *
+     * A clip is as wide as its own length times the zoom, and that is unbounded:
+     * an hour-long shot examined at frame level is millions of pixels, which
+     * Compose will not lay out at all. So the box drawn is the screenful of the
+     * clip you can see, positioned where that part of the whole clip would have
+     * been - which looks identical and costs the same whatever the clip's length.
+     */
+    val span = window.clampToView(clip.timelineStartMs, clip.timelineEndMs) ?: return
+    val drawnStartMs = span.first
+    val drawnEndMs = span.last
+    val width = window.widthDp(drawnEndMs - drawnStartMs).dp
+
+    /** Whether the clip's real edges are in the part being drawn. */
+    val headVisible = drawnStartMs <= clip.timelineStartMs
+    val tailVisible = drawnEndMs >= clip.timelineEndMs
 
     // A short clip must still be trimmable. Fixed 20dp handles covered a two-second
     // clip completely at default zoom, so the grips scale down with the clip and
@@ -679,33 +726,51 @@ private fun ClipView(
 
     Box(
         modifier = Modifier
-            .offset(x = clip.timelineStartMs.onTimeline(pixelsPerSecond))
+            .offset(x = window.xDp(drawnStartMs).dp)
             .width(width)
             .fillMaxHeight()
-            .clip(RoundedCornerShape(7.dp))
+            // Corners only where the clip really ends. A rounded edge in the
+            // middle of a long clip would read as a cut that is not there.
+            .clip(
+                RoundedCornerShape(
+                    topStart = if (headVisible) 7.dp else 0.dp,
+                    bottomStart = if (headVisible) 7.dp else 0.dp,
+                    topEnd = if (tailVisible) 7.dp else 0.dp,
+                    bottomEnd = if (tailVisible) 7.dp else 0.dp
+                )
+            )
             .background(accent.copy(alpha = if (selected) 0.42f else 0.26f))
             .border(
                 width = if (selected) 2.dp else 1.dp,
                 color = if (selected) accent else accent.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(7.dp)
+                shape = RoundedCornerShape(
+                    topStart = if (headVisible) 7.dp else 0.dp,
+                    bottomStart = if (headVisible) 7.dp else 0.dp,
+                    topEnd = if (tailVisible) 7.dp else 0.dp,
+                    bottomEnd = if (tailVisible) 7.dp else 0.dp
+                )
             )
             // Tap handled as a gesture rather than Modifier.clickable: clickable sat
             // ahead of the drag detector in the chain and swallowed the drag, which
             // is why clips could be selected but never moved.
-            .pointerInput(clip.id, pixelsPerSecond) {
+            .pointerInput(clip.id) {
                 // Selects the clip *and* goes to the moment that was tapped. On a
                 // phone the strip is the only place to aim at a frame, so a tap
                 // that only selects wastes the one gesture there is room for.
+                //
+                // The window is asked where the tap landed rather than measuring
+                // from the clip's start: what is drawn may begin partway into the
+                // clip, so "the clip's start plus this far in" is not the moment
+                // the finger is over.
                 detectTapGestures { offset ->
                     latestSelect(clip.id)
-                    val into = (offset.x / density / pixelsPerSecond * 1000f).toLong()
-                    latestScrub((clip.timelineStartMs + into).coerceAtLeast(0L))
+                    latestScrub(latestWindow.msAt(offset.x + latestWindow.xPx(drawnStartMs)))
                 }
             }
             // The leftover fraction is carried between events rather than thrown
             // away. Zoomed in, one pixel is a fraction of a millisecond, and
             // rounding each event on its own turned most of a slow drag into zero.
-            .pointerInput(clip.id, pixelsPerSecond) {
+            .pointerInput(clip.id) {
                 var carriedMs = 0f
                 detectHorizontalDragGestures(
                     onDragStart = {
@@ -714,7 +779,7 @@ private fun ClipView(
                     }
                 ) { change, dragAmount ->
                     change.consume()
-                    carriedMs += dragAmount / density / pixelsPerSecond * 1000f
+                    carriedMs += latestWindow.msForPx(dragAmount).toFloat()
                     val wholeMs = carriedMs.toLong()
                     if (wholeMs != 0L) {
                         carriedMs -= wholeMs
@@ -728,10 +793,16 @@ private fun ClipView(
         // is its words, both of which it already shows.
         val strip = clip.uri?.takeIf { clip.kind == ClipKind.Video }
         if (strip != null) {
+            // The frames under the part being drawn, not under the whole clip.
+            // The box is a window onto the clip, so sampling the clip's whole
+            // source into it would show the wrong moments - and on a long clip
+            // would space them minutes apart.
+            val spanSourceIn = clip.sourceAt(drawnStartMs)
+            val spanSourceOut = clip.sourceAt(drawnEndMs)
             Filmstrip(
                 uri = strip,
-                sourceInMs = clip.sourceInMs,
-                sourceOutMs = clip.sourceOutMs,
+                sourceInMs = spanSourceIn,
+                sourceOutMs = spanSourceOut,
                 widthDp = width.value,
                 modifier = Modifier.matchParentSize()
             )
@@ -803,7 +874,9 @@ private fun ClipView(
         // Keyframes, where they sit along the clip. An animated shot should be
         // readable as animated from the strip, without opening a panel.
         clip.keyframes.forEach { key ->
-            val x = (key.atMs / 1000f * pixelsPerSecond).dp
+            val atTimeline = clip.timelineStartMs + key.atMs
+            if (atTimeline < drawnStartMs || atTimeline > drawnEndMs) return@forEach
+            val x = window.widthDp(atTimeline - drawnStartMs).dp
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -814,12 +887,17 @@ private fun ClipView(
             )
         }
 
-        if (selected) {
-            TrimHandle(accent, handleWidth, Alignment.CenterStart) { delta ->
-                latestTrim(clip.id, (delta / pixelsPerSecond * 1000f).toLong(), 0L)
+        // Only on an edge that is really there. A handle at the side of a clip
+        // that carries on past the screen would trim from a point the user never
+        // chose - it is the edge of the view, not the edge of the shot.
+        if (selected && headVisible) {
+            TrimHandle(accent, handleWidth, Alignment.CenterStart) { deltaDp ->
+                latestTrim(clip.id, latestWindow.msForDp(deltaDp).toLong(), 0L)
             }
-            TrimHandle(accent, handleWidth, Alignment.CenterEnd) { delta ->
-                latestTrim(clip.id, 0L, (delta / pixelsPerSecond * 1000f).toLong())
+        }
+        if (selected && tailVisible) {
+            TrimHandle(accent, handleWidth, Alignment.CenterEnd) { deltaDp ->
+                latestTrim(clip.id, 0L, latestWindow.msForDp(deltaDp).toLong())
             }
         }
     }

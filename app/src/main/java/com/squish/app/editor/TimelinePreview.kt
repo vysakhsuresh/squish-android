@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -80,7 +81,16 @@ fun TimelinePreview(
     scrubNonce: Long,
     onPositionChange: (Long) -> Unit,
     onPlayingChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Drawn over the picture, inside its bounds.
+     *
+     * A slot rather than a sibling of the preview, because the picture no longer
+     * fills its container: an overlay laid over the container would put its crop
+     * rectangle partly on the surround beside the footage, and measure it against
+     * the wrong width.
+     */
+    pictureOverlay: @Composable BoxScope.() -> Unit = {}
 ) {
     val context = LocalContext.current
     val engine = remember { PreviewEngine(context) }
@@ -101,7 +111,16 @@ fun TimelinePreview(
             "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}" +
                 ":L${it.layer}:${it.opacity}:${it.staticTransform}" +
                 ":${it.transitionIn.type}/${it.transitionIn.durationMs}" +
-                ":K${it.keyframes}"
+                ":K${it.keyframes}" +
+                // Keying, masking and stabilisation are things the engine already
+                // applies and this signature did not mention, so changing one of
+                // them did not reach the preview: you set a green-screen colour,
+                // nothing happened, and it only appeared once some unrelated edit
+                // happened to change the signature. Anything the picture depends
+                // on belongs here, or the preview is not a preview.
+                ":C${it.chromaKey}" +
+                ":M${it.mask}" +
+                ":S${it.stabilizer.size}"
         } +
             "//" + audioClips.joinToString("|") { "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}:${it.volume}" } +
             "//" + proxyUri + muteOriginal + originalVolume + grade + captions +
@@ -149,10 +168,18 @@ fun TimelinePreview(
     ) {
         // The canvas the edit is composed on. Overlay offsets are fractions of it,
         // so they have to be measured against the picture rather than the letterbox.
+        //
+        // Fitted, not filled. `fillMaxSize` here handed the aspect ratio below a
+        // set of constraints it could not change, so the ratio was ignored and the
+        // picture took the whole container - which for a portrait clip in a
+        // landscape container meant most of the frame was outside it. Matching the
+        // height first and letting the width follow gives the largest rectangle of
+        // the footage's own shape that fits, and nothing of the frame is lost.
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .aspectRatio(if (sourceAspect > 0f) sourceAspect else 16f / 9f)
+            modifier = Modifier.aspectRatio(
+                ratio = if (sourceAspect > 0f) sourceAspect else 16f / 9f,
+                matchHeightConstraintsFirst = true
+            )
         ) {
             VideoSurface(engine.baseA, frame.surfaceA)
             VideoSurface(engine.baseB, frame.surfaceB)
@@ -165,6 +192,8 @@ fun TimelinePreview(
                         .background(Color.Black.copy(alpha = frame.blackVeil.coerceIn(0f, 1f)))
                 )
             }
+
+            pictureOverlay()
 
             frame.overlays.forEach { placement ->
                 // Keyed by layer. Without this, deleting layer 1 shifts layer 2 into

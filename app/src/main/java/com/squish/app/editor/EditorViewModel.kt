@@ -43,6 +43,8 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
+import com.squish.app.timeline.ZOOM_MAX
+import com.squish.app.timeline.ZOOM_MIN
 import com.squish.app.timeline.rippleVideo
 import com.squish.app.timeline.withLayerChanged
 import com.squish.app.timeline.withOverlayGeometry
@@ -1410,8 +1412,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Sets the zoom directly, which is how the strip answers a fit request. */
+    // One pair of limits for the zoom, shared with the strip. They were written
+    // out again here, so the pinch and the buttons disagreed about how far in you
+    // could go - and the strip's own ceiling had moved.
     fun setPixelsPerSecond(value: Float) =
-        _state.update { it.copy(pixelsPerSecond = value.coerceIn(2f, 400f)) }
+        _state.update { it.copy(pixelsPerSecond = value.coerceIn(ZOOM_MIN, ZOOM_MAX)) }
 
     /** Asks the strip to fit the whole edit across its width. */
     fun fitTimeline() = _state.update { it.copy(fitNonce = it.fitNonce + 1) }

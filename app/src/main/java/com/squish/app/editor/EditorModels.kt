@@ -316,7 +316,20 @@ data class EditorUiState(
     val previewAspect: Float
         get() {
             cropAspect.ratio?.let { return it }
-            if (sourceWidth <= 0 || sourceHeight <= 0) return 16f / 9f
+            return sourceFrameAspect
+        }
+
+    /**
+     * The shape of the footage itself, whatever crop is set.
+     *
+     * The preview is fitted to this rather than to the crop, so the whole frame
+     * is on screen and the crop is drawn over it. Fitting to the crop instead
+     * meant the part being cropped away was never visible, which makes choosing
+     * a crop a matter of guessing and checking the export.
+     */
+    val sourceFrameAspect: Float
+        get() {
+            if (sourceWidth <= 0 || sourceHeight <= 0) return PreviewBox.DEFAULT_ASPECT
             val quarterTurned = rotationDegrees % 180 != 0
             return if (quarterTurned) sourceHeight.toFloat() / sourceWidth
             else sourceWidth.toFloat() / sourceHeight

@@ -187,8 +187,8 @@ data class TimelineState(
 }
 
 const val MIN_CLIP_MS = 200L
-private const val ZOOM_MIN = 8f
-private const val ZOOM_MAX = 400f
+const val ZOOM_MIN = 0.05f
+const val ZOOM_MAX = 2_000f
 
 /**
  * Video runs as one continuous strip - the way every cuts-only editor behaves -
