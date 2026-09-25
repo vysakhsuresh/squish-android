@@ -72,9 +72,20 @@ private const val FOLLOW_ANCHOR = 0.33f
 /** How close to the right edge counts as "about to leave the screen". */
 private const val EDGE_MARGIN_PX = 48f
 
-/** Zoom limits. Below the first a second is invisible; above it a frame is a mile. */
-private const val MIN_PPS = 2f
+/**
+ * Zoom limits. Above the second a frame is a mile wide.
+ *
+ * The floor is deliberately far below anything anyone would choose by hand. It is
+ * not a zoom to work at - it is what "fit the whole edit" needs in order to mean
+ * something on a long file. Three hours across a phone screen is a thirtieth of a
+ * pixel per second, and a floor of two silently left the fit showing a sixtieth
+ * of the timeline while claiming to show all of it.
+ */
+private const val MIN_PPS = 0.05f
 private const val MAX_PPS = 400f
+
+/** Empty run past the end of the edit, so the last clip is not against the edge. */
+private const val TAIL_DP = 240f
 
 private fun Long.onTimeline(pixelsPerSecond: Float): Dp = (this / 1000f * pixelsPerSecond).dp
 
@@ -173,12 +184,38 @@ fun TimelineEditor(
 ) {
     val scroll = rememberScrollState()
     val density = LocalDensity.current
-    val pps = state.pixelsPerSecond
+
+    /**
+     * The zoom the strip is actually laid out at.
+     *
+     * Not always the zoom that was asked for. Compose refuses any dimension of
+     * 262,143 pixels or more - it throws rather than clamping - and this strip is
+     * one very wide row whose width is seconds times zoom times density. A
+     * three-hour import at the default zoom asks for nine hundred thousand
+     * pixels, so the editor died on the first frame it composed, whatever the
+     * device's memory. Everything below reads this rather than the state, so the
+     * ruler, the clips, the markers and the playhead all agree on one scale.
+     */
+    val pps = TimelineSpan.safePixelsPerSecond(
+        requested = state.pixelsPerSecond,
+        durationMs = maxOf(state.durationMs, 8_000L),
+        density = density.density,
+        tailDp = TAIL_DP,
+        floor = MIN_PPS
+    )
     // Read fresh inside the gesture: the pointerInput block is keyed on Unit so
     // it survives a zoom, and a captured value would go stale on the first pinch.
     val latestZoomTo by rememberUpdatedState(onZoomTo)
     val latestPps by rememberUpdatedState(pps)
-    val contentWidth = maxOf(state.durationMs, 8_000L).onTimeline(pps) + 240.dp
+    val latestMaxPps by rememberUpdatedState(
+        TimelineSpan.maxPixelsPerSecond(maxOf(state.durationMs, 8_000L), density.density, TAIL_DP)
+    )
+    val contentWidth = TimelineSpan.contentWidthDp(
+        durationMs = maxOf(state.durationMs, 8_000L),
+        pixelsPerSecond = pps,
+        density = density.density,
+        tailDp = TAIL_DP
+    ).dp
 
     // The strip's own width in pixels, which is what makes following and fitting
     // possible. Zero until the first layout pass, and every use guards for that.
@@ -203,7 +240,8 @@ fun TimelineEditor(
         val seconds = (state.durationMs / 1000f).coerceAtLeast(1f)
         val usableDp = with(density) { viewportPx.toDp().value } - 24f
         if (usableDp <= 0f) return@LaunchedEffect
-        onZoomTo((usableDp / seconds).coerceIn(MIN_PPS, MAX_PPS))
+        val ceiling = TimelineSpan.maxPixelsPerSecond(state.durationMs, density.density, TAIL_DP)
+        onZoomTo((usableDp / seconds).coerceIn(MIN_PPS, minOf(MAX_PPS, ceiling).coerceAtLeast(MIN_PPS)))
     }
 
     /**
@@ -288,7 +326,11 @@ fun TimelineEditor(
                 // where your attention is, so it stays put.
                 .pointerInput(Unit) {
                     detectPinch { zoom ->
-                        latestZoomTo((latestPps * zoom).coerceIn(MIN_PPS, MAX_PPS))
+                        // Against the same ceiling the layout uses, so a pinch that
+                        // cannot be honoured stops at the edge rather than storing a
+                        // zoom the strip then quietly refuses to draw.
+                        val ceiling = minOf(latestMaxPps, MAX_PPS).coerceAtLeast(MIN_PPS)
+                        latestZoomTo((latestPps * zoom).coerceIn(MIN_PPS, ceiling))
                     }
                 }
                 .horizontalScroll(scroll)
@@ -305,6 +347,7 @@ fun TimelineEditor(
                     Lane(
                         clips = state.clips.filter { it.kind == ClipKind.Video && it.layer == layer },
                         state = state,
+                        pps = pps,
                         accent = SquishColors.Magenta,
                         onSelect = onSelect,
                         onMove = onMove,
@@ -315,6 +358,7 @@ fun TimelineEditor(
                 Lane(
                     clips = state.baseVideoClips,
                     state = state,
+                    pps = pps,
                     accent = SquishColors.Violet,
                     onSelect = onSelect,
                     onMove = onMove,
@@ -323,9 +367,9 @@ fun TimelineEditor(
                     onTransitionTap = onTransitionTap
                 )
                 audioLanes.forEach { lane ->
-                    Lane(lane, state, SquishColors.Cyan, onSelect, onMove, onTrim, onScrub)
+                    Lane(lane, state, pps, SquishColors.Cyan, onSelect, onMove, onTrim, onScrub)
                 }
-                Lane(state.textClips, state, SquishColors.Amber, onSelect, onMove, onTrim, onScrub)
+                Lane(state.textClips, state, pps, SquishColors.Amber, onSelect, onMove, onTrim, onScrub)
             }
 
             // Beat lines run the full height, behind the playhead. A grid you can
@@ -452,15 +496,17 @@ private fun Ruler(
     onScrub: (Long) -> Unit
 ) {
     val latestScrub by rememberUpdatedState(onScrub)
+    val total = maxOf(durationMs, 8_000L)
     // A tick every second is unreadable when zoomed out, so widen the step until
-    // labels have room to breathe.
-    val stepMs = when {
+    // labels have room to breathe - and widen it again if the timeline is long
+    // enough that the readable step would mean a thousand of them.
+    val readableStepMs = when {
         pixelsPerSecond >= 90f -> 1_000L
         pixelsPerSecond >= 40f -> 2_000L
         pixelsPerSecond >= 18f -> 5_000L
         else -> 10_000L
     }
-    val total = maxOf(durationMs, 8_000L)
+    val stepMs = TimelineSpan.rulerStepMs(total, readableStepMs)
 
     Box(
         modifier = Modifier
@@ -512,6 +558,14 @@ private fun Ruler(
 private fun Lane(
     clips: List<Clip>,
     state: TimelineState,
+    /**
+     * The zoom the strip is being laid out at, which is not always the one in the
+     * state - see the clamp in [TimelineEditor]. Passed in rather than read from
+     * the state here, because a lane that disagreed with the ruler above it about
+     * the scale would put every clip in the wrong place, and a lane that used the
+     * unclamped value would lay out a clip too wide for Compose to accept.
+     */
+    pps: Float,
     accent: Color,
     onSelect: (String?) -> Unit,
     onMove: (String, Long) -> Unit,
@@ -520,7 +574,6 @@ private fun Lane(
     onTransitionTap: ((String) -> Unit)? = null
 ) {
     val latestScrub by rememberUpdatedState(onScrub)
-    val pps = state.pixelsPerSecond
 
     Box(
         modifier = Modifier
@@ -546,7 +599,7 @@ private fun Lane(
             ClipView(
                 clip = clip,
                 selected = clip.id == state.selectedClipId,
-                pixelsPerSecond = state.pixelsPerSecond,
+                pixelsPerSecond = pps,
                 accent = accent,
                 onSelect = onSelect,
                 onMove = onMove,
@@ -561,7 +614,7 @@ private fun Lane(
             clips.drop(1).forEach { clip ->
                 TransitionBadge(
                     clip = clip,
-                    pixelsPerSecond = state.pixelsPerSecond,
+                    pixelsPerSecond = pps,
                     onTap = { tap(clip.id) }
                 )
             }

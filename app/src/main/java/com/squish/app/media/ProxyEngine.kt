@@ -55,8 +55,25 @@ object ProxyEngine {
      */
     const val PROXY_WIDTH_HINT = 1280
 
-    fun isWorthProxying(width: Int, height: Int): Boolean =
-        maxOf(width, height) > PROXY_THRESHOLD_LONG_EDGE
+    /**
+     * Longest source worth making a proxy of.
+     *
+     * A proxy is a full re-encode of the whole file. That is a fine trade on a
+     * two-minute 4K clip - a few seconds of work for an hour of smooth scrubbing -
+     * and a terrible one on a three-hour recording, where it is tens of minutes of
+     * encoding, several gigabytes into the cache, and a second encoder session
+     * running the entire time the editor is open. It was started automatically on
+     * import, so a long file put the app under that load before the user had
+     * touched anything.
+     *
+     * Past this the editor plays the original. Heavier per frame, but the whole
+     * file is not re-encoded to find that out.
+     */
+    private const val PROXY_MAX_DURATION_MS = 15L * 60_000
+
+    fun isWorthProxying(width: Int, height: Int, durationMs: Long): Boolean =
+        maxOf(width, height) > PROXY_THRESHOLD_LONG_EDGE &&
+            durationMs in 1..PROXY_MAX_DURATION_MS
 
     /**
      * The proxy for this clip if one is already on disk. Instant and side-effect

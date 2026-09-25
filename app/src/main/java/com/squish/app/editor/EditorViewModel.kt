@@ -154,7 +154,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             }
             recomputeEstimate()
             offerRecovery(recoverable, uri)
-            startProxy(uri, meta.displayWidth, meta.displayHeight)
+            startProxy(uri, meta.displayWidth, meta.displayHeight, meta.durationMs)
 
             val pcm = PcmDecoder.decodeMono(getApplication(), uri)
             _state.update {
@@ -1757,10 +1757,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * entirely - it already scrubs smoothly, and transcoding it would cost more
      * time than it ever saves.
      */
-    private fun startProxy(uri: Uri, width: Int, height: Int) {
+    private fun startProxy(uri: Uri, width: Int, height: Int, durationMs: Long) {
         proxyJob?.cancel()
 
-        if (!ProxyEngine.isWorthProxying(width, height)) {
+        if (!ProxyEngine.isWorthProxying(width, height, durationMs)) {
             _state.update { it.copy(proxyUri = null, proxyStatus = ProxyStatus.NotNeeded) }
             return
         }
