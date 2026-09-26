@@ -408,12 +408,19 @@ class PreviewEngine(private val context: Context) {
      *
      * A paused TextureView keeps the frame it had, at the size it had it, so
      * opening a tool panel - which shrinks the preview - left a small stale frame
-     * adrift in a bigger box until playback drew a new one. Seeking to where we
-     * already are makes the decoder hand over a fresh frame at the new size.
+     * adrift in a bigger box until playback drew a new one. A seek makes the
+     * decoder hand over a fresh frame at the new size.
+     *
+     * Nudged by a millisecond, which is the same frame: a seek to exactly where a
+     * player already is gets dropped as a no-op, and draws nothing.
      */
     fun redraw() {
         if (released || playing) return
-        seekTo(positionMs)
+        (listOf(baseA, baseB) + overlayPlayers.values).forEach { player ->
+            if (player.mediaItemCount == 0) return@forEach
+            val at = player.currentPosition
+            player.seekTo(if (at > 0L) at - 1L else at + 1L)
+        }
     }
 
     /**

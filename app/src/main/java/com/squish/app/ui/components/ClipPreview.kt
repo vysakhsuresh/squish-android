@@ -211,7 +211,7 @@ fun ClipPreview(
                     .fillMaxWidth()
                     .height(boxHeight.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(SquishColors.Background)
+                    .background(SquishColors.Surface)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
