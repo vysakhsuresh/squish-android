@@ -489,6 +489,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         recomputeEstimate()
     }
 
+    fun setVoiceEffect(effect: VoiceEffect) = record("Voice") {
+        _state.update { it.copy(voiceEffect = effect) }
+    }
+
     fun setMuteOriginal(muted: Boolean) = record("Camera audio") {
         _state.update { it.copy(muteOriginal = muted) }
         recomputeEstimate()
@@ -2000,6 +2004,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         targetSizeMb = snapshot.targetSizeMb,
         audioOnly = snapshot.audioOnly,
         muteOriginal = snapshot.muteOriginal,
+        voiceEffect = snapshot.voiceEffect,
         originalVolume = snapshot.originalVolume,
         rotationDegrees = snapshot.rotationDegrees,
         cropAspect = snapshot.cropAspect,

@@ -95,6 +95,7 @@ fun TimelinePreview(
     /** Auto-reframe: where the crop sits through the head clip, in its source time. */
     reframe: MotionTrack? = null,
     reframeOffsetMs: Long = 0L,
+    voiceEffect: VoiceEffect = VoiceEffect.None,
     sourceAspect: Float,
     playheadMs: Long,
     scrubNonce: Long,
@@ -153,6 +154,7 @@ fun TimelinePreview(
     }
 
     LaunchedEffect(reframe) { engine.setReframe(reframe) }
+    LaunchedEffect(voiceEffect) { engine.setVoice(voiceEffect) }
 
     LaunchedEffect(editSignature, fallbackUri) {
         engine.setTimeline(

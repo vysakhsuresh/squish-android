@@ -250,6 +250,7 @@ fun EditorScreen(
                     fallbackUri = sourceUri,
                     proxyUri = state.proxyUri,
                     muteOriginal = state.muteOriginal,
+                    voiceEffect = state.voiceEffect,
                     originalVolume = state.originalVolume,
                     grade = state.grade,
                     rotationDegrees = state.rotationDegrees,

@@ -30,6 +30,9 @@ import com.google.common.collect.ImmutableList
 import com.squish.app.editor.CropAspect
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
+import com.squish.app.editor.VoiceEffect
+import com.squish.app.media.audio.VoiceProcessor
+import androidx.media3.common.audio.SonicAudioProcessor
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.FxEffect
@@ -292,6 +295,7 @@ class VideoProcessor(private val context: Context) {
             !state.fitToSize &&
             state.outputP == OutputSize.ORIGINAL &&
             gainOnly(state.originalVolume).isEmpty() &&
+            state.voiceEffect == VoiceEffect.None &&
             buildVideoEffects(state).isEmpty()
 
     private fun needsForcedAudio(state: EditorUiState): Boolean =
@@ -342,7 +346,7 @@ class VideoProcessor(private val context: Context) {
             .setEffects(
                 Effects(
                     if (clip.isOverlay) ImmutableList.of()
-                    else buildAudioProcessors(clip, state.originalVolume),
+                    else buildAudioProcessors(clip, state.originalVolume, state.voiceEffect),
                     ImmutableList.copyOf(effects)
                 )
             )
@@ -385,7 +389,7 @@ class VideoProcessor(private val context: Context) {
             .setEffects(
                 Effects(
                     // No clip, so no ramp: this path is the whole file, untimed.
-                    gainOnly(state.originalVolume),
+                    gainOnly(state.originalVolume, state.voiceEffect),
                     if (state.audioOnly) ImmutableList.of() else buildVideoEffects(state)
                 )
             )
@@ -575,7 +579,7 @@ class VideoProcessor(private val context: Context) {
      * pitch, which is the only reason a ramp is usable on anything with a voice in
      * it - a rate change without it is a slide whistle.
      */
-    private fun buildAudioProcessors(clip: Clip, volume: Float): ImmutableList<AudioProcessor> {
+    private fun buildAudioProcessors(clip: Clip, volume: Float, voice: VoiceEffect = VoiceEffect.None): ImmutableList<AudioProcessor> {
         val processors = mutableListOf<AudioProcessor>()
         if (!clip.speedRamp.isIdentity) {
             val segments = clip.speedRamp.segments(clip.sourceSpanMs)
@@ -583,13 +587,25 @@ class VideoProcessor(private val context: Context) {
                 processors.add(SpeedChangingAudioProcessor(RampSpeedProvider(segments)))
             }
         }
+        processors.addAll(voiceProcessors(voice))
         AudioMixing.gain(volume)?.let { processors.add(it) }
         return ImmutableList.copyOf(processors)
     }
 
     /** Level only, for the one path that has no clip to read a ramp from. */
-    private fun gainOnly(volume: Float): ImmutableList<AudioProcessor> {
-        val gain = AudioMixing.gain(volume)
-        return if (gain == null) ImmutableList.of() else ImmutableList.of(gain)
+    private fun gainOnly(volume: Float, voice: VoiceEffect = VoiceEffect.None): ImmutableList<AudioProcessor> {
+        val processors = voiceProcessors(voice) + listOfNotNull(AudioMixing.gain(volume))
+        return ImmutableList.copyOf(processors)
+    }
+
+    /**
+     * A voice effect: a pitch shift that keeps timing, or one of the processed
+     * sounds, or nothing. Sonic shifts pitch without touching duration, which is
+     * the only way a voice effect can sit on footage without drifting out of sync.
+     */
+    private fun voiceProcessors(voice: VoiceEffect): List<AudioProcessor> = when {
+        voice == VoiceEffect.None -> emptyList()
+        voice.pitch != 1f -> listOf(SonicAudioProcessor().apply { setPitch(voice.pitch) })
+        else -> listOf(VoiceProcessor { voice })
     }
 }

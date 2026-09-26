@@ -9,7 +9,12 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.ScaleAndRotateTransformation
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import com.squish.app.media.audio.VoiceProcessor
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.Effect
@@ -193,7 +198,34 @@ class PreviewEngine(private val context: Context) {
     private var anchorTimelineMs: Long = 0
     private var anchorWallMs: Long = SystemClock.elapsedRealtime()
 
-    private fun newPlayer() = ExoPlayer.Builder(context).build().apply {
+    /** The voice effect on the clip's own sound, read by the players' audio every buffer. */
+    private val liveVoice = AtomicReference(VoiceEffect.None)
+
+    fun setVoice(effect: VoiceEffect) {
+        if (liveVoice.getAndSet(effect) == effect) return
+        // Pitch is a playback parameter; push it to every base player now.
+        appliedSpeed.clear()
+        listOf(baseA, baseB).forEach { player ->
+            runCatching { player.playbackParameters = PlaybackParameters(player.playbackParameters.speed, effect.pitch) }
+        }
+    }
+
+    /**
+     * Renderers whose audio passes through a [VoiceProcessor] that reads
+     * [liveVoice], so robot, echo and radio are heard in the preview and change
+     * without the player being rebuilt.
+     */
+    private fun voiceRenderers() = object : DefaultRenderersFactory(context) {
+        override fun buildAudioSink(
+            context: Context,
+            enableFloatOutput: Boolean,
+            enableAudioTrackPlaybackParams: Boolean
+        ): AudioSink = DefaultAudioSink.Builder(context)
+            .setAudioProcessors(arrayOf(VoiceProcessor { liveVoice.get() }))
+            .build()
+    }
+
+    private fun newPlayer() = ExoPlayer.Builder(context, voiceRenderers()).build().apply {
         setSeekParameters(SeekParameters.EXACT)
         repeatMode = Player.REPEAT_MODE_OFF
         playWhenReady = false
@@ -333,7 +365,9 @@ class PreviewEngine(private val context: Context) {
         val current = appliedSpeed[key]
         if (current != null && abs(current - safe) < 0.001f) return
         appliedSpeed[key] = safe
-        runCatching { player.setPlaybackSpeed(safe) }
+        // Pitch rides along with speed: a pitch voice effect is a playback
+        // parameter, so it is heard live and costs nothing to change.
+        runCatching { player.playbackParameters = PlaybackParameters(safe, liveVoice.get().pitch) }
     }
 
     /**

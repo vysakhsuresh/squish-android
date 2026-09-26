@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
+import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.AccentBadge
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
@@ -53,6 +54,30 @@ fun AudioPanel(
     val target = state.targetAudioClip
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
+        if (state.sourceHasAudio) {
+            PanelCard {
+                PanelHeading(
+                    "Voice",
+                    "Change how the recorded voice sounds",
+                    icon = Icons.Filled.Mic,
+                    accent = SquishColors.Cyan
+                )
+                VoiceEffect.entries.chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        row.forEach { effect ->
+                            SelectableChip(
+                                label = "${effect.glyph} ${effect.label}",
+                                selected = state.voiceEffect == effect,
+                                accentColor = SquishColors.Cyan,
+                                modifier = Modifier.weight(1f),
+                                onClick = { viewModel.setVoiceEffect(effect) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
         BeatPanel(state, viewModel)
 

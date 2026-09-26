@@ -244,6 +244,7 @@ data class EditSnapshot(
     val markers: List<Long>,
     val selectedClipId: String?,
     val muteOriginal: Boolean,
+    val voiceEffect: VoiceEffect,
     val originalVolume: Float,
     val rotationDegrees: Int,
     val cropAspect: CropAspect,
@@ -290,6 +291,8 @@ data class EditorUiState(
     val audioOnly: Boolean = false,
 
     val muteOriginal: Boolean = false,
+    /** A voice effect on the clip'"'"'s own sound; see [VoiceEffect]. */
+    val voiceEffect: VoiceEffect = VoiceEffect.None,
     val originalVolume: Float = 1f,
     val rotationDegrees: Int = 0,
     val cropAspect: CropAspect = CropAspect.Original,
@@ -444,6 +447,7 @@ data class EditorUiState(
             markers = markers,
             selectedClipId = selectedClipId,
             muteOriginal = muteOriginal,
+            voiceEffect = voiceEffect,
             originalVolume = originalVolume,
             rotationDegrees = rotationDegrees,
             cropAspect = cropAspect,
@@ -465,6 +469,7 @@ data class EditorUiState(
         markers = snapshot.markers,
         selectedClipId = snapshot.selectedClipId,
         muteOriginal = snapshot.muteOriginal,
+        voiceEffect = snapshot.voiceEffect,
         originalVolume = snapshot.originalVolume,
         rotationDegrees = snapshot.rotationDegrees,
         cropAspect = snapshot.cropAspect,

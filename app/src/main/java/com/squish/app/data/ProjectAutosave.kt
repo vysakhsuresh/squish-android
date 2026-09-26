@@ -11,6 +11,7 @@ import com.squish.app.editor.TextMotion
 import com.squish.app.editor.TextOverlayItem
 import com.squish.app.editor.EffectKind
 import com.squish.app.editor.TimedEffect
+import com.squish.app.editor.VoiceEffect
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
 import com.squish.app.timeline.ChromaKey
@@ -230,6 +231,7 @@ class ProjectAutosave(context: Context) {
         put("targetSizeMb", state.targetSizeMb)
         put("audioOnly", state.audioOnly)
         put("muteOriginal", state.muteOriginal)
+        put("voiceEffect", state.voiceEffect.name)
         put("originalVolume", state.originalVolume.toDouble())
         put("rotationDegrees", state.rotationDegrees)
         put("cropAspect", state.cropAspect.name)
@@ -433,6 +435,7 @@ class ProjectAutosave(context: Context) {
             targetSizeMb = json.optInt("targetSizeMb", 16),
             audioOnly = json.optBoolean("audioOnly"),
             muteOriginal = json.optBoolean("muteOriginal"),
+            voiceEffect = enumOrNull<VoiceEffect>(json.optString("voiceEffect")) ?: VoiceEffect.None,
             originalVolume = json.optDouble("originalVolume", 1.0).toFloat(),
             rotationDegrees = json.optInt("rotationDegrees"),
             cropAspect = enumOrNull<CropAspect>(json.optString("cropAspect")) ?: CropAspect.Original,
@@ -611,6 +614,7 @@ data class ProjectSnapshot(
     val targetSizeMb: Int,
     val audioOnly: Boolean,
     val muteOriginal: Boolean,
+    val voiceEffect: VoiceEffect,
     val originalVolume: Float,
     val rotationDegrees: Int,
     val cropAspect: CropAspect,
