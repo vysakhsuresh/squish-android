@@ -14,8 +14,9 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.Effect
+import java.util.concurrent.atomic.AtomicReference
 import com.squish.app.media.effects.ChromaKeyEffect
-import com.squish.app.media.effects.ColorGrade
+import com.squish.app.media.effects.LiveLookEffect
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.effects.MaskEffect
 import androidx.media3.effect.OverlayEffect
@@ -127,7 +128,11 @@ class PreviewEngine(private val context: Context) {
     private var durationMs: Long = 0
     private var playing: Boolean = false
     private var inGap: Boolean = false
-    private var appliedGrade: Grade? = null
+    /**
+     * The grade every surface is drawing with, read by the shader on each frame.
+     * Changing it is a write here, never a pipeline rebuild - see [LiveLookEffect].
+     */
+    private val liveGrade = AtomicReference(IDENTITY_GRADE)
 
     /**
      * Framing, previewed rather than promised.
@@ -303,23 +308,20 @@ class PreviewEngine(private val context: Context) {
      * degrades instead of breaking.
      */
     private fun applyGrade(grade: Grade) {
-        if (grade == appliedGrade) return
-        appliedGrade = grade
-        // Every surface now disagrees with what it is running; the next tick
-        // rebuilds each one, chroma key included.
-        appliedEffects.clear()
+        // Picked up by the next frame on every surface. No rebuild: that was what
+        // froze the picture for the length of every slider drag.
+        liveGrade.set(grade)
     }
 
     /**
      * Gives one surface the effects its current clip needs: the green screen key,
      * then the grade.
      *
-     * This is the same ChromaKeyEffect and the same ColorGrade the export builds,
+     * This is the same ChromaKeyEffect and the same grade shader the export uses,
      * handed to the preview player - so the key you tune is the key that renders,
      * to the pixel, rather than an approximation of it.
      */
     private fun applySurfaceEffects(surfaceKey: String, player: ExoPlayer, clip: Clip?) {
-        val grade = appliedGrade
         val chroma = clip?.chromaKey
         val mask = clip?.mask
         // Only captions that overlap this clip, shifted into its own clock.
@@ -327,7 +329,10 @@ class PreviewEngine(private val context: Context) {
             .filter { it.endMs > clip.timelineStartMs && it.startMs < clip.timelineEndMs }
             .map { it.shiftedInto(clip) }
 
-        val signature = "$grade|$chroma|$mask|$visible|$rotationDegrees|$cropRatio"
+        // The grade is not in here: it lives in [liveGrade] and changes without a
+        // rebuild. Everything that is still needs one, but none of it moves on
+        // every frame of a drag the way a slider does.
+        val signature = "$chroma|$mask|$visible|$rotationDegrees|$cropRatio"
         if (appliedEffects[surfaceKey] == signature) return
         appliedEffects[surfaceKey] = signature
 
@@ -350,7 +355,10 @@ class PreviewEngine(private val context: Context) {
             cropRatio?.let {
                 add(Presentation.createForAspectRatio(it, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
             }
-            grade?.let { addAll(ColorGrade.effects(it)) }
+            // Always present, even ungraded, so the pipeline exists from the first
+            // frame and the first touch of a slider changes a value rather than
+            // building one mid-playback.
+            add(LiveLookEffect(liveGrade))
             if (visible.isNotEmpty()) {
                 // Captions were previously export-only, so a tracked one could not be
                 // seen following anything until after a render.
@@ -750,3 +758,6 @@ class PreviewEngine(private val context: Context) {
         const val PREROLL_MS = 2_000L
     }
 }
+
+/** A grade that changes nothing: unit gain, no contrast or saturation shift, no look. */
+private val IDENTITY_GRADE = Grade(redScale = 1f, greenScale = 1f, blueScale = 1f, contrast = 0f, saturation = 0f)

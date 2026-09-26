@@ -13,6 +13,7 @@ import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The whole grade in one pass, for looks that need more than a colour transform.
@@ -30,26 +31,38 @@ import java.io.IOException
 class LookEffect(private val grade: Grade) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        LookShaderProgram(context, useHdr, grade)
+        LookShaderProgram(context, useHdr) { grade }
+}
+
+/**
+ * The same shader, reading its grade fresh on every frame.
+ *
+ * For the preview. Handing a player a new effect list tears down and rebuilds its
+ * whole GL pipeline, and a brightness drag asked for that dozens of times a
+ * second - the picture froze while the clock kept counting. This effect is put in
+ * once and left there; moving a slider only changes what [grade] holds, which the
+ * next frame picks up. At the identity grade it passes every pixel through as is.
+ */
+class LiveLookEffect(private val grade: AtomicReference<Grade>) : GlEffect {
+
+    override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
+        LookShaderProgram(context, useHdr) { grade.get() }
 }
 
 private class LookShaderProgram(
     context: Context,
     useHdr: Boolean,
-    private val grade: Grade
+    private val gradeNow: () -> Grade
 ) : BaseGlShaderProgram(/* useHighPrecisionColorComponents= */ useHdr, /* texturePoolCapacity= */ 1) {
 
     private val glProgram: GlProgram
 
-    init {
-        glProgram = try {
-            GlProgram(context, VERTEX_SHADER_PATH, FRAGMENT_SHADER_PATH)
-        } catch (e: IOException) {
-            throw VideoFrameProcessingException(e)
-        } catch (e: GlUtil.GlException) {
-            throw VideoFrameProcessingException(e)
-        }
+    /** What the uniforms currently hold, so an unchanged grade costs no writes. */
+    private var loaded: Grade? = null
 
+    private fun load(grade: Grade) {
+        if (grade == loaded) return
+        loaded = grade
         glProgram.setFloatsUniform(
             "uGain",
             floatArrayOf(grade.redScale, grade.greenScale, grade.blueScale)
@@ -63,6 +76,18 @@ private class LookShaderProgram(
         glProgram.setFloatsUniform("uBloom", floatArrayOf(grade.bloom))
         glProgram.setFloatsUniform("uVignette", floatArrayOf(grade.vignette))
         glProgram.setFloatsUniform("uGrain", floatArrayOf(grade.grain))
+    }
+
+    init {
+        glProgram = try {
+            GlProgram(context, VERTEX_SHADER_PATH, FRAGMENT_SHADER_PATH)
+        } catch (e: IOException) {
+            throw VideoFrameProcessingException(e)
+        } catch (e: GlUtil.GlException) {
+            throw VideoFrameProcessingException(e)
+        }
+
+        load(gradeNow())
         glProgram.setFloatsUniform("uTime", floatArrayOf(0f))
 
         glProgram.setBufferAttribute(
@@ -86,6 +111,8 @@ private class LookShaderProgram(
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
         try {
             glProgram.use()
+            val grade = gradeNow()
+            load(grade)
             glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
 
             // Only when there is grain to move. Still grain does not read as film,
