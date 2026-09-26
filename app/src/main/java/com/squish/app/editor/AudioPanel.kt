@@ -79,6 +79,8 @@ fun AudioPanel(
             }
         }
 
+        MusicPanel(viewModel)
+
         BeatPanel(state, viewModel)
 
         PanelCard {

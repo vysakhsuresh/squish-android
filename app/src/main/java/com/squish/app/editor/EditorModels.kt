@@ -557,7 +557,8 @@ fun EditorUiState.toTimeline(): TimelineState {
         clips = videoClips + audioClips + captions,
         selectedClipId = selectedClipId,
         playheadMs = playheadMs,
-        pixelsPerSecond = pixelsPerSecond
+        pixelsPerSecond = pixelsPerSecond,
+        waveforms = audioWaveforms
     )
 }
 

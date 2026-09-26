@@ -343,18 +343,25 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * voiceover and a second mic can all sit on the strip at once, overlapping
      * freely, because each one is an ordinary clip rather than a special case.
      */
-    fun addAudioTrack(uri: Uri) {
+    fun addAudioTrack(uri: Uri, label: String? = null) {
         viewModelScope.launch {
             val trackDuration = ThumbnailExtractor.probeDurationMs(getApplication(), uri)
-            val name = displayNameOf(uri) ?: "Audio"
+            val name = label ?: displayNameOf(uri) ?: "Audio"
 
             _state.update { current ->
+                // Ends with the video. A song is usually longer than the clip it
+                // goes under, and left whole it stretched the edit to the song's
+                // length - a minute of black after an eight-second video. The rest
+                // of the song is still there: drag the end out to use it.
+                val videoEnd = current.videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
+                val room = videoEnd - current.playheadMs
+                val out = if (room >= MIN_EFFECT_MS && room < trackDuration) room else trackDuration
                 val clip = Clip(
                     kind = ClipKind.Audio,
                     uri = uri,
                     label = name,
                     sourceInMs = 0,
-                    sourceOutMs = trackDuration,
+                    sourceOutMs = out,
                     timelineStartMs = current.playheadMs,
                     sourceDurationMs = trackDuration
                 )

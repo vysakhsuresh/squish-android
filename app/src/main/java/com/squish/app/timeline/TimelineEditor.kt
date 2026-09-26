@@ -60,6 +60,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
@@ -702,6 +705,7 @@ private fun Lane(
             ClipView(
                 clip = clip,
                 selected = clip.id == state.selectedClipId,
+                waveform = clip.uri?.let { state.waveforms[it.toString()] },
                 window = window,
                 accent = accent,
                 onSelect = onSelect,
@@ -754,6 +758,7 @@ private fun BoxScope.TransitionBadge(clip: Clip, window: TimelineWindow, onTap: 
 
 @Composable
 private fun ClipView(
+    waveform: com.squish.app.media.audio.Waveform? = null,
     clip: Clip,
     selected: Boolean,
     window: TimelineWindow,
@@ -862,6 +867,31 @@ private fun ClipView(
         // clip has any: an audio clip's picture is its waveform and a caption's
         // is its words, both of which it already shows.
         val strip = clip.uri?.takeIf { clip.kind == ClipKind.Video }
+        // A sound's picture: its waveform across the part being drawn, so where
+        // the loud bits and the beats fall can be read off the strip.
+        if (clip.kind == ClipKind.Audio && waveform != null && waveform.peaks.isNotEmpty() && waveform.durationMs > 0) {
+            val fromMs = clip.sourceAt(drawnStartMs)
+            val toMs = clip.sourceAt(drawnEndMs)
+            Canvas(modifier = Modifier.matchParentSize().padding(vertical = 6.dp)) {
+                val bars = (size.width / 3.dp.toPx()).toInt().coerceAtLeast(1)
+                val mid = size.height / 2f
+                val barWidth = 2.dp.toPx()
+                for (b in 0 until bars) {
+                    val atMs = fromMs + (toMs - fromMs) * (b + 0.5f) / bars
+                    val index = (atMs / waveform.durationMs.toFloat() * waveform.peaks.size).toInt()
+                    val peak = waveform.peaks.getOrElse(index.coerceIn(0, waveform.peaks.lastIndex)) { 0f }
+                    val half = (peak.coerceIn(0.05f, 1f) * size.height * 0.48f)
+                    val x = (b + 0.5f) * size.width / bars
+                    drawLine(
+                        color = accent.copy(alpha = 0.75f),
+                        start = Offset(x, mid - half),
+                        end = Offset(x, mid + half),
+                        strokeWidth = barWidth,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+        }
         if (strip != null) {
             // The frames under the part being drawn, not under the whole clip.
             // The box is a window onto the clip, so sampling the clip's whole
@@ -893,7 +923,7 @@ private fun ClipView(
                 // Over pictures the label needs its own ground to stand on; over
                 // flat colour it does not, and a chip there would just be clutter.
                 .then(
-                    if (strip != null) {
+                    if (strip != null || (clip.kind == ClipKind.Audio && waveform != null)) {
                         Modifier
                             .clip(RoundedCornerShape(5.dp))
                             .background(SquishColors.Background.copy(alpha = 0.6f))
