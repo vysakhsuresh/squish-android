@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squish.app.media.keepReadAccess
+import com.squish.app.editor.GlyphTile
+import com.squish.app.editor.glyph
 import com.squish.app.tools.QuickTool
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.components.accentSweep
@@ -270,20 +272,7 @@ private fun ToolTile(tool: QuickTool, modifier: Modifier = Modifier, onClick: ()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(accentSweep(tool.accent)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                tool.icon,
-                contentDescription = null,
-                tint = SquishColors.Background,
-                modifier = Modifier.size(20.dp)
-            )
-        }
+        GlyphTile(tool.glyph, size = 44.dp)
         Text(tool.title, style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
         Text(
             tool.blurb,
