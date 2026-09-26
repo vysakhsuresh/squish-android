@@ -322,6 +322,11 @@ private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorVie
 
         SquishOutlinedButton(
             text = when {
+                // The count on the button, where the eye already is: the line at the
+                // top of the card has scrolled away by the time this is pressed, and
+                // a bare "Measuring…" for forty seconds reads as frozen.
+                status.running && status.total > 0 ->
+                    "Measuring… ${(status.done * 100 / status.total).coerceIn(0, 99)}%"
                 status.running -> "Measuring…"
                 clip.isStabilized -> "Measure again at this strength"
                 else -> "Stabilize this clip"

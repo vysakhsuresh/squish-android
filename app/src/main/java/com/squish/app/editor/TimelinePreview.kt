@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -180,6 +181,10 @@ fun TimelinePreview(
         modifier = Modifier
             .weight(1f)
             .fillMaxWidth()
+            // Nothing drawn outside the picture. A stabilised, zoomed or moved
+            // frame is scaled up and shifted, and without this it spilled over
+            // the transport below and covered the play button.
+            .clipToBounds()
             .clickable(
                 // The player's own controller is off, so the picture itself is the
                 // play button - which is what people reach for anyway.

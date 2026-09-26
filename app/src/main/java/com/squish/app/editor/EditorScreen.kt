@@ -540,5 +540,12 @@ private fun ToolRail(selected: EditorTab?, onSelect: (EditorTab) -> Unit) {
  */
 private val RAIL_ITEM_WIDTH = 66.dp
 
-/** Tools that do not work against the timeline, so open with its room. */
-private val ROOMY_TABS = setOf(EditorTab.Finish, EditorTab.Looks, EditorTab.Frame)
+/**
+ * Tools that open with the timeline folded away. Every panel but Blend: on a
+ * phone the strip and a panel together left the panel one row - Cut showed its
+ * in point and not its out, Motion and Sound showed a paragraph and no button.
+ * These work on the playhead and the picture, not on dragging clips, so the
+ * strip costs them room and gives nothing; "Show timeline" is one tap away.
+ * Blend keeps the strip because it acts on whichever clip is tapped there.
+ */
+private val ROOMY_TABS = EditorTab.entries.toSet() - EditorTab.Blend
