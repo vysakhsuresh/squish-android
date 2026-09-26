@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -47,16 +46,16 @@ internal fun Filmstrip(
         FilmstripPlan.tileTimes(sourceInMs, sourceOutMs, tiles)
     }
 
-    // Seeded from whatever is already cached, so a zoom or a scroll redraws the
-    // strip in the same frame instead of blanking and decoding it again.
-    val frames = remember(uri, times) {
-        times.map { FilmstripLoader.cached(uri, it) }.toMutableStateList()
+    // Straight from the cache, so a zoom or a scroll redraws the strip in the
+    // same frame instead of blanking it. Reading the arrival count is what
+    // redraws it again as the missing tiles land.
+    val arrived = FilmstripLoader.arrivals.intValue
+    val frames = remember(uri, times, arrived) {
+        times.map { FilmstripLoader.cached(uri, it) }
     }
 
     LaunchedEffect(uri, times) {
-        FilmstripLoader.load(context, uri, times) { index, bitmap ->
-            if (index in frames.indices) frames[index] = bitmap
-        }
+        FilmstripLoader.request(context, uri, times)
     }
 
     Row(modifier = modifier) {

@@ -633,8 +633,13 @@ class PreviewEngine(private val context: Context) {
     // ---- Base track and transitions ---------------------------------------------
 
     private fun composeBase(t: Long): Triple<SurfaceDraw, SurfaceDraw, Float> {
-        val clipA = rollA.lastOrNull { covers(it, t) }
-        val clipB = rollB.lastOrNull { covers(it, t) }
+        // A clip covers up to, not including, its end - so parked exactly on the
+        // end of the edit, where every play-through stops, nothing covered it and
+        // the picture went to "Gap". The end shows the last frame instead.
+        val end = (rollA + rollB).maxOfOrNull { it.timelineEndMs } ?: 0L
+        val at = if (end > 0L && t == end) end - 1 else t
+        val clipA = rollA.lastOrNull { covers(it, at) }
+        val clipB = rollB.lastOrNull { covers(it, at) }
 
         if (clipA == null && clipB == null) {
             inGap = rollA.isNotEmpty() || rollB.isNotEmpty()
@@ -644,8 +649,8 @@ class PreviewEngine(private val context: Context) {
         }
         inGap = false
 
-        syncSurface(KEY_A, baseA, clipA, t)
-        syncSurface(KEY_B, baseB, clipB, t)
+        syncSurface(KEY_A, baseA, clipA, at)
+        syncSurface(KEY_B, baseB, clipB, at)
 
         // Whichever shot was already driving keeps the clock for the whole
         // transition. Handing it over mid-blend would step the playhead by whatever
@@ -661,8 +666,8 @@ class PreviewEngine(private val context: Context) {
             val onA = clipA != null
             val only = (clipA ?: clipB)!!
             return Triple(
-                SurfaceDraw(visible = onA, transform = only.transformAt(t)),
-                SurfaceDraw(visible = !onA, transform = only.transformAt(t)),
+                SurfaceDraw(visible = onA, transform = only.transformAt(at)),
+                SurfaceDraw(visible = !onA, transform = only.transformAt(at)),
                 0f
             )
         }
@@ -671,13 +676,13 @@ class PreviewEngine(private val context: Context) {
         val incoming = if (clipA.timelineStartMs >= clipB.timelineStartMs) clipA else clipB
         val outgoing = if (incoming === clipA) clipB else clipA
         val overlapMs = (outgoing.timelineEndMs - incoming.timelineStartMs).coerceAtLeast(1L)
-        val progress = ((t - incoming.timelineStartMs).toFloat() / overlapMs).coerceIn(0f, 1f)
+        val progress = ((at - incoming.timelineStartMs).toFloat() / overlapMs).coerceIn(0f, 1f)
 
         val (outDraw, inDraw, veil) = blend(incoming.transitionIn.type, progress)
         // Both shots keep animating through the blend, which is the point of
         // keyframing a transition - a push-in that stalls mid-dissolve is a glitch.
-        val outMoved = outDraw.copy(transform = outgoing.transformAt(t))
-        val inMoved = inDraw.copy(transform = incoming.transformAt(t))
+        val outMoved = outDraw.copy(transform = outgoing.transformAt(at))
+        val inMoved = inDraw.copy(transform = incoming.transformAt(at))
         val aIsIncoming = incoming === clipA
         return Triple(
             if (aIsIncoming) inMoved else outMoved,

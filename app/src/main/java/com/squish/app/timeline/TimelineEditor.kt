@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -939,7 +940,7 @@ private fun ClipView(
     Box(
         modifier = Modifier
             .offset(x = window.xDp(drawnStartMs).dp)
-            .width(width)
+            .spanWidth(width)
             .fillMaxHeight()
             // Corners only where the clip really ends. A rounded edge in the
             // middle of a long clip would read as a cut that is not there.
@@ -1286,7 +1287,7 @@ private fun EffectBar(
     Box(
         modifier = Modifier
             .offset(x = window.xDp(drawnStartMs).dp)
-            .width(width)
+            .spanWidth(width)
             .fillMaxHeight()
             .clip(shape)
             // Solid ground first: a bar lying over a longer one must hide it, or
@@ -1407,7 +1408,7 @@ private fun SelectionFrame(
     Box(
         modifier = Modifier
             .offset(x = window.xDp(span.first).dp)
-            .width(width)
+            .spanWidth(width)
             .fillMaxHeight()
             .clip(shape)
             .border(2.dp, color, shape)
@@ -1442,6 +1443,20 @@ private fun SelectionFrame(
         }
     }
 }
+
+/**
+ * A bar's width, even when that is wider than the strip.
+ *
+ * A bar is built for what is on screen plus half a screen either side, so
+ * zoomed in it is wider than the strip itself. Plain `width` quietly caps a
+ * child at its parent's width - the bar kept its offset half a screen to the
+ * left and lost its right-hand end, so a clip or effect looked as if it
+ * stopped partway across the screen. It showed as soon as a pinch zoomed in and
+ * playback scrolled the strip, and it squeezed the filmstrip's frames, which
+ * were laid out for the full width, into the capped one.
+ */
+private fun Modifier.spanWidth(width: Dp): Modifier =
+    wrapContentWidth(Alignment.Start, unbounded = true).width(width)
 
 /** Receives drag in dp so the caller only has to convert time. */
 @Composable
