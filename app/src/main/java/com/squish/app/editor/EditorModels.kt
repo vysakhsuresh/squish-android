@@ -11,6 +11,7 @@ import com.squish.app.media.audio.Waveform
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.EffectSpan
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.TimelineState
 
@@ -560,7 +561,10 @@ fun EditorUiState.toTimeline(): TimelineState {
         selectedClipId = selectedClipId,
         playheadMs = playheadMs,
         pixelsPerSecond = pixelsPerSecond,
-        waveforms = audioWaveforms
+        waveforms = audioWaveforms,
+        effects = effects.map { e ->
+            EffectSpan(e.id, e.kind.label, e.startMs, e.endMs, e.kind.icon, e.kind.color)
+        }
     )
 }
 

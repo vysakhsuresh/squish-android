@@ -7,6 +7,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BlurOn
+import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Contrast
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Gradient
+import androidx.compose.material.icons.filled.InvertColors
+import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.Voicemail
+import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,7 +33,7 @@ import com.squish.app.ui.icons.SquishIcons
 
 /**
  * One of Squish's own marks ([SquishIcons]) on its gradient sticker - how the
- * app shows a template, an effect, a voice or a quick tool. Emoji render
+ * app shows a template, a voice or a quick tool. Emoji render
  * differently on every phone and read as chat; the stock icon set read as a
  * settings screen. These are meant to look like something you'd slap on a clip.
  *
@@ -45,19 +56,41 @@ val Template.glyph: Glyph
         Template.Memories -> glyph(SquishIcons.Memories, 0xFFB8BCCB, 0xFF4A4E63, ordinal)
     }
 
-val EffectKind.glyph: Glyph
+/**
+ * Effects wear the same plain line marks as the editor's tool rail, not
+ * stickers: they sit in a grid of ten beside that rail and in a slim timeline
+ * lane, where a quieter mark reads better than a crowd of little pictures.
+ */
+val EffectKind.icon: ImageVector
     get() = when (this) {
-        EffectKind.Shake -> glyph(SquishIcons.Shake, 0xFFFF7A59, 0xFFE83E8C, ordinal)
-        EffectKind.Punch -> glyph(SquishIcons.Punch, 0xFFFF5B3A, 0xFFB5236B, ordinal)
-        EffectKind.ZoomIn -> glyph(SquishIcons.ZoomIn, 0xFF4FD1FF, 0xFF4F6BFF, ordinal)
-        EffectKind.Glitch -> glyph(SquishIcons.Glitch, 0xFF3A2D7A, 0xFF12103A, ordinal)
-        EffectKind.Flash -> glyph(SquishIcons.Flash, 0xFF7B5CFF, 0xFF3A2DB0, ordinal)
-        EffectKind.Vhs -> glyph(SquishIcons.Vhs, 0xFFFF9A62, 0xFFB5476E, ordinal)
-        EffectKind.Mono -> glyph(SquishIcons.Mono, 0xFF9AA0B8, 0xFF3A3E52, ordinal)
-        EffectKind.Invert -> glyph(SquishIcons.Invert, 0xFFFF7AC6, 0xFF7B5CFF, ordinal)
-        EffectKind.Blur -> glyph(SquishIcons.Blur, 0xFF9AB6FF, 0xFF5A6ACF, ordinal)
-        EffectKind.Rainbow -> glyph(SquishIcons.Rainbow, 0xFF4FD1FF, 0xFF3A6BFF, ordinal)
+        EffectKind.Shake -> Icons.Filled.Vibration
+        EffectKind.Punch -> Icons.Filled.CenterFocusStrong
+        EffectKind.ZoomIn -> Icons.Filled.ZoomIn
+        EffectKind.Glitch -> Icons.Filled.BrokenImage
+        EffectKind.Flash -> Icons.Filled.FlashOn
+        EffectKind.Vhs -> Icons.Filled.Voicemail
+        EffectKind.Mono -> Icons.Filled.Contrast
+        EffectKind.Invert -> Icons.Filled.InvertColors
+        EffectKind.Blur -> Icons.Filled.BlurOn
+        EffectKind.Rainbow -> Icons.Filled.Gradient
     }
+
+/** Each effect's colour on the timeline, so neighbours on the one lane can be told apart. */
+val EffectKind.color: Color
+    get() = Color(
+        when (this) {
+            EffectKind.Shake -> 0xFFFF7A59
+            EffectKind.Punch -> 0xFFFF5B7A
+            EffectKind.ZoomIn -> 0xFF4FD1FF
+            EffectKind.Glitch -> 0xFF3DE0C0
+            EffectKind.Flash -> 0xFFFFC53D
+            EffectKind.Vhs -> 0xFFFF9A62
+            EffectKind.Mono -> 0xFFB8BCCB
+            EffectKind.Invert -> 0xFFFF7AC6
+            EffectKind.Blur -> 0xFF9AB6FF
+            EffectKind.Rainbow -> 0xFFB14DFF
+        }
+    )
 
 val VoiceEffect.glyph: Glyph
     get() = when (this) {

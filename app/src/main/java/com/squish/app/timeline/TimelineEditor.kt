@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -83,6 +84,9 @@ import com.squish.app.editor.Timecode
 import com.squish.app.ui.theme.SquishColors
 
 private val LANE_HEIGHT = 54.dp
+
+/** The effects lane is slimmer than the rest: its bars carry a mark and a name, not pictures. */
+private val FX_LANE_HEIGHT = 32.dp
 private val GUTTER = 34.dp
 private val RULER_HEIGHT = 26.dp
 private val HANDLE_WIDTH = 20.dp
@@ -248,7 +252,11 @@ fun TimelineEditor(
      * back rather than worked out by whoever wants it.
      */
     fitNonce: Long = 0L,
-    onZoomTo: (Float) -> Unit = {}
+    onZoomTo: (Float) -> Unit = {},
+    /** An effect dragged along its lane, by this many milliseconds. */
+    onEffectMove: (String, Long) -> Unit = { _, _ -> },
+    /** An effect's start and end pulled by these many milliseconds. */
+    onEffectTrim: (String, Long, Long) -> Unit = { _, _, _ -> }
 ) {
     val density = LocalDensity.current
     val totalMs = maxOf(state.durationMs, 8_000L)
@@ -394,6 +402,15 @@ fun TimelineEditor(
     val overlayLayers = (state.layerCount downTo 1).toList()
     val audioLanes = state.audioLanes.ifEmpty { listOf(emptyList()) }
     val laneCount = overlayLayers.size + audioLanes.size + 2
+    // Only once there is an effect to show - an edit without any keeps the strip
+    // it always had, rather than gaining an empty row to scroll past.
+    val showEffects = state.effects.isNotEmpty()
+    val rawEffectMove by rememberUpdatedState(onEffectMove)
+    val rawEffectTrim by rememberUpdatedState(onEffectTrim)
+    val guardedEffectMove: (String, Long) -> Unit =
+        remember { { id, delta -> if (!guard.active) rawEffectMove(id, delta) } }
+    val guardedEffectTrim: (String, Long, Long) -> Unit =
+        remember { { id, start, end -> if (!guard.active) rawEffectTrim(id, start, end) } }
 
     Row(modifier = modifier.fillMaxWidth().background(SquishColors.Background)) {
 
@@ -403,6 +420,7 @@ fun TimelineEditor(
             LaneBadge(Icons.Filled.Videocam, SquishColors.Violet)
             audioLanes.forEach { LaneBadge(Icons.Filled.MusicNote, SquishColors.Cyan) }
             LaneBadge(Icons.Filled.TextFields, SquishColors.Amber)
+            if (showEffects) LaneBadge(Icons.Filled.Bolt, SquishColors.Violet, FX_LANE_HEIGHT)
         }
 
         Box(
@@ -459,12 +477,23 @@ fun TimelineEditor(
                     Lane(lane, state, window, SquishColors.Cyan, guardedSelect, guardedMove, guardedTrim, guardedScrub)
                 }
                 Lane(state.textClips, state, window, SquishColors.Amber, guardedSelect, guardedMove, guardedTrim, guardedScrub)
+                if (showEffects) {
+                    EffectsLane(
+                        effects = state.effects,
+                        selectedId = state.selectedClipId,
+                        window = window,
+                        onSelect = guardedSelect,
+                        onMove = guardedEffectMove,
+                        onTrim = guardedEffectTrim,
+                        onScrub = guardedScrub
+                    )
+                }
             }
 
             // Beat lines run the full height, behind the playhead. A grid you can
             // only see on the ruler tells you where the beats are; a grid that
             // crosses the lanes tells you whether a cut is on one.
-            val laneHeight = RULER_HEIGHT + LANE_HEIGHT * laneCount
+            val laneHeight = RULER_HEIGHT + LANE_HEIGHT * laneCount + if (showEffects) FX_LANE_HEIGHT else 0.dp
             markers.forEach { at ->
                 if (!window.intersects(at, at)) return@forEach
                 val isBar = at in barMarkers
@@ -575,9 +604,9 @@ private fun BoxScope.Playhead(
 }
 
 @Composable
-private fun LaneBadge(icon: ImageVector, tint: Color) {
+private fun LaneBadge(icon: ImageVector, tint: Color, height: Dp = LANE_HEIGHT) {
     Box(
-        modifier = Modifier.height(LANE_HEIGHT).fillMaxWidth(),
+        modifier = Modifier.height(height).fillMaxWidth(),
         contentAlignment = Alignment.Center
     ) {
         Icon(icon, contentDescription = null, tint = tint.copy(alpha = 0.75f), modifier = Modifier.size(16.dp))
@@ -1009,6 +1038,220 @@ private fun ClipView(
     }
 }
 
+/**
+ * How an effect is shown on the strip: where it sits, and the mark and colour
+ * that tell it from its neighbours. The editor fills these in, so the timeline
+ * never has to know what an effect does.
+ */
+data class EffectSpan(
+    val id: String,
+    val label: String,
+    val startMs: Long,
+    val endMs: Long,
+    val icon: ImageVector,
+    val color: Color
+)
+
+/**
+ * Every effect on one slim lane.
+ *
+ * Deliberately one row however many there are: effects are short and usually
+ * sparse, and stacking overlaps into rows of their own - the way sounds are -
+ * would grow the strip every time two landed on the same beat. Where they
+ * overlap the shorter one always sits on top, so every bar keeps a part that
+ * can be grabbed. Selecting one does not lift it forward - a long effect raised
+ * over the short ones would hide them until it was let go.
+ */
+@Composable
+private fun EffectsLane(
+    effects: List<EffectSpan>,
+    selectedId: String?,
+    window: TimelineWindow,
+    onSelect: (String?) -> Unit,
+    onMove: (String, Long) -> Unit,
+    onTrim: (String, Long, Long) -> Unit,
+    onScrub: (Long) -> Unit
+) {
+    val latestScrub by rememberUpdatedState(onScrub)
+    val latestWindow by rememberUpdatedState(window)
+    val ordered = effects.sortedByDescending { it.endMs - it.startMs }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(FX_LANE_HEIGHT)
+            .padding(vertical = 3.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(SquishColors.Violet.copy(alpha = 0.05f))
+            .pointerInput(Unit) {
+                detectTapGestures { offset -> latestScrub(latestWindow.msAt(offset.x)) }
+            }
+    ) {
+        ordered.forEachIndexed { i, effect ->
+            if (!window.intersects(effect.startMs, effect.endMs)) return@forEachIndexed
+            // The name goes in the widest stretch the bars on top leave showing,
+            // so a long effect under a short one is still labelled.
+            val above = ordered.drop(i + 1)
+            val label = openStretch(effect.startMs, effect.endMs, above.map { it.startMs..it.endMs })
+            EffectBar(effect, effect.id == selectedId, label, window, onSelect, onMove, onScrub)
+        }
+        ordered.firstOrNull { it.id == selectedId }?.let { effect ->
+            SelectedEffectFrame(effect, window, onTrim)
+        }
+    }
+}
+
+/** The longest part of start..end that none of [covers] lies over. */
+private fun openStretch(start: Long, end: Long, covers: List<LongRange>): LongRange {
+    var best = start..start
+    var from = start
+    covers.filter { it.first < end && it.last > start }.sortedBy { it.first }.forEach { c ->
+        if (c.first > from && c.first - from > best.last - best.first) best = from..c.first
+        from = maxOf(from, c.last)
+    }
+    if (end > from && end - from > best.last - best.first) best = from..end
+    return best
+}
+
+@Composable
+private fun EffectBar(
+    effect: EffectSpan,
+    selected: Boolean,
+    /** Where along the bar its mark and name can be seen. */
+    labelSpan: LongRange,
+    window: TimelineWindow,
+    onSelect: (String?) -> Unit,
+    onMove: (String, Long) -> Unit,
+    onScrub: (Long) -> Unit
+) {
+    val latestMove by rememberUpdatedState(onMove)
+    val latestSelect by rememberUpdatedState(onSelect)
+    val latestScrub by rememberUpdatedState(onScrub)
+    val latestWindow by rememberUpdatedState(window)
+
+    val span = window.clampToView(effect.startMs, effect.endMs) ?: return
+    val drawnStartMs = span.first
+    val drawnEndMs = span.last
+    val latestDrawnStart by rememberUpdatedState(drawnStartMs)
+    val width = window.widthDp(drawnEndMs - drawnStartMs).dp
+    val shape = barShape(drawnStartMs <= effect.startMs, drawnEndMs >= effect.endMs)
+
+    Box(
+        modifier = Modifier
+            .offset(x = window.xDp(drawnStartMs).dp)
+            .width(width)
+            .fillMaxHeight()
+            .clip(shape)
+            // Solid ground first: a bar lying over a longer one must hide it, or
+            // the two names print through each other.
+            .background(SquishColors.Background)
+            .background(effect.color.copy(alpha = if (selected) 0.5f else 0.3f))
+            .border(1.dp, effect.color.copy(alpha = 0.6f), shape)
+            .pointerInput(effect.id) {
+                detectTapGestures { offset ->
+                    latestSelect(effect.id)
+                    latestScrub(latestWindow.msAt(offset.x + latestWindow.xPx(latestDrawnStart)))
+                }
+            }
+            .pointerInput(effect.id) {
+                var carriedMs = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        carriedMs = 0f
+                        latestSelect(effect.id)
+                    }
+                ) { change, dragAmount ->
+                    change.consume()
+                    carriedMs += latestWindow.msForPx(dragAmount).toFloat()
+                    val wholeMs = carriedMs.toLong()
+                    if (wholeMs != 0L) {
+                        carriedMs -= wholeMs
+                        latestMove(effect.id, wholeMs)
+                    }
+                }
+            }
+    ) {
+        // The mark whenever it fits, the name when there is room for it too -
+        // measured in the stretch left showing, from wherever that starts on screen.
+        val labelFrom = maxOf(labelSpan.first, drawnStartMs)
+        val labelTo = minOf(labelSpan.last, drawnEndMs)
+        val labelRoom = window.widthDp((labelTo - labelFrom).coerceAtLeast(0L)).dp
+        val inset = if (selected) EFFECT_GRIP + 2.dp else 5.dp
+        if (labelRoom > inset * 2 + 14.dp) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .offset(x = window.widthDp(labelFrom - drawnStartMs).dp)
+                    .width(labelRoom)
+                    // Clear of the grips when they are showing; otherwise a small
+                    // inset, so the mark on a short bar is not squeezed to nothing.
+                    .padding(horizontal = inset),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(effect.icon, contentDescription = null, tint = SquishColors.TextPrimary, modifier = Modifier.size(13.dp))
+                if (labelRoom > 64.dp) {
+                    Text(
+                        effect.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.TextPrimary,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val EFFECT_GRIP = 14.dp
+
+/** Corners only where the effect really ends, as for clips. */
+private fun barShape(headVisible: Boolean, tailVisible: Boolean) = RoundedCornerShape(
+    topStart = if (headVisible) 6.dp else 0.dp,
+    bottomStart = if (headVisible) 6.dp else 0.dp,
+    topEnd = if (tailVisible) 6.dp else 0.dp,
+    bottomEnd = if (tailVisible) 6.dp else 0.dp
+)
+
+/**
+ * The selected effect's outline and trim grips, drawn over every bar. The
+ * outline takes no touches, so the short bars it passes over can still be
+ * tapped and dragged - only the grips answer.
+ */
+@Composable
+private fun SelectedEffectFrame(effect: EffectSpan, window: TimelineWindow, onTrim: (String, Long, Long) -> Unit) {
+    val latestTrim by rememberUpdatedState(onTrim)
+    val latestWindow by rememberUpdatedState(window)
+    val span = window.clampToView(effect.startMs, effect.endMs) ?: return
+    val width = window.widthDp(span.last - span.first).dp
+    val headVisible = span.first <= effect.startMs
+    val tailVisible = span.last >= effect.endMs
+    val shape = barShape(headVisible, tailVisible)
+    val grip = minOf(EFFECT_GRIP, width / 3f)
+
+    Box(
+        modifier = Modifier
+            .offset(x = window.xDp(span.first).dp)
+            .width(width)
+            .fillMaxHeight()
+            .clip(shape)
+            .border(2.dp, effect.color, shape)
+    ) {
+        if (headVisible) {
+            TrimHandle(effect.color, grip, Alignment.CenterStart) { deltaDp ->
+                latestTrim(effect.id, latestWindow.msForDp(deltaDp).toLong(), 0L)
+            }
+        }
+        if (tailVisible) {
+            TrimHandle(effect.color, grip, Alignment.CenterEnd) { deltaDp ->
+                latestTrim(effect.id, 0L, latestWindow.msForDp(deltaDp).toLong())
+            }
+        }
+    }
+}
+
 /** Receives drag in dp so the caller only has to convert time. */
 @Composable
 private fun BoxScope.TrimHandle(
@@ -1129,7 +1372,7 @@ fun TimelineActionBar(
                 "Delete the selected clip",
                 SquishColors.Magenta,
                 onDelete,
-                enabled = selected != null
+                enabled = selected != null || state.effects.any { it.id == state.selectedClipId }
             )
             MiniAction(
                 Icons.Filled.Compress,

@@ -316,7 +316,9 @@ fun EditorScreen(
                 barMarkers = state.beats.every(4),
                 isPlaying = state.isPlaying,
                 fitNonce = state.fitNonce,
-                onZoomTo = viewModel::setPixelsPerSecond
+                onZoomTo = viewModel::setPixelsPerSecond,
+                onEffectMove = viewModel::moveEffect,
+                onEffectTrim = viewModel::trimEffect
             )
 
             TimelineActionBar(

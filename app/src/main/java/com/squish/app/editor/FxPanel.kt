@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,7 +57,7 @@ fun FxPanel(state: EditorUiState, viewModel: EditorViewModel) {
                                 .clickable { viewModel.addEffect(kind) }
                                 .padding(vertical = 10.dp)
                         ) {
-                            GlyphTile(kind.glyph, size = 38.dp)
+                            Icon(kind.icon, contentDescription = null, tint = SquishColors.TextSecondary, modifier = Modifier.size(22.dp))
                             Text(
                                 kind.label,
                                 style = MaterialTheme.typography.labelSmall,
@@ -109,7 +111,7 @@ private fun PlacedEffect(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            GlyphTile(effect.kind.glyph, size = 26.dp)
+            Icon(effect.kind.icon, contentDescription = null, tint = effect.kind.color, modifier = Modifier.size(18.dp))
             Text("  ${effect.kind.label}", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
             Text(
                 "  ${Timecode.format(effect.startMs)} → ${Timecode.format(effect.endMs)}",

@@ -156,7 +156,9 @@ data class TimelineState(
     val playheadMs: Long = 0,
     val pixelsPerSecond: Float = 42f,
     /** Each sound file's waveform, by URI, drawn on its clips. */
-    val waveforms: Map<String, com.squish.app.media.audio.Waveform> = emptyMap()
+    val waveforms: Map<String, com.squish.app.media.audio.Waveform> = emptyMap(),
+    /** The effects library's placements, on a lane of their own. */
+    val effects: List<EffectSpan> = emptyList()
 ) {
     val videoClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Video }.sortedBy { it.timelineStartMs }
     /** The base picture - the cuts-only spine of the edit. */

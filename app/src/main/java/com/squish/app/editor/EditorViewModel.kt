@@ -1064,6 +1064,31 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /** Slides an effect along the timeline, keeping its length and staying inside the edit. */
+    fun moveEffect(id: String, deltaMs: Long) = record("Effect $id") {
+        _state.update { current ->
+            val total = current.timelineDurationMs
+            current.copy(effects = current.effects.map { e ->
+                if (e.id != id) return@map e
+                val delta = deltaMs.coerceIn(-e.startMs, (total - e.endMs).coerceAtLeast(0L))
+                e.copy(startMs = e.startMs + delta, endMs = e.endMs + delta)
+            })
+        }
+    }
+
+    /** Pulls an effect's start and end by the given amounts, never past each other or the edit's ends. */
+    fun trimEffect(id: String, startDeltaMs: Long, endDeltaMs: Long) = record("Effect $id") {
+        _state.update { current ->
+            val total = current.timelineDurationMs
+            current.copy(effects = current.effects.map { e ->
+                if (e.id != id) return@map e
+                val start = (e.startMs + startDeltaMs).coerceIn(0L, (e.endMs - MIN_EFFECT_MS).coerceAtLeast(0L))
+                val end = (e.endMs + endDeltaMs).coerceIn(start + MIN_EFFECT_MS, maxOf(total, start + MIN_EFFECT_MS))
+                e.copy(startMs = start, endMs = end)
+            })
+        }
+    }
+
     fun removeEffect(id: String) = record("Remove effect") {
         _state.update { it.copy(effects = it.effects.filterNot { e -> e.id == id }) }
     }
@@ -1792,7 +1817,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val selected = _state.value.selectedClipId ?: return
         record("Delete") {
             if (_state.value.textOverlays.any { it.id == selected }) removeTextOverlay(selected)
-            else mutateTimeline { it.withClipRemoved(selected) }
+            else if (_state.value.effects.any { it.id == selected }) {
+                _state.update { it.copy(effects = it.effects.filterNot { e -> e.id == selected }) }
+            } else mutateTimeline { it.withClipRemoved(selected) }
             _state.update { it.copy(selectedClipId = null) }
         }
     }
