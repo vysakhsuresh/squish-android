@@ -351,7 +351,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             val trackDuration = ThumbnailExtractor.probeDurationMs(getApplication(), uri)
             val name = label ?: displayNameOf(uri) ?: "Audio"
 
-            _state.update { current ->
+            // Recorded like every other edit, so a track added by mistake is one
+            // undo away rather than a select-and-delete.
+            record("Add $name") { _state.update { current ->
                 // Ends with the video. A song is usually longer than the clip it
                 // goes under, and left whole it stretched the edit to the song's
                 // length - a minute of black after an eight-second video. The rest
@@ -369,7 +371,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     sourceDurationMs = trackDuration
                 )
                 current.copy(audioClips = current.audioClips + clip, selectedClipId = clip.id)
-            }
+            } }
             recomputeEstimate()
 
             // Cached against the file, not the clip, so splitting a track in two
