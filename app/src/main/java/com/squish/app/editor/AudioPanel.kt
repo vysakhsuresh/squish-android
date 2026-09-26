@@ -19,7 +19,7 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -172,7 +172,7 @@ fun AudioPanel(
             PanelHeading(
                 "Place on the timeline",
                 "Where this track starts",
-                icon = Icons.Filled.PlaylistPlay,
+                icon = Icons.AutoMirrored.Filled.PlaylistPlay,
                 accent = SquishColors.Cyan
             )
             Row(

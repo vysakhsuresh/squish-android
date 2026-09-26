@@ -22,7 +22,7 @@ import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RangeSlider
@@ -430,7 +430,7 @@ private fun MergeControls(
             title = "Playing order",
             subtitle = if (state.mergeClips.isEmpty()) "Nothing added yet"
             else "Tap a row's arrows to move it",
-            icon = Icons.Filled.PlaylistPlay,
+            icon = Icons.AutoMirrored.Filled.PlaylistPlay,
             accent = SquishColors.Magenta,
             trailing = {
                 if (state.mergeClips.size > 1) {

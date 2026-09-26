@@ -400,4 +400,4 @@ private fun DraftsDoor(count: Int, onClick: () -> Unit) {
 }
 
 /** Two rows of text and a glyph, at a height that does not depend on the words. */
-private val TILE_HEIGHT = 138.dp
+private val TILE_HEIGHT = 156.dp

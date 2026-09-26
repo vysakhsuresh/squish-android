@@ -40,7 +40,7 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FirstPage
 import androidx.compose.material.icons.filled.FitScreen
-import androidx.compose.material.icons.filled.LastPage
+import androidx.compose.material.icons.automirrored.filled.LastPage
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Remove
@@ -1047,7 +1047,7 @@ fun TimelineActionBar(
             // A long edit is a long drag otherwise, and the two ends are where
             // people go most.
             MiniAction(Icons.Filled.FirstPage, "Go to the start", SquishColors.TextSecondary, onGoToStart)
-            MiniAction(Icons.Filled.LastPage, "Go to the end", SquishColors.TextSecondary, onGoToEnd)
+            MiniAction(Icons.AutoMirrored.Filled.LastPage, "Go to the end", SquishColors.TextSecondary, onGoToEnd)
             // A gap, not a fraction: inside a scrolling row the width is
             // unbounded, and a proportion of infinity measures nothing.
             Spacer(modifier = Modifier.width(10.dp))

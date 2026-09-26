@@ -4,7 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.squish.app.ui.theme.SquishColors
@@ -41,7 +41,7 @@ enum class QuickTool(
     Squeeze(
         id = "compress",
         title = "Squeeze",
-        blurb = "Make a video smaller without making it worse",
+        blurb = "Make a video smaller, not worse",
         accent = SquishColors.Blue,
         icon = Icons.Filled.Compress,
         actionLabel = "Squeeze it",
@@ -70,7 +70,7 @@ enum class QuickTool(
         title = "Stitch",
         blurb = "Join clips end to end",
         accent = SquishColors.Magenta,
-        icon = Icons.Filled.PlaylistAdd,
+        icon = Icons.AutoMirrored.Filled.PlaylistAdd,
         actionLabel = "Stitch them",
         doneLabel = "Stitched"
     );

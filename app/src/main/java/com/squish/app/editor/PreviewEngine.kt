@@ -1,4 +1,4 @@
-@file:OptIn(UnstableApi::class)
+@file:androidx.annotation.OptIn(UnstableApi::class)
 
 package com.squish.app.editor
 
@@ -440,7 +440,7 @@ class PreviewEngine(private val context: Context) {
             stalled -> positionMs
             // Mapped back through the clip's own curve, so the playhead tracks a
             // ramp instead of racing it and then waiting.
-            driving && clockClip != null ->
+            driving ->
                 clockClip.timelineAtSource(clockPlayer.currentPosition)
             // The timeline is played time, so it runs at wall time. Speed lives
             // inside each clip's length rather than on the clock.
