@@ -330,7 +330,9 @@ private fun PreviewCard(
                     else state.name ?: "Selected video",
                     style = MaterialTheme.typography.bodyMedium,
                     color = SquishColors.TextPrimary,
-                    maxLines = 1
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     if (tool == QuickTool.Stitch)
@@ -533,7 +535,9 @@ private fun MergeRow(
                 clip.label,
                 style = MaterialTheme.typography.bodyMedium,
                 color = SquishColors.TextPrimary,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 "${Timecode.format(clip.durationMs)}  ·  starts at ${Timecode.format(clip.timelineStartMs)}",

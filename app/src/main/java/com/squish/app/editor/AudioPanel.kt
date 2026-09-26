@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
 import com.squish.app.ui.components.AccentBadge
@@ -267,7 +268,9 @@ private fun TrackRow(clip: Clip, selected: Boolean, onSelect: () -> Unit, onRemo
                 clip.label,
                 style = MaterialTheme.typography.bodyMedium,
                 color = SquishColors.TextPrimary,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 "${Timecode.format(clip.durationMs)} at ${Timecode.format(clip.timelineStartMs)}",

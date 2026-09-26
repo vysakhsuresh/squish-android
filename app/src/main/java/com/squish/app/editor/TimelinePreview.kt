@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
@@ -340,7 +341,9 @@ private fun Transport(
             Timecode.format(frame.positionMs),
             style = MaterialTheme.typography.labelLarge.tabularFigures(),
             color = SquishColors.TextPrimary,
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
         )
         Text(
             "/ ${Timecode.format(frame.durationMs)}",

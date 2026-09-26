@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squish.app.home.countOf
@@ -160,7 +161,9 @@ fun EditorScreen(
                         state.videoClips.firstOrNull()?.label ?: "Your edit",
                         style = MaterialTheme.typography.titleMedium,
                         color = SquishColors.TextPrimary,
-                        maxLines = 1
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         "${countOf(state.videoClips.size, "clip")} · ${Timecode.format(state.trimmedDurationMs)}",
@@ -519,7 +522,9 @@ private fun ToolRail(selected: EditorTab?, onSelect: (EditorTab) -> Unit) {
                     entry.label,
                     style = MaterialTheme.typography.labelSmall,
                     color = tint,
-                    maxLines = 1
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

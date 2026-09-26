@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.squish.app.data.SquishRepositories
@@ -270,7 +271,12 @@ private fun SavedToCard(isAudio: Boolean, fileName: String) {
                     if (isAudio) fileName else "Movies › Squish · $fileName",
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextMuted,
-                    maxLines = 1
+                    // One line, cut short at the end. Allowed to wrap, a name one
+                    // character too long broke after the dot and the one-line limit
+                    // then hid the name completely.
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

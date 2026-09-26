@@ -49,6 +49,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.SquishRepositories
@@ -342,7 +343,9 @@ private fun LibraryRow(
                 record.title,
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (exists) SquishColors.TextPrimary else SquishColors.TextMuted,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 "${Timecode.format(record.durationMs)}  ·  ${formatSize(record.outputSizeBytes)}",

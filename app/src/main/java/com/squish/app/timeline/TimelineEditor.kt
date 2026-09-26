@@ -73,6 +73,7 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.squish.app.editor.Timecode
@@ -906,14 +907,18 @@ private fun ClipView(
                 text = clip.text ?: clip.label,
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextPrimary,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
             if (width > 88.dp) {
                 Text(
                     text = Timecode.format(clip.durationMs).removeSuffix(".000"),
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextPrimary.copy(alpha = 0.6f),
-                    maxLines = 1
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -935,7 +940,9 @@ private fun ClipView(
                     else "${"%.2f".format(clip.speedRamp.flatSpeed).trimEnd('0').trimEnd('.')}x",
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.Cyan,
-                    maxLines = 1
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

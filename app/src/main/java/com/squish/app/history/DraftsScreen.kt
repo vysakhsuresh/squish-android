@@ -280,7 +280,9 @@ private fun DraftCard(
                 draft.describe(),
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
             if (draft.durationMs > 0) {
                 Text(
