@@ -4,7 +4,12 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,14 +28,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.MailOutline
-import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,7 +42,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -111,8 +117,20 @@ fun ExportScreen(
             ) {
                 Spacer(modifier = Modifier.height(20.dp))
 
+                // The tick springs in once, the moment the file is ready.
+                var landed by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { landed = true }
+                val pop by animateFloatAsState(
+                    if (landed) 1f else 0.4f,
+                    spring(dampingRatio = 0.42f, stiffness = 260f),
+                    label = "tick"
+                )
                 Box(
-                    modifier = Modifier.size(78.dp).clip(CircleShape).background(accentSweep(SquishColors.Cyan)),
+                    modifier = Modifier
+                        .size(78.dp)
+                        .graphicsLayer { scaleX = pop; scaleY = pop; alpha = pop.coerceIn(0f, 1f) }
+                        .clip(CircleShape)
+                        .background(accentSweep(SquishColors.Cyan)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -192,23 +210,23 @@ fun ExportScreen(
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ShareTarget("WhatsApp", ShareGlyphs.WhatsApp, WHATSAPP_GREEN) {
+                    ShareTarget("WhatsApp", ShareGlyphs.WhatsApp, ShareStyle.WhatsApp) {
                         if (!ShareUtils.share(context, resultPath, "com.whatsapp")) {
                             notice = "Nothing on this phone can share that."
                         }
                     }
-                    ShareTarget("Instagram", ShareGlyphs.Instagram, INSTAGRAM_PINK) {
+                    ShareTarget("Instagram", ShareGlyphs.Instagram, ShareStyle.Instagram) {
                         if (!ShareUtils.share(context, resultPath, "com.instagram.android")) {
                             notice = "Nothing on this phone can share that."
                         }
                     }
-                    ShareTarget("Mail", Icons.Filled.MailOutline, SquishColors.Blue) {
+                    ShareTarget("Mail", ShareGlyphs.Mail, ShareStyle.Mail) {
                         sendByEmail(context, resultPath, isAudio) { notice = it }
                     }
-                    ShareTarget("More apps", Icons.Filled.MoreHoriz, SquishColors.Violet) {
+                    ShareTarget("More", ShareGlyphs.More, ShareStyle.More) {
                         if (!ShareUtils.share(context, resultPath, null)) {
                             notice = "Nothing on this phone can share that."
                         }
@@ -294,20 +312,29 @@ private fun SavedToCard(isAudio: Boolean, fileName: String) {
  * touch loses anything.
  */
 @Composable
-private fun ShareTarget(label: String, icon: ImageVector, color: Color, onClick: () -> Unit) {
+private fun ShareTarget(label: String, icon: ImageVector, tile: Brush, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(20.dp)
+    val press = remember { MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.9f else 1f, spring(dampingRatio = 0.45f), label = "press")
     Box(
         modifier = Modifier
-            .size(56.dp)
-            .clip(CircleShape)
-            .background(color)
-            .clickable(onClick = onClick),
+            .size(62.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(shape)
+            .background(tile)
+            // A soft light across the top edge, so the tile reads as a surface
+            // rather than a flat swatch.
+            .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.22f), Color.Transparent), endY = 90f))
+            .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
+            .clickable(interactionSource = press, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             icon,
             contentDescription = "Share to $label",
             tint = Color.White,
-            modifier = Modifier.size(27.dp)
+            modifier = Modifier.size(28.dp)
         )
     }
 }
@@ -352,5 +379,3 @@ private fun sendByEmail(
     }
 }
 
-private val WHATSAPP_GREEN = Color(0xFF25D366)
-private val INSTAGRAM_PINK = Color(0xFFE1306C)

@@ -6,17 +6,17 @@ import kotlin.math.exp
 import kotlin.math.sin
 
 /** The effects in the library, each a stretch of the video treated a particular way. */
-enum class EffectKind(val label: String, val glyph: String) {
-    Shake("Shake", "📳"),
-    Punch("Zoom punch", "💥"),
-    ZoomIn("Slow zoom", "🔍"),
-    Glitch("Glitch", "📺"),
-    Flash("Flash", "⚡"),
-    Vhs("VHS", "📼"),
-    Mono("B&W", "⚫"),
-    Invert("Invert", "🔄"),
-    Blur("Blur", "🌫️"),
-    Rainbow("Rainbow", "🌈")
+enum class EffectKind(val label: String) {
+    Shake("Shake"),
+    Punch("Zoom punch"),
+    ZoomIn("Slow zoom"),
+    Glitch("Glitch"),
+    Flash("Flash"),
+    Vhs("VHS"),
+    Mono("B&W"),
+    Invert("Invert"),
+    Blur("Blur"),
+    Rainbow("Rainbow")
 }
 
 /**

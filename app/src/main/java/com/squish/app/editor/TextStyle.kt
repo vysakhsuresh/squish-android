@@ -137,11 +137,11 @@ enum class TitlePreset(
  * A voice effect on the clip's own sound. Pitch effects shift the voice without
  * changing its timing; the rest are processed by VoiceProcessor.
  */
-enum class VoiceEffect(val label: String, val glyph: String, val pitch: Float = 1f) {
-    None("None", "🎙️"),
-    Chipmunk("Chipmunk", "🐿️", pitch = 1.6f),
-    Deep("Deep", "🐻", pitch = 0.72f),
-    Robot("Robot", "🤖"),
-    Echo("Echo", "🏔️"),
-    Radio("Radio", "📻")
+enum class VoiceEffect(val label: String, val pitch: Float = 1f) {
+    None("None"),
+    Chipmunk("Chipmunk", pitch = 1.6f),
+    Deep("Deep", pitch = 0.72f),
+    Robot("Robot"),
+    Echo("Echo"),
+    Radio("Radio")
 }

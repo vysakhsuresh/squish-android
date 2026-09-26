@@ -55,7 +55,7 @@ fun FxPanel(state: EditorUiState, viewModel: EditorViewModel) {
                                 .clickable { viewModel.addEffect(kind) }
                                 .padding(vertical = 10.dp)
                         ) {
-                            Text(kind.glyph, fontSize = 22.sp)
+                            GlyphTile(kind.glyph, size = 38.dp)
                             Text(
                                 kind.label,
                                 style = MaterialTheme.typography.labelSmall,
@@ -109,7 +109,8 @@ private fun PlacedEffect(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("${effect.kind.glyph}  ${effect.kind.label}", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+            GlyphTile(effect.kind.glyph, size = 26.dp)
+            Text("  ${effect.kind.label}", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
             Text(
                 "  ${Timecode.format(effect.startMs)} → ${Timecode.format(effect.endMs)}",
                 style = MaterialTheme.typography.labelSmall,

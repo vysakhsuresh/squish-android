@@ -66,13 +66,29 @@ fun AudioPanel(
                 VoiceEffect.entries.chunked(3).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         row.forEach { effect ->
-                            SelectableChip(
-                                label = "${effect.glyph} ${effect.label}",
-                                selected = state.voiceEffect == effect,
-                                accentColor = SquishColors.Cyan,
-                                modifier = Modifier.weight(1f),
-                                onClick = { viewModel.setVoiceEffect(effect) }
-                            )
+                            val on = state.voiceEffect == effect
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(if (on) SquishColors.Cyan.copy(alpha = 0.14f) else SquishColors.Background)
+                                    .border(
+                                        if (on) 1.5.dp else 1.dp,
+                                        if (on) SquishColors.Cyan else SquishColors.Border,
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .clickable { viewModel.setVoiceEffect(effect) }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                GlyphTile(effect.glyph, size = 36.dp)
+                                Text(
+                                    effect.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (on) SquishColors.TextPrimary else SquishColors.TextSecondary
+                                )
+                            }
                         }
                     }
                 }

@@ -87,7 +87,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                             .clickable { viewModel.applyTemplate(template) }
                             .padding(12.dp)
                     ) {
-                        Text(template.glyph, fontSize = 24.sp)
+                        GlyphTile(template.glyph, size = 40.dp)
                         Text(template.label, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
                         Text(
                             template.blurb,
