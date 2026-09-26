@@ -38,6 +38,29 @@ data class TimedEffect(
 }
 
 /**
+ * The effects cut back to a picture [endMs] long.
+ *
+ * An effect over time the video no longer has does nothing - there are no
+ * frames there to treat - but it still drew a bar running off the end of the
+ * strip and could not be dragged back in. So one that overhangs the end stops
+ * at it, and one that starts past the end is dropped. Undo brings either back
+ * along with the length that was cut.
+ *
+ * An empty picture ([endMs] of zero or less) changes nothing: that is a timeline
+ * part-way through being rebuilt, not one that is short.
+ */
+fun List<TimedEffect>.fittedTo(endMs: Long): List<TimedEffect> {
+    if (endMs <= 0L || none { it.endMs > endMs }) return this
+    return mapNotNull { e ->
+        when {
+            e.startMs >= endMs -> null
+            e.endMs > endMs -> e.copy(endMs = endMs)
+            else -> e
+        }
+    }
+}
+
+/**
  * Everything the effects shader needs for one frame, worked out on the CPU from
  * whichever effects cover that moment. Effects that overlap add together.
  */

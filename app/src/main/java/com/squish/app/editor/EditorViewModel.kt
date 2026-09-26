@@ -1895,10 +1895,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 playheadMs = current.playheadMs
             )
             val next = block(timeline)
+            val video = next.clips.filter { it.kind == ClipKind.Video }
             current.copy(
-                videoClips = next.clips.filter { it.kind == ClipKind.Video },
+                videoClips = video,
                 audioClips = next.clips.filter { it.kind == ClipKind.Audio },
-                selectedClipId = next.selectedClipId
+                selectedClipId = next.selectedClipId,
+                // Every change to how long the picture runs comes through here -
+                // trims, cuts, deletes, retimes, closing gaps - so this is where
+                // effects are kept inside it. See [fittedTo].
+                effects = current.effects.fittedTo(video.maxOfOrNull { it.timelineEndMs } ?: 0L)
             )
         }
         recomputeEstimate()
@@ -2057,6 +2062,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             loadedUri = snapshot.sourceUri
             _state.update {
                 it.applying(snapshot, meta.durationMs, meta.displayWidth, meta.displayHeight, meta.fps)
+                    // Drafts saved before effects were fitted can carry some
+                    // running far past the end; tidy those on the way in.
+                    .let { s -> s.copy(effects = s.effects.fittedTo(s.videoClips.maxOfOrNull { c -> c.timelineEndMs } ?: 0L)) }
             }
             recomputeEstimate()
             startProxy(snapshot.sourceUri, meta.displayWidth, meta.displayHeight, meta.durationMs)
