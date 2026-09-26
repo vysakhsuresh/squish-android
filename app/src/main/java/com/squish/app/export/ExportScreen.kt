@@ -63,7 +63,12 @@ import java.io.File
  * in the app. And its share row was four coloured circles with no marks on them.
  */
 @Composable
-fun ExportScreen(resultPath: String, jobLabel: String, onDone: () -> Unit) {
+fun ExportScreen(
+    resultPath: String,
+    /** Already in the past tense — "Stitched", "Exported". The screen adds nothing. */
+    jobLabel: String,
+    onDone: () -> Unit
+) {
     val context = LocalContext.current
     val record = remember(resultPath) {
         SquishRepositories.history(context).records.value.firstOrNull { it.outputPath == resultPath }
@@ -118,7 +123,7 @@ fun ExportScreen(resultPath: String, jobLabel: String, onDone: () -> Unit) {
                 }
 
                 Text(
-                    "$jobLabel done",
+                    jobLabel,
                     style = MaterialTheme.typography.headlineSmall,
                     color = SquishColors.TextPrimary
                 )

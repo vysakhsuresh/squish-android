@@ -96,7 +96,7 @@ fun QuickToolScreen(
         .build()
 
     fun openPicker() {
-        if (tool == QuickTool.Merge) pickMergeClips.launch(videoOnly) else pickVideo.launch(videoOnly)
+        if (tool == QuickTool.Stitch) pickMergeClips.launch(videoOnly) else pickVideo.launch(videoOnly)
     }
 
     // Straight to the picker: the tile tap already said what they want to do.
@@ -122,14 +122,14 @@ fun QuickToolScreen(
         if (!state.hasSource) {
             SquishCard(accent = tool.accent) {
                 Text(
-                    if (tool == QuickTool.Merge)
+                    if (tool == QuickTool.Stitch)
                         "Choose the videos you want joined — you can pick several at once."
                     else "Choose a video to get started.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = SquishColors.TextSecondary
                 )
                 SquishOutlinedButton(
-                    text = if (tool == QuickTool.Merge) "Choose videos" else "Choose video",
+                    text = if (tool == QuickTool.Stitch) "Choose videos" else "Choose video",
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { openPicker() }
                 )
@@ -146,8 +146,8 @@ fun QuickToolScreen(
         )
 
         when (tool) {
-            QuickTool.Compress -> CompressControls(state, viewModel)
-            QuickTool.Trim -> RangeControls(
+            QuickTool.Squeeze -> CompressControls(state, viewModel)
+            QuickTool.Snip -> RangeControls(
                 state = state,
                 tool = tool,
                 blurb = "Everything between the handles is kept.",
@@ -157,7 +157,7 @@ fun QuickToolScreen(
                     seekNonce += 1
                 }
             )
-            QuickTool.ExtractAudio -> RangeControls(
+            QuickTool.Rip -> RangeControls(
                 state = state,
                 tool = tool,
                 blurb = "Only the sound between the handles is saved, as an .m4a in Music/Squish.",
@@ -167,7 +167,7 @@ fun QuickToolScreen(
                     seekNonce += 1
                 }
             )
-            QuickTool.Merge -> MergeControls(
+            QuickTool.Stitch -> MergeControls(
                 state = state,
                 viewModel = viewModel,
                 onAddClips = { pickMergeClips.launch(videoOnly) }
@@ -222,7 +222,7 @@ private fun PreviewCard(
     onChangeSource: () -> Unit
 ) {
     val sources = remember(state.mergeClips, state.sourceUri, state.durationMs) {
-        if (tool == QuickTool.Merge) {
+        if (tool == QuickTool.Stitch) {
             state.mergeClips.mapNotNull { clip ->
                 clip.uri?.let { PreviewSource(it, clip.durationMs, clip.label) }
             }
@@ -240,7 +240,7 @@ private fun PreviewCard(
             aspect = state.previewAspect,
             rangeStartMs = if (tool.usesRange) state.trimStartMs else 0L,
             rangeEndMs = if (tool.usesRange) state.trimEndMs else 0L,
-            audioOnly = tool == QuickTool.ExtractAudio,
+            audioOnly = tool == QuickTool.Rip,
             seekToMs = seekTarget,
             seekNonce = seekNonce,
             modifier = Modifier.fillMaxWidth()
@@ -253,14 +253,14 @@ private fun PreviewCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    if (tool == QuickTool.Merge) "${state.mergeClips.size} clips joined"
+                    if (tool == QuickTool.Stitch) "${state.mergeClips.size} clips joined"
                     else state.name ?: "Selected video",
                     style = MaterialTheme.typography.bodyMedium,
                     color = SquishColors.TextPrimary,
                     maxLines = 1
                 )
                 Text(
-                    if (tool == QuickTool.Merge)
+                    if (tool == QuickTool.Stitch)
                         Timecode.format(state.mergeDurationMs)
                     else
                         "${Timecode.format(state.durationMs)}  ·  ${formatSize(state.originalSizeBytes)}",
@@ -385,7 +385,7 @@ private fun RangeControls(
         SectionHeading(
             title = "Keep this part",
             subtitle = blurb,
-            icon = if (tool == QuickTool.ExtractAudio) Icons.Filled.MusicNote else Icons.Filled.ContentCut,
+            icon = if (tool == QuickTool.Rip) Icons.Filled.MusicNote else Icons.Filled.ContentCut,
             accent = tool.accent
         )
 

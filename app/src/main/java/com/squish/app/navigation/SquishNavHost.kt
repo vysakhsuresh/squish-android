@@ -76,7 +76,7 @@ fun SquishNavHost() {
                 onOpen = { path ->
                     navController.fromTopOf(entry) {
                         navController.navigate(
-                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Export"))
+                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Exported"))
                         )
                     }
                 }
@@ -130,7 +130,7 @@ fun SquishNavHost() {
                 onExported = { path ->
                     navController.fromTopOf(entry) {
                         navController.navigate(
-                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode(tool.title))
+                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode(tool.doneLabel))
                         ) {
                             popUpTo(Destination.Home.route)
                         }
@@ -159,7 +159,7 @@ fun SquishNavHost() {
                 onExported = { path ->
                     navController.fromTopOf(entry) {
                         navController.navigate(
-                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Export"))
+                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Exported"))
                         ) {
                             popUpTo(Destination.Home.route)
                         }
@@ -179,7 +179,7 @@ fun SquishNavHost() {
             val job = Uri.decode(entry.arguments?.getString("job").orEmpty())
             ExportScreen(
                 resultPath = Uri.decode(encoded),
-                jobLabel = job.ifBlank { "Export" },
+                jobLabel = job.ifBlank { "Exported" },
                 onDone = {
                     navController.fromTopOf(entry) {
                         navController.navigate(Destination.Home.route) {

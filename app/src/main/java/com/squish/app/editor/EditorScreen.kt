@@ -70,15 +70,28 @@ import com.squish.app.ui.theme.SquishColors
  * than nine identically grey words.
  */
 enum class EditorTab(val label: String, val icon: ImageVector, val accent: Color) {
-    Trim("Trim", Icons.Filled.ContentCut, SquishColors.Violet),
-    Crop("Crop", Icons.Filled.Crop, SquishColors.Violet),
+    /** In and out points. "Cut" is what the job is called everywhere but a menu. */
+    Cut("Cut", Icons.Filled.ContentCut, SquishColors.Violet),
+
+    /**
+     * Crop and rotation together, which is framing rather than cropping - and
+     * "Frame" was already the more accurate word for a panel that does both.
+     */
+    Frame("Frame", Icons.Filled.Crop, SquishColors.Violet),
+
     Speed("Speed", Icons.Filled.Speed, SquishColors.Blue),
-    Mix("Mix", Icons.Filled.Layers, SquishColors.Magenta),
+
+    /** Transitions and the layers they happen between. */
+    Blend("Blend", Icons.Filled.Layers, SquishColors.Magenta),
+
     Motion("Motion", Icons.Filled.Animation, SquishColors.Amber),
-    Audio("Audio", Icons.Filled.GraphicEq, SquishColors.Cyan),
-    Captions("Captions", Icons.Filled.ClosedCaption, SquishColors.Amber),
-    Effects("Effects", Icons.Filled.AutoAwesome, SquishColors.Magenta),
-    Export("Export", Icons.Filled.FileUpload, SquishColors.Blue)
+    Sound("Sound", Icons.Filled.GraphicEq, SquishColors.Cyan),
+    Words("Words", Icons.Filled.ClosedCaption, SquishColors.Amber),
+
+    /** The look catalogue. It was called Effects and shows nothing but looks. */
+    Looks("Looks", Icons.Filled.AutoAwesome, SquishColors.Magenta),
+
+    Finish("Finish", Icons.Filled.FileUpload, SquishColors.Blue)
 }
 
 @Composable
@@ -220,7 +233,7 @@ fun EditorScreen(
                                 onCommit = { viewModel.setCropRect(state.cropRect) },
                                 modifier = Modifier.fillMaxSize()
                             )
-                            tab == EditorTab.Crop || state.cropAspect != CropAspect.Original ->
+                            tab == EditorTab.Frame || state.cropAspect != CropAspect.Original ->
                                 CropOverlay(
                                     aspect = state.cropAspect,
                                     modifier = Modifier.fillMaxSize()
@@ -244,7 +257,7 @@ fun EditorScreen(
                 onScrub = viewModel::scrubTo,
                 onTransitionTap = { clipId ->
                     viewModel.selectClip(clipId)
-                    tab = EditorTab.Mix
+                    tab = EditorTab.Blend
                 },
                 markers = state.markers,
                 barMarkers = state.beats.every(4),
@@ -297,10 +310,10 @@ fun EditorScreen(
                     // Nothing open. The room goes back to the strip, and the row
                     // of tools below says what is available without taking any.
                     null -> IdleHint(hasSelection = state.selectedClipId != null)
-                    EditorTab.Trim -> PrecisionTrimPanel(state, viewModel)
-                    EditorTab.Crop -> CropPanel(state, viewModel)
+                    EditorTab.Cut -> PrecisionTrimPanel(state, viewModel)
+                    EditorTab.Frame -> CropPanel(state, viewModel)
                     EditorTab.Speed -> SpeedPanel(state, viewModel)
-                    EditorTab.Mix -> TransitionPanel(
+                    EditorTab.Blend -> TransitionPanel(
                         state = state,
                         viewModel = viewModel,
                         onAddOverlay = {
@@ -312,14 +325,14 @@ fun EditorScreen(
                         }
                     )
                     EditorTab.Motion -> MotionPanel(state, viewModel)
-                    EditorTab.Audio -> AudioPanel(
+                    EditorTab.Sound -> AudioPanel(
                         state = state,
                         viewModel = viewModel,
                         onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) }
                     )
-                    EditorTab.Captions -> CaptionsPanel(state, viewModel)
-                    EditorTab.Effects -> EffectsPanel(state, viewModel)
-                    EditorTab.Export -> ExportPanel(
+                    EditorTab.Words -> CaptionsPanel(state, viewModel)
+                    EditorTab.Looks -> EffectsPanel(state, viewModel)
+                    EditorTab.Finish -> ExportPanel(
                         state = state,
                         viewModel = viewModel,
                         onAddClip = {
@@ -434,5 +447,10 @@ private fun ToolRail(selected: EditorTab?, onSelect: (EditorTab) -> Unit) {
     }
 }
 
-/** Wide enough for "Captions", which is the longest label in the rail. */
-private val RAIL_ITEM_WIDTH = 74.dp
+/**
+ * Wide enough for "Motion", which is the longest label left in the rail.
+ *
+ * It used to be sized for "Captions". Shorter names are not only nicer to read -
+ * they buy back the width, so a thumb sees more of the row before scrolling.
+ */
+private val RAIL_ITEM_WIDTH = 66.dp

@@ -140,7 +140,7 @@ fun HomeScreen(
             )
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Header("Quick tools", "One job, one tap")
+                Header("Fast lane", "One job, one tap")
                 QuickTool.entries.chunked(2).forEach { pair ->
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -194,8 +194,12 @@ private fun EditorHero(onClick: () -> Unit) {
             .padding(22.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // "The Studio", not "Video editor". Every app on the phone that opens
+            // a timeline calls itself a video editor; the word describes the
+            // category, not this. What it is, is the room with everything in it -
+            // and the one-job tools below are the opposite of a room.
             Text(
-                "Video\neditor",
+                "The\nStudio",
                 style = MaterialTheme.typography.displayLarge,
                 fontSize = 38.sp,
                 lineHeight = 40.sp,
@@ -203,7 +207,7 @@ private fun EditorHero(onClick: () -> Unit) {
                 color = SquishColors.Background
             )
             Text(
-                "Timeline, transitions, looks, captions and automatic audio sync.",
+                "Timeline, blends, looks, words and automatic audio sync.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = SquishColors.Background.copy(alpha = 0.8f)
             )
@@ -213,7 +217,7 @@ private fun EditorHero(onClick: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    "Pick a video",
+                    "Open the studio",
                     style = MaterialTheme.typography.labelLarge,
                     color = SquishColors.Background
                 )

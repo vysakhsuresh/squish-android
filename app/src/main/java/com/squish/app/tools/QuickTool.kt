@@ -15,54 +15,74 @@ import com.squish.app.ui.theme.SquishColors
  * person who just needs a smaller file never has to meet a timeline.
  */
 enum class QuickTool(
+    /**
+     * The stable handle, and deliberately not the name on screen.
+     *
+     * It is in the navigation route, in the filename of every draft of a session,
+     * and in the filename of every file the tool writes. A rename that touched it
+     * would orphan drafts people are in the middle of and break any link already
+     * in existence - so the names below are free to change and this never does.
+     */
     val id: String,
     val title: String,
     val blurb: String,
     val accent: Color,
     val icon: ImageVector,
-    val actionLabel: String
+    val actionLabel: String,
+    /**
+     * What the done screen says once the file exists.
+     *
+     * A past tense of its own, because the screen used to append "done" to the
+     * tool's name and "Squeeze done" is not a sentence anyone writes. One word
+     * that is already finished says it better than two that are not.
+     */
+    val doneLabel: String
 ) {
-    Compress(
+    Squeeze(
         id = "compress",
-        title = "Compress",
-        blurb = "Shrink a video to a size you choose",
+        title = "Squeeze",
+        blurb = "Make a video smaller without making it worse",
         accent = SquishColors.Blue,
         icon = Icons.Filled.Compress,
-        actionLabel = "Compress video"
+        actionLabel = "Squeeze it",
+        doneLabel = "Squeezed"
     ),
-    Trim(
+    Snip(
         id = "trim",
-        title = "Trim",
-        blurb = "Keep only the part you want",
+        title = "Snip",
+        blurb = "Keep only the part worth keeping",
         accent = SquishColors.Cyan,
         icon = Icons.Filled.ContentCut,
-        actionLabel = "Trim video"
+        actionLabel = "Snip it",
+        doneLabel = "Snipped"
     ),
-    ExtractAudio(
+    Rip(
         id = "audio",
-        title = "Extract audio",
-        blurb = "Save the sound as an audio file",
+        title = "Rip",
+        blurb = "Pull the sound out as its own file",
         accent = SquishColors.Amber,
         icon = Icons.Filled.MusicNote,
-        actionLabel = "Extract audio"
+        actionLabel = "Rip the sound",
+        doneLabel = "Ripped"
     ),
-    Merge(
+    Stitch(
         id = "merge",
-        title = "Merge",
+        title = "Stitch",
         blurb = "Join clips end to end",
         accent = SquishColors.Magenta,
         icon = Icons.Filled.PlaylistAdd,
-        actionLabel = "Merge clips"
+        actionLabel = "Stitch them",
+        doneLabel = "Stitched"
     );
 
     /** Whether the job works on a chosen part of the source rather than all of it. */
-    val usesRange: Boolean get() = this == Trim || this == ExtractAudio
+    val usesRange: Boolean get() = this == Snip || this == Rip
 
     /** What the finished file is, said once so every screen agrees on the wording. */
     val outputNoun: String
-        get() = if (this == ExtractAudio) "audio file" else "video"
+        get() = if (this == Rip) "audio file" else "video"
 
     companion object {
-        fun fromId(id: String?): QuickTool = entries.firstOrNull { it.id == id } ?: Compress
+        fun fromId(id: String?): QuickTool = entries.firstOrNull { it.id == id } ?: Squeeze
     }
 }

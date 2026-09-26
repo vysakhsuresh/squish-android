@@ -40,6 +40,7 @@ resample
 resamples
 resampling
 resequenced
+restitch
 retime
 retimed
 retimes
@@ -48,6 +49,8 @@ scrim
 scrub
 scrubbing
 scrubs
+snip
+snipped
 sonic
 squish
 squished
@@ -60,6 +63,7 @@ transmux
 transmuxed
 transmuxing
 undoable
+unsnip
 vignette
 vignetting
 waveform

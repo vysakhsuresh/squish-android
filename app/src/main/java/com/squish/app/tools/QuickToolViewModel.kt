@@ -141,12 +141,12 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun draftOf(tool: QuickTool, state: UiState) = ToolDraft(
         toolId = tool.id,
-        title = if (tool == QuickTool.Merge) {
+        title = if (tool == QuickTool.Stitch) {
             "${state.mergeClips.size} clips to merge"
         } else {
             state.name ?: tool.title
         },
-        uris = if (tool == QuickTool.Merge) {
+        uris = if (tool == QuickTool.Stitch) {
             state.mergeClips.mapNotNull { it.uri }
         } else {
             listOfNotNull(state.sourceUri)
@@ -179,7 +179,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             )
         }
 
-        if (tool == QuickTool.Merge) {
+        if (tool == QuickTool.Stitch) {
             addMergeClips(draft.uris)
             return
         }
@@ -376,7 +376,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val current = _state.value
         val sourceUri = current.sourceUri ?: return
 
-        val audioOnly = tool == QuickTool.ExtractAudio
+        val audioOnly = tool == QuickTool.Rip
         val editorState = EditorUiState(
             sourceUri = sourceUri,
             isLoadingSource = false,
@@ -387,7 +387,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             trimStartMs = if (tool.usesRange) current.trimStartMs else 0,
             trimEndMs = if (tool.usesRange) current.trimEndMs else current.durationMs,
             quality = current.quality,
-            fitToSize = tool == QuickTool.Compress && current.fitToSize,
+            fitToSize = tool == QuickTool.Squeeze && current.fitToSize,
             targetSizeMb = current.targetSizeMb,
             audioOnly = audioOnly,
             // Checked rather than assumed, so extracting audio from a silent clip
@@ -396,11 +396,11 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             sourceHasAudio = current.hasAudio,
             // Already in order and already sequenced, so the export is simply the
             // list as shown - there is no second place for the order to be decided.
-            videoClips = if (tool != QuickTool.Merge) emptyList()
+            videoClips = if (tool != QuickTool.Stitch) emptyList()
             else current.mergeClips.filter { it.sourceSpanMs > 0 }
         )
 
-        if (tool == QuickTool.Merge && editorState.videoClips.isEmpty()) {
+        if (tool == QuickTool.Stitch && editorState.videoClips.isEmpty()) {
             onError("Nothing to merge. Every clip came back with no length — pick them again.")
             return
         }
@@ -435,7 +435,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                 historyRepository.add(
                     ExportRecord(
                         id = UUID.randomUUID().toString(),
-                        title = if (tool == QuickTool.Merge) {
+                        title = if (tool == QuickTool.Stitch) {
                             "${current.mergeClips.size} clips merged"
                         } else {
                             current.name ?: tool.title
