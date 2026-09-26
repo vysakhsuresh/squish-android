@@ -239,6 +239,7 @@ data class EditSnapshot(
     val videoClips: List<Clip>,
     val audioClips: List<Clip>,
     val textOverlays: List<TextOverlayItem>,
+    val effects: List<TimedEffect>,
     val markers: List<Long>,
     val selectedClipId: String?,
     val muteOriginal: Boolean,
@@ -302,6 +303,8 @@ data class EditorUiState(
     val lookIntensity: Float = 1f,
 
     val textOverlays: List<TextOverlayItem> = emptyList(),
+    /** Timed effects from the library - shake, glitch, flash and the rest. */
+    val effects: List<TimedEffect> = emptyList(),
     val captions: CaptionProgress = CaptionProgress(),
     val stabilize: StabilizeProgress = StabilizeProgress(),
     val stabilizeStrength: Float = 0.5f,
@@ -428,6 +431,7 @@ data class EditorUiState(
             videoClips = videoClips,
             audioClips = audioClips,
             textOverlays = textOverlays,
+            effects = effects,
             markers = markers,
             selectedClipId = selectedClipId,
             muteOriginal = muteOriginal,
@@ -447,6 +451,7 @@ data class EditorUiState(
         videoClips = snapshot.videoClips,
         audioClips = snapshot.audioClips,
         textOverlays = snapshot.textOverlays,
+        effects = snapshot.effects,
         markers = snapshot.markers,
         selectedClipId = snapshot.selectedClipId,
         muteOriginal = snapshot.muteOriginal,

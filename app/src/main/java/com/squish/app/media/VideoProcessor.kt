@@ -32,6 +32,7 @@ import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
+import com.squish.app.media.effects.FxEffect
 import com.squish.app.media.effects.MaskEffect
 import com.squish.app.media.effects.Looks
 import com.squish.app.timeline.Clip
@@ -532,6 +533,13 @@ class VideoProcessor(private val context: Context) {
                 )
             )
         )
+
+        // The effects library, after the grade and before the captions, so a shake
+        // or a glitch moves the picture and leaves the words readable on top.
+        if (state.effects.isNotEmpty()) {
+            val timed = state.effects
+            effects.add(FxEffect { timed })
+        }
 
         if (state.textOverlays.isNotEmpty()) {
             // Widened at the declaration: OverlayEffect takes List<TextureOverlay>,

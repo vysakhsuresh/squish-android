@@ -880,6 +880,34 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id) }
     }
 
+    // ---- Effects library --------------------------------------------------------
+
+    /** An effect from the playhead for [DEFAULT_EFFECT_MS], or to the end if that is sooner. */
+    fun addEffect(kind: EffectKind) = record("Add ${kind.label}") {
+        val current = _state.value
+        val total = current.timelineDurationMs
+        val start = current.playheadMs.coerceIn(0L, (total - MIN_EFFECT_MS).coerceAtLeast(0L))
+        val end = (start + DEFAULT_EFFECT_MS).coerceAtMost(total.takeIf { it > start } ?: (start + DEFAULT_EFFECT_MS))
+        val effect = TimedEffect(id = UUID.randomUUID().toString(), kind = kind, startMs = start, endMs = end)
+        _state.update { it.copy(effects = it.effects + effect) }
+    }
+
+    fun changeEffect(id: String, change: (TimedEffect) -> TimedEffect) = record("Effect $id") {
+        _state.update { current ->
+            current.copy(effects = current.effects.map { e ->
+                if (e.id != id) e else change(e).let { c ->
+                    // Never shorter than a tenth of a second, never inside out.
+                    val start = c.startMs.coerceAtLeast(0L)
+                    c.copy(startMs = start, endMs = c.endMs.coerceAtLeast(start + MIN_EFFECT_MS))
+                }
+            })
+        }
+    }
+
+    fun removeEffect(id: String) = record("Remove effect") {
+        _state.update { it.copy(effects = it.effects.filterNot { e -> e.id == id }) }
+    }
+
     /** Changes how one caption looks or moves. The text and timing are left alone. */
     fun restyleCaption(id: String, change: (TextOverlayItem) -> TextOverlayItem) = record("Style $id") {
         _state.update { current ->
@@ -1872,6 +1900,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         trimEndMs = durationMs,
         videoClips = snapshot.clips,
         textOverlays = snapshot.textOverlays,
+        effects = snapshot.effects,
         markers = snapshot.markers,
         playheadMs = snapshot.playheadMs,
         outputP = snapshot.outputP,
@@ -1950,5 +1979,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
         /** Long enough for a title to arrive, be read and leave. */
         const val DEFAULT_TITLE_MS = 3_000L
+
+        /** An effect lasts two seconds unless stretched - long enough to see, short enough to be a moment. */
+        const val DEFAULT_EFFECT_MS = 2_000L
+        const val MIN_EFFECT_MS = 100L
     }
 }

@@ -17,6 +17,7 @@ import androidx.media3.common.Effect
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import com.squish.app.media.effects.ChromaKeyEffect
+import com.squish.app.media.effects.FxEffect
 import com.squish.app.media.effects.LiveLookEffect
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.effects.MaskEffect
@@ -115,6 +116,7 @@ class PreviewEngine(private val context: Context) {
     private var layers: List<Int> = emptyList()
     private var audioClips: List<Clip> = emptyList()
     private var captions: List<TextOverlayItem> = emptyList()
+    private var effects: List<TimedEffect> = emptyList()
 
     private var fallbackUri: Uri? = null
     private var proxyUri: Uri? = null
@@ -169,6 +171,9 @@ class PreviewEngine(private val context: Context) {
 
     /** Set when what a paused frame shows has changed; see [setTimeline]. */
     private var pendingRedraw = false
+
+    /** Each surface'"'"'s timed effects, in its own clock, read by its effects shader every frame. */
+    private val liveEffects = HashMap<String, AtomicReference<List<TimedEffect>>>()
 
     /** Whether captions draw at rest, which they do whenever the preview is paused. */
     private val captionsAtRest = AtomicBoolean(true)
@@ -236,6 +241,7 @@ class PreviewEngine(private val context: Context) {
         videoClips: List<Clip>,
         audioClips: List<Clip>,
         captions: List<TextOverlayItem>,
+        effects: List<TimedEffect>,
         fallbackUri: Uri,
         proxyUri: Uri?,
         muteOriginal: Boolean,
@@ -248,7 +254,8 @@ class PreviewEngine(private val context: Context) {
         // A paused picture does not redraw by itself, so a restyled caption or a
         // new grade would not show until play. The next tick, once every surface
         // has been handed the change, asks for a fresh frame.
-        if (captions != this.captions || grade != liveGrade.get()) pendingRedraw = true
+        if (captions != this.captions || effects != this.effects || grade != liveGrade.get()) pendingRedraw = true
+        this.effects = effects
         this.captions = captions
         applyFraming(rotationDegrees, cropRatio)
         val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
@@ -345,6 +352,13 @@ class PreviewEngine(private val context: Context) {
             .map { it.shiftedInto(clip) }
         val captionsHere = liveCaptions.getOrPut(surfaceKey) { AtomicReference(emptyList()) }
         captionsHere.set(visible)
+        // The effects library, handed over the same way and for the same reason.
+        val effectsHere = liveEffects.getOrPut(surfaceKey) { AtomicReference(emptyList()) }
+        effectsHere.set(
+            if (clip == null) emptyList() else effects
+                .filter { it.endMs > clip.timelineStartMs && it.startMs < clip.timelineEndMs }
+                .map { it.shiftedInto(clip) }
+        )
 
         // Neither the grade nor the captions are in here: both live in references
         // the pipeline reads each frame, so changing them needs no rebuild.
@@ -377,6 +391,7 @@ class PreviewEngine(private val context: Context) {
             // frame and the first touch of a slider changes a value rather than
             // building one mid-playback.
             add(LiveLookEffect(liveGrade))
+            add(FxEffect { effectsHere.get() })
             // Always present for the same reason: the first title added mid-play
             // is drawn by the next frame instead of rebuilding the pipeline.
             val overlays: List<TextureOverlay> = listOf(LiveCaptionOverlay(captionsHere, captionsAtRest))

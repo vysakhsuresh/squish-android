@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
@@ -94,6 +95,7 @@ enum class EditorTab(val label: String, val icon: ImageVector, val accent: Color
     Sound("Sound", Icons.Filled.GraphicEq, SquishColors.Cyan),
     Words("Words", Icons.Filled.ClosedCaption, SquishColors.Amber),
     Stickers("Stickers", Icons.Filled.EmojiEmotions, SquishColors.Magenta),
+    Effects("Effects", Icons.Filled.Bolt, SquishColors.Violet),
 
     /** The look catalogue. It was called Effects and shows nothing but looks. */
     Looks("Looks", Icons.Filled.AutoAwesome, SquishColors.Magenta),
@@ -239,6 +241,7 @@ fun EditorScreen(
                     videoClips = state.videoClips,
                     audioClips = state.audioClips,
                     captions = state.textOverlays,
+                    effects = state.effects,
                     fallbackUri = sourceUri,
                     proxyUri = state.proxyUri,
                     muteOriginal = state.muteOriginal,
@@ -379,6 +382,7 @@ fun EditorScreen(
                     )
                     EditorTab.Words -> CaptionsPanel(state, viewModel)
                     EditorTab.Stickers -> StickersPanel(state, viewModel)
+                    EditorTab.Effects -> FxPanel(state, viewModel)
                     EditorTab.Looks -> EffectsPanel(state, viewModel)
                     EditorTab.Finish -> ExportPanel(
                         state = state,

@@ -9,6 +9,8 @@ import com.squish.app.editor.TextFont
 import com.squish.app.editor.TextLook
 import com.squish.app.editor.TextMotion
 import com.squish.app.editor.TextOverlayItem
+import com.squish.app.editor.EffectKind
+import com.squish.app.editor.TimedEffect
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
 import com.squish.app.timeline.ChromaKey
@@ -240,6 +242,17 @@ class ProjectAutosave(context: Context) {
         put("markers", JSONArray().apply { state.markers.forEach { put(it) } })
         put("clips", JSONArray().apply { state.videoClips.forEach { put(encodeClip(it)) } })
         put("textOverlays", JSONArray().apply { state.textOverlays.forEach { put(encodeText(it)) } })
+        put("effects", JSONArray().apply {
+            state.effects.forEach { e ->
+                put(JSONObject().apply {
+                    put("id", e.id)
+                    put("kind", e.kind.name)
+                    put("startMs", e.startMs)
+                    put("endMs", e.endMs)
+                    put("intensity", e.intensity.toDouble())
+                })
+            }
+        })
 
         put("audioClips", JSONArray().apply { state.audioClips.forEach { put(encodeClip(it)) } })
     }
@@ -379,6 +392,18 @@ class ProjectAutosave(context: Context) {
             clips = clips,
             audioClips = audio,
             textOverlays = overlays,
+            effects = json.optJSONArray("effects")?.let { array ->
+                (0 until array.length()).mapNotNull { i ->
+                    val o = array.optJSONObject(i) ?: return@mapNotNull null
+                    TimedEffect(
+                        id = o.optString("id").takeIf { it.isNotBlank() } ?: return@mapNotNull null,
+                        kind = enumOrNull<EffectKind>(o.optString("kind")) ?: return@mapNotNull null,
+                        startMs = o.optLong("startMs"),
+                        endMs = o.optLong("endMs"),
+                        intensity = o.optDouble("intensity", 0.7).toFloat()
+                    )
+                }
+            }.orEmpty(),
             markers = markers,
             playheadMs = json.optLong("playheadMs"),
             outputP = if (json.has("outputP")) json.optInt("outputP") else OutputSize.fromLegacyQuality(json.optString("quality")) ?: OutputSize.ORIGINAL,
@@ -555,6 +580,7 @@ data class ProjectSnapshot(
     val clips: List<Clip>,
     val audioClips: List<Clip>,
     val textOverlays: List<TextOverlayItem>,
+    val effects: List<TimedEffect>,
     val markers: List<Long>,
     val playheadMs: Long,
     val outputP: Int,
@@ -581,6 +607,7 @@ data class ProjectSnapshot(
     val isTrivial: Boolean
         get() = clips.size == 1 &&
             textOverlays.isEmpty() &&
+            effects.isEmpty() &&
             audioClips.isEmpty() &&
             markers.isEmpty() &&
             clips.first().let { it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs }

@@ -77,6 +77,7 @@ fun TimelinePreview(
     videoClips: List<Clip>,
     audioClips: List<Clip>,
     captions: List<TextOverlayItem>,
+    effects: List<TimedEffect>,
     fallbackUri: Uri,
     proxyUri: Uri?,
     muteOriginal: Boolean,
@@ -114,7 +115,7 @@ fun TimelinePreview(
     // Positions and trims are read fresh every tick, so this only has to run when
     // the set of clips itself changes shape.
     val editSignature = remember(
-        videoClips, audioClips, captions, proxyUri, muteOriginal, originalVolume,
+        videoClips, audioClips, captions, effects, proxyUri, muteOriginal, originalVolume,
         grade, rotationDegrees, cropRatio
     ) {
         videoClips.joinToString("|") {
@@ -133,7 +134,7 @@ fun TimelinePreview(
                 ":S${it.stabilizer.size}"
         } +
             "//" + audioClips.joinToString("|") { "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}:${it.volume}" } +
-            "//" + proxyUri + muteOriginal + originalVolume + grade + captions +
+            "//" + proxyUri + muteOriginal + originalVolume + grade + captions + effects +
             rotationDegrees + cropRatio +
             // Speed is a clip property now, so a ramp edit has to reach the engine
             // through the same signature every other clip edit does.
@@ -143,7 +144,7 @@ fun TimelinePreview(
 
     LaunchedEffect(editSignature, fallbackUri) {
         engine.setTimeline(
-            videoClips, audioClips, captions, fallbackUri, proxyUri,
+            videoClips, audioClips, captions, effects, fallbackUri, proxyUri,
             muteOriginal, originalVolume, grade, rotationDegrees, cropRatio
         )
     }
