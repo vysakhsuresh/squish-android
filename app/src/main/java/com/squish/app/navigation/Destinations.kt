@@ -6,8 +6,13 @@ sealed class Destination(val route: String) {
     data object Drafts : Destination("drafts")
     data object Settings : Destination("settings")
 
-    data object Editor : Destination("editor/{videoUri}") {
-        fun buildRoute(encodedUri: String) = "editor/$encodedUri"
+    /**
+     * [resume] is set only by the drafts list: choosing a draft there means "carry
+     * on with that edit", so it opens as it was left rather than as the bare video
+     * with an offer to restore it.
+     */
+    data object Editor : Destination("editor/{videoUri}?resume={resume}") {
+        fun buildRoute(encodedUri: String, resume: Boolean = false) = "editor/$encodedUri?resume=$resume"
     }
 
     /** [resume] is set only by the drafts list; a dashboard tap always starts fresh. */

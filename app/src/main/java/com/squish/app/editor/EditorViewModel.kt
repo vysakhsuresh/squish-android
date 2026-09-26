@@ -112,6 +112,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 delay(AUTOSAVE_INTERVAL)
                 val current = _state.value
                 if (current.isExporting) continue
+                // Not while a saved edit is waiting to be restored or dropped. The
+                // offer and the document behind it are the same edit, and saving
+                // the bare video here wrote over it the moment anything was
+                // touched - so the banner went on offering work that was already
+                // gone from disk, and leaving the editor lost it for good.
+                if (current.recovery != null) continue
                 val uri = current.sourceUri ?: continue
                 // Off the main thread. viewModelScope is Main, so encoding the
                 // timeline to JSON and fsyncing it were both happening on the
@@ -134,7 +140,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun load(uri: Uri) {
+    /**
+     * Opens a video. With [resume] - a draft chosen from the drafts list - its
+     * saved edit is applied at once instead of being offered: picking a draft is
+     * already the answer to "restore it?".
+     */
+    fun load(uri: Uri, resume: Boolean = false) {
         if (loadedUri == uri) return
         loadedUri = uri
 
@@ -187,6 +198,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             recomputeEstimate()
             baseline = autosave.editKey(_state.value)
             offerRecovery(recoverable, uri)
+            if (resume && _state.value.recovery?.snapshot?.sourceUri == uri) {
+                acceptRecovery()
+                return@launch
+            }
             startProxy(uri, meta.displayWidth, meta.displayHeight, meta.durationMs)
 
             val pcm = PcmDecoder.decodeMono(getApplication(), uri)

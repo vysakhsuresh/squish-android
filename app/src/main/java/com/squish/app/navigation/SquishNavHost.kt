@@ -102,7 +102,7 @@ fun SquishNavHost() {
                 onOpenEdit = { draft ->
                     navController.fromTopOf(entry) {
                         navController.navigate(
-                            Destination.Editor.buildRoute(Uri.encode(draft.sourceUri.toString()))
+                            Destination.Editor.buildRoute(Uri.encode(draft.sourceUri.toString()), resume = true)
                         )
                     }
                 },
@@ -157,11 +157,18 @@ fun SquishNavHost() {
 
         composable(
             route = Destination.Editor.route,
-            arguments = listOf(navArgument("videoUri") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("videoUri") { type = NavType.StringType },
+                navArgument("resume") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
         ) { entry ->
             val encoded = entry.arguments?.getString("videoUri").orEmpty()
             EditorScreen(
                 sourceUri = Uri.parse(Uri.decode(encoded)),
+                resume = entry.arguments?.getBoolean("resume") ?: false,
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onExported = { path ->
                     navController.fromTopOf(entry) {

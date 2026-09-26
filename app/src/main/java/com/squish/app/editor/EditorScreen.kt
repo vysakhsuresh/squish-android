@@ -106,6 +106,8 @@ enum class EditorTab(val label: String, val icon: ImageVector, val accent: Color
 @Composable
 fun EditorScreen(
     sourceUri: Uri,
+    /** Opened from the drafts list: apply the saved edit straight away. */
+    resume: Boolean = false,
     onBack: () -> Unit,
     onExported: (String) -> Unit,
     viewModel: EditorViewModel = viewModel()
@@ -134,7 +136,7 @@ fun EditorScreen(
     LaunchedEffect(tab) { panelExpanded = tab in ROOMY_TABS }
     var exportSheetOpen by remember { mutableStateOf(false) }
 
-    LaunchedEffect(sourceUri) { viewModel.load(sourceUri) }
+    LaunchedEffect(sourceUri) { viewModel.load(sourceUri, resume) }
 
     val pickAudioTrack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
