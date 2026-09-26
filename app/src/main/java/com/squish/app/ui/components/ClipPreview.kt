@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -52,6 +53,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.squish.app.editor.PreviewBox
+import com.squish.app.media.audio.PcmDecoder
+import com.squish.app.media.audio.Waveform
+import com.squish.app.media.audio.WaveformBuilder
 import com.squish.app.editor.Timecode
 import com.squish.app.ui.theme.SquishColors
 import com.squish.app.ui.theme.tabularFigures
@@ -222,13 +226,18 @@ fun ClipPreview(
                 contentAlignment = Alignment.Center
             ) {
             if (audioOnly) {
-                // No picture to show, so the surface says what it is rather than
-                // being a black rectangle that looks broken.
-                Icon(
-                    Icons.Filled.MusicNote,
-                    contentDescription = null,
-                    tint = accent.copy(alpha = 0.55f),
-                    modifier = Modifier.size(34.dp)
+                // The sound itself, where a picture would be: the part being kept
+                // lit, what is cut dimmed, and the playhead moving across it. An
+                // empty box with a note in it said nothing about where the loud
+                // part is, which is the whole question when choosing what to keep.
+                SoundWave(
+                    uri = sources.firstOrNull()?.uri,
+                    totalMs = totalMs,
+                    positionMs = positionMs,
+                    startMs = startMs,
+                    endMs = endMs,
+                    accent = accent,
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 18.dp)
                 )
             } else {
                 AndroidView(
@@ -237,7 +246,10 @@ fun ClipPreview(
                 )
             }
 
-            if (!playing) {
+            // Over a picture, the big play button says "this is a video, tap it".
+            // Over a waveform it would hide the thing being shown, and the button
+            // under the preview already does the job.
+            if (!playing && !audioOnly) {
                 Box(
                     modifier = Modifier
                         .size(56.dp)
@@ -394,3 +406,80 @@ private const val SKIP_MS = 5_000L
 
 /** Sixteen a second. A scrub bar does not need a frame's worth of precision. */
 private val TICK = 60.milliseconds
+
+/**
+ * The file's sound as a waveform, with the kept range lit and the playhead on it.
+ *
+ * Decoded at a low rate and capped in length: a waveform is read at a glance,
+ * and decoding a two-hour film to draw one would take longer than the rip.
+ */
+@Composable
+private fun SoundWave(
+    uri: Uri?,
+    totalMs: Long,
+    positionMs: Long,
+    startMs: Long,
+    endMs: Long,
+    accent: Color,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var wave by remember(uri) { mutableStateOf<Waveform?>(null) }
+    LaunchedEffect(uri, totalMs) {
+        if (uri == null || totalMs <= 0L) return@LaunchedEffect
+        val pcm = PcmDecoder.decodeMono(context, uri, maxDurationMs = totalMs.coerceAtMost(WAVE_MAX_MS))
+        wave = pcm?.let { WaveformBuilder.build(it, buckets = WAVE_BARS) }
+    }
+
+    val shown = wave
+    if (shown == null || shown.peaks.isEmpty()) {
+        // Still decoding, or there is no sound to draw.
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Filled.MusicNote,
+                contentDescription = null,
+                tint = accent.copy(alpha = 0.55f),
+                modifier = Modifier.size(34.dp)
+            )
+        }
+        return
+    }
+
+    Canvas(modifier = modifier) {
+        if (totalMs <= 0L) return@Canvas
+        val w = size.width
+        val h = size.height
+        val mid = h / 2f
+        // The decoded span may be shorter than the file; the bars cover only it.
+        val span = (shown.durationMs.toFloat() / totalMs).coerceIn(0f, 1f)
+        val step = w * span / shown.peaks.size
+        val bar = (step * 0.62f).coerceAtLeast(1f)
+        val keepFrom = w * startMs / totalMs
+        val keepTo = w * endMs / totalMs
+        val played = w * positionMs / totalMs
+
+        shown.peaks.forEachIndexed { i, peak ->
+            val x = i * step + step / 2f
+            val half = (peak.coerceIn(0.04f, 1f) * h * 0.46f)
+            val color = when {
+                x < keepFrom || x > keepTo -> SquishColors.Border
+                x <= played -> accent
+                else -> accent.copy(alpha = 0.45f)
+            }
+            drawLine(color, Offset(x, mid - half), Offset(x, mid + half), strokeWidth = bar, cap = StrokeCap.Round)
+        }
+
+        drawLine(
+            SquishColors.TextPrimary,
+            Offset(played, 0f),
+            Offset(played, h),
+            strokeWidth = 2.dp.toPx()
+        )
+    }
+}
+
+/** Enough bars to read a shape at phone width without one per pixel. */
+private const val WAVE_BARS = 140
+
+/** The longest stretch decoded for the picture: ten minutes. */
+private const val WAVE_MAX_MS = 10 * 60_000L
