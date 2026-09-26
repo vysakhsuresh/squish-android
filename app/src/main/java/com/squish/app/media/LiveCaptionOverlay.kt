@@ -12,6 +12,7 @@ import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlaySettings
 import com.squish.app.editor.TextFrame
 import com.squish.app.editor.TextOverlayItem
+import com.squish.app.media.video.MotionTrack
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
@@ -45,7 +46,9 @@ class LiveCaptionOverlay(
      * clipping on screen, so captions are laid out inside the centred crop here -
      * exactly where the export, which crops first, puts them.
      */
-    private val crop: AtomicReference<Float?>
+    private val crop: AtomicReference<Float?>,
+    /** Auto-reframe's path, in the same source time frames arrive in; moves the crop box. */
+    private val reframe: AtomicReference<MotionTrack?> = AtomicReference(null)
 ) : BitmapOverlay() {
 
     private var frameWidth = 1080
@@ -81,7 +84,10 @@ class LiveCaptionOverlay(
             val frameAspect = w.toFloat() / h
             val cw = if (ratio < frameAspect) h * ratio else w.toFloat()
             val ch = if (ratio < frameAspect) h.toFloat() else w / ratio
-            RectF((w - cw) / 2f, (h - ch) / 2f, (w + cw) / 2f, (h + ch) / 2f)
+            val s = reframe.get()?.sampleAt(timeMs)
+            val left = ((s?.xFraction ?: 0.5f) * w - cw / 2f).coerceIn(0f, (w - cw).coerceAtLeast(0f))
+            val top = ((s?.yFraction ?: 0.5f) * h - ch / 2f).coerceIn(0f, (h - ch).coerceAtLeast(0f))
+            RectF(left, top, left + cw, top + ch)
         }
 
         val showing = captions.get().mapNotNull { item ->
@@ -96,7 +102,7 @@ class LiveCaptionOverlay(
             glyphs.clear()
             glyphsRatio = ratio
         }
-        val key = "$ratio#" + showing.joinToString("|") { (item, frame, shown) ->
+        val key = "$ratio@${box.left.roundToInt()},${box.top.roundToInt()}#" + showing.joinToString("|") { (item, frame, shown) ->
             val (x, y) = item.anchorAt(timeMs)
             "${styleKey(item, shown)}@${q(x)},${q(y - frame.rise)},${q(frame.scale)},${q(frame.alpha)}"
         }

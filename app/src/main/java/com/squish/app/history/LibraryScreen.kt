@@ -161,12 +161,9 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             uri = android.net.Uri.fromFile(File(record.outputPath)),
             durationMs = record.durationMs,
             accent = SquishColors.Violet,
-            // Recorded at export time, so there is nothing to measure off the file.
-            aspect = if (record.width > 0 && record.height > 0) {
-                record.width.toFloat() / record.height
-            } else {
-                0f
-            },
+            // Measured off the exported file itself. The record holds the source's
+            // shape, which is not the export's once it was cropped or reframed -
+            // a 16:9 reframe of a portrait clip played stretched into a tall box.
             actionLabel = "Open",
             onAction = {
                 previewing = null

@@ -242,6 +242,17 @@ class ProjectAutosave(context: Context) {
         put("markers", JSONArray().apply { state.markers.forEach { put(it) } })
         put("clips", JSONArray().apply { state.videoClips.forEach { put(encodeClip(it)) } })
         put("textOverlays", JSONArray().apply { state.textOverlays.forEach { put(encodeText(it)) } })
+        state.reframe?.let { track ->
+            put("reframe", JSONArray().apply {
+                track.samples.forEach { s ->
+                    put(JSONObject().apply {
+                        put("atMs", s.atMs)
+                        put("x", s.xFraction.toDouble())
+                        put("y", s.yFraction.toDouble())
+                    })
+                }
+            })
+        }
         put("effects", JSONArray().apply {
             state.effects.forEach { e ->
                 put(JSONObject().apply {
@@ -392,6 +403,17 @@ class ProjectAutosave(context: Context) {
             clips = clips,
             audioClips = audio,
             textOverlays = overlays,
+            reframe = json.optJSONArray("reframe")?.let { array ->
+                MotionTrack((0 until array.length()).mapNotNull { i ->
+                    array.optJSONObject(i)?.let { o ->
+                        TrackSample(
+                            atMs = o.optLong("atMs"),
+                            xFraction = o.optDouble("x", 0.5).toFloat(),
+                            yFraction = o.optDouble("y", 0.5).toFloat()
+                        )
+                    }
+                })
+            }?.takeIf { !it.isEmpty },
             effects = json.optJSONArray("effects")?.let { array ->
                 (0 until array.length()).mapNotNull { i ->
                     val o = array.optJSONObject(i) ?: return@mapNotNull null
@@ -581,6 +603,7 @@ data class ProjectSnapshot(
     val audioClips: List<Clip>,
     val textOverlays: List<TextOverlayItem>,
     val effects: List<TimedEffect>,
+    val reframe: MotionTrack?,
     val markers: List<Long>,
     val playheadMs: Long,
     val outputP: Int,

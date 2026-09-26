@@ -157,6 +157,48 @@ private fun TrimPointRow(
 
 // ---- Crop -------------------------------------------------------------------
 
+/**
+ * Auto-reframe: a crop that follows the subject instead of sitting in the middle.
+ * Faces first, movement where there are none - analysed on the phone.
+ */
+@Composable
+private fun AutoReframeRow(state: EditorUiState, viewModel: EditorViewModel) {
+    val progress = state.reframeProgress
+    val following = state.reframe != null && state.cropAspect.ratio != null
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            when {
+                progress.running && progress.total > 0 ->
+                    "Finding the subject — ${progress.done * 100 / progress.total}%"
+                progress.running -> "Finding the subject…"
+                progress.failed -> "Could not read this clip to reframe it."
+                following -> "The crop follows the subject. Play to see it move."
+                else -> "Auto-reframe keeps faces and movement in the crop, instead of the middle."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (progress.failed) SquishColors.Pink else SquishColors.TextMuted
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            when {
+                progress.running -> SquishOutlinedButton(
+                    text = "Stop",
+                    modifier = Modifier.weight(1f),
+                    onClick = viewModel::cancelReframe
+                )
+                following -> {
+                    SquishOutlinedButton(text = "Again", modifier = Modifier.weight(1f), onClick = viewModel::autoReframe)
+                    SquishOutlinedButton(text = "Centre it", modifier = Modifier.weight(1f), onClick = viewModel::clearReframe)
+                }
+                else -> SquishOutlinedButton(
+                    text = "Auto-reframe",
+                    modifier = Modifier.weight(1f),
+                    onClick = viewModel::autoReframe
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
     PanelSurface(accent = SquishColors.Violet) {
@@ -189,6 +231,8 @@ fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )
+        } else {
+            AutoReframeRow(state, viewModel)
         }
         Row(
             modifier = Modifier.fillMaxWidth(),

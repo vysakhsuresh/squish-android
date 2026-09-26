@@ -24,6 +24,7 @@ import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.SpeechSegmenter
 import com.squish.app.media.audio.Transcriber
 import com.squish.app.media.video.FilmstripLoader
+import com.squish.app.media.video.Reframer
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.Stabilizer
 import com.squish.app.media.video.TrackRunner
@@ -878,6 +879,51 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             sticker = true
         )
         _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id) }
+    }
+
+    // ---- Auto-reframe -------------------------------------------------------------
+
+    private var reframeJob: Job? = null
+
+    /**
+     * Finds the subject through the head clip and makes the frame-shape crop
+     * follow it. Needs a fixed shape; if none is chosen yet, 9:16 is - the shape
+     * this is nearly always wanted for.
+     */
+    fun autoReframe() {
+        val current = _state.value
+        if (current.reframeProgress.running) return
+        val clip = current.videoClips.firstOrNull() ?: return
+        val uri = clip.uri ?: current.sourceUri ?: return
+        if (current.cropAspect.ratio == null) setCropAspect(CropAspect.Portrait)
+
+        reframeJob?.cancel()
+        _state.update { it.copy(reframeProgress = ReframeProgress(running = true)) }
+        reframeJob = viewModelScope.launch {
+            val track = Reframer.analyze(
+                getApplication(), uri, clip.sourceInMs, clip.sourceOutMs
+            ) { done, total ->
+                _state.update { it.copy(reframeProgress = it.reframeProgress.copy(done = done, total = total)) }
+            }
+            if (track == null) {
+                _state.update { it.copy(reframeProgress = ReframeProgress(failed = true)) }
+                return@launch
+            }
+            record("Auto-reframe") {
+                _state.update { it.copy(reframe = track, reframeProgress = ReframeProgress()) }
+            }
+        }
+    }
+
+    fun cancelReframe() {
+        reframeJob?.cancel()
+        reframeJob = null
+        _state.update { it.copy(reframeProgress = ReframeProgress()) }
+    }
+
+    /** Back to a centred crop. */
+    fun clearReframe() = record("Centre crop") {
+        _state.update { it.copy(reframe = null) }
     }
 
     // ---- Templates ----------------------------------------------------------------

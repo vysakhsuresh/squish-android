@@ -33,6 +33,7 @@ import com.squish.app.editor.OutputSize
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.FxEffect
+import com.squish.app.media.effects.ReframeEffect
 import com.squish.app.media.effects.MaskEffect
 import com.squish.app.media.effects.Looks
 import com.squish.app.timeline.Clip
@@ -502,7 +503,17 @@ class VideoProcessor(private val context: Context) {
             effects.add(Crop(ndc[0], ndc[1], ndc[2], ndc[3]))
         } else {
             state.cropAspect.ratio?.let { ratio ->
-                effects.add(Presentation.createForAspectRatio(ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+                val follow = state.reframe
+                if (follow != null && !follow.isEmpty) {
+                    // Auto-reframe: the same crop, its window following the subject.
+                    // The track is in the main source's time; frames arrive in
+                    // timeline time, so the head clip's offset converts one to the other.
+                    val head = state.videoClips.firstOrNull()
+                    val offset = if (head != null) head.sourceInMs - head.timelineStartMs else state.trimStartMs
+                    effects.add(ReframeEffect(ratio, follow, offset))
+                } else {
+                    effects.add(Presentation.createForAspectRatio(ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+                }
             }
         }
 

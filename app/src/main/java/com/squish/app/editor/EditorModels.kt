@@ -240,6 +240,7 @@ data class EditSnapshot(
     val audioClips: List<Clip>,
     val textOverlays: List<TextOverlayItem>,
     val effects: List<TimedEffect>,
+    val reframe: MotionTrack?,
     val markers: List<Long>,
     val selectedClipId: String?,
     val muteOriginal: Boolean,
@@ -305,6 +306,13 @@ data class EditorUiState(
     val textOverlays: List<TextOverlayItem> = emptyList(),
     /** Timed effects from the library - shake, glitch, flash and the rest. */
     val effects: List<TimedEffect> = emptyList(),
+    /**
+     * Auto-reframe: where the frame-shape crop is centred through the clip, in
+     * the main source'"'"'s time. Null keeps the crop centred. Only used with a
+     * fixed shape (9:16, 1:1, 16:9).
+     */
+    val reframe: MotionTrack? = null,
+    val reframeProgress: ReframeProgress = ReframeProgress(),
     val captions: CaptionProgress = CaptionProgress(),
     val stabilize: StabilizeProgress = StabilizeProgress(),
     val stabilizeStrength: Float = 0.5f,
@@ -432,6 +440,7 @@ data class EditorUiState(
             audioClips = audioClips,
             textOverlays = textOverlays,
             effects = effects,
+            reframe = reframe,
             markers = markers,
             selectedClipId = selectedClipId,
             muteOriginal = muteOriginal,
@@ -452,6 +461,7 @@ data class EditorUiState(
         audioClips = snapshot.audioClips,
         textOverlays = snapshot.textOverlays,
         effects = snapshot.effects,
+        reframe = snapshot.reframe,
         markers = snapshot.markers,
         selectedClipId = snapshot.selectedClipId,
         muteOriginal = snapshot.muteOriginal,
@@ -545,3 +555,11 @@ fun EditorUiState.toTimeline(): TimelineState {
         pixelsPerSecond = pixelsPerSecond
     )
 }
+
+/** Where an auto-reframe analysis has got to. */
+data class ReframeProgress(
+    val running: Boolean = false,
+    val done: Int = 0,
+    val total: Int = 0,
+    val failed: Boolean = false
+)

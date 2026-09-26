@@ -237,6 +237,11 @@ fun EditorScreen(
                         .background(SquishColors.Surface),
                     contentAlignment = Alignment.Center
                 ) {
+                // Auto-reframe, in the head clip's source time, and where it has the
+                // crop centred at the playhead - for the outline drawn over the picture.
+                val reframeOffset = state.videoClips.firstOrNull()?.let { it.sourceInMs - it.timelineStartMs } ?: 0L
+                val reframeFocus = state.reframe?.takeIf { state.cropAspect.ratio != null }
+                    ?.sampleAt(state.playheadMs + reframeOffset)?.let { it.xFraction to it.yFraction }
                 TimelinePreview(
                     videoClips = state.videoClips,
                     audioClips = state.audioClips,
@@ -249,6 +254,8 @@ fun EditorScreen(
                     grade = state.grade,
                     rotationDegrees = state.rotationDegrees,
                     cropRatio = state.cropAspect.ratio,
+                    reframe = state.reframe.takeIf { state.cropAspect.ratio != null },
+                    reframeOffsetMs = reframeOffset,
                     sourceAspect = state.sourceFrameAspect,
                     playheadMs = state.playheadMs,
                     scrubNonce = state.scrubNonce,
@@ -276,6 +283,7 @@ fun EditorScreen(
                             tab == EditorTab.Frame || state.cropAspect != CropAspect.Original ->
                                 CropOverlay(
                                     aspect = state.cropAspect,
+                                    focus = reframeFocus,
                                     modifier = Modifier.fillMaxSize()
                                 )
                         }

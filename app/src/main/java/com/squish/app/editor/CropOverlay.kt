@@ -21,6 +21,8 @@ import com.squish.app.ui.theme.SquishColors
 @Composable
 fun CropOverlay(
     aspect: CropAspect,
+    /** Where auto-reframe has the crop centred right now; the middle when null. */
+    focus: Pair<Float, Float>? = null,
     modifier: Modifier = Modifier
 ) {
     val ratio = aspect.ratio ?: return
@@ -40,8 +42,9 @@ fun CropOverlay(
             frameW = w
             frameH = w / ratio
         }
-        val left = (w - frameW) / 2f
-        val top = (h - frameH) / 2f
+        val (fx, fy) = focus ?: (0.5f to 0.5f)
+        val left = (fx * w - frameW / 2f).coerceIn(0f, (w - frameW).coerceAtLeast(0f))
+        val top = (fy * h - frameH / 2f).coerceIn(0f, (h - frameH).coerceAtLeast(0f))
         val dim = Color.Black.copy(alpha = 0.58f)
 
         drawRect(dim, topLeft = Offset(0f, 0f), size = Size(w, top))

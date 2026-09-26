@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.FxEffect
+import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.effects.LiveLookEffect
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.effects.MaskEffect
@@ -179,6 +180,15 @@ class PreviewEngine(private val context: Context) {
 
     /** The frame shape the preview is cropped to, read by the caption layer each frame. */
     private val liveCrop = AtomicReference<Float?>(null)
+
+    /** Auto-reframe'"'"'s path, in source time, read by the caption layer to follow the crop. */
+    private val liveReframe = AtomicReference<MotionTrack?>(null)
+
+    fun setReframe(track: MotionTrack?) {
+        if (liveReframe.get() == track) return
+        liveReframe.set(track)
+        pendingRedraw = true
+    }
 
     private var anchorTimelineMs: Long = 0
     private var anchorWallMs: Long = SystemClock.elapsedRealtime()
@@ -401,7 +411,7 @@ class PreviewEngine(private val context: Context) {
             add(FxEffect { effectsHere.get() })
             // Always present for the same reason: the first title added mid-play
             // is drawn by the next frame instead of rebuilding the pipeline.
-            val overlays: List<TextureOverlay> = listOf(LiveCaptionOverlay(captionsHere, captionsAtRest, liveCrop))
+            val overlays: List<TextureOverlay> = listOf(LiveCaptionOverlay(captionsHere, captionsAtRest, liveCrop, liveReframe))
             add(OverlayEffect(ImmutableList.copyOf(overlays)))
         }
         // Guarded: setVideoEffects is unstable API, and a custom shader can fail to

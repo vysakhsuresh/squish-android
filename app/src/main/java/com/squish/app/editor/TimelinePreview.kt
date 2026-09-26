@@ -60,6 +60,7 @@ import androidx.compose.ui.zIndex
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.squish.app.media.effects.Grade
+import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
 import com.squish.app.ui.theme.SquishColors
 import com.squish.app.ui.theme.tabularFigures
@@ -91,6 +92,9 @@ fun TimelinePreview(
     grade: Grade,
     rotationDegrees: Int,
     cropRatio: Float?,
+    /** Auto-reframe: where the crop sits through the head clip, in its source time. */
+    reframe: MotionTrack? = null,
+    reframeOffsetMs: Long = 0L,
     sourceAspect: Float,
     playheadMs: Long,
     scrubNonce: Long,
@@ -147,6 +151,8 @@ fun TimelinePreview(
             videoClips.joinToString("|") { it.speedRamp.toString() } +
             audioClips.joinToString("|") { it.speedRamp.toString() }
     }
+
+    LaunchedEffect(reframe) { engine.setReframe(reframe) }
 
     LaunchedEffect(editSignature, fallbackUri) {
         engine.setTimeline(
@@ -223,7 +229,8 @@ fun TimelinePreview(
             // the full frame, so this is pixel-for-pixel what the export writes -
             // and changing it costs nothing, where rebuilding the chain for it
             // could leave the player unable to draw again.
-            Box(modifier = Modifier.fillMaxSize().clip(CentredCrop(cropRatio))) {
+            val focus = reframe?.sampleAt(frame.positionMs + reframeOffsetMs)?.let { it.xFraction to it.yFraction }
+            Box(modifier = Modifier.fillMaxSize().clip(CentredCrop(cropRatio, focus))) {
                 VideoSurface(engine, engine.baseA, frame.surfaceA)
                 VideoSurface(engine, engine.baseB, frame.surfaceB)
             }
@@ -396,7 +403,7 @@ private val TICK = 33.milliseconds
 private val REDRAW_SETTLE = 150.milliseconds
 
 /** The centred rectangle of [ratio] inside whatever it clips, or all of it when there is none. */
-private class CentredCrop(private val ratio: Float?) : Shape {
+private class CentredCrop(private val ratio: Float?, private val focus: Pair<Float, Float>? = null) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val r = ratio
         if (r == null || r <= 0f || size.width <= 0f || size.height <= 0f) {
@@ -405,8 +412,9 @@ private class CentredCrop(private val ratio: Float?) : Shape {
         val aspect = size.width / size.height
         val w = if (r < aspect) size.height * r else size.width
         val h = if (r < aspect) size.height else size.width / r
-        val left = (size.width - w) / 2f
-        val top = (size.height - h) / 2f
+        val (fx, fy) = focus ?: (0.5f to 0.5f)
+        val left = (fx * size.width - w / 2f).coerceIn(0f, (size.width - w).coerceAtLeast(0f))
+        val top = (fy * size.height - h / 2f).coerceIn(0f, (size.height - h).coerceAtLeast(0f))
         return Outline.Rectangle(Rect(left, top, left + w, top + h))
     }
 }
