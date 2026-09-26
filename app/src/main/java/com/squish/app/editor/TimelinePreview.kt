@@ -142,6 +142,7 @@ fun TimelinePreview(
                 // on belongs here, or the preview is not a preview.
                 ":C${it.chromaKey}" +
                 ":M${it.mask}" +
+                ":B${it.background}" +
                 ":S${it.stabilizer.size}"
         } +
             "//" + audioClips.joinToString("|") { "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}:${it.volume}" } +

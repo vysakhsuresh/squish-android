@@ -291,7 +291,7 @@ data class EditorUiState(
     val audioOnly: Boolean = false,
 
     val muteOriginal: Boolean = false,
-    /** A voice effect on the clip'"'"'s own sound; see [VoiceEffect]. */
+    /** A voice effect on the clip's own sound; see [VoiceEffect]. */
     val voiceEffect: VoiceEffect = VoiceEffect.None,
     val originalVolume: Float = 1f,
     val rotationDegrees: Int = 0,
@@ -311,11 +311,13 @@ data class EditorUiState(
     val effects: List<TimedEffect> = emptyList(),
     /**
      * Auto-reframe: where the frame-shape crop is centred through the clip, in
-     * the main source'"'"'s time. Null keeps the crop centred. Only used with a
+     * the main source's time. Null keeps the crop centred. Only used with a
      * fixed shape (9:16, 1:1, 16:9).
      */
     val reframe: MotionTrack? = null,
     val reframeProgress: ReframeProgress = ReframeProgress(),
+    /** Finding the person in a clip, for background removal. */
+    val backgroundProgress: ReframeProgress = ReframeProgress(),
     val captions: CaptionProgress = CaptionProgress(),
     val stabilize: StabilizeProgress = StabilizeProgress(),
     val stabilizeStrength: Float = 0.5f,

@@ -100,7 +100,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 }
             }
         }
-
+        BackgroundPanel(state, viewModel)
 
         PanelSurface(accent = SquishColors.Magenta) {
             PanelHeading(

@@ -34,6 +34,11 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        // Memory-mapped by the segmenter, which a compressed asset cannot be.
+        noCompress += "tflite"
+    }
+
     packaging {
         resources.excludes.add("/META-INF/{AL2.0,LGPL2.1}")
     }
@@ -87,4 +92,5 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.media3.common)
+    implementation(libs.mediapipe.tasks.vision)
 }

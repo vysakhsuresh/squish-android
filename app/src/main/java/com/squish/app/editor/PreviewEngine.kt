@@ -26,10 +26,12 @@ import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.effects.LiveLookEffect
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.effects.MaskEffect
+import com.squish.app.media.effects.BackgroundEffect
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.TextureOverlay
 import com.google.common.collect.ImmutableList
 import com.squish.app.media.LiveCaptionOverlay
+import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.TransitionType
@@ -177,8 +179,11 @@ class PreviewEngine(private val context: Context) {
     /** Set when what a paused frame shows has changed; see [setTimeline]. */
     private var pendingRedraw = false
 
-    /** Each surface'"'"'s timed effects, in its own clock, read by its effects shader every frame. */
+    /** Each surface's timed effects, in its own clock, read by its effects shader every frame. */
     private val liveEffects = HashMap<String, AtomicReference<List<TimedEffect>>>()
+
+    /** Each surface's background removal and its clip's start, read by [BackgroundEffect] per frame. */
+    private val liveBackground = HashMap<String, AtomicReference<Pair<BackgroundRemoval?, Long>>>()
 
     /** Whether captions draw at rest, which they do whenever the preview is paused. */
     private val captionsAtRest = AtomicBoolean(true)
@@ -186,7 +191,7 @@ class PreviewEngine(private val context: Context) {
     /** The frame shape the preview is cropped to, read by the caption layer each frame. */
     private val liveCrop = AtomicReference<Float?>(null)
 
-    /** Auto-reframe'"'"'s path, in source time, read by the caption layer to follow the crop. */
+    /** Auto-reframe's path, in source time, read by the caption layer to follow the crop. */
     private val liveReframe = AtomicReference<MotionTrack?>(null)
 
     fun setReframe(track: MotionTrack?) {
@@ -418,6 +423,11 @@ class PreviewEngine(private val context: Context) {
         // the pipeline reads each frame, so changing them needs no rebuild.
         // Everything that is here still needs one, but none of it moves on every
         // tap or every frame of a drag.
+        // Handed over as a value, like the captions: a rebuild under a loaded
+        // player is what froze the picture when background removal was switched on.
+        val backgroundHere = liveBackground.getOrPut(surfaceKey) { AtomicReference(null to 0L) }
+        val background = clip?.background to (clip?.sourceInMs ?: 0L)
+        if (backgroundHere.getAndSet(background) != background) pendingRedraw = true
         val signature = "$chroma|$mask|$rotationDegrees"
         if (appliedEffects[surfaceKey] == signature) return
         appliedEffects[surfaceKey] = signature
@@ -425,6 +435,9 @@ class PreviewEngine(private val context: Context) {
         val effects = buildList<Effect> {
             // Keyed first, then masked, matching the export's order exactly.
             chroma?.let { add(ChromaKeyEffect(it)) }
+            // Always present and read per frame - see liveBackground - so turning it
+            // on, off or to another fill never rebuilds the chain.
+            add(BackgroundEffect({ backgroundHere.get().first }, { backgroundHere.get().second }, timesAreSourceTime = true))
             // The preview player holds the whole source file, so its clock is source time.
             mask?.let { add(MaskEffect(it, clip?.sourceInMs ?: 0L, timesAreSourceTime = true)) }
             // Then framing, then colour - the exporter's order exactly. Grading

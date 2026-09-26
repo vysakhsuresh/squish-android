@@ -81,6 +81,9 @@ data class Clip(
     /** Restricts the clip to a shape. Composes with [chromaKey] rather than replacing it. */
     val mask: Mask? = null,
 
+    /** Background removal, when this clip has had its person found. */
+    val background: BackgroundRemoval? = null,
+
     /**
      * The measured correction for camera shake, keyed by **source** time. Separate
      * from [keyframes] so an edit never destroys an analysis, and an analysis never

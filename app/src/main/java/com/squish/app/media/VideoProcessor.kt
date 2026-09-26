@@ -38,6 +38,7 @@ import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.FxEffect
 import com.squish.app.media.effects.ReframeEffect
 import com.squish.app.media.effects.MaskEffect
+import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.Looks
 import com.squish.app.timeline.Clip
 import kotlin.time.Duration.Companion.milliseconds
@@ -333,6 +334,7 @@ class VideoProcessor(private val context: Context) {
                 !clip.staticTransform.isIdentity
             val leading = buildList<Effect> {
                 clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
+                clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
                 clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
                 if (moved) add(ClipTransformEffect(clip.keyframes, clip.staticTransform, clip.stabilizer, clip.sourceInMs))
             }

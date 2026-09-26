@@ -25,6 +25,9 @@ import com.squish.app.media.audio.SpeechSegmenter
 import com.squish.app.media.audio.Transcriber
 import com.squish.app.media.video.FilmstripLoader
 import com.squish.app.media.video.Reframer
+import com.squish.app.media.video.Segmenter
+import com.squish.app.timeline.BackgroundFill
+import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.Stabilizer
 import com.squish.app.media.video.TrackRunner
@@ -890,6 +893,60 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             sticker = true
         )
         _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id) }
+    }
+
+    // ---- Background removal ---------------------------------------------------------
+
+    private var backgroundJob: Job? = null
+
+    /** The clip background removal acts on: the selected video clip, else the first. */
+    fun backgroundTarget(state: EditorUiState = _state.value): Clip? =
+        state.videoClips.firstOrNull { it.id == state.selectedClipId }
+            ?: state.videoClips.firstOrNull { it.layer == 0 }
+            ?: state.videoClips.firstOrNull()
+
+    /** Finds the person through the clip, then blurs what is behind them. */
+    fun removeBackground() {
+        val current = _state.value
+        if (current.backgroundProgress.running) return
+        val clip = backgroundTarget(current) ?: return
+        val uri = clip.uri ?: current.sourceUri ?: return
+
+        backgroundJob?.cancel()
+        _state.update { it.copy(backgroundProgress = ReframeProgress(running = true)) }
+        backgroundJob = viewModelScope.launch {
+            val file = Segmenter.analyze(
+                getApplication(), uri, clip.sourceInMs, clip.sourceOutMs
+            ) { done, total ->
+                _state.update { it.copy(backgroundProgress = it.backgroundProgress.copy(done = done, total = total)) }
+            }
+            if (file == null) {
+                _state.update { it.copy(backgroundProgress = ReframeProgress(failed = true)) }
+                return@launch
+            }
+            _state.update { it.copy(backgroundProgress = ReframeProgress()) }
+            val fill = clip.background?.fill ?: BackgroundFill.Blur
+            val colour = clip.background?.colorArgb ?: BackgroundRemoval(file).colorArgb
+            setBackground(clip.id, BackgroundRemoval(file, fill, colour))
+        }
+    }
+
+    fun cancelBackground() {
+        backgroundJob?.cancel()
+        backgroundJob = null
+        _state.update { it.copy(backgroundProgress = ReframeProgress()) }
+    }
+
+    fun setBackgroundFill(clipId: String, fill: BackgroundFill, colorArgb: Int? = null) {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return
+        val current = clip.background ?: return
+        setBackground(clipId, current.copy(fill = fill, colorArgb = colorArgb ?: current.colorArgb))
+    }
+
+    fun setBackground(clipId: String, background: BackgroundRemoval?) = record("Background") {
+        mutateTimeline { timeline ->
+            timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(background = background) else it })
+        }
     }
 
     // ---- Auto-reframe -------------------------------------------------------------
@@ -2004,8 +2061,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         videoClips = snapshot.clips,
         textOverlays = snapshot.textOverlays,
         effects = snapshot.effects,
+        reframe = snapshot.reframe,
         markers = snapshot.markers,
-        playheadMs = snapshot.playheadMs,
+        // Saved at the very end, it would reopen on "no clip here"; the start is more useful.
+        playheadMs = snapshot.playheadMs.takeIf { it < snapshot.totalDurationMs } ?: 0L,
         outputP = snapshot.outputP,
         fitToSize = snapshot.fitToSize,
         targetSizeMb = snapshot.targetSizeMb,

@@ -14,6 +14,8 @@ import com.squish.app.editor.TimedEffect
 import com.squish.app.editor.VoiceEffect
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
+import com.squish.app.timeline.BackgroundFill
+import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
@@ -328,6 +330,13 @@ class ProjectAutosave(context: Context) {
                 }
             })
         }
+        clip.background?.let { bg ->
+            put("background", JSONObject().apply {
+                put("maskFile", bg.maskFile)
+                put("fill", bg.fill.name)
+                put("colorArgb", bg.colorArgb)
+            })
+        }
         clip.chromaKey?.let { key ->
             put("chromaKey", JSONObject().apply {
                 put("keyColorArgb", key.keyColorArgb)
@@ -499,6 +508,15 @@ class ProjectAutosave(context: Context) {
             stabilizer = json.optJSONArray("stabilizer")?.let { array ->
                 (0 until array.length()).mapNotNull { i -> decodeKeyframe(array.optJSONObject(i)) }
             }.orEmpty().sortedBy { it.atMs },
+            background = json.optJSONObject("background")?.let { b ->
+                b.optString("maskFile").takeIf { it.isNotBlank() }?.let { path ->
+                    BackgroundRemoval(
+                        maskFile = path,
+                        fill = enumOrNull<BackgroundFill>(b.optString("fill")) ?: BackgroundFill.Blur,
+                        colorArgb = b.optInt("colorArgb", 0xFF101828.toInt())
+                    )
+                }
+            },
             chromaKey = json.optJSONObject("chromaKey")?.let { k ->
                 ChromaKey(
                     keyColorArgb = k.optInt("keyColorArgb", ChromaKey.STANDARD_GREEN),
@@ -637,5 +655,14 @@ data class ProjectSnapshot(
             effects.isEmpty() &&
             audioClips.isEmpty() &&
             markers.isEmpty() &&
-            clips.first().let { it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs }
+            reframe == null &&
+            // A look, a crop or a changed voice is work too, as much as a trim is.
+            lookId == null && brightness == 0f && contrast == 0f && saturation == 0f &&
+            cropAspect == CropAspect.Original && rotationDegrees == 0 &&
+            voiceEffect == VoiceEffect.None && !muteOriginal && originalVolume == 1f &&
+            clips.first().let {
+                it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs &&
+                    it.chromaKey == null && it.mask == null && it.background == null &&
+                    it.keyframes.isEmpty() && it.stabilizer.isEmpty() && it.speedRamp == com.squish.app.timeline.SpeedRamp()
+            }
 }
