@@ -150,16 +150,45 @@ class VideoProcessor(private val context: Context) {
 
             val bitrate = state.exportVideoBitrate
 
+            // A cut and nothing else keeps the original frames. Only the stretch
+            // from the in point to the next keyframe is re-encoded; the rest is
+            // copied as it was recorded. Re-encoding the whole thing lost quality
+            // for nothing and, on a quiet screen recording, came out heavier than
+            // the file it was cut from. Media3 falls back to a full encode by
+            // itself when a file cannot be cut this way.
+            val trimOnly = isPlainTrim(state)
+
+            // Left at its defaults for a cut. Media3 reads any requested encoder
+            // setting - a bitrate included - as "this must be re-encoded", and
+            // quietly re-encodes the whole file instead of copying it.
             val encoderFactory = DefaultEncoderFactory.Builder(context)
-                .setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(bitrate).build())
+                .apply {
+                    if (!trimOnly) {
+                        setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(bitrate).build())
+                    }
+                }
                 .build()
 
             val transformer = Transformer.Builder(context)
-                .setAudioMimeType(MimeTypes.AUDIO_AAC)
-                .apply { if (!state.audioOnly) setVideoMimeType(MimeTypes.VIDEO_H264) }
+                .apply {
+                    if (trimOnly) {
+                        // No codec is asked for, audio or video: a copied stream
+                        // stays in its own, and naming one - even the one it is
+                        // already in - counts as a transcode and cancels the copy.
+                        experimentalSetTrimOptimizationEnabled(true)
+                    } else {
+                        setAudioMimeType(MimeTypes.AUDIO_AAC)
+                        if (!state.audioOnly) setVideoMimeType(MimeTypes.VIDEO_H264)
+                    }
+                }
                 .setEncoderFactory(encoderFactory)
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                        android.util.Log.i(
+                            "SquishExport",
+                            "done trimOnly=$trimOnly optimization=${exportResult.optimizationResult} " +
+                                "video=${exportResult.videoEncoderName} bitrate=${exportResult.averageVideoBitrate}"
+                        )
                         if (continuation.isActive) continuation.resume(Result.success(outputFile))
                     }
 
@@ -248,6 +277,21 @@ class VideoProcessor(private val context: Context) {
      * separate cue mixed over the top. Forcing it on a single silent clip would
      * add a pointless track, so that case is left alone.
      */
+    /**
+     * One file, cut, with nothing changed about its picture or sound - which is
+     * Snip. The editor's clips are left out even when there is only one: a clip
+     * carries its own speed, motion and masks, none of which a copied stream keeps.
+     */
+    private fun isPlainTrim(state: EditorUiState): Boolean =
+        state.videoClips.isEmpty() &&
+            !state.audioOnly &&
+            !state.muteOriginal &&
+            state.audioClips.isEmpty() &&
+            !state.fitToSize &&
+            state.outputP == OutputSize.ORIGINAL &&
+            gainOnly(state.originalVolume).isEmpty() &&
+            buildVideoEffects(state).isEmpty()
+
     private fun needsForcedAudio(state: EditorUiState): Boolean =
         !state.audioOnly && (isMultiSource(state) || state.audioClips.isNotEmpty())
 
