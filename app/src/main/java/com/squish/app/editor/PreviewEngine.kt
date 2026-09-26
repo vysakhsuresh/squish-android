@@ -22,7 +22,7 @@ import com.squish.app.media.effects.MaskEffect
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.TextureOverlay
 import com.google.common.collect.ImmutableList
-import com.squish.app.media.SquishTextOverlay
+import com.squish.app.media.LiveCaptionOverlay
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.TransitionType
@@ -163,6 +163,12 @@ class PreviewEngine(private val context: Context) {
      */
     private val appliedEffects = HashMap<String, String>()
 
+    /** Each surface's captions, in that surface's clock, read by its caption layer every frame. */
+    private val liveCaptions = HashMap<String, AtomicReference<List<TextOverlayItem>>>()
+
+    /** Set when what a paused frame shows has changed; see [setTimeline]. */
+    private var pendingRedraw = false
+
     private var anchorTimelineMs: Long = 0
     private var anchorWallMs: Long = SystemClock.elapsedRealtime()
 
@@ -235,6 +241,10 @@ class PreviewEngine(private val context: Context) {
         cropRatio: Float?
     ) {
         if (released) return
+        // A paused picture does not redraw by itself, so a restyled caption or a
+        // new grade would not show until play. The next tick, once every surface
+        // has been handed the change, asks for a fresh frame.
+        if (captions != this.captions || grade != liveGrade.get()) pendingRedraw = true
         this.captions = captions
         applyFraming(rotationDegrees, cropRatio)
         val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
@@ -324,15 +334,19 @@ class PreviewEngine(private val context: Context) {
     private fun applySurfaceEffects(surfaceKey: String, player: ExoPlayer, clip: Clip?) {
         val chroma = clip?.chromaKey
         val mask = clip?.mask
-        // Only captions that overlap this clip, shifted into its own clock.
+        // Only captions that overlap this clip, shifted into its own clock, handed
+        // to the surface's caption layer as a value - see [LiveCaptionOverlay].
         val visible = if (clip == null) emptyList() else captions
             .filter { it.endMs > clip.timelineStartMs && it.startMs < clip.timelineEndMs }
             .map { it.shiftedInto(clip) }
+        val captionsHere = liveCaptions.getOrPut(surfaceKey) { AtomicReference(emptyList()) }
+        captionsHere.set(visible)
 
-        // The grade is not in here: it lives in [liveGrade] and changes without a
-        // rebuild. Everything that is still needs one, but none of it moves on
-        // every frame of a drag the way a slider does.
-        val signature = "$chroma|$mask|$visible|$rotationDegrees|$cropRatio"
+        // Neither the grade nor the captions are in here: both live in references
+        // the pipeline reads each frame, so changing them needs no rebuild.
+        // Everything that is here still needs one, but none of it moves on every
+        // tap or every frame of a drag.
+        val signature = "$chroma|$mask|$rotationDegrees|$cropRatio"
         if (appliedEffects[surfaceKey] == signature) return
         appliedEffects[surfaceKey] = signature
 
@@ -359,12 +373,10 @@ class PreviewEngine(private val context: Context) {
             // frame and the first touch of a slider changes a value rather than
             // building one mid-playback.
             add(LiveLookEffect(liveGrade))
-            if (visible.isNotEmpty()) {
-                // Captions were previously export-only, so a tracked one could not be
-                // seen following anything until after a render.
-                val overlays: List<TextureOverlay> = visible.map { SquishTextOverlay(it) }
-                add(OverlayEffect(ImmutableList.copyOf(overlays)))
-            }
+            // Always present for the same reason: the first title added mid-play
+            // is drawn by the next frame instead of rebuilding the pipeline.
+            val overlays: List<TextureOverlay> = listOf(LiveCaptionOverlay(captionsHere))
+            add(OverlayEffect(ImmutableList.copyOf(overlays)))
         }
         // Guarded: setVideoEffects is unstable API, and a custom shader can fail to
         // compile on a given driver. Either way the preview falls back to plain
@@ -485,6 +497,10 @@ class PreviewEngine(private val context: Context) {
         anchorWallMs = now
 
         val (drawA, drawB, veil) = composeBase(t)
+        if (pendingRedraw) {
+            pendingRedraw = false
+            redraw()
+        }
         val overlays = syncOverlays(t)
         syncAudio(t, transportRunning = playing && !stalled)
 

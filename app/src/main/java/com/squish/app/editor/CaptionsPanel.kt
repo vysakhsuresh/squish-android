@@ -5,6 +5,21 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.Title
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.sp
+import com.squish.app.ui.components.SelectableChip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,6 +74,23 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
+        PanelSurface(accent = SquishColors.Amber) {
+            PanelHeading(
+                "Titles",
+                "Tap one to drop it at the playhead",
+                icon = Icons.Filled.Title,
+                accent = SquishColors.Amber
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
+                TitlePreset.entries.forEach { preset ->
+                    TitleTile(preset = preset, onClick = { viewModel.addTitle(preset) })
+                }
+            }
+        }
 
         PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
@@ -194,20 +226,175 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     caption = caption,
                     onJump = { viewModel.scrubTo(caption.startMs) },
                     onEdit = { viewModel.updateCaptionText(caption.id, it) },
-                    onRemove = { viewModel.removeTextOverlay(caption.id) }
+                    onRemove = { viewModel.removeTextOverlay(caption.id) },
+                    onRestyle = { change -> viewModel.restyleCaption(caption.id, change) }
                 )
             }
         }
     }
 }
 
+/** A title preset, showing its own face, colour and edge rather than just its name. */
+@Composable
+private fun TitleTile(preset: TitlePreset, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .width(104.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(SquishColors.Background)
+            .border(1.dp, SquishColors.Border, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .height(34.dp)
+                .then(
+                    if (preset.look == TextLook.Box) Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black.copy(alpha = 0.66f))
+                        .padding(horizontal = 6.dp)
+                    else Modifier
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                preset.sample.take(10),
+                color = Color(preset.colorArgb),
+                fontFamily = FontFamily(preset.font.typeface()),
+                fontSize = 15.sp,
+                maxLines = 1,
+                style = when (preset.look) {
+                    TextLook.Outline -> TextStyle(
+                        shadow = Shadow(Color.Black, blurRadius = 3f)
+                    )
+                    TextLook.Shadow -> TextStyle(
+                        shadow = Shadow(Color.Black, offset = Offset(2f, 3f), blurRadius = 6f)
+                    )
+                    TextLook.Neon -> TextStyle(
+                        shadow = Shadow(Color(preset.colorArgb), blurRadius = 18f)
+                    )
+                    else -> TextStyle()
+                }
+            )
+        }
+        Text(preset.label, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+    }
+}
+
+/**
+ * Face, look, motion, colour, size and place for one caption, all one tap each.
+ * Every choice is a named chip rather than a slider hidden behind a menu, because
+ * the choices are few and seeing them all is faster than finding them.
+ */
+@Composable
+private fun StyleEditor(caption: TextOverlayItem, onRestyle: ((TextOverlayItem) -> TextOverlayItem) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ChipRow("Look", TextLook.entries, caption.look, { it.label }) { v -> onRestyle { it.copy(look = v) } }
+        ChipRow("Font", TextFont.entries, caption.font, { it.label }) { v -> onRestyle { it.copy(font = v) } }
+        ChipRow("Motion", TextMotion.entries, caption.motion, { it.label }) { v -> onRestyle { it.copy(motion = v) } }
+
+        Text("Colour", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CAPTION_COLOURS.forEach { argb ->
+                val selected = caption.colorArgb == argb
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Color(argb))
+                        .border(
+                            if (selected) 3.dp else 1.dp,
+                            if (selected) SquishColors.Primary else SquishColors.Border,
+                            RoundedCornerShape(999.dp)
+                        )
+                        .clickable { onRestyle { it.copy(colorArgb = argb) } }
+                )
+            }
+        }
+
+        ChipRow("Place", CaptionPlace.entries, CaptionPlace.nearest(caption.yFraction), { it.label }) { v ->
+            onRestyle { it.copy(yFraction = v.yFraction) }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Size ${caption.sizeSp}",
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.TextMuted,
+                modifier = Modifier.width(64.dp)
+            )
+            Slider(
+                value = caption.sizeSp.toFloat(),
+                onValueChange = { v -> onRestyle { it.copy(sizeSp = v.toInt()) } },
+                valueRange = 14f..72f,
+                colors = SliderDefaults.colors(
+                    thumbColor = SquishColors.Amber,
+                    activeTrackColor = SquishColors.Amber,
+                    inactiveTrackColor = SquishColors.Border
+                ),
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun <T> ChipRow(
+    title: String,
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onPick: (T) -> Unit
+) {
+    Text(title, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+    ) {
+        options.forEach { option ->
+            SelectableChip(
+                label = label(option),
+                selected = option == selected,
+                accentColor = SquishColors.Amber,
+                onClick = { onPick(option) }
+            )
+        }
+    }
+}
+
+/** Where a caption sits, in the three places people actually put one. */
+private enum class CaptionPlace(val label: String, val yFraction: Float) {
+    Top("Top", 0.14f),
+    Middle("Middle", 0.5f),
+    Bottom("Bottom", 0.84f);
+
+    companion object {
+        fun nearest(y: Float): CaptionPlace = entries.minBy { kotlin.math.abs(it.yFraction - y) }
+    }
+}
+
+private val CAPTION_COLOURS = listOf(
+    0xFFFFFFFF.toInt(),
+    0xFF111111.toInt(),
+    0xFFFFD166.toInt(),
+    0xFFFF4FD8.toInt(),
+    0xFF5CE1E6.toInt(),
+    0xFF7CFC8A.toInt(),
+    0xFFFF6B6B.toInt()
+)
+
 @Composable
 private fun CaptionRow(
     caption: TextOverlayItem,
     onJump: () -> Unit,
     onEdit: (String) -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onRestyle: ((TextOverlayItem) -> TextOverlayItem) -> Unit
 ) {
+    var styling by remember(caption.id) { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -228,12 +415,20 @@ private fun CaptionRow(
                 color = SquishColors.Cyan,
                 modifier = Modifier.clickable(onClick = onJump)
             )
-            Text(
-                "Remove",
-                style = MaterialTheme.typography.labelSmall,
-                color = SquishColors.Pink,
-                modifier = Modifier.clickable(onClick = onRemove)
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    if (styling) "Done" else "Style",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Amber,
+                    modifier = Modifier.clickable { styling = !styling }
+                )
+                Text(
+                    "Remove",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Pink,
+                    modifier = Modifier.clickable(onClick = onRemove)
+                )
+            }
         }
 
         OutlinedTextField(
@@ -248,5 +443,7 @@ private fun CaptionRow(
                 unfocusedTextColor = SquishColors.TextPrimary
             )
         )
+
+        if (styling) StyleEditor(caption, onRestyle)
     }
 }

@@ -85,6 +85,11 @@ data class TextOverlayItem(
     val yFraction: Float = 0.85f,
     val sizeSp: Int = 28,
 
+    /** How it is set. New captions get an outline, which reads on any picture. */
+    val font: TextFont = TextFont.Sans,
+    val look: TextLook = TextLook.Outline,
+    val motion: TextMotion = TextMotion.None,
+
     /**
      * Pins this caption to something moving. Stored in timeline time, matching
      * [startMs] and [endMs], because that is the clock the overlay renderer is

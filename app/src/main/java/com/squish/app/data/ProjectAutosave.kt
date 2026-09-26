@@ -5,6 +5,9 @@ import android.net.Uri
 import com.squish.app.editor.CropAspect
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
+import com.squish.app.editor.TextFont
+import com.squish.app.editor.TextLook
+import com.squish.app.editor.TextMotion
 import com.squish.app.editor.TextOverlayItem
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
@@ -327,6 +330,9 @@ class ProjectAutosave(context: Context) {
         put("xFraction", item.xFraction.toDouble())
         put("yFraction", item.yFraction.toDouble())
         put("sizeSp", item.sizeSp)
+        put("font", item.font.name)
+        put("look", item.look.name)
+        put("motion", item.motion.name)
         item.track?.let { t ->
             put("track", JSONArray().apply {
                 t.samples.forEach { sample ->
@@ -508,6 +514,10 @@ class ProjectAutosave(context: Context) {
             xFraction = json.optDouble("xFraction", 0.5).toFloat(),
             yFraction = json.optDouble("yFraction", 0.85).toFloat(),
             sizeSp = json.optInt("sizeSp", 28),
+            // Captions saved before styles existed were plain white letters.
+            font = enumOrNull<TextFont>(json.optString("font")) ?: TextFont.Sans,
+            look = enumOrNull<TextLook>(json.optString("look")) ?: TextLook.Plain,
+            motion = enumOrNull<TextMotion>(json.optString("motion")) ?: TextMotion.None,
             track = json.optJSONArray("track")?.let { array ->
                 MotionTrack(
                     (0 until array.length()).mapNotNull { i ->

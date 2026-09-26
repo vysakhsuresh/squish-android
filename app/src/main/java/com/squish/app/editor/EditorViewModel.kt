@@ -828,6 +828,39 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(textOverlays = it.textOverlays + item) }
     }
 
+    /**
+     * A title at the playhead, styled by [preset]: its text, face, look, colour,
+     * place on the frame and motion, all at once. It is an ordinary caption from
+     * then on - every part of it can be changed afterwards.
+     */
+    fun addTitle(preset: TitlePreset) = record("Add title") {
+        val current = _state.value
+        val start = current.playheadMs
+        val end = (start + DEFAULT_TITLE_MS).coerceAtMost(
+            current.timelineDurationMs.takeIf { it > start } ?: (start + DEFAULT_TITLE_MS)
+        )
+        val item = TextOverlayItem(
+            id = UUID.randomUUID().toString(),
+            text = preset.sample,
+            startMs = start,
+            endMs = end,
+            colorArgb = preset.colorArgb,
+            yFraction = preset.yFraction,
+            sizeSp = preset.sizeSp,
+            font = preset.font,
+            look = preset.look,
+            motion = preset.motion
+        )
+        _state.update { it.copy(textOverlays = it.textOverlays + item) }
+    }
+
+    /** Changes how one caption looks or moves. The text and timing are left alone. */
+    fun restyleCaption(id: String, change: (TextOverlayItem) -> TextOverlayItem) = record("Style $id") {
+        _state.update { current ->
+            current.copy(textOverlays = current.textOverlays.map { if (it.id == id) change(it) else it })
+        }
+    }
+
     fun removeTextOverlay(id: String) {
         _state.update { it.copy(textOverlays = it.textOverlays.filterNot { item -> item.id == id }) }
     }
@@ -1886,5 +1919,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         const val MIN_SYNC_CONFIDENCE = 0.28f
         val AUTOSAVE_INTERVAL = 1_500.milliseconds
         const val DEFAULT_CAPTION_MS = 2_000L
+
+        /** Long enough for a title to arrive, be read and leave. */
+        const val DEFAULT_TITLE_MS = 3_000L
     }
 }
