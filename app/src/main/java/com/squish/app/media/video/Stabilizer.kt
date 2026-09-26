@@ -72,10 +72,34 @@ object Stabilizer {
             val motions = mutableListOf<FrameMotion>()
             val times = mutableListOf<Long>()
 
+            // The fast path: brightness grids straight off the hardware decoder. Several
+            // times quicker than the retriever below, which is kept for any file the
+            // decoder will not hand over as readable YUV.
+            val expected = (span / stride).coerceAtLeast(1)
+            val fast = LumaDecoder.decode(context, uri, fromMs, toMs, stride) { timeMs, luma ->
+                if (analysisWidth == 0) {
+                    analysisWidth = luma.width
+                    analysisHeight = luma.height
+                }
+                previous?.let {
+                    motions.add(MotionEstimator.estimate(it, luma))
+                    times.add(timeMs)
+                }
+                previous = luma
+                if (motions.size % 15 == 0) onProgress(motions.size, expected)
+            }
+            if (!fast) {
+                motions.clear()
+                times.clear()
+                previous = null
+                analysisWidth = 0
+                analysisHeight = 0
+            }
+
             var pixelBuffer: IntArray? = null
             val perCall = FrameBatch.framesPerCall(sourceWidth, sourceHeight)
 
-            FrameBatch.forEachFrame(
+            if (!fast) FrameBatch.forEachFrame(
                 retriever = retriever,
                 firstIndex = firstIndex,
                 lastIndex = lastIndex,
