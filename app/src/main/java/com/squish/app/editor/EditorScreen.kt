@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
@@ -92,6 +93,7 @@ enum class EditorTab(val label: String, val icon: ImageVector, val accent: Color
     Motion("Motion", Icons.Filled.Animation, SquishColors.Amber),
     Sound("Sound", Icons.Filled.GraphicEq, SquishColors.Cyan),
     Words("Words", Icons.Filled.ClosedCaption, SquishColors.Amber),
+    Stickers("Stickers", Icons.Filled.EmojiEmotions, SquishColors.Magenta),
 
     /** The look catalogue. It was called Effects and shows nothing but looks. */
     Looks("Looks", Icons.Filled.AutoAwesome, SquishColors.Magenta),
@@ -376,6 +378,7 @@ fun EditorScreen(
                         onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) }
                     )
                     EditorTab.Words -> CaptionsPanel(state, viewModel)
+                    EditorTab.Stickers -> StickersPanel(state, viewModel)
                     EditorTab.Looks -> EffectsPanel(state, viewModel)
                     EditorTab.Finish -> ExportPanel(
                         state = state,

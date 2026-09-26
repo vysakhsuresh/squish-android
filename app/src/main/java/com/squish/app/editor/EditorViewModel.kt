@@ -854,6 +854,32 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(textOverlays = it.textOverlays + item) }
     }
 
+    /**
+     * A sticker at the playhead, in the middle of the picture, popping in. It
+     * stays for [DEFAULT_TITLE_MS] and can be moved, sized and retimed from there.
+     */
+    fun addSticker(emoji: String) = record("Add sticker") {
+        val current = _state.value
+        val start = current.playheadMs
+        val end = (start + DEFAULT_TITLE_MS).coerceAtMost(
+            current.timelineDurationMs.takeIf { it > start } ?: (start + DEFAULT_TITLE_MS)
+        )
+        val item = TextOverlayItem(
+            id = UUID.randomUUID().toString(),
+            text = emoji,
+            startMs = start,
+            endMs = end,
+            colorArgb = android.graphics.Color.WHITE,
+            xFraction = 0.5f,
+            yFraction = 0.5f,
+            sizeSp = 64,
+            look = TextLook.Plain,
+            motion = TextMotion.Pop,
+            sticker = true
+        )
+        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id) }
+    }
+
     /** Changes how one caption looks or moves. The text and timing are left alone. */
     fun restyleCaption(id: String, change: (TextOverlayItem) -> TextOverlayItem) = record("Style $id") {
         _state.update { current ->
@@ -1096,7 +1122,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearCaptions() {
         captionJob?.cancel()
-        _state.update { it.copy(textOverlays = emptyList(), captions = CaptionProgress()) }
+        // Stickers are not captions, and clearing the words should not take them.
+        _state.update { it.copy(textOverlays = it.textOverlays.filter { o -> o.sticker }, captions = CaptionProgress()) }
     }
 
     /** Brings in a transcript made anywhere else. */
@@ -1137,6 +1164,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     /** Writes the captions out so they can be used anywhere else. */
     fun exportSrt(target: Uri, onDone: (Boolean) -> Unit) {
         val cues = _state.value.textOverlays
+            .filterNot { it.sticker }
             .sortedBy { it.startMs }
             .map { SrtCue(it.startMs, it.endMs, it.text) }
             .filter { it.text.isNotBlank() }

@@ -333,6 +333,7 @@ class ProjectAutosave(context: Context) {
         put("font", item.font.name)
         put("look", item.look.name)
         put("motion", item.motion.name)
+        put("sticker", item.sticker)
         item.track?.let { t ->
             put("track", JSONArray().apply {
                 t.samples.forEach { sample ->
@@ -518,6 +519,7 @@ class ProjectAutosave(context: Context) {
             font = enumOrNull<TextFont>(json.optString("font")) ?: TextFont.Sans,
             look = enumOrNull<TextLook>(json.optString("look")) ?: TextLook.Plain,
             motion = enumOrNull<TextMotion>(json.optString("motion")) ?: TextMotion.None,
+            sticker = json.optBoolean("sticker", false),
             track = json.optJSONArray("track")?.let { array ->
                 MotionTrack(
                     (0 until array.length()).mapNotNull { i ->

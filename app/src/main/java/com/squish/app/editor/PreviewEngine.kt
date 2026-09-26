@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.Effect
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.LiveLookEffect
@@ -168,6 +169,9 @@ class PreviewEngine(private val context: Context) {
 
     /** Set when what a paused frame shows has changed; see [setTimeline]. */
     private var pendingRedraw = false
+
+    /** Whether captions draw at rest, which they do whenever the preview is paused. */
+    private val captionsAtRest = AtomicBoolean(true)
 
     private var anchorTimelineMs: Long = 0
     private var anchorWallMs: Long = SystemClock.elapsedRealtime()
@@ -375,7 +379,7 @@ class PreviewEngine(private val context: Context) {
             add(LiveLookEffect(liveGrade))
             // Always present for the same reason: the first title added mid-play
             // is drawn by the next frame instead of rebuilding the pipeline.
-            val overlays: List<TextureOverlay> = listOf(LiveCaptionOverlay(captionsHere))
+            val overlays: List<TextureOverlay> = listOf(LiveCaptionOverlay(captionsHere, captionsAtRest))
             add(OverlayEffect(ImmutableList.copyOf(overlays)))
         }
         // Guarded: setVideoEffects is unstable API, and a custom shader can fail to
@@ -390,6 +394,7 @@ class PreviewEngine(private val context: Context) {
         if (released) return
         if (durationMs > 0 && positionMs >= durationMs) seekTo(0)
         playing = true
+        captionsAtRest.set(false)
         anchorTimelineMs = positionMs
         anchorWallMs = SystemClock.elapsedRealtime()
         // Not cleared. Clearing here is what used to make the first play the one
@@ -401,6 +406,9 @@ class PreviewEngine(private val context: Context) {
     fun pause() {
         if (released) return
         playing = false
+        captionsAtRest.set(true)
+        // Settles any caption caught mid-animation into its resting look.
+        pendingRedraw = true
         baseA.pause(); baseB.pause()
         overlayPlayers.values.forEach { it.pause() }
         audioPlayers.values.forEach { it.pause() }

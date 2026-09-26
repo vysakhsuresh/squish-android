@@ -10,7 +10,9 @@ import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlaySettings
+import com.squish.app.editor.TextFrame
 import com.squish.app.editor.TextOverlayItem
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 
@@ -29,7 +31,16 @@ import kotlin.math.roundToInt
  * The bitmap is only redrawn when what it shows changes - a caption that is just
  * sitting there costs nothing per frame.
  */
-class LiveCaptionOverlay(private val captions: AtomicReference<List<TextOverlayItem>>) : BitmapOverlay() {
+class LiveCaptionOverlay(
+    private val captions: AtomicReference<List<TextOverlayItem>>,
+    /**
+     * True while the preview is paused. A paused editor shows every caption and
+     * sticker as it looks at rest - a pop-in is invisible on its first frame,
+     * which is exactly where one is added, so a new sticker seemed not to appear.
+     * Motion plays when the video does.
+     */
+    private val atRest: AtomicBoolean
+) : BitmapOverlay() {
 
     private var frameWidth = 1080
     private var frameHeight = 1920
@@ -59,7 +70,9 @@ class LiveCaptionOverlay(private val captions: AtomicReference<List<TextOverlayI
         val h = (frameHeight * SCALE).roundToInt().coerceAtLeast(2)
 
         val showing = captions.get().mapNotNull { item ->
-            CaptionRenderer.frameAt(item, timeMs)?.let { frame -> Triple(item, frame, CaptionRenderer.shownText(item, frame)) }
+            CaptionRenderer.frameAt(item, timeMs)
+                ?.let { if (atRest.get()) TextFrame() else it }
+                ?.let { frame -> Triple(item, frame, CaptionRenderer.shownText(item, frame)) }
         }.filter { it.third.isNotBlank() }
 
         // Rounded so a caption at rest produces the same key frame after frame.

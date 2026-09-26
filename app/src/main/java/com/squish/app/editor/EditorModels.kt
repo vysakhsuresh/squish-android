@@ -91,6 +91,13 @@ data class TextOverlayItem(
     val motion: TextMotion = TextMotion.None,
 
     /**
+     * A sticker: an emoji placed on the picture. Drawn exactly like a caption -
+     * the same renderer, motions, timeline lane and export - but listed in its own
+     * panel and left out of anything that treats captions as words, like .srt.
+     */
+    val sticker: Boolean = false,
+
+    /**
      * Pins this caption to something moving. Stored in timeline time, matching
      * [startMs] and [endMs], because that is the clock the overlay renderer is
      * already handed.

@@ -58,6 +58,8 @@ import com.squish.app.ui.theme.SquishColors
  */
 @Composable
 fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
+    // Words only - stickers share the caption track but have their own panel.
+    val lines = state.textOverlays.filterNot { it.sticker }
     var notice by remember { mutableStateOf<String?>(null) }
 
     val importSrt = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -192,11 +194,11 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
         PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
                 "Lines",
-                "${state.textOverlays.size} on the timeline",
+                "${lines.size} on the timeline",
                 icon = Icons.Filled.Subtitles,
                 accent = SquishColors.Amber,
                 trailing = {
-                    if (state.textOverlays.isNotEmpty()) {
+                    if (lines.isNotEmpty()) {
                         Text(
                             "Clear all",
                             style = MaterialTheme.typography.labelSmall,
@@ -207,7 +209,7 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 }
             )
 
-            if (state.textOverlays.isEmpty()) {
+            if (lines.isEmpty()) {
                 Text(
                     "Nothing yet. Auto-caption above, import a transcript, or add a line by hand.",
                     style = MaterialTheme.typography.bodySmall,
@@ -221,7 +223,7 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 onClick = { viewModel.addCaptionAtPlayhead() }
             )
 
-            state.textOverlays.sortedBy { it.startMs }.forEach { caption ->
+            lines.sortedBy { it.startMs }.forEach { caption ->
                 CaptionRow(
                     caption = caption,
                     onJump = { viewModel.scrubTo(caption.startMs) },
