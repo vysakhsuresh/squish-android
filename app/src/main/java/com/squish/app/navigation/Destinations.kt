@@ -10,8 +10,9 @@ sealed class Destination(val route: String) {
         fun buildRoute(encodedUri: String) = "editor/$encodedUri"
     }
 
-    data object QuickTool : Destination("tool/{toolId}") {
-        fun buildRoute(toolId: String) = "tool/$toolId"
+    /** [resume] is set only by the drafts list; a dashboard tap always starts fresh. */
+    data object QuickTool : Destination("tool/{toolId}?resume={resume}") {
+        fun buildRoute(toolId: String, resume: Boolean = false) = "tool/$toolId?resume=$resume"
     }
 
     /**

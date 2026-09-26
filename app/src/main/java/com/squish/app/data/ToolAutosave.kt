@@ -2,6 +2,7 @@ package com.squish.app.data
 
 import android.content.Context
 import android.net.Uri
+import com.squish.app.editor.OutputSize
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -33,7 +34,8 @@ data class ToolDraft(
     val durationMs: Long,
     val trimStartMs: Long,
     val trimEndMs: Long,
-    val quality: String,
+    /** The export's short edge; see [com.squish.app.editor.OutputSize]. */
+    val outputP: Int,
     val fitToSize: Boolean,
     val targetSizeMb: Int,
     val savedAtMillis: Long
@@ -81,6 +83,9 @@ class ToolAutosave(context: Context) {
 
     fun peek(toolId: String): ToolDraft? = read(liveFile(toolId))
 
+    /** Everything that makes this session this session, and nothing about when. */
+    fun keyOf(draft: ToolDraft): String = encode(draft).toString()
+
     fun clear(toolId: String) {
         lastSignature.remove(toolId)
         listOf(liveFile(toolId), scratchFile(toolId)).forEach { runCatching { it.delete() } }
@@ -106,7 +111,7 @@ class ToolAutosave(context: Context) {
         put("durationMs", draft.durationMs)
         put("trimStartMs", draft.trimStartMs)
         put("trimEndMs", draft.trimEndMs)
-        put("quality", draft.quality)
+        put("outputP", draft.outputP)
         put("fitToSize", draft.fitToSize)
         put("targetSizeMb", draft.targetSizeMb)
     }
@@ -126,7 +131,8 @@ class ToolAutosave(context: Context) {
             durationMs = json.optLong("durationMs"),
             trimStartMs = json.optLong("trimStartMs"),
             trimEndMs = json.optLong("trimEndMs"),
-            quality = json.optString("quality"),
+            outputP = if (json.has("outputP")) json.optInt("outputP")
+            else OutputSize.fromLegacyQuality(json.optString("quality")) ?: 720,
             fitToSize = json.optBoolean("fitToSize"),
             targetSizeMb = json.optInt("targetSizeMb", 16),
             savedAtMillis = json.optLong("savedAtMillis")

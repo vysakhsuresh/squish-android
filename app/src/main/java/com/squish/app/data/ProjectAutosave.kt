@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.squish.app.editor.CropAspect
 import com.squish.app.editor.EditorUiState
-import com.squish.app.editor.Quality
+import com.squish.app.editor.OutputSize
 import com.squish.app.editor.TextOverlayItem
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
@@ -130,6 +130,18 @@ class ProjectAutosave(context: Context) {
         return ok
     }
 
+    /**
+     * The edit itself, for telling an edited timeline from an untouched one.
+     *
+     * Where the playhead sits and how far the strip is zoomed are left out:
+     * scrubbing through a clip to look at it is not editing it.
+     */
+    fun editKey(state: EditorUiState): String =
+        encode(state).apply {
+            remove("playheadMs")
+            remove("pixelsPerSecond")
+        }.toString()
+
     /** A recoverable session for this video, if one survived. */
     fun peek(uri: Uri): ProjectSnapshot? {
         val slot = slotFor(uri)
@@ -208,7 +220,7 @@ class ProjectAutosave(context: Context) {
         put("sourceUri", state.sourceUri.toString())
         put("durationMs", state.durationMs)
         put("playheadMs", state.playheadMs)
-        put("quality", state.quality.name)
+        put("outputP", state.outputP)
         put("fitToSize", state.fitToSize)
         put("targetSizeMb", state.targetSizeMb)
         put("audioOnly", state.audioOnly)
@@ -362,7 +374,7 @@ class ProjectAutosave(context: Context) {
             textOverlays = overlays,
             markers = markers,
             playheadMs = json.optLong("playheadMs"),
-            quality = enumOrNull<Quality>(json.optString("quality")) ?: Quality.Medium,
+            outputP = if (json.has("outputP")) json.optInt("outputP") else OutputSize.fromLegacyQuality(json.optString("quality")) ?: OutputSize.ORIGINAL,
             fitToSize = json.optBoolean("fitToSize"),
             targetSizeMb = json.optInt("targetSizeMb", 16),
             audioOnly = json.optBoolean("audioOnly"),
@@ -533,7 +545,7 @@ data class ProjectSnapshot(
     val textOverlays: List<TextOverlayItem>,
     val markers: List<Long>,
     val playheadMs: Long,
-    val quality: Quality,
+    val outputP: Int,
     val fitToSize: Boolean,
     val targetSizeMb: Int,
     val audioOnly: Boolean,

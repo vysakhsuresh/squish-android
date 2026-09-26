@@ -85,6 +85,20 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var stabilizeJob: Job? = null
     private var trackJob: Job? = null
 
+    /**
+     * The timeline as it stood the moment its clip finished loading.
+     *
+     * Opening a video is not an edit. Saving from that moment on put every video
+     * that was merely opened and backed out of on the dashboard as "pick up where
+     * you left off". The edit is only saved once it differs from this.
+     */
+    @Volatile
+    private var baseline: String? = null
+
+    /** Whether this session has put a draft on disk, so undoing back to nothing can take it off. */
+    @Volatile
+    private var wroteDraft = false
+
     init {
         // Aggressive by design. Each save is atomic, and skipped entirely when
         // nothing changed, so the cost of a tick is one string comparison, and the
@@ -94,12 +108,24 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 delay(AUTOSAVE_INTERVAL)
                 val current = _state.value
                 if (current.isExporting) continue
+                val uri = current.sourceUri ?: continue
                 // Off the main thread. viewModelScope is Main, so encoding the
                 // timeline to JSON and fsyncing it were both happening on the
                 // frame loop, every second and a half, for the whole session -
                 // which is exactly the kind of thing that makes a scrub stutter
                 // for no visible reason.
-                withContext(Dispatchers.IO) { autosave.save(current) }
+                withContext(Dispatchers.IO) {
+                    val start = baseline
+                    val untouched = start == null || autosave.editKey(current) == start
+                    if (untouched) {
+                        if (wroteDraft) {
+                            autosave.clear(uri)
+                            wroteDraft = false
+                        }
+                    } else if (autosave.save(current)) {
+                        wroteDraft = true
+                    }
+                }
             }
         }
     }
@@ -155,6 +181,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
             recomputeEstimate()
+            baseline = autosave.editKey(_state.value)
             offerRecovery(recoverable, uri)
             startProxy(uri, meta.displayWidth, meta.displayHeight, meta.durationMs)
 
@@ -433,8 +460,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---- Look & compression ---------------------------------------------------
 
-    fun setQuality(quality: Quality) {
-        _state.update { it.copy(quality = quality) }
+    /** Picks an output size, which also leaves fit-to-size: the two are rival answers. */
+    fun setOutputP(p: Int) {
+        _state.update { it.copy(outputP = p, fitToSize = false) }
         recomputeEstimate()
     }
 
@@ -1587,20 +1615,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun recomputeEstimate() {
-        val current = _state.value
-        val bitrate = if (current.fitToSize) {
-            ExportPresets.bitrateForTargetSize(
-                current.targetSizeMb * 1_000_000L,
-                current.trimmedDurationMs,
-                current.hasAnyAudio
-            )
-        } else {
-            ExportPresets.bitrateFor(current.quality)
-        }
-        val durationSeconds = current.trimmedDurationMs / 1000.0
-        val audioBits = if (current.hasAnyAudio) ExportPresets.AUDIO_BITRATE_BPS * durationSeconds else 0.0
-        val videoBits = bitrate * durationSeconds
-        _state.update { it.copy(estimatedOutputBytes = ((videoBits + audioBits) / 8).toLong()) }
+        _state.update { it.copy(estimatedOutputBytes = it.estimatedExportBytes) }
     }
 
     private fun displayNameOf(uri: Uri): String? = runCatching {
@@ -1753,7 +1768,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         textOverlays = snapshot.textOverlays,
         markers = snapshot.markers,
         playheadMs = snapshot.playheadMs,
-        quality = snapshot.quality,
+        outputP = snapshot.outputP,
         fitToSize = snapshot.fitToSize,
         targetSizeMb = snapshot.targetSizeMb,
         audioOnly = snapshot.audioOnly,

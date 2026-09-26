@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCut
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RangeSlider
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,9 +43,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.squish.app.editor.Quality
+import com.squish.app.home.countOf
+import com.squish.app.ui.components.BackOrb
+import com.squish.app.ui.components.OutputSizePicker
 import com.squish.app.editor.Timecode
 import com.squish.app.home.formatSize
 import com.squish.app.timeline.Clip
@@ -53,7 +60,7 @@ import com.squish.app.ui.components.SectionHeading
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishCard
 import com.squish.app.ui.components.SquishOutlinedButton
-import com.squish.app.ui.components.SquishPage
+
 import com.squish.app.ui.components.SquishPrimaryButton
 import com.squish.app.ui.components.SquishToggleSwitch
 import com.squish.app.ui.theme.SquishColors
@@ -73,6 +80,8 @@ fun QuickToolScreen(
     onBack: () -> Unit,
     onExported: (String) -> Unit,
     onOpenInEditor: (Uri) -> Unit,
+    /** True when opened from the drafts list, to carry on; false from the dashboard, to start fresh. */
+    resume: Boolean = false,
     viewModel: QuickToolViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -101,11 +110,11 @@ fun QuickToolScreen(
 
     // Straight to the picker: the tile tap already said what they want to do.
     //
-    // Unless there is a session to pick back up. Six videos chosen and ordered for
-    // a merge is ten minutes of work, and throwing the picker over the top of it
-    // would mean starting that again - the very thing the draft exists to prevent.
+    // Unless this was opened from the drafts list to carry on. Six videos chosen
+    // and ordered for a merge is ten minutes of work, and throwing the picker over
+    // the top of it would mean starting that again.
     LaunchedEffect(tool) {
-        val draft = viewModel.begin(tool)
+        val draft = viewModel.begin(tool, resume)
         if (draft != null) {
             viewModel.restore(draft)
         } else if (!state.hasSource) {
@@ -113,95 +122,156 @@ fun QuickToolScreen(
         }
     }
 
-    SquishPage(
-        title = tool.title,
-        subtitle = tool.blurb,
-        onBack = onBack,
-        accent = tool.accent
-    ) {
-        if (!state.hasSource) {
-            SquishCard(accent = tool.accent) {
-                Text(
-                    if (tool == QuickTool.Stitch)
-                        "Choose the videos you want joined — you can pick several at once."
-                    else "Choose a video to get started.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = SquishColors.TextSecondary
-                )
-                SquishOutlinedButton(
-                    text = if (tool == QuickTool.Stitch) "Choose videos" else "Choose video",
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { openPicker() }
+    // Laid out the way the studio is: the picture pinned at the top, the controls
+    // scrolling underneath it, and the action pinned at the bottom. As one long
+    // scrolling page, a portrait clip took the whole screen and every setting sat
+    // below it - change something, scroll up to see it, scroll down to change it
+    // again.
+    Scaffold(containerColor = SquishColors.Background) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            ToolHeader(
+                tool = tool,
+                canOpenInEditor = state.sourceUri != null && !state.isExporting,
+                onBack = onBack,
+                onOpenInEditor = { state.sourceUri?.let(onOpenInEditor) }
+            )
+
+            if (state.hasSource) {
+                PreviewCard(
+                    tool = tool,
+                    state = state,
+                    seekTarget = seekTarget,
+                    seekNonce = seekNonce,
+                    onChangeSource = { openPicker() }
                 )
             }
-            return@SquishPage
-        }
 
-        PreviewCard(
-            tool = tool,
-            state = state,
-            seekTarget = seekTarget,
-            seekNonce = seekNonce,
-            onChangeSource = { openPicker() }
-        )
-
-        when (tool) {
-            QuickTool.Squeeze -> CompressControls(state, viewModel)
-            QuickTool.Snip -> RangeControls(
-                state = state,
-                tool = tool,
-                blurb = "Everything between the handles is kept.",
-                onRange = { start, end, moved ->
-                    viewModel.setTrim(start, end)
-                    seekTarget = moved
-                    seekNonce += 1
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (!state.hasSource) {
+                    SquishCard(accent = tool.accent) {
+                        Text(
+                            if (tool == QuickTool.Stitch)
+                                "Choose the videos you want joined — you can pick several at once."
+                            else "Choose a video to get started.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SquishColors.TextSecondary
+                        )
+                        SquishOutlinedButton(
+                            text = if (tool == QuickTool.Stitch) "Choose videos" else "Choose video",
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { openPicker() }
+                        )
+                    }
+                } else {
+                    when (tool) {
+                        QuickTool.Squeeze -> CompressControls(state, viewModel)
+                        QuickTool.Snip -> RangeControls(
+                            state = state,
+                            tool = tool,
+                            blurb = "Everything between the handles is kept.",
+                            onRange = { start, end, moved ->
+                                viewModel.setTrim(start, end)
+                                seekTarget = moved
+                                seekNonce += 1
+                            }
+                        )
+                        QuickTool.Rip -> RangeControls(
+                            state = state,
+                            tool = tool,
+                            blurb = "Only the sound between the handles is saved, as an .m4a in Music/Squish.",
+                            onRange = { start, end, moved ->
+                                viewModel.setTrim(start, end)
+                                seekTarget = moved
+                                seekNonce += 1
+                            }
+                        )
+                        QuickTool.Stitch -> MergeControls(
+                            state = state,
+                            viewModel = viewModel,
+                            onAddClips = { pickMergeClips.launch(videoOnly) }
+                        )
+                    }
                 }
-            )
-            QuickTool.Rip -> RangeControls(
-                state = state,
-                tool = tool,
-                blurb = "Only the sound between the handles is saved, as an .m4a in Music/Squish.",
-                onRange = { start, end, moved ->
-                    viewModel.setTrim(start, end)
-                    seekTarget = moved
-                    seekNonce += 1
+
+                errorMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.Pink)
                 }
-            )
-            QuickTool.Stitch -> MergeControls(
-                state = state,
-                viewModel = viewModel,
-                onAddClips = { pickMergeClips.launch(videoOnly) }
-            )
-        }
+            }
 
-        errorMessage?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.Pink)
-        }
-
-        if (state.isExporting) {
-            ExportProgressCard(progress = state.exportProgress, accent = tool.accent)
-        } else {
-            SquishPrimaryButton(
-                text = tool.actionLabel,
-                enabled = !state.isLoading,
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    errorMessage = null
-                    viewModel.export(tool, onResult = onExported, onError = { errorMessage = it })
-                }
-            )
-
-            state.sourceUri?.let { uri ->
-                Text(
-                    "Need more control? Open in the full editor",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = tool.accent,
+            if (state.hasSource) {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onOpenInEditor(uri) }
-                        .padding(vertical = 8.dp)
-                )
+                        .background(SquishColors.Surface)
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    if (state.isExporting) {
+                        ExportProgressCard(progress = state.exportProgress, accent = tool.accent)
+                    } else {
+                        SquishPrimaryButton(
+                            text = tool.actionLabel,
+                            enabled = !state.isLoading,
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                errorMessage = null
+                                viewModel.export(tool, onResult = onExported, onError = { errorMessage = it })
+                            }
+                        )
+                    }
+                }
             }
+        }
+    }
+}
+
+/**
+ * Back, the tool's name, and the way out to the full editor, on one line.
+ *
+ * The back control sits here rather than floating bottom-left as on other pages:
+ * the bottom of this screen is the action button, and a floating orb over it
+ * would cover the one thing the screen is for.
+ */
+@Composable
+private fun ToolHeader(
+    tool: QuickTool,
+    canOpenInEditor: Boolean,
+    onBack: () -> Unit,
+    onOpenInEditor: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        BackOrb(accent = tool.accent, onClick = onBack, size = 40.dp)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(tool.title, style = MaterialTheme.typography.titleLarge, color = SquishColors.TextPrimary, maxLines = 1)
+            Text(
+                tool.blurb,
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.TextMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (canOpenInEditor) {
+            Text(
+                "Open in editor",
+                style = MaterialTheme.typography.labelLarge,
+                color = tool.accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(tool.accent.copy(alpha = 0.12f))
+                    .clickable(onClick = onOpenInEditor)
+                    .padding(horizontal = 10.dp, vertical = 7.dp)
+            )
         }
     }
 }
@@ -209,9 +279,8 @@ fun QuickToolScreen(
 /**
  * The footage, playing, with the file's name and weight underneath.
  *
- * One card rather than a preview plus a details card plus a change-source card:
- * three stacked boxes saying three things about one video is how a tool screen
- * turns into a form.
+ * Pinned above the controls rather than scrolling with them, and capped in
+ * height, so whatever is being changed below is always in view.
  */
 @Composable
 private fun PreviewCard(
@@ -233,7 +302,10 @@ private fun PreviewCard(
     }
     if (sources.isEmpty()) return
 
-    SquishCard(accent = tool.accent) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         ClipPreview(
             sources = sources,
             accent = tool.accent,
@@ -243,6 +315,7 @@ private fun PreviewCard(
             audioOnly = tool == QuickTool.Rip,
             seekToMs = seekTarget,
             seekNonce = seekNonce,
+            maxHeightDp = PREVIEW_MAX_HEIGHT_DP,
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -253,7 +326,7 @@ private fun PreviewCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    if (tool == QuickTool.Stitch) "${state.mergeClips.size} clips joined"
+                    if (tool == QuickTool.Stitch) "${countOf(state.mergeClips.size, "clip")} joined"
                     else state.name ?: "Selected video",
                     style = MaterialTheme.typography.bodyMedium,
                     color = SquishColors.TextPrimary,
@@ -285,22 +358,21 @@ private fun PreviewCard(
 private fun CompressControls(state: QuickToolViewModel.UiState, viewModel: QuickToolViewModel) {
     SquishCard(accent = SquishColors.Blue) {
         SectionHeading(
-            title = "Quality",
+            title = "Size",
             subtitle = "Bigger means sharper and heavier",
             icon = Icons.Filled.HighQuality,
             accent = SquishColors.Blue
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Quality.entries.forEach { quality ->
-                SelectableChip(
-                    label = quality.label,
-                    selected = state.quality == quality && !state.fitToSize,
-                    accentColor = SquishColors.Blue,
-                    modifier = Modifier.weight(1f),
-                    onClick = { viewModel.setQuality(quality) }
-                )
-            }
-        }
+        OutputSizePicker(
+            outputP = state.outputP,
+            fitToSize = state.fitToSize,
+            sourceWidth = state.width,
+            sourceHeight = state.height,
+            estimatedBytes = state.estimatedOutputBytes,
+            originalBytes = state.originalSizeBytes,
+            accent = SquishColors.Blue,
+            onPick = viewModel::setOutputP
+        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -326,43 +398,6 @@ private fun CompressControls(state: QuickToolViewModel.UiState, viewModel: Quick
                     )
                 }
             }
-        }
-
-        SavingRow(state)
-    }
-}
-
-/** Before and after, side by side, because that is the whole question being asked. */
-@Composable
-private fun SavingRow(state: QuickToolViewModel.UiState) {
-    val saved = if (state.originalSizeBytes > 0 && state.estimatedOutputBytes > 0) {
-        (100 - (state.estimatedOutputBytes * 100 / state.originalSizeBytes)).coerceIn(0, 99)
-    } else {
-        null
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(SquishColors.Background)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column {
-            Text("Estimated output", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
-            Text(
-                formatSize(state.estimatedOutputBytes),
-                style = MaterialTheme.typography.titleMedium,
-                color = SquishColors.Cyan
-            )
-        }
-        saved?.let {
-            Text(
-                "$it% smaller",
-                style = MaterialTheme.typography.labelLarge,
-                color = SquishColors.Cyan
-            )
         }
     }
 }
@@ -541,3 +576,6 @@ private fun MoveButton(icon: ImageVector, enabled: Boolean, onClick: () -> Unit)
 }
 
 private const val MAX_MERGE_CLIPS = 20
+
+/** Room for the picture, and still room under it for the controls it is showing. */
+private const val PREVIEW_MAX_HEIGHT_DP = 320f

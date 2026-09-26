@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.squish.app.home.formatSize
+import com.squish.app.ui.components.OutputSizePicker
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
@@ -212,24 +213,21 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = SquishColors.Blue) {
             PanelHeading(
-                "Quality",
+                "Size",
                 "Bigger means sharper and heavier",
                 icon = Icons.Filled.HighQuality,
                 accent = SquishColors.Blue
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Quality.entries.forEach { quality ->
-                    SelectableChip(
-                        label = quality.label,
-                        selected = state.quality == quality && !state.fitToSize,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            viewModel.setFitToSize(false)
-                            viewModel.setQuality(quality)
-                        }
-                    )
-                }
-            }
+            OutputSizePicker(
+                outputP = state.outputP,
+                fitToSize = state.fitToSize,
+                sourceWidth = state.sourceWidth,
+                sourceHeight = state.sourceHeight,
+                estimatedBytes = state.estimatedOutputBytes,
+                originalBytes = state.originalSizeBytes,
+                accent = SquishColors.Blue,
+                onPick = viewModel::setOutputP
+            )
         }
 
         PanelSurface(accent = SquishColors.Blue) {
@@ -260,8 +258,6 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
             }
         }
 
-        EstimateCard(state)
-
         PanelSurface(accent = SquishColors.Blue) {
             PanelHeading(
                 "Video track",
@@ -290,20 +286,6 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
                 }
             }
             SquishOutlinedButton(text = "Add another clip", modifier = Modifier.fillMaxWidth(), onClick = onAddClip)
-        }
-    }
-}
-
-@Composable
-fun EstimateCard(state: EditorUiState) {
-    PanelSurface(accent = SquishColors.Cyan) {
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("Original", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
-            Text(formatSize(state.originalSizeBytes), style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
-        }
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("Estimated output", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
-            Text(formatSize(state.estimatedOutputBytes), style = MaterialTheme.typography.titleSmall, color = SquishColors.Teal)
         }
     }
 }

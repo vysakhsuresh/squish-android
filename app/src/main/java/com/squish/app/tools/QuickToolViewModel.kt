@@ -5,11 +5,12 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.squish.app.home.countOf
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.SquishRepositories
 import com.squish.app.data.ToolDraft
 import com.squish.app.editor.EditorUiState
-import com.squish.app.editor.Quality
+import com.squish.app.editor.OutputSize
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
 import com.squish.app.media.GallerySaver
@@ -47,7 +48,9 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val height: Int = 0,
         val originalSizeBytes: Long = 0,
         val hasAudio: Boolean = true,
-        val quality: Quality = Quality.Medium,
+        /** The export's short edge. 720p: small enough to send, sharp enough to watch. */
+        val outputP: Int = 720,
+        val fps: Float = 30f,
         val fitToSize: Boolean = false,
         val targetSizeMb: Int = 16,
         val trimStartMs: Long = 0,
@@ -116,14 +119,35 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     private var tool: QuickTool? = null
 
     /**
-     * Starts saving this tool's session, and hands back the one it left behind.
+     * The session as it stood the moment its video finished loading.
+     *
+     * Choosing a video is not work. Saving from that moment on is what put a
+     * "pick up where you left off" row on the dashboard for every video that was
+     * merely opened and backed out of. A session is only a draft once it differs
+     * from this - a handle moved, a size picked, a clip reordered.
+     */
+    private var baseline: String? = null
+
+    /** A draft that was reopened is already work, so it keeps saving as it is. */
+    private var resumed = false
+
+    /** Whether this session has put a draft on disk, so undoing back to nothing can take it off. */
+    private var wroteDraft = false
+
+    /**
+     * Starts saving this tool's session and, when [resume] asks for it, hands
+     * back the one it left behind.
+     *
+     * Only the drafts list resumes. Tapping the tool on the dashboard is asking
+     * for the tool, fresh: the last video appearing again there was a session
+     * nobody asked to continue.
      *
      * Called once, as the screen opens. The ticker is the editor's: a fixed
      * interval, a no-op when nothing changed, and never on the frame loop. What is
      * saved is only the choices - which files, in which order, where the handles
      * are - so the cost of a tick is a short string comparison.
      */
-    suspend fun begin(tool: QuickTool): ToolDraft? {
+    suspend fun begin(tool: QuickTool, resume: Boolean): ToolDraft? {
         if (this.tool != null) return null
         this.tool = tool
 
@@ -132,17 +156,36 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                 delay(AUTOSAVE_INTERVAL)
                 val current = _state.value
                 if (current.isExporting || current.isLoading) continue
-                withContext(Dispatchers.IO) { autosave.save(draftOf(tool, current)) }
+                val draft = draftOf(tool, current)
+                withContext(Dispatchers.IO) {
+                    val untouched = !resumed && (baseline == null || autosave.keyOf(draft) == baseline)
+                    if (untouched) {
+                        if (wroteDraft) {
+                            autosave.clear(tool.id)
+                            wroteDraft = false
+                        }
+                    } else if (autosave.save(draft)) {
+                        wroteDraft = true
+                    }
+                }
             }
         }
 
-        return withContext(Dispatchers.IO) { autosave.peek(tool.id) }
+        if (!resume) return null
+        return withContext(Dispatchers.IO) { autosave.peek(tool.id) }?.also { resumed = true }
+    }
+
+    /** Marks the current state as the untouched starting point. */
+    private fun markBaseline() {
+        val tool = tool ?: return
+        if (resumed) return
+        baseline = autosave.keyOf(draftOf(tool, _state.value))
     }
 
     private fun draftOf(tool: QuickTool, state: UiState) = ToolDraft(
         toolId = tool.id,
         title = if (tool == QuickTool.Stitch) {
-            "${state.mergeClips.size} clips to merge"
+            "${countOf(state.mergeClips.size, "clip")} to merge"
         } else {
             state.name ?: tool.title
         },
@@ -154,7 +197,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         durationMs = state.exportDurationMs,
         trimStartMs = state.trimStartMs,
         trimEndMs = state.trimEndMs,
-        quality = state.quality.name,
+        outputP = state.outputP,
         fitToSize = state.fitToSize,
         targetSizeMb = state.targetSizeMb,
         savedAtMillis = System.currentTimeMillis()
@@ -173,7 +216,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val tool = QuickTool.fromId(draft.toolId)
         _state.update {
             it.copy(
-                quality = runCatching { Quality.valueOf(draft.quality) }.getOrDefault(it.quality),
+                outputP = draft.outputP,
                 fitToSize = draft.fitToSize,
                 targetSizeMb = draft.targetSizeMb
             )
@@ -219,6 +262,11 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                     width = meta.displayWidth,
                     height = meta.displayHeight,
                     hasAudio = meta.hasAudio,
+                    fps = meta.fps,
+                    // A resumed session keeps the size it chose; a new video gets
+                    // one below its own, so the default never makes it bigger.
+                    outputP = if (resumed) it.outputP
+                    else OutputSize.squeezeDefault(minOf(meta.displayWidth, meta.displayHeight)),
                     originalSizeBytes = size,
                     trimStartMs = 0,
                     trimEndMs = meta.durationMs,
@@ -226,6 +274,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             }
             recomputeEstimate()
+            markBaseline()
         }
     }
 
@@ -238,6 +287,9 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     fun addMergeClips(uris: List<Uri>) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
+            // The first pick fills an empty list, and is the starting point rather
+            // than an edit. Anything added after that is.
+            val firstPick = _state.value.mergeClips.isEmpty()
             val added = uris.map { uri ->
                 val meta = ThumbnailExtractor.probe(getApplication(), uri)
                 val clip = Clip(
@@ -257,6 +309,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             }
             _state.update { current -> current.withMerge(current.mergeClips + added) }
             recomputeEstimate()
+            if (firstPick) markBaseline()
         }
     }
 
@@ -312,6 +365,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             durationMs = first?.durationMs ?: 0L,
             width = lead?.displayWidth ?: 0,
             height = lead?.displayHeight ?: 0,
+            fps = lead?.fps ?: 30f,
             // Every file that goes in, so the finished screen can say what the
             // merge actually saved instead of comparing against zero.
             originalSizeBytes = sequenced.sumOf { mergeSizes[it.id] ?: 0L },
@@ -320,8 +374,8 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         )
     }
 
-    fun setQuality(quality: Quality) {
-        _state.update { it.copy(quality = quality, fitToSize = false) }
+    fun setOutputP(p: Int) {
+        _state.update { it.copy(outputP = p, fitToSize = false) }
         recomputeEstimate()
     }
 
@@ -345,20 +399,55 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         recomputeEstimate()
     }
 
+    /**
+     * The estimate is read off the very state the export will be handed, so the
+     * number on screen and the file that comes out are worked out by one piece
+     * of code rather than two that have to be kept agreeing.
+     */
     private fun recomputeEstimate() {
-        val current = _state.value
-        val bitrate = if (current.fitToSize) {
-            ExportPresets.bitrateForTargetSize(
-                current.targetSizeMb * 1_000_000L,
-                current.exportDurationMs,
-                true
-            )
-        } else {
-            ExportPresets.bitrateFor(current.quality)
-        }
-        val seconds = current.exportDurationMs / 1000.0
-        val bits = bitrate * seconds + ExportPresets.AUDIO_BITRATE_BPS * seconds
-        _state.update { it.copy(estimatedOutputBytes = (bits / 8).toLong()) }
+        val tool = tool ?: QuickTool.Squeeze
+        val bytes = editorStateOf(tool, _state.value).estimatedExportBytes
+        _state.update { it.copy(estimatedOutputBytes = bytes) }
+    }
+
+    /**
+     * This session, as the export pipeline's state.
+     *
+     * Only Squeeze changes the size. Cutting or joining a video is not a request to
+     * shrink it, so the other tools write at the source's own size and bitrate -
+     * they used to re-encode everything to 720p on the way through.
+     */
+    private fun editorStateOf(tool: QuickTool, current: UiState): EditorUiState {
+        val merging = tool == QuickTool.Stitch
+        return EditorUiState(
+            sourceUri = current.sourceUri,
+            isLoadingSource = false,
+            durationMs = current.durationMs,
+            sourceWidth = current.width,
+            sourceHeight = current.height,
+            fps = current.fps,
+            originalSizeBytes = current.originalSizeBytes,
+            // A merge's weight is every file's, over every file's length.
+            sourceVideoBps = if (merging) {
+                ExportPresets.sourceVideoBitrate(current.originalSizeBytes, current.mergeDurationMs, current.hasAudio)
+            } else {
+                0L
+            },
+            trimStartMs = if (tool.usesRange) current.trimStartMs else 0,
+            trimEndMs = if (tool.usesRange) current.trimEndMs else current.durationMs,
+            outputP = if (tool == QuickTool.Squeeze) current.outputP else OutputSize.ORIGINAL,
+            fitToSize = tool == QuickTool.Squeeze && current.fitToSize,
+            targetSizeMb = current.targetSizeMb,
+            audioOnly = tool == QuickTool.Rip,
+            // Checked rather than assumed, so extracting audio from a silent clip
+            // fails immediately with a sentence about it instead of after a full
+            // encode with a code nobody can read.
+            sourceHasAudio = current.hasAudio,
+            // Already in order and already sequenced, so the export is simply the
+            // list as shown - there is no second place for the order to be decided.
+            videoClips = if (!merging) emptyList()
+            else current.mergeClips.filter { it.sourceSpanMs > 0 }
+        )
     }
 
     private fun fileSizeOf(uri: Uri): Long = runCatching {
@@ -374,31 +463,10 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun export(tool: QuickTool, onResult: (String) -> Unit, onError: (String) -> Unit) {
         val current = _state.value
-        val sourceUri = current.sourceUri ?: return
+        if (current.sourceUri == null) return
 
         val audioOnly = tool == QuickTool.Rip
-        val editorState = EditorUiState(
-            sourceUri = sourceUri,
-            isLoadingSource = false,
-            durationMs = current.durationMs,
-            sourceWidth = current.width,
-            sourceHeight = current.height,
-            originalSizeBytes = current.originalSizeBytes,
-            trimStartMs = if (tool.usesRange) current.trimStartMs else 0,
-            trimEndMs = if (tool.usesRange) current.trimEndMs else current.durationMs,
-            quality = current.quality,
-            fitToSize = tool == QuickTool.Squeeze && current.fitToSize,
-            targetSizeMb = current.targetSizeMb,
-            audioOnly = audioOnly,
-            // Checked rather than assumed, so extracting audio from a silent clip
-            // fails immediately with a sentence about it instead of after a full
-            // encode with a code nobody can read.
-            sourceHasAudio = current.hasAudio,
-            // Already in order and already sequenced, so the export is simply the
-            // list as shown - there is no second place for the order to be decided.
-            videoClips = if (tool != QuickTool.Stitch) emptyList()
-            else current.mergeClips.filter { it.sourceSpanMs > 0 }
-        )
+        val editorState = editorStateOf(tool, current)
 
         if (tool == QuickTool.Stitch && editorState.videoClips.isEmpty()) {
             onError("Nothing to merge. Every clip came back with no length — pick them again.")
@@ -436,7 +504,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                     ExportRecord(
                         id = UUID.randomUUID().toString(),
                         title = if (tool == QuickTool.Stitch) {
-                            "${current.mergeClips.size} clips merged"
+                            "${countOf(current.mergeClips.size, "clip")} merged"
                         } else {
                             current.name ?: tool.title
                         },

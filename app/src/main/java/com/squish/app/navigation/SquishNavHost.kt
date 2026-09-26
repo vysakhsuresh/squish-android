@@ -108,7 +108,7 @@ fun SquishNavHost() {
                 },
                 onOpenTool = { tool ->
                     navController.fromTopOf(entry) {
-                        navController.navigate(Destination.QuickTool.buildRoute(tool.id))
+                        navController.navigate(Destination.QuickTool.buildRoute(tool.id, resume = true))
                     }
                 },
                 onDiscard = homeViewModel::discardDraft
@@ -121,11 +121,18 @@ fun SquishNavHost() {
 
         composable(
             route = Destination.QuickTool.route,
-            arguments = listOf(navArgument("toolId") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("toolId") { type = NavType.StringType },
+                navArgument("resume") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
         ) { entry ->
             val tool = QuickTool.fromId(entry.arguments?.getString("toolId"))
             QuickToolScreen(
                 tool = tool,
+                resume = entry.arguments?.getBoolean("resume") ?: false,
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onExported = { path ->
                     navController.fromTopOf(entry) {

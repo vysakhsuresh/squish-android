@@ -10,6 +10,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,7 +40,9 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
@@ -142,6 +145,15 @@ fun TimelinePreview(
     // simply advancing. Only the former should move the players.
     LaunchedEffect(scrubNonce) { engine.seekTo(playheadMs) }
 
+    // A new picture size, once the view underneath has actually taken it. Asking
+    // for the frame during the layout pass got it drawn at the old size.
+    var pictureSize by remember { mutableStateOf(IntSize.Zero) }
+    LaunchedEffect(pictureSize) {
+        if (pictureSize == IntSize.Zero) return@LaunchedEffect
+        delay(REDRAW_SETTLE)
+        engine.redraw()
+    }
+
     LaunchedEffect(engine) {
         while (true) {
             val next = engine.tick()
@@ -154,9 +166,14 @@ fun TimelinePreview(
         }
     }
 
+    // The transport sits under the picture rather than over it. Laid over the
+    // bottom of the frame it hid whatever was there - a caption, a subtitle, the
+    // bottom of a screen recording - which is exactly what an editor has to show.
+    Column(modifier = modifier.background(Color.Black)) {
     Box(
-        modifier = modifier
-            .background(Color.Black)
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
             .clickable(
                 // The player's own controller is off, so the picture itself is the
                 // play button - which is what people reach for anyway.
@@ -176,10 +193,12 @@ fun TimelinePreview(
         // height first and letting the width follow gives the largest rectangle of
         // the footage's own shape that fits, and nothing of the frame is lost.
         Box(
-            modifier = Modifier.aspectRatio(
-                ratio = if (sourceAspect > 0f) sourceAspect else 16f / 9f,
-                matchHeightConstraintsFirst = true
-            )
+            modifier = Modifier
+                .aspectRatio(
+                    ratio = if (sourceAspect > 0f) sourceAspect else 16f / 9f,
+                    matchHeightConstraintsFirst = true
+                )
+                .onSizeChanged { pictureSize = it }
         ) {
             VideoSurface(engine.baseA, frame.surfaceA)
             VideoSurface(engine.baseB, frame.surfaceB)
@@ -218,12 +237,9 @@ fun TimelinePreview(
                 )
             }
         }
+    }
 
-        Transport(
-            frame = frame,
-            onToggle = { engine.togglePlay() },
-            modifier = Modifier.align(Alignment.BottomCenter).zIndex(30f)
-        )
+        Transport(frame = frame, onToggle = { engine.togglePlay() })
     }
 }
 
@@ -324,3 +340,6 @@ private fun Transport(frame: PreviewFrame, onToggle: () -> Unit, modifier: Modif
 
 /** A frame at 30fps: fast enough that the playhead does not visibly step. */
 private val TICK = 33.milliseconds
+
+/** Long enough for the view system to finish a resize the layout pass started. */
+private val REDRAW_SETTLE = 150.milliseconds

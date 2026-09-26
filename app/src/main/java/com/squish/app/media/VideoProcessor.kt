@@ -29,7 +29,7 @@ import androidx.media3.transformer.VideoEncoderSettings
 import com.google.common.collect.ImmutableList
 import com.squish.app.editor.CropAspect
 import com.squish.app.editor.EditorUiState
-import com.squish.app.editor.Quality
+import com.squish.app.editor.OutputSize
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.MaskEffect
@@ -148,15 +148,7 @@ class VideoProcessor(private val context: Context) {
                 .experimentalSetForceAudioTrack(needsForcedAudio(state))
                 .build()
 
-            val bitrate = if (state.fitToSize) {
-                ExportPresets.bitrateForTargetSize(
-                    state.targetSizeMb * 1_000_000L,
-                    state.trimmedDurationMs,
-                    state.hasAnyAudio
-                )
-            } else {
-                ExportPresets.bitrateFor(state.quality)
-            }
+            val bitrate = state.exportVideoBitrate
 
             val encoderFactory = DefaultEncoderFactory.Builder(context)
                 .setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(bitrate).build())
@@ -235,7 +227,7 @@ class VideoProcessor(private val context: Context) {
         val height = if (quarterTurned) state.sourceWidth else state.sourceHeight
         if (width <= 0 || height <= 0) return null
 
-        val resolution = ExportPresets.resolutionFor(state.quality, width, height)
+        val resolution = ExportPresets.resolutionFor(state.outputP, width, height)
         if (resolution.width <= 0 || resolution.height <= 0) return null
         // Encoders want even dimensions, and a scaled odd number is how you get a
         // configuration failure on one device and not another.
@@ -469,8 +461,8 @@ class VideoProcessor(private val context: Context) {
             }
         }
 
-        if (state.quality != Quality.Original && !state.fitToSize) {
-            val resolution = ExportPresets.resolutionFor(state.quality, state.sourceWidth, state.sourceHeight)
+        if (state.outputP != OutputSize.ORIGINAL && !state.fitToSize) {
+            val resolution = state.outputResolution
             if (resolution.width > 0 && resolution.height > 0) {
                 effects.add(
                     Presentation.createForWidthAndHeight(

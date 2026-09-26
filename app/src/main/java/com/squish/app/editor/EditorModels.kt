@@ -2,6 +2,7 @@ package com.squish.app.editor
 
 import android.net.Uri
 import com.squish.app.data.ProjectSnapshot
+import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
 import com.squish.app.media.SquishError
 import com.squish.app.media.effects.Grade
@@ -13,8 +14,47 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.TimelineState
 
-enum class Quality(val label: String) {
-    Small("Small"), Medium("Medium"), High("High"), Original("Original")
+/**
+ * How big an export comes out, named by its short edge - 720p, 1080p - the way
+ * every phone and upload page names a video size. [ORIGINAL] keeps the source's
+ * own frame.
+ *
+ * This replaced Small / Medium / High, which were fixed bitrates wearing
+ * adjectives. A phone records heavier than "High" was, so High came out smaller
+ * than the original and nobody could say why; a size in pixels says what it is.
+ */
+object OutputSize {
+    const val ORIGINAL = 0
+    val PRESETS = listOf(360, 480, 720, 1080, 1440, 2160)
+
+    /** The range a hand-typed size may take. Above 4K, phone encoders refuse. */
+    const val MIN_P = 144
+    const val MAX_P = 2160
+
+    fun label(p: Int): String = when (p) {
+        ORIGINAL -> "Original"
+        2160 -> "4K"
+        else -> "${p}p"
+    }
+
+    /**
+     * Where Squeeze starts for a source whose short edge is [sourceP]: the
+     * largest named size below it, and no more than 720p. A fixed 720p default
+     * made a 576p clip *bigger*, which is the opposite of what the tool is for.
+     */
+    fun squeezeDefault(sourceP: Int): Int {
+        if (sourceP <= 0) return 720
+        return PRESETS.lastOrNull { it < sourceP && it <= 720 } ?: ORIGINAL
+    }
+
+    /** The old quality names, read back out of drafts saved before sizes existed. */
+    fun fromLegacyQuality(name: String?): Int? = when (name) {
+        "Small" -> 360
+        "Medium" -> 720
+        "High" -> 1080
+        "Original" -> ORIGINAL
+        else -> null
+    }
 }
 
 enum class CropAspect(val label: String, val ratio: Float?) {
@@ -219,7 +259,14 @@ data class EditorUiState(
     val isPlaying: Boolean = false,
     val scrubNonce: Long = 0,
 
-    val quality: Quality = Quality.Original,
+    /** The export's short edge, or [OutputSize.ORIGINAL]. See [OutputSize]. */
+    val outputP: Int = OutputSize.ORIGINAL,
+    /**
+     * The source picture's bitrate, when the caller knows better than the file's
+     * weight over its length - a merge, whose weight is several files'. 0 means
+     * work it out from [originalSizeBytes] and [durationMs].
+     */
+    val sourceVideoBps: Long = 0,
     val fitToSize: Boolean = false,
     val targetSizeMb: Int = 16,
     val audioOnly: Boolean = false,
@@ -422,6 +469,32 @@ data class EditorUiState(
 
     /** Whether any audio at all reaches the exported file. */
     val hasAnyAudio: Boolean get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio
+
+    /** The frame the chosen size produces, before any crop. */
+    val outputResolution: ExportPresets.Resolution
+        get() = ExportPresets.resolutionFor(outputP, sourceWidth, sourceHeight)
+
+    /**
+     * The video bitrate this export is written at. One definition, read by the
+     * estimate and by the encoder, so the size promised is the size delivered.
+     */
+    val exportVideoBitrate: Int
+        get() = if (fitToSize) {
+            ExportPresets.bitrateForTargetSize(targetSizeMb * 1_000_000L, trimmedDurationMs, hasAnyAudio)
+        } else {
+            val sourceBps = sourceVideoBps.takeIf { it > 0 }
+                ?: ExportPresets.sourceVideoBitrate(originalSizeBytes, durationMs, sourceHasAudio)
+            ExportPresets.bitrateFor(outputP, sourceWidth, sourceHeight, fps, sourceBps)
+        }
+
+    /** What the finished file should weigh. */
+    val estimatedExportBytes: Long
+        get() {
+            val seconds = trimmedDurationMs / 1000.0
+            if (audioOnly) return (ExportPresets.AUDIO_BITRATE_BPS * seconds / 8).toLong()
+            val audioBits = if (hasAnyAudio) ExportPresets.AUDIO_BITRATE_BPS * seconds else 0.0
+            return ((exportVideoBitrate * seconds + audioBits) / 8).toLong()
+        }
 }
 
 /**

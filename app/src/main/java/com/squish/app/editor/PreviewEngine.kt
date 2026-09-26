@@ -404,6 +404,19 @@ class PreviewEngine(private val context: Context) {
     }
 
     /**
+     * Puts the current frame back on screen after the picture changed size.
+     *
+     * A paused TextureView keeps the frame it had, at the size it had it, so
+     * opening a tool panel - which shrinks the preview - left a small stale frame
+     * adrift in a bigger box until playback drew a new one. Seeking to where we
+     * already are makes the decoder hand over a fresh frame at the new size.
+     */
+    fun redraw() {
+        if (released || playing) return
+        seekTo(positionMs)
+    }
+
+    /**
      * Parks every sound on the sample it will need, without starting it.
      *
      * Called on load, on seek and on play rather than at the moment a cue is due,

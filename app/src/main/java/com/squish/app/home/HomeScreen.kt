@@ -55,6 +55,9 @@ fun formatSize(bytes: Long): String {
     return if (mb >= 1) "%.1f MB".format(mb) else "%.0f KB".format(bytes / 1000.0)
 }
 
+/** "1 clip", "3 clips" - a count read aloud, not a count with an s stapled on. */
+fun countOf(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"
+
 /**
  * The dashboard. Every capability is a separate door: one-job tools for people who
  * just need a smaller file, and the full editor for people making something.

@@ -8,7 +8,6 @@ import android.os.StatFs
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.ExportException
 import com.squish.app.editor.EditorUiState
-import com.squish.app.editor.Quality
 import java.io.File
 
 /**
@@ -71,7 +70,7 @@ sealed class SquishError(
     class SourceTooLarge(val pixels: Long) : SquishError(
         title = "That clip is very large",
         detail = "At ${pixels / 1_000_000} megapixels per frame this will decode slowly and may run out of memory mid-export.",
-        fix = "Export at High rather than Original, or trim it shorter first."
+        fix = "Export at 1080p rather than Original, or trim it shorter first."
     )
 
     class NothingToExport : SquishError(
@@ -154,8 +153,8 @@ sealed class SquishError(
             val free = freeBytes(context.filesDir)
             if (free in 1 until needed) return NotEnoughSpace(needed, free)
 
-            val pixels = state.sourceWidth.toLong() * state.sourceHeight.toLong()
-            if (pixels > HUGE_FRAME_PIXELS && state.quality == Quality.Original) {
+            val pixels = state.outputResolution.pixels
+            if (pixels > HUGE_FRAME_PIXELS && !state.fitToSize) {
                 return SourceTooLarge(pixels)
             }
             return null

@@ -12,11 +12,13 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -47,6 +49,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.squish.app.editor.PreviewBox
 import com.squish.app.editor.Timecode
 import com.squish.app.ui.theme.SquishColors
 import com.squish.app.ui.theme.tabularFigures
@@ -84,7 +87,9 @@ fun ClipPreview(
     audioOnly: Boolean = false,
     /** Where to jump to; changing [seekNonce] is what makes the jump happen. */
     seekToMs: Long = 0L,
-    seekNonce: Long = 0L
+    seekNonce: Long = 0L,
+    /** The tallest the picture may be; a tall clip is fitted inside, whole. */
+    maxHeightDp: Float = PreviewBox.MAX_HEIGHT_DP
 ) {
     val context = LocalContext.current
     val player = remember { ExoPlayer.Builder(context).build() }
@@ -191,19 +196,29 @@ fun ClipPreview(
     }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(if (audioOnly) 3.2f else aspect.coerceIn(0.4f, 2.5f))
-                .clip(RoundedCornerShape(16.dp))
-                .background(SquishColors.Background)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = { toggle() }
-                ),
-            contentAlignment = Alignment.Center
-        ) {
+        // Capped in height, with the whole frame fitted inside, the way the
+        // editor's preview is. Sized by width alone, a portrait screen recording
+        // filled the phone and pushed every control below the fold, so choosing a
+        // setting meant scrolling away from the picture it was changing.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val shape = if (audioOnly) 3.2f else aspect.coerceIn(0.4f, 2.5f)
+            val boxHeight = if (audioOnly) maxWidth.value / shape
+            else PreviewBox.heightDp(shape, maxWidth.value).coerceAtMost(maxHeightDp)
+            val (pictureWidth, pictureHeight) = PreviewBox.fittedSizeDp(shape, maxWidth.value, boxHeight)
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(boxHeight.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(SquishColors.Background)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { toggle() }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
             if (audioOnly) {
                 // No picture to show, so the surface says what it is rather than
                 // being a black rectangle that looks broken.
@@ -216,7 +231,7 @@ fun ClipPreview(
             } else {
                 AndroidView(
                     factory = { ctx -> TextureView(ctx).also { player.setVideoTextureView(it) } },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.size(pictureWidth.dp, pictureHeight.dp)
                 )
             }
 
@@ -235,6 +250,7 @@ fun ClipPreview(
                         modifier = Modifier.size(28.dp)
                     )
                 }
+            }
             }
         }
 
