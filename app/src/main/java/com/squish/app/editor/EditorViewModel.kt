@@ -880,6 +880,52 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id) }
     }
 
+    // ---- Templates ----------------------------------------------------------------
+
+    /**
+     * Applies [template] as one undoable step. Replaces the look and the frame
+     * shape, and the effects and title an earlier template added; keeps every
+     * caption, sticker and effect added by hand.
+     */
+    fun applyTemplate(template: Template) = record("Template ${template.label}") {
+        _state.update { current ->
+            val total = current.timelineDurationMs.coerceAtLeast(1L)
+            val placed = template.effects.map { (kind, at) ->
+                val start = (total * at).toLong().coerceIn(0L, (total - MIN_EFFECT_MS).coerceAtLeast(0L))
+                // A slow push fills the whole edit; the others are a moment each.
+                val length = if (kind == EffectKind.ZoomIn) total else DEFAULT_EFFECT_MS
+                TimedEffect(
+                    id = TEMPLATE_PREFIX + UUID.randomUUID(),
+                    kind = kind,
+                    startMs = start,
+                    endMs = (start + length).coerceAtMost(total)
+                )
+            }
+            val title = template.title?.let { preset ->
+                TextOverlayItem(
+                    id = TEMPLATE_PREFIX + UUID.randomUUID(),
+                    text = template.titleText ?: preset.sample,
+                    startMs = 0L,
+                    endMs = DEFAULT_TITLE_MS.coerceAtMost(total),
+                    colorArgb = preset.colorArgb,
+                    yFraction = preset.yFraction,
+                    sizeSp = preset.sizeSp,
+                    font = preset.font,
+                    look = preset.look,
+                    motion = preset.motion
+                )
+            }
+            current.copy(
+                cropAspect = template.crop ?: CropAspect.Original,
+                lookId = template.lookId,
+                lookIntensity = 1f,
+                effects = current.effects.filterNot { it.id.startsWith(TEMPLATE_PREFIX) } + placed,
+                textOverlays = current.textOverlays.filterNot { it.id.startsWith(TEMPLATE_PREFIX) } +
+                    listOfNotNull(title)
+            )
+        }
+    }
+
     // ---- Effects library --------------------------------------------------------
 
     /** An effect from the playhead for [DEFAULT_EFFECT_MS], or to the end if that is sooner. */
@@ -1983,5 +2029,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         /** An effect lasts two seconds unless stretched - long enough to see, short enough to be a moment. */
         const val DEFAULT_EFFECT_MS = 2_000L
         const val MIN_EFFECT_MS = 100L
+
+        /** Marks what a template added, so the next template replaces it rather than piling on. */
+        const val TEMPLATE_PREFIX = "tpl-"
     }
 }

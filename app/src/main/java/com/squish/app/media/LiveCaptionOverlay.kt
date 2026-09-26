@@ -39,7 +39,13 @@ class LiveCaptionOverlay(
      * which is exactly where one is added, so a new sticker seemed not to appear.
      * Motion plays when the video does.
      */
-    private val atRest: AtomicBoolean
+    private val atRest: AtomicBoolean,
+    /**
+     * The frame shape the preview is cropped to, or null. The preview crops by
+     * clipping on screen, so captions are laid out inside the centred crop here -
+     * exactly where the export, which crops first, puts them.
+     */
+    private val crop: AtomicReference<Float?>
 ) : BitmapOverlay() {
 
     private var frameWidth = 1080
@@ -50,6 +56,7 @@ class LiveCaptionOverlay(
 
     /** Each caption's rendered letters, by what they look like, so animating one does not redraw its text. */
     private val glyphs = HashMap<String, Bitmap>()
+    private var glyphsRatio: Float? = null
 
     override fun configure(videoSize: Size) {
         super.configure(videoSize)
@@ -68,6 +75,14 @@ class LiveCaptionOverlay(
         val timeMs = presentationTimeUs / 1000L
         val w = (frameWidth * SCALE).roundToInt().coerceAtLeast(2)
         val h = (frameHeight * SCALE).roundToInt().coerceAtLeast(2)
+        // The part of the frame that is kept: all of it, or the centred crop.
+        val ratio = crop.get()
+        val box = if (ratio == null || ratio <= 0f) RectF(0f, 0f, w.toFloat(), h.toFloat()) else {
+            val frameAspect = w.toFloat() / h
+            val cw = if (ratio < frameAspect) h * ratio else w.toFloat()
+            val ch = if (ratio < frameAspect) h.toFloat() else w / ratio
+            RectF((w - cw) / 2f, (h - ch) / 2f, (w + cw) / 2f, (h + ch) / 2f)
+        }
 
         val showing = captions.get().mapNotNull { item ->
             CaptionRenderer.frameAt(item, timeMs)
@@ -76,7 +91,12 @@ class LiveCaptionOverlay(
         }.filter { it.third.isNotBlank() }
 
         // Rounded so a caption at rest produces the same key frame after frame.
-        val key = showing.joinToString("|") { (item, frame, shown) ->
+        // Glyphs are sized to the kept part of the frame, so a new crop redraws them.
+        if (ratio != glyphsRatio) {
+            glyphs.clear()
+            glyphsRatio = ratio
+        }
+        val key = "$ratio#" + showing.joinToString("|") { (item, frame, shown) ->
             val (x, y) = item.anchorAt(timeMs)
             "${styleKey(item, shown)}@${q(x)},${q(y - frame.rise)},${q(frame.scale)},${q(frame.alpha)}"
         }
@@ -94,11 +114,11 @@ class LiveCaptionOverlay(
         val paint = Paint(Paint.FILTER_BITMAP_FLAG)
         for ((item, frame, shown) in showing) {
             val glyph = glyphs.getOrPut(styleKey(item, shown)) {
-                CaptionRenderer.render(item, shown, w, h)
+                CaptionRenderer.render(item, shown, box.width().roundToInt(), box.height().roundToInt())
             }
             val (x, y) = item.anchorAt(timeMs)
-            val cx = x * w
-            val cy = (y - frame.rise) * h
+            val cx = box.left + x * box.width()
+            val cy = box.top + (y - frame.rise) * box.height()
             val gw = glyph.width * frame.scale
             val gh = glyph.height * frame.scale
             paint.alpha = (frame.alpha.coerceIn(0f, 1f) * 255).roundToInt()

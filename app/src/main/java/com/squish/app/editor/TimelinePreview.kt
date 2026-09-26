@@ -43,6 +43,12 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -212,8 +218,15 @@ fun TimelinePreview(
                 )
                 .onSizeChanged { pictureSize = it }
         ) {
-            VideoSurface(engine.baseA, frame.surfaceA)
-            VideoSurface(engine.baseB, frame.surfaceB)
+            // The frame shape, applied by clipping the picture here rather than by
+            // the player's effect chain. A centred crop is exactly the middle of
+            // the full frame, so this is pixel-for-pixel what the export writes -
+            // and changing it costs nothing, where rebuilding the chain for it
+            // could leave the player unable to draw again.
+            Box(modifier = Modifier.fillMaxSize().clip(CentredCrop(cropRatio))) {
+                VideoSurface(engine, engine.baseA, frame.surfaceA)
+                VideoSurface(engine, engine.baseB, frame.surfaceB)
+            }
 
             if (frame.blackVeil > 0f) {
                 Box(
@@ -257,9 +270,9 @@ fun TimelinePreview(
 
 /** One base surface, drawn the way the engine asked for. */
 @Composable
-private fun VideoSurface(player: ExoPlayer, draw: SurfaceDraw) {
+private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: SurfaceDraw) {
     AndroidView(
-        factory = { context -> TextureView(context).also { player.setVideoTextureView(it) } },
+        factory = { context -> TextureView(context).also { engine.attachSurface(player, it) } },
         modifier = Modifier
             .fillMaxSize()
             .zIndex(draw.zIndex.toFloat())
@@ -381,3 +394,19 @@ private val TICK = 33.milliseconds
 
 /** Long enough for the view system to finish a resize the layout pass started. */
 private val REDRAW_SETTLE = 150.milliseconds
+
+/** The centred rectangle of [ratio] inside whatever it clips, or all of it when there is none. */
+private class CentredCrop(private val ratio: Float?) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val r = ratio
+        if (r == null || r <= 0f || size.width <= 0f || size.height <= 0f) {
+            return Outline.Rectangle(Rect(0f, 0f, size.width, size.height))
+        }
+        val aspect = size.width / size.height
+        val w = if (r < aspect) size.height * r else size.width
+        val h = if (r < aspect) size.height else size.width / r
+        val left = (size.width - w) / 2f
+        val top = (size.height - h) / 2f
+        return Outline.Rectangle(Rect(left, top, left + w, top + h))
+    }
+}

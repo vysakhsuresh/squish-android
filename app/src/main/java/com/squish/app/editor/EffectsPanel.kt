@@ -2,6 +2,7 @@ package com.squish.app.editor
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -35,7 +36,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.squish.app.media.effects.Look
 import com.squish.app.media.effects.LookFamily
 import com.squish.app.media.effects.Looks
@@ -62,6 +65,42 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
     val frame = rememberLookFrame(state.sourceUri, state.playheadMs)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        PanelSurface(accent = SquishColors.Primary) {
+            PanelHeading(
+                "Templates",
+                "A whole style in one tap · undo to take it off",
+                icon = Icons.Filled.AutoAwesome,
+                accent = SquishColors.Primary
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
+                Template.entries.forEach { template ->
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .width(132.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(SquishColors.Background)
+                            .border(1.dp, SquishColors.Border, RoundedCornerShape(14.dp))
+                            .clickable { viewModel.applyTemplate(template) }
+                            .padding(12.dp)
+                    ) {
+                        Text(template.glyph, fontSize = 24.sp)
+                        Text(template.label, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
+                        Text(
+                            template.blurb,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SquishColors.TextMuted,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
 
         PanelSurface(accent = SquishColors.Magenta) {
             PanelHeading(
