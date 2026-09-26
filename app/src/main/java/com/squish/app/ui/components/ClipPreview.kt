@@ -23,8 +23,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Forward5
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay5
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -259,6 +261,11 @@ fun ClipPreview(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Skips stay inside the kept range, since outside it is what the render
+            // is about to drop.
+            fun skip(delta: Long) = seekJoint((jointPosition() + delta).coerceIn(startMs, endMs))
+
+            SkipButton(Icons.Filled.Replay5, "Back 5 seconds") { skip(-SKIP_MS) }
             Box(
                 modifier = Modifier
                     .size(36.dp)
@@ -274,6 +281,7 @@ fun ClipPreview(
                     modifier = Modifier.size(18.dp)
                 )
             }
+            SkipButton(Icons.Filled.Forward5, "Forward 5 seconds") { skip(SKIP_MS) }
 
             ScrubBar(
                 positionMs = positionMs,
@@ -367,6 +375,22 @@ private fun Modifier.pointerScrub(totalMs: Long, onScrub: (Long) -> Unit): Modif
             }
         }
     )
+
+@Composable
+private fun SkipButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = label, tint = SquishColors.TextSecondary, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** How far one press of rewind or forward goes. */
+private const val SKIP_MS = 5_000L
 
 /** Sixteen a second. A scrub bar does not need a frame's worth of precision. */
 private val TICK = 60.milliseconds

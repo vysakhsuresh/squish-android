@@ -19,8 +19,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Forward5
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay5
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -40,6 +42,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
@@ -84,6 +87,8 @@ fun TimelinePreview(
     scrubNonce: Long,
     onPositionChange: (Long) -> Unit,
     onPlayingChange: (Boolean) -> Unit,
+    /** Rewind (negative) or forward by a step. Routed through the edit so the playhead and picture move together. */
+    onJump: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
     /**
      * Drawn over the picture, inside its bounds.
@@ -239,7 +244,7 @@ fun TimelinePreview(
         }
     }
 
-        Transport(frame = frame, onToggle = { engine.togglePlay() })
+        Transport(frame = frame, onToggle = { engine.togglePlay() }, onJump = onJump)
     }
 }
 
@@ -299,7 +304,12 @@ private fun OverlaySurface(player: ExoPlayer, placement: OverlayPlacement) {
 }
 
 @Composable
-private fun Transport(frame: PreviewFrame, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+private fun Transport(
+    frame: PreviewFrame,
+    onToggle: () -> Unit,
+    onJump: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -308,6 +318,7 @@ private fun Transport(frame: PreviewFrame, onToggle: () -> Unit, modifier: Modif
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        SkipButton(Icons.Filled.Replay5, "Back 5 seconds") { onJump(-SKIP_MS) }
         Box(
             modifier = Modifier
                 .size(30.dp)
@@ -323,6 +334,7 @@ private fun Transport(frame: PreviewFrame, onToggle: () -> Unit, modifier: Modif
                 modifier = Modifier.size(17.dp)
             )
         }
+        SkipButton(Icons.Filled.Forward5, "Forward 5 seconds") { onJump(SKIP_MS) }
 
         Text(
             Timecode.format(frame.positionMs),
@@ -337,6 +349,23 @@ private fun Transport(frame: PreviewFrame, onToggle: () -> Unit, modifier: Modif
         )
     }
 }
+
+/** Rewind or forward, flanking play the way every player lays them out. */
+@Composable
+private fun SkipButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = label, tint = SquishColors.TextSecondary, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** How far one press of rewind or forward goes. */
+private const val SKIP_MS = 5_000L
 
 /** A frame at 30fps: fast enough that the playhead does not visibly step. */
 private val TICK = 33.milliseconds

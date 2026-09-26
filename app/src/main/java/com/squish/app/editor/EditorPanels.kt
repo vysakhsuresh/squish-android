@@ -185,7 +185,7 @@ fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
         if (state.cropAspect == CropAspect.Custom) {
             Text(
-                "Drag the corners on the picture. The dimmed part is what goes.",
+                "Drag any edge or corner on the picture, or the middle to move it. The dimmed part is what goes.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )

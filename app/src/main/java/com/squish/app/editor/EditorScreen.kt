@@ -245,6 +245,7 @@ fun EditorScreen(
                     scrubNonce = state.scrubNonce,
                     onPositionChange = viewModel::setPlayhead,
                     onPlayingChange = viewModel::setPlaying,
+                    onJump = viewModel::jumpBy,
                     modifier = Modifier.fillMaxSize(),
                     // Inside the picture, so the crop rectangle is measured
                     // against the frame rather than against the whole box.

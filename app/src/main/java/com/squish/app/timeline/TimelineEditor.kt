@@ -125,6 +125,9 @@ private val MINI_ACTION_SIZE = 38.dp
  */
 private const val PINCH_SLOP_PX = 12f
 
+/** How far apart ruler labels must land to not run into each other - room for "10:00". */
+private const val MIN_LABEL_GAP_DP = 52f
+
 /**
  * A pinch, and nothing but a pinch.
  *
@@ -144,16 +147,18 @@ private const val PINCH_SLOP_PX = 12f
  *
  * [onZoom] receives a ratio - above one for spreading, below for pinching in.
  */
-private suspend fun PointerInputScope.detectPinch(onZoom: (Float) -> Unit) {
+private suspend fun PointerInputScope.detectPinch(guard: MultiTouchGuard, onZoom: (Float) -> Unit) {
     awaitEachGesture {
         // The initial pass, so this is offered the gesture before the scroll that
         // wraps it. Nothing is consumed here: at one finger there is no pinch.
         var spread = 0f
         var engaged = false
+        try {
         while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             val down = event.changes.filter { it.pressed }
             if (down.isEmpty()) break
+            if (down.size >= 2) guard.active = true
 
             if (down.size < 2) {
                 // Back to one finger, mid-gesture. Forget the span rather than
@@ -179,6 +184,37 @@ private suspend fun PointerInputScope.detectPinch(onZoom: (Float) -> Unit) {
             spread = distance
             down.forEach { if (it.positionChanged()) it.consume() }
         }
+        } finally {
+            if (guard.active) guard.release()
+        }
+    }
+}
+
+/**
+ * Whether a two-finger gesture is on the strip, or only just left it.
+ *
+ * A pinch starts and ends with one finger, and the tap detectors on the lanes and
+ * ruler saw that finger lift and took it for a tap - at the new zoom, which when
+ * zoomed out is usually past the end of the edit. The playhead leapt to the end,
+ * the picture went to "gap", and a pinch made during playback stopped it dead.
+ * Every tap and scrub on the strip now asks this first.
+ */
+internal class MultiTouchGuard {
+    var active = false
+    private var releasedAt = 0L
+
+    fun release() {
+        active = false
+        releasedAt = android.os.SystemClock.uptimeMillis()
+    }
+
+    /** True while two fingers are down, and for a moment after they lift. */
+    val blocking: Boolean
+        get() = active || android.os.SystemClock.uptimeMillis() - releasedAt < AFTER_PINCH_MS
+
+    private companion object {
+        /** Long enough to cover the lift of the last finger, short enough that a real tap is never lost. */
+        const val AFTER_PINCH_MS = 350L
     }
 }
 
@@ -212,6 +248,19 @@ fun TimelineEditor(
 ) {
     val density = LocalDensity.current
     val totalMs = maxOf(state.durationMs, 8_000L)
+
+    // Every tap, scrub and select below goes through the guard, so the fingers of
+    // a pinch are never read as a tap on the strip.
+    val guard = remember { MultiTouchGuard() }
+    val rawScrub by rememberUpdatedState(onScrub)
+    val rawSelect by rememberUpdatedState(onSelect)
+    val guardedScrub: (Long) -> Unit = remember { { ms -> if (!guard.blocking) rawScrub(ms) } }
+    val guardedSelect: (String?) -> Unit = remember { { id -> if (!guard.blocking) rawSelect(id) } }
+    val rawMove by rememberUpdatedState(onMove)
+    val rawTrim by rememberUpdatedState(onTrim)
+    val guardedMove: (String, Long) -> Unit = remember { { id, delta -> if (!guard.active) rawMove(id, delta) } }
+    val guardedTrim: (String, Long, Long) -> Unit =
+        remember { { id, start, end -> if (!guard.active) rawTrim(id, start, end) } }
 
     // The strip's own width in pixels. Zero until the first layout pass, and
     // every use guards for that.
@@ -359,7 +408,7 @@ fun TimelineEditor(
                 // Pinch ahead of the scroll in the chain, so it sees the gesture on
                 // the initial pass before the scroll can claim it.
                 .pointerInput(Unit) {
-                    detectPinch { zoom ->
+                    detectPinch(guard) { zoom ->
                         latestZoomTo(
                             (latestWindow.pixelsPerSecond * zoom).coerceIn(MIN_PPS, MAX_PPS)
                         )
@@ -377,7 +426,7 @@ fun TimelineEditor(
                     window = window,
                     markers = markers,
                     barMarkers = barMarkers,
-                    onScrub = onScrub
+                    onScrub = guardedScrub
                 )
                 overlayLayers.forEach { layer ->
                     Lane(
@@ -385,10 +434,10 @@ fun TimelineEditor(
                         state = state,
                         window = window,
                         accent = SquishColors.Magenta,
-                        onSelect = onSelect,
-                        onMove = onMove,
-                        onTrim = onTrim,
-                        onScrub = onScrub
+                        onSelect = guardedSelect,
+                        onMove = guardedMove,
+                        onTrim = guardedTrim,
+                        onScrub = guardedScrub
                     )
                 }
                 Lane(
@@ -396,16 +445,16 @@ fun TimelineEditor(
                     state = state,
                     window = window,
                     accent = SquishColors.Violet,
-                    onSelect = onSelect,
-                    onMove = onMove,
-                    onTrim = onTrim,
-                    onScrub = onScrub,
+                    onSelect = guardedSelect,
+                    onMove = guardedMove,
+                    onTrim = guardedTrim,
+                    onScrub = guardedScrub,
                     onTransitionTap = onTransitionTap
                 )
                 audioLanes.forEach { lane ->
-                    Lane(lane, state, window, SquishColors.Cyan, onSelect, onMove, onTrim, onScrub)
+                    Lane(lane, state, window, SquishColors.Cyan, guardedSelect, guardedMove, guardedTrim, guardedScrub)
                 }
-                Lane(state.textClips, state, window, SquishColors.Amber, onSelect, onMove, onTrim, onScrub)
+                Lane(state.textClips, state, window, SquishColors.Amber, guardedSelect, guardedMove, guardedTrim, guardedScrub)
             }
 
             // Beat lines run the full height, behind the playhead. A grid you can
@@ -431,7 +480,7 @@ fun TimelineEditor(
                 atMs = state.playheadMs,
                 window = window,
                 height = laneHeight,
-                onScrub = onScrub,
+                onScrub = guardedScrub,
                 onScrubbingChange = { scrubbing = it }
             )
         }
@@ -458,7 +507,6 @@ private fun BoxScope.Playhead(
     val latestScrubbing by rememberUpdatedState(onScrubbingChange)
     val latestAtMs by rememberUpdatedState(atMs)
     val latestWindow by rememberUpdatedState(window)
-    val pixelsPerSecond = window.pixelsPerSecond
     val x = window.xDp(atMs).dp
 
     Column(
@@ -471,18 +519,24 @@ private fun BoxScope.Playhead(
             //
             // The gesture keeps its own running position rather than adding each
             // delta to wherever the playhead currently is. It has to: `dragAmount`
-            // is one event's movement, not the gesture's, and this block is keyed
-            // on the zoom so it does not restart when the playhead moves - which
-            // meant every event computed "where the playhead was when I grabbed it,
-            // plus three pixels", over and over. The playhead sat a few
-            // milliseconds from where it started and jittered there while the
-            // finger travelled the width of the screen, which is exactly what
-            // "I cannot move the play header" looks like.
+            // is one event's movement, not the gesture's, and this block does not
+            // restart when the playhead moves - which meant every event computed
+            // "where the playhead was when I grabbed it, plus three pixels", over
+            // and over. The playhead sat a few milliseconds from where it started
+            // and jittered there while the finger travelled the width of the
+            // screen, which is exactly what "I cannot move the play header" looks
+            // like.
+            //
+            // Keyed on nothing, not on the zoom. A restart mid-gesture - which a
+            // pinch caused on every step - dropped the drag without its end or
+            // cancel ever running, and left the strip believing a finger was still
+            // on the playhead, so it stopped following playback. The window is read
+            // fresh on every event instead.
             //
             // Kept as a float, because at a high zoom one pixel is under two
             // milliseconds and rounding every event to a whole one would lose most
             // of a slow drag.
-            .pointerInput(pixelsPerSecond) {
+            .pointerInput(Unit) {
                 var positionMs = 0f
                 detectHorizontalDragGestures(
                     onDragStart = {
@@ -541,12 +595,12 @@ private fun Ruler(
     // A tick every second is unreadable when zoomed out, so widen the step until
     // labels have room to breathe - and widen it again if the timeline is long
     // enough that the readable step would mean a thousand of them.
-    val readableStepMs = when {
-        pixelsPerSecond >= 90f -> 1_000L
-        pixelsPerSecond >= 40f -> 2_000L
-        pixelsPerSecond >= 18f -> 5_000L
-        else -> 10_000L
-    }
+    //
+    // Worked out from how far apart the labels land, rather than from a table of
+    // zoom bands that stopped at ten seconds - zoomed out past that, "0:00",
+    // "0:10" and "0:20" were drawn on top of one another.
+    val readableStepMs = (MIN_LABEL_GAP_DP / pixelsPerSecond.coerceAtLeast(0.001f) * 1000f)
+        .toLong().coerceAtLeast(1_000L)
     // Against what is on screen, not how long the video is. Only the visible
     // ticks are built now, so the length of the edit no longer has a say in how
     // finely it can be marked.
@@ -726,6 +780,8 @@ private fun ClipView(
     val span = window.clampToView(clip.timelineStartMs, clip.timelineEndMs) ?: return
     val drawnStartMs = span.first
     val drawnEndMs = span.last
+    // Read fresh by the tap below, whose gesture block outlives any one zoom or scroll.
+    val latestDrawnStart by rememberUpdatedState(drawnStartMs)
     val width = window.widthDp(drawnEndMs - drawnStartMs).dp
 
     /** Whether the clip's real edges are in the part being drawn. */
@@ -777,7 +833,7 @@ private fun ClipView(
                 // the finger is over.
                 detectTapGestures { offset ->
                     latestSelect(clip.id)
-                    latestScrub(latestWindow.msAt(offset.x + latestWindow.xPx(drawnStartMs)))
+                    latestScrub(latestWindow.msAt(offset.x + latestWindow.xPx(latestDrawnStart)))
                 }
             }
             // The leftover fraction is carried between events rather than thrown

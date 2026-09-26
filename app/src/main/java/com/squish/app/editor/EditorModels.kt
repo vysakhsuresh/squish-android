@@ -185,7 +185,11 @@ data class CaptionProgress(
     val stage: String = "",
     val total: Int = 0,
     val transcribed: Int = 0,
+    /** Lines worked through so far, words or not - what the progress bar measures. */
+    val done: Int = 0,
     val finished: Boolean = false,
+    /** Finished because it was stopped part-way, rather than by running out of lines. */
+    val stopped: Boolean = false,
     val recognitionAvailable: Boolean = true
 )
 

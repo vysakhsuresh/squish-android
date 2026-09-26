@@ -258,6 +258,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         current.copy(playheadMs = snapped, scrubNonce = current.scrubNonce + 1)
     }
 
+    /**
+     * Rewind or forward by a fixed step, from wherever the playhead is.
+     *
+     * Not snapped, unlike a scrub: a skip of five seconds that landed on a nearby
+     * cut instead would be a skip of some other amount, and pressing it twice
+     * would not go twice as far.
+     */
+    fun jumpBy(deltaMs: Long) = _state.update {
+        val target = (it.playheadMs + deltaMs).coerceIn(0L, it.timelineDurationMs)
+        it.copy(playheadMs = target, scrubNonce = it.scrubNonce + 1)
+    }
+
     /** Jump straight to either end, which is otherwise a long drag on a long edit. */
     fun scrubToStart() = scrubTo(0L)
 
@@ -973,40 +985,69 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             val language = Locale.getDefault().toLanguageTag()
-            val made = mutableListOf<TextOverlayItem>()
             var transcribed = 0
 
-            segments.forEach { segment ->
+            // Each line lands on the timeline as soon as it is done, rather than all
+            // of them at the end. So stopping part-way keeps what was already made,
+            // and a long clip shows its captions arriving instead of a spinner.
+            segments.forEachIndexed { index, segment ->
                 val words = if (canTranscribe) {
                     Transcriber.transcribe(getApplication(), pcm, segment, language)
                 } else null
                 if (!words.isNullOrBlank()) transcribed++
 
-                made.add(
-                    TextOverlayItem(
-                        id = UUID.randomUUID().toString(),
-                        text = words?.takeIf { it.isNotBlank() } ?: "",
-                        startMs = segment.startMs,
-                        endMs = segment.endMs,
-                        colorArgb = android.graphics.Color.WHITE
-                    )
+                val line = TextOverlayItem(
+                    id = UUID.randomUUID().toString(),
+                    text = words?.takeIf { it.isNotBlank() } ?: "",
+                    startMs = segment.startMs,
+                    endMs = segment.endMs,
+                    colorArgb = android.graphics.Color.WHITE
                 )
                 _state.update {
-                    it.copy(captions = it.captions.copy(transcribed = transcribed))
+                    it.copy(
+                        textOverlays = it.textOverlays + line,
+                        captions = it.captions.copy(transcribed = transcribed, done = index + 1)
+                    )
                 }
             }
 
             _state.update {
                 it.copy(
-                    textOverlays = it.textOverlays + made,
                     captions = CaptionProgress(
                         finished = true,
-                        total = made.size,
+                        total = segments.size,
                         transcribed = transcribed,
+                        done = segments.size,
                         recognitionAvailable = canTranscribe
                     )
                 )
             }
+        }
+    }
+
+    /**
+     * Stops auto-captioning where it has got to.
+     *
+     * There was no way to do this, and on a long clip - or a phone whose recogniser
+     * went quiet - the panel said "Listening" for as long as the editor stayed
+     * open. The lines already made stay on the timeline; only the rest are dropped.
+     */
+    fun stopCaptions() {
+        if (!_state.value.captions.running) return
+        captionJob?.cancel()
+        captionJob = null
+        _state.update {
+            val progress = it.captions
+            it.copy(
+                captions = CaptionProgress(
+                    finished = true,
+                    stopped = true,
+                    total = progress.done,
+                    transcribed = progress.transcribed,
+                    done = progress.done,
+                    recognitionAvailable = progress.recognitionAvailable
+                )
+            )
         }
     }
 

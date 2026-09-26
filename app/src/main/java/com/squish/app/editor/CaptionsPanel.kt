@@ -81,7 +81,7 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                             modifier = Modifier.size(14.dp)
                         )
                         Text(
-                            if (status.total > 0) "${status.stage} — ${status.transcribed} of ${status.total}"
+                            if (status.total > 0) "${status.stage} — line ${status.done} of ${status.total}"
                             else status.stage,
                             style = MaterialTheme.typography.bodySmall,
                             color = SquishColors.TextSecondary
@@ -89,13 +89,21 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     }
                     if (status.total > 0) {
                         LinearProgressIndicator(
-                            progress = { status.transcribed.toFloat() / status.total },
+                            progress = { status.done.toFloat() / status.total },
                             color = SquishColors.Cyan,
                             trackColor = SquishColors.Border,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
+
+                status.stopped -> Text(
+                    if (status.done == 0) "Stopped before any lines were made."
+                    else "Stopped. The ${status.done} lines made so far are on the timeline — " +
+                        "auto-caption again to redo the whole clip.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SquishColors.TextSecondary
+                )
 
                 status.finished && status.total == 0 -> Text(
                     "No speech found in this clip. If there is talking in it, the recording may be " +
@@ -122,10 +130,15 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 )
             }
 
+            // The same place starts and stops it. While it runs, the button is the
+            // way out - there was none, and a stuck run could only be left by
+            // leaving the editor.
             SquishOutlinedButton(
-                text = if (state.captions.running) "Working…" else "Auto-caption this clip",
+                text = if (state.captions.running) "Stop" else "Auto-caption this clip",
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { if (!state.captions.running) viewModel.generateCaptions() }
+                onClick = {
+                    if (state.captions.running) viewModel.stopCaptions() else viewModel.generateCaptions()
+                }
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
