@@ -21,13 +21,19 @@ object Timecode {
         return (frame * 1000.0 / fps).roundToLong()
     }
 
-    /** "1:04.320" - millisecond precision, the minimum useful for sync work. */
+    /**
+     * "1:04.320" - millisecond precision, the minimum useful for sync work - and
+     * "2:35:26.714" once there are hours. Without the hours a film read as
+     * "155:26.714", which nobody reads as two and a half hours.
+     */
     fun format(ms: Long): String {
         val safe = ms.coerceAtLeast(0)
-        val minutes = safe / 60_000
+        val hours = safe / 3_600_000
+        val minutes = (safe % 3_600_000) / 60_000
         val seconds = (safe % 60_000) / 1000
         val millis = safe % 1000
-        return "%d:%02d.%03d".format(minutes, seconds, millis)
+        return if (hours > 0) "%d:%02d:%02d.%03d".format(hours, minutes, seconds, millis)
+        else "%d:%02d.%03d".format(minutes, seconds, millis)
     }
 
     /** "1:04.320 · f1929" */

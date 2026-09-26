@@ -38,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.squish.app.media.keepReadAccess
 import com.squish.app.tools.QuickTool
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.components.accentSweep
@@ -77,8 +79,9 @@ fun HomeScreen(
     // Re-read on every return to the dashboard, so an edit left five minutes ago
     // is here rather than whatever the list happened to hold at launch.
     LaunchedEffect(Unit) { viewModel.refreshDrafts() }
+    val context = LocalContext.current
     val pickForEditor = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let(onOpenEditor)
+        uri?.let { context.keepReadAccess(it); onOpenEditor(it) }
     }
 
 

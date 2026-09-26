@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.squish.app.media.keepReadAccess
 import com.squish.app.home.countOf
 import com.squish.app.timeline.TimelineActionBar
 import com.squish.app.timeline.TimelineEditor
@@ -140,10 +141,10 @@ fun EditorScreen(
         }
     }
     val pickExtraClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { viewModel.addVideoClip(it) }
+        uri?.let { context.keepReadAccess(it); viewModel.addVideoClip(it) }
     }
     val pickOverlayClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { viewModel.addOverlayClip(it) }
+        uri?.let { context.keepReadAccess(it); viewModel.addOverlayClip(it) }
     }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->

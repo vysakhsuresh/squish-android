@@ -1695,6 +1695,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
 
             result.onSuccess { file ->
+                // What was just rendered is now the untouched starting point, so the
+                // autosave, which keeps ticking, has nothing to write back. Without
+                // this, the finished edit reappeared under Unfinished moments later.
+                baseline = autosave.editKey(_state.value)
                 GallerySaver.publish(getApplication(), file)
                 historyRepository.add(
                     ExportRecord(

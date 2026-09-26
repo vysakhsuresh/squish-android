@@ -48,6 +48,9 @@ import com.squish.app.data.DraftSummary
 import com.squish.app.editor.Timecode
 import com.squish.app.home.agoOf
 import com.squish.app.media.ThumbnailExtractor
+import com.squish.app.media.canReadMedia
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.squish.app.tools.QuickTool
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.ConfirmDialog
@@ -173,7 +176,7 @@ fun DraftsScreen(
             body = draft.toolId?.let { id ->
                 "This throws away the ${QuickTool.fromId(id).title.lowercase()} you had " +
                     "set up — ${draft.clipCount} " +
-                    "${if (draft.clipCount == 1) "file" else "files"}, and the settings on them."
+                    "${if (draft.clipCount == 1) "file, and the settings on it." else "files, and the settings on them."}"
             } ?: (
                 "This throws away the edit in progress — " +
                     "${draft.clipCount} ${if (draft.clipCount == 1) "clip" else "clips"}, " +
@@ -211,8 +214,14 @@ private fun DraftCard(
 ) {
     val context = LocalContext.current
     var thumb by remember(draft.sourceUri) { mutableStateOf<Bitmap?>(null) }
+    // Null until checked. A draft whose video can no longer be opened - deleted,
+    // or picked before the app kept its access - cannot be resumed, and opening
+    // it used to crash the app.
+    var readable by remember(draft.sourceUri) { mutableStateOf<Boolean?>(null) }
 
     LaunchedEffect(draft.sourceUri) {
+        readable = withContext(Dispatchers.IO) { context.canReadMedia(draft.sourceUri) }
+        if (readable != true) return@LaunchedEffect
         thumb = ThumbnailExtractor.frameAt(
             context,
             draft.sourceUri,
@@ -226,7 +235,7 @@ private fun DraftCard(
             .clip(RoundedCornerShape(16.dp))
             .background(SquishColors.Surface)
             .border(1.dp, SquishColors.Cyan.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
-            .clickable(onClick = onOpen)
+            .clickable(enabled = readable != false, onClick = onOpen)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -284,7 +293,14 @@ private fun DraftCard(
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
-            if (draft.durationMs > 0) {
+            if (readable == false) {
+                Text(
+                    "The video can't be opened any more — remove this with ✕",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Pink,
+                    maxLines = 2
+                )
+            } else if (draft.durationMs > 0) {
                 Text(
                     Timecode.format(draft.durationMs).removeSuffix(".000"),
                     style = MaterialTheme.typography.labelSmall,
@@ -293,7 +309,9 @@ private fun DraftCard(
             }
         }
 
-        CardAction(Icons.Filled.PlayArrow, "Preview ${draft.title}", SquishColors.Cyan, onPreview)
+        if (readable != false) {
+            CardAction(Icons.Filled.PlayArrow, "Preview ${draft.title}", SquishColors.Cyan, onPreview)
+        }
         CardAction(Icons.Filled.Close, "Discard ${draft.title}", SquishColors.Pink, onDiscard)
     }
 }

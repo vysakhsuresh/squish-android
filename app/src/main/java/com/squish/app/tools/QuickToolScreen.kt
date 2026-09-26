@@ -41,11 +41,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.squish.app.media.keepReadAccess
 import com.squish.app.home.countOf
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.OutputSizePicker
@@ -90,13 +92,15 @@ fun QuickToolScreen(
     // handle being dragged. Seeing the cut is the entire point of the preview.
     var seekNonce by remember { mutableStateOf(0L) }
     var seekTarget by remember { mutableStateOf(0L) }
+    val context = LocalContext.current
 
     val pickVideo = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let(viewModel::load)
+        uri?.let { context.keepReadAccess(it); viewModel.load(it) }
     }
     val pickMergeClips = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(MAX_MERGE_CLIPS)
     ) { uris ->
+        uris.forEach { context.keepReadAccess(it) }
         viewModel.addMergeClips(uris)
     }
 

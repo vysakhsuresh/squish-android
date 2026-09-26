@@ -155,9 +155,11 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             while (true) {
                 delay(AUTOSAVE_INTERVAL)
                 val current = _state.value
+                if (finished) break
                 if (current.isExporting || current.isLoading) continue
                 val draft = draftOf(tool, current)
                 withContext(Dispatchers.IO) {
+                    if (finished) return@withContext
                     val untouched = !resumed && (baseline == null || autosave.keyOf(draft) == baseline)
                     if (untouched) {
                         if (wroteDraft) {
@@ -244,8 +246,15 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
 
     /** The session is finished - it produced a file, so there is nothing to resume. */
     private fun clearDraft() {
+        // Stop saving first. The timer ticks on after an export, and it wrote the
+        // finished session straight back as a draft a second and a half later.
+        finished = true
         tool?.let { autosave.clear(it.id) }
     }
+
+    /** Set once the session has produced its file; the autosave stops for good. */
+    @Volatile
+    private var finished = false
 
     fun load(uri: Uri) {
         if (_state.value.sourceUri == uri) return
