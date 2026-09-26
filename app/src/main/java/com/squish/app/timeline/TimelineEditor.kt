@@ -632,9 +632,15 @@ private fun BoxScope.Playhead(
             .pointerInput(Unit) {
                 var positionMs = 0f
                 detectHorizontalDragGestures(
-                    onDragStart = {
-                        positionMs = latestAtMs.toFloat()
+                    onDragStart = { offset ->
+                        // From where the finger is once the drag is recognised, not
+                        // from the playhead: the travel spent crossing the touch slop
+                        // used to be dropped, so the line trailed the finger by it for
+                        // the whole drag.
+                        val fromLinePx = offset.x - PLAYHEAD_HEAD.toPx() / 2f
+                        positionMs = (latestAtMs + latestWindow.msForPx(fromLinePx)).toFloat().coerceAtLeast(0f)
                         latestScrubbing(true)
+                        latestScrub(positionMs.toLong())
                     },
                     onDragEnd = { latestScrubbing(false) },
                     onDragCancel = { latestScrubbing(false) }
