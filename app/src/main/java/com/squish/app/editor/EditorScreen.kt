@@ -55,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -158,7 +159,7 @@ fun EditorScreen(
     val addVideos = {
         pickExtraClips.launch(
             PickVisualMediaRequest.Builder()
-                .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                 .build()
         )
     }
@@ -315,6 +316,7 @@ fun EditorScreen(
             }
 
             ProxyIndicator(status = state.proxyStatus, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+            PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
 
             Spacer(modifier = Modifier.height(2.dp))
 
@@ -340,7 +342,10 @@ fun EditorScreen(
                 onZoomTo = viewModel::setPixelsPerSecond,
                 onEffectMove = viewModel::moveEffect,
                 onEffectTrim = viewModel::trimEffect,
-                onAddClip = addVideos
+                onAddVideo = addVideos,
+                onAddBlank = viewModel::addBlankClip,
+                onOpenSound = { tab = EditorTab.Sound },
+                onOpenWords = { tab = EditorTab.Words }
             )
 
             TimelineActionBar(
@@ -357,7 +362,6 @@ fun EditorScreen(
                 onRedo = viewModel::redo,
                 undoLabel = state.undoLabel,
                 redoLabel = state.redoLabel,
-                onAddClip = addVideos,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
             }
@@ -514,11 +518,21 @@ private fun PanelBar(
 
 @Composable
 private fun ToolRail(selected: EditorTab?, onSelect: (EditorTab) -> Unit) {
+    val scroll = rememberScrollState()
+    val density = LocalDensity.current
+    // A tool opened from elsewhere - a track's button on the timeline - is
+    // brought into view here, or the rail shows nothing selected at all.
+    LaunchedEffect(selected) {
+        val index = selected?.ordinal ?: return@LaunchedEffect
+        val step = with(density) { (RAIL_ITEM_WIDTH + 6.dp).toPx() }
+        val target = (index * step - scroll.viewportSize / 2f + step / 2f).toInt().coerceIn(0, scroll.maxValue)
+        scroll.animateScrollTo(target)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(SquishColors.Surface)
-            .horizontalScroll(rememberScrollState())
+            .horizontalScroll(scroll)
             .padding(horizontal = 10.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {

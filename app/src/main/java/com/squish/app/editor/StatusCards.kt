@@ -170,6 +170,24 @@ fun ProxyIndicator(status: ProxyStatus, modifier: Modifier = Modifier) {
     }
 }
 
+/** Photos and blanks take a few seconds to become clips; this says they are coming. */
+@Composable
+fun PreparingIndicator(count: Int, modifier: Modifier = Modifier) {
+    if (count <= 0) return
+    Row(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        CircularProgressIndicator(color = SquishColors.Violet, strokeWidth = 2.dp, modifier = Modifier.size(12.dp))
+        Text(
+            if (count == 1) "Preparing 1 photo or blank for the timeline…" else "Preparing $count photos or blanks for the timeline…",
+            style = MaterialTheme.typography.labelSmall,
+            color = SquishColors.Violet
+        )
+    }
+}
+
 private fun relativeTime(millis: Long): String {
     if (millis <= 0L) return "recently"
     val elapsed = System.currentTimeMillis() - millis

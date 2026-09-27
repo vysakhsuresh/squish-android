@@ -368,6 +368,8 @@ data class EditorUiState(
     // Proxy media. The preview plays [proxyUri] when it exists; export never does.
     val proxyUri: Uri? = null,
     val proxyStatus: ProxyStatus = ProxyStatus.NotNeeded,
+    /** How many photos or blanks are being made into clips right now. */
+    val preparingStills: Int = 0,
 
     // A session that survived the process being killed, waiting to be accepted.
     val recovery: RecoveryOffer? = null,

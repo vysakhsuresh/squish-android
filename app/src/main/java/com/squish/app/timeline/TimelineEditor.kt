@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FirstPage
@@ -49,6 +51,8 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -89,7 +93,7 @@ private val LANE_HEIGHT = 54.dp
 
 /** The effects lane is slimmer than the rest: its bars carry a mark and a name, not pictures. */
 private val FX_LANE_HEIGHT = 32.dp
-private val GUTTER = 34.dp
+private val GUTTER = 42.dp
 private val RULER_HEIGHT = 26.dp
 private val HANDLE_WIDTH = 20.dp
 
@@ -259,8 +263,15 @@ fun TimelineEditor(
     onEffectMove: (String, Long) -> Unit = { _, _ -> },
     /** An effect's start and end pulled by these many milliseconds. */
     onEffectTrim: (String, Long, Long) -> Unit = { _, _, _ -> },
-    /** Adds videos to the end of the main track - the "+" that sits after its last clip. */
-    onAddClip: (() -> Unit)? = null
+    /**
+     * What each track's icon does when tapped - the way in to adding to that
+     * track, beside the track itself. Video offers a menu (see [VideoTrackButton]);
+     * sound and words open their tools. Null leaves the icon a plain label.
+     */
+    onAddVideo: (() -> Unit)? = null,
+    onAddBlank: (() -> Unit)? = null,
+    onOpenSound: (() -> Unit)? = null,
+    onOpenWords: (() -> Unit)? = null
 ) {
     val density = LocalDensity.current
     val totalMs = maxOf(state.durationMs, 8_000L)
@@ -469,9 +480,21 @@ fun TimelineEditor(
         Column(modifier = Modifier.width(GUTTER)) {
             Spacer(modifier = Modifier.height(RULER_HEIGHT))
             overlayLayers.forEach { LaneBadge(Icons.Filled.Layers, SquishColors.Magenta) }
-            LaneBadge(Icons.Filled.Videocam, SquishColors.Violet)
-            LaneBadge(Icons.Filled.MusicNote, SquishColors.Cyan)
-            LaneBadge(Icons.Filled.TextFields, SquishColors.Amber)
+            if (onAddVideo != null) {
+                VideoTrackButton(onAddVideo, onAddBlank)
+            } else {
+                LaneBadge(Icons.Filled.Videocam, SquishColors.Violet)
+            }
+            if (onOpenSound != null) {
+                TrackButton(Icons.Filled.MusicNote, SquishColors.Cyan, "Add music or sound", onOpenSound)
+            } else {
+                LaneBadge(Icons.Filled.MusicNote, SquishColors.Cyan)
+            }
+            if (onOpenWords != null) {
+                TrackButton(Icons.Filled.TextFields, SquishColors.Amber, "Add text", onOpenWords)
+            } else {
+                LaneBadge(Icons.Filled.TextFields, SquishColors.Amber)
+            }
             if (showEffects) LaneBadge(Icons.Filled.Bolt, SquishColors.Violet, FX_LANE_HEIGHT)
         }
 
@@ -523,8 +546,7 @@ fun TimelineEditor(
                     onMove = guardedMove,
                     onTrim = guardedTrim,
                     onScrub = guardedScrub,
-                    onTransitionTap = onTransitionTap,
-                    onAppend = onAddClip
+                    onTransitionTap = onTransitionTap
                 )
                 Lane(
                     state.audioClips, state, window, SquishColors.Cyan,
@@ -680,6 +702,73 @@ private fun BoxScope.Playhead(
     }
 }
 
+/**
+ * A track's icon as the way to add to that track - a tile in the track's colour
+ * with a small "+" on its corner, so it reads as a button rather than a label.
+ */
+@Composable
+private fun TrackButton(icon: ImageVector, tint: Color, label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.height(LANE_HEIGHT).fillMaxWidth().padding(vertical = 5.dp, horizontal = 3.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(9.dp))
+                .background(tint.copy(alpha = 0.16f))
+                .border(1.dp, tint.copy(alpha = 0.45f), RoundedCornerShape(9.dp))
+                .clickable(onClickLabel = label, onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(17.dp))
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(2.dp)
+                    .size(11.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(tint),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null, tint = SquishColors.Background, modifier = Modifier.size(9.dp))
+            }
+        }
+    }
+}
+
+/**
+ * The video track's button, and what it offers: a video or photo from the
+ * gallery, or a blank - the two ways a shot gets onto the main track.
+ */
+@Composable
+private fun VideoTrackButton(onAddVideo: () -> Unit, onAddBlank: (() -> Unit)?) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        TrackButton(Icons.Filled.Videocam, SquishColors.Violet, "Add to the video track") {
+            if (onAddBlank == null) onAddVideo() else open = true
+        }
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            containerColor = SquishColors.SurfaceElevated
+        ) {
+            DropdownMenuItem(
+                text = { Text("Video or photo", color = SquishColors.TextPrimary) },
+                leadingIcon = { Icon(Icons.Filled.VideoLibrary, contentDescription = null, tint = SquishColors.Violet) },
+                onClick = { open = false; onAddVideo() }
+            )
+            onAddBlank?.let { blank ->
+                DropdownMenuItem(
+                    text = { Text("Blank", color = SquishColors.TextPrimary) },
+                    leadingIcon = { Icon(Icons.Filled.CropSquare, contentDescription = null, tint = SquishColors.Violet) },
+                    onClick = { open = false; blank() }
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun LaneBadge(icon: ImageVector, tint: Color, height: Dp = LANE_HEIGHT) {
     Box(
@@ -792,8 +881,6 @@ private fun Lane(
     stackTap: ((Long) -> Unit)? = null,
     /** The last pick from a pile, for the "2/3" on the selection. */
     cycle: CycleMark? = null,
-    /** Adds to the end of this lane: a "+" drawn just after its last clip. */
-    onAppend: (() -> Unit)? = null,
     /**
      * Each clip's own colour, where a lane holds several things worth telling
      * apart at a glance - two songs, a title and a caption. Otherwise every clip
@@ -876,27 +963,6 @@ private fun Lane(
                     window = window,
                     onTap = { tap(clip.id) }
                 )
-            }
-        }
-
-        // Where the next clip goes, drawn where it will go. Adding a video used
-        // to live at the bottom of the Finish tab, one file at a time - found by
-        // almost nobody, so the editor read as a one-video tool.
-        onAppend?.let { add ->
-            val end = clips.maxOfOrNull { it.timelineEndMs } ?: 0L
-            if (window.intersects(end, end)) {
-                Box(
-                    modifier = Modifier
-                        .offset(x = window.xDp(end).dp + 6.dp)
-                        .width(42.dp)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(SquishColors.TextPrimary)
-                        .clickable(onClick = add),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add videos", tint = SquishColors.Background, modifier = Modifier.size(24.dp))
-                }
             }
         }
     }
@@ -1570,8 +1636,6 @@ fun TimelineActionBar(
     onRedo: () -> Unit,
     undoLabel: String?,
     redoLabel: String?,
-    /** Adds videos to the end of the main track. Here as well as the strip's "+", which scrolls away. */
-    onAddClip: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val selected = state.selectedClip
@@ -1631,9 +1695,6 @@ fun TimelineActionBar(
                 onRedo,
                 enabled = redoLabel != null
             )
-            onAddClip?.let { add ->
-                MiniAction(Icons.Filled.VideoLibrary, "Add videos", SquishColors.Violet, add)
-            }
             MiniAction(
                 Icons.Filled.ContentCut,
                 "Cut at the playhead",

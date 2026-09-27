@@ -15,6 +15,7 @@ import com.squish.app.media.ExportProgress
 import com.squish.app.media.MediaCompat
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.SquishError
+import com.squish.app.media.StillClips
 import com.squish.app.media.GallerySaver
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.VideoProcessor
@@ -1142,31 +1143,88 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun addVideoClips(uris: List<Uri>) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
-            val probed = uris.map { it to ThumbnailExtractor.probe(getApplication(), it) }
-                .filter { (_, meta) -> meta.durationMs > 0L }
-            if (probed.isEmpty()) {
-                _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+            // Photos come in the same pick as videos. Each is made into a short
+            // clip first (see StillClips); the order picked is kept either way.
+            val resolver = getApplication<Application>().contentResolver
+            val isPhoto = uris.associateWith { resolver.getType(it)?.startsWith("image/") == true }
+            val photos = isPhoto.count { it.value }
+            if (photos > 0) _state.update { it.copy(preparingStills = it.preparingStills + photos) }
+            val sources = uris.map { uri ->
+                if (isPhoto[uri] == true) {
+                    StillClips.fromImage(getApplication(), uri)?.let { StillSource(it, displayNameOf(uri) ?: "Photo") }
+                        .also { _state.update { s -> s.copy(preparingStills = (s.preparingStills - 1).coerceAtLeast(0)) } }
+                } else {
+                    StillSource(uri, null)
+                }
+            }
+            addSources(sources.filterNotNull(), failedAny = sources.any { it == null })
+        }
+    }
+
+    /** A blank - plain black, the edit's own shape - at the end of the video track. */
+    fun addBlankClip() {
+        viewModelScope.launch {
+            _state.update { it.copy(preparingStills = it.preparingStills + 1) }
+            val current = _state.value
+            val made = StillClips.blank(getApplication(), current.framedWidth, current.framedHeight)
+            _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
+            if (made == null) {
+                _state.update { it.copy(failure = SquishError.Unknown(null)) }
                 return@launch
             }
-            record(if (probed.size == 1) "Add clip" else "Add ${probed.size} clips") {
+            addSources(listOf(StillSource(made, "Blank")), failedAny = false)
+        }
+    }
+
+    /**
+     * A file to put on the video track, and the name to show for it. A still is
+     * rendered longer than it is placed, so its end can be dragged out; [label]
+     * is set for those, and marks them.
+     */
+    private data class StillSource(val uri: Uri, val label: String?)
+
+    private suspend fun addSources(sources: List<StillSource>, failedAny: Boolean) {
+        if (sources.isEmpty()) {
+            _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+            return
+        }
+        if (failedAny) _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+        run {
+            val probed = sources.map { src ->
+                val meta = ThumbnailExtractor.probe(getApplication(), src.uri)
+                Triple(src.uri, meta, src.label)
+            }.filter { (_, meta, _) -> meta.durationMs > 0L }
+            if (probed.isEmpty()) {
+                _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+                return
+            }
+            val what = when {
+                probed.size > 1 -> "${probed.size} clips"
+                probed[0].third == "Blank" -> "blank"
+                probed[0].third != null -> "photo"
+                else -> "clip"
+            }
+            record("Add $what") {
                 _state.update { current ->
                     var start = current.videoClips.filter { it.layer == 0 }.maxOfOrNull { c -> c.timelineEndMs } ?: 0L
-                    val added = probed.mapIndexed { i, (uri, meta) ->
+                    val added = probed.mapIndexed { i, (uri, meta, label) ->
+                        // A still lands short and can be dragged out to its full render.
+                        val placed = if (label != null) minOf(StillClips.DEFAULT_MS, meta.durationMs) else meta.durationMs
                         Clip(
                             kind = ClipKind.Video,
                             uri = uri,
-                            label = displayNameOf(uri) ?: "Clip ${current.videoClips.size + i + 1}",
+                            label = label ?: displayNameOf(uri) ?: "Clip ${current.videoClips.size + i + 1}",
                             sourceInMs = 0,
-                            sourceOutMs = meta.durationMs,
+                            sourceOutMs = placed,
                             timelineStartMs = start,
                             sourceDurationMs = meta.durationMs
-                        ).also { start += meta.durationMs }
+                        ).also { start += placed }
                     }
                     current.copy(videoClips = current.videoClips + added, fitNonce = current.fitNonce + 1)
                 }
             }
             recomputeEstimate()
-            probed.forEach { (uri, _) -> checkDecodable(uri) }
+            probed.forEach { (uri, _, label) -> if (label == null) checkDecodable(uri) }
         }
     }
 
@@ -1914,7 +1972,23 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun publishHistory() = _state.update {
-        it.copy(undoLabel = history.undoLabel, redoLabel = history.redoLabel)
+        it.copy(undoLabel = history.undoLabel?.let(::shownLabel), redoLabel = history.redoLabel?.let(::shownLabel))
+    }
+
+    /**
+     * An undo step as the button says it. Some steps carry the id of what they
+     * changed, so that dragging one clip coalesces while dragging another does
+     * not - and the button used to print that id: "Undo: Move 16ad0793-d41b-…".
+     */
+    private fun shownLabel(label: String): String {
+        val verb = label.replace(ID_SUFFIX, "")
+        return when (verb) {
+            "Move" -> "Move clip"
+            "Trim" -> "Trim clip"
+            "Effect" -> "Effect change"
+            "Style" -> "Text style"
+            else -> verb
+        }
     }
 
     fun undo() {
@@ -1955,6 +2029,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Close enough to a butt cut that a retime should carry the next clip along. */
     private val TOUCHING_MS = 40L
+
+    /** The id on the end of an undo label - " 16ad0793-d41b-…", or a template's " tpl-…". */
+    private val ID_SUFFIX = Regex(""" \S*[0-9a-f]{8}-[0-9a-f]{4}-\S*$""")
 
     /**
      * The rate the beat analysis runs at, and how much of a track it will listen to.
