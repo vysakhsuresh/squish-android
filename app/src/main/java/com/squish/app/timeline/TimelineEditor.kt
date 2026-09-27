@@ -704,7 +704,7 @@ private fun BoxScope.Playhead(
 
 /**
  * A track's icon as the way to add to that track - a tile in the track's colour
- * with a small "+" on its corner, so it reads as a button rather than a label.
+ * framed tile in the track's colour, so it reads as a button rather than a label.
  */
 @Composable
 private fun TrackButton(icon: ImageVector, tint: Color, label: String, onClick: () -> Unit) {
@@ -721,18 +721,7 @@ private fun TrackButton(icon: ImageVector, tint: Color, label: String, onClick: 
                 .clickable(onClickLabel = label, onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(17.dp))
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(2.dp)
-                    .size(11.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(tint),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null, tint = SquishColors.Background, modifier = Modifier.size(9.dp))
-            }
+            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(18.dp))
         }
     }
 }
