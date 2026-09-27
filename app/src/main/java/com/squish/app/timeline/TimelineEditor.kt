@@ -703,8 +703,8 @@ private fun BoxScope.Playhead(
 }
 
 /**
- * A track's icon as the way to add to that track - a tile in the track's colour
- * framed tile in the track's colour, so it reads as a button rather than a label.
+ * A track's icon as the way to add to that track - a framed tile in the
+ * track's colour, so it reads as a button rather than a label.
  */
 @Composable
 private fun TrackButton(icon: ImageVector, tint: Color, label: String, onClick: () -> Unit) {
