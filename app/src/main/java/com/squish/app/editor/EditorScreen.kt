@@ -149,8 +149,18 @@ fun EditorScreen(
             viewModel.addAudioTrack(it)
         }
     }
-    val pickExtraClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { context.keepReadAccess(it); viewModel.addVideoClip(it) }
+    // Several at once, added in the order picked - one video at a time made
+    // building an edit from a handful of shots a chore.
+    val pickExtraClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
+        uris.forEach { context.keepReadAccess(it) }
+        viewModel.addVideoClips(uris)
+    }
+    val addVideos = {
+        pickExtraClips.launch(
+            PickVisualMediaRequest.Builder()
+                .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                .build()
+        )
     }
     val pickOverlayClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let { context.keepReadAccess(it); viewModel.addOverlayClip(it) }
@@ -329,7 +339,8 @@ fun EditorScreen(
                 fitNonce = state.fitNonce,
                 onZoomTo = viewModel::setPixelsPerSecond,
                 onEffectMove = viewModel::moveEffect,
-                onEffectTrim = viewModel::trimEffect
+                onEffectTrim = viewModel::trimEffect,
+                onAddClip = addVideos
             )
 
             TimelineActionBar(
@@ -346,6 +357,7 @@ fun EditorScreen(
                 onRedo = viewModel::redo,
                 undoLabel = state.undoLabel,
                 redoLabel = state.redoLabel,
+                onAddClip = addVideos,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
             }
@@ -409,13 +421,7 @@ fun EditorScreen(
                     EditorTab.Finish -> ExportPanel(
                         state = state,
                         viewModel = viewModel,
-                        onAddClip = {
-                            pickExtraClip.launch(
-                                PickVisualMediaRequest.Builder()
-                                    .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
-                                    .build()
-                            )
-                        }
+                        onAddClip = addVideos
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -568,6 +574,9 @@ private fun ToolRail(selected: EditorTab?, onSelect: (EditorTab) -> Unit) {
  * they buy back the width, so a thumb sees more of the row before scrolling.
  */
 private val RAIL_ITEM_WIDTH = 66.dp
+
+/** The most videos one pick adds. The picker needs a number; this is well past a normal batch. */
+private const val MAX_PICK = 30
 
 /**
  * Tools that open with the timeline folded away. Every panel but Blend: on a

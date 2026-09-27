@@ -1129,23 +1129,44 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---- Timeline -------------------------------------------------------------
 
-    fun addVideoClip(uri: Uri) {
+    fun addVideoClip(uri: Uri) = addVideoClips(listOf(uri))
+
+    /**
+     * Adds videos to the end of the main track, in the order they were picked.
+     *
+     * Probed one after another and added in a single step, so the order is the
+     * picking order - not whichever file happened to finish probing first - and
+     * one undo takes back the whole batch. The strip is refitted afterwards so
+     * what was just added is on screen rather than past its right-hand edge.
+     */
+    fun addVideoClips(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         viewModelScope.launch {
-            val meta = ThumbnailExtractor.probe(getApplication(), uri)
-            _state.update { current ->
-                val clip = Clip(
-                    kind = ClipKind.Video,
-                    uri = uri,
-                    label = displayNameOf(uri) ?: "Clip ${current.videoClips.size + 1}",
-                    sourceInMs = 0,
-                    sourceOutMs = meta.durationMs,
-                    timelineStartMs = current.videoClips.maxOfOrNull { c -> c.timelineEndMs } ?: 0L,
-                    sourceDurationMs = meta.durationMs
-                )
-                current.copy(videoClips = current.videoClips + clip)
+            val probed = uris.map { it to ThumbnailExtractor.probe(getApplication(), it) }
+                .filter { (_, meta) -> meta.durationMs > 0L }
+            if (probed.isEmpty()) {
+                _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+                return@launch
+            }
+            record(if (probed.size == 1) "Add clip" else "Add ${probed.size} clips") {
+                _state.update { current ->
+                    var start = current.videoClips.filter { it.layer == 0 }.maxOfOrNull { c -> c.timelineEndMs } ?: 0L
+                    val added = probed.mapIndexed { i, (uri, meta) ->
+                        Clip(
+                            kind = ClipKind.Video,
+                            uri = uri,
+                            label = displayNameOf(uri) ?: "Clip ${current.videoClips.size + i + 1}",
+                            sourceInMs = 0,
+                            sourceOutMs = meta.durationMs,
+                            timelineStartMs = start,
+                            sourceDurationMs = meta.durationMs
+                        ).also { start += meta.durationMs }
+                    }
+                    current.copy(videoClips = current.videoClips + added, fitNonce = current.fitNonce + 1)
+                }
             }
             recomputeEstimate()
-            checkDecodable(uri)
+            probed.forEach { (uri, _) -> checkDecodable(uri) }
         }
     }
 

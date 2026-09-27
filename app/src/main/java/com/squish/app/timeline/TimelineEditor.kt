@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -257,7 +258,9 @@ fun TimelineEditor(
     /** An effect dragged along its lane, by this many milliseconds. */
     onEffectMove: (String, Long) -> Unit = { _, _ -> },
     /** An effect's start and end pulled by these many milliseconds. */
-    onEffectTrim: (String, Long, Long) -> Unit = { _, _, _ -> }
+    onEffectTrim: (String, Long, Long) -> Unit = { _, _, _ -> },
+    /** Adds videos to the end of the main track - the "+" that sits after its last clip. */
+    onAddClip: (() -> Unit)? = null
 ) {
     val density = LocalDensity.current
     val totalMs = maxOf(state.durationMs, 8_000L)
@@ -520,17 +523,20 @@ fun TimelineEditor(
                     onMove = guardedMove,
                     onTrim = guardedTrim,
                     onScrub = guardedScrub,
-                    onTransitionTap = onTransitionTap
+                    onTransitionTap = onTransitionTap,
+                    onAppend = onAddClip
                 )
                 Lane(
                     state.audioClips, state, window, SquishColors.Cyan,
                     guardedSelect, guardedMove, guardedTrim, guardedScrub,
-                    stackTap = tapAudio, cycle = cycle
+                    stackTap = tapAudio, cycle = cycle,
+                    clipColor = remember(state.audioClips) { coloursByKey(state.audioClips, MUSIC_COLOURS) { it.uri?.toString() ?: it.id } }
                 )
                 Lane(
                     state.textClips, state, window, SquishColors.Amber,
                     guardedSelect, guardedMove, guardedTrim, guardedScrub,
-                    stackTap = tapText, cycle = cycle
+                    stackTap = tapText, cycle = cycle,
+                    clipColor = remember(state.textClips) { coloursByKey(state.textClips, TEXT_COLOURS) { it.id } }
                 )
                 if (showEffects) {
                     EffectsLane(
@@ -785,7 +791,15 @@ private fun Lane(
      */
     stackTap: ((Long) -> Unit)? = null,
     /** The last pick from a pile, for the "2/3" on the selection. */
-    cycle: CycleMark? = null
+    cycle: CycleMark? = null,
+    /** Adds to the end of this lane: a "+" drawn just after its last clip. */
+    onAppend: (() -> Unit)? = null,
+    /**
+     * Each clip's own colour, where a lane holds several things worth telling
+     * apart at a glance - two songs, a title and a caption. Otherwise every clip
+     * wears the lane's [accent].
+     */
+    clipColor: ((Clip) -> Color)? = null
 ) {
     val stacked = stackTap != null
     val latestScrub by rememberUpdatedState(onScrub)
@@ -823,7 +837,7 @@ private fun Lane(
                 selected = clip.id == state.selectedClipId,
                 waveform = clip.uri?.let { state.waveforms[it.toString()] },
                 window = window,
-                accent = accent,
+                accent = clipColor?.invoke(clip) ?: accent,
                 onSelect = onSelect,
                 onMove = onMove,
                 onTrim = onTrim,
@@ -844,7 +858,7 @@ private fun Lane(
                     id = clip.id,
                     startMs = clip.timelineStartMs,
                     endMs = clip.timelineEndMs,
-                    color = accent,
+                    color = clipColor?.invoke(clip) ?: accent,
                     window = window,
                     onTrim = onTrim,
                     cycle = cycle?.takeIf { it.id == clip.id }
@@ -862,6 +876,27 @@ private fun Lane(
                     window = window,
                     onTap = { tap(clip.id) }
                 )
+            }
+        }
+
+        // Where the next clip goes, drawn where it will go. Adding a video used
+        // to live at the bottom of the Finish tab, one file at a time - found by
+        // almost nobody, so the editor read as a one-video tool.
+        onAppend?.let { add ->
+            val end = clips.maxOfOrNull { it.timelineEndMs } ?: 0L
+            if (window.intersects(end, end)) {
+                Box(
+                    modifier = Modifier
+                        .offset(x = window.xDp(end).dp + 6.dp)
+                        .width(42.dp)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SquishColors.TextPrimary)
+                        .clickable(onClick = add),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Add videos", tint = SquishColors.Background, modifier = Modifier.size(24.dp))
+                }
             }
         }
     }
@@ -1248,6 +1283,28 @@ private fun EffectsLane(
     }
 }
 
+/**
+ * One colour per distinct [key] on a lane, handed out in the order the keys first
+ * appear along the timeline - so neighbours always differ, which a hash of the id
+ * could not promise. The first keeps the lane's own colour, so a lone track looks
+ * as it always did.
+ */
+private fun coloursByKey(clips: List<Clip>, palette: List<Color>, key: (Clip) -> String): (Clip) -> Color {
+    val order = clips.sortedBy { it.timelineStartMs }.map(key).distinct()
+    val byKey = order.withIndex().associate { (i, k) -> k to palette[i % palette.size] }
+    return { clip -> byKey[key(clip)] ?: palette.first() }
+}
+
+/** Songs: by source, so the two halves of a split song stay one colour. Cyan first, as the lane always was. */
+private val MUSIC_COLOURS = listOf(
+    Color(0xFF3DE0C0), Color(0xFF4FA8FF), Color(0xFF7EE08A), Color(0xFFC39BFF), Color(0xFFFF8FB1), Color(0xFFFFB547)
+)
+
+/** Titles, captions and stickers: one each. Amber first, as the lane always was. */
+private val TEXT_COLOURS = listOf(
+    Color(0xFFFFC53D), Color(0xFFFF8FB1), Color(0xFF7CF0FF), Color(0xFFC39BFF), Color(0xFF7EE08A), Color(0xFFFF9A62)
+)
+
 /** Drawing order on a stacked lane: longest first, so the shortest ends up on top. */
 private fun List<Clip>.stackOrder() = sortedByDescending { it.durationMs }
 
@@ -1513,6 +1570,8 @@ fun TimelineActionBar(
     onRedo: () -> Unit,
     undoLabel: String?,
     redoLabel: String?,
+    /** Adds videos to the end of the main track. Here as well as the strip's "+", which scrolls away. */
+    onAddClip: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val selected = state.selectedClip
@@ -1572,6 +1631,9 @@ fun TimelineActionBar(
                 onRedo,
                 enabled = redoLabel != null
             )
+            onAddClip?.let { add ->
+                MiniAction(Icons.Filled.VideoLibrary, "Add videos", SquishColors.Violet, add)
+            }
             MiniAction(
                 Icons.Filled.ContentCut,
                 "Cut at the playhead",
