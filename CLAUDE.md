@@ -55,6 +55,44 @@ JVM against real numbers. Several bugs were found that way that no amount of
 reading would have produced. When adding logic, ask whether it can be a pure
 function first; if it can, it can be checked.
 
+## On the desktop (Windows, Git Bash) — what it took to find out
+
+- **Build with JDK 21, not Android Studio's bundled one.** Studio ships JBR 25,
+  and Gradle 8.9 cannot run on it; the only symptom is a bare "25.0.3".
+  `JAVA_HOME=$HOME/.jdks/jbr-21.0.11 ./gradlew assembleDebug`.
+- **There are no unit tests.** `./gradlew testDebugUnitTest` succeeds by having
+  nothing to run, so it proves nothing. The `tools/jvm` suites are the tests.
+- **Python is not installed here**, so the `tools/check_*.py` checkers only run
+  in the sandbox. On this machine `assembleDebug` is the check.
+- **The device is the user's own phone** (moto g84 5G, serial ZY32J8HF2S),
+  driven with `C:/Users/vysak/AppData/Local/Android/Sdk/platform-tools/adb`.
+  Before any taps, confirm it is free: `dumpsys telephony.registry | grep
+  mCallState` is 0 and Squish is the resumed activity. A call once came in mid
+  test and the taps landed in Messages. Never delete the user's media; clean up
+  test files you add, by MediaStore id, not by pattern — `LIKE 'sq_%'` matched
+  every `squish_` export too, because `_` is a wildcard.
+- **Git Bash rewrites `/data/...` and `/sdcard/...` paths** into Windows ones.
+  Prefix `adb push`/`adb shell` with `MSYS_NO_PATHCONV=1`.
+- **Two-finger gestures:** `sendevent` is refused by SELinux and `input` is one
+  finger only. A monkey script does it: a file containing
+  `type= raw events` / `count= 1` / `speed= 1.0` / `start data >>` /
+  `PinchZoom(x1a,y,x1b,y,x2a,y,x2b,y,15)`, run with
+  `monkey -p com.squish.app -f /data/local/tmp/<file> 1`.
+- **Logcat is small and the media server floods it.** `adb logcat -G 16M` before
+  reproducing anything, or the app's own lines are gone by the time you look.
+- **Drafts can be read on the device** because the build is debuggable:
+  `adb shell run-as com.squish.app cat files/projects/<slot>.json`. Back a draft
+  up the same way before an experiment that might overwrite it.
+- **Files can be opened directly**, without the photo picker:
+  `am start -a android.intent.action.VIEW -d content://media/external/video/media/<id> -t <mime> --grant-read-uri-permission -n com.squish.app/.MainActivity`.
+  (A `SEND` from `am` carries no read grant for its extra; that failure is the
+  test, not the app.)
+- **This phone decodes no HEVC 10-bit (Main 10)**, hardware or software. Film
+  rips in that format are expected to fail on it; `MediaCompat` says so to the
+  user. A second attached phone (Samsung S23 Ultra, R5CWA381NEE) should decode it.
+- **Working agreement:** when the build passes, commit and push to `main`
+  without asking.
+
 ## What is currently unverified on a device
 
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
