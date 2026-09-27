@@ -52,6 +52,16 @@ data class SpeedRamp(val points: List<SpeedPoint> = emptyList()) {
         get() = ordered.size >= 2 && ordered.any { abs(it.speed - ordered.first().speed) > 1e-3f }
 
     /** The single rate this clip plays at, when it is not ramped. */
+    /**
+     * The slowest rate anywhere in this clip.
+     *
+     * A ramp is only as smooth as its slowest moment - the stepping shows where
+     * the footage is thinnest, not on average - so anything judging smoothness
+     * has to ask for this rather than for the flat rate.
+     */
+    val slowestSpeed: Float
+        get() = ordered.minOfOrNull { it.speed }?.coerceIn(MIN_SPEED, MAX_SPEED) ?: flatSpeed
+
     val flatSpeed: Float
         get() = ordered.firstOrNull()?.speed?.coerceIn(MIN_SPEED, MAX_SPEED) ?: 1f
 

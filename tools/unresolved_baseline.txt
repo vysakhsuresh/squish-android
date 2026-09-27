@@ -3,6 +3,7 @@
 Bitmap
 BoxScope
 ColumnScope
+addListener
 android
 androidx
 awaitPointerEvent
@@ -30,6 +31,7 @@ setSeekParameters
 setSpan
 setSpeed
 setTimeline
+setVideoEffects
 setVideoMimeType
 size
 startActivity

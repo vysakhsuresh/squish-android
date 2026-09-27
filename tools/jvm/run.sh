@@ -22,6 +22,7 @@ run() {
 
 run looks      "$SRC/media/effects/Look.kt" tools/jvm/LookChecks.kt
 run lookpreview "$SRC/media/effects/Look.kt" "$SRC/media/effects/LookPreview.kt" tools/jvm/LookPreviewChecks.kt
+run framing    "$SRC/media/ExportPresets.kt" tools/jvm/stub/Quality.kt tools/jvm/FramingChecks.kt
 run crop       "$SRC/editor/CropRect.kt" tools/jvm/CropChecks.kt
 run frames     "$SRC/media/video/FrameBatch.kt" tools/jvm/stub/Bitmap.kt \
                tools/jvm/stub/MediaMetadataRetriever.kt tools/jvm/FrameBatchChecks.kt
@@ -31,6 +32,7 @@ run window     "$SRC/timeline/TimelineWindow.kt" tools/jvm/WindowChecks.kt
 run span       "$SRC/timeline/TimelineSpan.kt" tools/jvm/SpanChecks.kt
 run filmstrip  "$SRC/media/video/Filmstrip.kt" tools/jvm/FilmstripChecks.kt
 run undo       "$SRC/editor/UndoStack.kt" tools/jvm/UndoChecks.kt
+run slowmo     "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/SlowMotion.kt" tools/jvm/SlowMotionChecks.kt
 run ramp       "$SRC/timeline/SpeedRamp.kt" tools/jvm/RampChecks.kt
 run slice      "$SRC/timeline/SpeedRamp.kt" tools/jvm/SliceChecks.kt
 run timeline   "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \

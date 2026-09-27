@@ -209,7 +209,11 @@ fun EditorScreen(
                     originalVolume = state.originalVolume,
                     grade = state.grade,
                     rotationDegrees = state.rotationDegrees,
-                    cropRatio = state.cropAspect.ratio,
+                    // The shape actually being kept, not the chosen ratio. A
+                    // hand-drawn crop has no ratio of its own, so passing the
+                    // enum's left the preview showing no crop at all until the
+                    // file came out the other end.
+                    cropRatio = state.previewCropRatio,
                     sourceAspect = state.sourceFrameAspect,
                     playheadMs = state.playheadMs,
                     scrubNonce = state.scrubNonce,

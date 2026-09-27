@@ -335,6 +335,19 @@ data class EditorUiState(
             return sourceFrameAspect
         }
 
+    /**
+     * The shape the preview should frame to, or null for the whole picture.
+     *
+     * The preview crops by aspect, which a hand-drawn rectangle can be reduced to
+     * for framing purposes even though the export cuts the rectangle itself.
+     */
+    val previewCropRatio: Float?
+        get() = when {
+            cropAspect == CropAspect.Custom ->
+                if (cropRect.isFull) null else cropRect.aspect(sourceFrameAspect)
+            else -> cropAspect.ratio
+        }
+
     /** The rectangle actually kept, whichever way the crop was chosen. */
     val effectiveCrop: CropRect
         get() = when {
@@ -342,6 +355,25 @@ data class EditorUiState(
             cropAspect.ratio != null -> CropRect.centred(cropAspect.ratio, sourceFrameAspect)
             else -> CropRect()
         }
+
+    /** True when the user's rotation transposes the frame. */
+    val quarterTurned: Boolean get() = rotationDegrees % 180 != 0
+
+    /**
+     * The frame's width *after* the rotation has been applied, and its height.
+     *
+     * Everything downstream of the rotation in the render chain has to measure
+     * against these rather than against the source's own numbers. Rotating a
+     * 1080x1920 clip by ninety degrees hands the next effect a 1920x1080 frame,
+     * and an output size worked out from 1080x1920 then asks it to fit a
+     * landscape picture into a portrait box - which is the distorted, letterboxed
+     * export that came out of pressing Rotate.
+     *
+     * The exporter had this right in one place and wrong in two others, which is
+     * the argument for it living here instead of being recomputed per call site.
+     */
+    val framedWidth: Int get() = if (quarterTurned) sourceHeight else sourceWidth
+    val framedHeight: Int get() = if (quarterTurned) sourceWidth else sourceHeight
 
     /**
      * The shape of the footage itself, whatever crop is set.
@@ -353,10 +385,8 @@ data class EditorUiState(
      */
     val sourceFrameAspect: Float
         get() {
-            if (sourceWidth <= 0 || sourceHeight <= 0) return PreviewBox.DEFAULT_ASPECT
-            val quarterTurned = rotationDegrees % 180 != 0
-            return if (quarterTurned) sourceHeight.toFloat() / sourceWidth
-            else sourceWidth.toFloat() / sourceHeight
+            if (framedWidth <= 0 || framedHeight <= 0) return PreviewBox.DEFAULT_ASPECT
+            return framedWidth.toFloat() / framedHeight
         }
 
     /** Everything an undo would restore, as it stands. */

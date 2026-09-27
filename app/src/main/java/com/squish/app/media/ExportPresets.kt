@@ -7,6 +7,19 @@ object ExportPresets {
 
     const val AUDIO_BITRATE_BPS = 128_000
 
+    /**
+     * The frame to encode into, for footage of this shape at this quality.
+     *
+     * Always even in both directions. Hardware encoders want even dimensions and
+     * a good many simply refuse odd ones, which is the sort of failure that
+     * happens on one phone and not another and is miserable to chase. Two paths
+     * through here used to return the source's own numbers untouched - the "it
+     * already fits" shortcut and Original - so a clip that happened to be an odd
+     * number of pixels tall went to the encoder that way.
+     *
+     * The size passed in must be the shape the frame will *be* when it arrives,
+     * which after a user rotation is not the shape it was shot at.
+     */
     fun resolutionFor(quality: Quality, sourceWidth: Int, sourceHeight: Int): Resolution {
         if (sourceWidth <= 0 || sourceHeight <= 0) return Resolution(sourceWidth, sourceHeight)
         val targetLongEdge = when (quality) {
@@ -16,12 +29,16 @@ object ExportPresets {
             Quality.Original -> maxOf(sourceWidth, sourceHeight)
         }
         val longEdge = maxOf(sourceWidth, sourceHeight)
-        if (longEdge <= targetLongEdge) return Resolution(sourceWidth, sourceHeight)
+        if (longEdge <= targetLongEdge) return even(sourceWidth, sourceHeight)
         val scale = targetLongEdge.toFloat() / longEdge
-        val w = ((sourceWidth * scale).toInt().coerceAtLeast(2) / 2) * 2
-        val h = ((sourceHeight * scale).toInt().coerceAtLeast(2) / 2) * 2
-        return Resolution(w, h)
+        return even((sourceWidth * scale).toInt(), (sourceHeight * scale).toInt())
     }
+
+    /** Rounded down to even, and never to nothing. */
+    private fun even(width: Int, height: Int) = Resolution(
+        width = (width.coerceAtLeast(2) / 2) * 2,
+        height = (height.coerceAtLeast(2) / 2) * 2
+    )
 
     fun bitrateFor(quality: Quality): Int = when (quality) {
         Quality.Small -> 1_500_000

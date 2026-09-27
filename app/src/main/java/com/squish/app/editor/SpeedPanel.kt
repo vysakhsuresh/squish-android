@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.RampShape
+import com.squish.app.timeline.SlowMotion
 import com.squish.app.timeline.SpeedRamp
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
@@ -89,6 +91,22 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
             )
 
             RampCurve(clip = clip, playheadMs = state.playheadMs)
+
+            // What the speed does to the frame rate, said as a number.
+            //
+            // Slowing footage down does not create frames - the timestamps are
+            // stretched and the same pictures are spread further apart - so a
+            // thirty-frame second at a quarter speed is seven and a half frames a
+            // second, each held for a seventh of a second. That is the stepping,
+            // and it is arithmetic rather than a fault. Nobody can be expected to
+            // work that out from a slider, so the panel says it.
+            SmoothnessLine(sourceFps = state.fps, speed = ramp.slowestSpeed)
+
+            SmoothToggle(
+                sourceFps = state.fps,
+                speed = ramp.slowestSpeed,
+                onHold = { viewModel.setClipSpeed(clip.id, SlowMotion.smoothestSpeed(state.fps)) }
+            )
 
             if (ramp.isRamped) {
                 Text(
@@ -332,4 +350,71 @@ private fun sliderToSpeed(t: Float): Float {
         if (abs(raw - snap) < snap * 0.06f) return snap
     }
     return (Math.round(raw * 100f) / 100f)
+}
+
+/** The frame rate this speed produces, and whether it will show. */
+@Composable
+private fun SmoothnessLine(sourceFps: Float, speed: Float) {
+    if (sourceFps <= 0f || speed >= 1f) return
+    val verdict = SlowMotion.verdict(sourceFps, speed)
+    Text(
+        SlowMotion.advice(sourceFps, speed),
+        style = MaterialTheme.typography.bodySmall,
+        color = when (verdict) {
+            SlowMotion.Verdict.Smooth -> SquishColors.Cyan
+            SlowMotion.Verdict.Stepped -> SquishColors.Amber
+            SlowMotion.Verdict.Slideshow -> SquishColors.Pink
+        }
+    )
+}
+
+/**
+ * Holds the clip at the slowest speed its own footage can carry.
+ *
+ * Not the toggle other editors have. Theirs invents the frames in between by
+ * working out where everything moved, which is a real thing this does not do yet
+ * and will not pretend to. This does the other honest thing: stops at the point
+ * where the footage runs out of frames, so the result moves instead of stepping.
+ *
+ * Shown only when it would change something. At a hundred and twenty frames a
+ * second there is nothing to warn about until a fifth speed, and a control that
+ * does nothing is worse than no control.
+ */
+@Composable
+private fun SmoothToggle(sourceFps: Float, speed: Float, onHold: () -> Unit) {
+    if (sourceFps <= 0f) return
+    if (SlowMotion.isSmooth(sourceFps, speed)) return
+    val limit = SlowMotion.smoothestSpeed(sourceFps)
+    if (limit <= speed + 0.01f) return
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SquishColors.Cyan.copy(alpha = 0.10f))
+            .clickable(onClick = onHold)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(
+            Icons.Filled.AutoAwesome,
+            contentDescription = null,
+            tint = SquishColors.Cyan,
+            modifier = Modifier.size(18.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "Keep it smooth",
+                style = MaterialTheme.typography.bodyMedium,
+                color = SquishColors.TextPrimary
+            )
+            Text(
+                "Hold at ${"%.2f".format(limit).trimEnd('0').trimEnd('.')}x — " +
+                    "the slowest this footage carries",
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.TextMuted
+            )
+        }
+    }
 }

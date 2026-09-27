@@ -1648,8 +1648,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                         originalSizeBytes = current.originalSizeBytes,
                         outputSizeBytes = file.length(),
                         durationMs = current.trimmedDurationMs,
-                        width = current.sourceWidth,
-                        height = current.sourceHeight,
+                        // The shape of the file that was written, which after a
+                        // rotation is not the shape it was shot at. The library
+                        // sizes its preview from these, so a rotated export
+                        // previewed in the wrong shape.
+                        width = current.framedWidth,
+                        height = current.framedHeight,
                         createdAtMillis = System.currentTimeMillis()
                     )
                 )

@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.Effect
+import androidx.media3.common.PlaybackException
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.Grade
@@ -85,8 +86,8 @@ data class PreviewFrame(
  */
 class PreviewEngine(private val context: Context) {
 
-    val baseA: ExoPlayer = newPlayer()
-    val baseB: ExoPlayer = newPlayer()
+    val baseA: ExoPlayer = newPlayer().watched(KEY_A)
+    val baseB: ExoPlayer = newPlayer().watched(KEY_B)
 
     /**
      * True once [release] has run.
@@ -99,6 +100,22 @@ class PreviewEngine(private val context: Context) {
      * the user is already leaving.
      */
     private var released = false
+
+    /** When each surface was last corrected, so it cannot be corrected every frame. */
+    private val lastCorrection = HashMap<String, Long>()
+
+    /**
+     * Surfaces whose effect chain has failed, and which now run without one.
+     *
+     * A custom shader can fail to compile on a given driver, and a pipeline can
+     * fail to reconfigure when the frame changes shape. Neither is recoverable by
+     * trying the same thing again, and neither reaches the `runCatching` around
+     * `setVideoEffects` - they surface later, on the player's own listener. Left
+     * unhandled the player sits wedged and the editor looks frozen; dropped, the
+     * preview goes back to plain playback and the export is unaffected, because
+     * nothing about the export comes through here.
+     */
+    private val effectsDisabled = HashSet<String>()
 
     private val overlayPlayers = LinkedHashMap<Int, ExoPlayer>()
     private val audioPlayers = LinkedHashMap<String, ExoPlayer>()
@@ -165,6 +182,35 @@ class PreviewEngine(private val context: Context) {
         setSeekParameters(SeekParameters.EXACT)
         repeatMode = Player.REPEAT_MODE_OFF
         playWhenReady = false
+    }
+
+    /**
+     * Makes a player say when its pipeline has failed, and takes the chain off it.
+     *
+     * Without this a failure has nowhere to go. `setVideoEffects` is wrapped in a
+     * `runCatching`, but that only catches a throw on the calling thread; a shader
+     * that will not compile on this driver, or a pipeline that cannot reconfigure
+     * when the frame changes shape, fails later and asynchronously. The player
+     * then sits in an error state while the tick loop goes on asking it for
+     * positions and seeks, and the editor looks frozen.
+     *
+     * Dropping the effects and preparing once more is the only recovery worth
+     * having: the same chain will fail the same way, and the preview without it
+     * is a preview without a grade rather than no preview at all. The export
+     * never comes through here, so nothing about the finished file changes.
+     */
+    private fun ExoPlayer.watched(key: String): ExoPlayer = apply {
+        addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                if (released || key in effectsDisabled) return
+                effectsDisabled.add(key)
+                appliedEffects.remove(key)
+                runCatching {
+                    setVideoEffects(emptyList())
+                    prepare()
+                }
+            }
+        })
     }
 
     /**
@@ -326,6 +372,8 @@ class PreviewEngine(private val context: Context) {
         val visible = if (clip == null) emptyList() else captions
             .filter { it.endMs > clip.timelineStartMs && it.startMs < clip.timelineEndMs }
             .map { it.shiftedInto(clip) }
+
+        if (surfaceKey in effectsDisabled) return
 
         val signature = "$grade|$chroma|$mask|$visible|$rotationDegrees|$cropRatio"
         if (appliedEffects[surfaceKey] == signature) return
@@ -596,6 +644,7 @@ class PreviewEngine(private val context: Context) {
 
         when {
             loadedUri[key] != source.toString() -> {
+                effectsDisabled.remove(key)
                 player.setMediaItem(MediaItem.fromUri(source))
                 player.prepare()
                 loadedUri[key] = source.toString()
@@ -610,7 +659,22 @@ class PreviewEngine(private val context: Context) {
             }
             // Zero by construction while this surface drives the clock, so playback
             // is never interrupted by its own correction.
-            abs(player.currentPosition - wanted) > VIDEO_RESYNC_MS -> player.seekTo(wanted)
+            //
+            // Only while the player is in a state where its position means
+            // something, and never twice in quick succession. Both guards are
+            // there because this runs thirty times a second: a player whose
+            // pipeline is being rebuilt - which is what changing the rotation
+            // does - reports a position of zero until it is ready again, so the
+            // correction fired on every tick, each seek interrupting the rebuild
+            // that would have stopped the next one. That is a loop the main
+            // thread cannot get out of, and it is what being stuck and then
+            // killed looks like from outside.
+            player.playbackState == Player.STATE_READY &&
+                abs(player.currentPosition - wanted) > VIDEO_RESYNC_MS &&
+                SystemClock.elapsedRealtime() - (lastCorrection[key] ?: 0L) > CORRECTION_GAP_MS -> {
+                lastCorrection[key] = SystemClock.elapsedRealtime()
+                player.seekTo(wanted)
+            }
         }
 
         if (playing && !player.playWhenReady) player.play()
@@ -728,5 +792,15 @@ class PreviewEngine(private val context: Context) {
 
         /** How far ahead of a cue its decoder is positioned and buffered. */
         const val PREROLL_MS = 2_000L
+
+        /**
+         * The shortest gap between two corrective seeks on the same surface.
+         *
+         * A seek is not free - it drops the decoder's buffer and, with an effect
+         * chain attached, restarts a GL pipeline. Anything that can ask for one
+         * on every frame has to be stopped from doing so, whatever the reason it
+         * thinks it has.
+         */
+        const val CORRECTION_GAP_MS = 400L
     }
 }

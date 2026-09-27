@@ -230,9 +230,8 @@ class VideoProcessor(private val context: Context) {
      * guessed size would be worse than letting Media3 decide.
      */
     private fun outputSize(state: EditorUiState): ExportPresets.Resolution? {
-        val quarterTurned = state.rotationDegrees % 180 != 0
-        val width = if (quarterTurned) state.sourceHeight else state.sourceWidth
-        val height = if (quarterTurned) state.sourceWidth else state.sourceHeight
+        val width = state.framedWidth
+        val height = state.framedHeight
         if (width <= 0 || height <= 0) return null
 
         val resolution = ExportPresets.resolutionFor(state.quality, width, height)
@@ -282,7 +281,11 @@ class VideoProcessor(private val context: Context) {
 
         val effects = if (clip.isOverlay) {
             // Overlays carry their placement inside overlayEffects already.
-            CompositionFactory.overlayEffects(clip, state.sourceWidth, state.sourceHeight)
+            // Also the rotated shape: an overlay is placed as a fraction of the
+            // frame it lands on, and after a quarter turn that frame is the other
+            // way round. Measured against the source, a caption pinned near the
+            // bottom of a rotated clip drifted off the side of it.
+            CompositionFactory.overlayEffects(clip, state.framedWidth, state.framedHeight)
         } else {
             // A base shot can be animated too - a push-in, a drift, a slow turn -
             // so its transform goes on first, in source space, ahead of rotation,
@@ -470,7 +473,11 @@ class VideoProcessor(private val context: Context) {
         }
 
         if (state.quality != Quality.Original && !state.fitToSize) {
-            val resolution = ExportPresets.resolutionFor(state.quality, state.sourceWidth, state.sourceHeight)
+            // Against the rotated shape, because this sits *after* the rotation in
+            // the chain. Measured against the source's own numbers it asked a
+            // landscape frame to fit a portrait box, which is what made a rotated
+            // export come out letterboxed and the wrong shape.
+            val resolution = ExportPresets.resolutionFor(state.quality, state.framedWidth, state.framedHeight)
             if (resolution.width > 0 && resolution.height > 0) {
                 effects.add(
                     Presentation.createForWidthAndHeight(
