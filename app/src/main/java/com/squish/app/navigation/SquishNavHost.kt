@@ -46,8 +46,15 @@ private inline fun NavController.fromTopOf(entry: NavBackStackEntry, block: () -
 }
 
 @Composable
-fun SquishNavHost() {
+fun SquishNavHost(
+    /** A video handed over by "Open with" or "Share", opened in the editor over the dashboard. */
+    openVideo: Uri? = null
+) {
     val navController = rememberNavController()
+
+    LaunchedEffect(openVideo) {
+        if (openVideo != null) navController.navigate(Destination.Editor.buildRoute(Uri.encode(openVideo.toString())))
+    }
 
     // Straight to the dashboard. The launch animation is the system splash, which
     // Android shows before this composes at all - routing through a second in-app
@@ -102,13 +109,13 @@ fun SquishNavHost() {
                 onOpenEdit = { draft ->
                     navController.fromTopOf(entry) {
                         navController.navigate(
-                            Destination.Editor.buildRoute(Uri.encode(draft.sourceUri.toString()))
+                            Destination.Editor.buildRoute(Uri.encode(draft.sourceUri.toString()), resume = true)
                         )
                     }
                 },
                 onOpenTool = { tool ->
                     navController.fromTopOf(entry) {
-                        navController.navigate(Destination.QuickTool.buildRoute(tool.id))
+                        navController.navigate(Destination.QuickTool.buildRoute(tool.id, resume = true))
                     }
                 },
                 onDiscard = homeViewModel::discardDraft
@@ -121,11 +128,18 @@ fun SquishNavHost() {
 
         composable(
             route = Destination.QuickTool.route,
-            arguments = listOf(navArgument("toolId") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("toolId") { type = NavType.StringType },
+                navArgument("resume") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
         ) { entry ->
             val tool = QuickTool.fromId(entry.arguments?.getString("toolId"))
             QuickToolScreen(
                 tool = tool,
+                resume = entry.arguments?.getBoolean("resume") ?: false,
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onExported = { path ->
                     navController.fromTopOf(entry) {
@@ -150,11 +164,18 @@ fun SquishNavHost() {
 
         composable(
             route = Destination.Editor.route,
-            arguments = listOf(navArgument("videoUri") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("videoUri") { type = NavType.StringType },
+                navArgument("resume") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
         ) { entry ->
             val encoded = entry.arguments?.getString("videoUri").orEmpty()
             EditorScreen(
                 sourceUri = Uri.parse(Uri.decode(encoded)),
+                resume = entry.arguments?.getBoolean("resume") ?: false,
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onExported = { path ->
                     navController.fromTopOf(entry) {

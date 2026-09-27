@@ -31,8 +31,13 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.UnfoldLess
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,8 +55,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.squish.app.media.keepReadAccess
+import com.squish.app.home.countOf
 import com.squish.app.timeline.TimelineActionBar
 import com.squish.app.timeline.TimelineEditor
 import androidx.compose.animation.animateColorAsState
@@ -59,7 +67,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.style.TextAlign
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
@@ -87,6 +94,8 @@ enum class EditorTab(val label: String, val icon: ImageVector, val accent: Color
     Motion("Motion", Icons.Filled.Animation, SquishColors.Amber),
     Sound("Sound", Icons.Filled.GraphicEq, SquishColors.Cyan),
     Words("Words", Icons.Filled.ClosedCaption, SquishColors.Amber),
+    Stickers("Stickers", Icons.Filled.EmojiEmotions, SquishColors.Magenta),
+    Effects("Effects", Icons.Filled.Bolt, SquishColors.Violet),
 
     /** The look catalogue. It was called Effects and shows nothing but looks. */
     Looks("Looks", Icons.Filled.AutoAwesome, SquishColors.Magenta),
@@ -97,6 +106,8 @@ enum class EditorTab(val label: String, val icon: ImageVector, val accent: Color
 @Composable
 fun EditorScreen(
     sourceUri: Uri,
+    /** Opened from the drafts list: apply the saved edit straight away. */
+    resume: Boolean = false,
     onBack: () -> Unit,
     onExported: (String) -> Unit,
     viewModel: EditorViewModel = viewModel()
@@ -113,9 +124,22 @@ fun EditorScreen(
      * a panel is something you ask for.
      */
     var tab by remember { mutableStateOf<EditorTab?>(null) }
+    /**
+     * Whether the open panel has taken the strip's room as well as its own.
+     *
+     * Panels that work on the picture or the file rather than on time - sizing
+     * the export, choosing a look, framing the shot - open with the room already
+     * taken, since the strip does nothing for them. The rest open beside the
+     * strip, and either way the panel's own button flips it.
+     */
+    var panelExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(tab) { panelExpanded = tab in ROOMY_TABS }
     var exportSheetOpen by remember { mutableStateOf(false) }
+    // A failure is explained by a card under the picture, which the sheet covers.
+    // Left open, "Render and save" looked as if it did nothing at all.
+    LaunchedEffect(state.failure) { if (state.failure != null) exportSheetOpen = false }
 
-    LaunchedEffect(sourceUri) { viewModel.load(sourceUri) }
+    LaunchedEffect(sourceUri) { viewModel.load(sourceUri, resume) }
 
     val pickAudioTrack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -126,10 +150,10 @@ fun EditorScreen(
         }
     }
     val pickExtraClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { viewModel.addVideoClip(it) }
+        uri?.let { context.keepReadAccess(it); viewModel.addVideoClip(it) }
     }
     val pickOverlayClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { viewModel.addOverlayClip(it) }
+        uri?.let { context.keepReadAccess(it); viewModel.addOverlayClip(it) }
     }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
@@ -147,10 +171,12 @@ fun EditorScreen(
                         state.videoClips.firstOrNull()?.label ?: "Your edit",
                         style = MaterialTheme.typography.titleMedium,
                         color = SquishColors.TextPrimary,
-                        maxLines = 1
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        "${state.videoClips.size} clips · ${Timecode.format(state.trimmedDurationMs)}",
+                        "${countOf(state.videoClips.size, "clip")} · ${Timecode.format(state.trimmedDurationMs)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = SquishColors.TextMuted
                     )
@@ -187,9 +213,26 @@ fun EditorScreen(
             // The preview takes its height from the footage, inside limits. A
             // portrait clip in a fixed landscape box was showing its middle third
             // and hiding the rest; see PreviewBox for what the limits are for.
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            //
+            // With no tool open there is no panel to make room for, so the picture
+            // takes that room instead of leaving an empty gap under the strip.
+            val panelOpen = tab != null
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .then(if (panelOpen) Modifier else Modifier.weight(1f)),
+                contentAlignment = Alignment.Center
+            ) {
                 val frameAspect = state.sourceFrameAspect
-                val boxHeight = PreviewBox.heightDp(frameAspect, maxWidth.value).dp
+                val boxHeight = if (panelOpen) {
+                    PreviewBox.heightDp(frameAspect, maxWidth.value).dp
+                } else {
+                    // As tall as the footage wants at full width, within the room
+                    // there is - a landscape clip does not need the whole column.
+                    val shape = frameAspect.takeIf { it > 0f && it.isFinite() } ?: PreviewBox.DEFAULT_ASPECT
+                    (maxWidth.value / shape).coerceAtLeast(PreviewBox.MIN_HEIGHT_DP).dp.coerceAtMost(maxHeight)
+                }
 
                 Box(
                     modifier = Modifier
@@ -199,13 +242,20 @@ fun EditorScreen(
                         .background(SquishColors.Surface),
                     contentAlignment = Alignment.Center
                 ) {
+                // Auto-reframe, in the head clip's source time, and where it has the
+                // crop centred at the playhead - for the outline drawn over the picture.
+                val reframeOffset = state.videoClips.firstOrNull()?.let { it.sourceInMs - it.timelineStartMs } ?: 0L
+                val reframeFocus = state.reframe?.takeIf { state.cropAspect.ratio != null }
+                    ?.sampleAt(state.playheadMs + reframeOffset)?.let { it.xFraction to it.yFraction }
                 TimelinePreview(
                     videoClips = state.videoClips,
                     audioClips = state.audioClips,
                     captions = state.textOverlays,
+                    effects = state.effects,
                     fallbackUri = sourceUri,
                     proxyUri = state.proxyUri,
                     muteOriginal = state.muteOriginal,
+                    voiceEffect = state.voiceEffect,
                     originalVolume = state.originalVolume,
                     grade = state.grade,
                     rotationDegrees = state.rotationDegrees,
@@ -214,11 +264,16 @@ fun EditorScreen(
                     // enum's left the preview showing no crop at all until the
                     // file came out the other end.
                     cropRatio = state.previewCropRatio,
+                    // Auto-reframe follows a fixed ratio's frame; a hand-drawn
+                    // rectangle is the frame, so the two do not combine.
+                    reframe = state.reframe.takeIf { state.cropAspect.ratio != null },
+                    reframeOffsetMs = reframeOffset,
                     sourceAspect = state.sourceFrameAspect,
                     playheadMs = state.playheadMs,
                     scrubNonce = state.scrubNonce,
                     onPositionChange = viewModel::setPlayhead,
                     onPlayingChange = viewModel::setPlaying,
+                    onJump = viewModel::jumpBy,
                     modifier = Modifier.fillMaxSize(),
                     // Inside the picture, so the crop rectangle is measured
                     // against the frame rather than against the whole box.
@@ -240,6 +295,7 @@ fun EditorScreen(
                             tab == EditorTab.Frame || state.cropAspect != CropAspect.Original ->
                                 CropOverlay(
                                     aspect = state.cropAspect,
+                                    focus = reframeFocus,
                                     modifier = Modifier.fillMaxSize()
                                 )
                         }
@@ -253,6 +309,10 @@ fun EditorScreen(
             Spacer(modifier = Modifier.height(2.dp))
 
             val timeline = state.toTimeline()
+            // Folded away while a panel has been given the room. The picture stays:
+            // it is what the panel is changing.
+            val showStrip = !(panelOpen && panelExpanded)
+            if (showStrip) {
             TimelineEditor(
                 state = timeline,
                 onSelect = viewModel::selectClip,
@@ -267,7 +327,9 @@ fun EditorScreen(
                 barMarkers = state.beats.every(4),
                 isPlaying = state.isPlaying,
                 fitNonce = state.fitNonce,
-                onZoomTo = viewModel::setPixelsPerSecond
+                onZoomTo = viewModel::setPixelsPerSecond,
+                onEffectMove = viewModel::moveEffect,
+                onEffectTrim = viewModel::trimEffect
             )
 
             TimelineActionBar(
@@ -286,6 +348,7 @@ fun EditorScreen(
                 redoLabel = state.redoLabel,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
+            }
 
             state.recovery?.let { offer ->
                 RecoveryBanner(
@@ -304,16 +367,21 @@ fun EditorScreen(
                 )
             }
 
+            // Nothing open: no panel at all, and the picture above has the room.
+            tab?.let { openTab ->
+            PanelBar(
+                tab = openTab,
+                expanded = panelExpanded,
+                onToggleExpanded = { panelExpanded = !panelExpanded },
+                onClose = { tab = null }
+            )
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
             ) {
-                when (tab) {
-                    // Nothing open. The room goes back to the strip, and the row
-                    // of tools below says what is available without taking any.
-                    null -> IdleHint(hasSelection = state.selectedClipId != null)
+                when (openTab) {
                     EditorTab.Cut -> PrecisionTrimPanel(state, viewModel)
                     EditorTab.Frame -> CropPanel(state, viewModel)
                     EditorTab.Speed -> SpeedPanel(state, viewModel)
@@ -335,6 +403,8 @@ fun EditorScreen(
                         onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) }
                     )
                     EditorTab.Words -> CaptionsPanel(state, viewModel)
+                    EditorTab.Stickers -> StickersPanel(state, viewModel)
+                    EditorTab.Effects -> FxPanel(state, viewModel)
                     EditorTab.Looks -> EffectsPanel(state, viewModel)
                     EditorTab.Finish -> ExportPanel(
                         state = state,
@@ -350,9 +420,9 @@ fun EditorScreen(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
+            }
 
-            // Tapping the open tool closes it, which is the only way back to a
-            // screen with nothing on it once something has been opened.
+            // Tapping the open tool closes it, as does the panel's own close.
             ToolRail(selected = tab, onSelect = { tab = if (tab == it) null else it })
         }
 
@@ -371,30 +441,68 @@ fun EditorScreen(
 }
 
 /**
- * What the empty space below the strip says when no tool is open.
+ * The open tool's name, and two controls: more room, and close.
  *
- * Quiet on purpose. The point of opening with nothing down is that the screen is
- * not full; filling the gap with a panel of suggestions would give the space
- * straight back. One line naming the next useful thing, and nothing else.
+ * A panel shares the screen with the picture, the strip and the rail, which
+ * leaves it a slot - a setting chosen at the top and its result at the bottom
+ * meant scrolling between them. "More room" folds the strip away while the panel
+ * is open, and the picture stays, since it is what the panel is changing.
  */
 @Composable
-private fun IdleHint(hasSelection: Boolean) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+private fun PanelBar(
+    tab: EditorTab,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onClose: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 2.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        Icon(tab.icon, contentDescription = null, tint = tab.accent, modifier = Modifier.size(16.dp))
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
-            if (hasSelection) "Pick a tool to change this clip" else "Pick a tool to start",
-            style = MaterialTheme.typography.bodyMedium,
-            color = SquishColors.TextSecondary
+            tab.label,
+            style = MaterialTheme.typography.titleSmall,
+            color = SquishColors.TextPrimary,
+            modifier = Modifier.weight(1f)
         )
-        Text(
-            "Cut, delete and undo are above the strip — a tool opens only when you ask for it.",
-            style = MaterialTheme.typography.labelSmall,
-            color = SquishColors.TextMuted,
-            textAlign = TextAlign.Center
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier
+                .clip(RoundedCornerShape(9.dp))
+                .background(tab.accent.copy(alpha = 0.12f))
+                .clickable(onClick = onToggleExpanded)
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Icon(
+                if (expanded) Icons.Filled.UnfoldLess else Icons.Filled.UnfoldMore,
+                contentDescription = null,
+                tint = tab.accent,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                if (expanded) "Show timeline" else "More room",
+                style = MaterialTheme.typography.labelMedium,
+                color = tab.accent
+            )
+        }
+        Spacer(modifier = Modifier.width(4.dp))
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .clickable(onClick = onClose),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "Close ${tab.label}",
+                tint = SquishColors.TextMuted,
+                modifier = Modifier.size(18.dp)
+            )
+        }
     }
 }
 
@@ -444,7 +552,9 @@ private fun ToolRail(selected: EditorTab?, onSelect: (EditorTab) -> Unit) {
                     entry.label,
                     style = MaterialTheme.typography.labelSmall,
                     color = tint,
-                    maxLines = 1
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -458,3 +568,13 @@ private fun ToolRail(selected: EditorTab?, onSelect: (EditorTab) -> Unit) {
  * they buy back the width, so a thumb sees more of the row before scrolling.
  */
 private val RAIL_ITEM_WIDTH = 66.dp
+
+/**
+ * Tools that open with the timeline folded away. Every panel but Blend: on a
+ * phone the strip and a panel together left the panel one row - Cut showed its
+ * in point and not its out, Motion and Sound showed a paragraph and no button.
+ * These work on the playhead and the picture, not on dragging clips, so the
+ * strip costs them room and gives nothing; "Show timeline" is one tap away.
+ * Blend keeps the strip because it acts on whichever clip is tapped there.
+ */
+private val ROOMY_TABS = EditorTab.entries.toSet() - EditorTab.Blend

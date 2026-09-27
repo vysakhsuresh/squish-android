@@ -38,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +46,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.squish.app.media.keepReadAccess
+import com.squish.app.editor.GlyphTile
+import com.squish.app.editor.glyph
 import com.squish.app.tools.QuickTool
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.components.accentSweep
@@ -54,6 +58,9 @@ fun formatSize(bytes: Long): String {
     val mb = bytes / 1_000_000.0
     return if (mb >= 1) "%.1f MB".format(mb) else "%.0f KB".format(bytes / 1000.0)
 }
+
+/** "1 clip", "3 clips" - a count read aloud, not a count with an s stapled on. */
+fun countOf(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"
 
 /**
  * The dashboard. Every capability is a separate door: one-job tools for people who
@@ -74,8 +81,9 @@ fun HomeScreen(
     // Re-read on every return to the dashboard, so an edit left five minutes ago
     // is here rather than whatever the list happened to hold at launch.
     LaunchedEffect(Unit) { viewModel.refreshDrafts() }
+    val context = LocalContext.current
     val pickForEditor = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let(onOpenEditor)
+        uri?.let { context.keepReadAccess(it); onOpenEditor(it) }
     }
 
 
@@ -264,20 +272,7 @@ private fun ToolTile(tool: QuickTool, modifier: Modifier = Modifier, onClick: ()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(accentSweep(tool.accent)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                tool.icon,
-                contentDescription = null,
-                tint = SquishColors.Background,
-                modifier = Modifier.size(20.dp)
-            )
-        }
+        GlyphTile(tool.glyph, size = 44.dp)
         Text(tool.title, style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
         Text(
             tool.blurb,
@@ -400,4 +395,4 @@ private fun DraftsDoor(count: Int, onClick: () -> Unit) {
 }
 
 /** Two rows of text and a glyph, at a height that does not depend on the words. */
-private val TILE_HEIGHT = 138.dp
+private val TILE_HEIGHT = 156.dp

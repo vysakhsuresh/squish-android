@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.squish.app.home.formatSize
+import com.squish.app.ui.components.OutputSizePicker
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
@@ -156,6 +157,48 @@ private fun TrimPointRow(
 
 // ---- Crop -------------------------------------------------------------------
 
+/**
+ * Auto-reframe: a crop that follows the subject instead of sitting in the middle.
+ * Faces first, movement where there are none - analysed on the phone.
+ */
+@Composable
+private fun AutoReframeRow(state: EditorUiState, viewModel: EditorViewModel) {
+    val progress = state.reframeProgress
+    val following = state.reframe != null && state.cropAspect.ratio != null
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            when {
+                progress.running && progress.total > 0 ->
+                    "Finding the subject — ${progress.done * 100 / progress.total}%"
+                progress.running -> "Finding the subject…"
+                progress.failed -> "Could not read this clip to reframe it."
+                following -> "The crop follows the subject. Play to see it move."
+                else -> "Auto-reframe keeps faces and movement in the crop, instead of the middle."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (progress.failed) SquishColors.Pink else SquishColors.TextMuted
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            when {
+                progress.running -> SquishOutlinedButton(
+                    text = "Stop",
+                    modifier = Modifier.weight(1f),
+                    onClick = viewModel::cancelReframe
+                )
+                following -> {
+                    SquishOutlinedButton(text = "Again", modifier = Modifier.weight(1f), onClick = viewModel::autoReframe)
+                    SquishOutlinedButton(text = "Centre it", modifier = Modifier.weight(1f), onClick = viewModel::clearReframe)
+                }
+                else -> SquishOutlinedButton(
+                    text = "Auto-reframe",
+                    modifier = Modifier.weight(1f),
+                    onClick = viewModel::autoReframe
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
     PanelSurface(accent = SquishColors.Violet) {
@@ -184,10 +227,12 @@ fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
         if (state.cropAspect == CropAspect.Custom) {
             Text(
-                "Drag the corners on the picture. The dimmed part is what goes.",
+                "Drag any edge or corner on the picture, or the middle to move it. The dimmed part is what goes.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )
+        } else {
+            AutoReframeRow(state, viewModel)
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -212,24 +257,21 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = SquishColors.Blue) {
             PanelHeading(
-                "Quality",
+                "Size",
                 "Bigger means sharper and heavier",
                 icon = Icons.Filled.HighQuality,
                 accent = SquishColors.Blue
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Quality.entries.forEach { quality ->
-                    SelectableChip(
-                        label = quality.label,
-                        selected = state.quality == quality && !state.fitToSize,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            viewModel.setFitToSize(false)
-                            viewModel.setQuality(quality)
-                        }
-                    )
-                }
-            }
+            OutputSizePicker(
+                outputP = state.outputP,
+                fitToSize = state.fitToSize,
+                sourceWidth = state.sourceWidth,
+                sourceHeight = state.sourceHeight,
+                estimatedBytes = state.estimatedOutputBytes,
+                originalBytes = state.originalSizeBytes,
+                accent = SquishColors.Blue,
+                onPick = viewModel::setOutputP
+            )
         }
 
         PanelSurface(accent = SquishColors.Blue) {
@@ -260,8 +302,6 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
             }
         }
 
-        EstimateCard(state)
-
         PanelSurface(accent = SquishColors.Blue) {
             PanelHeading(
                 "Video track",
@@ -290,20 +330,6 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
                 }
             }
             SquishOutlinedButton(text = "Add another clip", modifier = Modifier.fillMaxWidth(), onClick = onAddClip)
-        }
-    }
-}
-
-@Composable
-fun EstimateCard(state: EditorUiState) {
-    PanelSurface(accent = SquishColors.Cyan) {
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("Original", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
-            Text(formatSize(state.originalSizeBytes), style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
-        }
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("Estimated output", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
-            Text(formatSize(state.estimatedOutputBytes), style = MaterialTheme.typography.titleSmall, color = SquishColors.Teal)
         }
     }
 }

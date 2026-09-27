@@ -1,4 +1,4 @@
-@file:OptIn(UnstableApi::class)
+@file:androidx.annotation.OptIn(UnstableApi::class)
 
 package com.squish.app.ui.components
 
@@ -12,17 +12,22 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Forward5
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay5
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,11 +47,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.squish.app.editor.PreviewBox
+import com.squish.app.media.audio.PcmDecoder
+import com.squish.app.media.audio.Waveform
+import com.squish.app.media.audio.WaveformBuilder
 import com.squish.app.editor.Timecode
 import com.squish.app.ui.theme.SquishColors
 import com.squish.app.ui.theme.tabularFigures
@@ -84,7 +94,9 @@ fun ClipPreview(
     audioOnly: Boolean = false,
     /** Where to jump to; changing [seekNonce] is what makes the jump happen. */
     seekToMs: Long = 0L,
-    seekNonce: Long = 0L
+    seekNonce: Long = 0L,
+    /** The tallest the picture may be; a tall clip is fitted inside, whole. */
+    maxHeightDp: Float = PreviewBox.MAX_HEIGHT_DP
 ) {
     val context = LocalContext.current
     val player = remember { ExoPlayer.Builder(context).build() }
@@ -191,36 +203,54 @@ fun ClipPreview(
     }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(if (audioOnly) 3.2f else aspect.coerceIn(0.4f, 2.5f))
-                .clip(RoundedCornerShape(16.dp))
-                .background(SquishColors.Background)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = { toggle() }
-                ),
-            contentAlignment = Alignment.Center
-        ) {
+        // Capped in height, with the whole frame fitted inside, the way the
+        // editor's preview is. Sized by width alone, a portrait screen recording
+        // filled the phone and pushed every control below the fold, so choosing a
+        // setting meant scrolling away from the picture it was changing.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val shape = if (audioOnly) 3.2f else aspect.coerceIn(0.4f, 2.5f)
+            val boxHeight = if (audioOnly) maxWidth.value / shape
+            else PreviewBox.heightDp(shape, maxWidth.value).coerceAtMost(maxHeightDp)
+            val (pictureWidth, pictureHeight) = PreviewBox.fittedSizeDp(shape, maxWidth.value, boxHeight)
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(boxHeight.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(SquishColors.Surface)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { toggle() }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
             if (audioOnly) {
-                // No picture to show, so the surface says what it is rather than
-                // being a black rectangle that looks broken.
-                Icon(
-                    Icons.Filled.MusicNote,
-                    contentDescription = null,
-                    tint = accent.copy(alpha = 0.55f),
-                    modifier = Modifier.size(34.dp)
+                // The sound itself, where a picture would be: the part being kept
+                // lit, what is cut dimmed, and the playhead moving across it. An
+                // empty box with a note in it said nothing about where the loud
+                // part is, which is the whole question when choosing what to keep.
+                SoundWave(
+                    uri = sources.firstOrNull()?.uri,
+                    totalMs = totalMs,
+                    positionMs = positionMs,
+                    startMs = startMs,
+                    endMs = endMs,
+                    accent = accent,
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 18.dp)
                 )
             } else {
                 AndroidView(
                     factory = { ctx -> TextureView(ctx).also { player.setVideoTextureView(it) } },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.size(pictureWidth.dp, pictureHeight.dp)
                 )
             }
 
-            if (!playing) {
+            // Over a picture, the big play button says "this is a video, tap it".
+            // Over a waveform it would hide the thing being shown, and the button
+            // under the preview already does the job.
+            if (!playing && !audioOnly) {
                 Box(
                     modifier = Modifier
                         .size(56.dp)
@@ -236,6 +266,7 @@ fun ClipPreview(
                     )
                 }
             }
+            }
         }
 
         Row(
@@ -243,6 +274,11 @@ fun ClipPreview(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Skips stay inside the kept range, since outside it is what the render
+            // is about to drop.
+            fun skip(delta: Long) = seekJoint((jointPosition() + delta).coerceIn(startMs, endMs))
+
+            SkipButton(Icons.Filled.Replay5, "Back 5 seconds") { skip(-SKIP_MS) }
             Box(
                 modifier = Modifier
                     .size(36.dp)
@@ -258,6 +294,7 @@ fun ClipPreview(
                     modifier = Modifier.size(18.dp)
                 )
             }
+            SkipButton(Icons.Filled.Forward5, "Forward 5 seconds") { skip(SKIP_MS) }
 
             ScrubBar(
                 positionMs = positionMs,
@@ -273,7 +310,9 @@ fun ClipPreview(
                 Timecode.format((positionMs - startMs).coerceAtLeast(0L)),
                 style = MaterialTheme.typography.labelSmall.tabularFigures(),
                 color = SquishColors.TextSecondary,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -352,5 +391,98 @@ private fun Modifier.pointerScrub(totalMs: Long, onScrub: (Long) -> Unit): Modif
         }
     )
 
+@Composable
+private fun SkipButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = label, tint = SquishColors.TextSecondary, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** How far one press of rewind or forward goes. */
+private const val SKIP_MS = 5_000L
+
 /** Sixteen a second. A scrub bar does not need a frame's worth of precision. */
 private val TICK = 60.milliseconds
+
+/**
+ * The file's sound as a waveform, with the kept range lit and the playhead on it.
+ *
+ * Decoded at a low rate and capped in length: a waveform is read at a glance,
+ * and decoding a two-hour film to draw one would take longer than the rip.
+ */
+@Composable
+private fun SoundWave(
+    uri: Uri?,
+    totalMs: Long,
+    positionMs: Long,
+    startMs: Long,
+    endMs: Long,
+    accent: Color,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var wave by remember(uri) { mutableStateOf<Waveform?>(null) }
+    LaunchedEffect(uri, totalMs) {
+        if (uri == null || totalMs <= 0L) return@LaunchedEffect
+        val pcm = PcmDecoder.decodeMono(context, uri, maxDurationMs = totalMs.coerceAtMost(WAVE_MAX_MS))
+        wave = pcm?.let { WaveformBuilder.build(it, buckets = WAVE_BARS) }
+    }
+
+    val shown = wave
+    if (shown == null || shown.peaks.isEmpty()) {
+        // Still decoding, or there is no sound to draw.
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Filled.MusicNote,
+                contentDescription = null,
+                tint = accent.copy(alpha = 0.55f),
+                modifier = Modifier.size(34.dp)
+            )
+        }
+        return
+    }
+
+    Canvas(modifier = modifier) {
+        if (totalMs <= 0L) return@Canvas
+        val w = size.width
+        val h = size.height
+        val mid = h / 2f
+        // The decoded span may be shorter than the file; the bars cover only it.
+        val span = (shown.durationMs.toFloat() / totalMs).coerceIn(0f, 1f)
+        val step = w * span / shown.peaks.size
+        val bar = (step * 0.62f).coerceAtLeast(1f)
+        val keepFrom = w * startMs / totalMs
+        val keepTo = w * endMs / totalMs
+        val played = w * positionMs / totalMs
+
+        shown.peaks.forEachIndexed { i, peak ->
+            val x = i * step + step / 2f
+            val half = (peak.coerceIn(0.04f, 1f) * h * 0.46f)
+            val color = when {
+                x < keepFrom || x > keepTo -> SquishColors.Border
+                x <= played -> accent
+                else -> accent.copy(alpha = 0.45f)
+            }
+            drawLine(color, Offset(x, mid - half), Offset(x, mid + half), strokeWidth = bar, cap = StrokeCap.Round)
+        }
+
+        drawLine(
+            SquishColors.TextPrimary,
+            Offset(played, 0f),
+            Offset(played, h),
+            strokeWidth = 2.dp.toPx()
+        )
+    }
+}
+
+/** Enough bars to read a shape at phone width without one per pixel. */
+private const val WAVE_BARS = 140
+
+/** The longest stretch decoded for the picture: ten minutes. */
+private const val WAVE_MAX_MS = 10 * 60_000L

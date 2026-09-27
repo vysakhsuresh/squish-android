@@ -1,4 +1,4 @@
-@file:OptIn(UnstableApi::class)
+@file:androidx.annotation.OptIn(UnstableApi::class)
 
 package com.squish.app.editor
 
@@ -8,21 +8,31 @@ import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.effect.Presentation
 import androidx.media3.effect.ScaleAndRotateTransformation
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import com.squish.app.media.audio.VoiceProcessor
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.Effect
 import androidx.media3.common.PlaybackException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import com.squish.app.media.effects.ChromaKeyEffect
-import com.squish.app.media.effects.ColorGrade
+import com.squish.app.media.effects.FxEffect
+import com.squish.app.media.video.MotionTrack
+import com.squish.app.media.effects.LiveLookEffect
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.effects.MaskEffect
+import com.squish.app.media.effects.BackgroundEffect
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.TextureOverlay
 import com.google.common.collect.ImmutableList
-import com.squish.app.media.SquishTextOverlay
+import com.squish.app.media.LiveCaptionOverlay
+import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.TransitionType
@@ -130,6 +140,7 @@ class PreviewEngine(private val context: Context) {
     private var layers: List<Int> = emptyList()
     private var audioClips: List<Clip> = emptyList()
     private var captions: List<TextOverlayItem> = emptyList()
+    private var effects: List<TimedEffect> = emptyList()
 
     private var fallbackUri: Uri? = null
     private var proxyUri: Uri? = null
@@ -144,7 +155,11 @@ class PreviewEngine(private val context: Context) {
     private var durationMs: Long = 0
     private var playing: Boolean = false
     private var inGap: Boolean = false
-    private var appliedGrade: Grade? = null
+    /**
+     * The grade every surface is drawing with, read by the shader on each frame.
+     * Changing it is a write here, never a pipeline rebuild - see [LiveLookEffect].
+     */
+    private val liveGrade = AtomicReference(IDENTITY_GRADE)
 
     /**
      * Framing, previewed rather than promised.
@@ -175,13 +190,75 @@ class PreviewEngine(private val context: Context) {
      */
     private val appliedEffects = HashMap<String, String>()
 
+    /** Each surface's captions, in that surface's clock, read by its caption layer every frame. */
+    private val liveCaptions = HashMap<String, AtomicReference<List<TextOverlayItem>>>()
+
+    /** Set when what a paused frame shows has changed; see [setTimeline]. */
+    private var pendingRedraw = false
+
+    /** Each surface's timed effects, in its own clock, read by its effects shader every frame. */
+    private val liveEffects = HashMap<String, AtomicReference<List<TimedEffect>>>()
+
+    /** Each surface's background removal and its clip's start, read by [BackgroundEffect] per frame. */
+    private val liveBackground = HashMap<String, AtomicReference<Pair<BackgroundRemoval?, Long>>>()
+
+    /** Whether captions draw at rest, which they do whenever the preview is paused. */
+    private val captionsAtRest = AtomicBoolean(true)
+
+    /** The frame shape the preview is cropped to, read by the caption layer each frame. */
+    private val liveCrop = AtomicReference<Float?>(null)
+
+    /** Auto-reframe's path, in source time, read by the caption layer to follow the crop. */
+    private val liveReframe = AtomicReference<MotionTrack?>(null)
+
+    fun setReframe(track: MotionTrack?) {
+        if (liveReframe.get() == track) return
+        liveReframe.set(track)
+        pendingRedraw = true
+    }
+
     private var anchorTimelineMs: Long = 0
     private var anchorWallMs: Long = SystemClock.elapsedRealtime()
 
-    private fun newPlayer() = ExoPlayer.Builder(context).build().apply {
+    /** The voice effect on the clip's own sound, read by the players' audio every buffer. */
+    private val liveVoice = AtomicReference(VoiceEffect.None)
+
+    fun setVoice(effect: VoiceEffect) {
+        if (liveVoice.getAndSet(effect) == effect) return
+        // Pitch is a playback parameter; push it to every base player now.
+        appliedSpeed.clear()
+        listOf(baseA, baseB).forEach { player ->
+            runCatching { player.playbackParameters = PlaybackParameters(player.playbackParameters.speed, effect.pitch) }
+        }
+    }
+
+    /**
+     * Renderers whose audio passes through a [VoiceProcessor] that reads
+     * [liveVoice], so robot, echo and radio are heard in the preview and change
+     * without the player being rebuilt.
+     */
+    private fun voiceRenderers() = object : DefaultRenderersFactory(context) {
+        override fun buildAudioSink(
+            context: Context,
+            enableFloatOutput: Boolean,
+            enableAudioTrackPlaybackParams: Boolean
+        ): AudioSink = DefaultAudioSink.Builder(context)
+            .setAudioProcessors(arrayOf(VoiceProcessor { liveVoice.get() }))
+            .build()
+    }
+
+    private fun newPlayer() = ExoPlayer.Builder(context, voiceRenderers()).build().apply {
         setSeekParameters(SeekParameters.EXACT)
         repeatMode = Player.REPEAT_MODE_OFF
         playWhenReady = false
+        // A failed player stops without a sound: the picture goes black and the
+        // clock carries on. The user is told by MediaCompat's check; this leaves
+        // the actual cause in the log, which is where the 10-bit HEVC case was found.
+        addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                android.util.Log.w("SquishPreview", "player error ${error.errorCodeName}", error)
+            }
+        })
     }
 
     /**
@@ -205,6 +282,7 @@ class PreviewEngine(private val context: Context) {
                 if (released || key in effectsDisabled) return
                 effectsDisabled.add(key)
                 appliedEffects.remove(key)
+                android.util.Log.w("SquishPreview", "dropping effects on $key after ${error.errorCodeName}")
                 runCatching {
                     setVideoEffects(emptyList())
                     prepare()
@@ -267,6 +345,7 @@ class PreviewEngine(private val context: Context) {
         videoClips: List<Clip>,
         audioClips: List<Clip>,
         captions: List<TextOverlayItem>,
+        effects: List<TimedEffect>,
         fallbackUri: Uri,
         proxyUri: Uri?,
         muteOriginal: Boolean,
@@ -276,6 +355,11 @@ class PreviewEngine(private val context: Context) {
         cropRatio: Float?
     ) {
         if (released) return
+        // A paused picture does not redraw by itself, so a restyled caption or a
+        // new grade would not show until play. The next tick, once every surface
+        // has been handed the change, asks for a fresh frame.
+        if (captions != this.captions || effects != this.effects || grade != liveGrade.get()) pendingRedraw = true
+        this.effects = effects
         this.captions = captions
         applyFraming(rotationDegrees, cropRatio)
         val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
@@ -317,9 +401,17 @@ class PreviewEngine(private val context: Context) {
 
     /** Re-frames every surface, but only when the framing has actually changed. */
     private fun applyFraming(rotation: Int, crop: Float?) {
-        if (rotation == rotationDegrees && crop == cropRatio) return
-        rotationDegrees = rotation
+        // The crop is not part of the pipeline: the preview clips the picture on
+        // screen instead (see TimelinePreview), and captions read it live to sit
+        // inside it. Only a rotation still needs the chain rebuilt.
+        if (crop != liveCrop.get()) {
+            liveCrop.set(crop)
+            pendingRedraw = true
+        }
         cropRatio = crop
+        if (rotation == rotationDegrees) return
+        rotationDegrees = rotation
+
         // Every surface now disagrees with the chain it is running.
         appliedEffects.clear()
     }
@@ -333,7 +425,9 @@ class PreviewEngine(private val context: Context) {
         val current = appliedSpeed[key]
         if (current != null && abs(current - safe) < 0.001f) return
         appliedSpeed[key] = safe
-        runCatching { player.setPlaybackSpeed(safe) }
+        // Pitch rides along with speed: a pitch voice effect is a playback
+        // parameter, so it is heard live and costs nothing to change.
+        runCatching { player.playbackParameters = PlaybackParameters(safe, liveVoice.get().pitch) }
     }
 
     /**
@@ -349,39 +443,58 @@ class PreviewEngine(private val context: Context) {
      * degrades instead of breaking.
      */
     private fun applyGrade(grade: Grade) {
-        if (grade == appliedGrade) return
-        appliedGrade = grade
-        // Every surface now disagrees with what it is running; the next tick
-        // rebuilds each one, chroma key included.
-        appliedEffects.clear()
+        // Picked up by the next frame on every surface. No rebuild: that was what
+        // froze the picture for the length of every slider drag.
+        liveGrade.set(grade)
     }
 
     /**
      * Gives one surface the effects its current clip needs: the green screen key,
      * then the grade.
      *
-     * This is the same ChromaKeyEffect and the same ColorGrade the export builds,
+     * This is the same ChromaKeyEffect and the same grade shader the export uses,
      * handed to the preview player - so the key you tune is the key that renders,
      * to the pixel, rather than an approximation of it.
      */
     private fun applySurfaceEffects(surfaceKey: String, player: ExoPlayer, clip: Clip?) {
-        val grade = appliedGrade
         val chroma = clip?.chromaKey
         val mask = clip?.mask
-        // Only captions that overlap this clip, shifted into its own clock.
+        // Only captions that overlap this clip, shifted into its own clock, handed
+        // to the surface's caption layer as a value - see [LiveCaptionOverlay].
         val visible = if (clip == null) emptyList() else captions
             .filter { it.endMs > clip.timelineStartMs && it.startMs < clip.timelineEndMs }
             .map { it.shiftedInto(clip) }
+        val captionsHere = liveCaptions.getOrPut(surfaceKey) { AtomicReference(emptyList()) }
+        captionsHere.set(visible)
+        // The effects library, handed over the same way and for the same reason.
+        val effectsHere = liveEffects.getOrPut(surfaceKey) { AtomicReference(emptyList()) }
+        effectsHere.set(
+            if (clip == null) emptyList() else effects
+                .filter { it.endMs > clip.timelineStartMs && it.startMs < clip.timelineEndMs }
+                .map { it.shiftedInto(clip) }
+        )
 
         if (surfaceKey in effectsDisabled) return
 
-        val signature = "$grade|$chroma|$mask|$visible|$rotationDegrees|$cropRatio"
+        // Neither the grade nor the captions are in here: both live in references
+        // the pipeline reads each frame, so changing them needs no rebuild.
+        // Everything that is here still needs one, but none of it moves on every
+        // tap or every frame of a drag.
+        // Handed over as a value, like the captions: a rebuild under a loaded
+        // player is what froze the picture when background removal was switched on.
+        val backgroundHere = liveBackground.getOrPut(surfaceKey) { AtomicReference(null to 0L) }
+        val background = clip?.background to (clip?.sourceInMs ?: 0L)
+        if (backgroundHere.getAndSet(background) != background) pendingRedraw = true
+        val signature = "$chroma|$mask|$rotationDegrees"
         if (appliedEffects[surfaceKey] == signature) return
         appliedEffects[surfaceKey] = signature
 
         val effects = buildList<Effect> {
             // Keyed first, then masked, matching the export's order exactly.
             chroma?.let { add(ChromaKeyEffect(it)) }
+            // Always present and read per frame - see liveBackground - so turning it
+            // on, off or to another fill never rebuilds the chain.
+            add(BackgroundEffect({ backgroundHere.get().first }, { backgroundHere.get().second }, timesAreSourceTime = true))
             // The preview player holds the whole source file, so its clock is source time.
             mask?.let { add(MaskEffect(it, clip?.sourceInMs ?: 0L, timesAreSourceTime = true)) }
             // Then framing, then colour - the exporter's order exactly. Grading
@@ -395,21 +508,33 @@ class PreviewEngine(private val context: Context) {
                         .build()
                 )
             }
-            cropRatio?.let {
-                add(Presentation.createForAspectRatio(it, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
-            }
-            grade?.let { addAll(ColorGrade.effects(it)) }
-            if (visible.isNotEmpty()) {
-                // Captions were previously export-only, so a tracked one could not be
-                // seen following anything until after a render.
-                val overlays: List<TextureOverlay> = visible.map { SquishTextOverlay(it) }
-                add(OverlayEffect(ImmutableList.copyOf(overlays)))
-            }
+            // Always present, even ungraded, so the pipeline exists from the first
+            // frame and the first touch of a slider changes a value rather than
+            // building one mid-playback.
+            add(LiveLookEffect(liveGrade))
+            add(FxEffect { effectsHere.get() })
+            // Always present for the same reason: the first title added mid-play
+            // is drawn by the next frame instead of rebuilding the pipeline.
+            val overlays: List<TextureOverlay> = listOf(LiveCaptionOverlay(captionsHere, captionsAtRest, liveCrop, liveReframe))
+            add(OverlayEffect(ImmutableList.copyOf(overlays)))
         }
         // Guarded: setVideoEffects is unstable API, and a custom shader can fail to
         // compile on a given driver. Either way the preview falls back to plain
         // playback and the export still applies everything.
+        // Swapped on a stopped player, then the file is loaded again - the order a
+        // first load uses, and the only one that is reliable. Swapping the chain
+        // under a player that is already prepared wedged it more often than not:
+        // with a new frame shape and a grade changing together (every template),
+        // the video renderer never became ready again and the picture froze while
+        // the clock ran. A reload of a local file costs a few frames.
+        val wasPrepared = loadedUri.containsKey(surfaceKey)
+        if (wasPrepared) player.stop()
         runCatching { player.setVideoEffects(effects) }
+        if (wasPrepared) {
+            loadedUri.remove(surfaceKey)
+            activeClip.remove(surfaceKey)
+        }
+        lastRebuildAt = SystemClock.elapsedRealtime()
     }
 
     // ---- Transport --------------------------------------------------------------
@@ -418,6 +543,7 @@ class PreviewEngine(private val context: Context) {
         if (released) return
         if (durationMs > 0 && positionMs >= durationMs) seekTo(0)
         playing = true
+        captionsAtRest.set(false)
         anchorTimelineMs = positionMs
         anchorWallMs = SystemClock.elapsedRealtime()
         // Not cleared. Clearing here is what used to make the first play the one
@@ -429,6 +555,9 @@ class PreviewEngine(private val context: Context) {
     fun pause() {
         if (released) return
         playing = false
+        captionsAtRest.set(true)
+        // Settles any caption caught mid-animation into its resting look.
+        pendingRedraw = true
         baseA.pause(); baseB.pause()
         overlayPlayers.values.forEach { it.pause() }
         audioPlayers.values.forEach { it.pause() }
@@ -449,6 +578,26 @@ class PreviewEngine(private val context: Context) {
         activeClip.clear()
         clockClipId = null
         primeAudio(positionMs)
+    }
+
+    /**
+     * Puts the current frame back on screen after the picture changed size.
+     *
+     * A paused TextureView keeps the frame it had, at the size it had it, so
+     * opening a tool panel - which shrinks the preview - left a small stale frame
+     * adrift in a bigger box until playback drew a new one. A seek makes the
+     * decoder hand over a fresh frame at the new size.
+     *
+     * Nudged by a millisecond, which is the same frame: a seek to exactly where a
+     * player already is gets dropped as a no-op, and draws nothing.
+     */
+    fun redraw() {
+        if (released || playing) return
+        (listOf(baseA, baseB) + overlayPlayers.values).forEach { player ->
+            if (player.mediaItemCount == 0) return@forEach
+            val at = player.currentPosition
+            player.seekTo(if (at > 0L) at - 1L else at + 1L)
+        }
     }
 
     /**
@@ -480,6 +629,15 @@ class PreviewEngine(private val context: Context) {
         val state = clockPlayer.playbackState
         val driving = clockClip != null && state == Player.STATE_READY && clockPlayer.isPlaying
         val stalled = playing && clockClip != null && state == Player.STATE_BUFFERING
+        // Stuck either way: waiting on a buffer, or "playing" with a position that
+        // will not move.
+        val frozen = playing && clockClip != null && state == Player.STATE_READY &&
+            clockPlayer.playWhenReady && clockPlayer.currentPosition == lastClockPosition
+        lastClockPosition = clockPlayer.currentPosition
+        // Paused too: a paused player wedged in buffering shows a stale frame and
+        // fails the moment play is pressed.
+        val wedged = clockClip != null && state == Player.STATE_BUFFERING
+        if (wedged || frozen) unstick(clockPlayer, now) else stalledSince = 0L
 
         var t = when {
             !playing -> positionMs
@@ -488,7 +646,7 @@ class PreviewEngine(private val context: Context) {
             stalled -> positionMs
             // Mapped back through the clip's own curve, so the playhead tracks a
             // ramp instead of racing it and then waiting.
-            driving && clockClip != null ->
+            driving ->
                 clockClip.timelineAtSource(clockPlayer.currentPosition)
             // The timeline is played time, so it runs at wall time. Speed lives
             // inside each clip's length rather than on the clock.
@@ -505,6 +663,15 @@ class PreviewEngine(private val context: Context) {
         anchorWallMs = now
 
         val (drawA, drawB, veil) = composeBase(t)
+        // Not while a rebuild is settling. A seek that lands while the player is
+        // swapping its effect chain can leave the chain waiting for a frame that
+        // never comes: picture frozen, clock held, no error. Templates hit this
+        // every time, because they change the look and the captions (which ask for
+        // a redraw) in the same moment as the frame shape (which rebuilds).
+        if (pendingRedraw && now - lastRebuildAt > REBUILD_SETTLE_MS) {
+            pendingRedraw = false
+            redraw()
+        }
         val overlays = syncOverlays(t)
         syncAudio(t, transportRunning = playing && !stalled)
 
@@ -523,8 +690,13 @@ class PreviewEngine(private val context: Context) {
     // ---- Base track and transitions ---------------------------------------------
 
     private fun composeBase(t: Long): Triple<SurfaceDraw, SurfaceDraw, Float> {
-        val clipA = rollA.lastOrNull { covers(it, t) }
-        val clipB = rollB.lastOrNull { covers(it, t) }
+        // A clip covers up to, not including, its end - so parked exactly on the
+        // end of the edit, where every play-through stops, nothing covered it and
+        // the picture went to "Gap". The end shows the last frame instead.
+        val end = (rollA + rollB).maxOfOrNull { it.timelineEndMs } ?: 0L
+        val at = if (end > 0L && t == end) end - 1 else t
+        val clipA = rollA.lastOrNull { covers(it, at) }
+        val clipB = rollB.lastOrNull { covers(it, at) }
 
         if (clipA == null && clipB == null) {
             inGap = rollA.isNotEmpty() || rollB.isNotEmpty()
@@ -534,8 +706,8 @@ class PreviewEngine(private val context: Context) {
         }
         inGap = false
 
-        syncSurface(KEY_A, baseA, clipA, t)
-        syncSurface(KEY_B, baseB, clipB, t)
+        syncSurface(KEY_A, baseA, clipA, at)
+        syncSurface(KEY_B, baseB, clipB, at)
 
         // Whichever shot was already driving keeps the clock for the whole
         // transition. Handing it over mid-blend would step the playhead by whatever
@@ -551,8 +723,8 @@ class PreviewEngine(private val context: Context) {
             val onA = clipA != null
             val only = (clipA ?: clipB)!!
             return Triple(
-                SurfaceDraw(visible = onA, transform = only.transformAt(t)),
-                SurfaceDraw(visible = !onA, transform = only.transformAt(t)),
+                SurfaceDraw(visible = onA, transform = only.transformAt(at)),
+                SurfaceDraw(visible = !onA, transform = only.transformAt(at)),
                 0f
             )
         }
@@ -561,13 +733,13 @@ class PreviewEngine(private val context: Context) {
         val incoming = if (clipA.timelineStartMs >= clipB.timelineStartMs) clipA else clipB
         val outgoing = if (incoming === clipA) clipB else clipA
         val overlapMs = (outgoing.timelineEndMs - incoming.timelineStartMs).coerceAtLeast(1L)
-        val progress = ((t - incoming.timelineStartMs).toFloat() / overlapMs).coerceIn(0f, 1f)
+        val progress = ((at - incoming.timelineStartMs).toFloat() / overlapMs).coerceIn(0f, 1f)
 
         val (outDraw, inDraw, veil) = blend(incoming.transitionIn.type, progress)
         // Both shots keep animating through the blend, which is the point of
         // keyframing a transition - a push-in that stalls mid-dissolve is a glitch.
-        val outMoved = outDraw.copy(transform = outgoing.transformAt(t))
-        val inMoved = inDraw.copy(transform = incoming.transformAt(t))
+        val outMoved = outDraw.copy(transform = outgoing.transformAt(at))
+        val inMoved = inDraw.copy(transform = incoming.transformAt(at))
         val aIsIncoming = incoming === clipA
         return Triple(
             if (aIsIncoming) inMoved else outMoved,
@@ -767,6 +939,57 @@ class PreviewEngine(private val context: Context) {
         }
     }
 
+    /** The view each base player draws into, so a stuck one can be re-attached. */
+    private val surfaces = HashMap<ExoPlayer, android.view.TextureView>()
+
+    fun attachSurface(player: ExoPlayer, view: android.view.TextureView) {
+        surfaces[player] = view
+        player.setVideoTextureView(view)
+    }
+
+    /** When the clock's player went into buffering and has stayed there, or 0. */
+    private var stalledSince = 0L
+
+    private var lastClockPosition = -1L
+
+    /** When a surface last had its effect chain rebuilt; see the redraw in [tick]. */
+    private var lastRebuildAt = 0L
+
+    /**
+     * Gets a player moving again when it has stopped being ready and not come back.
+     *
+     * Rebuilding a player's effects - a new frame shape, a template - very
+     * occasionally leaves it buffering for good: the picture freezes and the clock
+     * holds, with nothing reported as an error. A decode stall on a local file
+     * clears in well under a second, so one that has lasted two seconds is this, and
+     * the file is loaded again from scratch. Paused or playing: a wedged paused
+     * player is just as stuck, it only shows it later.
+     */
+    private fun unstick(player: ExoPlayer, now: Long) {
+        if (stalledSince == 0L) {
+            stalledSince = now
+            return
+        }
+        if (now - stalledSince < STALL_RELOAD_MS) return
+        stalledSince = now
+        // Loaded again from scratch: the file set, prepared and parked where the
+        // playhead is, with its effects applied fresh - exactly as on first load.
+        // Another seek does not help here; a seek is what wedges it.
+        player.stop()
+        player.clearMediaItems()
+        // The surface too. A reload alone came back just as stuck: the wedge is
+        // in the output surface, which a reload keeps. Letting go of it and taking
+        // it back gives the effect pipeline a fresh buffer queue to draw into.
+        surfaces[player]?.let { view ->
+            player.clearVideoTextureView(view)
+            player.setVideoTextureView(view)
+        }
+        loadedUri.clear()
+        appliedEffects.clear()
+        activeClip.clear()
+        pendingRedraw = false
+    }
+
     fun release() {
         if (released) return
         released = true
@@ -786,6 +1009,9 @@ class PreviewEngine(private val context: Context) {
         const val KEY_B = "base-b"
         const val KEY_OVERLAY = "overlay-"
 
+        const val STALL_RELOAD_MS = 2_000L
+        const val REBUILD_SETTLE_MS = 400L
+
         /** Generous on purpose: correction is for a jump, not for playback. */
         const val AUDIO_RESYNC_MS = 400L
         const val VIDEO_RESYNC_MS = 120L
@@ -804,3 +1030,6 @@ class PreviewEngine(private val context: Context) {
         const val CORRECTION_GAP_MS = 400L
     }
 }
+
+/** A grade that changes nothing: unit gain, no contrast or saturation shift, no look. */
+private val IDENTITY_GRADE = Grade(redScale = 1f, greenScale = 1f, blueScale = 1f, contrast = 0f, saturation = 0f)

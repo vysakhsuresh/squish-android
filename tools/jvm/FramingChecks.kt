@@ -1,4 +1,4 @@
-import com.squish.app.editor.Quality
+import com.squish.app.editor.OutputSize
 import com.squish.app.media.ExportPresets
 
 private val failures = mutableListOf<String>()
@@ -40,14 +40,14 @@ fun main() {
                 check("$name at $rotation keeps its shape", fw == w && fh == h)
             }
 
-            for (quality in Quality.entries) {
-                val target = ExportPresets.resolutionFor(quality, fw, fh)
+            for (outputP in listOf(OutputSize.ORIGINAL) + OutputSize.PRESETS) {
+                val target = ExportPresets.resolutionFor(outputP, fw, fh)
 
                 // The crucial one: the output box has to be the same way round as
                 // the frame it is fitting. A landscape frame given a portrait box
                 // is the letterboxed, wrong-shaped export that rotating produced.
                 check(
-                    "$name at $rotation, $quality: box is the same way round as the frame " +
+                    "$name at $rotation, ${outputP}p: box is the same way round as the frame " +
                         "(frame ${fw}x$fh, box ${target.width}x${target.height})",
                     (fw >= fh) == (target.width >= target.height)
                 )
@@ -57,7 +57,7 @@ fun main() {
                     val sourceAspect = fw.toFloat() / fh
                     val targetAspect = target.width.toFloat() / target.height
                     check(
-                        "$name at $rotation, $quality keeps its aspect " +
+                        "$name at $rotation, ${outputP}p keeps its aspect " +
                             "($sourceAspect vs $targetAspect)",
                         kotlin.math.abs(sourceAspect - targetAspect) < 0.02f
                     )
@@ -66,31 +66,31 @@ fun main() {
                 // Encoders reject odd dimensions on some devices and not others,
                 // which is the worst kind of failure to chase.
                 check(
-                    "$name at $rotation, $quality is even",
+                    "$name at $rotation, ${outputP}p is even",
                     target.width % 2 == 0 && target.height % 2 == 0
                 )
 
-                check("$name at $rotation, $quality is not empty", target.width > 0 && target.height > 0)
+                check("$name at $rotation, ${outputP}p is not empty", target.width > 0 && target.height > 0)
             }
         }
     }
 
     // Measuring against the source instead of the rotated frame really does go
     // wrong, or the fix above is guarding nothing.
-    val naive = ExportPresets.resolutionFor(Quality.Medium, 1080, 1920)
+    val naive = ExportPresets.resolutionFor(720, 1080, 1920)
     val (rotW, rotH) = framed(1080, 1920, 90)
     check(
         "the old way really did put a landscape frame in a portrait box",
         (rotW >= rotH) != (naive.width >= naive.height)
     )
-    println("a rotated 1080x1920 at Medium: frame ${rotW}x$rotH, " +
+    println("a rotated 1080x1920 at 720p: frame ${rotW}x$rotH, " +
         "old box ${naive.width}x${naive.height}, new box " +
-        ExportPresets.resolutionFor(Quality.Medium, rotW, rotH).let { "${it.width}x${it.height}" })
+        ExportPresets.resolutionFor(720, rotW, rotH).let { "${it.width}x${it.height}" })
 
     // Nothing measured yet must not produce a box of zero, which Media3 rejects.
-    for (quality in Quality.entries) {
-        val none = ExportPresets.resolutionFor(quality, 0, 0)
-        check("$quality survives an unmeasured source", none.width <= 0 || none.height > 0)
+    for (outputP in listOf(OutputSize.ORIGINAL) + OutputSize.PRESETS) {
+        val none = ExportPresets.resolutionFor(outputP, 0, 0)
+        check("${outputP}p survives an unmeasured source", none.width <= 0 || none.height > 0)
     }
 
     if (failures.isEmpty()) {

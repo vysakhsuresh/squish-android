@@ -15,6 +15,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.dp
 import com.squish.app.ui.theme.SquishColors
 
 /**
@@ -53,9 +54,12 @@ fun CustomCropOverlay(
                 detectDragGestures(
                     onDragStart = { at ->
                         grip = gripAt(
-                            at.x / size.width.coerceAtLeast(1),
-                            at.y / size.height.coerceAtLeast(1),
-                            latestRect
+                            x = at.x,
+                            y = at.y,
+                            rect = latestRect,
+                            width = size.width.toFloat().coerceAtLeast(1f),
+                            height = size.height.toFloat().coerceAtLeast(1f),
+                            reachPx = GRAB_REACH.toPx()
                         )
                     },
                     onDragEnd = {
@@ -118,8 +122,26 @@ fun CustomCropOverlay(
             drawLine(SquishColors.Violet, Offset(x, y), Offset(x + arm * sx, y), strokeWidth = thickness)
             drawLine(SquishColors.Violet, Offset(x, y), Offset(x, y + arm * sy), strokeWidth = thickness)
         }
+
+        // A grip in the middle of every edge. With only the corners marked, the
+        // top and bottom looked fixed - nothing said they could be taken hold of.
+        val pill = GRIP_PILL.toPx()
+        val midX = (left + right) / 2f
+        val midY = (top + bottom) / 2f
+        listOf(Offset(midX, top), Offset(midX, bottom)).forEach { at ->
+            drawLine(SquishColors.Violet, at.copy(x = at.x - pill / 2f), at.copy(x = at.x + pill / 2f), strokeWidth = 6f)
+        }
+        listOf(Offset(left, midY), Offset(right, midY)).forEach { at ->
+            drawLine(SquishColors.Violet, at.copy(y = at.y - pill / 2f), at.copy(y = at.y + pill / 2f), strokeWidth = 6f)
+        }
     }
 }
+
+/** How far from an edge a finger still takes hold of it - finger-sized, not frame-relative. */
+private val GRAB_REACH = 28.dp
+
+/** The length of the mid-edge grips. */
+private val GRIP_PILL = 22.dp
 
 /** Which part of the rectangle a finger landed on. */
 private enum class Grip {
@@ -151,27 +173,71 @@ private enum class Grip {
     }
 }
 
-/** How close to an edge counts as grabbing it, as a fraction of the frame. */
-private const val GRAB = 0.09f
+/**
+ * Which grip a finger landed on, measured in pixels.
+ *
+ * The reach used to be 9% of the frame, which on a short landscape picture is a
+ * sliver a finger cannot find - so the top and bottom edges seemed not to move at
+ * all. It is now a finger's width, and a drag that starts in the dimmed part
+ * outside the rectangle takes the nearest edge or corner rather than nothing.
+ */
+private fun gripAt(x: Float, y: Float, rect: CropRect, width: Float, height: Float, reachPx: Float): Grip {
+    val left = rect.left * width
+    val right = rect.right * width
+    val top = rect.top * height
+    val bottom = rect.bottom * height
 
-private fun gripAt(x: Float, y: Float, rect: CropRect): Grip {
-    val nearLeft = kotlin.math.abs(x - rect.left) < GRAB
-    val nearRight = kotlin.math.abs(x - rect.right) < GRAB
-    val nearTop = kotlin.math.abs(y - rect.top) < GRAB
-    val nearBottom = kotlin.math.abs(y - rect.bottom) < GRAB
+    val nearLeft = kotlin.math.abs(x - left) < reachPx
+    val nearRight = kotlin.math.abs(x - right) < reachPx
+    val nearTop = kotlin.math.abs(y - top) < reachPx
+    val nearBottom = kotlin.math.abs(y - bottom) < reachPx
+    val inside = x > left && x < right && y > top && y < bottom
 
     // Corners before edges: at a corner both tests pass, and the corner is what a
-    // finger that close to one meant.
+    // finger that close to one meant. Inside a small rectangle every edge can be
+    // "near", so the nearest one wins rather than whichever is tested first.
     return when {
-        nearLeft && nearTop -> Grip.TopLeft
-        nearRight && nearTop -> Grip.TopRight
-        nearLeft && nearBottom -> Grip.BottomLeft
-        nearRight && nearBottom -> Grip.BottomRight
-        nearLeft -> Grip.Left
-        nearRight -> Grip.Right
-        nearTop -> Grip.Top
-        nearBottom -> Grip.Bottom
-        x > rect.left && x < rect.right && y > rect.top && y < rect.bottom -> Grip.Move
-        else -> Grip.None
+        nearLeft && nearTop && !inside -> Grip.TopLeft
+        nearRight && nearTop && !inside -> Grip.TopRight
+        nearLeft && nearBottom && !inside -> Grip.BottomLeft
+        nearRight && nearBottom && !inside -> Grip.BottomRight
+        nearLeft || nearRight || nearTop || nearBottom -> {
+            val distances = listOf(
+                Grip.Left to kotlin.math.abs(x - left),
+                Grip.Right to kotlin.math.abs(x - right),
+                Grip.Top to kotlin.math.abs(y - top),
+                Grip.Bottom to kotlin.math.abs(y - bottom)
+            )
+            val nearest = distances.minBy { it.second }
+            // Well inside a large rectangle is a move, not the edge it happens to be
+            // a finger's width from.
+            if (inside && nearest.second > reachPx * 0.6f) Grip.Move else nearest.first
+        }
+        inside -> Grip.Move
+        else -> {
+            // Out in the dimmed part: take whatever edges lie between the finger
+            // and the rectangle.
+            val horizontal = when {
+                x < left -> -1
+                x > right -> 1
+                else -> 0
+            }
+            val vertical = when {
+                y < top -> -1
+                y > bottom -> 1
+                else -> 0
+            }
+            when {
+                horizontal < 0 && vertical < 0 -> Grip.TopLeft
+                horizontal > 0 && vertical < 0 -> Grip.TopRight
+                horizontal < 0 && vertical > 0 -> Grip.BottomLeft
+                horizontal > 0 && vertical > 0 -> Grip.BottomRight
+                horizontal < 0 -> Grip.Left
+                horizontal > 0 -> Grip.Right
+                vertical < 0 -> Grip.Top
+                vertical > 0 -> Grip.Bottom
+                else -> Grip.None
+            }
+        }
     }
 }

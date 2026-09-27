@@ -29,18 +29,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FirstPage
 import androidx.compose.material.icons.filled.FitScreen
-import androidx.compose.material.icons.filled.LastPage
+import androidx.compose.material.icons.automirrored.filled.LastPage
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Remove
@@ -60,6 +62,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
@@ -73,12 +78,16 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.squish.app.editor.Timecode
 import com.squish.app.ui.theme.SquishColors
 
 private val LANE_HEIGHT = 54.dp
+
+/** The effects lane is slimmer than the rest: its bars carry a mark and a name, not pictures. */
+private val FX_LANE_HEIGHT = 32.dp
 private val GUTTER = 34.dp
 private val RULER_HEIGHT = 26.dp
 private val HANDLE_WIDTH = 20.dp
@@ -125,6 +134,9 @@ private val MINI_ACTION_SIZE = 38.dp
  */
 private const val PINCH_SLOP_PX = 12f
 
+/** How far apart ruler labels must land to not run into each other - room for "10:00". */
+private const val MIN_LABEL_GAP_DP = 52f
+
 /**
  * A pinch, and nothing but a pinch.
  *
@@ -144,16 +156,18 @@ private const val PINCH_SLOP_PX = 12f
  *
  * [onZoom] receives a ratio - above one for spreading, below for pinching in.
  */
-private suspend fun PointerInputScope.detectPinch(onZoom: (Float) -> Unit) {
+private suspend fun PointerInputScope.detectPinch(guard: MultiTouchGuard, onZoom: (Float) -> Unit) {
     awaitEachGesture {
         // The initial pass, so this is offered the gesture before the scroll that
         // wraps it. Nothing is consumed here: at one finger there is no pinch.
         var spread = 0f
         var engaged = false
+        try {
         while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             val down = event.changes.filter { it.pressed }
             if (down.isEmpty()) break
+            if (down.size >= 2) guard.active = true
 
             if (down.size < 2) {
                 // Back to one finger, mid-gesture. Forget the span rather than
@@ -179,6 +193,37 @@ private suspend fun PointerInputScope.detectPinch(onZoom: (Float) -> Unit) {
             spread = distance
             down.forEach { if (it.positionChanged()) it.consume() }
         }
+        } finally {
+            if (guard.active) guard.release()
+        }
+    }
+}
+
+/**
+ * Whether a two-finger gesture is on the strip, or only just left it.
+ *
+ * A pinch starts and ends with one finger, and the tap detectors on the lanes and
+ * ruler saw that finger lift and took it for a tap - at the new zoom, which when
+ * zoomed out is usually past the end of the edit. The playhead leapt to the end,
+ * the picture went to "gap", and a pinch made during playback stopped it dead.
+ * Every tap and scrub on the strip now asks this first.
+ */
+internal class MultiTouchGuard {
+    var active = false
+    private var releasedAt = 0L
+
+    fun release() {
+        active = false
+        releasedAt = android.os.SystemClock.uptimeMillis()
+    }
+
+    /** True while two fingers are down, and for a moment after they lift. */
+    val blocking: Boolean
+        get() = active || android.os.SystemClock.uptimeMillis() - releasedAt < AFTER_PINCH_MS
+
+    private companion object {
+        /** Long enough to cover the lift of the last finger, short enough that a real tap is never lost. */
+        const val AFTER_PINCH_MS = 350L
     }
 }
 
@@ -208,10 +253,27 @@ fun TimelineEditor(
      * back rather than worked out by whoever wants it.
      */
     fitNonce: Long = 0L,
-    onZoomTo: (Float) -> Unit = {}
+    onZoomTo: (Float) -> Unit = {},
+    /** An effect dragged along its lane, by this many milliseconds. */
+    onEffectMove: (String, Long) -> Unit = { _, _ -> },
+    /** An effect's start and end pulled by these many milliseconds. */
+    onEffectTrim: (String, Long, Long) -> Unit = { _, _, _ -> }
 ) {
     val density = LocalDensity.current
     val totalMs = maxOf(state.durationMs, 8_000L)
+
+    // Every tap, scrub and select below goes through the guard, so the fingers of
+    // a pinch are never read as a tap on the strip.
+    val guard = remember { MultiTouchGuard() }
+    val rawScrub by rememberUpdatedState(onScrub)
+    val rawSelect by rememberUpdatedState(onSelect)
+    val guardedScrub: (Long) -> Unit = remember { { ms -> if (!guard.blocking) rawScrub(ms) } }
+    val guardedSelect: (String?) -> Unit = remember { { id -> if (!guard.blocking) rawSelect(id) } }
+    val rawMove by rememberUpdatedState(onMove)
+    val rawTrim by rememberUpdatedState(onTrim)
+    val guardedMove: (String, Long) -> Unit = remember { { id, delta -> if (!guard.active) rawMove(id, delta) } }
+    val guardedTrim: (String, Long, Long) -> Unit =
+        remember { { id, start, end -> if (!guard.active) rawTrim(id, start, end) } }
 
     // The strip's own width in pixels. Zero until the first layout pass, and
     // every use guards for that.
@@ -339,8 +401,65 @@ fun TimelineEditor(
     }
 
     val overlayLayers = (state.layerCount downTo 1).toList()
-    val audioLanes = state.audioLanes.ifEmpty { listOf(emptyList()) }
-    val laneCount = overlayLayers.size + audioLanes.size + 2
+    // Picture layers, the base picture, sound and words. Sound is one row however
+    // many tracks there are - overlaps stack in place, see [Lane]'s stacked mode.
+    val laneCount = overlayLayers.size + 3
+    // Only once there is an effect to show - an edit without any keeps the strip
+    // it always had, rather than gaining an empty row to scroll past.
+    val showEffects = state.effects.isNotEmpty()
+    val rawEffectMove by rememberUpdatedState(onEffectMove)
+    val rawEffectTrim by rememberUpdatedState(onEffectTrim)
+    val guardedEffectMove: (String, Long) -> Unit =
+        remember { { id, delta -> if (!guard.active) rawEffectMove(id, delta) } }
+    val guardedEffectTrim: (String, Long, Long) -> Unit =
+        remember { { id, start, end -> if (!guard.active) rawEffectTrim(id, start, end) } }
+
+    // One rule for picking out of a pile on every stacked row, and one record of
+    // the last pick - there is only ever one selection to say "2/3" about.
+    var cycle by remember { mutableStateOf<CycleMark?>(null) }
+    val latestState by rememberUpdatedState(state)
+    val stackTap: (List<Pair<String, LongRange>>, Long) -> Unit = remember {
+        { pile, atMs ->
+            val under = pile.filter { atMs >= it.second.first && atMs < it.second.last }.asReversed().map { it.first }
+            cycle = pickUnderTap(under, latestState.selectedClipId)?.also { guardedSelect(it.id) }
+            guardedScrub(atMs)
+        }
+    }
+    val tapAudio: (Long) -> Unit = remember {
+        { ms -> stackTap(latestState.audioClips.stackOrder().map { it.id to it.timelineStartMs..it.timelineEndMs }, ms) }
+    }
+    val tapText: (Long) -> Unit = remember {
+        { ms -> stackTap(latestState.textClips.stackOrder().map { it.id to it.timelineStartMs..it.timelineEndMs }, ms) }
+    }
+    val tapEffects: (Long) -> Unit = remember {
+        { ms -> stackTap(latestState.effects.stackOrder().map { it.id to it.startMs..it.endMs }, ms) }
+    }
+
+    /**
+     * A tap that lands on the playhead, handed on to the row beneath it.
+     *
+     * The playhead is a wide grab target over every row, and a tap on a clip
+     * moves the playhead to the finger - so a second tap in the same place, which
+     * is how a pile is cycled, always landed on the playhead and did nothing.
+     */
+    val rulerPx = with(density) { RULER_HEIGHT.toPx() }
+    val lanePx = with(density) { LANE_HEIGHT.toPx() }
+    val tapThroughPlayhead: (Float) -> Unit = { y ->
+        val s = latestState
+        val atMs = s.playheadMs
+        val layers = (s.layerCount downTo 1).toList()
+        val row = ((y - rulerPx) / lanePx).toInt()
+        when {
+            y < rulerPx -> Unit
+            row < layers.size -> s.clips
+                .firstOrNull { it.kind == ClipKind.Video && it.layer == layers[row] && it.spans(atMs) }
+                ?.let { guardedSelect(it.id) }
+            row == layers.size -> s.baseVideoClips.firstOrNull { it.spans(atMs) }?.let { guardedSelect(it.id) }
+            row == layers.size + 1 -> tapAudio(atMs)
+            row == layers.size + 2 -> tapText(atMs)
+            s.effects.isNotEmpty() -> tapEffects(atMs)
+        }
+    }
 
     Row(modifier = modifier.fillMaxWidth().background(SquishColors.Background)) {
 
@@ -348,8 +467,9 @@ fun TimelineEditor(
             Spacer(modifier = Modifier.height(RULER_HEIGHT))
             overlayLayers.forEach { LaneBadge(Icons.Filled.Layers, SquishColors.Magenta) }
             LaneBadge(Icons.Filled.Videocam, SquishColors.Violet)
-            audioLanes.forEach { LaneBadge(Icons.Filled.MusicNote, SquishColors.Cyan) }
+            LaneBadge(Icons.Filled.MusicNote, SquishColors.Cyan)
             LaneBadge(Icons.Filled.TextFields, SquishColors.Amber)
+            if (showEffects) LaneBadge(Icons.Filled.Bolt, SquishColors.Violet, FX_LANE_HEIGHT)
         }
 
         Box(
@@ -359,7 +479,7 @@ fun TimelineEditor(
                 // Pinch ahead of the scroll in the chain, so it sees the gesture on
                 // the initial pass before the scroll can claim it.
                 .pointerInput(Unit) {
-                    detectPinch { zoom ->
+                    detectPinch(guard) { zoom ->
                         latestZoomTo(
                             (latestWindow.pixelsPerSecond * zoom).coerceIn(MIN_PPS, MAX_PPS)
                         )
@@ -377,7 +497,7 @@ fun TimelineEditor(
                     window = window,
                     markers = markers,
                     barMarkers = barMarkers,
-                    onScrub = onScrub
+                    onScrub = guardedScrub
                 )
                 overlayLayers.forEach { layer ->
                     Lane(
@@ -385,10 +505,10 @@ fun TimelineEditor(
                         state = state,
                         window = window,
                         accent = SquishColors.Magenta,
-                        onSelect = onSelect,
-                        onMove = onMove,
-                        onTrim = onTrim,
-                        onScrub = onScrub
+                        onSelect = guardedSelect,
+                        onMove = guardedMove,
+                        onTrim = guardedTrim,
+                        onScrub = guardedScrub
                     )
                 }
                 Lane(
@@ -396,22 +516,40 @@ fun TimelineEditor(
                     state = state,
                     window = window,
                     accent = SquishColors.Violet,
-                    onSelect = onSelect,
-                    onMove = onMove,
-                    onTrim = onTrim,
-                    onScrub = onScrub,
+                    onSelect = guardedSelect,
+                    onMove = guardedMove,
+                    onTrim = guardedTrim,
+                    onScrub = guardedScrub,
                     onTransitionTap = onTransitionTap
                 )
-                audioLanes.forEach { lane ->
-                    Lane(lane, state, window, SquishColors.Cyan, onSelect, onMove, onTrim, onScrub)
+                Lane(
+                    state.audioClips, state, window, SquishColors.Cyan,
+                    guardedSelect, guardedMove, guardedTrim, guardedScrub,
+                    stackTap = tapAudio, cycle = cycle
+                )
+                Lane(
+                    state.textClips, state, window, SquishColors.Amber,
+                    guardedSelect, guardedMove, guardedTrim, guardedScrub,
+                    stackTap = tapText, cycle = cycle
+                )
+                if (showEffects) {
+                    EffectsLane(
+                        effects = state.effects,
+                        selectedId = state.selectedClipId,
+                        window = window,
+                        onSelect = guardedSelect,
+                        onMove = guardedEffectMove,
+                        onTrim = guardedEffectTrim,
+                        onTapAt = tapEffects,
+                        cycle = cycle
+                    )
                 }
-                Lane(state.textClips, state, window, SquishColors.Amber, onSelect, onMove, onTrim, onScrub)
             }
 
             // Beat lines run the full height, behind the playhead. A grid you can
             // only see on the ruler tells you where the beats are; a grid that
             // crosses the lanes tells you whether a cut is on one.
-            val laneHeight = RULER_HEIGHT + LANE_HEIGHT * laneCount
+            val laneHeight = RULER_HEIGHT + LANE_HEIGHT * laneCount + if (showEffects) FX_LANE_HEIGHT else 0.dp
             markers.forEach { at ->
                 if (!window.intersects(at, at)) return@forEach
                 val isBar = at in barMarkers
@@ -431,8 +569,9 @@ fun TimelineEditor(
                 atMs = state.playheadMs,
                 window = window,
                 height = laneHeight,
-                onScrub = onScrub,
-                onScrubbingChange = { scrubbing = it }
+                onScrub = guardedScrub,
+                onScrubbingChange = { scrubbing = it },
+                onTap = tapThroughPlayhead
             )
         }
     }
@@ -452,13 +591,15 @@ private fun BoxScope.Playhead(
     window: TimelineWindow,
     height: Dp,
     onScrub: (Long) -> Unit,
-    onScrubbingChange: (Boolean) -> Unit
+    onScrubbingChange: (Boolean) -> Unit,
+    /** A tap, not a drag, at this height down the strip - for the row underneath. */
+    onTap: (Float) -> Unit = {}
 ) {
     val latestScrub by rememberUpdatedState(onScrub)
     val latestScrubbing by rememberUpdatedState(onScrubbingChange)
+    val latestTap by rememberUpdatedState(onTap)
     val latestAtMs by rememberUpdatedState(atMs)
     val latestWindow by rememberUpdatedState(window)
-    val pixelsPerSecond = window.pixelsPerSecond
     val x = window.xDp(atMs).dp
 
     Column(
@@ -471,23 +612,35 @@ private fun BoxScope.Playhead(
             //
             // The gesture keeps its own running position rather than adding each
             // delta to wherever the playhead currently is. It has to: `dragAmount`
-            // is one event's movement, not the gesture's, and this block is keyed
-            // on the zoom so it does not restart when the playhead moves - which
-            // meant every event computed "where the playhead was when I grabbed it,
-            // plus three pixels", over and over. The playhead sat a few
-            // milliseconds from where it started and jittered there while the
-            // finger travelled the width of the screen, which is exactly what
-            // "I cannot move the play header" looks like.
+            // is one event's movement, not the gesture's, and this block does not
+            // restart when the playhead moves - which meant every event computed
+            // "where the playhead was when I grabbed it, plus three pixels", over
+            // and over. The playhead sat a few milliseconds from where it started
+            // and jittered there while the finger travelled the width of the
+            // screen, which is exactly what "I cannot move the play header" looks
+            // like.
+            //
+            // Keyed on nothing, not on the zoom. A restart mid-gesture - which a
+            // pinch caused on every step - dropped the drag without its end or
+            // cancel ever running, and left the strip believing a finger was still
+            // on the playhead, so it stopped following playback. The window is read
+            // fresh on every event instead.
             //
             // Kept as a float, because at a high zoom one pixel is under two
             // milliseconds and rounding every event to a whole one would lose most
             // of a slow drag.
-            .pointerInput(pixelsPerSecond) {
+            .pointerInput(Unit) {
                 var positionMs = 0f
                 detectHorizontalDragGestures(
-                    onDragStart = {
-                        positionMs = latestAtMs.toFloat()
+                    onDragStart = { offset ->
+                        // From where the finger is once the drag is recognised, not
+                        // from the playhead: the travel spent crossing the touch slop
+                        // used to be dropped, so the line trailed the finger by it for
+                        // the whole drag.
+                        val fromLinePx = offset.x - PLAYHEAD_HEAD.toPx() / 2f
+                        positionMs = (latestAtMs + latestWindow.msForPx(fromLinePx)).toFloat().coerceAtLeast(0f)
                         latestScrubbing(true)
+                        latestScrub(positionMs.toLong())
                     },
                     onDragEnd = { latestScrubbing(false) },
                     onDragCancel = { latestScrubbing(false) }
@@ -497,6 +650,11 @@ private fun BoxScope.Playhead(
                     positionMs = positionMs.coerceAtLeast(0f)
                     latestScrub(positionMs.toLong())
                 }
+            }
+            // It covers every row, and nothing under it hears a touch it takes -
+            // so a tap is passed on rather than lost.
+            .pointerInput(Unit) {
+                detectTapGestures { offset -> latestTap(offset.y) }
             },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -517,9 +675,9 @@ private fun BoxScope.Playhead(
 }
 
 @Composable
-private fun LaneBadge(icon: ImageVector, tint: Color) {
+private fun LaneBadge(icon: ImageVector, tint: Color, height: Dp = LANE_HEIGHT) {
     Box(
-        modifier = Modifier.height(LANE_HEIGHT).fillMaxWidth(),
+        modifier = Modifier.height(height).fillMaxWidth(),
         contentAlignment = Alignment.Center
     ) {
         Icon(icon, contentDescription = null, tint = tint.copy(alpha = 0.75f), modifier = Modifier.size(16.dp))
@@ -541,12 +699,12 @@ private fun Ruler(
     // A tick every second is unreadable when zoomed out, so widen the step until
     // labels have room to breathe - and widen it again if the timeline is long
     // enough that the readable step would mean a thousand of them.
-    val readableStepMs = when {
-        pixelsPerSecond >= 90f -> 1_000L
-        pixelsPerSecond >= 40f -> 2_000L
-        pixelsPerSecond >= 18f -> 5_000L
-        else -> 10_000L
-    }
+    //
+    // Worked out from how far apart the labels land, rather than from a table of
+    // zoom bands that stopped at ten seconds - zoomed out past that, "0:00",
+    // "0:10" and "0:20" were drawn on top of one another.
+    val readableStepMs = (MIN_LABEL_GAP_DP / pixelsPerSecond.coerceAtLeast(0.001f) * 1000f)
+        .toLong().coerceAtLeast(1_000L)
     // Against what is on screen, not how long the video is. Only the visible
     // ticks are built now, so the length of the edit no longer has a say in how
     // finely it can be marked.
@@ -617,10 +775,23 @@ private fun Lane(
     onMove: (String, Long) -> Unit,
     onTrim: (String, Long, Long) -> Unit,
     onScrub: (Long) -> Unit,
-    onTransitionTap: ((String) -> Unit)? = null
+    onTransitionTap: ((String) -> Unit)? = null,
+    /**
+     * Given, everything goes on one row, overlaps and all - for sound and words,
+     * which would otherwise need a row per overlap. Shortest on top so every clip
+     * keeps a part to grab, names in whatever stretch is left showing, the
+     * selection's outline and grips drawn over the lot, and every tap handed to
+     * this, which picks from the pile under it (see [pickUnderTap]).
+     */
+    stackTap: ((Long) -> Unit)? = null,
+    /** The last pick from a pile, for the "2/3" on the selection. */
+    cycle: CycleMark? = null
 ) {
+    val stacked = stackTap != null
     val latestScrub by rememberUpdatedState(onScrub)
     val latestWindow by rememberUpdatedState(window)
+    val latestStackTap by rememberUpdatedState(stackTap)
+    val ordered = if (stacked) clips.stackOrder() else clips
 
     Box(
         modifier = Modifier
@@ -637,23 +808,48 @@ private fun Lane(
             // there. Only the bare lane: a clip handles its own tap, because that
             // one also has to select.
             .pointerInput(Unit) {
-                detectTapGestures { offset -> latestScrub(latestWindow.msAt(offset.x)) }
+                detectTapGestures { offset ->
+                    val atMs = latestWindow.msAt(offset.x)
+                    latestStackTap?.invoke(atMs) ?: latestScrub(atMs)
+                }
             }
     ) {
-        clips.forEach { clip ->
+        ordered.forEachIndexed { i, clip ->
             // Off-screen clips are not built at all. This is what makes a timeline
             // of a hundred cuts cost the same to lay out as one of three.
-            if (!window.intersects(clip.timelineStartMs, clip.timelineEndMs)) return@forEach
+            if (!window.intersects(clip.timelineStartMs, clip.timelineEndMs)) return@forEachIndexed
             ClipView(
                 clip = clip,
                 selected = clip.id == state.selectedClipId,
+                waveform = clip.uri?.let { state.waveforms[it.toString()] },
                 window = window,
                 accent = accent,
                 onSelect = onSelect,
                 onMove = onMove,
                 onTrim = onTrim,
-                onScrub = onScrub
+                onScrub = onScrub,
+                stacked = stacked,
+                onTapAt = stackTap,
+                labelSpan = if (!stacked) null else openStretch(
+                    clip.timelineStartMs,
+                    clip.timelineEndMs,
+                    ordered.drop(i + 1).map { it.timelineStartMs..it.timelineEndMs }
+                )
             )
+        }
+
+        if (stacked) {
+            ordered.firstOrNull { it.id == state.selectedClipId }?.let { clip ->
+                SelectionFrame(
+                    id = clip.id,
+                    startMs = clip.timelineStartMs,
+                    endMs = clip.timelineEndMs,
+                    color = accent,
+                    window = window,
+                    onTrim = onTrim,
+                    cycle = cycle?.takeIf { it.id == clip.id }
+                )
+            }
         }
 
         // A tappable marker on every cut, so adding a dissolve is a tap on the
@@ -699,6 +895,7 @@ private fun BoxScope.TransitionBadge(clip: Clip, window: TimelineWindow, onTap: 
 
 @Composable
 private fun ClipView(
+    waveform: com.squish.app.media.audio.Waveform? = null,
     clip: Clip,
     selected: Boolean,
     window: TimelineWindow,
@@ -706,12 +903,19 @@ private fun ClipView(
     onSelect: (String?) -> Unit,
     onMove: (String, Long) -> Unit,
     onTrim: (String, Long, Long) -> Unit,
-    onScrub: (Long) -> Unit
+    onScrub: (Long) -> Unit,
+    /** On a stacked lane: solid, so it hides what it lies over, and its grips live in the lane's frame. */
+    stacked: Boolean = false,
+    /** On a stacked lane, a tap goes to the lane, which decides which clip under it to pick. */
+    onTapAt: ((Long) -> Unit)? = null,
+    /** On a stacked lane, the stretch of this clip the ones on top leave showing, for its name. */
+    labelSpan: LongRange? = null
 ) {
     val latestMove by rememberUpdatedState(onMove)
     val latestTrim by rememberUpdatedState(onTrim)
     val latestSelect by rememberUpdatedState(onSelect)
     val latestScrub by rememberUpdatedState(onScrub)
+    val latestTapAt by rememberUpdatedState(onTapAt)
     val latestWindow by rememberUpdatedState(window)
 
     /**
@@ -726,6 +930,8 @@ private fun ClipView(
     val span = window.clampToView(clip.timelineStartMs, clip.timelineEndMs) ?: return
     val drawnStartMs = span.first
     val drawnEndMs = span.last
+    // Read fresh by the tap below, whose gesture block outlives any one zoom or scroll.
+    val latestDrawnStart by rememberUpdatedState(drawnStartMs)
     val width = window.widthDp(drawnEndMs - drawnStartMs).dp
 
     /** Whether the clip's real edges are in the part being drawn. */
@@ -740,7 +946,7 @@ private fun ClipView(
     Box(
         modifier = Modifier
             .offset(x = window.xDp(drawnStartMs).dp)
-            .width(width)
+            .spanWidth(width)
             .fillMaxHeight()
             // Corners only where the clip really ends. A rounded edge in the
             // middle of a long clip would read as a cut that is not there.
@@ -752,6 +958,7 @@ private fun ClipView(
                     bottomEnd = if (tailVisible) 7.dp else 0.dp
                 )
             )
+            .then(if (stacked) Modifier.background(SquishColors.Background) else Modifier)
             .background(accent.copy(alpha = if (selected) 0.42f else 0.26f))
             .border(
                 width = if (selected) 2.dp else 1.dp,
@@ -776,8 +983,14 @@ private fun ClipView(
                 // clip, so "the clip's start plus this far in" is not the moment
                 // the finger is over.
                 detectTapGestures { offset ->
-                    latestSelect(clip.id)
-                    latestScrub(latestWindow.msAt(offset.x + latestWindow.xPx(drawnStartMs)))
+                    val atMs = latestWindow.msAt(offset.x + latestWindow.xPx(latestDrawnStart))
+                    val lane = latestTapAt
+                    if (lane != null) {
+                        lane(atMs)
+                    } else {
+                        latestSelect(clip.id)
+                        latestScrub(atMs)
+                    }
                 }
             }
             // The leftover fraction is carried between events rather than thrown
@@ -805,6 +1018,31 @@ private fun ClipView(
         // clip has any: an audio clip's picture is its waveform and a caption's
         // is its words, both of which it already shows.
         val strip = clip.uri?.takeIf { clip.kind == ClipKind.Video }
+        // A sound's picture: its waveform across the part being drawn, so where
+        // the loud bits and the beats fall can be read off the strip.
+        if (clip.kind == ClipKind.Audio && waveform != null && waveform.peaks.isNotEmpty() && waveform.durationMs > 0) {
+            val fromMs = clip.sourceAt(drawnStartMs)
+            val toMs = clip.sourceAt(drawnEndMs)
+            Canvas(modifier = Modifier.matchParentSize().padding(vertical = 6.dp)) {
+                val bars = (size.width / 3.dp.toPx()).toInt().coerceAtLeast(1)
+                val mid = size.height / 2f
+                val barWidth = 2.dp.toPx()
+                for (b in 0 until bars) {
+                    val atMs = fromMs + (toMs - fromMs) * (b + 0.5f) / bars
+                    val index = (atMs / waveform.durationMs.toFloat() * waveform.peaks.size).toInt()
+                    val peak = waveform.peaks.getOrElse(index.coerceIn(0, waveform.peaks.lastIndex)) { 0f }
+                    val half = (peak.coerceIn(0.05f, 1f) * size.height * 0.48f)
+                    val x = (b + 0.5f) * size.width / bars
+                    drawLine(
+                        color = accent.copy(alpha = 0.75f),
+                        start = Offset(x, mid - half),
+                        end = Offset(x, mid + half),
+                        strokeWidth = barWidth,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+        }
         if (strip != null) {
             // The frames under the part being drawn, not under the whole clip.
             // The box is a window onto the clip, so sampling the clip's whole
@@ -829,14 +1067,27 @@ private fun ClipView(
             )
         }
 
-        Column(
+        // Where the name can go: the whole clip, or on a stacked lane the stretch
+        // the clips on top leave showing - clear of the grips when they are out.
+        val labelFrom = labelSpan?.let { maxOf(it.first, drawnStartMs) } ?: drawnStartMs
+        val labelRoom = labelSpan
+            ?.let { window.widthDp((minOf(it.last, drawnEndMs) - labelFrom).coerceAtLeast(0L)).dp }
+            ?: width
+        val labelInset = when {
+            !stacked -> handleWidth + 3.dp
+            selected -> STACKED_GRIP + 2.dp
+            else -> 5.dp
+        }
+        if (labelRoom > labelInset * 2 + 16.dp) Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .padding(horizontal = handleWidth + 3.dp)
+                .offset(x = window.widthDp(labelFrom - drawnStartMs).dp)
+                .widthIn(max = labelRoom)
+                .padding(horizontal = labelInset)
                 // Over pictures the label needs its own ground to stand on; over
                 // flat colour it does not, and a chip there would just be clutter.
                 .then(
-                    if (strip != null) {
+                    if (strip != null || (clip.kind == ClipKind.Audio && waveform != null)) {
                         Modifier
                             .clip(RoundedCornerShape(5.dp))
                             .background(SquishColors.Background.copy(alpha = 0.6f))
@@ -850,14 +1101,18 @@ private fun ClipView(
                 text = clip.text ?: clip.label,
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextPrimary,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
-            if (width > 88.dp) {
+            if (labelRoom > 88.dp) {
                 Text(
                     text = Timecode.format(clip.durationMs).removeSuffix(".000"),
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextPrimary.copy(alpha = 0.6f),
-                    maxLines = 1
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -879,7 +1134,9 @@ private fun ClipView(
                     else "${"%.2f".format(clip.speedRamp.flatSpeed).trimEnd('0').trimEnd('.')}x",
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.Cyan,
-                    maxLines = 1
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -902,19 +1159,310 @@ private fun ClipView(
 
         // Only on an edge that is really there. A handle at the side of a clip
         // that carries on past the screen would trim from a point the user never
-        // chose - it is the edge of the view, not the edge of the shot.
-        if (selected && headVisible) {
+        // chose - it is the edge of the view, not the edge of the shot. On a
+        // stacked lane the grips are the lane's, drawn over whatever lies on top.
+        if (selected && headVisible && !stacked) {
             TrimHandle(accent, handleWidth, Alignment.CenterStart) { deltaDp ->
                 latestTrim(clip.id, latestWindow.msForDp(deltaDp).toLong(), 0L)
             }
         }
-        if (selected && tailVisible) {
+        if (selected && tailVisible && !stacked) {
             TrimHandle(accent, handleWidth, Alignment.CenterEnd) { deltaDp ->
                 latestTrim(clip.id, 0L, latestWindow.msForDp(deltaDp).toLong())
             }
         }
     }
 }
+
+/**
+ * How an effect is shown on the strip: where it sits, and the mark and colour
+ * that tell it from its neighbours. The editor fills these in, so the timeline
+ * never has to know what an effect does.
+ */
+data class EffectSpan(
+    val id: String,
+    val label: String,
+    val startMs: Long,
+    val endMs: Long,
+    val icon: ImageVector,
+    val color: Color
+)
+
+/**
+ * Every effect on one slim lane.
+ *
+ * Deliberately one row however many there are: effects are short and usually
+ * sparse, and stacking overlaps into rows of their own - the way sounds are -
+ * would grow the strip every time two landed on the same beat. Where they
+ * overlap the shorter one always sits on top, so every bar keeps a part that
+ * can be grabbed. Selecting one does not lift it forward - a long effect raised
+ * over the short ones would hide them until it was let go.
+ */
+@Composable
+private fun EffectsLane(
+    effects: List<EffectSpan>,
+    selectedId: String?,
+    window: TimelineWindow,
+    onSelect: (String?) -> Unit,
+    onMove: (String, Long) -> Unit,
+    onTrim: (String, Long, Long) -> Unit,
+    /** Every tap on the lane, which picks from the pile under it. */
+    onTapAt: (Long) -> Unit,
+    /** The last pick from a pile, for the "2/3" on the selection. */
+    cycle: CycleMark?
+) {
+    val latestTapAt by rememberUpdatedState(onTapAt)
+    val latestWindow by rememberUpdatedState(window)
+    val ordered = effects.stackOrder()
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(FX_LANE_HEIGHT)
+            .padding(vertical = 3.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(SquishColors.Violet.copy(alpha = 0.05f))
+            .pointerInput(Unit) {
+                detectTapGestures { offset -> latestTapAt(latestWindow.msAt(offset.x)) }
+            }
+    ) {
+        ordered.forEachIndexed { i, effect ->
+            if (!window.intersects(effect.startMs, effect.endMs)) return@forEachIndexed
+            // The name goes in the widest stretch the bars on top leave showing,
+            // so a long effect under a short one is still labelled.
+            val above = ordered.drop(i + 1)
+            val label = openStretch(effect.startMs, effect.endMs, above.map { it.startMs..it.endMs })
+            EffectBar(effect, effect.id == selectedId, label, window, onSelect, onMove, onTapAt)
+        }
+        ordered.firstOrNull { it.id == selectedId }?.let { effect ->
+            SelectionFrame(
+                id = effect.id,
+                startMs = effect.startMs,
+                endMs = effect.endMs,
+                color = effect.color,
+                window = window,
+                onTrim = onTrim,
+                cycle = cycle?.takeIf { it.id == effect.id }
+            )
+        }
+    }
+}
+
+/** Drawing order on a stacked lane: longest first, so the shortest ends up on top. */
+private fun List<Clip>.stackOrder() = sortedByDescending { it.durationMs }
+
+@JvmName("effectStackOrder")
+private fun List<EffectSpan>.stackOrder() = sortedByDescending { it.endMs - it.startMs }
+
+/** The longest part of start..end that none of [covers] lies over. */
+private fun openStretch(start: Long, end: Long, covers: List<LongRange>): LongRange {
+    var best = start..start
+    var from = start
+    covers.filter { it.first < end && it.last > start }.sortedBy { it.first }.forEach { c ->
+        if (c.first > from && c.first - from > best.last - best.first) best = from..c.first
+        from = maxOf(from, c.last)
+    }
+    if (end > from && end - from > best.last - best.first) best = from..end
+    return best
+}
+
+@Composable
+private fun EffectBar(
+    effect: EffectSpan,
+    selected: Boolean,
+    /** Where along the bar its mark and name can be seen. */
+    labelSpan: LongRange,
+    window: TimelineWindow,
+    onSelect: (String?) -> Unit,
+    onMove: (String, Long) -> Unit,
+    /** A tap goes to the lane, which picks among whatever lies under it. */
+    onTapAt: (Long) -> Unit
+) {
+    val latestMove by rememberUpdatedState(onMove)
+    val latestSelect by rememberUpdatedState(onSelect)
+    val latestTapAt by rememberUpdatedState(onTapAt)
+    val latestWindow by rememberUpdatedState(window)
+
+    val span = window.clampToView(effect.startMs, effect.endMs) ?: return
+    val drawnStartMs = span.first
+    val drawnEndMs = span.last
+    val latestDrawnStart by rememberUpdatedState(drawnStartMs)
+    val width = window.widthDp(drawnEndMs - drawnStartMs).dp
+    val shape = barShape(drawnStartMs <= effect.startMs, drawnEndMs >= effect.endMs)
+
+    Box(
+        modifier = Modifier
+            .offset(x = window.xDp(drawnStartMs).dp)
+            .spanWidth(width)
+            .fillMaxHeight()
+            .clip(shape)
+            // Solid ground first: a bar lying over a longer one must hide it, or
+            // the two names print through each other.
+            .background(SquishColors.Background)
+            .background(effect.color.copy(alpha = if (selected) 0.5f else 0.3f))
+            .border(1.dp, effect.color.copy(alpha = 0.6f), shape)
+            .pointerInput(effect.id) {
+                detectTapGestures { offset ->
+                    latestTapAt(latestWindow.msAt(offset.x + latestWindow.xPx(latestDrawnStart)))
+                }
+            }
+            .pointerInput(effect.id) {
+                var carriedMs = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        carriedMs = 0f
+                        latestSelect(effect.id)
+                    }
+                ) { change, dragAmount ->
+                    change.consume()
+                    carriedMs += latestWindow.msForPx(dragAmount).toFloat()
+                    val wholeMs = carriedMs.toLong()
+                    if (wholeMs != 0L) {
+                        carriedMs -= wholeMs
+                        latestMove(effect.id, wholeMs)
+                    }
+                }
+            }
+    ) {
+        // The mark whenever it fits, the name when there is room for it too -
+        // measured in the stretch left showing, from wherever that starts on screen.
+        val labelFrom = maxOf(labelSpan.first, drawnStartMs)
+        val labelTo = minOf(labelSpan.last, drawnEndMs)
+        val labelRoom = window.widthDp((labelTo - labelFrom).coerceAtLeast(0L)).dp
+        val inset = if (selected) STACKED_GRIP + 2.dp else 5.dp
+        if (labelRoom > inset * 2 + 14.dp) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .offset(x = window.widthDp(labelFrom - drawnStartMs).dp)
+                    .width(labelRoom)
+                    // Clear of the grips when they are showing; otherwise a small
+                    // inset, so the mark on a short bar is not squeezed to nothing.
+                    .padding(horizontal = inset),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(effect.icon, contentDescription = null, tint = SquishColors.TextPrimary, modifier = Modifier.size(13.dp))
+                if (labelRoom > 64.dp) {
+                    Text(
+                        effect.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.TextPrimary,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val STACKED_GRIP = 14.dp
+
+/** Corners only where the thing really ends, as for clips. */
+private fun barShape(headVisible: Boolean, tailVisible: Boolean) = RoundedCornerShape(
+    topStart = if (headVisible) 6.dp else 0.dp,
+    bottomStart = if (headVisible) 6.dp else 0.dp,
+    topEnd = if (tailVisible) 6.dp else 0.dp,
+    bottomEnd = if (tailVisible) 6.dp else 0.dp
+)
+
+/** Which of a pile a tap picked, and how deep: shown as "2/3" on the selection. */
+private data class CycleMark(val id: String, val position: Int, val count: Int)
+
+/**
+ * What a tap on a stacked lane selects, given what is under it, top first.
+ *
+ * The top one - unless the selection is already in the pile, in which case the
+ * one below it, wrapping back to the top. So tapping the same spot again walks
+ * down through everything there, and a thing buried completely under shorter
+ * ones can still be reached from the strip.
+ */
+private fun pickUnderTap(topFirst: List<String>, current: String?): CycleMark? {
+    if (topFirst.isEmpty()) return null
+    val at = topFirst.indexOf(current)
+    val next = if (at < 0) 0 else (at + 1) % topFirst.size
+    return CycleMark(topFirst[next], next + 1, topFirst.size)
+}
+
+/**
+ * The selection's outline and trim grips on a stacked lane, drawn over every
+ * bar. The outline takes no touches, so what it passes over can still be tapped
+ * and dragged - only the grips answer. Where the tap that selected it landed on
+ * a pile, it says how deep in the pile this one is.
+ */
+@Composable
+private fun SelectionFrame(
+    id: String,
+    startMs: Long,
+    endMs: Long,
+    color: Color,
+    window: TimelineWindow,
+    onTrim: (String, Long, Long) -> Unit,
+    cycle: CycleMark?
+) {
+    val latestTrim by rememberUpdatedState(onTrim)
+    val latestWindow by rememberUpdatedState(window)
+    val span = window.clampToView(startMs, endMs) ?: return
+    val width = window.widthDp(span.last - span.first).dp
+    val headVisible = span.first <= startMs
+    val tailVisible = span.last >= endMs
+    val shape = barShape(headVisible, tailVisible)
+    val grip = minOf(STACKED_GRIP, width / 3f)
+
+    Box(
+        modifier = Modifier
+            .offset(x = window.xDp(span.first).dp)
+            .spanWidth(width)
+            .fillMaxHeight()
+            .clip(shape)
+            .border(2.dp, color, shape)
+    ) {
+        if (cycle != null && cycle.count > 1 && width > grip * 2 + 34.dp) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 2.dp, end = (if (tailVisible) grip else 0.dp) + 2.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(color)
+                    .padding(horizontal = 4.dp)
+            ) {
+                Text(
+                    "${cycle.position}/${cycle.count}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Background,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+        }
+        if (headVisible) {
+            TrimHandle(color, grip, Alignment.CenterStart) { deltaDp ->
+                latestTrim(id, latestWindow.msForDp(deltaDp).toLong(), 0L)
+            }
+        }
+        if (tailVisible) {
+            TrimHandle(color, grip, Alignment.CenterEnd) { deltaDp ->
+                latestTrim(id, 0L, latestWindow.msForDp(deltaDp).toLong())
+            }
+        }
+    }
+}
+
+/**
+ * A bar's width, even when that is wider than the strip.
+ *
+ * A bar is built for what is on screen plus half a screen either side, so
+ * zoomed in it is wider than the strip itself. Plain `width` quietly caps a
+ * child at its parent's width - the bar kept its offset half a screen to the
+ * left and lost its right-hand end, so a clip or effect looked as if it
+ * stopped partway across the screen. It showed as soon as a pinch zoomed in and
+ * playback scrolled the strip, and it squeezed the filmstrip's frames, which
+ * were laid out for the full width, into the capped one.
+ */
+private fun Modifier.spanWidth(width: Dp): Modifier =
+    wrapContentWidth(Alignment.Start, unbounded = true).width(width)
 
 /** Receives drag in dp so the caller only has to convert time. */
 @Composable
@@ -1036,7 +1584,7 @@ fun TimelineActionBar(
                 "Delete the selected clip",
                 SquishColors.Magenta,
                 onDelete,
-                enabled = selected != null
+                enabled = selected != null || state.effects.any { it.id == state.selectedClipId }
             )
             MiniAction(
                 Icons.Filled.Compress,
@@ -1047,7 +1595,7 @@ fun TimelineActionBar(
             // A long edit is a long drag otherwise, and the two ends are where
             // people go most.
             MiniAction(Icons.Filled.FirstPage, "Go to the start", SquishColors.TextSecondary, onGoToStart)
-            MiniAction(Icons.Filled.LastPage, "Go to the end", SquishColors.TextSecondary, onGoToEnd)
+            MiniAction(Icons.AutoMirrored.Filled.LastPage, "Go to the end", SquishColors.TextSecondary, onGoToEnd)
             // A gap, not a fraction: inside a scrolling row the width is
             // unbounded, and a proportion of infinity measures nothing.
             Spacer(modifier = Modifier.width(10.dp))

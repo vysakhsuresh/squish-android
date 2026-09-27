@@ -47,6 +47,9 @@ object MotionEstimator {
     /** Search radius in analysis pixels. At 96 wide this is 8% of the frame. */
     private const val SEARCH_RADIUS = 8
 
+    /** How far round the coarse winner the fine pass looks. */
+    private const val FINE_RADIUS = 2
+
     /** Rows and columns skipped at the border, where a shifted frame has no data. */
     private const val MARGIN = SEARCH_RADIUS + 1
 
@@ -94,42 +97,84 @@ object MotionEstimator {
         val y1 = h - MARGIN
         if (x1 <= x0 || y1 <= y0) return Match(0f, 0f, 0f)
 
+        val cur = current.pixels
+        val prev = previous.pixels
+
+        /** Mean absolute difference at one offset, sampling every [step]th pixel. */
+        fun sad(dx: Int, dy: Int, step: Int): Float {
+            var sum = 0f
+            var count = 0
+            var y = y0
+            while (y < y1) {
+                val rowCur = y * w
+                val rowPrev = (y + dy) * w + dx
+                var x = x0
+                while (x < x1) {
+                    sum += abs(cur[rowCur + x] - prev[rowPrev + x])
+                    count++
+                    x += step
+                }
+                y += step
+            }
+            return if (count > 0) sum / count else Float.MAX_VALUE
+        }
+
+        // Coarse to fine. Every offset in the window was scored at full density,
+        // which was 289 passes over the frame and nearly all the time Stabilize
+        // took. Now the window is scanned sparsely at every other offset, then the
+        // best of those is refined over its neighbours at full density. Shake is
+        // a smooth, single-minimum surface at this scale, so the coarse pass lands
+        // in the right basin and the answer is the same, about ten times sooner.
         var bestScore = Float.MAX_VALUE
         var bestDx = 0
         var bestDy = 0
         var worstScore = 0f
-
-        // Every other pixel: at this size the neighbours are nearly the same value,
-        // so the full grid costs four times as much for no extra accuracy.
-        val step = 2
-        val scores = HashMap<Long, Float>()
-
-        for (dy in -SEARCH_RADIUS..SEARCH_RADIUS) {
-            for (dx in -SEARCH_RADIUS..SEARCH_RADIUS) {
-                var sum = 0f
-                var count = 0
-                var y = y0
-                while (y < y1) {
-                    var x = x0
-                    val rowCur = y * w
-                    val rowPrev = (y + dy) * w
-                    while (x < x1) {
-                        sum += abs(current.pixels[rowCur + x] - previous.pixels[rowPrev + x + dx])
-                        count++
-                        x += step
-                    }
-                    y += step
-                }
-                val score = if (count > 0) sum / count else Float.MAX_VALUE
-                scores[key(dx, dy)] = score
+        var dy = -SEARCH_RADIUS
+        while (dy <= SEARCH_RADIUS) {
+            var dx = -SEARCH_RADIUS
+            while (dx <= SEARCH_RADIUS) {
+                val score = sad(dx, dy, 4)
                 if (score < bestScore) {
                     bestScore = score
                     bestDx = dx
                     bestDy = dy
                 }
                 if (score > worstScore) worstScore = score
+                dx += 2
+            }
+            dy += 2
+        }
+
+        // Fine: the 5x5 around the coarse winner, densely - which also covers the
+        // four neighbours the sub-pixel fit below needs.
+        val span = 2 * FINE_RADIUS + 1
+        val fine = FloatArray(span * span) { Float.NaN }
+        val cx = bestDx
+        val cy = bestDy
+        bestScore = Float.MAX_VALUE
+        for (oy in -FINE_RADIUS..FINE_RADIUS) {
+            for (ox in -FINE_RADIUS..FINE_RADIUS) {
+                val dxx = cx + ox
+                val dyy = cy + oy
+                if (abs(dxx) > SEARCH_RADIUS || abs(dyy) > SEARCH_RADIUS) continue
+                val score = sad(dxx, dyy, 2)
+                fine[(oy + FINE_RADIUS) * span + (ox + FINE_RADIUS)] = score
+                if (score < bestScore) {
+                    bestScore = score
+                    bestDx = dxx
+                    bestDy = dyy
+                }
             }
         }
+        fun fineAt(dx: Int, dy: Int): Float? {
+            val ox = dx - cx + FINE_RADIUS
+            val oy = dy - cy + FINE_RADIUS
+            if (ox !in 0 until span || oy !in 0 until span) return null
+            return fine[oy * span + ox].takeIf { !it.isNaN() }
+        }
+        // The coarse pass sampled more sparsely, so its worst is scaled to the fine
+        // pass's units by rescoring that one offset would cost more than it tells.
+        worstScore = maxOf(worstScore, bestScore)
 
         // A frame that matches every offer equally well carries no information -
         // a flat wall, a white flash, a cut. Correcting on that estimate invents
@@ -137,16 +182,8 @@ object MotionEstimator {
         val contrast = if (worstScore > 1e-6f) (worstScore - bestScore) / worstScore else 0f
         if (contrast < 0.04f) return Match(0f, 0f, 0f)
 
-        val refinedX = refine(
-            scores[key(bestDx - 1, bestDy)],
-            bestScore,
-            scores[key(bestDx + 1, bestDy)]
-        )
-        val refinedY = refine(
-            scores[key(bestDx, bestDy - 1)],
-            bestScore,
-            scores[key(bestDx, bestDy + 1)]
-        )
+        val refinedX = refine(fineAt(bestDx - 1, bestDy), bestScore, fineAt(bestDx + 1, bestDy))
+        val refinedY = refine(fineAt(bestDx, bestDy - 1), bestScore, fineAt(bestDx, bestDy + 1))
 
         // An estimate pinned at the edge of the search window means the real motion
         // was larger than the window, so the number is a floor rather than a value.
@@ -169,7 +206,6 @@ object MotionEstimator {
         return (0.5f * (before - after) / denominator).coerceIn(-0.5f, 0.5f)
     }
 
-    private fun key(dx: Int, dy: Int): Long = (dx.toLong() shl 32) or (dy.toLong() and 0xFFFFFFFFL)
 
     /** Nearest-neighbor downsample of a packed ARGB frame into a luma grid. */
     fun toLuma(argb: IntArray, srcWidth: Int, srcHeight: Int, dstWidth: Int, dstHeight: Int): LumaFrame {

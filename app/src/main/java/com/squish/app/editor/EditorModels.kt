@@ -2,6 +2,7 @@ package com.squish.app.editor
 
 import android.net.Uri
 import com.squish.app.data.ProjectSnapshot
+import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
 import com.squish.app.media.SquishError
 import com.squish.app.media.effects.Grade
@@ -10,11 +11,51 @@ import com.squish.app.media.audio.Waveform
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.EffectSpan
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.TimelineState
 
-enum class Quality(val label: String) {
-    Small("Small"), Medium("Medium"), High("High"), Original("Original")
+/**
+ * How big an export comes out, named by its short edge - 720p, 1080p - the way
+ * every phone and upload page names a video size. [ORIGINAL] keeps the source's
+ * own frame.
+ *
+ * This replaced Small / Medium / High, which were fixed bitrates wearing
+ * adjectives. A phone records heavier than "High" was, so High came out smaller
+ * than the original and nobody could say why; a size in pixels says what it is.
+ */
+object OutputSize {
+    const val ORIGINAL = 0
+    val PRESETS = listOf(360, 480, 720, 1080, 1440, 2160)
+
+    /** The range a hand-typed size may take. Above 4K, phone encoders refuse. */
+    const val MIN_P = 144
+    const val MAX_P = 2160
+
+    fun label(p: Int): String = when (p) {
+        ORIGINAL -> "Original"
+        2160 -> "4K"
+        else -> "${p}p"
+    }
+
+    /**
+     * Where Squeeze starts for a source whose short edge is [sourceP]: the
+     * largest named size below it, and no more than 720p. A fixed 720p default
+     * made a 576p clip *bigger*, which is the opposite of what the tool is for.
+     */
+    fun squeezeDefault(sourceP: Int): Int {
+        if (sourceP <= 0) return 720
+        return PRESETS.lastOrNull { it < sourceP && it <= 720 } ?: ORIGINAL
+    }
+
+    /** The old quality names, read back out of drafts saved before sizes existed. */
+    fun fromLegacyQuality(name: String?): Int? = when (name) {
+        "Small" -> 360
+        "Medium" -> 720
+        "High" -> 1080
+        "Original" -> ORIGINAL
+        else -> null
+    }
 }
 
 enum class CropAspect(val label: String, val ratio: Float?) {
@@ -44,6 +85,18 @@ data class TextOverlayItem(
     val xFraction: Float = 0.5f,
     val yFraction: Float = 0.85f,
     val sizeSp: Int = 28,
+
+    /** How it is set. New captions get an outline, which reads on any picture. */
+    val font: TextFont = TextFont.Sans,
+    val look: TextLook = TextLook.Outline,
+    val motion: TextMotion = TextMotion.None,
+
+    /**
+     * A sticker: an emoji placed on the picture. Drawn exactly like a caption -
+     * the same renderer, motions, timeline lane and export - but listed in its own
+     * panel and left out of anything that treats captions as words, like .srt.
+     */
+    val sticker: Boolean = false,
 
     /**
      * Pins this caption to something moving. Stored in timeline time, matching
@@ -145,7 +198,11 @@ data class CaptionProgress(
     val stage: String = "",
     val total: Int = 0,
     val transcribed: Int = 0,
+    /** Lines worked through so far, words or not - what the progress bar measures. */
+    val done: Int = 0,
     val finished: Boolean = false,
+    /** Finished because it was stopped part-way, rather than by running out of lines. */
+    val stopped: Boolean = false,
     val recognitionAvailable: Boolean = true
 )
 
@@ -183,9 +240,12 @@ data class EditSnapshot(
     val videoClips: List<Clip>,
     val audioClips: List<Clip>,
     val textOverlays: List<TextOverlayItem>,
+    val effects: List<TimedEffect>,
+    val reframe: MotionTrack?,
     val markers: List<Long>,
     val selectedClipId: String?,
     val muteOriginal: Boolean,
+    val voiceEffect: VoiceEffect,
     val originalVolume: Float,
     val rotationDegrees: Int,
     val cropAspect: CropAspect,
@@ -219,12 +279,21 @@ data class EditorUiState(
     val isPlaying: Boolean = false,
     val scrubNonce: Long = 0,
 
-    val quality: Quality = Quality.Original,
+    /** The export's short edge, or [OutputSize.ORIGINAL]. See [OutputSize]. */
+    val outputP: Int = OutputSize.ORIGINAL,
+    /**
+     * The source picture's bitrate, when the caller knows better than the file's
+     * weight over its length - a merge, whose weight is several files'. 0 means
+     * work it out from [originalSizeBytes] and [durationMs].
+     */
+    val sourceVideoBps: Long = 0,
     val fitToSize: Boolean = false,
     val targetSizeMb: Int = 16,
     val audioOnly: Boolean = false,
 
     val muteOriginal: Boolean = false,
+    /** A voice effect on the clip's own sound; see [VoiceEffect]. */
+    val voiceEffect: VoiceEffect = VoiceEffect.None,
     val originalVolume: Float = 1f,
     val rotationDegrees: Int = 0,
     val cropAspect: CropAspect = CropAspect.Original,
@@ -239,6 +308,17 @@ data class EditorUiState(
     val lookIntensity: Float = 1f,
 
     val textOverlays: List<TextOverlayItem> = emptyList(),
+    /** Timed effects from the library - shake, glitch, flash and the rest. */
+    val effects: List<TimedEffect> = emptyList(),
+    /**
+     * Auto-reframe: where the frame-shape crop is centred through the clip, in
+     * the main source's time. Null keeps the crop centred. Only used with a
+     * fixed shape (9:16, 1:1, 16:9).
+     */
+    val reframe: MotionTrack? = null,
+    val reframeProgress: ReframeProgress = ReframeProgress(),
+    /** Finding the person in a clip, for background removal. */
+    val backgroundProgress: ReframeProgress = ReframeProgress(),
     val captions: CaptionProgress = CaptionProgress(),
     val stabilize: StabilizeProgress = StabilizeProgress(),
     val stabilizeStrength: Float = 0.5f,
@@ -395,9 +475,12 @@ data class EditorUiState(
             videoClips = videoClips,
             audioClips = audioClips,
             textOverlays = textOverlays,
+            effects = effects,
+            reframe = reframe,
             markers = markers,
             selectedClipId = selectedClipId,
             muteOriginal = muteOriginal,
+            voiceEffect = voiceEffect,
             originalVolume = originalVolume,
             rotationDegrees = rotationDegrees,
             cropAspect = cropAspect,
@@ -414,9 +497,12 @@ data class EditorUiState(
         videoClips = snapshot.videoClips,
         audioClips = snapshot.audioClips,
         textOverlays = snapshot.textOverlays,
+        effects = snapshot.effects,
+        reframe = snapshot.reframe,
         markers = snapshot.markers,
         selectedClipId = snapshot.selectedClipId,
         muteOriginal = snapshot.muteOriginal,
+        voiceEffect = snapshot.voiceEffect,
         originalVolume = snapshot.originalVolume,
         rotationDegrees = snapshot.rotationDegrees,
         cropAspect = snapshot.cropAspect,
@@ -452,6 +538,36 @@ data class EditorUiState(
 
     /** Whether any audio at all reaches the exported file. */
     val hasAnyAudio: Boolean get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio
+
+    /** The frame the chosen size produces, before any crop. */
+    val outputResolution: ExportPresets.Resolution
+        // The rotated shape, not the shot one. This sits after the rotation in
+        // the render chain, so measured against the source's own numbers it asks
+        // a turned frame to fit a box the wrong way round - which is the
+        // letterboxed, wrong-shaped file that pressing Rotate produced.
+        get() = ExportPresets.resolutionFor(outputP, framedWidth, framedHeight)
+
+    /**
+     * The video bitrate this export is written at. One definition, read by the
+     * estimate and by the encoder, so the size promised is the size delivered.
+     */
+    val exportVideoBitrate: Int
+        get() = if (fitToSize) {
+            ExportPresets.bitrateForTargetSize(targetSizeMb * 1_000_000L, trimmedDurationMs, hasAnyAudio)
+        } else {
+            val sourceBps = sourceVideoBps.takeIf { it > 0 }
+                ?: ExportPresets.sourceVideoBitrate(originalSizeBytes, durationMs, sourceHasAudio)
+            ExportPresets.bitrateFor(outputP, sourceWidth, sourceHeight, fps, sourceBps)
+        }
+
+    /** What the finished file should weigh. */
+    val estimatedExportBytes: Long
+        get() {
+            val seconds = trimmedDurationMs / 1000.0
+            if (audioOnly) return (ExportPresets.AUDIO_BITRATE_BPS * seconds / 8).toLong()
+            val audioBits = if (hasAnyAudio) ExportPresets.AUDIO_BITRATE_BPS * seconds else 0.0
+            return ((exportVideoBitrate * seconds + audioBits) / 8).toLong()
+        }
 }
 
 /**
@@ -478,6 +594,18 @@ fun EditorUiState.toTimeline(): TimelineState {
         clips = videoClips + audioClips + captions,
         selectedClipId = selectedClipId,
         playheadMs = playheadMs,
-        pixelsPerSecond = pixelsPerSecond
+        pixelsPerSecond = pixelsPerSecond,
+        waveforms = audioWaveforms,
+        effects = effects.map { e ->
+            EffectSpan(e.id, e.kind.label, e.startMs, e.endMs, e.kind.icon, e.kind.color)
+        }
     )
 }
+
+/** Where an auto-reframe analysis has got to. */
+data class ReframeProgress(
+    val running: Boolean = false,
+    val done: Int = 0,
+    val total: Int = 0,
+    val failed: Boolean = false
+)

@@ -1,4 +1,4 @@
-@file:OptIn(UnstableApi::class)
+@file:androidx.annotation.OptIn(UnstableApi::class)
 
 package com.squish.app.editor
 
@@ -10,6 +10,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,8 +19,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Forward5
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay5
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,17 +38,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.squish.app.media.effects.Grade
+import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
 import com.squish.app.ui.theme.SquishColors
 import com.squish.app.ui.theme.tabularFigures
@@ -69,6 +84,7 @@ fun TimelinePreview(
     videoClips: List<Clip>,
     audioClips: List<Clip>,
     captions: List<TextOverlayItem>,
+    effects: List<TimedEffect>,
     fallbackUri: Uri,
     proxyUri: Uri?,
     muteOriginal: Boolean,
@@ -76,11 +92,17 @@ fun TimelinePreview(
     grade: Grade,
     rotationDegrees: Int,
     cropRatio: Float?,
+    /** Auto-reframe: where the crop sits through the head clip, in its source time. */
+    reframe: MotionTrack? = null,
+    reframeOffsetMs: Long = 0L,
+    voiceEffect: VoiceEffect = VoiceEffect.None,
     sourceAspect: Float,
     playheadMs: Long,
     scrubNonce: Long,
     onPositionChange: (Long) -> Unit,
     onPlayingChange: (Boolean) -> Unit,
+    /** Rewind (negative) or forward by a step. Routed through the edit so the playhead and picture move together. */
+    onJump: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
     /**
      * Drawn over the picture, inside its bounds.
@@ -104,7 +126,7 @@ fun TimelinePreview(
     // Positions and trims are read fresh every tick, so this only has to run when
     // the set of clips itself changes shape.
     val editSignature = remember(
-        videoClips, audioClips, captions, proxyUri, muteOriginal, originalVolume,
+        videoClips, audioClips, captions, effects, proxyUri, muteOriginal, originalVolume,
         grade, rotationDegrees, cropRatio
     ) {
         videoClips.joinToString("|") {
@@ -120,10 +142,11 @@ fun TimelinePreview(
                 // on belongs here, or the preview is not a preview.
                 ":C${it.chromaKey}" +
                 ":M${it.mask}" +
+                ":B${it.background}" +
                 ":S${it.stabilizer.size}"
         } +
             "//" + audioClips.joinToString("|") { "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}:${it.volume}" } +
-            "//" + proxyUri + muteOriginal + originalVolume + grade + captions +
+            "//" + proxyUri + muteOriginal + originalVolume + grade + captions + effects +
             rotationDegrees + cropRatio +
             // Speed is a clip property now, so a ramp edit has to reach the engine
             // through the same signature every other clip edit does.
@@ -131,9 +154,12 @@ fun TimelinePreview(
             audioClips.joinToString("|") { it.speedRamp.toString() }
     }
 
+    LaunchedEffect(reframe) { engine.setReframe(reframe) }
+    LaunchedEffect(voiceEffect) { engine.setVoice(voiceEffect) }
+
     LaunchedEffect(editSignature, fallbackUri) {
         engine.setTimeline(
-            videoClips, audioClips, captions, fallbackUri, proxyUri,
+            videoClips, audioClips, captions, effects, fallbackUri, proxyUri,
             muteOriginal, originalVolume, grade, rotationDegrees, cropRatio
         )
     }
@@ -141,6 +167,15 @@ fun TimelinePreview(
     // A deliberate jump - scrubbing the ruler, a nudge - as opposed to the playhead
     // simply advancing. Only the former should move the players.
     LaunchedEffect(scrubNonce) { engine.seekTo(playheadMs) }
+
+    // A new picture size, once the view underneath has actually taken it. Asking
+    // for the frame during the layout pass got it drawn at the old size.
+    var pictureSize by remember { mutableStateOf(IntSize.Zero) }
+    LaunchedEffect(pictureSize) {
+        if (pictureSize == IntSize.Zero) return@LaunchedEffect
+        delay(REDRAW_SETTLE)
+        engine.redraw()
+    }
 
     LaunchedEffect(engine) {
         while (true) {
@@ -154,9 +189,18 @@ fun TimelinePreview(
         }
     }
 
+    // The transport sits under the picture rather than over it. Laid over the
+    // bottom of the frame it hid whatever was there - a caption, a subtitle, the
+    // bottom of a screen recording - which is exactly what an editor has to show.
+    Column(modifier = modifier.background(Color.Black)) {
     Box(
-        modifier = modifier
-            .background(Color.Black)
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            // Nothing drawn outside the picture. A stabilised, zoomed or moved
+            // frame is scaled up and shifted, and without this it spilled over
+            // the transport below and covered the play button.
+            .clipToBounds()
             .clickable(
                 // The player's own controller is off, so the picture itself is the
                 // play button - which is what people reach for anyway.
@@ -176,13 +220,23 @@ fun TimelinePreview(
         // height first and letting the width follow gives the largest rectangle of
         // the footage's own shape that fits, and nothing of the frame is lost.
         Box(
-            modifier = Modifier.aspectRatio(
-                ratio = if (sourceAspect > 0f) sourceAspect else 16f / 9f,
-                matchHeightConstraintsFirst = true
-            )
+            modifier = Modifier
+                .aspectRatio(
+                    ratio = if (sourceAspect > 0f) sourceAspect else 16f / 9f,
+                    matchHeightConstraintsFirst = true
+                )
+                .onSizeChanged { pictureSize = it }
         ) {
-            VideoSurface(engine.baseA, frame.surfaceA)
-            VideoSurface(engine.baseB, frame.surfaceB)
+            // The frame shape, applied by clipping the picture here rather than by
+            // the player's effect chain. A centred crop is exactly the middle of
+            // the full frame, so this is pixel-for-pixel what the export writes -
+            // and changing it costs nothing, where rebuilding the chain for it
+            // could leave the player unable to draw again.
+            val focus = reframe?.sampleAt(frame.positionMs + reframeOffsetMs)?.let { it.xFraction to it.yFraction }
+            Box(modifier = Modifier.fillMaxSize().clip(CentredCrop(cropRatio, focus))) {
+                VideoSurface(engine, engine.baseA, frame.surfaceA)
+                VideoSurface(engine, engine.baseB, frame.surfaceB)
+            }
 
             if (frame.blackVeil > 0f) {
                 Box(
@@ -218,20 +272,17 @@ fun TimelinePreview(
                 )
             }
         }
+    }
 
-        Transport(
-            frame = frame,
-            onToggle = { engine.togglePlay() },
-            modifier = Modifier.align(Alignment.BottomCenter).zIndex(30f)
-        )
+        Transport(frame = frame, onToggle = { engine.togglePlay() }, onJump = onJump)
     }
 }
 
 /** One base surface, drawn the way the engine asked for. */
 @Composable
-private fun VideoSurface(player: ExoPlayer, draw: SurfaceDraw) {
+private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: SurfaceDraw) {
     AndroidView(
-        factory = { context -> TextureView(context).also { player.setVideoTextureView(it) } },
+        factory = { context -> TextureView(context).also { engine.attachSurface(player, it) } },
         modifier = Modifier
             .fillMaxSize()
             .zIndex(draw.zIndex.toFloat())
@@ -283,7 +334,12 @@ private fun OverlaySurface(player: ExoPlayer, placement: OverlayPlacement) {
 }
 
 @Composable
-private fun Transport(frame: PreviewFrame, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+private fun Transport(
+    frame: PreviewFrame,
+    onToggle: () -> Unit,
+    onJump: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -292,6 +348,7 @@ private fun Transport(frame: PreviewFrame, onToggle: () -> Unit, modifier: Modif
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        SkipButton(Icons.Filled.Replay5, "Back 5 seconds") { onJump(-SKIP_MS) }
         Box(
             modifier = Modifier
                 .size(30.dp)
@@ -307,12 +364,15 @@ private fun Transport(frame: PreviewFrame, onToggle: () -> Unit, modifier: Modif
                 modifier = Modifier.size(17.dp)
             )
         }
+        SkipButton(Icons.Filled.Forward5, "Forward 5 seconds") { onJump(SKIP_MS) }
 
         Text(
             Timecode.format(frame.positionMs),
             style = MaterialTheme.typography.labelLarge.tabularFigures(),
             color = SquishColors.TextPrimary,
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
         )
         Text(
             "/ ${Timecode.format(frame.durationMs)}",
@@ -322,5 +382,42 @@ private fun Transport(frame: PreviewFrame, onToggle: () -> Unit, modifier: Modif
     }
 }
 
+/** Rewind or forward, flanking play the way every player lays them out. */
+@Composable
+private fun SkipButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = label, tint = SquishColors.TextSecondary, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** How far one press of rewind or forward goes. */
+private const val SKIP_MS = 5_000L
+
 /** A frame at 30fps: fast enough that the playhead does not visibly step. */
 private val TICK = 33.milliseconds
+
+/** Long enough for the view system to finish a resize the layout pass started. */
+private val REDRAW_SETTLE = 150.milliseconds
+
+/** The centred rectangle of [ratio] inside whatever it clips, or all of it when there is none. */
+private class CentredCrop(private val ratio: Float?, private val focus: Pair<Float, Float>? = null) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val r = ratio
+        if (r == null || r <= 0f || size.width <= 0f || size.height <= 0f) {
+            return Outline.Rectangle(Rect(0f, 0f, size.width, size.height))
+        }
+        val aspect = size.width / size.height
+        val w = if (r < aspect) size.height * r else size.width
+        val h = if (r < aspect) size.height else size.width / r
+        val (fx, fy) = focus ?: (0.5f to 0.5f)
+        val left = (fx * size.width - w / 2f).coerceIn(0f, (size.width - w).coerceAtLeast(0f))
+        val top = (fy * size.height - h / 2f).coerceIn(0f, (size.height - h).coerceAtLeast(0f))
+        return Outline.Rectangle(Rect(left, top, left + w, top + h))
+    }
+}

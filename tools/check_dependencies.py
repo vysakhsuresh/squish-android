@@ -27,6 +27,7 @@ MODULE_BUILD = pathlib.Path("app/build.gradle.kts")
 # Import prefix -> the libs.versions.toml alias that must be declared for it.
 # Longest prefix wins, so a more specific artifact can override a broader one.
 PROVIDED_BY = {
+    "com.google.mediapipe": "mediapipe.tasks.vision",
     "androidx.activity": "androidx.activity.compose",
     "androidx.compose.animation": "androidx.compose.foundation",
     "androidx.compose.foundation.layout": "androidx.compose.foundation.layout",
@@ -62,8 +63,23 @@ DECLARED = re.compile(r"(?:implementation|debugImplementation|api)\(libs\.([A-Za
 # at ERROR level, so a file that touches it and has not opted in does not compile.
 # The Gradle-wide opt-in covers it too, but that is one line in a build script that
 # has already been silently wrong once, and a file annotation cannot be.
-OPT_IN_REQUIRED = "androidx.media3"
-OPT_IN_MARKER = "@file:OptIn(UnstableApi::class)"
+# Only the packages that are actually opt-in. Importing androidx.media3 at all
+# used to count, which flagged files whose only Media3 names were MediaItem and
+# ExoPlayer - both stable, neither needing anything. A checker that cries wolf
+# about working code is worse than no checker, because it gets ignored.
+#
+# A file using an unstable *method* on a stable class is not caught here, and
+# does not need to be: the compiler refuses that outright, with a clear message,
+# in any real build.
+OPT_IN_REQUIRED = ("androidx.media3.effect", "androidx.media3.transformer", "androidx.media3.common.util")
+# Two spellings, and only one of them is right. Media3's @UnstableApi is an
+# androidx.annotation.RequiresOptIn marker, so it wants androidx.annotation.OptIn
+# rather than Kotlin's own - but the Kotlin one compiles too, with a warning, so
+# both are accepted here and neither is silently missing.
+OPT_IN_MARKERS = (
+    "@file:androidx.annotation.OptIn(UnstableApi::class)",
+    "@file:OptIn(UnstableApi::class)",
+)
 
 
 def provider_of(fqn: str) -> str | None:
@@ -89,7 +105,7 @@ def main() -> int:
 
     for path in sorted(SOURCE.rglob("*.kt")):
         text = path.read_text()
-        if OPT_IN_REQUIRED in text and OPT_IN_MARKER not in text:
+        if any(pkg in text for pkg in OPT_IN_REQUIRED) and not any(m in text for m in OPT_IN_MARKERS):
             unmarked.append(str(path))
         for fqn in IMPORT.findall(text):
             if fqn.startswith(PLATFORM_PREFIXES) or fqn.startswith(ALLOWED_TRANSITIVE):
@@ -110,7 +126,7 @@ def main() -> int:
     for prefix, path in sorted(unmapped.items()):
         problems.append(f"{path}: imports {prefix}.*, which this checker has no entry for")
     for path in sorted(unmarked):
-        problems.append(f"{path}: uses Media3 without `{OPT_IN_MARKER}` above its package line")
+        problems.append(f"{path}: uses Media3 without `{OPT_IN_MARKERS[0]}` above its package line")
 
     if problems:
         for problem in problems:

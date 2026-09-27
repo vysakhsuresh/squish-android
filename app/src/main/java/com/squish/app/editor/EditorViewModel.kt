@@ -12,6 +12,7 @@ import com.squish.app.data.SrtFile
 import com.squish.app.data.SquishRepositories
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
+import com.squish.app.media.MediaCompat
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.SquishError
 import com.squish.app.media.GallerySaver
@@ -24,6 +25,10 @@ import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.SpeechSegmenter
 import com.squish.app.media.audio.Transcriber
 import com.squish.app.media.video.FilmstripLoader
+import com.squish.app.media.video.Reframer
+import com.squish.app.media.video.Segmenter
+import com.squish.app.timeline.BackgroundFill
+import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.Stabilizer
 import com.squish.app.media.video.TrackRunner
@@ -85,6 +90,20 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var stabilizeJob: Job? = null
     private var trackJob: Job? = null
 
+    /**
+     * The timeline as it stood the moment its clip finished loading.
+     *
+     * Opening a video is not an edit. Saving from that moment on put every video
+     * that was merely opened and backed out of on the dashboard as "pick up where
+     * you left off". The edit is only saved once it differs from this.
+     */
+    @Volatile
+    private var baseline: String? = null
+
+    /** Whether this session has put a draft on disk, so undoing back to nothing can take it off. */
+    @Volatile
+    private var wroteDraft = false
+
     init {
         // Aggressive by design. Each save is atomic, and skipped entirely when
         // nothing changed, so the cost of a tick is one string comparison, and the
@@ -94,17 +113,40 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 delay(AUTOSAVE_INTERVAL)
                 val current = _state.value
                 if (current.isExporting) continue
+                // Not while a saved edit is waiting to be restored or dropped. The
+                // offer and the document behind it are the same edit, and saving
+                // the bare video here wrote over it the moment anything was
+                // touched - so the banner went on offering work that was already
+                // gone from disk, and leaving the editor lost it for good.
+                if (current.recovery != null) continue
+                val uri = current.sourceUri ?: continue
                 // Off the main thread. viewModelScope is Main, so encoding the
                 // timeline to JSON and fsyncing it were both happening on the
                 // frame loop, every second and a half, for the whole session -
                 // which is exactly the kind of thing that makes a scrub stutter
                 // for no visible reason.
-                withContext(Dispatchers.IO) { autosave.save(current) }
+                withContext(Dispatchers.IO) {
+                    val start = baseline
+                    val untouched = start == null || autosave.editKey(current) == start
+                    if (untouched) {
+                        if (wroteDraft) {
+                            autosave.clear(uri)
+                            wroteDraft = false
+                        }
+                    } else if (autosave.save(current)) {
+                        wroteDraft = true
+                    }
+                }
             }
         }
     }
 
-    fun load(uri: Uri) {
+    /**
+     * Opens a video. With [resume] - a draft chosen from the drafts list - its
+     * saved edit is applied at once instead of being offered: picking a draft is
+     * already the answer to "restore it?".
+     */
+    fun load(uri: Uri, resume: Boolean = false) {
         if (loadedUri == uri) return
         loadedUri = uri
 
@@ -155,7 +197,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
             recomputeEstimate()
+            baseline = autosave.editKey(_state.value)
+            // Every real video has a length. None means the file could not be read
+            // - gone, or handed over without permission - and an empty editor with
+            // nothing said is the worst way to learn that.
+            if (meta.durationMs <= 0L) _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+            checkDecodable(uri)
             offerRecovery(recoverable, uri)
+            if (resume && _state.value.recovery?.snapshot?.sourceUri == uri) {
+                acceptRecovery()
+                return@launch
+            }
             startProxy(uri, meta.displayWidth, meta.displayHeight, meta.durationMs)
 
             val pcm = PcmDecoder.decodeMono(getApplication(), uri)
@@ -231,6 +283,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         current.copy(playheadMs = snapped, scrubNonce = current.scrubNonce + 1)
     }
 
+    /**
+     * Rewind or forward by a fixed step, from wherever the playhead is.
+     *
+     * Not snapped, unlike a scrub: a skip of five seconds that landed on a nearby
+     * cut instead would be a skip of some other amount, and pressing it twice
+     * would not go twice as far.
+     */
+    fun jumpBy(deltaMs: Long) = _state.update {
+        val target = (it.playheadMs + deltaMs).coerceIn(0L, it.timelineDurationMs)
+        it.copy(playheadMs = target, scrubNonce = it.scrubNonce + 1)
+    }
+
     /** Jump straight to either end, which is otherwise a long drag on a long edit. */
     fun scrubToStart() = scrubTo(0L)
 
@@ -303,23 +367,32 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * voiceover and a second mic can all sit on the strip at once, overlapping
      * freely, because each one is an ordinary clip rather than a special case.
      */
-    fun addAudioTrack(uri: Uri) {
+    fun addAudioTrack(uri: Uri, label: String? = null) {
         viewModelScope.launch {
             val trackDuration = ThumbnailExtractor.probeDurationMs(getApplication(), uri)
-            val name = displayNameOf(uri) ?: "Audio"
+            val name = label ?: displayNameOf(uri) ?: "Audio"
 
-            _state.update { current ->
+            // Recorded like every other edit, so a track added by mistake is one
+            // undo away rather than a select-and-delete.
+            record("Add $name") { _state.update { current ->
+                // Ends with the video. A song is usually longer than the clip it
+                // goes under, and left whole it stretched the edit to the song's
+                // length - a minute of black after an eight-second video. The rest
+                // of the song is still there: drag the end out to use it.
+                val videoEnd = current.videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
+                val room = videoEnd - current.playheadMs
+                val out = if (room >= MIN_EFFECT_MS && room < trackDuration) room else trackDuration
                 val clip = Clip(
                     kind = ClipKind.Audio,
                     uri = uri,
                     label = name,
                     sourceInMs = 0,
-                    sourceOutMs = trackDuration,
+                    sourceOutMs = out,
                     timelineStartMs = current.playheadMs,
                     sourceDurationMs = trackDuration
                 )
                 current.copy(audioClips = current.audioClips + clip, selectedClipId = clip.id)
-            }
+            } }
             recomputeEstimate()
 
             // Cached against the file, not the clip, so splitting a track in two
@@ -433,8 +506,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---- Look & compression ---------------------------------------------------
 
-    fun setQuality(quality: Quality) {
-        _state.update { it.copy(quality = quality) }
+    /** Picks an output size, which also leaves fit-to-size: the two are rival answers. */
+    fun setOutputP(p: Int) {
+        _state.update { it.copy(outputP = p, fitToSize = false) }
         recomputeEstimate()
     }
 
@@ -446,6 +520,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun setTargetSizeMb(mb: Int) {
         _state.update { it.copy(targetSizeMb = mb) }
         recomputeEstimate()
+    }
+
+    fun setVoiceEffect(effect: VoiceEffect) = record("Voice") {
+        _state.update { it.copy(voiceEffect = effect) }
     }
 
     fun setMuteOriginal(muted: Boolean) = record("Camera audio") {
@@ -788,6 +866,263 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(textOverlays = it.textOverlays + item) }
     }
 
+    /**
+     * A title at the playhead, styled by [preset]: its text, face, look, colour,
+     * place on the frame and motion, all at once. It is an ordinary caption from
+     * then on - every part of it can be changed afterwards.
+     */
+    fun addTitle(preset: TitlePreset) = record("Add title") {
+        val current = _state.value
+        val start = current.playheadMs
+        val end = (start + DEFAULT_TITLE_MS).coerceAtMost(
+            current.timelineDurationMs.takeIf { it > start } ?: (start + DEFAULT_TITLE_MS)
+        )
+        val item = TextOverlayItem(
+            id = UUID.randomUUID().toString(),
+            text = preset.sample,
+            startMs = start,
+            endMs = end,
+            colorArgb = preset.colorArgb,
+            yFraction = preset.yFraction,
+            sizeSp = preset.sizeSp,
+            font = preset.font,
+            look = preset.look,
+            motion = preset.motion
+        )
+        _state.update { it.copy(textOverlays = it.textOverlays + item) }
+    }
+
+    /**
+     * A sticker at the playhead, in the middle of the picture, popping in. It
+     * stays for [DEFAULT_TITLE_MS] and can be moved, sized and retimed from there.
+     */
+    fun addSticker(emoji: String) = record("Add sticker") {
+        val current = _state.value
+        val start = current.playheadMs
+        val end = (start + DEFAULT_TITLE_MS).coerceAtMost(
+            current.timelineDurationMs.takeIf { it > start } ?: (start + DEFAULT_TITLE_MS)
+        )
+        val item = TextOverlayItem(
+            id = UUID.randomUUID().toString(),
+            text = emoji,
+            startMs = start,
+            endMs = end,
+            colorArgb = android.graphics.Color.WHITE,
+            xFraction = 0.5f,
+            yFraction = 0.5f,
+            sizeSp = 64,
+            look = TextLook.Plain,
+            motion = TextMotion.Pop,
+            sticker = true
+        )
+        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id) }
+    }
+
+    // ---- Background removal ---------------------------------------------------------
+
+    private var backgroundJob: Job? = null
+
+    /** The clip background removal acts on: the selected video clip, else the first. */
+    fun backgroundTarget(state: EditorUiState = _state.value): Clip? =
+        state.videoClips.firstOrNull { it.id == state.selectedClipId }
+            ?: state.videoClips.firstOrNull { it.layer == 0 }
+            ?: state.videoClips.firstOrNull()
+
+    /** Finds the person through the clip, then blurs what is behind them. */
+    fun removeBackground() {
+        val current = _state.value
+        if (current.backgroundProgress.running) return
+        val clip = backgroundTarget(current) ?: return
+        val uri = clip.uri ?: current.sourceUri ?: return
+
+        backgroundJob?.cancel()
+        _state.update { it.copy(backgroundProgress = ReframeProgress(running = true)) }
+        backgroundJob = viewModelScope.launch {
+            val file = Segmenter.analyze(
+                getApplication(), uri, clip.sourceInMs, clip.sourceOutMs
+            ) { done, total ->
+                _state.update { it.copy(backgroundProgress = it.backgroundProgress.copy(done = done, total = total)) }
+            }
+            if (file == null) {
+                _state.update { it.copy(backgroundProgress = ReframeProgress(failed = true)) }
+                return@launch
+            }
+            _state.update { it.copy(backgroundProgress = ReframeProgress()) }
+            val fill = clip.background?.fill ?: BackgroundFill.Blur
+            val colour = clip.background?.colorArgb ?: BackgroundRemoval(file).colorArgb
+            setBackground(clip.id, BackgroundRemoval(file, fill, colour))
+        }
+    }
+
+    fun cancelBackground() {
+        backgroundJob?.cancel()
+        backgroundJob = null
+        _state.update { it.copy(backgroundProgress = ReframeProgress()) }
+    }
+
+    fun setBackgroundFill(clipId: String, fill: BackgroundFill, colorArgb: Int? = null) {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return
+        val current = clip.background ?: return
+        setBackground(clipId, current.copy(fill = fill, colorArgb = colorArgb ?: current.colorArgb))
+    }
+
+    fun setBackground(clipId: String, background: BackgroundRemoval?) = record("Background") {
+        mutateTimeline { timeline ->
+            timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(background = background) else it })
+        }
+    }
+
+    // ---- Auto-reframe -------------------------------------------------------------
+
+    private var reframeJob: Job? = null
+
+    /**
+     * Finds the subject through the head clip and makes the frame-shape crop
+     * follow it. Needs a fixed shape; if none is chosen yet, 9:16 is - the shape
+     * this is nearly always wanted for.
+     */
+    fun autoReframe() {
+        val current = _state.value
+        if (current.reframeProgress.running) return
+        val clip = current.videoClips.firstOrNull() ?: return
+        val uri = clip.uri ?: current.sourceUri ?: return
+        if (current.cropAspect.ratio == null) setCropAspect(CropAspect.Portrait)
+
+        reframeJob?.cancel()
+        _state.update { it.copy(reframeProgress = ReframeProgress(running = true)) }
+        reframeJob = viewModelScope.launch {
+            val track = Reframer.analyze(
+                getApplication(), uri, clip.sourceInMs, clip.sourceOutMs
+            ) { done, total ->
+                _state.update { it.copy(reframeProgress = it.reframeProgress.copy(done = done, total = total)) }
+            }
+            if (track == null) {
+                _state.update { it.copy(reframeProgress = ReframeProgress(failed = true)) }
+                return@launch
+            }
+            record("Auto-reframe") {
+                _state.update { it.copy(reframe = track, reframeProgress = ReframeProgress()) }
+            }
+        }
+    }
+
+    fun cancelReframe() {
+        reframeJob?.cancel()
+        reframeJob = null
+        _state.update { it.copy(reframeProgress = ReframeProgress()) }
+    }
+
+    /** Back to a centred crop. */
+    fun clearReframe() = record("Centre crop") {
+        _state.update { it.copy(reframe = null) }
+    }
+
+    // ---- Templates ----------------------------------------------------------------
+
+    /**
+     * Applies [template] as one undoable step. Replaces the look and the frame
+     * shape, and the effects and title an earlier template added; keeps every
+     * caption, sticker and effect added by hand.
+     */
+    fun applyTemplate(template: Template) = record("Template ${template.label}") {
+        _state.update { current ->
+            val total = current.timelineDurationMs.coerceAtLeast(1L)
+            val placed = template.effects.map { (kind, at) ->
+                val start = (total * at).toLong().coerceIn(0L, (total - MIN_EFFECT_MS).coerceAtLeast(0L))
+                // A slow push fills the whole edit; the others are a moment each.
+                val length = if (kind == EffectKind.ZoomIn) total else DEFAULT_EFFECT_MS
+                TimedEffect(
+                    id = TEMPLATE_PREFIX + UUID.randomUUID(),
+                    kind = kind,
+                    startMs = start,
+                    endMs = (start + length).coerceAtMost(total)
+                )
+            }
+            val title = template.title?.let { preset ->
+                TextOverlayItem(
+                    id = TEMPLATE_PREFIX + UUID.randomUUID(),
+                    text = template.titleText ?: preset.sample,
+                    startMs = 0L,
+                    endMs = DEFAULT_TITLE_MS.coerceAtMost(total),
+                    colorArgb = preset.colorArgb,
+                    yFraction = preset.yFraction,
+                    sizeSp = preset.sizeSp,
+                    font = preset.font,
+                    look = preset.look,
+                    motion = preset.motion
+                )
+            }
+            current.copy(
+                cropAspect = template.crop ?: CropAspect.Original,
+                lookId = template.lookId,
+                lookIntensity = 1f,
+                effects = current.effects.filterNot { it.id.startsWith(TEMPLATE_PREFIX) } + placed,
+                textOverlays = current.textOverlays.filterNot { it.id.startsWith(TEMPLATE_PREFIX) } +
+                    listOfNotNull(title)
+            )
+        }
+    }
+
+    // ---- Effects library --------------------------------------------------------
+
+    /** An effect from the playhead for [DEFAULT_EFFECT_MS], or to the end if that is sooner. */
+    fun addEffect(kind: EffectKind) = record("Add ${kind.label}") {
+        val current = _state.value
+        val total = current.timelineDurationMs
+        val start = current.playheadMs.coerceIn(0L, (total - MIN_EFFECT_MS).coerceAtLeast(0L))
+        val end = (start + DEFAULT_EFFECT_MS).coerceAtMost(total.takeIf { it > start } ?: (start + DEFAULT_EFFECT_MS))
+        val effect = TimedEffect(id = UUID.randomUUID().toString(), kind = kind, startMs = start, endMs = end)
+        _state.update { it.copy(effects = it.effects + effect) }
+    }
+
+    fun changeEffect(id: String, change: (TimedEffect) -> TimedEffect) = record("Effect $id") {
+        _state.update { current ->
+            current.copy(effects = current.effects.map { e ->
+                if (e.id != id) e else change(e).let { c ->
+                    // Never shorter than a tenth of a second, never inside out.
+                    val start = c.startMs.coerceAtLeast(0L)
+                    c.copy(startMs = start, endMs = c.endMs.coerceAtLeast(start + MIN_EFFECT_MS))
+                }
+            })
+        }
+    }
+
+    /** Slides an effect along the timeline, keeping its length and staying inside the edit. */
+    fun moveEffect(id: String, deltaMs: Long) = record("Effect $id") {
+        _state.update { current ->
+            val total = current.timelineDurationMs
+            current.copy(effects = current.effects.map { e ->
+                if (e.id != id) return@map e
+                val delta = deltaMs.coerceIn(-e.startMs, (total - e.endMs).coerceAtLeast(0L))
+                e.copy(startMs = e.startMs + delta, endMs = e.endMs + delta)
+            })
+        }
+    }
+
+    /** Pulls an effect's start and end by the given amounts, never past each other or the edit's ends. */
+    fun trimEffect(id: String, startDeltaMs: Long, endDeltaMs: Long) = record("Effect $id") {
+        _state.update { current ->
+            val total = current.timelineDurationMs
+            current.copy(effects = current.effects.map { e ->
+                if (e.id != id) return@map e
+                val start = (e.startMs + startDeltaMs).coerceIn(0L, (e.endMs - MIN_EFFECT_MS).coerceAtLeast(0L))
+                val end = (e.endMs + endDeltaMs).coerceIn(start + MIN_EFFECT_MS, maxOf(total, start + MIN_EFFECT_MS))
+                e.copy(startMs = start, endMs = end)
+            })
+        }
+    }
+
+    fun removeEffect(id: String) = record("Remove effect") {
+        _state.update { it.copy(effects = it.effects.filterNot { e -> e.id == id }) }
+    }
+
+    /** Changes how one caption looks or moves. The text and timing are left alone. */
+    fun restyleCaption(id: String, change: (TextOverlayItem) -> TextOverlayItem) = record("Style $id") {
+        _state.update { current ->
+            current.copy(textOverlays = current.textOverlays.map { if (it.id == id) change(it) else it })
+        }
+    }
+
     fun removeTextOverlay(id: String) {
         _state.update { it.copy(textOverlays = it.textOverlays.filterNot { item -> item.id == id }) }
     }
@@ -810,6 +1145,22 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 current.copy(videoClips = current.videoClips + clip)
             }
             recomputeEstimate()
+            checkDecodable(uri)
+        }
+    }
+
+    /**
+     * Asks whether this phone can decode [uri], and says so straight away if not -
+     * rather than showing a black preview, or letting an export start that cannot
+     * finish. The answer is kept for the export's preflight. See [MediaCompat].
+     */
+    private fun checkDecodable(uri: Uri) {
+        viewModelScope.launch {
+            val report = MediaCompat.check(getApplication(), uri) ?: return@launch
+            val problem = report.videoProblem?.let { SquishError.UnsupportedCodec(it) }
+                ?: report.audioProblem?.let { SquishError.UnsupportedAudio(it) }
+                ?: return@launch
+            _state.update { it.copy(failure = problem) }
         }
     }
 
@@ -836,6 +1187,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 current.copy(videoClips = current.videoClips + clip, selectedClipId = clip.id)
             }
             recomputeEstimate()
+            checkDecodable(uri)
         }
     }
 
@@ -945,40 +1297,69 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             val language = Locale.getDefault().toLanguageTag()
-            val made = mutableListOf<TextOverlayItem>()
             var transcribed = 0
 
-            segments.forEach { segment ->
+            // Each line lands on the timeline as soon as it is done, rather than all
+            // of them at the end. So stopping part-way keeps what was already made,
+            // and a long clip shows its captions arriving instead of a spinner.
+            segments.forEachIndexed { index, segment ->
                 val words = if (canTranscribe) {
                     Transcriber.transcribe(getApplication(), pcm, segment, language)
                 } else null
                 if (!words.isNullOrBlank()) transcribed++
 
-                made.add(
-                    TextOverlayItem(
-                        id = UUID.randomUUID().toString(),
-                        text = words?.takeIf { it.isNotBlank() } ?: "",
-                        startMs = segment.startMs,
-                        endMs = segment.endMs,
-                        colorArgb = android.graphics.Color.WHITE
-                    )
+                val line = TextOverlayItem(
+                    id = UUID.randomUUID().toString(),
+                    text = words?.takeIf { it.isNotBlank() } ?: "",
+                    startMs = segment.startMs,
+                    endMs = segment.endMs,
+                    colorArgb = android.graphics.Color.WHITE
                 )
                 _state.update {
-                    it.copy(captions = it.captions.copy(transcribed = transcribed))
+                    it.copy(
+                        textOverlays = it.textOverlays + line,
+                        captions = it.captions.copy(transcribed = transcribed, done = index + 1)
+                    )
                 }
             }
 
             _state.update {
                 it.copy(
-                    textOverlays = it.textOverlays + made,
                     captions = CaptionProgress(
                         finished = true,
-                        total = made.size,
+                        total = segments.size,
                         transcribed = transcribed,
+                        done = segments.size,
                         recognitionAvailable = canTranscribe
                     )
                 )
             }
+        }
+    }
+
+    /**
+     * Stops auto-captioning where it has got to.
+     *
+     * There was no way to do this, and on a long clip - or a phone whose recogniser
+     * went quiet - the panel said "Listening" for as long as the editor stayed
+     * open. The lines already made stay on the timeline; only the rest are dropped.
+     */
+    fun stopCaptions() {
+        if (!_state.value.captions.running) return
+        captionJob?.cancel()
+        captionJob = null
+        _state.update {
+            val progress = it.captions
+            it.copy(
+                captions = CaptionProgress(
+                    finished = true,
+                    stopped = true,
+                    total = progress.done,
+                    transcribed = progress.transcribed,
+                    done = progress.done,
+                    recognitionAvailable = progress.recognitionAvailable
+                )
+            )
         }
     }
 
@@ -994,7 +1375,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearCaptions() {
         captionJob?.cancel()
-        _state.update { it.copy(textOverlays = emptyList(), captions = CaptionProgress()) }
+        // Stickers are not captions, and clearing the words should not take them.
+        _state.update { it.copy(textOverlays = it.textOverlays.filter { o -> o.sticker }, captions = CaptionProgress()) }
     }
 
     /** Brings in a transcript made anywhere else. */
@@ -1035,6 +1417,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     /** Writes the captions out so they can be used anywhere else. */
     fun exportSrt(target: Uri, onDone: (Boolean) -> Unit) {
         val cues = _state.value.textOverlays
+            .filterNot { it.sticker }
             .sortedBy { it.startMs }
             .map { SrtCue(it.startMs, it.endMs, it.text) }
             .filter { it.text.isNotBlank() }
@@ -1474,7 +1857,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val selected = _state.value.selectedClipId ?: return
         record("Delete") {
             if (_state.value.textOverlays.any { it.id == selected }) removeTextOverlay(selected)
-            else mutateTimeline { it.withClipRemoved(selected) }
+            else if (_state.value.effects.any { it.id == selected }) {
+                _state.update { it.copy(effects = it.effects.filterNot { e -> e.id == selected }) }
+            } else mutateTimeline { it.withClipRemoved(selected) }
             _state.update { it.copy(selectedClipId = null) }
         }
     }
@@ -1533,10 +1918,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 playheadMs = current.playheadMs
             )
             val next = block(timeline)
+            val video = next.clips.filter { it.kind == ClipKind.Video }
             current.copy(
-                videoClips = next.clips.filter { it.kind == ClipKind.Video },
+                videoClips = video,
                 audioClips = next.clips.filter { it.kind == ClipKind.Audio },
-                selectedClipId = next.selectedClipId
+                selectedClipId = next.selectedClipId,
+                // Every change to how long the picture runs comes through here -
+                // trims, cuts, deletes, retimes, closing gaps - so this is where
+                // effects are kept inside it. See [fittedTo].
+                effects = current.effects.fittedTo(video.maxOfOrNull { it.timelineEndMs } ?: 0L)
             )
         }
         recomputeEstimate()
@@ -1587,20 +1977,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun recomputeEstimate() {
-        val current = _state.value
-        val bitrate = if (current.fitToSize) {
-            ExportPresets.bitrateForTargetSize(
-                current.targetSizeMb * 1_000_000L,
-                current.trimmedDurationMs,
-                current.hasAnyAudio
-            )
-        } else {
-            ExportPresets.bitrateFor(current.quality)
-        }
-        val durationSeconds = current.trimmedDurationMs / 1000.0
-        val audioBits = if (current.hasAnyAudio) ExportPresets.AUDIO_BITRATE_BPS * durationSeconds else 0.0
-        val videoBits = bitrate * durationSeconds
-        _state.update { it.copy(estimatedOutputBytes = ((videoBits + audioBits) / 8).toLong()) }
+        _state.update { it.copy(estimatedOutputBytes = it.estimatedExportBytes) }
     }
 
     private fun displayNameOf(uri: Uri): String? = runCatching {
@@ -1633,12 +2010,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 .apply { mkdirs() }
             val outputFile = File(outputDir, "squish_${System.currentTimeMillis()}.mp4")
 
-            val result = processor.export(current, outputFile) { progress ->
+            val result = processor.export(SquishError.exportable(current), outputFile) { progress ->
                 _state.update { it.copy(exportProgress = progress) }
             }
             _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
 
             result.onSuccess { file ->
+                // What was just rendered is now the untouched starting point, so the
+                // autosave, which keeps ticking, has nothing to write back. Without
+                // this, the finished edit reappeared under Unfinished moments later.
+                baseline = autosave.editKey(_state.value)
                 GallerySaver.publish(getApplication(), file)
                 historyRepository.add(
                     ExportRecord(
@@ -1708,6 +2089,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             loadedUri = snapshot.sourceUri
             _state.update {
                 it.applying(snapshot, meta.durationMs, meta.displayWidth, meta.displayHeight, meta.fps)
+                    // Drafts saved before effects were fitted can carry some
+                    // running far past the end; tidy those on the way in.
+                    .let { s -> s.copy(effects = s.effects.fittedTo(s.videoClips.maxOfOrNull { c -> c.timelineEndMs } ?: 0L)) }
             }
             recomputeEstimate()
             startProxy(snapshot.sourceUri, meta.displayWidth, meta.displayHeight, meta.durationMs)
@@ -1723,6 +2107,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     videoWaveform = pcm?.let { decoded -> WaveformBuilder.build(decoded) }
                 )
             }
+            (snapshot.clips.mapNotNull { it.uri } + snapshot.sourceUri).distinct().forEach(::checkDecodable)
             restoreAudioWaveforms(snapshot.audioClips)
         }
     }
@@ -1755,13 +2140,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         trimEndMs = durationMs,
         videoClips = snapshot.clips,
         textOverlays = snapshot.textOverlays,
+        effects = snapshot.effects,
+        reframe = snapshot.reframe,
         markers = snapshot.markers,
-        playheadMs = snapshot.playheadMs,
-        quality = snapshot.quality,
+        // Saved at the very end, it would reopen on "no clip here"; the start is more useful.
+        playheadMs = snapshot.playheadMs.takeIf { it < snapshot.totalDurationMs } ?: 0L,
+        outputP = snapshot.outputP,
         fitToSize = snapshot.fitToSize,
         targetSizeMb = snapshot.targetSizeMb,
         audioOnly = snapshot.audioOnly,
         muteOriginal = snapshot.muteOriginal,
+        voiceEffect = snapshot.voiceEffect,
         originalVolume = snapshot.originalVolume,
         rotationDegrees = snapshot.rotationDegrees,
         cropAspect = snapshot.cropAspect,
@@ -1830,5 +2219,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         const val MIN_SYNC_CONFIDENCE = 0.28f
         val AUTOSAVE_INTERVAL = 1_500.milliseconds
         const val DEFAULT_CAPTION_MS = 2_000L
+
+        /** Long enough for a title to arrive, be read and leave. */
+        const val DEFAULT_TITLE_MS = 3_000L
+
+        /** An effect lasts two seconds unless stretched - long enough to see, short enough to be a moment. */
+        const val DEFAULT_EFFECT_MS = 2_000L
+        const val MIN_EFFECT_MS = 100L
+
+        /** Marks what a template added, so the next template replaces it rather than piling on. */
+        const val TEMPLATE_PREFIX = "tpl-"
     }
 }

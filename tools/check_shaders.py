@@ -31,6 +31,10 @@ UNIFORM = re.compile(r"^\s*uniform\s+(\w+)\s+(\w+)\s*;", re.MULTILINE)
 ATTRIBUTE = re.compile(r"^\s*attribute\s+(\w+)\s+(\w+)\s*;", re.MULTILINE)
 SET_FLOATS = re.compile(r'setFloatsUniform\(\s*"(\w+)"\s*,\s*([^\n]*)')
 SET_FLOAT = re.compile(r'setFloatUniform\(\s*"(\w+)"')
+# Integers count too. Only the float setters were recognised, so a uniform set
+# with setIntUniform read as never set at all - which is a false alarm about
+# working code, and the fastest way to teach anyone to ignore this checker.
+SET_INT = re.compile(r'setIntUniform\(\s*"(\w+)"')
 SET_SAMPLER = re.compile(r'setSamplerTexIdUniform\(\s*"(\w+)"')
 SET_ATTRIBUTE = re.compile(r'setBufferAttribute\(\s*"(\w+)"')
 FRAGMENT_PATH = re.compile(r'FRAGMENT_SHADER_PATH\s*=\s*"([^"]+)"')
@@ -104,7 +108,7 @@ def main() -> int:
                         problems.append(f"{driver.name}: never sets attribute '{name}'")
                 continue
 
-            set_names = set(SET_FLOAT.findall(body)) | set(SET_SAMPLER.findall(body))
+            set_names = set(SET_FLOAT.findall(body)) | set(SET_INT.findall(body)) | set(SET_SAMPLER.findall(body))
             for name, argument in SET_FLOATS.findall(body):
                 set_names.add(name)
                 kind = declared.get(name)

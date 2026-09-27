@@ -1,4 +1,4 @@
-@file:OptIn(UnstableApi::class)
+@file:androidx.annotation.OptIn(UnstableApi::class)
 
 package com.squish.app.media
 
@@ -29,10 +29,16 @@ import androidx.media3.transformer.VideoEncoderSettings
 import com.google.common.collect.ImmutableList
 import com.squish.app.editor.CropAspect
 import com.squish.app.editor.EditorUiState
-import com.squish.app.editor.Quality
+import com.squish.app.editor.OutputSize
+import com.squish.app.editor.VoiceEffect
+import com.squish.app.media.audio.VoiceProcessor
+import androidx.media3.common.audio.SonicAudioProcessor
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
+import com.squish.app.media.effects.FxEffect
+import com.squish.app.media.effects.ReframeEffect
 import com.squish.app.media.effects.MaskEffect
+import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.Looks
 import com.squish.app.timeline.Clip
 import kotlin.time.Duration.Companion.milliseconds
@@ -148,26 +154,47 @@ class VideoProcessor(private val context: Context) {
                 .experimentalSetForceAudioTrack(needsForcedAudio(state))
                 .build()
 
-            val bitrate = if (state.fitToSize) {
-                ExportPresets.bitrateForTargetSize(
-                    state.targetSizeMb * 1_000_000L,
-                    state.trimmedDurationMs,
-                    state.hasAnyAudio
-                )
-            } else {
-                ExportPresets.bitrateFor(state.quality)
-            }
+            val bitrate = state.exportVideoBitrate
 
+            // A cut and nothing else keeps the original frames. Only the stretch
+            // from the in point to the next keyframe is re-encoded; the rest is
+            // copied as it was recorded. Re-encoding the whole thing lost quality
+            // for nothing and, on a quiet screen recording, came out heavier than
+            // the file it was cut from. Media3 falls back to a full encode by
+            // itself when a file cannot be cut this way.
+            val trimOnly = isPlainTrim(state)
+
+            // Left at its defaults for a cut. Media3 reads any requested encoder
+            // setting - a bitrate included - as "this must be re-encoded", and
+            // quietly re-encodes the whole file instead of copying it.
             val encoderFactory = DefaultEncoderFactory.Builder(context)
-                .setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(bitrate).build())
+                .apply {
+                    if (!trimOnly) {
+                        setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(bitrate).build())
+                    }
+                }
                 .build()
 
             val transformer = Transformer.Builder(context)
-                .setAudioMimeType(MimeTypes.AUDIO_AAC)
-                .apply { if (!state.audioOnly) setVideoMimeType(MimeTypes.VIDEO_H264) }
+                .apply {
+                    if (trimOnly) {
+                        // No codec is asked for, audio or video: a copied stream
+                        // stays in its own, and naming one - even the one it is
+                        // already in - counts as a transcode and cancels the copy.
+                        experimentalSetTrimOptimizationEnabled(true)
+                    } else {
+                        setAudioMimeType(MimeTypes.AUDIO_AAC)
+                        if (!state.audioOnly) setVideoMimeType(MimeTypes.VIDEO_H264)
+                    }
+                }
                 .setEncoderFactory(encoderFactory)
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                        android.util.Log.i(
+                            "SquishExport",
+                            "done trimOnly=$trimOnly optimization=${exportResult.optimizationResult} " +
+                                "video=${exportResult.videoEncoderName} bitrate=${exportResult.averageVideoBitrate}"
+                        )
                         if (continuation.isActive) continuation.resume(Result.success(outputFile))
                     }
 
@@ -234,7 +261,7 @@ class VideoProcessor(private val context: Context) {
         val height = state.framedHeight
         if (width <= 0 || height <= 0) return null
 
-        val resolution = ExportPresets.resolutionFor(state.quality, width, height)
+        val resolution = ExportPresets.resolutionFor(state.outputP, width, height)
         if (resolution.width <= 0 || resolution.height <= 0) return null
         // Encoders want even dimensions, and a scaled odd number is how you get a
         // configuration failure on one device and not another.
@@ -255,6 +282,22 @@ class VideoProcessor(private val context: Context) {
      * separate cue mixed over the top. Forcing it on a single silent clip would
      * add a pointless track, so that case is left alone.
      */
+    /**
+     * One file, cut, with nothing changed about its picture or sound - which is
+     * Snip. The editor's clips are left out even when there is only one: a clip
+     * carries its own speed, motion and masks, none of which a copied stream keeps.
+     */
+    private fun isPlainTrim(state: EditorUiState): Boolean =
+        state.videoClips.isEmpty() &&
+            !state.audioOnly &&
+            !state.muteOriginal &&
+            state.audioClips.isEmpty() &&
+            !state.fitToSize &&
+            state.outputP == OutputSize.ORIGINAL &&
+            gainOnly(state.originalVolume).isEmpty() &&
+            state.voiceEffect == VoiceEffect.None &&
+            buildVideoEffects(state).isEmpty()
+
     private fun needsForcedAudio(state: EditorUiState): Boolean =
         !state.audioOnly && (isMultiSource(state) || state.audioClips.isNotEmpty())
 
@@ -294,6 +337,7 @@ class VideoProcessor(private val context: Context) {
                 !clip.staticTransform.isIdentity
             val leading = buildList<Effect> {
                 clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
+                clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
                 clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
                 if (moved) add(ClipTransformEffect(clip.keyframes, clip.staticTransform, clip.stabilizer, clip.sourceInMs))
             }
@@ -307,7 +351,7 @@ class VideoProcessor(private val context: Context) {
             .setEffects(
                 Effects(
                     if (clip.isOverlay) ImmutableList.of()
-                    else buildAudioProcessors(clip, state.originalVolume),
+                    else buildAudioProcessors(clip, state.originalVolume, state.voiceEffect),
                     ImmutableList.copyOf(effects)
                 )
             )
@@ -350,7 +394,7 @@ class VideoProcessor(private val context: Context) {
             .setEffects(
                 Effects(
                     // No clip, so no ramp: this path is the whole file, untimed.
-                    gainOnly(state.originalVolume),
+                    gainOnly(state.originalVolume, state.voiceEffect),
                     if (state.audioOnly) ImmutableList.of() else buildVideoEffects(state)
                 )
             )
@@ -468,16 +512,22 @@ class VideoProcessor(private val context: Context) {
             effects.add(Crop(ndc[0], ndc[1], ndc[2], ndc[3]))
         } else {
             state.cropAspect.ratio?.let { ratio ->
-                effects.add(Presentation.createForAspectRatio(ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+                val follow = state.reframe
+                if (follow != null && !follow.isEmpty) {
+                    // Auto-reframe: the same crop, its window following the subject.
+                    // The track is in the main source's time; frames arrive in
+                    // timeline time, so the head clip's offset converts one to the other.
+                    val head = state.videoClips.firstOrNull()
+                    val offset = if (head != null) head.sourceInMs - head.timelineStartMs else state.trimStartMs
+                    effects.add(ReframeEffect(ratio, follow, offset))
+                } else {
+                    effects.add(Presentation.createForAspectRatio(ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+                }
             }
         }
 
-        if (state.quality != Quality.Original && !state.fitToSize) {
-            // Against the rotated shape, because this sits *after* the rotation in
-            // the chain. Measured against the source's own numbers it asked a
-            // landscape frame to fit a portrait box, which is what made a rotated
-            // export come out letterboxed and the wrong shape.
-            val resolution = ExportPresets.resolutionFor(state.quality, state.framedWidth, state.framedHeight)
+        if (state.outputP != OutputSize.ORIGINAL && !state.fitToSize) {
+            val resolution = state.outputResolution
             if (resolution.width > 0 && resolution.height > 0) {
                 effects.add(
                     Presentation.createForWidthAndHeight(
@@ -504,6 +554,13 @@ class VideoProcessor(private val context: Context) {
             )
         )
 
+        // The effects library, after the grade and before the captions, so a shake
+        // or a glitch moves the picture and leaves the words readable on top.
+        if (state.effects.isNotEmpty()) {
+            val timed = state.effects
+            effects.add(FxEffect { timed })
+        }
+
         if (state.textOverlays.isNotEmpty()) {
             // Widened at the declaration: OverlayEffect takes List<TextureOverlay>,
             // and Java generics are invariant, so a list of the subtype will not do.
@@ -527,7 +584,7 @@ class VideoProcessor(private val context: Context) {
      * pitch, which is the only reason a ramp is usable on anything with a voice in
      * it - a rate change without it is a slide whistle.
      */
-    private fun buildAudioProcessors(clip: Clip, volume: Float): ImmutableList<AudioProcessor> {
+    private fun buildAudioProcessors(clip: Clip, volume: Float, voice: VoiceEffect = VoiceEffect.None): ImmutableList<AudioProcessor> {
         val processors = mutableListOf<AudioProcessor>()
         if (!clip.speedRamp.isIdentity) {
             val segments = clip.speedRamp.segments(clip.sourceSpanMs)
@@ -535,13 +592,25 @@ class VideoProcessor(private val context: Context) {
                 processors.add(SpeedChangingAudioProcessor(RampSpeedProvider(segments)))
             }
         }
+        processors.addAll(voiceProcessors(voice))
         AudioMixing.gain(volume)?.let { processors.add(it) }
         return ImmutableList.copyOf(processors)
     }
 
     /** Level only, for the one path that has no clip to read a ramp from. */
-    private fun gainOnly(volume: Float): ImmutableList<AudioProcessor> {
-        val gain = AudioMixing.gain(volume)
-        return if (gain == null) ImmutableList.of() else ImmutableList.of(gain)
+    private fun gainOnly(volume: Float, voice: VoiceEffect = VoiceEffect.None): ImmutableList<AudioProcessor> {
+        val processors = voiceProcessors(voice) + listOfNotNull(AudioMixing.gain(volume))
+        return ImmutableList.copyOf(processors)
+    }
+
+    /**
+     * A voice effect: a pitch shift that keeps timing, or one of the processed
+     * sounds, or nothing. Sonic shifts pitch without touching duration, which is
+     * the only way a voice effect can sit on footage without drifting out of sync.
+     */
+    private fun voiceProcessors(voice: VoiceEffect): List<AudioProcessor> = when {
+        voice == VoiceEffect.None -> emptyList()
+        voice.pitch != 1f -> listOf(SonicAudioProcessor().apply { setPitch(voice.pitch) })
+        else -> listOf(VoiceProcessor { voice })
     }
 }

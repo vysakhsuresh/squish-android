@@ -5,6 +5,8 @@ import android.content.Intent
 import android.media.AudioFormat
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -12,6 +14,7 @@ import android.speech.SpeechRecognizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.DataOutputStream
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
@@ -55,9 +58,15 @@ object Transcriber {
 
         val slice = sliceOf(pcm, segment) ?: return null
 
+        // A recognizer that never answers - no result and no error - used to hold
+        // the whole run forever, and the panel said "Listening" for as long as the
+        // editor was open. A line gets its own length plus some slack, and then
+        // counts as not transcribed, and the run moves on.
+        val allowanceMs = (segment.endMs - segment.startMs).coerceAtLeast(0L) + RECOGNITION_SLACK_MS
+
         // The recognizer is a Looper-bound component: it must be created and driven
         // from the main thread, and its callbacks arrive there.
-        return withContext(Dispatchers.Main) {
+        return withTimeoutOrNull(allowanceMs) { withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { continuation ->
                 val recognizer = runCatching {
                     SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
@@ -119,7 +128,9 @@ object Transcriber {
                     putExtra("android.speech.extra.AUDIO_SOURCE_SAMPLE_RATE", pcm.sampleRate)
                 }
 
-                continuation.invokeOnCancellation { finish(null) }
+                // Cancellation - a stop, or the allowance running out - can arrive on
+                // any thread, and the recognizer may only be destroyed on the main one.
+                continuation.invokeOnCancellation { mainHandler.post { finish(null) } }
 
                 // Written on a worker: the pipe blocks once its buffer fills, and
                 // blocking the main thread here would deadlock against the recognizer
@@ -135,8 +146,13 @@ object Transcriber {
                 runCatching { recognizer.startListening(intent) }
                     .onFailure { finish(null) }
             }
-        }
+        } }
     }
+
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+
+    /** How much longer than the line itself a recognizer gets before it is given up on. */
+    private const val RECOGNITION_SLACK_MS = 8_000L
 
     /**
      * The segment as little-endian 16-bit PCM, which is what the recognizer expects.

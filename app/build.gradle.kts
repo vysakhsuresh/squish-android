@@ -34,6 +34,11 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        // Memory-mapped by the segmenter, which a compressed asset cannot be.
+        noCompress += "tflite"
+    }
+
     packaging {
         resources.excludes.add("/META-INF/{AL2.0,LGPL2.1}")
     }
@@ -48,17 +53,15 @@ android {
  * Media3's unstable API while every file that touched Transformer was failing to
  * compile. `kotlin { compilerOptions { } }` is the authoritative DSL.
  *
- * Every Media3 file also carries its own `@file:OptIn`, so the opt-in does not
- * depend on the build script being wired correctly at all.
+ * Media3's @UnstableApi is not opted in to here. It is an androidx
+ * `RequiresOptIn` marker, enforced by lint rather than the Kotlin compiler, so a
+ * compiler `optIn` entry for it does nothing except warn that it "is not an
+ * opt-in requirement marker". Every Media3 file carries its own
+ * `@file:OptIn(UnstableApi::class)`, which is what lint reads.
  */
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-
-        // Media3 marks Transformer, the effect pipeline and most of ExoPlayer
-        // @UnstableApi, which is an opt-in *error* rather than a warning. This app
-        // is built on those APIs end to end.
-        optIn.add("androidx.media3.common.util.UnstableApi")
     }
 }
 
@@ -89,4 +92,5 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.media3.common)
+    implementation(libs.mediapipe.tasks.vision)
 }

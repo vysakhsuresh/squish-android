@@ -81,6 +81,9 @@ data class Clip(
     /** Restricts the clip to a shape. Composes with [chromaKey] rather than replacing it. */
     val mask: Mask? = null,
 
+    /** Background removal, when this clip has had its person found. */
+    val background: BackgroundRemoval? = null,
+
     /**
      * The measured correction for camera shake, keyed by **source** time. Separate
      * from [keyframes] so an edit never destroys an analysis, and an analysis never
@@ -151,7 +154,11 @@ data class TimelineState(
     val clips: List<Clip> = emptyList(),
     val selectedClipId: String? = null,
     val playheadMs: Long = 0,
-    val pixelsPerSecond: Float = 42f
+    val pixelsPerSecond: Float = 42f,
+    /** Each sound file's waveform, by URI, drawn on its clips. */
+    val waveforms: Map<String, com.squish.app.media.audio.Waveform> = emptyMap(),
+    /** The effects library's placements, on a lane of their own. */
+    val effects: List<EffectSpan> = emptyList()
 ) {
     val videoClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Video }.sortedBy { it.timelineStartMs }
     /** The base picture - the cuts-only spine of the edit. */
@@ -162,25 +169,6 @@ data class TimelineState(
         get() = clips.filter { it.kind == ClipKind.Video && it.layer > 0 }.sortedBy { it.timelineStartMs }
     val layerCount: Int get() = clips.filter { it.kind == ClipKind.Video }.maxOfOrNull { it.layer } ?: 0
     val audioClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Audio }.sortedBy { it.timelineStartMs }
-
-    /**
-     * Added sounds packed into as few rows as they will fit, by the same greedy
-     * rule every editor uses: a clip goes on the first row where nothing already
-     * occupies its span. Two tracks that never overlap therefore share a row, and
-     * ones that do get a row each - so a music bed under a voiceover reads as two
-     * things rather than one drawn on top of the other.
-     */
-    val audioLanes: List<List<Clip>>
-        get() {
-            val lanes = mutableListOf<MutableList<Clip>>()
-            audioClips.forEach { clip ->
-                val lane = lanes.firstOrNull { row ->
-                    row.none { it.timelineStartMs < clip.timelineEndMs && clip.timelineStartMs < it.timelineEndMs }
-                }
-                if (lane != null) lane.add(clip) else lanes.add(mutableListOf(clip))
-            }
-            return lanes
-        }
     val textClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Text }.sortedBy { it.timelineStartMs }
     val durationMs: Long get() = clips.maxOfOrNull { it.timelineEndMs } ?: 0L
     val selectedClip: Clip? get() = clips.firstOrNull { it.id == selectedClipId }

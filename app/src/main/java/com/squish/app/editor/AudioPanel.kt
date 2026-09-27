@@ -19,7 +19,7 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -29,8 +29,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
+import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.AccentBadge
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
@@ -52,6 +54,48 @@ fun AudioPanel(
     val target = state.targetAudioClip
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
+        if (state.sourceHasAudio) {
+            PanelCard {
+                PanelHeading(
+                    "Voice",
+                    "Change how the recorded voice sounds",
+                    icon = Icons.Filled.Mic,
+                    accent = SquishColors.Cyan
+                )
+                VoiceEffect.entries.chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        row.forEach { effect ->
+                            val on = state.voiceEffect == effect
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(if (on) SquishColors.Cyan.copy(alpha = 0.14f) else SquishColors.Background)
+                                    .border(
+                                        if (on) 1.5.dp else 1.dp,
+                                        if (on) SquishColors.Cyan else SquishColors.Border,
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .clickable { viewModel.setVoiceEffect(effect) }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                GlyphTile(effect.glyph, size = 36.dp)
+                                Text(
+                                    effect.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (on) SquishColors.TextPrimary else SquishColors.TextSecondary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        MusicPanel(viewModel)
 
         BeatPanel(state, viewModel)
 
@@ -172,7 +216,7 @@ fun AudioPanel(
             PanelHeading(
                 "Place on the timeline",
                 "Where this track starts",
-                icon = Icons.Filled.PlaylistPlay,
+                icon = Icons.AutoMirrored.Filled.PlaylistPlay,
                 accent = SquishColors.Cyan
             )
             Row(
@@ -267,7 +311,9 @@ private fun TrackRow(clip: Clip, selected: Boolean, onSelect: () -> Unit, onRemo
                 clip.label,
                 style = MaterialTheme.typography.bodyMedium,
                 color = SquishColors.TextPrimary,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 "${Timecode.format(clip.durationMs)} at ${Timecode.format(clip.timelineStartMs)}",

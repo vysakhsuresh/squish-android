@@ -34,8 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import com.squish.app.home.formatSize
-import com.squish.app.media.ExportPresets
+import com.squish.app.home.countOf
+import com.squish.app.ui.components.OutputSizePicker
 import com.squish.app.ui.components.ExportProgressCard
 import com.squish.app.ui.components.SectionHeading
 import com.squish.app.ui.components.SelectableChip
@@ -112,7 +112,7 @@ fun ExportSheet(
                 SectionHeading(
                     title = "Export",
                     subtitle = "${Timecode.format(state.trimmedDurationMs)} · " +
-                        "${state.videoClips.size} clips · ${state.audioClips.size} sounds",
+                        "${countOf(state.videoClips.size, "clip")} · ${countOf(state.audioClips.size, "sound")}",
                     icon = Icons.Filled.FileUpload,
                     accent = SquishColors.Blue,
                     trailing = {
@@ -125,35 +125,16 @@ fun ExportSheet(
                     }
                 )
 
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "Resolution",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SquishColors.TextMuted
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Quality.entries.forEach { quality ->
-                            SelectableChip(
-                                label = quality.label,
-                                selected = state.quality == quality && !state.fitToSize,
-                                accentColor = SquishColors.Blue,
-                                modifier = Modifier.weight(1f),
-                                onClick = {
-                                    viewModel.setFitToSize(false)
-                                    viewModel.setQuality(quality)
-                                }
-                            )
-                        }
-                    }
-                    Text(
-                        resolutionHint(state),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SquishColors.TextSecondary
-                    )
-                }
+                OutputSizePicker(
+                    outputP = state.outputP,
+                    fitToSize = state.fitToSize,
+                    sourceWidth = state.sourceWidth,
+                    sourceHeight = state.sourceHeight,
+                    estimatedBytes = state.estimatedOutputBytes,
+                    originalBytes = state.originalSizeBytes,
+                    accent = SquishColors.Blue,
+                    onPick = viewModel::setOutputP
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -195,26 +176,6 @@ fun ExportSheet(
                     }
                 }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(SquishColors.Background)
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        "Estimated file",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SquishColors.TextSecondary
-                    )
-                    Text(
-                        formatSize(state.estimatedOutputBytes),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = SquishColors.Cyan
-                    )
-                }
-
                 SquishPrimaryButton(
                     text = "Render and save",
                     enabled = !state.isLoadingSource,
@@ -223,22 +184,5 @@ fun ExportSheet(
                 )
             }
         }
-    }
-}
-
-/** Says what the chosen setting will actually produce, in pixels. */
-private fun resolutionHint(state: EditorUiState): String {
-    if (state.fitToSize) return "Resolution and bitrate are chosen to hit the size you picked."
-    if (state.quality == Quality.Original) {
-        val w = state.sourceWidth
-        val h = state.sourceHeight
-        return if (w > 0 && h > 0) "Keeps the source frame size — ${w} × ${h}."
-        else "Keeps the source frame size."
-    }
-    val resolution = ExportPresets.resolutionFor(state.quality, state.sourceWidth, state.sourceHeight)
-    return if (resolution.width > 0 && resolution.height > 0) {
-        "Scales to ${resolution.width} × ${resolution.height}."
-    } else {
-        "Scales down from the source."
     }
 }

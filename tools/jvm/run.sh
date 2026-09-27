@@ -37,6 +37,8 @@ run ramp       "$SRC/timeline/SpeedRamp.kt" tools/jvm/RampChecks.kt
 run slice      "$SRC/timeline/SpeedRamp.kt" tools/jvm/SliceChecks.kt
 run timeline   "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
                "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
+               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
+               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
                "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
                tools/jvm/stub/Uri.kt tools/jvm/TimelineChecks.kt
 

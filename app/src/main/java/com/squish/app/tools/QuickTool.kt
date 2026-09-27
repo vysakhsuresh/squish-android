@@ -1,12 +1,6 @@
 package com.squish.app.tools
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Compress
-import androidx.compose.material.icons.filled.ContentCut
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import com.squish.app.ui.theme.SquishColors
 
 /**
@@ -27,7 +21,6 @@ enum class QuickTool(
     val title: String,
     val blurb: String,
     val accent: Color,
-    val icon: ImageVector,
     val actionLabel: String,
     /**
      * What the done screen says once the file exists.
@@ -41,9 +34,8 @@ enum class QuickTool(
     Squeeze(
         id = "compress",
         title = "Squeeze",
-        blurb = "Make a video smaller without making it worse",
+        blurb = "Make a video smaller, not worse",
         accent = SquishColors.Blue,
-        icon = Icons.Filled.Compress,
         actionLabel = "Squeeze it",
         doneLabel = "Squeezed"
     ),
@@ -52,7 +44,6 @@ enum class QuickTool(
         title = "Snip",
         blurb = "Keep only the part worth keeping",
         accent = SquishColors.Cyan,
-        icon = Icons.Filled.ContentCut,
         actionLabel = "Snip it",
         doneLabel = "Snipped"
     ),
@@ -61,7 +52,6 @@ enum class QuickTool(
         title = "Rip",
         blurb = "Pull the sound out as its own file",
         accent = SquishColors.Amber,
-        icon = Icons.Filled.MusicNote,
         actionLabel = "Rip the sound",
         doneLabel = "Ripped"
     ),
@@ -70,7 +60,6 @@ enum class QuickTool(
         title = "Stitch",
         blurb = "Join clips end to end",
         accent = SquishColors.Magenta,
-        icon = Icons.Filled.PlaylistAdd,
         actionLabel = "Stitch them",
         doneLabel = "Stitched"
     );

@@ -4,10 +4,18 @@ import android.content.Context
 import android.net.Uri
 import com.squish.app.editor.CropAspect
 import com.squish.app.editor.EditorUiState
-import com.squish.app.editor.Quality
+import com.squish.app.editor.OutputSize
+import com.squish.app.editor.TextFont
+import com.squish.app.editor.TextLook
+import com.squish.app.editor.TextMotion
 import com.squish.app.editor.TextOverlayItem
+import com.squish.app.editor.EffectKind
+import com.squish.app.editor.TimedEffect
+import com.squish.app.editor.VoiceEffect
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
+import com.squish.app.timeline.BackgroundFill
+import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
@@ -130,6 +138,18 @@ class ProjectAutosave(context: Context) {
         return ok
     }
 
+    /**
+     * The edit itself, for telling an edited timeline from an untouched one.
+     *
+     * Where the playhead sits and how far the strip is zoomed are left out:
+     * scrubbing through a clip to look at it is not editing it.
+     */
+    fun editKey(state: EditorUiState): String =
+        encode(state).apply {
+            remove("playheadMs")
+            remove("pixelsPerSecond")
+        }.toString()
+
     /** A recoverable session for this video, if one survived. */
     fun peek(uri: Uri): ProjectSnapshot? {
         val slot = slotFor(uri)
@@ -208,11 +228,12 @@ class ProjectAutosave(context: Context) {
         put("sourceUri", state.sourceUri.toString())
         put("durationMs", state.durationMs)
         put("playheadMs", state.playheadMs)
-        put("quality", state.quality.name)
+        put("outputP", state.outputP)
         put("fitToSize", state.fitToSize)
         put("targetSizeMb", state.targetSizeMb)
         put("audioOnly", state.audioOnly)
         put("muteOriginal", state.muteOriginal)
+        put("voiceEffect", state.voiceEffect.name)
         put("originalVolume", state.originalVolume.toDouble())
         put("rotationDegrees", state.rotationDegrees)
         put("cropAspect", state.cropAspect.name)
@@ -225,6 +246,28 @@ class ProjectAutosave(context: Context) {
         put("markers", JSONArray().apply { state.markers.forEach { put(it) } })
         put("clips", JSONArray().apply { state.videoClips.forEach { put(encodeClip(it)) } })
         put("textOverlays", JSONArray().apply { state.textOverlays.forEach { put(encodeText(it)) } })
+        state.reframe?.let { track ->
+            put("reframe", JSONArray().apply {
+                track.samples.forEach { s ->
+                    put(JSONObject().apply {
+                        put("atMs", s.atMs)
+                        put("x", s.xFraction.toDouble())
+                        put("y", s.yFraction.toDouble())
+                    })
+                }
+            })
+        }
+        put("effects", JSONArray().apply {
+            state.effects.forEach { e ->
+                put(JSONObject().apply {
+                    put("id", e.id)
+                    put("kind", e.kind.name)
+                    put("startMs", e.startMs)
+                    put("endMs", e.endMs)
+                    put("intensity", e.intensity.toDouble())
+                })
+            }
+        })
 
         put("audioClips", JSONArray().apply { state.audioClips.forEach { put(encodeClip(it)) } })
     }
@@ -287,6 +330,13 @@ class ProjectAutosave(context: Context) {
                 }
             })
         }
+        clip.background?.let { bg ->
+            put("background", JSONObject().apply {
+                put("maskFile", bg.maskFile)
+                put("fill", bg.fill.name)
+                put("colorArgb", bg.colorArgb)
+            })
+        }
         clip.chromaKey?.let { key ->
             put("chromaKey", JSONObject().apply {
                 put("keyColorArgb", key.keyColorArgb)
@@ -315,6 +365,10 @@ class ProjectAutosave(context: Context) {
         put("xFraction", item.xFraction.toDouble())
         put("yFraction", item.yFraction.toDouble())
         put("sizeSp", item.sizeSp)
+        put("font", item.font.name)
+        put("look", item.look.name)
+        put("motion", item.motion.name)
+        put("sticker", item.sticker)
         item.track?.let { t ->
             put("track", JSONArray().apply {
                 t.samples.forEach { sample ->
@@ -360,13 +414,37 @@ class ProjectAutosave(context: Context) {
             clips = clips,
             audioClips = audio,
             textOverlays = overlays,
+            reframe = json.optJSONArray("reframe")?.let { array ->
+                MotionTrack((0 until array.length()).mapNotNull { i ->
+                    array.optJSONObject(i)?.let { o ->
+                        TrackSample(
+                            atMs = o.optLong("atMs"),
+                            xFraction = o.optDouble("x", 0.5).toFloat(),
+                            yFraction = o.optDouble("y", 0.5).toFloat()
+                        )
+                    }
+                })
+            }?.takeIf { !it.isEmpty },
+            effects = json.optJSONArray("effects")?.let { array ->
+                (0 until array.length()).mapNotNull { i ->
+                    val o = array.optJSONObject(i) ?: return@mapNotNull null
+                    TimedEffect(
+                        id = o.optString("id").takeIf { it.isNotBlank() } ?: return@mapNotNull null,
+                        kind = enumOrNull<EffectKind>(o.optString("kind")) ?: return@mapNotNull null,
+                        startMs = o.optLong("startMs"),
+                        endMs = o.optLong("endMs"),
+                        intensity = o.optDouble("intensity", 0.7).toFloat()
+                    )
+                }
+            }.orEmpty(),
             markers = markers,
             playheadMs = json.optLong("playheadMs"),
-            quality = enumOrNull<Quality>(json.optString("quality")) ?: Quality.Medium,
+            outputP = if (json.has("outputP")) json.optInt("outputP") else OutputSize.fromLegacyQuality(json.optString("quality")) ?: OutputSize.ORIGINAL,
             fitToSize = json.optBoolean("fitToSize"),
             targetSizeMb = json.optInt("targetSizeMb", 16),
             audioOnly = json.optBoolean("audioOnly"),
             muteOriginal = json.optBoolean("muteOriginal"),
+            voiceEffect = enumOrNull<VoiceEffect>(json.optString("voiceEffect")) ?: VoiceEffect.None,
             originalVolume = json.optDouble("originalVolume", 1.0).toFloat(),
             rotationDegrees = json.optInt("rotationDegrees"),
             cropAspect = enumOrNull<CropAspect>(json.optString("cropAspect")) ?: CropAspect.Original,
@@ -430,6 +508,15 @@ class ProjectAutosave(context: Context) {
             stabilizer = json.optJSONArray("stabilizer")?.let { array ->
                 (0 until array.length()).mapNotNull { i -> decodeKeyframe(array.optJSONObject(i)) }
             }.orEmpty().sortedBy { it.atMs },
+            background = json.optJSONObject("background")?.let { b ->
+                b.optString("maskFile").takeIf { it.isNotBlank() }?.let { path ->
+                    BackgroundRemoval(
+                        maskFile = path,
+                        fill = enumOrNull<BackgroundFill>(b.optString("fill")) ?: BackgroundFill.Blur,
+                        colorArgb = b.optInt("colorArgb", 0xFF101828.toInt())
+                    )
+                }
+            },
             chromaKey = json.optJSONObject("chromaKey")?.let { k ->
                 ChromaKey(
                     keyColorArgb = k.optInt("keyColorArgb", ChromaKey.STANDARD_GREEN),
@@ -496,6 +583,11 @@ class ProjectAutosave(context: Context) {
             xFraction = json.optDouble("xFraction", 0.5).toFloat(),
             yFraction = json.optDouble("yFraction", 0.85).toFloat(),
             sizeSp = json.optInt("sizeSp", 28),
+            // Captions saved before styles existed were plain white letters.
+            font = enumOrNull<TextFont>(json.optString("font")) ?: TextFont.Sans,
+            look = enumOrNull<TextLook>(json.optString("look")) ?: TextLook.Plain,
+            motion = enumOrNull<TextMotion>(json.optString("motion")) ?: TextMotion.None,
+            sticker = json.optBoolean("sticker", false),
             track = json.optJSONArray("track")?.let { array ->
                 MotionTrack(
                     (0 until array.length()).mapNotNull { i ->
@@ -531,13 +623,16 @@ data class ProjectSnapshot(
     val clips: List<Clip>,
     val audioClips: List<Clip>,
     val textOverlays: List<TextOverlayItem>,
+    val effects: List<TimedEffect>,
+    val reframe: MotionTrack?,
     val markers: List<Long>,
     val playheadMs: Long,
-    val quality: Quality,
+    val outputP: Int,
     val fitToSize: Boolean,
     val targetSizeMb: Int,
     val audioOnly: Boolean,
     val muteOriginal: Boolean,
+    val voiceEffect: VoiceEffect,
     val originalVolume: Float,
     val rotationDegrees: Int,
     val cropAspect: CropAspect,
@@ -557,7 +652,17 @@ data class ProjectSnapshot(
     val isTrivial: Boolean
         get() = clips.size == 1 &&
             textOverlays.isEmpty() &&
+            effects.isEmpty() &&
             audioClips.isEmpty() &&
             markers.isEmpty() &&
-            clips.first().let { it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs }
+            reframe == null &&
+            // A look, a crop or a changed voice is work too, as much as a trim is.
+            lookId == null && brightness == 0f && contrast == 0f && saturation == 0f &&
+            cropAspect == CropAspect.Original && rotationDegrees == 0 &&
+            voiceEffect == VoiceEffect.None && !muteOriginal && originalVolume == 1f &&
+            clips.first().let {
+                it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs &&
+                    it.chromaKey == null && it.mask == null && it.background == null &&
+                    it.keyframes.isEmpty() && it.stabilizer.isEmpty() && it.speedRamp == com.squish.app.timeline.SpeedRamp()
+            }
 }

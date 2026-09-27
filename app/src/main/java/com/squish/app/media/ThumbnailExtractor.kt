@@ -47,6 +47,12 @@ object ThumbnailExtractor {
                 rotationDegrees = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0,
                 fps = 30f
             )
+        } catch (t: Throwable) {
+            // A file that cannot be opened - deleted, or a picker link whose
+            // access ran out - is a video with nothing known about it, not a crash.
+            // This threw straight through to the main thread and took the whole
+            // app down when an old draft was reopened.
+            return@withContext VideoMeta(durationMs = 0L, width = 0, height = 0, rotationDegrees = 0, fps = 30f)
         } finally {
             retriever.release()
         }

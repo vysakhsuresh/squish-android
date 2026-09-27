@@ -36,7 +36,7 @@ fun TransitionPanel(
     val selected = timeline.selectedClip
     val isVideo = selected?.kind == ClipKind.Video
     val baseOrder = timeline.baseVideoClips
-    val canTransition = isVideo && selected != null &&
+    val canTransition = isVideo &&
         selected.layer == 0 && baseOrder.indexOfFirst { it.id == selected.id } > 0
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -129,7 +129,7 @@ fun TransitionPanel(
                 icon = Icons.Filled.Layers,
                 accent = SquishColors.Magenta
             )
-            if (isVideo && selected != null) {
+            if (isVideo) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -180,7 +180,7 @@ fun TransitionPanel(
             )
         }
 
-        if (isVideo && selected != null) {
+        if (isVideo) {
             MaskPanel(clip = selected, viewModel = viewModel)
             ChromaKeyPanel(clip = selected, playheadMs = state.playheadMs, viewModel = viewModel)
         }
