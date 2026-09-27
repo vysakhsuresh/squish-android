@@ -38,13 +38,20 @@ sealed class SquishError(
     class UnsupportedCodec(val codecHint: String?, cause: Throwable? = null) : SquishError(
         title = "This phone can't decode that clip",
         detail = buildString {
-            append("The video uses a format")
-            codecHint?.let { append(" ($it)") }
-            append(" your device has no hardware decoder for. ")
+            append("The picture is in a format")
+            codecHint?.let { append(" - $it -") }
+            append(" that no decoder on this phone can read, so it can't be shown or exported. ")
             append("It is the phone, not the file - the same clip opens fine on hardware that supports it.")
         },
-        fix = "Convert the clip to H.264 on another device, or try a different file.",
+        fix = "Convert the clip to H.264 on a computer (HandBrake does it free), or try a different file.",
         cause = cause
+    )
+
+    class UnsupportedAudio(val codecHint: String) : SquishError(
+        title = "This phone can't play this clip's sound",
+        detail = "The sound is $codecHint, which no decoder on this phone can read. The picture edits normally; " +
+            "the original sound is left out of the export instead of the export failing.",
+        fix = "Add music or a voiceover, or convert the sound to AAC on a computer to keep it."
     )
 
     class EncoderUnavailable(cause: Throwable? = null) : SquishError(
@@ -149,6 +156,16 @@ sealed class SquishError(
             val sources = (state.videoClips.mapNotNull { it.uri } + state.sourceUri).distinct()
             if (sources.any { !canRead(context, it) }) return FileUnreadable()
 
+            // Answered in the background when each file was opened; only read here.
+            // A picture no decoder takes cannot export at all. Sound that none takes
+            // is dropped by the export instead - unless sound is all that was asked for.
+            val reports = sources.mapNotNull { MediaCompat.cached(it) }
+            if (!state.audioOnly) {
+                reports.firstNotNullOfOrNull { it.videoProblem }?.let { return UnsupportedCodec(it) }
+            } else if (!state.hasSeparateAudio) {
+                reports.firstNotNullOfOrNull { it.audioProblem }?.let { return UnsupportedAudio(it) }
+            }
+
             val needed = (estimatedBytes * SPACE_HEADROOM).toLong().coerceAtLeast(MIN_SPACE_BYTES)
             val free = freeBytes(context.filesDir)
             if (free in 1 until needed) return NotEnoughSpace(needed, free)
@@ -158,6 +175,18 @@ sealed class SquishError(
                 return SourceTooLarge(pixels)
             }
             return null
+        }
+
+        /**
+         * The edit as it should be exported, given what this phone can decode: a
+         * source whose sound no decoder takes has its original sound left out, so
+         * the export completes silent rather than failing in the audio pipeline.
+         */
+        fun exportable(state: EditorUiState): EditorUiState {
+            if (state.audioOnly || state.muteOriginal) return state
+            val sources = (state.videoClips.mapNotNull { it.uri } + listOfNotNull(state.sourceUri)).distinct()
+            val soundless = sources.any { MediaCompat.cached(it)?.audioProblem != null }
+            return if (soundless) state.copy(muteOriginal = true) else state
         }
 
         /**

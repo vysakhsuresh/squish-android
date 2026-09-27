@@ -13,6 +13,7 @@ import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
+import com.squish.app.media.MediaCompat
 import com.squish.app.media.GallerySaver
 import com.squish.app.media.SquishError
 import com.squish.app.media.ThumbnailExtractor
@@ -262,6 +263,8 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
 
         viewModelScope.launch {
             val meta = ThumbnailExtractor.probe(getApplication(), uri)
+            // Answered in the background, for the export's preflight to read.
+            launch { MediaCompat.check(getApplication(), uri) }
             val size = fileSizeOf(uri)
 
             _state.update {
@@ -301,6 +304,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             val firstPick = _state.value.mergeClips.isEmpty()
             val added = uris.map { uri ->
                 val meta = ThumbnailExtractor.probe(getApplication(), uri)
+                launch { MediaCompat.check(getApplication(), uri) }
                 val clip = Clip(
                     kind = ClipKind.Video,
                     uri = uri,
@@ -498,7 +502,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             val extension = if (audioOnly) "m4a" else "mp4"
             val outputFile = File(outputDir, "squish_${tool.id}_${System.currentTimeMillis()}.$extension")
 
-            val result = processor.export(editorState, outputFile) { progress ->
+            val result = processor.export(SquishError.exportable(editorState), outputFile) { progress ->
                 _state.update { it.copy(exportProgress = progress) }
             }
             _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }

@@ -12,6 +12,7 @@ import com.squish.app.data.SrtFile
 import com.squish.app.data.SquishRepositories
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
+import com.squish.app.media.MediaCompat
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.SquishError
 import com.squish.app.media.GallerySaver
@@ -197,6 +198,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             }
             recomputeEstimate()
             baseline = autosave.editKey(_state.value)
+            // Every real video has a length. None means the file could not be read
+            // - gone, or handed over without permission - and an empty editor with
+            // nothing said is the worst way to learn that.
+            if (meta.durationMs <= 0L) _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+            checkDecodable(uri)
             offerRecovery(recoverable, uri)
             if (resume && _state.value.recovery?.snapshot?.sourceUri == uri) {
                 acceptRecovery()
@@ -1139,6 +1145,22 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 current.copy(videoClips = current.videoClips + clip)
             }
             recomputeEstimate()
+            checkDecodable(uri)
+        }
+    }
+
+    /**
+     * Asks whether this phone can decode [uri], and says so straight away if not -
+     * rather than showing a black preview, or letting an export start that cannot
+     * finish. The answer is kept for the export's preflight. See [MediaCompat].
+     */
+    private fun checkDecodable(uri: Uri) {
+        viewModelScope.launch {
+            val report = MediaCompat.check(getApplication(), uri) ?: return@launch
+            val problem = report.videoProblem?.let { SquishError.UnsupportedCodec(it) }
+                ?: report.audioProblem?.let { SquishError.UnsupportedAudio(it) }
+                ?: return@launch
+            _state.update { it.copy(failure = problem) }
         }
     }
 
@@ -1165,6 +1187,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 current.copy(videoClips = current.videoClips + clip, selectedClipId = clip.id)
             }
             recomputeEstimate()
+            checkDecodable(uri)
         }
     }
 
@@ -1987,7 +2010,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 .apply { mkdirs() }
             val outputFile = File(outputDir, "squish_${System.currentTimeMillis()}.mp4")
 
-            val result = processor.export(current, outputFile) { progress ->
+            val result = processor.export(SquishError.exportable(current), outputFile) { progress ->
                 _state.update { it.copy(exportProgress = progress) }
             }
             _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
@@ -2080,6 +2103,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     videoWaveform = pcm?.let { decoded -> WaveformBuilder.build(decoded) }
                 )
             }
+            (snapshot.clips.mapNotNull { it.uri } + snapshot.sourceUri).distinct().forEach(::checkDecodable)
             restoreAudioWaveforms(snapshot.audioClips)
         }
     }

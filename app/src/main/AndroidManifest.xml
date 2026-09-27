@@ -29,6 +29,19 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- "Open with" and "Share" from a file manager or another app. That is
+                 where films and downloads are - an MKV in Downloads often never
+                 reaches the photo picker's recent grid. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
         </activity>
 
         <provider

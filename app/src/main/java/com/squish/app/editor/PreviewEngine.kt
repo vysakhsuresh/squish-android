@@ -234,6 +234,14 @@ class PreviewEngine(private val context: Context) {
         setSeekParameters(SeekParameters.EXACT)
         repeatMode = Player.REPEAT_MODE_OFF
         playWhenReady = false
+        // A failed player stops without a sound: the picture goes black and the
+        // clock carries on. The user is told by MediaCompat's check; this leaves
+        // the actual cause in the log, which is where the 10-bit HEVC case was found.
+        addListener(object : Player.Listener {
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                android.util.Log.w("SquishPreview", "player error ${error.errorCodeName}", error)
+            }
+        })
     }
 
     /**

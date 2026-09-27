@@ -135,6 +135,9 @@ fun EditorScreen(
     var panelExpanded by remember { mutableStateOf(false) }
     LaunchedEffect(tab) { panelExpanded = tab in ROOMY_TABS }
     var exportSheetOpen by remember { mutableStateOf(false) }
+    // A failure is explained by a card under the picture, which the sheet covers.
+    // Left open, "Render and save" looked as if it did nothing at all.
+    LaunchedEffect(state.failure) { if (state.failure != null) exportSheetOpen = false }
 
     LaunchedEffect(sourceUri) { viewModel.load(sourceUri, resume) }
 

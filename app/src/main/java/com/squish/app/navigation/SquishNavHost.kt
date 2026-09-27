@@ -46,8 +46,15 @@ private inline fun NavController.fromTopOf(entry: NavBackStackEntry, block: () -
 }
 
 @Composable
-fun SquishNavHost() {
+fun SquishNavHost(
+    /** A video handed over by "Open with" or "Share", opened in the editor over the dashboard. */
+    openVideo: Uri? = null
+) {
     val navController = rememberNavController()
+
+    LaunchedEffect(openVideo) {
+        if (openVideo != null) navController.navigate(Destination.Editor.buildRoute(Uri.encode(openVideo.toString())))
+    }
 
     // Straight to the dashboard. The launch animation is the system splash, which
     // Android shows before this composes at all - routing through a second in-app
