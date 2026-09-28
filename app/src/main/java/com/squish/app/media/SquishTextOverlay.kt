@@ -6,7 +6,8 @@ import android.graphics.Bitmap
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
-import androidx.media3.effect.OverlaySettings
+import androidx.media3.common.OverlaySettings
+import androidx.media3.effect.StaticOverlaySettings
 import com.squish.app.editor.TextOverlayItem
 
 /**
@@ -53,9 +54,9 @@ class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
         val timeMs = presentationTimeUs / 1000L
         val frame = CaptionRenderer.frameAt(item, timeMs)
-            ?: return OverlaySettings.Builder().setAlphaScale(0f).build()
+            ?: return StaticOverlaySettings.Builder().setAlphaScale(0f).build()
         val (x, y) = item.anchorAt(timeMs)
-        return OverlaySettings.Builder()
+        return StaticOverlaySettings.Builder()
             .setBackgroundFrameAnchor(x * 2 - 1, 1 - (y - frame.rise) * 2)
             .setScale(frame.scale, frame.scale)
             .setAlphaScale(frame.alpha.coerceIn(0f, 1f))

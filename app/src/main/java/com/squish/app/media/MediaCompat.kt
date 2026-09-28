@@ -8,7 +8,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.MetadataRetriever
+import androidx.media3.inspector.MetadataRetriever
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -52,7 +52,11 @@ object MediaCompat {
         cached(uri)?.let { return it }
         val groups = withContext(Dispatchers.IO) {
             runCatching {
-                MetadataRetriever.retrieveMetadata(context, MediaItem.fromUri(uri)).get(TIMEOUT_S, TimeUnit.SECONDS)
+                // An instance per file since Media3 1.8, closed when done with, and
+                // in its own module (media3-inspector) rather than in ExoPlayer.
+                MetadataRetriever.Builder(context, MediaItem.fromUri(uri)).build().use { retriever ->
+                    retriever.retrieveTrackGroups().get(TIMEOUT_S, TimeUnit.SECONDS)
+                }
             }.getOrNull()
         } ?: return null
 
@@ -70,19 +74,19 @@ object MediaCompat {
             }
         }
         val report = Report(
-            videoProblem = if (video.isNotEmpty() && video.none(::decodable)) describe(video.first()) else null,
-            audioProblem = if (audio.isNotEmpty() && audio.none(::decodable)) describe(audio.first()) else null
+            videoProblem = if (video.isNotEmpty() && video.none { decodable(context, it) }) describe(video.first()) else null,
+            audioProblem = if (audio.isNotEmpty() && audio.none { decodable(context, it) }) describe(audio.first()) else null
         )
         reports[uri.toString()] = report
         return report
     }
 
-    private fun decodable(format: Format): Boolean {
+    private fun decodable(context: Context, format: Format): Boolean {
         val mime = format.sampleMimeType ?: return false
         // Already samples; the sink plays them without a decoder.
         if (mime == MimeTypes.AUDIO_RAW) return true
         val decoders = runCatching { MediaCodecUtil.getDecoderInfos(mime, false, false) }.getOrDefault(emptyList())
-        return decoders.any { runCatching { it.isFormatSupported(format) }.getOrDefault(false) }
+        return decoders.any { runCatching { it.isFormatSupported(context, format) }.getOrDefault(false) }
     }
 
     /** The format as someone holding the file would know it - the name on a release, not a MIME type. */

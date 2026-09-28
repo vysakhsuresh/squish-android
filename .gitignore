@@ -18,3 +18,5 @@ local.properties
 /app/release
 *.apk
 *.aab
+# Kotlin 2.x Gradle plugin session and error logs.
+/.kotlin

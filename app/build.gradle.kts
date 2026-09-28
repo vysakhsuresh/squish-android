@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.squish.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.squish.app"
@@ -93,5 +93,6 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.media3.common)
+    implementation(libs.media3.inspector)
     implementation(libs.mediapipe.tasks.vision)
 }

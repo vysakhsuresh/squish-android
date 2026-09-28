@@ -9,7 +9,8 @@ import android.graphics.RectF
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
-import androidx.media3.effect.OverlaySettings
+import androidx.media3.common.OverlaySettings
+import androidx.media3.effect.StaticOverlaySettings
 import com.squish.app.editor.TextFrame
 import com.squish.app.editor.TextOverlayItem
 import com.squish.app.media.video.MotionTrack
@@ -141,7 +142,7 @@ class LiveCaptionOverlay(
 
     /** Drawn back at the frame's full size, filling it exactly. */
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
-        OverlaySettings.Builder().setScale(1f / SCALE, 1f / SCALE).build()
+        StaticOverlaySettings.Builder().setScale(1f / SCALE, 1f / SCALE).build()
 
     private fun styleKey(item: TextOverlayItem, shown: String): String =
         "${item.id}/${item.font}/${item.look}/${item.colorArgb}/${item.sizeSp}/${item.motion}/${item.text}/$shown"
