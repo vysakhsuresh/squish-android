@@ -1,6 +1,7 @@
 package com.squish.app.tools
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +34,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,11 +44,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.squish.app.ui.components.StopExportDialog
 import com.squish.app.media.keepReadAccess
 import com.squish.app.home.countOf
 import com.squish.app.ui.components.BackOrb
@@ -79,6 +85,8 @@ import com.squish.app.ui.theme.SquishColors
 @Composable
 fun QuickToolScreen(
     tool: QuickTool,
+    /** The file this session saves into; see [com.squish.app.data.ToolDraft.slot]. */
+    slot: String,
     onBack: () -> Unit,
     onExported: (String) -> Unit,
     onOpenInEditor: (Uri) -> Unit,
@@ -88,6 +96,28 @@ fun QuickToolScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var confirmStopExport by remember { mutableStateOf(false) }
+
+    // Leaving flushes the session first. And mid-export, leaving is a question:
+    // the back gesture used to pop the screen, clear the view model and cancel
+    // the encode with nothing said, a broken file left in exports/.
+    val leave = {
+        if (state.isExporting) confirmStopExport = true
+        else {
+            viewModel.saveNow()
+            onBack()
+        }
+    }
+    BackHandler(onBack = leave)
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.saveNow() }
+
+    // An encode only runs while the app is in front, so the screen must not go
+    // to sleep under a long one.
+    val view = LocalView.current
+    DisposableEffect(state.isExporting) {
+        view.keepScreenOn = state.isExporting
+        onDispose { view.keepScreenOn = false }
+    }
     // Bumped when a trim handle moves, which tells the preview to jump to the
     // handle being dragged. Seeing the cut is the entire point of the preview.
     var seekNonce by remember { mutableStateOf(0L) }
@@ -118,7 +148,7 @@ fun QuickToolScreen(
     // and ordered for a merge is ten minutes of work, and throwing the picker over
     // the top of it would mean starting that again.
     LaunchedEffect(tool) {
-        val draft = viewModel.begin(tool, resume)
+        val draft = viewModel.begin(tool, slot, resume)
         if (draft != null) {
             viewModel.restore(draft)
         } else if (!state.hasSource) {
@@ -136,7 +166,7 @@ fun QuickToolScreen(
             ToolHeader(
                 tool = tool,
                 canOpenInEditor = state.sourceUri != null && !state.isExporting,
-                onBack = onBack,
+                onBack = leave,
                 onOpenInEditor = { state.sourceUri?.let(onOpenInEditor) }
             )
 
@@ -232,6 +262,16 @@ fun QuickToolScreen(
                 }
             }
         }
+    }
+
+    if (confirmStopExport) {
+        StopExportDialog(
+            onStop = {
+                viewModel.cancelExport()
+                confirmStopExport = false
+            },
+            onKeepGoing = { confirmStopExport = false }
+        )
     }
 }
 

@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.ProjectSnapshot
@@ -75,7 +76,15 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.math.abs
 
-class EditorViewModel(application: Application) : AndroidViewModel(application) {
+class EditorViewModel(
+    application: Application,
+    /**
+     * Survives process death with the screen's back-stack entry, which is how a
+     * fresh view model can tell "the app was killed under this editor" from
+     * "this clip was opened again from the dashboard".
+     */
+    private val savedState: SavedStateHandle
+) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow(EditorUiState())
     val state: StateFlow<EditorUiState> = _state.asStateFlow()
@@ -105,40 +114,58 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     @Volatile
     private var wroteDraft = false
 
+    /**
+     * True from the moment a clip is opened until the process dies, and true
+     * again the instant a view model is rebuilt from the saved entry afterwards.
+     * That second case is the only way a brand-new view model finds it set.
+     */
+    private val restoredAfterDeath: Boolean = savedState.get<Boolean>(KEY_OPENED) == true
+
     init {
         // Aggressive by design. Each save is atomic, and skipped entirely when
         // nothing changed, so the cost of a tick is one string comparison, and the
-        // worst case after a kill is a second and a half of lost work.
+        // worst case after a kill is a second and a half of lost work - and
+        // leaving the editor flushes the rest, see saveNow.
         viewModelScope.launch {
             while (true) {
                 delay(AUTOSAVE_INTERVAL)
-                val current = _state.value
-                if (current.isExporting) continue
-                // Not while a saved edit is waiting to be restored or dropped. The
-                // offer and the document behind it are the same edit, and saving
-                // the bare video here wrote over it the moment anything was
-                // touched - so the banner went on offering work that was already
-                // gone from disk, and leaving the editor lost it for good.
-                if (current.recovery != null) continue
-                val uri = current.sourceUri ?: continue
                 // Off the main thread. viewModelScope is Main, so encoding the
                 // timeline to JSON and fsyncing it were both happening on the
                 // frame loop, every second and a half, for the whole session -
                 // which is exactly the kind of thing that makes a scrub stutter
                 // for no visible reason.
-                withContext(Dispatchers.IO) {
-                    val start = baseline
-                    val untouched = start == null || autosave.editKey(current) == start
-                    if (untouched) {
-                        if (wroteDraft) {
-                            autosave.clear(uri)
-                            wroteDraft = false
-                        }
-                    } else if (autosave.save(current)) {
-                        wroteDraft = true
-                    }
-                }
+                withContext(Dispatchers.IO) { saveNow() }
             }
+        }
+    }
+
+    /**
+     * Writes the edit to disk now, on the calling thread, if it has changed.
+     *
+     * The ticker calls this every second and a half; leaving the screen, the app
+     * going to the background and the view model being cleared each call it once
+     * more, so the last edit before a back press is on disk and not in the
+     * one-and-a-half-second gap it used to fall into. A no-op while an export is
+     * running (nothing can change) and while a saved edit is waiting to be
+     * restored or set aside: the offer and the document behind it are the same
+     * edit, and saving the bare video here wrote over it the moment anything was
+     * touched - so the banner went on offering work that was already gone.
+     */
+    fun saveNow() {
+        val current = _state.value
+        if (current.isExporting || current.recovery != null) return
+        val uri = current.sourceUri ?: return
+        val start = baseline ?: return
+        if (autosave.editKey(current) == start) {
+            // Undone all the way back to the untouched clip. The draft is set
+            // aside rather than removed: the undo history that would restore it
+            // lives only in memory.
+            if (wroteDraft) {
+                autosave.clear(uri)
+                wroteDraft = false
+            }
+        } else if (autosave.save(current)) {
+            wroteDraft = true
         }
     }
 
@@ -150,15 +177,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun load(uri: Uri, resume: Boolean = false) {
         if (loadedUri == uri) return
         loadedUri = uri
-
-        // Read before anything else writes. The autosave timer is already running,
-        // and once this session starts saving it will overwrite the very document
-        // we might need to recover.
-        val recoverable = autosave.peek(uri)
+        savedState[KEY_OPENED] = true
 
         _state.update { it.copy(sourceUri = uri, isLoadingSource = true) }
 
         viewModelScope.launch {
+            // Read before anything else writes. The ticker is already running,
+            // but it cannot write until the load below finishes and sets the
+            // baseline, so the document is still the one to recover - and this
+            // read is off the main thread, where a draft with a few thousand
+            // motion samples in it was a visible hitch on entry.
+            val recoverable = withContext(Dispatchers.IO) { autosave.peek(uri) }
             val meta = ThumbnailExtractor.probe(getApplication(), uri)
             val originalSize = runCatching {
                 getApplication<Application>().contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
@@ -1966,6 +1995,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * into it.
      */
     private fun record(label: String, change: () -> Unit) {
+        // Editing the bare clip while its saved edit is still on offer is the
+        // answer to the offer: this is a new project. The old one is set aside
+        // in the bin, not lost, and the autosave - paused while the offer stood -
+        // starts covering the new work from this edit on.
+        _state.value.recovery?.let { retireRecovery(it.snapshot) }
         history.record(label, _state.value.editSnapshot, System.currentTimeMillis())
         change()
         publishHistory()
@@ -2103,7 +2137,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
         _state.update { it.copy(isExporting = true, failure = null, exportProgress = ExportProgress()) }
 
-        viewModelScope.launch {
+        exportJob = viewModelScope.launch {
             val outputDir = File(getApplication<Application>().getExternalFilesDir(null), "exports")
                 .apply { mkdirs() }
             val outputFile = File(outputDir, "squish_${System.currentTimeMillis()}.mp4")
@@ -2114,10 +2148,6 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
 
             result.onSuccess { file ->
-                // What was just rendered is now the untouched starting point, so the
-                // autosave, which keeps ticking, has nothing to write back. Without
-                // this, the finished edit reappeared under Unfinished moments later.
-                baseline = autosave.editKey(_state.value)
                 GallerySaver.publish(getApplication(), file)
                 historyRepository.add(
                     ExportRecord(
@@ -2136,14 +2166,38 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                         createdAtMillis = System.currentTimeMillis()
                     )
                 )
-                // The work is in the gallery now, so there is nothing left to
-                // recover and no reason to offer it on the next launch.
-                autosave.markCompleted(sourceUri)
+                // The edit stays, marked as exported. It used to be deleted here
+                // on the grounds that the work had reached the gallery - which
+                // made a test render to check a look the one action that could
+                // never be followed by "and now one more change".
+                withContext(Dispatchers.IO) {
+                    // Unless a saved edit is still on offer: what was rendered
+                    // then is the bare clip, and the stamp would land on the
+                    // other edit's draft.
+                    if (_state.value.recovery == null) {
+                        saveNow()
+                        autosave.markCompleted(sourceUri)
+                    }
+                }
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
                 _state.update { it.copy(failure = SquishError.from(throwable)) }
             }
         }
+    }
+
+    /** The running export, so back can stop it rather than abandon it. */
+    private var exportJob: Job? = null
+
+    /**
+     * Stops an export part-way. The encoder is cancelled through the coroutine
+     * and the half-written file is removed by the processor; the edit itself is
+     * untouched, so it can simply be rendered again.
+     */
+    fun cancelExport() {
+        exportJob?.cancel()
+        exportJob = null
+        _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
     }
 
     // ---- Crash recovery -------------------------------------------------------
@@ -2166,13 +2220,35 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val sameClip = snapshot.sourceUri == openedUri
         if (!sameClip && !canRead(snapshot.sourceUri)) return
 
-        // A session already finished by an export was cleared; anything still here
-        // ended some other way, which is exactly the case worth recovering.
-        _state.update { it.copy(recovery = RecoveryOffer(snapshot)) }
+        // After the app was killed under this very edit, the offer has to be
+        // answered before anything else: the person was in the middle of it, and
+        // an inline card under a live timeline let them edit the bare clip for
+        // as long as they liked with nothing being saved, then lose it all to
+        // "Continue".
+        val modal = restoredAfterDeath && sameClip
+        _state.update { it.copy(recovery = RecoveryOffer(snapshot, modal = modal)) }
     }
 
+    /**
+     * "Start a new project": the saved edit is set aside in the bin and the
+     * editor carries on with the untouched clip. Nothing is deleted; the drafts
+     * screen can bring it back for a month.
+     */
     fun dismissRecovery() {
-        _state.value.recovery?.snapshot?.sourceUri?.let { autosave.clear(it) }
+        val snapshot = _state.value.recovery?.snapshot ?: return
+        retireRecovery(snapshot)
+    }
+
+    /**
+     * Moves the offered document into the bin, then withdraws the offer - in
+     * that order, and on this thread. The ticker does not save while an offer
+     * stands, so the document is untouched until it has been moved aside; the
+     * other order, or a move handed to another thread, left a window in which
+     * the new session was saved over the old document first. The move is a
+     * handful of renames.
+     */
+    private fun retireRecovery(snapshot: ProjectSnapshot) {
+        autosave.clear(snapshot.sourceUri)
         _state.update { it.copy(recovery = null) }
     }
 
@@ -2252,6 +2328,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         originalVolume = snapshot.originalVolume,
         rotationDegrees = snapshot.rotationDegrees,
         cropAspect = snapshot.cropAspect,
+        cropRect = snapshot.cropRect,
+        snapToMarkers = snapshot.snapToMarkers,
+        stabilizeStrength = snapshot.stabilizeStrength,
+        beats = snapshot.beats,
         brightness = snapshot.brightness,
         contrast = snapshot.contrast,
         saturation = snapshot.saturation,
@@ -2310,10 +2390,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      */
     override fun onCleared() {
         super.onCleared()
+        // The last edit, before the ticker that would have saved it is gone.
+        // Blocking, on purpose: viewModelScope is already cancelled here, and a
+        // write handed to another thread has no guarantee of running before the
+        // process that asked for it is killed.
+        saveNow()
         FilmstripLoader.evictAll()
     }
 
     private companion object {
+        /** Saved-state key: this entry has opened its clip. See [restoredAfterDeath]. */
+        const val KEY_OPENED = "opened"
         const val MIN_SYNC_CONFIDENCE = 0.28f
         val AUTOSAVE_INTERVAL = 1_500.milliseconds
         const val DEFAULT_CAPTION_MS = 2_000L

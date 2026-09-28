@@ -14,6 +14,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.squish.app.data.ToolAutosave
 import com.squish.app.editor.EditorScreen
 import com.squish.app.export.ExportScreen
 import com.squish.app.history.DraftsScreen
@@ -69,7 +70,14 @@ fun SquishNavHost(
                     }
                 },
                 onOpenTool = { tool ->
-                    navController.fromTopOf(entry) { navController.navigate(Destination.QuickTool.buildRoute(tool.id)) }
+                    navController.fromTopOf(entry) {
+                        // A slot of its own for every tap: the tool is being asked
+                        // for fresh, and it must not write over a session waiting
+                        // under Unfinished.
+                        navController.navigate(
+                            Destination.QuickTool.buildRoute(tool.id, Uri.encode(ToolAutosave.freshSlot(tool.id)))
+                        )
+                    }
                 },
                 onOpenLibrary = { navController.fromTopOf(entry) { navController.navigate(Destination.Library.route) } },
                 onOpenDrafts = { navController.fromTopOf(entry) { navController.navigate(Destination.Drafts.route) } },
@@ -83,7 +91,7 @@ fun SquishNavHost(
                 onOpen = { path ->
                     navController.fromTopOf(entry) {
                         navController.navigate(
-                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Exported"))
+                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Exported"), Uri.encode("Back to library"))
                         )
                     }
                 }
@@ -98,6 +106,8 @@ fun SquishNavHost(
             val homeEntry = remember(entry) { navController.getBackStackEntry(Destination.Home.route) }
             val homeViewModel: HomeViewModel = viewModel(homeEntry)
             val drafts by homeViewModel.drafts.collectAsState()
+            val trashed by homeViewModel.trashed.collectAsState()
+            val lastDiscarded by homeViewModel.lastDiscarded.collectAsState()
 
             // Re-read on arrival: something may have been finished or thrown away
             // since the dashboard last looked.
@@ -105,6 +115,8 @@ fun SquishNavHost(
 
             DraftsScreen(
                 drafts = drafts,
+                trashed = trashed,
+                lastDiscarded = lastDiscarded,
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onOpenEdit = { draft ->
                     navController.fromTopOf(entry) {
@@ -113,12 +125,18 @@ fun SquishNavHost(
                         )
                     }
                 },
-                onOpenTool = { tool ->
+                onOpenTool = { draft ->
                     navController.fromTopOf(entry) {
-                        navController.navigate(Destination.QuickTool.buildRoute(tool.id, resume = true))
+                        val tool = QuickTool.fromId(draft.toolId)
+                        navController.navigate(
+                            Destination.QuickTool.buildRoute(tool.id, Uri.encode(draft.id), resume = true)
+                        )
                     }
                 },
-                onDiscard = homeViewModel::discardDraft
+                onDiscard = homeViewModel::discardDraft,
+                onRestore = homeViewModel::restoreDraft,
+                onPurge = homeViewModel::purgeDraft,
+                onDismissLastDiscarded = homeViewModel::dismissLastDiscarded
             )
         }
 
@@ -130,6 +148,10 @@ fun SquishNavHost(
             route = Destination.QuickTool.route,
             arguments = listOf(
                 navArgument("toolId") { type = NavType.StringType },
+                navArgument("slot") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
                 navArgument("resume") {
                     type = NavType.BoolType
                     defaultValue = false
@@ -137,17 +159,23 @@ fun SquishNavHost(
             )
         ) { entry ->
             val tool = QuickTool.fromId(entry.arguments?.getString("toolId"))
+            // A route with no slot - one written before slots existed and restored
+            // after an update - falls back to the tool's old single file.
+            val slot = entry.arguments?.getString("slot").orEmpty().ifBlank { tool.id }
             QuickToolScreen(
                 tool = tool,
+                slot = slot,
                 resume = entry.arguments?.getBoolean("resume") ?: false,
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onExported = { path ->
+                    // The tool stays underneath, session and all: the done screen's
+                    // back leads to it.
                     navController.fromTopOf(entry) {
                         navController.navigate(
-                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode(tool.doneLabel))
-                        ) {
-                            popUpTo(Destination.Home.route)
-                        }
+                            Destination.Export.buildRoute(
+                                Uri.encode(path), Uri.encode(tool.doneLabel), Uri.encode("Back to ${tool.title}")
+                            )
+                        )
                     }
                 },
                 onOpenInEditor = { uri ->
@@ -172,18 +200,24 @@ fun SquishNavHost(
                 }
             )
         ) { entry ->
-            val encoded = entry.arguments?.getString("videoUri").orEmpty()
+            // Decoded once already, by Navigation, when the route was matched.
+            // Decoding again here turned a document URI's "%3A" into ":", which
+            // is a different URI - one the file manager's provider refuses - so
+            // "Open with" from Files failed as unreadable while the picker,
+            // whose URIs carry no escapes, worked.
+            val videoUri = entry.arguments?.getString("videoUri").orEmpty()
             EditorScreen(
-                sourceUri = Uri.parse(Uri.decode(encoded)),
+                sourceUri = Uri.parse(videoUri),
                 resume = entry.arguments?.getBoolean("resume") ?: false,
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onExported = { path ->
+                    // The editor stays on the stack with its timeline. Popping it
+                    // here was half of how a successful export destroyed the edit;
+                    // the other half was the draft being deleted.
                     navController.fromTopOf(entry) {
                         navController.navigate(
-                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Exported"))
-                        ) {
-                            popUpTo(Destination.Home.route)
-                        }
+                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Exported"), Uri.encode("Back to editor"))
+                        )
                     }
                 }
             )
@@ -193,14 +227,21 @@ fun SquishNavHost(
             route = Destination.Export.route,
             arguments = listOf(
                 navArgument("resultPath") { type = NavType.StringType },
-                navArgument("job") { type = NavType.StringType }
+                navArgument("job") { type = NavType.StringType },
+                navArgument("back") {
+                    type = NavType.StringType
+                    defaultValue = "Back"
+                }
             )
         ) { entry ->
-            val encoded = entry.arguments?.getString("resultPath").orEmpty()
-            val job = Uri.decode(entry.arguments?.getString("job").orEmpty())
+            val resultPath = entry.arguments?.getString("resultPath").orEmpty()
+            val job = entry.arguments?.getString("job").orEmpty()
+            val backLabel = entry.arguments?.getString("back").orEmpty()
             ExportScreen(
-                resultPath = Uri.decode(encoded),
+                resultPath = resultPath,
                 jobLabel = job.ifBlank { "Exported" },
+                backLabel = backLabel.ifBlank { "Back" },
+                onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onDone = {
                     navController.fromTopOf(entry) {
                         navController.navigate(Destination.Home.route) {

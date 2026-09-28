@@ -112,6 +112,18 @@ should work through it and then delete what holds up.
   True smoothing needs frame blending or optical flow and has not been built.
 - **A hand-drawn crop in the preview.** It reached the export before it reached
   the preview; now it does both, unseen.
+- **Batch B1 of the roadmap (data safety and exit paths), all of it.** Built and
+  compiled on the desktop with no phone attached. The device script is in
+  `docs/ROADMAP.md` §4 under B1: export keeps the project and "Back to editor"
+  returns to the same edit; "Start a new project" asks and moves the old draft
+  into `files/projects/trash/`; a cut made within a second of pressing back is
+  on disk; the first edit under the recovery banner retires the offer; the
+  banner is modal after `am kill`; the custom crop and the beat grid survive a
+  kill; back mid-export asks "Stop exporting?" and leaves no file in
+  `exports/`; "Open with" a document URI loads; each Stitch gets its own draft.
+  Two things only a device can answer: whether `SavedStateHandle` comes back
+  set after `am kill` (that is what makes the banner modal), and whether
+  `keepScreenOn` holds through a long render.
 
 ## Conventions worth not rediscovering
 

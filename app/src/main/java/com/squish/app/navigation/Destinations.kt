@@ -15,17 +15,26 @@ sealed class Destination(val route: String) {
         fun buildRoute(encodedUri: String, resume: Boolean = false) = "editor/$encodedUri?resume=$resume"
     }
 
-    /** [resume] is set only by the drafts list; a dashboard tap always starts fresh. */
-    data object QuickTool : Destination("tool/{toolId}?resume={resume}") {
-        fun buildRoute(toolId: String, resume: Boolean = false) = "tool/$toolId?resume=$resume"
+    /**
+     * [slot] is the file the session saves into - a fresh one for a dashboard
+     * tap, the draft's own for the drafts list, which is also the only caller
+     * that sets [resume]. Carried in the route so it survives process death
+     * with the screen: a session that came back under a different name would
+     * write a second draft beside the one it was.
+     */
+    data object QuickTool : Destination("tool/{toolId}?slot={slot}&resume={resume}") {
+        fun buildRoute(toolId: String, encodedSlot: String, resume: Boolean = false) =
+            "tool/$toolId?slot=$encodedSlot&resume=$resume"
     }
 
     /**
-      * The done screen. It carries what was done as well as what came out, because
-      * "Compress another video" after a merge is the app telling you it was not
-      * paying attention.
-      */
-    data object Export : Destination("export/{resultPath}/{job}") {
-        fun buildRoute(encodedPath: String, encodedJob: String) = "export/$encodedPath/$encodedJob"
+     * The done screen. It carries what was done as well as what came out, because
+     * "Compress another video" after a merge is the app telling you it was not
+     * paying attention - and where back leads, because the screen that made the
+     * file is still underneath and worth going back to.
+     */
+    data object Export : Destination("export/{resultPath}/{job}?back={back}") {
+        fun buildRoute(encodedPath: String, encodedJob: String, encodedBackLabel: String) =
+            "export/$encodedPath/$encodedJob?back=$encodedBackLabel"
     }
 }

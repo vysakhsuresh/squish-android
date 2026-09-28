@@ -219,7 +219,15 @@ enum class ProxyStatus { NotNeeded, Building, Ready, Failed }
  * the permission a gallery picker grants does not outlive the process - and is left
  * on disk to re-attach when that clip is opened again.
  */
-data class RecoveryOffer(val snapshot: ProjectSnapshot) {
+data class RecoveryOffer(
+    val snapshot: ProjectSnapshot,
+    /**
+     * Whether the offer blocks the editor until it is answered. It does after
+     * the app was killed under this edit: the person was in the middle of it,
+     * and the editor cannot save anything until they say which edit this is.
+     */
+    val modal: Boolean = false
+) {
     val clipCount: Int get() = snapshot.clipCount
     val savedAtMillis: Long get() = snapshot.savedAtMillis
     val durationMs: Long get() = snapshot.totalDurationMs

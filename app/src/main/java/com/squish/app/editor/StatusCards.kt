@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.squish.app.media.SquishError
 import com.squish.app.ui.components.SquishOutlinedButton
+import com.squish.app.ui.components.SquishPrimaryButton
 import com.squish.app.ui.theme.SquishColors
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -70,12 +71,19 @@ fun FailureCard(error: SquishError, onDismiss: () -> Unit, modifier: Modifier = 
  * The parachute opening. An edit survived the app being killed, and it is offered
  * rather than applied - quietly overwriting the clip someone just opened would be
  * its own kind of data loss.
+ *
+ * Continue is the primary and the only filled button: it is what almost everyone
+ * wants, and it keeps work. "Start a new project" is the quiet one, and it never
+ * deletes anything - the saved edit goes to the bin, where the drafts screen can
+ * bring it back. The card used to say "Unsaved edit found" about an edit that
+ * was saved, and offer "Start fresh" in the same weight as "Restore it", one tap
+ * from deleting the only copy.
  */
 @Composable
 fun RecoveryBanner(
     offer: RecoveryOffer,
-    onRestore: () -> Unit,
-    onDiscard: () -> Unit,
+    onContinue: () -> Unit,
+    onStartNew: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -97,14 +105,16 @@ fun RecoveryBanner(
                 tint = SquishColors.Amber,
                 modifier = Modifier.size(18.dp)
             )
-            Text("Unsaved edit found", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
+            Text("Your edit of this clip is saved", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
         }
 
         Text(
             buildString {
                 append(offer.clipCount)
                 append(if (offer.clipCount == 1) " clip, " else " clips, ")
-                append(Timecode.format(offer.durationMs))
+                // Whole seconds. Nobody needs the milliseconds of an edit to
+                // decide whether it is theirs.
+                append(Timecode.format(offer.durationMs).substringBefore('.'))
                 append(" of edit, saved ")
                 append(relativeTime(offer.savedAtMillis))
                 append(".")
@@ -113,25 +123,16 @@ fun RecoveryBanner(
             color = SquishColors.TextSecondary
         )
 
-        // Two equal halves of the card's width, not two boxes cut to the length of
-        // their own words. These are the same kind of choice as each other and
-        // sizing them by their labels made "Restore it" look like the smaller one,
-        // which is the opposite of what it is.
-        Row(
+        SquishPrimaryButton(
+            text = "Continue",
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            SquishOutlinedButton(
-                text = "Restore it",
-                modifier = Modifier.weight(1f),
-                onClick = onRestore
-            )
-            SquishOutlinedButton(
-                text = "Start fresh",
-                modifier = Modifier.weight(1f),
-                onClick = onDiscard
-            )
-        }
+            onClick = onContinue
+        )
+        SquishOutlinedButton(
+            text = "Start a new project",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onStartNew
+        )
     }
 }
 

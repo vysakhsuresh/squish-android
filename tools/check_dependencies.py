@@ -41,6 +41,7 @@ PROVIDED_BY = {
     "androidx.core.splashscreen": "androidx.core.splashscreen",
     "androidx.core": "androidx.core.ktx",
     "androidx.lifecycle.viewmodel": "androidx.lifecycle.viewmodel.compose",
+    "androidx.lifecycle.compose": "androidx.lifecycle.runtime.compose",
     "androidx.lifecycle": "androidx.lifecycle.runtime.ktx",
     "androidx.media3.common": "media3.common",
     "androidx.media3.effect": "media3.effect",

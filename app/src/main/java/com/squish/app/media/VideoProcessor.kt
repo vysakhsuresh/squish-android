@@ -107,10 +107,17 @@ class VideoProcessor(private val context: Context) {
             }
         }
 
+        var result: Result<File>? = null
         try {
-            runExport(state, outputFile) { active.set(it) }
+            result = runExport(state, outputFile) { active.set(it) }
+            result
         } finally {
             poll.cancel()
+            // A file that did not finish is not an export. Left behind, a
+            // cancelled or failed render sat in exports/ as a broken MP4 nobody
+            // could see or remove - and each one cost what a finished export
+            // costs. A cancellation reaches here with no result at all.
+            if (result?.isSuccess != true) runCatching { outputFile.delete() }
         }
     }
 

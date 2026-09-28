@@ -56,6 +56,7 @@ import com.squish.app.home.formatSize
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.SquishCard
 import com.squish.app.ui.components.SquishOutlinedButton
+import com.squish.app.ui.components.SquishPrimaryButton
 import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
 import java.io.File
@@ -74,6 +75,14 @@ fun ExportScreen(
     resultPath: String,
     /** Already in the past tense — "Stitched", "Exported". The screen adds nothing. */
     jobLabel: String,
+    /**
+     * Where back leads - "Back to editor", "Back to Stitch" - because the screen
+     * that made this file is still underneath, with the edit on it. The only way
+     * off this screen used to be the dashboard, with the editor popped and the
+     * draft deleted behind it.
+     */
+    backLabel: String,
+    onBack: () -> Unit,
     onDone: () -> Unit
 ) {
     val context = LocalContext.current
@@ -234,6 +243,11 @@ fun ExportScreen(
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
+                SquishPrimaryButton(
+                    text = backLabel,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onBack
+                )
                 SquishOutlinedButton(
                     text = "Back to Squish",
                     modifier = Modifier.fillMaxWidth(),
@@ -244,7 +258,7 @@ fun ExportScreen(
 
             BackOrb(
                 accent = SquishColors.Cyan,
-                onClick = onDone,
+                onClick = onBack,
                 modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 24.dp)
             )
         }

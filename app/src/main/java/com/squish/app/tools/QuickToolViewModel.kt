@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.squish.app.home.countOf
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.SquishRepositories
+import com.squish.app.data.ToolAutosave
 import com.squish.app.data.ToolDraft
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
@@ -25,6 +26,7 @@ import java.io.File
 import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -120,6 +122,13 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     private var tool: QuickTool? = null
 
     /**
+     * Which file this session saves into. Handed in with the route: a fresh one
+     * from the dashboard, the draft's own from the drafts list. One slot per
+     * tool used to mean a second Stitch quietly wrote over the first.
+     */
+    private var slot: String? = null
+
+    /**
      * The session as it stood the moment its video finished loading.
      *
      * Choosing a video is not work. Saving from that moment on is what put a
@@ -127,12 +136,15 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      * merely opened and backed out of. A session is only a draft once it differs
      * from this - a handle moved, a size picked, a clip reordered.
      */
+    @Volatile
     private var baseline: String? = null
 
     /** A draft that was reopened is already work, so it keeps saving as it is. */
+    @Volatile
     private var resumed = false
 
     /** Whether this session has put a draft on disk, so undoing back to nothing can take it off. */
+    @Volatile
     private var wroteDraft = false
 
     /**
@@ -148,34 +160,43 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      * saved is only the choices - which files, in which order, where the handles
      * are - so the cost of a tick is a short string comparison.
      */
-    suspend fun begin(tool: QuickTool, resume: Boolean): ToolDraft? {
+    suspend fun begin(tool: QuickTool, slot: String, resume: Boolean): ToolDraft? {
         if (this.tool != null) return null
         this.tool = tool
+        this.slot = slot
 
         viewModelScope.launch {
             while (true) {
                 delay(AUTOSAVE_INTERVAL)
-                val current = _state.value
-                if (finished) break
-                if (current.isExporting || current.isLoading) continue
-                val draft = draftOf(tool, current)
-                withContext(Dispatchers.IO) {
-                    if (finished) return@withContext
-                    val untouched = !resumed && (baseline == null || autosave.keyOf(draft) == baseline)
-                    if (untouched) {
-                        if (wroteDraft) {
-                            autosave.clear(tool.id)
-                            wroteDraft = false
-                        }
-                    } else if (autosave.save(draft)) {
-                        wroteDraft = true
-                    }
-                }
+                withContext(Dispatchers.IO) { saveNow() }
             }
         }
 
         if (!resume) return null
-        return withContext(Dispatchers.IO) { autosave.peek(tool.id) }?.also { resumed = true }
+        return withContext(Dispatchers.IO) { autosave.peek(slot) }?.also { resumed = true }
+    }
+
+    /**
+     * Writes the session to disk now, on the calling thread, if it has changed.
+     *
+     * The ticker's job, and also called on the way out of the screen: an edit
+     * made in the last second and a half before back was pressed used to be the
+     * one edit that never reached disk.
+     */
+    fun saveNow() {
+        val tool = tool ?: return
+        val current = _state.value
+        if (current.isExporting || current.isLoading) return
+        val draft = draftOf(tool, current)
+        val untouched = !resumed && (baseline == null || autosave.keyOf(draft) == baseline)
+        if (untouched) {
+            if (wroteDraft) {
+                autosave.delete(draft.slot)
+                wroteDraft = false
+            }
+        } else if (autosave.save(draft)) {
+            wroteDraft = true
+        }
     }
 
     /** Marks the current state as the untouched starting point. */
@@ -186,6 +207,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun draftOf(tool: QuickTool, state: UiState) = ToolDraft(
+        slot = slot ?: ToolAutosave.freshSlot(tool.id),
         toolId = tool.id,
         title = if (tool == QuickTool.Stitch) {
             "${countOf(state.mergeClips.size, "clip")} to merge"
@@ -245,17 +267,18 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    /** The session is finished - it produced a file, so there is nothing to resume. */
-    private fun clearDraft() {
-        // Stop saving first. The timer ticks on after an export, and it wrote the
-        // finished session straight back as a draft a second and a half later.
-        finished = true
-        tool?.let { autosave.clear(it.id) }
+    /**
+     * The session produced a file. It stays, stamped as exported, so "back to
+     * the tool" from the done screen finds it as it was - a merge that came out
+     * with one clip in the wrong place is fixed by moving that clip, not by
+     * choosing six files again. Nothing is stamped for a session that never
+     * differed from its first pick, since no draft was written for it.
+     */
+    private fun markExported() {
+        val slot = slot ?: return
+        saveNow()
+        autosave.markCompleted(slot)
     }
-
-    /** Set once the session has produced its file; the autosave stops for good. */
-    @Volatile
-    private var finished = false
 
     fun load(uri: Uri) {
         if (_state.value.sourceUri == uri) return
@@ -496,7 +519,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
 
         _state.update { it.copy(isExporting = true, exportProgress = ExportProgress()) }
 
-        viewModelScope.launch {
+        exportJob = viewModelScope.launch {
             val outputDir = File(getApplication<Application>().getExternalFilesDir(null), "exports")
                 .apply { mkdirs() }
             val extension = if (audioOnly) "m4a" else "mp4"
@@ -530,7 +553,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                         createdAtMillis = System.currentTimeMillis()
                     )
                 )
-                clearDraft()
+                withContext(Dispatchers.IO) { markExported() }
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
                 // Same typed vocabulary as the editor, so a failure reads the same
@@ -539,6 +562,25 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                 onError("${problem.title}. ${problem.fix}")
             }
         }
+    }
+
+    /** The running export, so back can stop it rather than abandon it. */
+    private var exportJob: Job? = null
+
+    /** Stops an export part-way; the processor removes the half-written file. */
+    fun cancelExport() {
+        exportJob?.cancel()
+        exportJob = null
+        _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
+    }
+
+    /**
+     * The last change, before the ticker that would have saved it is gone.
+     * Blocking on purpose: viewModelScope is already cancelled here.
+     */
+    override fun onCleared() {
+        super.onCleared()
+        saveNow()
     }
 
     private companion object {

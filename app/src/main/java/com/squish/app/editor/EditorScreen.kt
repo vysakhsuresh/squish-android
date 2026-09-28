@@ -2,6 +2,7 @@ package com.squish.app.editor
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.HistoryToggleOff
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -56,9 +59,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.squish.app.ui.components.ConfirmDialog
+import com.squish.app.ui.components.StopExportDialog
 import com.squish.app.media.keepReadAccess
 import com.squish.app.home.countOf
 import com.squish.app.timeline.TimelineActionBar
@@ -139,8 +149,34 @@ fun EditorScreen(
     // A failure is explained by a card under the picture, which the sheet covers.
     // Left open, "Render and save" looked as if it did nothing at all.
     LaunchedEffect(state.failure) { if (state.failure != null) exportSheetOpen = false }
+    var confirmStopExport by remember { mutableStateOf(false) }
+    var confirmStartNew by remember { mutableStateOf(false) }
 
     LaunchedEffect(sourceUri) { viewModel.load(sourceUri, resume) }
+
+    // Leaving flushes the edit first, so the last thing done before back is on
+    // disk rather than in the ticker's gap. And mid-export, leaving is a
+    // question: the back gesture used to pop the screen, clear the view model
+    // and cancel the encode with nothing said and a broken file left behind.
+    val leave = {
+        if (state.isExporting) confirmStopExport = true
+        else {
+            viewModel.saveNow()
+            onBack()
+        }
+    }
+    BackHandler(onBack = leave)
+    // The app going behind something - a call, the home button - is the moment
+    // it is most likely to be killed, so the edit is flushed there too.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.saveNow() }
+
+    // An encode only runs while the app is in front, so the screen must not go
+    // to sleep under a long one.
+    val view = LocalView.current
+    DisposableEffect(state.isExporting) {
+        view.keepScreenOn = state.isExporting
+        onDispose { view.keepScreenOn = false }
+    }
 
     val pickAudioTrack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -176,7 +212,7 @@ fun EditorScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BackOrb(accent = tab?.accent ?: SquishColors.Violet, onClick = onBack, size = 40.dp)
+                BackOrb(accent = tab?.accent ?: SquishColors.Violet, onClick = leave, size = 40.dp)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         state.videoClips.firstOrNull()?.label ?: "Your edit",
@@ -366,11 +402,13 @@ fun EditorScreen(
             )
             }
 
-            state.recovery?.let { offer ->
+            // Only the inline offer lives here; the modal one is over everything,
+            // at the bottom of this screen.
+            state.recovery?.takeIf { !it.modal }?.let { offer ->
                 RecoveryBanner(
                     offer = offer,
-                    onRestore = viewModel::acceptRecovery,
-                    onDiscard = viewModel::dismissRecovery,
+                    onContinue = viewModel::acceptRecovery,
+                    onStartNew = { confirmStartNew = true },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }
@@ -447,6 +485,53 @@ fun EditorScreen(
             )
         }
         }
+    }
+
+    // After the app was killed under this edit the offer blocks the editor until
+    // it is answered: nothing can be saved until it is known which edit this is,
+    // and an inline card let the bare clip be edited for as long as anyone liked
+    // with none of it reaching disk.
+    state.recovery?.takeIf { it.modal }?.let { offer ->
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+        ) {
+            RecoveryBanner(
+                offer = offer,
+                onContinue = viewModel::acceptRecovery,
+                onStartNew = { confirmStartNew = true }
+            )
+        }
+    }
+
+    // "Start a new project" sets the saved edit aside; it never deletes it. But it
+    // is still the button that makes hours of work disappear from the editor, so
+    // it asks - the way discarding from the drafts list always has.
+    if (confirmStartNew) {
+        ConfirmDialog(
+            title = "Start a new project?",
+            body = "The saved edit of this clip is set aside so you can begin again from the untouched video.",
+            caution = "It moves to Recently discarded on the Unfinished screen, where it can be brought back for 30 days.",
+            confirmLabel = "Start new",
+            dismissLabel = "Keep",
+            icon = Icons.Filled.HistoryToggleOff,
+            accent = SquishColors.Amber,
+            onConfirm = {
+                viewModel.dismissRecovery()
+                confirmStartNew = false
+            },
+            onDismiss = { confirmStartNew = false }
+        )
+    }
+
+    if (confirmStopExport) {
+        StopExportDialog(
+            onStop = {
+                viewModel.cancelExport()
+                confirmStopExport = false
+            },
+            onKeepGoing = { confirmStopExport = false }
+        )
     }
 }
 

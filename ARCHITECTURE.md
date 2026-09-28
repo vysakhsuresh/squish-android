@@ -112,8 +112,20 @@ is atomic: a temporary file is flushed to the platter with `fsync`, then `rename
 over the live document. `rename(2)` is atomic, so the saved project is always either
 the complete previous version or the complete new version — never a truncated file,
 however abruptly Android kills the process. The previous version is kept beside it as
-a second parachute. On reopening, the edit is *offered* rather than silently applied,
-because overwriting what someone just opened is its own kind of data loss.
+a second parachute, and a third copy — the snapshot — is refreshed at most every ten
+minutes so that a run of bad saves cannot roll over every good version there was.
+Leaving the editor, the app going behind something and the view model being
+cleared each flush the edit once more, so nothing falls into the ticker's gap.
+On reopening, the edit is *offered* rather than silently applied, because
+overwriting what someone just opened is its own kind of data loss.
+
+Nothing deletes a draft. A finished export stamps it as exported and keeps it;
+"Start a new project", discarding from the Unfinished list and undoing all the way
+back to the untouched clip move it into `projects/trash/` (tool sessions into
+`tooldrafts/trash/`), where it is listed under "Recently discarded" for thirty
+days and can be put back. Deleting from the bin is the only real delete, and it
+asks first. Quick-tool sessions each save into their own slot, named in the
+route, so starting a second Stitch never writes over the first.
 
 ### Failure is explained, never swallowed
 `SquishError` names every failure a user can hit and carries three things: what

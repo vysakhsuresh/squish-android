@@ -2,7 +2,9 @@ package com.squish.app.data
 
 import android.content.Context
 import android.net.Uri
+import com.squish.app.editor.BeatProgress
 import com.squish.app.editor.CropAspect
+import com.squish.app.editor.CropRect
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
 import com.squish.app.editor.TextFont
@@ -46,7 +48,14 @@ import java.io.FileOutputStream
  * one. rename(2) is atomic, so the saved project is always either the previous
  * complete version or the new complete version - never a half-written file, no
  * matter when the process dies. The previous version is kept alongside as a second
- * parachute in case the JSON itself is ever unreadable.
+ * parachute in case the JSON itself is ever unreadable, and a third copy - the
+ * snapshot - is allowed to fall ten minutes behind on purpose, so that a run of
+ * bad saves cannot roll over every good version there was.
+ *
+ * Nothing here deletes a draft. Every path that used to - a finished export,
+ * "Start a new project", discarding from the list, undoing back to the untouched
+ * clip - moves it into a bin instead, where it is kept for a month and can be
+ * put back.
  */
 /** One saved edit, as a list needs to know about it — without reading the edit. */
 data class DraftSummary(
@@ -64,12 +73,32 @@ data class DraftSummary(
      * the person who left a cut half-made both came back for the same reason, and
      * sorting their work into two piles by which screen made it would help nobody.
      */
-    val toolId: String? = null
+    val toolId: String? = null,
+    /**
+     * When this edit was last rendered to a file, or null if it never was. An
+     * exported edit stays: a test render to check a look, then one more tweak,
+     * is the commonest reason to come back to a project.
+     */
+    val exportedAtMillis: Long? = null
+) {
+    val editedSinceExport: Boolean
+        get() = DraftHousekeeping.editedSinceExport(savedAtMillis, exportedAtMillis)
+}
+
+/** A draft in the bin: what it was, and when it went there. */
+data class TrashedDraft(
+    /** The bin entry's name, which is what puts it back or purges it. */
+    val trashId: String,
+    val draft: DraftSummary,
+    val discardedAtMillis: Long
 )
 
 class ProjectAutosave(context: Context) {
 
     private val dir = File(context.filesDir, "projects").apply { mkdirs() }
+
+    /** Where discarded drafts wait. One folder per discard, holding the slot's files. */
+    private val trashDir = File(dir, "trash").apply { mkdirs() }
 
     /**
      * One draft per source video, keyed by its URI.
@@ -84,7 +113,9 @@ class ProjectAutosave(context: Context) {
 
     private fun liveFile(slot: String) = File(dir, "$slot.json")
     private fun backupFile(slot: String) = File(dir, "$slot.bak.json")
+    private fun snapshotFile(slot: String) = File(dir, "$slot.snap.json")
     private fun scratchFile(slot: String) = File(dir, "$slot.tmp.json")
+    private fun metaScratchFile(slot: String) = File(dir, "$slot.meta.tmp.json")
 
     /**
      * A few hundred bytes written beside each draft: enough to list every draft
@@ -93,20 +124,31 @@ class ProjectAutosave(context: Context) {
      */
     private fun metaFile(slot: String) = File(dir, "$slot.meta.json")
 
+    /** The files that make up one slot, in the order they matter. */
+    private fun slotFiles(slot: String) =
+        listOf(liveFile(slot), backupFile(slot), snapshotFile(slot), metaFile(slot))
+
     /** Cheap change detector, so an idle editor never touches the disk. */
-    @Volatile
-    private var lastSignature: String? = null
+    private val lastSignature = HashMap<String, String>()
+
+    /**
+     * Every method that touches the files takes this. The editor's ticker saves on
+     * an IO thread while a flush on leaving saves on the main one, and two writers
+     * renaming over the same live file would otherwise race.
+     */
+    private val lock = Any()
 
     /**
      * Persists the edit if anything has changed since the last write. Safe to call
      * on a timer; it is a no-op when nothing moved.
      */
-    fun save(state: EditorUiState): Boolean {
+    fun save(state: EditorUiState): Boolean = synchronized(lock) {
         val uri = state.sourceUri ?: return false
         if (state.isLoadingSource) return false
         val slot = slotFor(uri)
         val live = liveFile(slot)
         val backup = backupFile(slot)
+        val snapshot = snapshotFile(slot)
         val scratch = scratchFile(slot)
 
         // The signature is taken from the edit alone. Stamping the time first would
@@ -114,9 +156,10 @@ class ProjectAutosave(context: Context) {
         // into "write to flash every 1.5 seconds, forever".
         val document = encode(state)
         val signature = document.toString()
-        if (signature == lastSignature) return false
+        if (signature == lastSignature[slot]) return false
 
-        document.put("savedAtMillis", System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        document.put("savedAtMillis", now)
 
         val ok = runCatching {
             FileOutputStream(scratch).use { out ->
@@ -125,79 +168,213 @@ class ProjectAutosave(context: Context) {
                 out.fd.sync()          // on the platter, not just in the page cache
             }
             if (live.exists()) {
+                // The snapshot is refreshed from the version about to be
+                // overwritten, and only when the one it holds has had its ten
+                // minutes. See DraftHousekeeping for why it is meant to be stale.
+                val snapshotAt = snapshot.takeIf { it.exists() }?.lastModified()
+                if (DraftHousekeeping.snapshotDue(snapshotAt, now)) {
+                    live.copyTo(snapshot, overwrite = true)
+                }
                 backup.delete()
                 live.copyTo(backup, overwrite = true)
             }
+            // The sidecar goes first, atomically. It used to be a plain truncating
+            // write after the rename, so a kill in the gap left a draft that was
+            // whole on disk and missing from the list.
+            writeMeta(slot, state, uri, now)
             check(scratch.renameTo(live)) { "atomic rename refused" }
         }.isSuccess
 
-        if (ok) {
-            lastSignature = signature
-            writeMeta(slot, state, uri)
-        }
-        return ok
+        if (ok) lastSignature[slot] = signature
+        ok
     }
 
     /**
      * The edit itself, for telling an edited timeline from an untouched one.
      *
      * Where the playhead sits and how far the strip is zoomed are left out:
-     * scrubbing through a clip to look at it is not editing it.
+     * scrubbing through a clip to look at it is not editing it. Nor are the
+     * snapping switch and the stabilizer's strength dial, which are settings
+     * for edits rather than edits - they are saved with a draft, but they do
+     * not make one.
      */
     fun editKey(state: EditorUiState): String =
         encode(state).apply {
             remove("playheadMs")
             remove("pixelsPerSecond")
+            remove("snapToMarkers")
+            remove("stabilizeStrength")
         }.toString()
 
     /** A recoverable session for this video, if one survived. */
-    fun peek(uri: Uri): ProjectSnapshot? {
+    fun peek(uri: Uri): ProjectSnapshot? = synchronized(lock) {
         val slot = slotFor(uri)
-        return read(liveFile(slot)) ?: read(backupFile(slot))
+        read(liveFile(slot)) ?: read(backupFile(slot)) ?: read(snapshotFile(slot))
     }
 
     /**
-     * Every draft, newest first, read from the sidecars alone.
+     * Every draft, newest first, read from the sidecars where they exist.
      *
-     * A draft whose source video has been deleted from the device is dropped as
-     * it is found: it can never be reopened, and leaving it in the list is an
-     * offer that fails when taken.
+     * A live file with no readable sidecar is listed from its own header rather
+     * than dropped: the sidecar is a convenience for the list, not the draft, and
+     * a draft that had vanished from the list while sitting whole on disk was one
+     * of the ways work looked lost.
      */
-    fun drafts(): List<DraftSummary> = runCatching {
-        // listFiles(lambda) is ambiguous between FileFilter and FilenameFilter,
-        // so the filtering happens after, on a plainly typed array.
-        val files: Array<File> = dir.listFiles() ?: return@runCatching emptyList()
-        files.filter { it.name.endsWith(".meta.json") }
-            .mapNotNull { readMeta(it) }
-            .filter { liveFile(it.id).exists() }
-            .sortedByDescending { it.savedAtMillis }
-    }.getOrDefault(emptyList())
-
-    fun delete(slot: String) {
-        lastSignature = null
-        listOf(liveFile(slot), backupFile(slot), scratchFile(slot), metaFile(slot))
-            .forEach { runCatching { it.delete() } }
+    fun drafts(): List<DraftSummary> = synchronized(lock) {
+        runCatching {
+            // listFiles(lambda) is ambiguous between FileFilter and FilenameFilter,
+            // so the filtering happens after, on a plainly typed array.
+            val files: Array<File> = dir.listFiles() ?: return@runCatching emptyList()
+            files.filter { it.isFile && it.name.endsWith(".json") && !it.name.contains(".tmp.") }
+                .filter { !it.name.endsWith(".bak.json") && !it.name.endsWith(".snap.json") && !it.name.endsWith(".meta.json") }
+                .mapNotNull { live -> summaryOf(live.name.removeSuffix(".json"), live, metaFile(live.name.removeSuffix(".json"))) }
+                .sortedByDescending { it.savedAtMillis }
+        }.getOrDefault(emptyList())
     }
 
-    fun clear(uri: Uri) = delete(slotFor(uri))
+    private fun summaryOf(slot: String, live: File, meta: File): DraftSummary? {
+        readMeta(meta)?.let { return it.copy(id = slot) }
+        val snapshot = read(live) ?: return null
+        return DraftSummary(
+            id = slot,
+            title = snapshot.clips.firstOrNull()?.label ?: "Untitled edit",
+            sourceUri = snapshot.sourceUri,
+            durationMs = snapshot.totalDurationMs,
+            clipCount = snapshot.clipCount,
+            savedAtMillis = snapshot.savedAtMillis
+        )
+    }
 
-    private fun writeMeta(slot: String, state: EditorUiState, uri: Uri) {
+    /**
+     * Moves a slot into the bin and returns the bin entry's name, or null when
+     * there was nothing on disk to move.
+     */
+    fun delete(slot: String): String? = synchronized(lock) {
+        lastSignature.remove(slot)
+        scratchFile(slot).delete()
+        metaScratchFile(slot).delete()
+        val present = slotFiles(slot).filter { it.exists() }
+        if (present.isEmpty()) return null
+        // A name of its own, even if the same slot was binned this millisecond -
+        // a restore that finds a newer draft in the slot bins that one first.
+        var at = System.currentTimeMillis()
+        while (File(trashDir, DraftHousekeeping.trashName(slot, at)).exists()) at += 1
+        val name = DraftHousekeeping.trashName(slot, at)
+        val target = File(trashDir, name)
         runCatching {
-            metaFile(slot).writeText(
-                JSONObject().apply {
-                    put("id", slot)
-                    put("title", state.videoClips.firstOrNull()?.label ?: "Untitled edit")
-                    put("uri", uri.toString())
-                    put("durationMs", state.trimmedDurationMs)
-                    put("clipCount", state.videoClips.size)
-                    put("savedAtMillis", System.currentTimeMillis())
-                }.toString()
-            )
+            check(target.mkdirs()) { "bin folder refused" }
+            present.forEach { file -> check(file.renameTo(File(target, file.name))) { "move into bin refused" } }
+            name
+        }.getOrElse {
+            // Half-moved is worse than not moved: put back whatever went across.
+            present.forEach { file -> File(target, file.name).takeIf { it.exists() }?.renameTo(file) }
+            target.delete()
+            null
         }
     }
 
+    fun clear(uri: Uri): String? = delete(slotFor(uri))
+
+    /**
+     * Stamps the draft as exported. It stays where it is, exported and all: the
+     * work reached the gallery, and the commonest thing to want next is one more
+     * change to it. Nothing to stamp when the edit never differed from the bare
+     * clip, since no draft was ever written for it.
+     */
+    fun markCompleted(uri: Uri) {
+        synchronized(lock) {
+            val slot = slotFor(uri)
+            if (!liveFile(slot).exists()) return
+            val existing = readMetaJson(metaFile(slot)) ?: return
+            existing.put("exportedAtMillis", System.currentTimeMillis())
+            writeAtomically(metaScratchFile(slot), metaFile(slot), existing.toString())
+        }
+    }
+
+    /** Everything in the bin, newest first, with anything past its month gone. */
+    fun trashed(): List<TrashedDraft> = synchronized(lock) {
+        runCatching {
+            val now = System.currentTimeMillis()
+            val entries: Array<File> = trashDir.listFiles() ?: return@runCatching emptyList()
+            entries.filter { it.isDirectory }.mapNotNull { entry ->
+                val (slot, at) = DraftHousekeeping.parseTrashName(entry.name) ?: return@mapNotNull null
+                if (DraftHousekeeping.isExpired(at, now)) {
+                    entry.deleteRecursively()
+                    return@mapNotNull null
+                }
+                val live = File(entry, liveFile(slot).name)
+                val summary = summaryOf(slot, live, File(entry, metaFile(slot).name))
+                    ?: read(File(entry, backupFile(slot).name))?.let { s ->
+                        DraftSummary(slot, s.clips.firstOrNull()?.label ?: "Untitled edit", s.sourceUri, s.totalDurationMs, s.clipCount, s.savedAtMillis)
+                    }
+                    ?: return@mapNotNull null
+                TrashedDraft(trashId = entry.name, draft = summary, discardedAtMillis = at)
+            }.sortedByDescending { it.discardedAtMillis }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Puts a bin entry back as the live draft of its clip. A newer draft already
+     * in that slot goes into the bin in its place, so nothing is overwritten
+     * either way.
+     */
+    fun restore(trashId: String): Boolean = synchronized(lock) {
+        val entry = File(trashDir, trashId)
+        if (!entry.isDirectory) return false
+        val (slot, _) = DraftHousekeeping.parseTrashName(trashId) ?: return false
+        if (liveFile(slot).exists()) delete(slot)
+        lastSignature.remove(slot)
+        val moved = runCatching {
+            slotFiles(slot).forEach { file ->
+                val kept = File(entry, file.name)
+                if (kept.exists()) check(kept.renameTo(file)) { "move out of bin refused" }
+            }
+        }.isSuccess
+        if (moved) entry.deleteRecursively()
+        moved
+    }
+
+    /** Removes a bin entry for good. Only ever from a confirmed tap on the list. */
+    fun purge(trashId: String) {
+        synchronized(lock) {
+            val entry = File(trashDir, trashId)
+            if (DraftHousekeeping.parseTrashName(trashId) != null && entry.isDirectory) entry.deleteRecursively()
+        }
+    }
+
+    private fun writeMeta(slot: String, state: EditorUiState, uri: Uri, savedAtMillis: Long) {
+        // The export stamp is the one thing in the sidecar the edit does not
+        // carry, so it is kept from the previous sidecar rather than lost on
+        // the next save.
+        val exportedAt = readMetaJson(metaFile(slot))?.optLong("exportedAtMillis", 0L)?.takeIf { it > 0L }
+        val json = JSONObject().apply {
+            put("id", slot)
+            put("title", state.videoClips.firstOrNull()?.label ?: "Untitled edit")
+            put("uri", uri.toString())
+            put("durationMs", state.trimmedDurationMs)
+            put("clipCount", state.videoClips.size)
+            put("savedAtMillis", savedAtMillis)
+            exportedAt?.let { put("exportedAtMillis", it) }
+        }
+        writeAtomically(metaScratchFile(slot), metaFile(slot), json.toString())
+    }
+
+    private fun writeAtomically(scratch: File, target: File, text: String) {
+        runCatching {
+            FileOutputStream(scratch).use { out ->
+                out.write(text.toByteArray())
+                out.flush()
+                out.fd.sync()
+            }
+            check(scratch.renameTo(target)) { "atomic rename refused" }
+        }
+    }
+
+    private fun readMetaJson(file: File): JSONObject? =
+        if (!file.exists()) null else runCatching { JSONObject(file.readText()) }.getOrNull()
+
     private fun readMeta(file: File): DraftSummary? = runCatching {
-        val json = JSONObject(file.readText())
+        val json = readMetaJson(file) ?: return null
         val uri = json.optString("uri").takeIf { it.isNotBlank() } ?: return null
         DraftSummary(
             id = json.optString("id").takeIf { it.isNotBlank() } ?: return null,
@@ -205,16 +382,10 @@ class ProjectAutosave(context: Context) {
             sourceUri = Uri.parse(uri),
             durationMs = json.optLong("durationMs"),
             clipCount = json.optInt("clipCount", 1),
-            savedAtMillis = json.optLong("savedAtMillis")
+            savedAtMillis = json.optLong("savedAtMillis"),
+            exportedAtMillis = json.optLong("exportedAtMillis", 0L).takeIf { it > 0L }
         )
     }.getOrNull()
-
-    /**
-     * Marks the current edit as finished. Called after a successful export: the
-     * work reached the gallery, so there is nothing left to recover and offering
-     * to restore it on next launch would only confuse.
-     */
-    fun markCompleted(uri: Uri) = clear(uri)
 
     private fun read(file: File): ProjectSnapshot? {
         if (!file.exists()) return null
@@ -237,6 +408,19 @@ class ProjectAutosave(context: Context) {
         put("originalVolume", state.originalVolume.toDouble())
         put("rotationDegrees", state.rotationDegrees)
         put("cropAspect", state.cropAspect.name)
+        // The hand-drawn rectangle. Saved only when it means something: a
+        // Custom crop that came back as the whole frame exported uncropped while
+        // the panel still said Custom.
+        if (!state.cropRect.isFull) {
+            put("cropRect", JSONObject().apply {
+                put("left", state.cropRect.left.toDouble())
+                put("top", state.cropRect.top.toDouble())
+                put("right", state.cropRect.right.toDouble())
+                put("bottom", state.cropRect.bottom.toDouble())
+            })
+        }
+        put("snapToMarkers", state.snapToMarkers)
+        put("stabilizeStrength", state.stabilizeStrength.toDouble())
         put("brightness", state.brightness.toDouble())
         put("contrast", state.contrast.toDouble())
         put("saturation", state.saturation.toDouble())
@@ -244,6 +428,17 @@ class ProjectAutosave(context: Context) {
         put("lookIntensity", state.lookIntensity.toDouble())
         put("pixelsPerSecond", state.pixelsPerSecond.toDouble())
         put("markers", JSONArray().apply { state.markers.forEach { put(it) } })
+        // The beat grid, once found. An analysis in flight or one that failed
+        // is not a result, and offering to restore it would restore nothing.
+        if (state.beats.finished && !state.beats.failed && state.beats.hasBeats) {
+            put("beats", JSONObject().apply {
+                put("bpm", state.beats.bpm.toDouble())
+                put("confidence", state.beats.confidence.toDouble())
+                put("downbeatOffset", state.beats.downbeatOffset)
+                put("clipLabel", state.beats.clipLabel)
+                put("beatsMs", JSONArray().apply { state.beats.beatsMs.forEach { put(it) } })
+            })
+        }
         put("clips", JSONArray().apply { state.videoClips.forEach { put(encodeClip(it)) } })
         put("textOverlays", JSONArray().apply { state.textOverlays.forEach { put(encodeText(it)) } })
         state.reframe?.let { track ->
@@ -387,7 +582,10 @@ class ProjectAutosave(context: Context) {
     // ---- Decoding -------------------------------------------------------------
 
     private fun decode(json: JSONObject): ProjectSnapshot? {
-        if (json.optInt("version") != FORMAT_VERSION) return null
+        // Every version since the last incompatible change is read: the fields
+        // added since then all have defaults, and a bump that orphaned every
+        // draft on the phone would be the very loss this file exists to prevent.
+        if (json.optInt("version") !in OLDEST_READABLE_VERSION..FORMAT_VERSION) return null
         val sourceUri = json.optString("sourceUri").takeIf { it.isNotBlank() } ?: return null
 
         val clips = json.optJSONArray("clips")?.let { array ->
@@ -448,6 +646,29 @@ class ProjectAutosave(context: Context) {
             originalVolume = json.optDouble("originalVolume", 1.0).toFloat(),
             rotationDegrees = json.optInt("rotationDegrees"),
             cropAspect = enumOrNull<CropAspect>(json.optString("cropAspect")) ?: CropAspect.Original,
+            cropRect = json.optJSONObject("cropRect")?.let { r ->
+                CropRect.of(
+                    left = r.optDouble("left", 0.0).toFloat(),
+                    top = r.optDouble("top", 0.0).toFloat(),
+                    right = r.optDouble("right", 1.0).toFloat(),
+                    bottom = r.optDouble("bottom", 1.0).toFloat()
+                )
+            } ?: CropRect(),
+            snapToMarkers = json.optBoolean("snapToMarkers", true),
+            stabilizeStrength = json.optDouble("stabilizeStrength", 0.5).toFloat().coerceIn(0f, 1f),
+            beats = json.optJSONObject("beats")?.let { b ->
+                val beatsMs = b.optJSONArray("beatsMs")?.let { array ->
+                    (0 until array.length()).map { i -> array.optLong(i) }
+                }.orEmpty()
+                BeatProgress(
+                    finished = true,
+                    bpm = b.optDouble("bpm", 0.0).toFloat(),
+                    confidence = b.optDouble("confidence", 0.0).toFloat(),
+                    beatsMs = beatsMs,
+                    downbeatOffset = b.optInt("downbeatOffset"),
+                    clipLabel = b.optString("clipLabel")
+                ).takeIf { it.hasBeats }
+            } ?: BeatProgress(),
             brightness = json.optDouble("brightness").toFloat(),
             contrast = json.optDouble("contrast").toFloat(),
             saturation = json.optDouble("saturation").toFloat(),
@@ -610,8 +831,15 @@ class ProjectAutosave(context: Context) {
         name?.let { runCatching { enumValueOf<T>(it) }.getOrNull() }
 
     private companion object {
-        /** Bump when the shape changes; older documents are then ignored rather than misread. */
-        const val FORMAT_VERSION = 9
+        /**
+         * Bump when the shape changes. Documents from [OLDEST_READABLE_VERSION] up
+         * are still read; anything older is ignored rather than misread.
+         *
+         * 10: the hand-drawn crop, the beat grid, snapping and the stabilizer
+         * strength, none of which survived a kill before.
+         */
+        const val FORMAT_VERSION = 10
+        const val OLDEST_READABLE_VERSION = 9
     }
 }
 
@@ -636,6 +864,10 @@ data class ProjectSnapshot(
     val originalVolume: Float,
     val rotationDegrees: Int,
     val cropAspect: CropAspect,
+    val cropRect: CropRect,
+    val snapToMarkers: Boolean,
+    val stabilizeStrength: Float,
+    val beats: BeatProgress,
     val brightness: Float,
     val contrast: Float,
     val saturation: Float,
@@ -656,9 +888,11 @@ data class ProjectSnapshot(
             audioClips.isEmpty() &&
             markers.isEmpty() &&
             reframe == null &&
-            // A look, a crop or a changed voice is work too, as much as a trim is.
+            // A look, a crop, a found beat or a changed voice is work too, as
+            // much as a trim is.
+            !beats.hasBeats &&
             lookId == null && brightness == 0f && contrast == 0f && saturation == 0f &&
-            cropAspect == CropAspect.Original && rotationDegrees == 0 &&
+            cropAspect == CropAspect.Original && cropRect.isFull && rotationDegrees == 0 &&
             voiceEffect == VoiceEffect.None && !muteOriginal && originalVolume == 1f &&
             clips.first().let {
                 it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs &&
