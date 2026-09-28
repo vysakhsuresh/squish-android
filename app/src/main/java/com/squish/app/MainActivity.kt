@@ -1,9 +1,11 @@
 package com.squish.app
 
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.content.IntentCompat
@@ -17,7 +19,14 @@ class MainActivity : ComponentActivity() {
         // straight to the dashboard. No second in-app splash.
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // Dark bars, always. The default reads the phone's light/dark setting to
+        // pick the icon colour, but this app is navy whatever the phone is set
+        // to - so on a phone in light mode the clock and the gesture pill were
+        // drawn dark on dark and vanished.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
+        )
         // Only on a fresh start: a restored activity is already wherever the
         // video took it, and opening it again would stack a second editor.
         val opened = if (savedInstanceState == null) videoFrom(intent) else null
