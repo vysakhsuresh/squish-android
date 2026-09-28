@@ -259,7 +259,7 @@ class VideoProcessor(private val context: Context) {
                     baseAudio = baseAudio,
                     filler = { ms -> CompositionFactory.filler(checkNotNull(clear), ms, rate) },
                     editedFor = { clip, layer ->
-                        if (layer.role == ExportPlan.Role.Overlay) editedOverlay(clip, canvas)
+                        if (layer.role == ExportPlan.Role.Overlay) editedOverlay(state, clip, canvas)
                         else editedClip(state, clip, canvas, layers.baseRolls)
                     }
                 )
@@ -427,9 +427,9 @@ class VideoProcessor(private val context: Context) {
      * A floating clip: silent (an overlay's sound is not mixed yet), placed on the
      * canvas and retimed. See CompositionFactory.overlayEffects.
      */
-    private fun editedOverlay(clip: Clip, canvas: ExportPresets.Resolution?): EditedMediaItem {
+    private fun editedOverlay(state: EditorUiState, clip: Clip, canvas: ExportPresets.Resolution?): EditedMediaItem {
         val item = MediaItem.Builder()
-            .setUri(clip.uri)
+            .setUri(clip.uri ?: state.sourceUri)
             .setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder()
                     .setStartPositionMs(clip.sourceInMs)

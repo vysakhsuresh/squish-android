@@ -334,7 +334,10 @@ sealed class SquishError(
             if (state.audioOnly && !state.hasSeparateAudio) return null
             for (clip in state.audioClips) {
                 val uri = clip.uri ?: continue
-                val report = MediaCompat.check(context, uri) ?: return SoundUnreadable(soundName(clip.label))
+                // No report is not a verdict: preflight has already opened the
+                // file, and a slow provider timing out here must not refuse an
+                // export that would have worked. Only a decoder's no is.
+                val report = MediaCompat.check(context, uri) ?: continue
                 report.audioProblem?.let { return SoundUnsupported(soundName(clip.label), it) }
             }
             return null
