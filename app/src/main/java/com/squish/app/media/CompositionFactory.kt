@@ -2,119 +2,150 @@
 
 package com.squish.app.media
 
+import android.net.Uri
+import androidx.media3.common.C
 import androidx.media3.common.Effect
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.OverlaySettings
+import androidx.media3.common.VideoCompositorSettings
+import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.AlphaScale
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
-import com.squish.app.editor.EditorUiState
+import androidx.media3.transformer.Effects
+import com.google.common.collect.ImmutableList
+import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.MaskEffect
-import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.timeline.Clip
-import com.squish.app.timeline.TransitionType
+import java.io.File
 
 /**
  * Builds the video side of a [Composition].
  *
- * Two strategies, chosen by what the edit actually needs:
+ * Two strategies, chosen by what the edit actually needs (ExportPlan.needsCompositing):
  *
- *  - **Cuts only** — one sequence, clips end to end. Uses nothing beyond the APIs
- *    the rest of the app already relies on, and is what every export took before
- *    transitions existed.
+ *  - **Cuts only** — one sequence, clips end to end. What every export took
+ *    before transitions existed, and still the cheapest.
  *
- *  - **Composited** — A/B roll. Transitions require two shots to be on screen at
- *    once, and a single sequence plays its items strictly one after another, so
- *    alternating clips are dealt onto two sequences with gaps opposite each
- *    other. Where they overlap you get a transition; overlay layers ride on
- *    further sequences above. This is how an NLE has always done dissolves.
+ *  - **Composited** — every layer its own sequence, stacked by Media3's
+ *    compositor. The base track is dealt onto as many rolls as its overlaps need
+ *    (a transition is two shots on screen at once, and one sequence plays its
+ *    items strictly one after another); each overlay layer rides above them; and
+ *    on top of everything a transparent clock sequence the length of the edit.
  *
- * The composited path is only taken when the edit contains a transition or an
- * overlay, so a plain cuts export never touches the newer compositing APIs.
- *
- * BUILD RISK: gaps (`EditedMediaItemSequence.Builder.addGap`) and per-input
- * compositing arrived in Media3 1.5, which is why the module was moved off
- * 1.4.1. If those signatures differ in the version you resolve, this file is the
- * only one to fix - `buildCutsOnly` keeps working regardless. See BUILD_NOTES.md.
+ * What this leans on in Media3 1.11, and nothing more: sequences are handed to
+ * the compositor in order, the first is the primary whose timestamps the output
+ * takes, and the compositor draws the first input on top and each later one
+ * underneath (DefaultCompositorGlProgram, "draw textures from back to front"),
+ * blending straight alpha. Transitions are drawn into each shot's own pixels
+ * (TransitionEffect), and the empty stretches of a layer are a transparent still
+ * rather than Media3's gap, so per-input compositor settings are used only to
+ * hide the clock and to name the output size.
  */
 object CompositionFactory {
 
-    /**
-     * Cuts-only can render a track that runs end to end. The moment clips are
-     * layered, overlap for a transition, or sit apart with a gap between them, the
-     * edit needs real positioning and goes down the compositing path.
-     */
-    fun needsCompositing(state: EditorUiState): Boolean {
-        if (state.videoClips.any { it.isOverlay || it.transitionIn.isActive }) return true
-        val base = state.videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
-        if (base.isEmpty()) return false
-        if (base.first().timelineStartMs > 0L) return true
-        return base.zipWithNext().any { (a, b) -> b.timelineStartMs != a.timelineEndMs }
-    }
+    fun needsCompositing(state: com.squish.app.editor.EditorUiState): Boolean =
+        ExportPlan.needsCompositing(state.videoClips)
 
-    fun buildCutsOnly(items: List<EditedMediaItem>): List<EditedMediaItemSequence> {
-        val sequence = EditedMediaItemSequence.Builder()
-        items.forEach { sequence.addItem(it) }
-        return listOf(sequence.build())
-    }
+    /** The one-sequence export: every clip end to end, with the tracks [trackTypes] names. */
+    fun buildCutsOnly(items: List<EditedMediaItem>, trackTypes: Set<Int>): List<EditedMediaItemSequence> =
+        listOf(EditedMediaItemSequence.Builder(trackTypes).addItems(items).build())
+
+    /** What the composited path hands the Composition. */
+    class Composited(
+        val sequences: List<EditedMediaItemSequence>,
+        val settings: VideoCompositorSettings?
+    )
 
     /**
-     * Deals the base track onto two alternating sequences so consecutive shots can
-     * overlap, and puts each overlay layer on its own sequence above them.
+     * Every layer of [layers] as a sequence, top first.
+     *
+     * @param videoOut false for a sound-only export: then only the base rolls are
+     *   built, as sound, and their empty stretches are Media3's own audio gaps.
+     * @param baseAudio whether the base rolls carry the clips' own sound. Every
+     *   roll that does is declared with an audio track from its first moment, so
+     *   a roll that opens on a photo, a blank or an empty stretch is filled with
+     *   silence rather than refused - which is how a Dissolve between a video and
+     *   a photo failed every export on the device.
+     * @param filler a transparent still [durationMs] long, for the empty stretches.
+     * @param editedFor the clip as an item of its layer.
      */
     fun buildComposited(
-        state: EditorUiState,
-        editedFor: (Clip) -> EditedMediaItem
-    ): List<EditedMediaItemSequence> {
-        val base = state.videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
-        if (base.isEmpty()) return emptyList()
-
-        val rollA = EditedMediaItemSequence.Builder()
-        val rollB = EditedMediaItemSequence.Builder()
-        var cursorA = 0L
-        var cursorB = 0L
-
-        base.forEachIndexed { index, clip ->
-            val ontoA = index % 2 == 0
-            val start = clip.timelineStartMs
-            if (ontoA) {
-                if (start > cursorA) rollA.addGap(msToUs(start - cursorA))
-                rollA.addItem(editedFor(clip))
-                cursorA = start + clip.durationMs
-            } else {
-                if (start > cursorB) rollB.addGap(msToUs(start - cursorB))
-                rollB.addItem(editedFor(clip))
-                cursorB = start + clip.durationMs
+        layers: ExportPlan.Layers,
+        canvas: ExportPresets.Resolution?,
+        videoOut: Boolean,
+        baseAudio: Boolean,
+        filler: (durationMs: Long) -> EditedMediaItem,
+        editedFor: (Clip, ExportPlan.Layer) -> EditedMediaItem
+    ): Composited {
+        val sequences = mutableListOf<EditedMediaItemSequence>()
+        for (layer in layers.layers) {
+            if (!videoOut && layer.role != ExportPlan.Role.Base) continue
+            val types = when {
+                !videoOut -> setOf(C.TRACK_TYPE_AUDIO)
+                layer.role == ExportPlan.Role.Base && baseAudio -> setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO)
+                else -> setOf(C.TRACK_TYPE_VIDEO)
             }
-        }
-
-        val sequences = mutableListOf(rollA.build())
-        if (base.size > 1) sequences.add(rollB.build())
-
-        state.videoClips.filter { it.isOverlay }.sortedBy { it.layer }.forEach { overlay ->
-            val builder = EditedMediaItemSequence.Builder()
-            if (overlay.timelineStartMs > 0) builder.addGap(msToUs(overlay.timelineStartMs))
-            builder.addItem(editedFor(overlay))
+            // A layer with nothing at all in it has no pieces; the clock always
+            // has one, the edit's length.
+            val pieces = ExportPlan.pieces(layer, layers.endMs)
+            if (pieces.isEmpty()) continue
+            val builder = EditedMediaItemSequence.Builder(types)
+            for (piece in pieces) {
+                when (piece) {
+                    is ExportPlan.Piece.Item -> builder.addItem(editedFor(piece.clip, layer))
+                    is ExportPlan.Piece.Gap ->
+                        if (videoOut) builder.addItem(filler(piece.durationMs))
+                        else builder.addGap(piece.durationMs * 1_000L)
+                }
+            }
             sequences.add(builder.build())
         }
-
-        return sequences
+        return Composited(sequences, if (videoOut) LayerSettings(canvas) else null)
     }
 
     /**
-     * Geometry and opacity for an overlay: scaled down, moved where it was put, and
-     * dimmed to taste. Applied as effects on the clip itself rather than through
-     * compositor settings, so it degrades to a plain scaled inset if per-input
-     * compositing is unavailable.
-     *
-     * Scale, position and rotation are one matrix rather than several effects,
-     * which is also what lets them be animated: see ClipTransformEffect.
+     * A transparent still of [durationMs] at [frameRate], from [clearFrame] (see
+     * StillClips.clearFrame). The alpha is also scaled to nothing, so the still
+     * stays invisible even if some step between the file and the compositor
+     * drops its transparency and hands on black.
      */
-    fun overlayEffects(clip: Clip, canvasWidth: Int, canvasHeight: Int): List<Effect> {
-        if (!clip.isOverlay || canvasWidth <= 0 || canvasHeight <= 0) return emptyList()
-        return buildList {
+    fun filler(clearFrame: File, durationMs: Long, frameRate: Int): EditedMediaItem {
+        val item = MediaItem.Builder()
+            .setUri(Uri.fromFile(clearFrame))
+            .setMimeType(MimeTypes.IMAGE_PNG)
+            .setImageDurationMs(durationMs.coerceAtLeast(1L))
+            .build()
+        val hide: List<Effect> = listOf(AlphaScale(0f))
+        return EditedMediaItem.Builder(item)
+            .setFrameRate(frameRate)
+            .setEffects(Effects(ImmutableList.of(), ImmutableList.copyOf(hide)))
+            .build()
+    }
+
+    /**
+     * An overlay's picture effects: keyed and masked on the frame the camera saw,
+     * fitted to the canvas the file is written at, and only then placed.
+     *
+     * Placement after the fit is what makes it canvas-relative. Done before, the
+     * offsets were fractions of the overlay's own frame: a portrait PiP 45% right
+     * of centre over a landscape edit landed 14% right of it in the file, and
+     * the size was measured against the source's frame while the base had been
+     * scaled to the chosen output, so a 4K source exported at 1080p drew every
+     * PiP twice the size it was placed at.
+     *
+     * No rotation and no grade: the preview draws neither on an overlay, and the
+     * two have to agree. Captions and the effects library are drawn once for the
+     * whole frame, above every layer (VideoProcessor.compositionEffects).
+     */
+    fun overlayEffects(clip: Clip, canvas: ExportPresets.Resolution?, speed: List<Effect>): List<Effect> =
+        buildList {
             // Keyed first, on the raw frame, so the matte is cut from the pixels the
             // camera saw rather than from a scaled and resampled copy of them.
             clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
@@ -123,29 +154,46 @@ object CompositionFactory {
             // frame the camera saw rather than from a scaled copy of it.
             clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
             clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
-            add(ClipTransformEffect(clip.keyframes, clip.staticTransform, clip.stabilizer, clip.sourceInMs))
-            add(Presentation.createForWidthAndHeight(canvasWidth, canvasHeight, Presentation.LAYOUT_SCALE_TO_FIT))
-            if (clip.opacity < 1f) add(AlphaScale(clip.opacity))
+            ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
+            if (canvas != null && canvas.width > 0 && canvas.height > 0) {
+                add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT))
+            }
+            ClipTransformEffect.of(clip, ExportPlan.MotionPart.User)?.let { add(it) }
+            addAll(speed)
+            if (clip.opacity < 1f) add(AlphaScale(clip.opacity.coerceIn(0f, 1f)))
         }
-    }
 
     /**
-     * How a transition reads on the incoming shot. A dissolve fades it up; a dip
-     * takes the outgoing shot down to black first. Both need alpha that changes
-     * over the overlap, which the compositor supplies per presentation time.
+     * The compositor told the two things it cannot know: how big the output is,
+     * and that the clock on top is not to be seen.
+     *
+     * Every layer arrives at the canvas's size already - fitted in its own chain
+     * - so each is drawn one to one. The size is stated rather than left to
+     * Media3, whose default is "whatever the first input is", and the first input
+     * is the clock: a 16 pixel still.
      */
-    fun transitionAlphaAt(clip: Clip, positionInClipMs: Long): Float {
-        val transition = clip.transitionIn
-        if (!transition.isActive) return 1f
-        if (positionInClipMs >= transition.durationMs) return 1f
-        val progress = (positionInClipMs.toFloat() / transition.durationMs).coerceIn(0f, 1f)
-        return when (transition.type) {
-            TransitionType.CrossFade, TransitionType.SlideLeft, TransitionType.WipeRight -> progress
-            // Black in the middle: out to nothing, then back up.
-            TransitionType.DipToBlack -> if (progress < 0.5f) 0f else (progress - 0.5f) * 2f
-            TransitionType.None -> 1f
+    private class LayerSettings(private val canvas: ExportPresets.Resolution?) : VideoCompositorSettings {
+
+        /** When nothing measured the canvas, the first real frame's size, kept for the whole export. */
+        private var latched: Size? = null
+
+        override fun getOutputSize(inputSizes: List<Size>): Size {
+            if (canvas != null && canvas.width > 0 && canvas.height > 0) return Size(canvas.width, canvas.height)
+            latched?.let { return it }
+            val biggest = inputSizes.drop(1).maxByOrNull { it.width.toLong() * it.height }
+            return if (biggest != null && biggest.width > FILLER_SIDE && biggest.height > FILLER_SIDE) {
+                biggest.also { latched = it }
+            } else {
+                inputSizes.first()
+            }
         }
+
+        override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings =
+            if (inputId == CLOCK_INPUT) HIDDEN else SHOWN
     }
 
-    private fun msToUs(ms: Long): Long = ms * 1000L
+    private const val CLOCK_INPUT = 0
+    private const val FILLER_SIDE = 16
+    private val HIDDEN: OverlaySettings = StaticOverlaySettings.Builder().setAlphaScale(0f).build()
+    private val SHOWN: OverlaySettings = StaticOverlaySettings.Builder().build()
 }

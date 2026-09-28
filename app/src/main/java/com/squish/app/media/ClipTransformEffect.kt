@@ -3,11 +3,10 @@
 package com.squish.app.media
 
 import android.graphics.Matrix
+import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.MatrixTransformation
-import com.squish.app.timeline.Keyframe
-import com.squish.app.timeline.Transform
-import com.squish.app.timeline.composeTransform
+import com.squish.app.timeline.Clip
 
 /**
  * Moves a clip's picture - scaled, turned and shifted - and animates it if the
@@ -17,29 +16,34 @@ import com.squish.app.timeline.composeTransform
  * per-frame effects are static: Contrast, HslAdjustment and AlphaScale are handed
  * one value and keep it. MatrixTransformation is the exception - it is asked for a
  * matrix *per presentation time*, which is precisely the hook an animated
- * transform needs. Scale, position and rotation can therefore move over time using
- * an API the app already relies on, with no custom shader in sight.
+ * transform needs.
  *
  * It also replaced ScaleAndRotateTransformation, which can scale but cannot
  * translate - so the editor's position sliders moved a layer in the preview and
  * were then discarded at render time, and every picture-in-picture came out
  * centered.
  *
- * Media3 matrices work in normalized device coordinates, where the frame spans -1
- * to 1 and **+Y points up**. The editor's offsets are screen-space, where down is
- * positive, which is why Y is negated here - and here only, so the convention has
- * exactly one place it can go wrong.
+ * One clip's placement is two effects, at two places in its chain, each with
+ * its own clock ([part]):
  *
- * BUILD RISK: MatrixTransformation is the one new Media3 interface in the app. If
- * the signature differs in the version you resolve, see BUILD_NOTES.md for the
- * one-line fallback; layers then render centered and unanimated, as before.
+ *  - the stabilizer's correction belongs to the footage, so it goes on first, in
+ *    the frame the camera recorded, keyed by source time;
+ *  - what the editor asked for belongs to the picture as it is seen, so it goes
+ *    on after the edit's rotation (for a base shot) or after the layer has been
+ *    fitted to the canvas (for an overlay) - which is where the preview applies
+ *    it, to the view. Keyed by played time.
+ *
+ * Done as one effect before the rotation, a pan on a clip turned a quarter turn
+ * ran up the screen in the file and across it in the preview. Measured in the
+ * overlay's own frame rather than the canvas, a PiP placed 45% right of centre
+ * landed 14% right of it whenever the overlay's shape differed from the edit's.
+ *
+ * Both parts see frames before the clip's speed change, so what they are handed
+ * is source time; ExportPlan.motionAt converts it for the keyframes.
  */
 class ClipTransformEffect(
-    private val keyframes: List<Keyframe>,
-    private val staticTransform: Transform,
-    private val stabilizer: List<Keyframe> = emptyList(),
-    /** Where in the source file this clip starts, so stabilization lines up after a trim. */
-    private val sourceInMs: Long = 0L
+    private val clip: Clip,
+    private val part: ExportPlan.MotionPart
 ) : MatrixTransformation {
 
     /**
@@ -53,23 +57,33 @@ class ClipTransformEffect(
      */
     private var originUs = Long.MIN_VALUE
 
+    /** Width over height of the frame this is applied to; the turn is done in its pixels. */
+    private var aspect = 1f
+
     /** Reused rather than allocated: this is called once per frame of the export. */
     private val matrix = Matrix()
+    private val values = FloatArray(9)
+
+    override fun configure(inputWidth: Int, inputHeight: Int): Size {
+        if (inputWidth > 0 && inputHeight > 0) aspect = inputWidth.toFloat() / inputHeight
+        return Size(inputWidth, inputHeight)
+    }
 
     override fun getMatrix(presentationTimeUs: Long): Matrix {
         if (originUs == Long.MIN_VALUE) originUs = presentationTimeUs
-        val tInClipMs = (presentationTimeUs - originUs) / 1_000L
+        val sourceElapsedMs = (presentationTimeUs - originUs) / 1_000L
 
-        val transform = composeTransform(
-            keyframes, staticTransform, stabilizer, tInClipMs, sourceInMs + tInClipMs
-        )
-
-        matrix.reset()
-        // Post-concatenation, so these read in application order: turn about the
-        // center, scale about the center, then move.
-        matrix.postRotate(transform.rotationDegrees)
-        matrix.postScale(transform.scale, transform.scale)
-        matrix.postTranslate(transform.offsetXFraction, -transform.offsetYFraction)
+        val m = ExportPlan.placementMatrix(ExportPlan.motionAt(clip, part, sourceElapsedMs), aspect)
+        values[0] = m[0]; values[1] = m[1]; values[2] = m[4]
+        values[3] = m[2]; values[4] = m[3]; values[5] = m[5]
+        values[6] = 0f; values[7] = 0f; values[8] = 1f
+        matrix.setValues(values)
         return matrix
+    }
+
+    companion object {
+        /** The effect for [part] of [clip]'s motion, or null when that part never moves it. */
+        fun of(clip: Clip, part: ExportPlan.MotionPart): ClipTransformEffect? =
+            if (ExportPlan.hasMotion(clip, part)) ClipTransformEffect(clip, part) else null
     }
 }

@@ -23,16 +23,24 @@ import java.io.IOException
  * frame. The window is kept inside the picture, so following a subject to the
  * edge stops at the edge rather than showing black.
  *
- * [timeOffsetMs] turns the frame's presentation time into the track's clock.
+ * One instance per clip, placed before the clip's speed change so its frames
+ * carry source time: the first frame it sees is [sourceInMs] into the file, and
+ * each later one is as far past that as its timestamp is past the first. The
+ * track is in the file's own time, so that is the clock it is read on.
+ *
+ * It used to be one offset for the whole edit - the head clip's - added to
+ * whatever timestamp arrived. Every clip after the first, every trimmed or
+ * reordered one and anything retimed then looked the track up at the wrong
+ * moment, and the window followed where the subject had been somewhere else.
  */
 class ReframeEffect(
     private val ratio: Float,
     private val track: MotionTrack,
-    private val timeOffsetMs: Long = 0L
+    private val sourceInMs: Long = 0L
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        ReframeShaderProgram(context, useHdr, ratio, track, timeOffsetMs)
+        ReframeShaderProgram(context, useHdr, ratio, track, sourceInMs)
 
     companion object {
         /** The kept window's size, as fractions of a frame [aspect] wide per unit tall. */
@@ -50,8 +58,11 @@ private class ReframeShaderProgram(
     useHdr: Boolean,
     private val ratio: Float,
     private val track: MotionTrack,
-    private val timeOffsetMs: Long
+    private val sourceInMs: Long
 ) : BaseGlShaderProgram(useHdr, /* texturePoolCapacity= */ 1) {
+
+    /** Latched on the first frame, which is the clip's first. */
+    private var originUs = Long.MIN_VALUE
 
     private val glProgram: GlProgram = try {
         GlProgram(context, VERTEX_SHADER_PATH, FRAGMENT_SHADER_PATH)
@@ -85,7 +96,8 @@ private class ReframeShaderProgram(
 
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
         try {
-            val at = presentationTimeUs / 1000L + timeOffsetMs
+            if (originUs == Long.MIN_VALUE) originUs = presentationTimeUs
+            val at = sourceInMs + (presentationTimeUs - originUs) / 1000L
             val s = track.sampleAt(at)
             val (left, top) = ReframeEffect.windowOrigin(s?.xFraction ?: 0.5f, s?.yFraction ?: 0.5f, ww, wh)
             glProgram.use()

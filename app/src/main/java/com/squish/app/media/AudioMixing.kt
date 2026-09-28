@@ -41,9 +41,6 @@ object AudioMixing {
         return processor
     }
 
-    /** Gain alone, null at full volume - the level-only form the export still calls. */
-    fun gain(volume: Float): AudioProcessor? = if (volume >= 0.999f) null else processor(volume)
-
     /**
      * No louder than the source. The preview's players cannot turn a sound up
      * past its own level, and a file that is louder than what was heard while

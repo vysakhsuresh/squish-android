@@ -555,13 +555,23 @@ data class EditorUiState(
     /** Whether any audio at all reaches the exported file. */
     val hasAnyAudio: Boolean get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio
 
-    /** The frame the chosen size produces, before any crop. */
+    /** The part of the rotated frame the crop keeps, in pixels, before any size is chosen. */
+    val croppedFrame: ExportPresets.Resolution
+        get() = effectiveCrop.let { ExportPresets.croppedFrame(framedWidth, framedHeight, it.width, it.height) }
+
+    /**
+     * The frame the file is written at: what the crop keeps, at the chosen size.
+     * Fit-to-size keeps the kept part's own size and spends its budget on bitrate.
+     */
     val outputResolution: ExportPresets.Resolution
         // The rotated shape, not the shot one. This sits after the rotation in
         // the render chain, so measured against the source's own numbers it asks
         // a turned frame to fit a box the wrong way round - which is the
-        // letterboxed, wrong-shaped file that pressing Rotate produced.
-        get() = ExportPresets.resolutionFor(outputP, framedWidth, framedHeight)
+        // letterboxed, wrong-shaped file that pressing Rotate produced. And the
+        // cropped one: see ExportPresets.croppedFrame.
+        get() = effectiveCrop.let {
+            ExportPresets.canvasFor(if (fitToSize) OutputSize.ORIGINAL else outputP, framedWidth, framedHeight, it.width, it.height)
+        }
 
     /**
      * The video bitrate this export is written at. One definition, read by the
@@ -573,7 +583,7 @@ data class EditorUiState(
         } else {
             val sourceBps = sourceVideoBps.takeIf { it > 0 }
                 ?: ExportPresets.sourceVideoBitrate(originalSizeBytes, durationMs, sourceHasAudio)
-            ExportPresets.bitrateFor(outputP, sourceWidth, sourceHeight, fps, sourceBps)
+            ExportPresets.bitrateForFrame(outputResolution, sourceWidth, sourceHeight, fps, sourceBps)
         }
 
     /** What the finished file should weigh. */

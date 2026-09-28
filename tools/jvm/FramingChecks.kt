@@ -87,6 +87,51 @@ fun main() {
         "old box ${naive.width}x${naive.height}, new box " +
         ExportPresets.resolutionFor(720, rotW, rotH).let { "${it.width}x${it.height}" })
 
+    // The canvas is the crop, at the chosen size. A 9:16 cut of a landscape clip
+    // exported at 720p is a 720x1280 file - not the cut fitted into 1280x720
+    // with black down both sides, which is what sizing the whole frame produced.
+    for ((name, size) in sources) {
+        val (w, h) = size
+        for (rotation in intArrayOf(0, 90)) {
+            val (fw, fh) = framed(w, h, rotation)
+            val frameAspect = fw.toFloat() / fh
+            for (ratio in listOf(9f / 16f, 1f, 4f / 5f, 16f / 9f)) {
+                val crop = com.squish.app.editor.CropRect.centred(ratio, frameAspect)
+                for (outputP in listOf(OutputSize.ORIGINAL) + OutputSize.PRESETS) {
+                    val canvas = ExportPresets.canvasFor(outputP, fw, fh, crop.width, crop.height)
+                    val got = canvas.width.toFloat() / canvas.height
+                    check(
+                        "$name at $rotation, crop $ratio, ${outputP}p: canvas ${canvas.width}x${canvas.height} is the crop's shape",
+                        kotlin.math.abs(got - ratio) / ratio < 0.02f
+                    )
+                    check("$name crop $ratio ${outputP}p is even", canvas.width % 2 == 0 && canvas.height % 2 == 0)
+                    if (outputP != OutputSize.ORIGINAL) {
+                        check(
+                            "$name crop $ratio ${outputP}p: short edge ${minOf(canvas.width, canvas.height)}",
+                            kotlin.math.abs(minOf(canvas.width, canvas.height) - outputP) <= 2
+                        )
+                    } else {
+                        // Original is the kept pixels, never scaled up past them.
+                        check("$name crop $ratio at Original is not upscaled", canvas.width <= fw && canvas.height <= fh)
+                    }
+                }
+            }
+        }
+    }
+    val nineSixteen = com.squish.app.editor.CropRect.centred(9f / 16f, 16f / 9f)
+    val reel = ExportPresets.canvasFor(720, 1920, 1080, nineSixteen.width, nineSixteen.height)
+    check("9:16 of 1920x1080 at 720p is 720x1280 (got ${reel.width}x${reel.height})", reel.width == 720 && reel.height == 1280)
+    val whole = ExportPresets.canvasFor(720, 1920, 1080, 1f, 1f)
+    check("no crop is the old size", whole == ExportPresets.resolutionFor(720, 1920, 1080))
+
+    // A cropped frame costs fewer bits than the whole one at the same size.
+    val full = ExportPresets.bitrateFor(OutputSize.ORIGINAL, 1920, 1080, 30f, 16_000_000L)
+    val cut = ExportPresets.bitrateForFrame(
+        ExportPresets.canvasFor(OutputSize.ORIGINAL, 1920, 1080, nineSixteen.width, nineSixteen.height),
+        1920, 1080, 30f, 16_000_000L
+    )
+    check("a 9:16 cut is budgeted less than the whole frame ($cut vs $full)", cut < full / 2)
+
     // Nothing measured yet must not produce a box of zero, which Media3 rejects.
     for (outputP in listOf(OutputSize.ORIGINAL) + OutputSize.PRESETS) {
         val none = ExportPresets.resolutionFor(outputP, 0, 0)

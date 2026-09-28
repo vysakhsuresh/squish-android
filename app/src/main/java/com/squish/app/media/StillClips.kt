@@ -8,6 +8,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.media.ExifInterface
 import android.net.Uri
+import androidx.media3.common.C
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -15,6 +16,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
@@ -123,8 +125,22 @@ object StillClips {
                 .setEffects(Effects(ImmutableList.of(), ImmutableList.copyOf(scale)))
                 .build()
 
+            // With a track of silence, so a still is a clip like any other all the
+            // way down. Without one, a photo was the only thing on the timeline with
+            // no sound at all, and Media3 will not start a sequence on an item with
+            // no audio and then meet one with: a dissolve that dealt the photo to
+            // the front of the second roll failed every export at the first frame.
+            // The export forces a sound track on every sequence as well; this makes
+            // a still safe even where something else reads the file.
+            val composition = Composition.Builder(
+                EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO))
+                    .addItem(item)
+                    .build()
+            ).build()
+
             val transformer = Transformer.Builder(context)
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
+                .setAudioMimeType(MimeTypes.AUDIO_AAC)
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         if (continuation.isActive) continuation.resume(true)
@@ -138,7 +154,7 @@ object StillClips {
                 .build()
 
             continuation.invokeOnCancellation { runCatching { transformer.cancel() } }
-            runCatching { transformer.start(item, output.absolutePath) }
+            runCatching { transformer.start(composition, output.absolutePath) }
                 .onFailure { if (continuation.isActive) continuation.resume(false) }
         }
 
@@ -149,7 +165,37 @@ object StillClips {
         return even(width * scale) to even(height * scale)
     }
 
+    /**
+     * A picture with nothing in it: every pixel fully transparent. The export
+     * lays it where a layer has nothing to show - before an overlay starts,
+     * between two shots on a roll, after the last one - so the layers underneath
+     * show through.
+     *
+     * Media3 can fill a gap in a sequence by itself, but what it fills it with is
+     * a small opaque black frame, which the compositor draws as a black square in
+     * the middle of whatever is below. Nothing the app draws itself has that
+     * problem, and nothing about it depends on the compositor honouring a setting.
+     *
+     * Blocking; call it off the main thread. Null if it could not be written.
+     */
+    fun clearFrame(context: Context): File? {
+        val file = File(dir(context), "clear_${CLEAR_SIDE}.png")
+        if (file.exists() && file.length() > 0) return file
+        return runCatching {
+            val partial = File(file.absolutePath + ".part")
+            val bitmap = Bitmap.createBitmap(CLEAR_SIDE, CLEAR_SIDE, Bitmap.Config.ARGB_8888)
+                .apply { eraseColor(Color.TRANSPARENT) }
+            FileOutputStream(partial).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+            if (!partial.renameTo(file)) error("could not keep $file")
+            file
+        }.getOrNull()
+    }
+
     private fun dir(context: Context): File = File(context.filesDir, "stills").apply { mkdirs() }
+
+    /** Small, because it is drawn at nothing; even, because some decoders insist. */
+    private const val CLEAR_SIDE = 16
 
     /** The rate most phone footage runs at, so a dissolve into a photo is as smooth as the shot beside it. */
     private const val FRAME_RATE = 30

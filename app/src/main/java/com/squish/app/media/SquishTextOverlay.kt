@@ -17,6 +17,12 @@ import com.squish.app.editor.TextOverlayItem
  * takes a string and a colour and nothing else: an outline, a box, a shadow or a
  * glow all have to be painted. The preview uses the same renderer through
  * [LiveCaptionOverlay], so what the editor shows is what the file gets.
+ *
+ * Drawn once, on the finished frame above every layer (VideoProcessor
+ * .compositionEffects), so the presentation times it is handed are the edit's
+ * own and the frame it is sized to is the canvas the file is written at. It
+ * used to ride on each base clip, which drew a caption twice through a
+ * dissolve and not at all over a gap.
  */
 class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
 
