@@ -98,7 +98,9 @@ fun StickersPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     sticker = sticker,
                     onJump = { viewModel.scrubTo(sticker.startMs) },
                     onRemove = { viewModel.removeTextOverlay(sticker.id) },
-                    onChange = { change -> viewModel.restyleCaption(sticker.id, change) }
+                    onChange = { change -> viewModel.restyleCaption(sticker.id, change) },
+                    onDrag = { change -> viewModel.restyleCaption(sticker.id, change, dragging = true) },
+                    onDragEnd = viewModel::endGesture
                 )
             }
         }
@@ -111,7 +113,9 @@ private fun PlacedSticker(
     sticker: TextOverlayItem,
     onJump: () -> Unit,
     onRemove: () -> Unit,
-    onChange: ((TextOverlayItem) -> TextOverlayItem) -> Unit
+    onChange: ((TextOverlayItem) -> TextOverlayItem) -> Unit,
+    onDrag: ((TextOverlayItem) -> TextOverlayItem) -> Unit,
+    onDragEnd: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -137,14 +141,15 @@ private fun PlacedSticker(
                 modifier = Modifier.clickable(onClick = onRemove)
             )
         }
-        LabeledSlider("Across", sticker.xFraction * 2 - 1, -1f..1f) { v ->
-            onChange { it.copy(xFraction = ((v + 1) / 2).coerceIn(0.02f, 0.98f)) }
+        // Each slider drag is one undo step; the motion chips below are one per tap.
+        LabeledSlider("Across", sticker.xFraction * 2 - 1, -1f..1f, onFinished = onDragEnd) { v ->
+            onDrag { it.copy(xFraction = ((v + 1) / 2).coerceIn(0.02f, 0.98f)) }
         }
-        LabeledSlider("Up / down", sticker.yFraction * 2 - 1, -1f..1f) { v ->
-            onChange { it.copy(yFraction = ((v + 1) / 2).coerceIn(0.02f, 0.98f)) }
+        LabeledSlider("Up / down", sticker.yFraction * 2 - 1, -1f..1f, onFinished = onDragEnd) { v ->
+            onDrag { it.copy(yFraction = ((v + 1) / 2).coerceIn(0.02f, 0.98f)) }
         }
-        LabeledSlider("Size", sticker.sizeSp / 64f, 0.4f..3f) { v ->
-            onChange { it.copy(sizeSp = (v * 64).toInt().coerceIn(24, 192)) }
+        LabeledSlider("Size", sticker.sizeSp / 64f, 0.4f..3f, readout = Readout.times, onFinished = onDragEnd) { v ->
+            onDrag { it.copy(sizeSp = (v * 64).toInt().coerceIn(24, 192)) }
         }
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),

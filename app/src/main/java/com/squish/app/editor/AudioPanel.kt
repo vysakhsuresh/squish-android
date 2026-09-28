@@ -114,7 +114,11 @@ fun AudioPanel(
                 }
             )
             if (!state.muteOriginal && state.sourceHasAudio) {
-                LabeledSlider("Level", state.originalVolume, 0f..1f, viewModel::setOriginalVolume)
+                LabeledSlider(
+                    "Level", state.originalVolume, 0f..1f,
+                    onFinished = viewModel::endGesture,
+                    onChange = viewModel::setOriginalVolume
+                )
             }
         }
 
@@ -183,7 +187,9 @@ fun AudioPanel(
                     .padding(vertical = 4.dp)
             )
 
-            LabeledSlider("Level", target.volume, 0f..1f) { viewModel.setAudioClipVolume(target.id, it) }
+            LabeledSlider("Level", target.volume, 0f..1f, onFinished = viewModel::endGesture) {
+                viewModel.setAudioClipVolume(target.id, it)
+            }
         }
 
         PanelCard {
@@ -250,7 +256,10 @@ fun AudioPanel(
                 icon = Icons.Filled.Sync,
                 accent = SquishColors.Cyan
             )
-            val offsetMs = target.sourceInMs - target.timelineStartMs
+            // Against the picture, not against the timeline: the head shot's own
+            // trim and position are taken off. Without that a plain trim of the
+            // shot read as a sync offset, and a synced sound read as off.
+            val offsetMs = target.sourceInMs - target.timelineStartMs - state.headPictureDeltaMs
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

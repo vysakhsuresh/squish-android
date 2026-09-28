@@ -54,7 +54,10 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
         return
     }
 
-    val here = clip.transformAt(state.playheadMs)
+    // What the editor set, not what is drawn: the drawn transform includes the
+    // stabilizer, and showing it here showed a 108% "scale" nobody chose - which
+    // the next nudge then wrote back, doubling the stabilizer's zoom.
+    val here = clip.userTransformAt(state.playheadMs)
     val animated = clip.keyframes.isNotEmpty()
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -106,16 +109,20 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 icon = Icons.Filled.Transform,
                 accent = SquishColors.Amber
             )
-            LabeledSlider("Scale", here.scale, 0.2f..3f) {
+            LabeledSlider("Scale", here.scale, 0.2f..3f, onFinished = viewModel::endGesture) {
                 viewModel.setClipTransform(clip.id, scale = it)
             }
-            LabeledSlider("Across", here.offsetXFraction, -1f..1f) {
+            LabeledSlider("Across", here.offsetXFraction, -1f..1f, onFinished = viewModel::endGesture) {
                 viewModel.setClipTransform(clip.id, offsetX = it)
             }
-            LabeledSlider("Up / down", here.offsetYFraction, -1f..1f) {
+            LabeledSlider("Up / down", here.offsetYFraction, -1f..1f, onFinished = viewModel::endGesture) {
                 viewModel.setClipTransform(clip.id, offsetY = it)
             }
-            LabeledSlider("Rotation", here.rotationDegrees, -45f..45f) {
+            LabeledSlider(
+                "Rotation", here.rotationDegrees, -45f..45f,
+                readout = Readout.degrees,
+                onFinished = viewModel::endGesture
+            ) {
                 viewModel.setClipTransform(clip.id, rotation = it)
             }
         }
@@ -242,7 +249,11 @@ private fun KeyRow(
  */
 @Composable
 private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
-    val status = state.stabilize
+    // Only this clip's analysis. The card used to report whichever clip was
+    // measured last - "Zoomed in 8%", or its failure - on every clip selected
+    // after it, beside a button that said this one was not stabilized.
+    val status = state.stabilize.takeIf { it.clipId == clip.id } ?: StabilizeProgress()
+    val busyElsewhere = state.stabilize.running && state.stabilize.clipId != clip.id
 
     PanelSurface(accent = SquishColors.Amber) {
         PanelHeading(
@@ -313,7 +324,11 @@ private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorVie
             )
         }
 
-        LabeledSlider("Strength", state.stabilizeStrength, 0f..1f, viewModel::setStabilizeStrength)
+        LabeledSlider(
+            "Strength", state.stabilizeStrength, 0f..1f,
+            onFinished = viewModel::endGesture,
+            onChange = viewModel::setStabilizeStrength
+        )
         Text(
             "Stronger holds the frame steadier and crops in further to afford it.",
             style = MaterialTheme.typography.bodySmall,
@@ -328,11 +343,13 @@ private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorVie
                 status.running && status.total > 0 ->
                     "Measuring… ${(status.done * 100 / status.total).coerceIn(0, 99)}%"
                 status.running -> "Measuring…"
+                // One measurement at a time; this one waits for the other clip's.
+                busyElsewhere -> "Measuring another clip…"
                 clip.isStabilized -> "Measure again at this strength"
                 else -> "Stabilize this clip"
             },
             modifier = Modifier.fillMaxWidth(),
-            onClick = { if (!status.running) viewModel.stabilizeClip(clip.id) }
+            onClick = { if (!status.running && !busyElsewhere) viewModel.stabilizeClip(clip.id) }
         )
     }
 }

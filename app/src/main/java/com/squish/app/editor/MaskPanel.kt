@@ -99,7 +99,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
         )
 
         if (mask.mode != MaskMode.Cutout) {
-            LabeledSlider("Obscure strength", mask.strength, 0f..1f) {
+            LabeledSlider("Obscure strength", mask.strength, 0f..1f, onFinished = viewModel::endGesture) {
                 viewModel.updateMask(clip.id, strength = it)
             }
             if (mask.track != null) {
@@ -153,10 +153,10 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
         // A pinned mask takes its center from the track every frame, so these two
         // would be controls that visibly do nothing.
         if (mask.track == null) {
-            LabeledSlider("Across", mask.centerXFraction, -1f..1f) {
+            LabeledSlider("Across", mask.centerXFraction, -1f..1f, onFinished = viewModel::endGesture) {
                 viewModel.updateMask(clip.id, centerX = it)
             }
-            LabeledSlider("Up / down", mask.centerYFraction, -1f..1f) {
+            LabeledSlider("Up / down", mask.centerYFraction, -1f..1f, onFinished = viewModel::endGesture) {
                 viewModel.updateMask(clip.id, centerY = it)
             }
         }
@@ -165,25 +165,29 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
         // band with no width - offering sliders that do nothing would just invite
         // someone to drag them and conclude the mask is broken.
         if (mask.shape == MaskShape.Rectangle || mask.shape == MaskShape.Ellipse) {
-            LabeledSlider("Width", mask.widthFraction, 0.02f..1.5f) {
+            LabeledSlider("Width", mask.widthFraction, 0.02f..1.5f, onFinished = viewModel::endGesture) {
                 viewModel.updateMask(clip.id, width = it)
             }
         }
         if (mask.shape != MaskShape.Linear) {
-            LabeledSlider("Height", mask.heightFraction, 0.02f..1.5f) {
+            LabeledSlider("Height", mask.heightFraction, 0.02f..1.5f, onFinished = viewModel::endGesture) {
                 viewModel.updateMask(clip.id, height = it)
             }
         }
         if (mask.shape == MaskShape.Rectangle) {
-            LabeledSlider("Corner round", mask.cornerRadius, 0f..0.5f) {
+            LabeledSlider("Corner round", mask.cornerRadius, 0f..0.5f, onFinished = viewModel::endGesture) {
                 viewModel.updateMask(clip.id, cornerRadius = it)
             }
         }
 
-        LabeledSlider("Rotation", mask.rotationDegrees, -180f..180f) {
+        LabeledSlider(
+            "Rotation", mask.rotationDegrees, -180f..180f,
+            readout = Readout.degrees,
+            onFinished = viewModel::endGesture
+        ) {
             viewModel.updateMask(clip.id, rotation = it)
         }
-        LabeledSlider("Feather", mask.feather, 0.001f..0.4f) {
+        LabeledSlider("Feather", mask.feather, 0.001f..0.4f, onFinished = viewModel::endGesture) {
             viewModel.updateMask(clip.id, feather = it)
         }
     }

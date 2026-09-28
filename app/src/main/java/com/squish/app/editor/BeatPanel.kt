@@ -46,7 +46,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
         PanelHeading(
             "Beat",
             when {
-                beats.running -> "Listening to ${beats.clipLabel}"
+                beats.running -> "Listening to ${beats.listeningTo}"
                 beats.hasBeats -> "${beats.beatsMs.size} beats in ${beats.clipLabel}"
                 else -> "Find the pulse and cut to it"
             },
@@ -81,9 +81,9 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 )
             }
 
-            beats.failed -> {
+            beats.failed && !beats.hasBeats -> {
                 Text(
-                    "No pulse found in ${beats.clipLabel}. Speech and ambient sound " +
+                    "No pulse found in ${beats.listeningTo}. Speech and ambient sound " +
                         "often have none — try a track with drums on it.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.Yellow
@@ -96,6 +96,15 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
             }
 
             beats.hasBeats -> {
+                // A second listen that found nothing leaves the grid it had; it
+                // used to throw that away along with the failed answer.
+                if (beats.failed) {
+                    Text(
+                        "No pulse found in ${beats.listeningTo} — the grid from ${beats.clipLabel} is kept.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SquishColors.Yellow
+                    )
+                }
                 TempoReadout(beats)
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
@@ -127,15 +136,16 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     icon = Icons.Filled.Flag,
                     title = "Snap to the beat",
                     body = "Drops a marker on every beat. Dragging a clip, setting an " +
-                        "in point and moving a caption all snap to markers already.",
+                        "in point and moving a caption all snap to markers already. " +
+                        "Markers you placed yourself stay.",
                     accent = SquishColors.Amber
                 ) { n -> viewModel.markBeats(n) }
 
                 BeatAction(
                     icon = Icons.Filled.ContentCut,
                     title = "Cut on the beat",
-                    body = "Razors the whole video track at once. Every clip on the " +
-                        "strip is cut where the beat lands.",
+                    body = "Razors the main video track at once, cutting every shot " +
+                        "where the beat lands. The music and any overlays stay whole.",
                     accent = SquishColors.Violet
                 ) { n -> viewModel.cutOnBeats(n) }
             }
@@ -144,7 +154,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 Text(
                     "Squish listens to the music on the timeline, works out the tempo, " +
                         "and marks every beat. Then you can snap your cuts to it, or " +
-                        "have it cut the whole track on the bar.",
+                        "have it cut the picture on the bar.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.TextSecondary
                 )
