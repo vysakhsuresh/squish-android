@@ -107,6 +107,7 @@ fun TransitionPanel(
                         onValueChange = {
                             viewModel.setTransition(selected.id, current.type, it.toLong())
                         },
+                        onValueChangeFinished = viewModel::endGesture,
                         valueRange = 150f..2000f,
                         colors = SliderDefaults.colors(
                             thumbColor = SquishColors.Primary,
@@ -159,16 +160,16 @@ fun TransitionPanel(
                     // ranges are the model's own, so no panel cuts down a value
                     // another one set.
                     val placement = selected.placementAt(state.playheadMs)
-                    LabeledSlider("Opacity", selected.opacity, 0f..1f) {
+                    LabeledSlider("Opacity", selected.opacity, 0f..1f, onFinished = viewModel::endGesture) {
                         viewModel.setOverlayGeometry(selected.id, opacity = it)
                     }
-                    LabeledSlider("Size", placement.scale, TransformLimits.SCALE_MIN..TransformLimits.SCALE_MAX) {
+                    LabeledSlider("Size", placement.scale, TransformLimits.SCALE_MIN..TransformLimits.SCALE_MAX, onFinished = viewModel::endGesture) {
                         viewModel.setOverlayGeometry(selected.id, scale = it)
                     }
-                    LabeledSlider("Across", placement.offsetXFraction, -TransformLimits.OFFSET_MAX..TransformLimits.OFFSET_MAX) {
+                    LabeledSlider("Across", placement.offsetXFraction, -TransformLimits.OFFSET_MAX..TransformLimits.OFFSET_MAX, onFinished = viewModel::endGesture) {
                         viewModel.setOverlayGeometry(selected.id, offsetX = it)
                     }
-                    LabeledSlider("Up / down", placement.offsetYFraction, -TransformLimits.OFFSET_MAX..TransformLimits.OFFSET_MAX) {
+                    LabeledSlider("Up / down", placement.offsetYFraction, -TransformLimits.OFFSET_MAX..TransformLimits.OFFSET_MAX, onFinished = viewModel::endGesture) {
                         viewModel.setOverlayGeometry(selected.id, offsetY = it)
                     }
                     if (selected.keyframes.isNotEmpty()) {

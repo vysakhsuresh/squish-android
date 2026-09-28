@@ -14,6 +14,8 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.EffectSpan
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.TimelineState
+import com.squish.app.timeline.Transform
+import com.squish.app.timeline.transformAt
 
 /**
  * How big an export comes out, named by its short edge - 720p, 1080p - the way
@@ -118,18 +120,29 @@ data class TextOverlayItem(
      * a caption is written in timeline time. Shifting once here is what makes a
      * caption appear at the right moment over a clip that has been trimmed or moved
      * - otherwise it shows up early by however far the clip was dragged.
+     *
+     * Mapped through the clip's speed curve rather than by one constant offset.
+     * The player's clock is source time and a retimed clip runs it faster or
+     * slower than the timeline, so over a clip at double speed a caption written
+     * for 4-6 s of the timeline used to show for 2-3 s instead.
      */
-    fun shiftedInto(clip: Clip): TextOverlayItem {
-        val delta = clip.sourceInMs - clip.timelineStartMs
-        return copy(
-            startMs = startMs + delta,
-            endMs = endMs + delta,
-            track = track?.let { t ->
-                MotionTrack(t.samples.map { it.copy(atMs = it.atMs + delta) })
-            }
-        )
-    }
+    fun shiftedInto(clip: Clip): TextOverlayItem = copy(
+        startMs = clip.sourceAtExtended(startMs),
+        endMs = clip.sourceAtExtended(endMs),
+        track = track?.let { t ->
+            MotionTrack(t.samples.map { it.copy(atMs = clip.sourceAtExtended(it.atMs)) })
+        }
+    )
 }
+
+/**
+ * Marks a caption made by auto-captioning, in its id. A second run replaces the
+ * first run's lines rather than stacking a copy of every one on top of them, and
+ * the id is the one thing about a caption every draft already keeps.
+ */
+const val AUTO_CAPTION_PREFIX = "auto-"
+
+val TextOverlayItem.isAutoCaption: Boolean get() = id.startsWith(AUTO_CAPTION_PREFIX)
 
 enum class SyncStatus { Idle, Analyzing, Matched, NoMatch }
 
@@ -153,7 +166,13 @@ data class TrackProgress(
     val boxFraction: Float = 0.14f
 )
 
-/** How stabilization analysis is going, and what it cost. */
+/**
+ * How stabilization analysis is going, and what it cost.
+ *
+ * [clipId] says which clip all of that is about. There is one analysis at a time
+ * but many clips, and without it the card reported clip A's "zoomed in 8%" - or
+ * its failure - on whichever clip was selected next.
+ */
 data class StabilizeProgress(
     val running: Boolean = false,
     val done: Int = 0,
@@ -161,7 +180,8 @@ data class StabilizeProgress(
     val finished: Boolean = false,
     val crop: Float = 0f,
     val framesAnalysed: Int = 0,
-    val failed: Boolean = false
+    val failed: Boolean = false,
+    val clipId: String? = null
 )
 
 /**
@@ -182,9 +202,21 @@ data class BeatProgress(
     val beatsMs: List<Long> = emptyList(),
     val downbeatOffset: Int = 0,
     /** Which clip was listened to, so the card can say so. */
-    val clipLabel: String = ""
+    val clipLabel: String = "",
+    /**
+     * What is being listened to while [running]. Separate from [clipLabel] so that
+     * a new analysis leaves the grid already found in place until it has an
+     * answer: undo can then put back the grid as it was, rather than a grid that
+     * says it is still listening to something.
+     */
+    val listeningTo: String = ""
 ) {
     val hasBeats: Boolean get() = beatsMs.size >= 2
+
+    /** The grid alone, as undo keeps it: no analysis in flight, no last failure. */
+    val settled: BeatProgress
+        get() = if (!running && !failed && listeningTo.isEmpty()) this
+        else copy(running = false, failed = false, listeningTo = "", finished = hasBeats)
 
     /** Every nth beat from the downbeat: the cut points for "on the bar". */
     fun every(n: Int): List<Long> {
@@ -203,7 +235,14 @@ data class CaptionProgress(
     val finished: Boolean = false,
     /** Finished because it was stopped part-way, rather than by running out of lines. */
     val stopped: Boolean = false,
-    val recognitionAvailable: Boolean = true
+    val recognitionAvailable: Boolean = true,
+    /** The video has no sound to listen to, which is not the same as no speech in it. */
+    val noAudio: Boolean = false,
+    /**
+     * Lines brought in from a subtitle file. Nothing was listened to or
+     * transcribed, and saying "N lines timed, N transcribed" claimed it had.
+     */
+    val imported: Int = 0
 )
 
 /**
@@ -262,7 +301,14 @@ data class EditSnapshot(
     val lookIntensity: Float,
     val brightness: Float,
     val contrast: Float,
-    val saturation: Float
+    val saturation: Float,
+    /**
+     * The beat grid, as [BeatProgress.settled]. Scaling it, shifting the bar and
+     * clearing it are edits like any other, and were the only ones undo could
+     * not reach.
+     */
+    val beats: BeatProgress,
+    val stabilizeStrength: Float
 )
 
 data class EditorUiState(
@@ -352,8 +398,6 @@ data class EditorUiState(
 
     val syncStatus: SyncStatus = SyncStatus.Idle,
     val syncConfidence: Float = 0f,
-
-    val videoWaveform: Waveform? = null,
 
     /** The hand-drawn crop, used when [cropAspect] is [CropAspect.Custom]. */
     val cropRect: CropRect = CropRect(),
@@ -505,7 +549,9 @@ data class EditorUiState(
             lookIntensity = lookIntensity,
             brightness = brightness,
             contrast = contrast,
-            saturation = saturation
+            saturation = saturation,
+            beats = beats.settled,
+            stabilizeStrength = stabilizeStrength
         )
 
     /** The same fields put back, leaving the playhead and the zoom where they are. */
@@ -527,7 +573,12 @@ data class EditorUiState(
         lookIntensity = snapshot.lookIntensity,
         brightness = snapshot.brightness,
         contrast = snapshot.contrast,
-        saturation = snapshot.saturation
+        saturation = snapshot.saturation,
+        // An analysis still listening keeps listening; the grid under it is
+        // what goes back.
+        beats = if (beats.running) snapshot.beats.copy(running = true, listeningTo = beats.listeningTo)
+        else snapshot.beats,
+        stabilizeStrength = snapshot.stabilizeStrength
     )
 
     /** The look and the manual sliders folded together - what the GPU is asked for. */
@@ -551,6 +602,34 @@ data class EditorUiState(
         get() = audioClips.firstOrNull { it.id == selectedClipId } ?: audioClips.firstOrNull()
 
     fun waveformFor(clip: Clip): Waveform? = clip.uri?.let { audioWaveforms[it.toString()] }
+
+    /** The first shot of the main track: the picture everything else is lined up against. */
+    val headVideoClip: Clip?
+        get() = videoClips.filter { it.layer == 0 }.minByOrNull { it.timelineStartMs }
+
+    /**
+     * How far the head shot's file runs ahead of the timeline: file time minus
+     * timeline time at its first frame. Zero for an untrimmed clip at the start,
+     * and exactly the error every sync calculation made once it was not.
+     *
+     * Taken at the first frame because that is the one moment whose file time
+     * is known whatever the shot's speed curve: the curve starts there. On a
+     * retimed shot file time and timeline time drift apart from there on, and a
+     * sound at its own speed cannot follow - one delta can match it at one
+     * moment only. The Sound panel says so when the head shot is retimed.
+     */
+    val headPictureDeltaMs: Long
+        get() = headVideoClip?.let { it.sourceInMs - it.timelineStartMs } ?: 0L
+
+    /**
+     * The main-track clip showing at [timelineMs]: the one it falls inside, or on
+     * the very last frame of the edit, the last clip.
+     */
+    fun baseClipAt(timelineMs: Long): Clip? {
+        val base = videoClips.filter { it.layer == 0 }
+        return base.firstOrNull { timelineMs >= it.timelineStartMs && timelineMs < it.timelineEndMs }
+            ?: base.maxByOrNull { it.timelineEndMs }?.takeIf { it.timelineEndMs == timelineMs }
+    }
 
     /** Whether any audio at all reaches the exported file. */
     val hasAnyAudio: Boolean get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio
@@ -585,6 +664,19 @@ data class EditorUiState(
             return ((exportVideoBitrate * seconds + audioBits) / 8).toLong()
         }
 }
+
+/**
+ * Where the editor asked this clip to sit at a moment of the timeline - keys or
+ * placement - without the stabilizer's correction.
+ *
+ * [Clip.transformAt] is what is drawn, and it includes the stabilizer. Reading
+ * that, changing one field and writing the result back as the user's transform
+ * put the stabilizer in twice: nudging any Motion slider on a stabilized clip
+ * doubled its zoom and froze one frame's shake correction into the whole clip.
+ * Anything that edits the transform starts from this.
+ */
+fun Clip.userTransformAt(timelineMs: Long): Transform =
+    keyframes.transformAt(timelineMs - timelineStartMs, staticTransform)
 
 /**
  * The timeline the editor draws, assembled from the one authoritative copy of each

@@ -61,6 +61,12 @@ class LookFrame(private val pixels: IntArray, val width: Int, val height: Int) {
 /**
  * Keeps the look row showing the shot you are actually on.
  *
+ * [uri] and [sourceMs] are the file and the moment in it that the preview shows
+ * under the playhead - the caller resolves them through the clip there, its trim
+ * and its speed. This used to be handed the first file opened and the raw
+ * timeline time, so with several clips the looks were judged on the wrong shot,
+ * at a moment that might not be in it at all.
+ *
  * Re-grabbed when the playhead moves somewhere else, but not for every
  * millisecond of a scrub: the thumbnails are for judging a grade, and a grade
  * does not change between neighbouring frames. Rounding the position to a couple
@@ -68,9 +74,9 @@ class LookFrame(private val pixels: IntArray, val width: Int, val height: Int) {
  * times rather than a hundred.
  */
 @Composable
-fun rememberLookFrame(uri: Uri?, playheadMs: Long): LookFrame? {
+fun rememberLookFrame(uri: Uri?, sourceMs: Long): LookFrame? {
     val context = LocalContext.current
-    val bucket = playheadMs / FRAME_BUCKET_MS
+    val bucket = sourceMs / FRAME_BUCKET_MS
     var frame by remember(uri) { mutableStateOf<LookFrame?>(null) }
 
     LaunchedEffect(uri, bucket) {
@@ -78,7 +84,10 @@ fun rememberLookFrame(uri: Uri?, playheadMs: Long): LookFrame? {
             frame = null
             return@LaunchedEffect
         }
-        LookFrame.grab(context, uri, bucket * FRAME_BUCKET_MS)?.let { frame = it }
+        // Replaced even when the grab fails. Keeping the last frame on failure
+        // showed an earlier shot's picture under a playhead that had left it;
+        // the swatches are the honest fallback.
+        frame = LookFrame.grab(context, uri, bucket * FRAME_BUCKET_MS)
     }
     return frame
 }

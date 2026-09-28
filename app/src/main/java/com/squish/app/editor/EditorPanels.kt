@@ -336,22 +336,59 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
 
 // ---- Shared -----------------------------------------------------------------
 
+/**
+ * How a slider's value reads beside its label.
+ *
+ * Every slider used to print its value times a hundred with a percent sign, so
+ * 45 degrees of rotation read "+4500%" and a half-turn "-18000%". The unit
+ * belongs to the value, so the slider is told it.
+ */
+object Readout {
+    /** A fraction as a percentage, signed when the range goes negative. */
+    fun percent(range: ClosedFloatingPointRange<Float>): (Float) -> String = { v ->
+        if (range.start < 0f) "%+.0f%%".format(v * 100) else "%.0f%%".format(v * 100)
+    }
+
+    /** An angle, already in degrees. */
+    val degrees: (Float) -> String = { v -> if (v == 0f) "0°" else "%+.0f°".format(v) }
+
+    /** A size relative to where it started: 1.5 reads "1.5×". */
+    val times: (Float) -> String = { v -> "%.2f".format(v).trimEnd('0').trimEnd('.') + "×" }
+}
+
 @Composable
 fun LabeledSlider(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
     onChange: (Float) -> Unit
+) = LabeledSlider(label, value, range, readout = Readout.percent(range), onFinished = null, onChange = onChange)
+
+/**
+ * A slider with its label and value above it.
+ *
+ * [onFinished] is the finger lifting. Pass the view model's `endGesture` so a
+ * second drag of the same slider straight after the first is its own undo step
+ * rather than part of the first.
+ */
+@Composable
+fun LabeledSlider(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    readout: (Float) -> String = Readout.percent(range),
+    onFinished: (() -> Unit)? = null,
+    onChange: (Float) -> Unit
 ) {
-    val readout = if (range.start < 0f) "%+.0f%%".format(value * 100) else "%.0f%%".format(value * 100)
     Column {
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text(label, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
-            Text(readout, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
+            Text(readout(value), style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
         }
         Slider(
             value = value,
             onValueChange = onChange,
+            onValueChangeFinished = onFinished,
             valueRange = range,
             colors = SliderDefaults.colors(
                 thumbColor = SquishColors.Teal,

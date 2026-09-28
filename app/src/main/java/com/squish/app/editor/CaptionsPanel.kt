@@ -37,7 +37,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.ui.focus.onFocusChanged
+import com.squish.app.ui.components.ConfirmDialog
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -60,7 +65,33 @@ import com.squish.app.ui.theme.SquishColors
 fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
     // Words only - stickers share the caption track but have their own panel.
     val lines = state.textOverlays.filterNot { it.sticker }
+    val autoLines = lines.count { it.isAutoCaption }
     var notice by remember { mutableStateOf<String?>(null) }
+    var confirmClear by remember { mutableStateOf(false) }
+
+    // A result, not a state: it said "Saved the subtitle file" for as long as the
+    // panel stayed open, through every edit after it.
+    LaunchedEffect(notice) {
+        if (notice != null) {
+            delay(NOTICE_MS)
+            notice = null
+        }
+    }
+
+    if (confirmClear) {
+        ConfirmDialog(
+            title = "Clear all captions?",
+            body = "Every line on the timeline goes - ${lines.size} of them, words and timing. " +
+                "Stickers stay.",
+            caution = "Undo brings them back.",
+            confirmLabel = "Clear all",
+            onConfirm = {
+                confirmClear = false
+                viewModel.clearCaptions()
+            },
+            onDismiss = { confirmClear = false }
+        )
+    }
 
     val importSrt = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { viewModel.importSrt(it) }
@@ -133,14 +164,29 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
                 status.stopped -> Text(
                     if (status.done == 0) "Stopped before any lines were made."
-                    else "Stopped. The ${status.done} lines made so far are on the timeline — " +
-                        "auto-caption again to redo the whole clip.",
+                    else "Stopped. The lines made so far are on the timeline — " +
+                        "auto-caption again to replace them with a full pass.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.TextSecondary
                 )
 
+                // Before "no speech": a video with no sound has nothing to find
+                // speech in, and saying there was none blamed the recording.
+                status.noAudio -> Text(
+                    "This video has no sound to caption. Add lines by hand below, or import a " +
+                        "subtitle file.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SquishColors.Yellow
+                )
+
+                status.imported > 0 -> Text(
+                    "Imported ${status.imported} lines from the subtitle file.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SquishColors.Teal
+                )
+
                 status.finished && status.total == 0 -> Text(
-                    "No speech found in this clip. If there is talking in it, the recording may be " +
+                    "No speech found in this video. If there is talking in it, the recording may be " +
                         "too quiet or too noisy for the detector to separate from the background.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.Yellow
@@ -167,8 +213,14 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             // The same place starts and stops it. While it runs, the button is the
             // way out - there was none, and a stuck run could only be left by
             // leaving the editor.
+            // Says what a second run does: it replaces the first run's lines,
+            // corrections included - which undo brings back.
             SquishOutlinedButton(
-                text = if (state.captions.running) "Stop" else "Auto-caption this clip",
+                text = when {
+                    state.captions.running -> "Stop"
+                    autoLines > 0 -> "Auto-caption again · replaces $autoLines"
+                    else -> "Auto-caption the video"
+                },
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     if (state.captions.running) viewModel.stopCaptions() else viewModel.generateCaptions()
@@ -203,7 +255,7 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                             "Clear all",
                             style = MaterialTheme.typography.labelSmall,
                             color = SquishColors.Pink,
-                            modifier = Modifier.clickable { viewModel.clearCaptions() }
+                            modifier = Modifier.clickable { confirmClear = true }
                         )
                     }
                 }
@@ -224,13 +276,24 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             )
 
             lines.sortedBy { it.startMs }.forEach { caption ->
-                CaptionRow(
-                    caption = caption,
-                    onJump = { viewModel.scrubTo(caption.startMs) },
-                    onEdit = { viewModel.updateCaptionText(caption.id, it) },
-                    onRemove = { viewModel.removeTextOverlay(caption.id) },
-                    onRestyle = { change -> viewModel.restyleCaption(caption.id, change) }
-                )
+                // Keyed, so a row's text field - its focus, its cursor, the IME's
+                // half-typed word - stays with its caption when a line is removed
+                // above it or an earlier one arrives. Unkeyed, the next keystrokes
+                // went into whichever caption had slid into that slot.
+                key(caption.id) {
+                    CaptionRow(
+                        caption = caption,
+                        onJump = { viewModel.scrubTo(caption.startMs) },
+                        onEdit = { viewModel.updateCaptionText(caption.id, it) },
+                        onRemove = { viewModel.removeTextOverlay(caption.id) },
+                        onRestyle = { change -> viewModel.restyleCaption(caption.id, change) },
+                        onResize = { size ->
+                            viewModel.restyleCaption(caption.id, { it.copy(sizeSp = size) }, dragging = true)
+                        },
+                        onGestureEnd = viewModel::endGesture,
+                        onTypingEnd = { viewModel.endCaptionTyping(caption.id) }
+                    )
+                }
             }
         }
     }
@@ -292,7 +355,12 @@ private fun TitleTile(preset: TitlePreset, onClick: () -> Unit) {
  * the choices are few and seeing them all is faster than finding them.
  */
 @Composable
-private fun StyleEditor(caption: TextOverlayItem, onRestyle: ((TextOverlayItem) -> TextOverlayItem) -> Unit) {
+private fun StyleEditor(
+    caption: TextOverlayItem,
+    onRestyle: ((TextOverlayItem) -> TextOverlayItem) -> Unit,
+    onResize: (Int) -> Unit,
+    onGestureEnd: () -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ChipRow("Look", TextLook.entries, caption.look, { it.label }) { v -> onRestyle { it.copy(look = v) } }
         ChipRow("Font", TextFont.entries, caption.font, { it.label }) { v -> onRestyle { it.copy(font = v) } }
@@ -330,7 +398,9 @@ private fun StyleEditor(caption: TextOverlayItem, onRestyle: ((TextOverlayItem) 
             )
             Slider(
                 value = caption.sizeSp.toFloat(),
-                onValueChange = { v -> onRestyle { it.copy(sizeSp = v.toInt()) } },
+                // One drag, one undo step - not one per point of size.
+                onValueChange = { v -> onResize(v.toInt()) },
+                onValueChangeFinished = onGestureEnd,
                 valueRange = 14f..72f,
                 colors = SliderDefaults.colors(
                     thumbColor = SquishColors.Amber,
@@ -378,6 +448,9 @@ private enum class CaptionPlace(val label: String, val yFraction: Float) {
     }
 }
 
+/** How long "Saved the subtitle file" stays up. */
+private const val NOTICE_MS = 4_000L
+
 private val CAPTION_COLOURS = listOf(
     0xFFFFFFFF.toInt(),
     0xFF111111.toInt(),
@@ -394,9 +467,16 @@ private fun CaptionRow(
     onJump: () -> Unit,
     onEdit: (String) -> Unit,
     onRemove: () -> Unit,
-    onRestyle: ((TextOverlayItem) -> TextOverlayItem) -> Unit
+    onRestyle: ((TextOverlayItem) -> TextOverlayItem) -> Unit,
+    onResize: (Int) -> Unit,
+    onGestureEnd: () -> Unit,
+    onTypingEnd: () -> Unit
 ) {
     var styling by remember(caption.id) { mutableStateOf(false) }
+    // Compose reports focus once as the field is attached - unfocused - and that
+    // is not the cursor leaving. Answering it ended whatever step was open each
+    // time a row appeared, which while auto-captioning was once a line.
+    var hadFocus by remember(caption.id) { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -436,7 +516,12 @@ private fun CaptionRow(
         OutlinedTextField(
             value = caption.text,
             onValueChange = onEdit,
-            modifier = Modifier.fillMaxWidth(),
+            // Typing in one line is one undo step; leaving the field ends it, so
+            // coming back to correct a word is a step of its own.
+            modifier = Modifier.fillMaxWidth().onFocusChanged {
+                if (hadFocus && !it.isFocused) onTypingEnd()
+                hadFocus = it.isFocused
+            },
             placeholder = { Text("Type what is said here…", color = SquishColors.TextMuted) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = SquishColors.Primary,
@@ -446,6 +531,6 @@ private fun CaptionRow(
             )
         )
 
-        if (styling) StyleEditor(caption, onRestyle)
+        if (styling) StyleEditor(caption, onRestyle, onResize, onGestureEnd)
     }
 }

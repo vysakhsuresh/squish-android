@@ -542,9 +542,12 @@ class ProjectAutosave(context: Context) {
         put("lookIntensity", state.lookIntensity.toDouble())
         put("pixelsPerSecond", state.pixelsPerSecond.toDouble())
         put("markers", JSONArray().apply { state.markers.forEach { put(it) } })
-        // The beat grid, once found. An analysis in flight or one that failed
-        // is not a result, and offering to restore it would restore nothing.
-        if (state.beats.finished && !state.beats.failed && state.beats.hasBeats) {
+        // The grid on screen, whatever the last listen did. A second listen still
+        // running, or one that failed, keeps the grid already found - the panel
+        // says so - and writing it only after a listen that succeeded left it out
+        // of the draft, and out of the edit key, so a failed listen could even
+        // make the edit read as undone back to the bare clip and bin the draft.
+        if (state.beats.hasBeats) {
             put("beats", JSONObject().apply {
                 put("bpm", state.beats.bpm.toDouble())
                 put("confidence", state.beats.confidence.toDouble())

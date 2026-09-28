@@ -114,7 +114,11 @@ fun AudioPanel(
                 }
             )
             if (!state.muteOriginal && state.sourceHasAudio) {
-                LabeledSlider("Level", state.originalVolume, 0f..1f, viewModel::setOriginalVolume)
+                LabeledSlider(
+                    "Level", state.originalVolume, 0f..1f,
+                    onFinished = viewModel::endGesture,
+                    onChange = viewModel::setOriginalVolume
+                )
             }
         }
 
@@ -183,7 +187,9 @@ fun AudioPanel(
                     .padding(vertical = 4.dp)
             )
 
-            LabeledSlider("Level", target.volume, 0f..1f) { viewModel.setAudioClipVolume(target.id, it) }
+            LabeledSlider("Level", target.volume, 0f..1f, onFinished = viewModel::endGesture) {
+                viewModel.setAudioClipVolume(target.id, it)
+            }
         }
 
         PanelCard {
@@ -250,7 +256,10 @@ fun AudioPanel(
                 icon = Icons.Filled.Sync,
                 accent = SquishColors.Cyan
             )
-            val offsetMs = target.sourceInMs - target.timelineStartMs
+            // Against the picture, not against the timeline: the head shot's own
+            // trim and position are taken off. Without that a plain trim of the
+            // shot read as a sync offset, and a synced sound read as off.
+            val offsetMs = target.sourceInMs - target.timelineStartMs - state.headPictureDeltaMs
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -266,6 +275,17 @@ fun AudioPanel(
                     textAlign = TextAlign.Center
                 )
             }
+            // A sound playing at its own speed cannot follow a shot that does not:
+            // it can meet it at one moment and drifts from there. Said, rather
+            // than letting a zero above read as "in sync all the way through".
+            if (state.headVideoClip?.speedRamp?.isIdentity == false) {
+                Text(
+                    "The first shot is retimed, so a sound at normal speed can only match it at one " +
+                        "moment. Squish lines them up at the shot's first frame, and reads the offset there.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SquishColors.Yellow
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                 NudgeButton("-1f", Modifier.weight(1f)) { viewModel.nudgeAudioOffsetFrames(target.id, -1) }
                 NudgeButton("-10ms", Modifier.weight(1f)) { viewModel.nudgeAudioOffset(target.id, -10) }
@@ -279,7 +299,7 @@ fun AudioPanel(
                     onClick = { viewModel.runAutoSync(target.id) }
                 )
                 SquishOutlinedButton(
-                    text = "Reset",
+                    text = "Start at 0:00",
                     modifier = Modifier.weight(1f),
                     onClick = { viewModel.resetAudioAlignment(target.id) }
                 )

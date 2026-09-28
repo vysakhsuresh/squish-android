@@ -62,7 +62,11 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
     // Every look previewed on the frame you are stopped on, which is how the
     // choice is actually made - a swatch tells you a look is warm, the shot tells
     // you whether warm is right for this face, in this light.
-    val frame = rememberLookFrame(state.sourceUri, state.playheadMs)
+    // The main-track shot under the playhead, at the frame the preview shows -
+    // through its trim and its speed. Over a gap there is nothing to judge on,
+    // and the chips fall back to their swatches.
+    val picture = viewModel.pictureAt(state, state.playheadMs)
+    val frame = rememberLookFrame(picture?.first, picture?.second ?: 0L)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = SquishColors.Primary) {
@@ -160,7 +164,11 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         )
                     }
                 )
-                LabeledSlider("Strength", state.lookIntensity, 0f..1f, viewModel::setLookIntensity)
+                LabeledSlider(
+                    "Strength", state.lookIntensity, 0f..1f,
+                    onFinished = viewModel::endGesture,
+                    onChange = viewModel::setLookIntensity
+                )
             }
         }
 
@@ -171,9 +179,10 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 icon = Icons.Filled.Tune,
                 accent = SquishColors.Magenta
             )
-            LabeledSlider("Brightness", state.brightness, -1f..1f, viewModel::setBrightness)
-            LabeledSlider("Contrast", state.contrast, -1f..1f, viewModel::setContrast)
-            LabeledSlider("Saturation", state.saturation, -1f..1f, viewModel::setSaturation)
+            val done = viewModel::endGesture
+            LabeledSlider("Brightness", state.brightness, -1f..1f, onFinished = done, onChange = viewModel::setBrightness)
+            LabeledSlider("Contrast", state.contrast, -1f..1f, onFinished = done, onChange = viewModel::setContrast)
+            LabeledSlider("Saturation", state.saturation, -1f..1f, onFinished = done, onChange = viewModel::setSaturation)
         }
     }
 }

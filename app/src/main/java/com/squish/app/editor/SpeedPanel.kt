@@ -105,7 +105,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
             SmoothToggle(
                 sourceFps = state.fps,
                 speed = ramp.slowestSpeed,
-                onHold = { viewModel.setClipSpeed(clip.id, SlowMotion.smoothestSpeed(state.fps)) }
+                onHold = { viewModel.keepSmooth(clip.id) }
             )
 
             if (ramp.isRamped) {
@@ -132,7 +132,8 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 // is crushed into the first fifth and unusable.
                 Slider(
                     value = speedToSlider(ramp.flatSpeed),
-                    onValueChange = { viewModel.setClipSpeed(clip.id, sliderToSpeed(it)) },
+                    onValueChange = { viewModel.setClipSpeed(clip.id, sliderToSpeed(it), dragging = true) },
+                    onValueChangeFinished = viewModel::endGesture,
                     valueRange = 0f..1f,
                     colors = SliderDefaults.colors(
                         thumbColor = SquishColors.Blue,
@@ -375,6 +376,8 @@ private fun SmoothnessLine(sourceFps: Float, speed: Float) {
  * working out where everything moved, which is a real thing this does not do yet
  * and will not pretend to. This does the other honest thing: stops at the point
  * where the footage runs out of frames, so the result moves instead of stepping.
+ * Only the parts slower than that are raised: a ramp keeps its shape, where it
+ * used to be flattened to one rate without a word.
  *
  * Shown only when it would change something. At a hundred and twenty frames a
  * second there is nothing to warn about until a fifth speed, and a control that
@@ -410,7 +413,7 @@ private fun SmoothToggle(sourceFps: Float, speed: Float, onHold: () -> Unit) {
                 color = SquishColors.TextPrimary
             )
             Text(
-                "Hold at ${"%.2f".format(limit).trimEnd('0').trimEnd('.')}x — " +
+                "Nothing slower than ${"%.2f".format(limit).trimEnd('0').trimEnd('.')}x — " +
                     "the slowest this footage carries",
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted
