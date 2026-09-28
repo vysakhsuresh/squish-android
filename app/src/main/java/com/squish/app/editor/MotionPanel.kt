@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
+import com.squish.app.timeline.within
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.theme.SquishColors
@@ -56,6 +57,10 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
     val here = clip.transformAt(state.playheadMs)
     val animated = clip.keyframes.isNotEmpty()
+    // A trim or a cut keeps the keys over footage the clip no longer shows, so
+    // the move comes back with the footage; they are not this clip's to edit.
+    val keys = clip.keyframes.within(clip.durationMs)
+    val hidden = clip.keyframes.size - keys.size
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
@@ -66,8 +71,10 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
         PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
                 clip.label,
-                if (animated) "${clip.keyframes.size} keys · moves while it plays"
-                else "Sitting still — add a move below",
+                if (animated) {
+                    "${keys.size} keys · moves while it plays" +
+                        if (hidden > 0) " · $hidden more in trimmed footage" else ""
+                } else "Sitting still — add a move below",
                 icon = Icons.Filled.Animation,
                 accent = SquishColors.Amber
             )
@@ -151,7 +158,7 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     color = SquishColors.TextMuted
                 )
             } else {
-                clip.keyframes.forEach { key ->
+                keys.forEach { key ->
                     KeyRow(
                         clip = clip,
                         key = key,

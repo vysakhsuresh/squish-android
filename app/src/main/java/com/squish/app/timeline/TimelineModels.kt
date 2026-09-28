@@ -2,6 +2,7 @@ package com.squish.app.timeline
 
 import android.net.Uri
 import java.util.UUID
+import kotlin.math.abs
 
 enum class ClipKind { Video, Audio, Text }
 
@@ -139,24 +140,57 @@ data class Clip(
      * cut frame lands on the timeline (`timelineAtSource`), give or take the
      * rounding of a ramp - so the two are butted by construction on every lane.
      * It gets no transition: the one into this clip belongs to the first half,
-     * and copying it made a dissolve of a shot into itself. The animation is
-     * split the same way the footage is, so each half carries on from the pose
-     * the other left at.
+     * and copying it made a dissolve of a shot into itself.
+     *
+     * Both halves keep the whole animation, the second moved back by the length
+     * of the first, so each plays exactly the part of the move that was drawn over
+     * its frames - no pose is re-sampled, so no easing restarts at the cut - and
+     * revealing footage past the cut later brings back the move that was there.
+     *
+     * The halves have to add up to the whole, or everything after a main-track cut
+     * shifts. A ramp's played length is rounded, and each half is rounded - and
+     * its staircase stepped - on its own, so the two can come out a few
+     * milliseconds long or short: once per cut, which a beat cutter makes a
+     * hundred of. So when they do not add up, the cut goes on the nearest source
+     * millisecond where they do, as long as that is within half a frame of the
+     * playhead; past that, the cut stays where it was asked for.
      */
     fun splitAt(timelineMs: Long): Pair<Clip, Clip>? {
-        val offset = splitOffsetAt(timelineMs) ?: return null
+        val wanted = splitOffsetAt(timelineMs) ?: return null
+        val exact = halvesAt(wanted)
+        if (exact.first.durationMs + exact.second.durationMs == durationMs) return exact
+        val playedCut = timelineMs - timelineStartMs
+        return (1L..SPLIT_SEARCH_MS).asSequence()
+            .flatMap { sequenceOf(wanted + it, wanted - it) }
+            .filter { it >= MIN_CLIP_MS && it <= sourceSpanMs - MIN_CLIP_MS }
+            .map { halvesAt(it) }
+            .filter { (head, _) -> abs(head.durationMs - playedCut) <= SPLIT_DRIFT_MS }
+            .firstOrNull { (head, tail) -> head.durationMs + tail.durationMs == durationMs }
+            ?: exact
+    }
+
+    private fun halvesAt(offset: Long): Pair<Clip, Clip> {
         val head = copy(sourceOutMs = sourceInMs + offset, speedRamp = speedRamp.sliced(0L, offset))
-        val playedCut = head.durationMs
         val tail = copy(
             id = UUID.randomUUID().toString(),
             sourceInMs = sourceInMs + offset,
             timelineStartMs = head.timelineEndMs,
             speedRamp = speedRamp.sliced(offset, sourceSpanMs),
-            transitionIn = Transition()
+            transitionIn = Transition(),
+            keyframes = keyframes.shiftedBy(-head.durationMs)
         )
-        return head.copy(keyframes = keyframes.rebased(0L, playedCut)) to
-            tail.copy(keyframes = keyframes.rebased(playedCut, playedCut + tail.durationMs))
+        return head to tail
     }
+
+    /**
+     * The user's placement at a moment of the timeline - the keys, or the static
+     * fields when there are none - without the stabilizer's measured correction.
+     * A moment outside the clip reads the pose at the nearer end, which is what a
+     * panel showing this clip's placement has to show while the playhead is
+     * elsewhere.
+     */
+    fun placementAt(timelineMs: Long): Transform =
+        keyframes.transformAt((timelineMs - timelineStartMs).coerceIn(0L, durationMs), staticTransform)
 
     /** The source frame on screen at a moment of the timeline. */
     fun sourceAt(timelineMs: Long): Long {
@@ -253,6 +287,12 @@ const val MAX_LAYER = 3
  */
 const val KEY_TOLERANCE_MS = 33L
 
+/** Source milliseconds either side of a cut tried, nearest first, for halves that add up. */
+private const val SPLIT_SEARCH_MS = 40L
+
+/** How far from the playhead, in played time, a cut may land to get halves that add up: half a frame. */
+private const val SPLIT_DRIFT_MS = 16L
+
 // ---- The main track -------------------------------------------------------------
 //
 // The main track is magnetic: its clips are always butted end to end from zero,
@@ -263,24 +303,57 @@ const val KEY_TOLERANCE_MS = 33L
 // every delete, tail trim and transition left a gap that played as black until
 // someone found "Close gaps". Overlays, sound and text stay where they are put:
 // a cue is deliberately placed against the picture.
+//
+// Except for spacing the edit did not make. A draft saved while the track was
+// free-floating can hold a clip deliberately parked a few seconds after the one
+// before it, against a music cue, or laid over it. Closing that up on the first
+// unrelated trim would slide the rest of the picture out of sync with the sound,
+// captions and effects that were placed against it, and autosave would keep the
+// damage. So every edit keeps the spacing each clip already had from the one
+// before it (see [mainSpacing]) and only closes what the edit itself opens; on a
+// track that was butted - every project made since - that spacing is zero and
+// the track stays butted. "Close gaps" ([rippleVideo]) is the one thing that
+// takes old spacing away.
+
+/** How far into the clip before it a transition into [clip] reaches. */
+private fun overlapInto(clip: Clip, previous: Clip): Long =
+    if (!clip.transitionIn.isActive) 0L
+    else clip.transitionIn.durationMs.coerceAtMost(minOf(clip.durationMs, previous.durationMs) / 2)
 
 /**
- * Lays the main track out end to end in [order], from zero.
+ * Each main clip's distance from where a butted track would put it: positive for
+ * a gap before it, negative for an overlap. Only non-zero entries are kept, so on
+ * any track laid out since the track became magnetic this is empty.
+ */
+private fun TimelineState.mainSpacing(): Map<String, Long> {
+    val base = baseVideoClips
+    val spacing = HashMap<String, Long>()
+    base.forEachIndexed { i, clip ->
+        val butted = if (i == 0) 0L else base[i - 1].timelineEndMs - overlapInto(clip, base[i - 1])
+        val gap = clip.timelineStartMs - butted
+        if (gap != 0L) spacing[clip.id] = gap
+    }
+    return spacing
+}
+
+/**
+ * Lays the main track out in [order], from zero, each clip [spacing] away from
+ * butted (see above; almost always nothing).
  *
  * A transition is an overlap, so the incoming clip starts early and the edit gets
  * shorter. Capped at half the shorter shot so a long dissolve between two short
  * clips cannot swallow either of them. The first clip has nothing to transition
  * from, so a transition left on it (by a delete or a reorder) is dropped rather
- * than carried: it would draw a badge on nothing and send the export down the
- * compositing path for no reason.
+ * than carried: the export would read it as a fade up from black at the very
+ * start (it fades the incoming shot in over its opening), and the strip would
+ * badge a join that is not there. Every path that puts a clip first is an undo
+ * step, which is where that transition comes back from.
  */
-private fun TimelineState.layOutMain(order: List<Clip>): TimelineState {
+private fun TimelineState.layOutMain(order: List<Clip>, spacing: Map<String, Long> = emptyMap()): TimelineState {
     var cursor = 0L
     val laid = order.mapIndexed { index, clip ->
-        val overlap = if (index == 0 || !clip.transitionIn.isActive) 0L else {
-            clip.transitionIn.durationMs.coerceAtMost(minOf(clip.durationMs, order[index - 1].durationMs) / 2)
-        }
-        val start = (cursor - overlap).coerceAtLeast(0L)
+        val overlap = if (index == 0) 0L else overlapInto(clip, order[index - 1])
+        val start = (cursor - overlap + (spacing[clip.id] ?: 0L)).coerceAtLeast(0L)
         val placed = clip.copy(
             timelineStartMs = start,
             transitionIn = if (index == 0) Transition() else clip.transitionIn
@@ -292,10 +365,8 @@ private fun TimelineState.layOutMain(order: List<Clip>): TimelineState {
 }
 
 /**
- * The main track closed up end to end, in the order it is in now.
- *
- * Every main-track edit already ends here; this is also what "Close gaps" runs,
- * which only has anything to do on a draft saved before the track was magnetic.
+ * The main track closed up end to end, in the order it is in now, gaps and
+ * overlaps left by a pre-magnetic draft included. What "Close gaps" runs.
  */
 fun TimelineState.rippleVideo(): TimelineState = layOutMain(baseVideoClips)
 
@@ -305,7 +376,8 @@ private fun insertionIndex(others: List<Clip>, midMs: Long): Int =
 
 /**
  * Moves a main-track clip to [index] in the running order, closing up behind it
- * and making room where it lands. What a long-press lift and drop does.
+ * and making room where it lands. What a long-press lift and drop does. The clip
+ * lands butted, whatever spacing it had where it was.
  */
 fun TimelineState.withClipReordered(clipId: String, index: Int): TimelineState {
     val base = baseVideoClips
@@ -313,7 +385,7 @@ fun TimelineState.withClipReordered(clipId: String, index: Int): TimelineState {
     val others = base.filterNot { it.id == clipId }
     val at = index.coerceIn(0, others.size)
     if (base.indexOf(clip) == at) return this
-    return layOutMain(others.take(at) + clip + others.drop(at))
+    return layOutMain(others.take(at) + clip + others.drop(at), mainSpacing() - clipId)
 }
 
 /**
@@ -324,8 +396,11 @@ fun TimelineState.withClipReordered(clipId: String, index: Int): TimelineState {
  */
 fun TimelineState.withTransition(clipId: String, transition: Transition): TimelineState {
     val clip = clips.firstOrNull { it.id == clipId } ?: return this
+    if (clip.transitionIn == transition) return this
     val tagged = copy(clips = clips.map { if (it.id == clipId) it.copy(transitionIn = transition) else it })
-    return if (clip.isMain) tagged.rippleVideo() else tagged
+    if (!clip.isMain) return tagged
+    val order = baseVideoClips.map { if (it.id == clipId) it.copy(transitionIn = transition) else it }
+    return tagged.layOutMain(order, mainSpacing())
 }
 
 // ---- Overlay rows ---------------------------------------------------------------
@@ -345,8 +420,8 @@ fun TimelineState.layerIsFree(layer: Int, startMs: Long, endMs: Long, exceptId: 
  * is taken there.
  *
  * Two overlays on one row used to be allowed, and the preview - one player per
- * row - showed only one of them while the export drew both. A clip that would
- * land on an occupied row goes up to the next free one instead.
+ * row - showed only one of them while the export drew both. An overlay added
+ * onto an occupied row goes to the lowest one with room instead.
  */
 fun TimelineState.firstFreeLayer(startMs: Long, endMs: Long, exceptId: String? = null): Int? =
     (1..MAX_LAYER).firstOrNull { layerIsFree(it, startMs, endMs, exceptId) }
@@ -362,7 +437,7 @@ fun TimelineState.withClipAdded(clip: Clip): TimelineState {
         val base = baseVideoClips
         val at = insertionIndex(base, clip.timelineStartMs + clip.durationMs / 2)
         return copy(clips = clips + clip, selectedClipId = clip.id)
-            .layOutMain(base.take(at) + clip + base.drop(at))
+            .layOutMain(base.take(at) + clip + base.drop(at), mainSpacing())
     }
     if (clip.kind == ClipKind.Video && clip.isOverlay &&
         !layerIsFree(clip.layer, clip.timelineStartMs, clip.timelineEndMs)
@@ -380,26 +455,38 @@ fun TimelineState.withClipAdded(clip: Clip): TimelineState {
  * in by where it sits and makes room. Between overlay rows, a row that is taken
  * at that moment is skipped for the next free one in the same direction, and
  * when there is none the clip stays where it is.
+ *
+ * Only the row directly above the main track drops onto it. Joining the main
+ * track re-lays every shot after the clip, so it is never where a Lower ends up
+ * by skipping over busy rows: an overlay on row 3 with rows 2 and 1 taken used
+ * to fall straight through into the picture and push the rest of the edit out
+ * of sync with its sound, when what was asked for was one row down.
  */
 fun TimelineState.withLayerChanged(clipId: String, delta: Int): TimelineState {
     val clip = clips.firstOrNull { it.id == clipId } ?: return this
     if (clip.kind != ClipKind.Video || delta == 0) return this
 
-    val step = if (delta > 0) 1 else -1
-    var target = (clip.layer + delta).coerceIn(0, MAX_LAYER)
-    while (target in 1..MAX_LAYER && !layerIsFree(target, clip.timelineStartMs, clip.timelineEndMs, clipId)) {
-        target += step
+    val target = if (clip.layer + delta <= 0) {
+        if (clip.layer == 1) 0 else return this
+    } else {
+        val step = if (delta > 0) 1 else -1
+        generateSequence((clip.layer + delta).coerceAtMost(MAX_LAYER)) { it + step }
+            .takeWhile { it in 1..MAX_LAYER }
+            .firstOrNull { layerIsFree(it, clip.timelineStartMs, clip.timelineEndMs, clipId) }
+            ?: return this
     }
-    if (target !in 0..MAX_LAYER || target == clip.layer) return this
+    if (target == clip.layer) return this
 
     // An overlay has no cut to transition across.
     val moved = clip.copy(layer = target, transitionIn = if (target > 0) Transition() else clip.transitionIn)
     val next = copy(clips = clips.map { if (it.id == clipId) moved else it })
-    if (target > 0) return if (clip.isMain) next.rippleVideo() else next
+    if (target > 0) {
+        return if (clip.isMain) next.layOutMain(baseVideoClips.filterNot { it.id == clipId }, mainSpacing()) else next
+    }
 
-    val others = baseVideoClips.filterNot { it.id == clipId }
+    val others = baseVideoClips
     val at = insertionIndex(others, clip.timelineStartMs + clip.durationMs / 2)
-    return next.layOutMain(others.take(at) + moved + others.drop(at))
+    return next.layOutMain(others.take(at) + moved + others.drop(at), mainSpacing())
 }
 
 /**
@@ -409,6 +496,12 @@ fun TimelineState.withLayerChanged(clipId: String, delta: Int): TimelineState {
  * writing it there moved the sliders and not the picture. There the change is
  * written as a key at the playhead instead, from the animation's own value at
  * that moment (never the stabilizer's correction, which is measured, not drawn).
+ *
+ * With the playhead off the clip there is no moment of it to key. Writing the key
+ * at the nearer end, as this first did, quietly rewrote the end of the move while
+ * the picture on screen was some other clip. There the change moves the whole
+ * animation instead - every key scaled, slid or turned by the same amount - which
+ * is what a panel showing the pose at that end (see [Clip.placementAt]) implies.
  */
 fun TimelineState.withOverlayGeometry(
     clipId: String,
@@ -435,21 +528,36 @@ fun TimelineState.withOverlayGeometry(
                 rotation = placed.rotationDegrees
             )
         } else {
-            val at = (playheadMs - clip.timelineStartMs).coerceIn(0L, clip.durationMs)
-            val now = clip.keyframes.transformAt(at, clip.staticTransform)
+            val now = clip.placementAt(playheadMs)
             val placed = Transform(
                 scale ?: now.scale,
                 offsetX ?: now.offsetXFraction,
                 offsetY ?: now.offsetYFraction,
                 rotation ?: now.rotationDegrees
             ).clamped()
-            if (placed == now) faded
-            else faded.copy(
-                keyframes = clip.keyframes.upserted(
-                    Keyframe(at, placed, clip.keyframes.easingAt(at)),
-                    KEY_TOLERANCE_MS
+            val local = playheadMs - clip.timelineStartMs
+            when {
+                placed == now -> faded
+                local in 0L..clip.durationMs -> faded.copy(
+                    keyframes = clip.keyframes.upserted(
+                        Keyframe(local, placed, clip.keyframes.easingAt(local)),
+                        KEY_TOLERANCE_MS
+                    )
                 )
-            )
+                else -> faded.copy(
+                    keyframes = clip.keyframes.map { key ->
+                        val t = key.transform
+                        key.copy(
+                            transform = Transform(
+                                scale = if (now.scale > 0f) t.scale * placed.scale / now.scale else placed.scale,
+                                offsetXFraction = t.offsetXFraction + placed.offsetXFraction - now.offsetXFraction,
+                                offsetYFraction = t.offsetYFraction + placed.offsetYFraction - now.offsetYFraction,
+                                rotationDegrees = t.rotationDegrees + placed.rotationDegrees - now.rotationDegrees
+                            ).clamped()
+                        )
+                    }
+                )
+            }
         }
     }
 )
@@ -464,6 +572,18 @@ fun TimelineState.withPlayhead(ms: Long): TimelineState =
 fun TimelineState.zoomedBy(factor: Float): TimelineState =
     copy(pixelsPerSecond = (pixelsPerSecond * factor).coerceIn(ZOOM_MIN, ZOOM_MAX))
 
+
+/**
+ * The main track re-laid after an edit, from the order it had before it: each
+ * clip that was there replaced by what [replace] makes of it (itself, nothing,
+ * or the halves of a cut), every clip keeping the spacing it had (see
+ * [mainSpacing]). The order is taken from before the edit rather than re-sorted
+ * after it, because an edit can move a clip's start past its neighbour's before
+ * the layout puts it back.
+ */
+private fun TimelineState.relaidFrom(before: TimelineState, replace: (Clip) -> List<Clip>): TimelineState =
+    layOutMain(before.baseVideoClips.flatMap(replace), before.mainSpacing())
+
 /** Removing a main-track clip closes the hole; anywhere else the hole is the edit's. */
 fun TimelineState.withClipRemoved(clipId: String): TimelineState {
     val clip = clips.firstOrNull { it.id == clipId } ?: return this
@@ -471,20 +591,28 @@ fun TimelineState.withClipRemoved(clipId: String): TimelineState {
         clips = clips.filterNot { it.id == clipId },
         selectedClipId = if (selectedClipId == clipId) null else selectedClipId
     )
-    return if (clip.isMain) next.rippleVideo() else next
+    return if (clip.isMain) next.relaidFrom(this) { if (it.id == clipId) emptyList() else listOf(it) } else next
 }
 
 /**
- * Drag.
+ * Drag. [deltaMs] is how far from where it is now the finger wants the clip -
+ * the strip measures a drag from where the clip was when it began (see ClipView),
+ * so a clip held back by a neighbour, or moved to a new slot, still ends up
+ * where the finger is.
  *
  * On the main track a drag is a change of order, not of position: the clip goes
  * where its middle would land among the others, and the track closes up around
  * it. A small drag therefore changes nothing, which is right - the track is
  * magnetic, and nudging one clip into the next is exactly the overlap it exists
- * to prevent. Reordering is a long-press; see [withClipReordered].
+ * to prevent. The swap point differs by direction (a neighbour's middle, laid
+ * out with the clip on one side of it or the other), so a finger resting near
+ * it does not flip the order back and forth.
  *
- * An overlay moves freely along its row. Dragged onto another overlay, it goes up
- * to the next free row; when there is none it stops against its neighbour.
+ * An overlay moves along its row and stops against a neighbour on it rather
+ * than sliding under it; dragged far enough that the whole clip fits past the
+ * neighbour, it jumps there. It never changes row on its own - a drag that did
+ * would change which picture is drawn over which, and leave it there after the
+ * finger had passed the obstacle. Rows are changed with Raise and Lower.
  *
  * Sound and text move freely; they are placed against the picture on purpose.
  * Every clip keeps its length, stopping at zero rather than shrinking into it.
@@ -500,38 +628,38 @@ fun TimelineState.withClipMoved(clipId: String, deltaMs: Long): TimelineState {
     }
 
     var start = (clip.timelineStartMs + deltaMs).coerceAtLeast(0L)
-    var layer = clip.layer
     if (clip.kind == ClipKind.Video && clip.isOverlay &&
-        !layerIsFree(layer, start, start + clip.durationMs, clipId)
+        !layerIsFree(clip.layer, start, start + clip.durationMs, clipId)
     ) {
-        val free = firstFreeLayer(start, start + clip.durationMs, clipId)
-        if (free != null) {
-            layer = free
+        // Stop against whatever is in the way, on this side of it.
+        val row = clips.filter { it.kind == ClipKind.Video && it.layer == clip.layer && it.id != clipId }
+        start = if (deltaMs > 0) {
+            val wall = row.filter { it.timelineStartMs >= clip.timelineEndMs }.minOfOrNull { it.timelineStartMs }
+            if (wall != null) minOf(start, wall - clip.durationMs) else start
         } else {
-            // Nowhere to go up to: stop against whatever is in the way.
-            val row = clips.filter { it.kind == ClipKind.Video && it.layer == layer && it.id != clipId }
-            start = if (deltaMs > 0) {
-                val wall = row.filter { it.timelineStartMs >= clip.timelineEndMs }.minOfOrNull { it.timelineStartMs }
-                if (wall != null) minOf(start, wall - clip.durationMs) else start
-            } else {
-                val wall = row.filter { it.timelineEndMs <= clip.timelineStartMs }.maxOfOrNull { it.timelineEndMs }
-                if (wall != null) maxOf(start, wall) else start
-            }.coerceAtLeast(0L)
-        }
+            val wall = row.filter { it.timelineEndMs <= clip.timelineStartMs }.maxOfOrNull { it.timelineEndMs }
+            if (wall != null) maxOf(start, wall) else start
+        }.coerceAtLeast(0L)
+        // Already overlapping where it was (a draft from before rows were kept
+        // clear): leave it rather than make it worse.
+        if (!layerIsFree(clip.layer, start, start + clip.durationMs, clipId)) return this
     }
-    if (start == clip.timelineStartMs && layer == clip.layer) return this
-    val moved = clip.copy(timelineStartMs = start, layer = layer)
+    if (start == clip.timelineStartMs) return this
+    val moved = clip.copy(timelineStartMs = start)
     return copy(clips = clips.map { if (it.id == clipId) moved else it })
 }
 
 /**
  * Drag a clip edge.
  *
- * The kept frames stay on the part of the animation they were keyed against:
- * keys move with the head and are cut off at the tail with a key at the new end,
- * so a trimmed push-in still arrives at its end pose. They used to stay put
- * relative to the head, so the whole move slid later in the footage by whatever
- * was trimmed, and a tail trim left the end pose unreachable.
+ * The animation stays on the frames it was drawn over: the keys move with the
+ * head by the played length trimmed, and none is ever removed. A key over footage
+ * the trim hides is kept where it is, outside the clip, so the kept frames still
+ * interpolate towards it exactly as before, and dragging the handle back out -
+ * in the same gesture or a later one - brings the move back as it was. Trims
+ * arrive as a stream of small steps, one per touch event; cutting keys off at
+ * each step made the result depend on how fast the finger moved and threw the
+ * end pose away the moment a handle went in.
  *
  * On the main track the clip stays butted to its neighbours: trimming either end
  * pulls everything after it along, and revealing earlier footage at the head
@@ -575,18 +703,18 @@ fun TimelineState.withClipTrimmed(clipId: String, startDeltaMs: Long, endDeltaMs
     // 100ms off a half-speed shot removes 200ms from the timeline.
     val playedShift = ramp.outputOffsetAt(newIn - clip.sourceInMs, span)
 
-    val resized = clip.copy(
+    val trimmed = clip.copy(
         sourceInMs = newIn,
         sourceOutMs = newOut,
         // The curve is anchored to the source window, so it moves with it -
         // otherwise the ramp stays put in the file while the footage slides
         // underneath it.
         speedRamp = ramp.sliced(newIn - clip.sourceInMs, newOut - clip.sourceInMs),
-        timelineStartMs = (clip.timelineStartMs + playedShift).coerceAtLeast(0L)
+        timelineStartMs = (clip.timelineStartMs + playedShift).coerceAtLeast(0L),
+        keyframes = clip.keyframes.shiftedBy(-playedShift)
     )
-    val trimmed = resized.copy(keyframes = clip.keyframes.rebased(playedShift, playedShift + resized.durationMs))
     val next = copy(clips = clips.map { if (it.id == clipId) trimmed else it })
-    return if (clip.isMain) next.rippleVideo() else next
+    return if (clip.isMain) next.relaidFrom(this) { if (it.id == clipId) listOf(trimmed) else listOf(it) } else next
 }
 
 /**
@@ -602,28 +730,24 @@ fun TimelineState.withSplitAtPlayhead(selection: String? = selectedClipId): Time
     // Text lives in the editor's own list, not here, and is cut there.
     if (target.kind == ClipKind.Text) return this
     val (head, tail) = target.splitAt(playheadMs) ?: return this
-    val next = copy(
-        clips = clips.flatMap { if (it.id == target.id) listOf(head, tail) else listOf(it) },
-        selectedClipId = null
-    )
-    return if (target.isMain) next.rippleVideo() else next
+    val halves = { clip: Clip -> if (clip.id == target.id) listOf(head, tail) else listOf(clip) }
+    val next = copy(clips = clips.flatMap(halves), selectedClipId = null)
+    return if (target.isMain) next.relaidFrom(this, halves) else next
 }
 
 /**
  * Cuts every clip under the playhead that [include] accepts, on every track at
- * once - for the beat cutter, which razors the picture on each beat. Each clip is
- * cut or refused by the same rule as a single cut.
+ * once - for the beat cutter, which razors the picture on each beat and passes
+ * video only, so the music it is cutting to stays one clip. Each clip is cut or
+ * refused by the same rule as a single cut.
  */
 fun TimelineState.withSplitAllTracks(include: (Clip) -> Boolean = { true }): TimelineState {
-    var touchedMain = false
-    val rebuilt = clips.flatMap { clip ->
-        val halves = if (clip.kind != ClipKind.Text && include(clip)) clip.splitAt(playheadMs) else null
-        if (halves == null) listOf(clip)
-        else {
-            if (clip.isMain) touchedMain = true
-            listOf(halves.first, halves.second)
-        }
-    }
-    val next = copy(clips = rebuilt, selectedClipId = null)
-    return if (touchedMain) next.rippleVideo() else next
+    val cuts = clips
+        .filter { it.kind != ClipKind.Text && include(it) }
+        .mapNotNull { clip -> clip.splitAt(playheadMs)?.let { clip.id to it } }
+        .toMap()
+    if (cuts.isEmpty()) return copy(selectedClipId = null)
+    val halves = { clip: Clip -> cuts[clip.id]?.toList() ?: listOf(clip) }
+    val next = copy(clips = clips.flatMap(halves), selectedClipId = null)
+    return if (clips.any { it.isMain && it.id in cuts }) next.relaidFrom(this, halves) else next
 }

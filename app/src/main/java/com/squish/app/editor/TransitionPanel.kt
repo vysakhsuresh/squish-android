@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.MAX_LAYER
+import com.squish.app.timeline.TransformLimits
 import com.squish.app.timeline.TransitionType
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
@@ -152,17 +153,34 @@ fun TransitionPanel(
                 )
 
                 if (selected.layer > 0) {
+                    // What the picture is doing at the playhead, not the static
+                    // fields: on an animated overlay those are never drawn, and a
+                    // slider bound to them snapped back after every change. The
+                    // ranges are the model's own, so no panel cuts down a value
+                    // another one set.
+                    val placement = selected.placementAt(state.playheadMs)
                     LabeledSlider("Opacity", selected.opacity, 0f..1f) {
                         viewModel.setOverlayGeometry(selected.id, opacity = it)
                     }
-                    LabeledSlider("Size", selected.scale, 0.1f..1f) {
+                    LabeledSlider("Size", placement.scale, TransformLimits.SCALE_MIN..TransformLimits.SCALE_MAX) {
                         viewModel.setOverlayGeometry(selected.id, scale = it)
                     }
-                    LabeledSlider("Across", selected.offsetXFraction, -1f..1f) {
+                    LabeledSlider("Across", placement.offsetXFraction, -TransformLimits.OFFSET_MAX..TransformLimits.OFFSET_MAX) {
                         viewModel.setOverlayGeometry(selected.id, offsetX = it)
                     }
-                    LabeledSlider("Up / down", selected.offsetYFraction, -1f..1f) {
+                    LabeledSlider("Up / down", placement.offsetYFraction, -TransformLimits.OFFSET_MAX..TransformLimits.OFFSET_MAX) {
                         viewModel.setOverlayGeometry(selected.id, offsetY = it)
+                    }
+                    if (selected.keyframes.isNotEmpty()) {
+                        Text(
+                            if (state.playheadMs - selected.timelineStartMs in 0L..selected.durationMs) {
+                                "Animated: a change here is a key at the playhead."
+                            } else {
+                                "Animated, and the playhead is off this clip: a change moves the whole animation."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SquishColors.TextMuted
+                        )
                     }
                 }
             } else {

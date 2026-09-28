@@ -11,7 +11,9 @@ import com.squish.app.timeline.Transform
 import com.squish.app.timeline.TransformLimits
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
-import com.squish.app.timeline.rebased
+import com.squish.app.timeline.rippleVideo
+import com.squish.app.timeline.shiftedBy
+import com.squish.app.timeline.within
 import com.squish.app.timeline.transformAt
 import com.squish.app.timeline.withClipAdded
 import com.squish.app.timeline.withClipMoved
@@ -103,21 +105,19 @@ fun main() {
         check(abs(revealedPlays - 1000L) <= 2L, "ramp: sliced() plays the revealed 350ms in $revealedPlays, not ~1000")
     }
 
-    // --- Keyframes re-based over a range. -----------------------------------------
+    // --- Keyframes shifted, never dropped. ------------------------------------------
     run {
-        val keys = pushIn(10_000L, KeyframeEasing.Linear)
-        val back = keys.rebased(5_000L, 10_000L)
-        check(back.size == 2 && back[0].atMs == 0L && back[1].atMs == 5_000L, "rebased back half: $back")
-        check(near(back[0].transform.scale, 1.09f), "rebased back half starts at ${back[0].transform.scale}, not 1.09")
-        check(near(back[1].transform.scale, 1.18f), "rebased back half ends at ${back[1].transform.scale}")
-        val front = keys.rebased(0L, 5_000L)
-        check(front.size == 2 && front[1].atMs == 5_000L && near(front[1].transform.scale, 1.09f), "rebased front half: $front")
-        val later = keys.rebased(-2_000L, 12_000L)
-        check(later.map { it.atMs } == listOf(2_000L, 12_000L), "revealing 2s at the head did not shift keys later: $later")
-        check(emptyList<Keyframe>().rebased(0, 100).isEmpty(), "rebasing nothing made something")
-        // A key exactly on the new head is kept, not doubled.
-        val onEdge = listOf(Keyframe(0L), Keyframe(3_000L, Transform(scale = 2f)), Keyframe(6_000L))
-        check(onEdge.rebased(3_000L, 6_000L).map { it.atMs } == listOf(0L, 3_000L), "key on the cut doubled")
+        val keys = pushIn(10_000L, KeyframeEasing.Smooth)
+        val back = keys.shiftedBy(-5_000L)
+        check(back.map { it.atMs } == listOf(-5_000L, 5_000L), "shifted back half: $back")
+        // The shifted curve is the same curve: every moment reads what it read.
+        for (t in 0L..5_000L step 250) {
+            check(near(back.transformAt(t, Transform()).scale, keys.transformAt(t + 5_000L, Transform()).scale, 0.0005f),
+                "shifted curve differs at $t")
+        }
+        check(keys.shiftedBy(0L) === keys, "a zero shift copied the list")
+        check(emptyList<Keyframe>().shiftedBy(100).isEmpty(), "shifting nothing made something")
+        check(back.within(5_000L).map { it.atMs } == listOf(5_000L), "within() kept a key off the clip: ${back.within(5_000L)}")
     }
 
     // --- Split: T3/V10 - keyframes carry on, the second half has no transition. -
@@ -126,7 +126,7 @@ fun main() {
         val a = video("a", 20_000, start = 5_000, keys = pushIn(20_000, easing),
             transition = Transition(TransitionType.CrossFade, 500))
         val b = video("b", 10_000, start = 25_000, transition = Transition(TransitionType.CrossFade, 500))
-        val cut = TimelineState(clips = listOf(z, a, b), playheadMs = 15_000).withSplitAtPlayhead()
+        val cut = TimelineState(clips = listOf(z, a, b), playheadMs = 15_000).rippleVideo().withSplitAtPlayhead()
         val halves = cut.baseVideoClips
         check(halves.size == 4, "$easing: cut made ${halves.size} main clips")
         if (halves.size != 4) continue
@@ -144,8 +144,38 @@ fun main() {
         }
         val end = second.transformAt(second.timelineEndMs)
         check(near(end.scale, 1.18f), "$easing: second half ends at ${end.scale}, not 1.18")
-        check(first.keyframes.all { it.atMs <= first.durationMs }, "$easing: first half keeps keys past its end")
+        // Every frame of both halves plays exactly the pose it had uncut - Smooth
+        // included, whose ease used to restart at the cut.
+        val uncut = a.copy(timelineStartMs = first.timelineStartMs)
+        for (t in first.timelineStartMs until second.timelineEndMs step 97) {
+            val half = if (t < first.timelineEndMs) first else second
+            check(near(half.transformAt(t).scale, uncut.transformAt(t).scale, 0.0005f),
+                "$easing: at $t the cut plays ${half.transformAt(t).scale}, uncut ${uncut.transformAt(t).scale}")
+        }
+        check(first.keyframes == a.keyframes, "$easing: the first half's keys were rewritten")
         mainIsMagnetic(cut, "split $easing")
+    }
+
+    // --- Split: the halves add up, so nothing after a main-track cut moves. ------
+    run {
+        val ramps = listOf(SpeedRamp(), SpeedRamp.flat(0.5f), SpeedRamp.flat(3f), SpeedRamp.flat(0.7f)) +
+            RampShape.entries.map { SpeedRamp.preset(it, 7_000L) }
+        for (ramp in ramps) {
+            val c = video("c", 7_000, ramp = ramp)
+            val next = video("n", 2_000, start = c.durationMs)
+            var s = TimelineState(clips = listOf(c, next))
+            // A beat cutter's run: fifty cuts across the one clip.
+            for (i in 1..50) s = s.copy(playheadMs = c.durationMs * i / 51).withSplitAllTracks { it.kind == ClipKind.Video }
+            // Exact where the ramp's staircase allows it. Where a half-speed or
+            // quarter-speed tread keeps the fraction fixed, no nearby cut adds up
+            // and a millisecond is left over; before the search it was up to 4ms
+            // a cut, in either direction, adding up over a run.
+            val drift = abs(s.byId("n").timelineStartMs - c.durationMs)
+            check(drift <= 2L,
+                "ramp ${ramp.points}: after 50 cuts the next clip moved ${c.durationMs} -> ${s.byId("n").timelineStartMs}")
+            if (ramp.points.size <= 1) check(drift == 0L, "flat ${ramp.points}: 50 cuts moved the next clip by $drift")
+            mainIsMagnetic(s, "fifty cuts")
+        }
     }
 
     // --- Split: T4 - refused inside the margin, and the button agrees. ---------
@@ -270,7 +300,28 @@ fun main() {
         val tail = s.withClipTrimmed("p", 0L, -4_000L).byId("p")
         check(near(tail.transformAt(tail.timelineEndMs).scale, pip.transformAt(pip.timelineStartMs + 6_000).scale),
             "tail trim: end pose ${tail.transformAt(tail.timelineEndMs).scale} is not the pose of that frame")
-        check(tail.keyframes.all { it.atMs <= tail.durationMs }, "tail trim left a key past the end")
+        check(tail.keyframes == keys, "a tail trim rewrote the keys: ${tail.keyframes}")
+
+        // One gesture, in and back out, in 1ms steps and in one step: the keys
+        // come back exactly, and fast and slow agree (the finding: a push-in whose
+        // tail went in 1s and back out lost its end pose).
+        for (easing in KeyframeEasing.entries) {
+            val moving = video("k", 3_000, start = 1_000, layer = 1, keys = pushIn(3_000L, easing))
+            val start = TimelineState(clips = listOf(moving))
+            var slow = start
+            repeat(1_000) { slow = slow.withClipTrimmed("k", 0L, -1L) }
+            val fast = start.withClipTrimmed("k", 0L, -1_000L)
+            check(near(slow.byId("k").transformAt(slow.byId("k").timelineEndMs).scale,
+                fast.byId("k").transformAt(fast.byId("k").timelineEndMs).scale, 0.0005f),
+                "$easing: a slow tail trim ends on a different pose from a fast one")
+            repeat(1_000) { slow = slow.withClipTrimmed("k", 0L, 1L) }
+            check(slow.byId("k").keyframes == moving.keyframes, "$easing: tail in and back out lost keys: ${slow.byId("k").keyframes}")
+            check(near(slow.byId("k").transformAt(slow.byId("k").timelineEndMs).scale, 1.18f), "$easing: end pose gone after tail in/out")
+            var headed = start
+            repeat(700) { headed = headed.withClipTrimmed("k", 1L, 0L) }
+            repeat(700) { headed = headed.withClipTrimmed("k", -1L, 0L) }
+            check(headed.byId("k").keyframes == moving.keyframes, "$easing: head in and back out moved keys: ${headed.byId("k").keyframes}")
+        }
         // A push-in at half speed, trimmed: still reaches 1.18 on its last frame.
         val slowKeys = pushIn(20_000L)
         val slow = video("m", 10_000, ramp = SpeedRamp.flat(0.5f), keys = slowKeys)
@@ -309,9 +360,44 @@ fun main() {
         val far = s.withClipMoved("a", 9_000)
         check(far.baseVideoClips.map { it.id } == listOf("b", "c", "a"), "a long drag did not reorder: ${far.baseVideoClips.map { it.id }}")
         mainIsMagnetic(far, "drag")
-        // A legacy draft with a gap and an overlap: the first edit lays it out.
+
+        // What the strip sends: one gesture measured from where it began, each
+        // event asking for the clip to start at anchor + finger travel (see
+        // ClipView). Drag b left past a, 30ms at a time.
+        var dragged = s
+        val anchor = s.byId("b").timelineStartMs
+        var travel = 0L
+        var steps = 0
+        while (travel > -4_000L) {
+            travel -= 30L
+            val clip = dragged.byId("b")
+            dragged = dragged.withClipMoved("b", anchor + travel - clip.timelineStartMs)
+            steps++
+        }
+        check(dragged.baseVideoClips.map { it.id } == listOf("b", "a", "c"), "a strip drag of b past a: ${dragged.baseVideoClips.map { it.id }}")
+        mainIsMagnetic(dragged, "strip drag")
+        // Resting the finger either side of the swap point does not flip it back.
+        val swapped = dragged
+        for (wobble in listOf(10L, -10L, 25L, -25L)) {
+            val clip = swapped.byId("b")
+            val nudged = swapped.withClipMoved("b", anchor + travel + wobble - clip.timelineStartMs)
+            check(nudged.baseVideoClips.map { it.id } == listOf("b", "a", "c"), "a ${wobble}ms wobble flipped the order back")
+        }
+
+        // A draft from before the track was magnetic, with a clip parked 2s after
+        // the one before it and another laid over it: an edit keeps that spacing
+        // and only closes what it opens itself. Close gaps takes it away.
         val legacy = TimelineState(clips = listOf(video("x", 3_000), video("y", 3_000, start = 5_000), video("z", 3_000, start = 6_000)))
-        mainIsMagnetic(legacy.withClipTrimmed("x", 0L, -500L), "legacy draft after a trim")
+        val trimmed = legacy.withClipTrimmed("x", 0L, -500L)
+        check(trimmed.byId("y").timelineStartMs == 4_500L && trimmed.byId("z").timelineStartMs == 5_500L,
+            "legacy trim: y at ${trimmed.byId("y").timelineStartMs}, z at ${trimmed.byId("z").timelineStartMs}")
+        val cutFirst = legacy.copy(playheadMs = 1_000L).withSplitAtPlayhead()
+        check(cutFirst.byId("y").timelineStartMs == 5_000L && cutFirst.byId("z").timelineStartMs == 6_000L,
+            "legacy cut moved later clips: ${cutFirst.baseVideoClips.map { it.timelineStartMs }}")
+        val dissolve = legacy.withTransition("z", Transition(TransitionType.CrossFade, 500))
+        check(dissolve.byId("y").timelineStartMs == 5_000L, "a transition on z moved y")
+        val closed = legacy.rippleVideo()
+        mainIsMagnetic(closed, "legacy closed up")
     }
 
     // --- O7: overlays never share a row at the same moment (script step 7). ---------
@@ -329,11 +415,23 @@ fun main() {
         val later = full.withClipAdded(video("later", 2_000, start = 20_000, layer = 1))
         check(later.byId("later").layer == 1, "an overlay where row 1 is free went to ${later.byId("later").layer}")
 
-        // Dragging onto a neighbour goes up a row; with none free it stops against it.
+        // Dragging onto a neighbour stops against it, on its own row; dragged far
+        // enough to fit past it, it goes there - still on its own row.
         val two = TimelineState(clips = listOf(base, video("p", 3_000, start = 0, layer = 1), video("q", 3_000, start = 5_000, layer = 1)))
-        val bumped = two.withClipMoved("p", 3_000)
-        check(bumped.byId("p").layer == 2, "an overlay dragged onto another stayed on row ${bumped.byId("p").layer}")
-        overlayRowsClear(bumped, "drag bump")
+        val blocked = two.withClipMoved("p", 3_000)
+        check(blocked.byId("p").layer == 1 && blocked.byId("p").timelineEndMs == 5_000L,
+            "an overlay dragged onto another: row ${blocked.byId("p").layer}, ends ${blocked.byId("p").timelineEndMs}")
+        overlayRowsClear(blocked, "drag onto a neighbour")
+        val past = blocked.withClipMoved("p", 9_000 - blocked.byId("p").timelineStartMs)
+        check(past.byId("p").layer == 1 && past.byId("p").timelineStartMs == 9_000L,
+            "an overlay dragged past its neighbour: row ${past.byId("p").layer}, at ${past.byId("p").timelineStartMs}")
+        val back = past.withClipMoved("p", -3_000)
+        check(back.byId("p").timelineStartMs == 8_000L, "dragged back, it did not stop against q's end: ${back.byId("p").timelineStartMs}")
+        // A logo on row 3 dragged into another row-3 overlay while row 1 is free
+        // does not drop under the row-2 picture.
+        val stack = TimelineState(clips = listOf(base, video("logo", 2_000, start = 0, layer = 3),
+            video("other", 2_000, start = 3_000, layer = 3), video("mid", 20_000, start = 0, layer = 2)))
+        check(stack.withClipMoved("logo", 2_000).byId("logo").layer == 3, "a drag changed an overlay's row")
         var crowded = two
         for (l in 2..MAX_LAYER) crowded = crowded.withClipAdded(video("w$l", 30_000, start = 0, layer = l))
         val stopped = crowded.withClipMoved("p", 3_000)
@@ -352,6 +450,16 @@ fun main() {
         val drop = lift.withLayerChanged("b", -1)
         mainIsMagnetic(drop, "drop to main")
         check(drop.baseVideoClips.size == 3, "dropping b to the main track lost it")
+
+        // Lower never falls through busy rows onto the main track.
+        val rows = TimelineState(clips = listOf(video("m", 20_000), video("r1", 5_000, start = 0, layer = 1),
+            video("r2", 5_000, start = 0, layer = 2), video("r3", 5_000, start = 1_000, layer = 3)))
+        check(rows.withLayerChanged("r3", -1) == rows, "Lower on row 3 over busy rows 2 and 1 changed something")
+        check(rows.withLayerChanged("r2", -1) == rows, "Lower on row 2 over a busy row 1 changed something")
+        val r1Down = rows.withLayerChanged("r1", -1)
+        check(r1Down.byId("r1").layer == 0 && r1Down.baseVideoClips.size == 2, "Lower on row 1 did not join the main track")
+        val freeBelow = rows.withClipRemoved("r2").withLayerChanged("r3", -1)
+        check(freeBelow.byId("r3").layer == 2, "Lower on row 3 over a free row 2 went to ${freeBelow.byId("r3").layer}")
     }
 
     // --- Fuzz: any sequence of edits keeps both promises. -----------------------------
@@ -400,6 +508,20 @@ fun main() {
         check(near(moved.transformAt(2_500).offsetXFraction, 0.5f), "an animated overlay did not move: ${moved.transformAt(2_500)}")
         check(moved.keyframes.size == 3, "an animated overlay's edit wrote ${moved.keyframes.size} keys, not 3")
         check(moved.scale == pip.scale && moved.offsetXFraction == pip.offsetXFraction, "an animated edit wrote the dead static fields")
+        // What a slider bound to placementAt reads back is what it just set -
+        // the static field it used to read never changed, so the thumb jumped back.
+        check(near(moved.placementAt(2_500).offsetXFraction, 0.5f), "the placement read back is ${moved.placementAt(2_500)}")
+
+        // Playhead after the clip: the whole move shifts, the end key is not
+        // rewritten on its own, and the value reads back.
+        val after = animated.copy(playheadMs = 9_000)
+        val slid = after.withOverlayGeometry("p", offsetX = 0.3f).byId("p")
+        check(slid.keyframes.size == 2, "an off-clip edit added a key: ${slid.keyframes}")
+        check(slid.keyframes.all { near(it.transform.offsetXFraction, 0.3f) }, "an off-clip edit did not move every key: ${slid.keyframes}")
+        check(near(slid.placementAt(9_000).offsetXFraction, 0.3f), "off-clip placement reads ${slid.placementAt(9_000)}")
+        val grown = after.withOverlayGeometry("p", scale = 2.36f).byId("p")
+        check(near(grown.keyframes[0].transform.scale, 2f, 0.01f) && near(grown.keyframes[1].transform.scale, 2.36f, 0.01f),
+            "an off-clip size change did not scale the whole move: ${grown.keyframes.map { it.transform.scale }}")
     }
 
     println("magnetic checks: main track, cuts, trims, keys, overlay rows")

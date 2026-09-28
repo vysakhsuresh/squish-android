@@ -813,8 +813,12 @@ class EditorViewModel(
         // One step for the whole run, not one per cut. Cutting a track on forty
         // beats and then pressing undo forty times is not undo.
         record("Cut on the beat") {
+            // Picture only. The song being cut to is on the strip too, and razoring
+            // it on every beat left a hundred pieces for the next nudge to break.
             cuts.forEach { at ->
-                mutateTimeline { timeline -> timeline.copy(playheadMs = at).withSplitAllTracks() }
+                mutateTimeline { timeline ->
+                    timeline.copy(playheadMs = at).withSplitAllTracks { it.kind == ClipKind.Video }
+                }
             }
             _state.update { it.copy(selectedClipId = null) }
         }
@@ -1381,10 +1385,16 @@ class EditorViewModel(
         }
     }
 
-    fun setTransition(clipId: String, type: TransitionType, durationMs: Long) =
+    // Both of these re-lay the main track, which can shorten the edit and so cut
+    // back the effects at its end - an undo step each, or there is no way back.
+    // Labelled per clip so a Length slider drag is one step.
+    fun setTransition(clipId: String, type: TransitionType, durationMs: Long) = record("Transition $clipId") {
         mutateTimeline { it.withTransition(clipId, Transition(type, durationMs)) }
+    }
 
-    fun changeLayer(clipId: String, delta: Int) = mutateTimeline { it.withLayerChanged(clipId, delta) }
+    fun changeLayer(clipId: String, delta: Int) = record("Layer $clipId") {
+        mutateTimeline { it.withLayerChanged(clipId, delta) }
+    }
 
     fun setOverlayGeometry(
         clipId: String,
@@ -1959,10 +1969,12 @@ class EditorViewModel(
         timeline.copy(clips = timeline.clips.map { if (it.id == clipId) updated else it })
     }
 
-    /** Drops the animation, leaving the clip wherever it was at the first key. */
+    /** Drops the animation, leaving the clip wherever it was on its first frame. */
     fun clearKeyframes(clipId: String) = mutateTimeline { timeline ->
         val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
-        val settled = clip.keyframes.firstOrNull()?.transform ?: clip.staticTransform
+        // The pose on the clip's first frame, which is the first key's only while
+        // no trim has hidden a key before it.
+        val settled = clip.placementAt(clip.timelineStartMs)
         val updated = clip.copy(
             keyframes = emptyList(),
             scale = settled.scale,
@@ -2023,9 +2035,33 @@ class EditorViewModel(
     /** Timeline drag. Each lane writes back to whichever model owns it. */
     // Labelled per clip so dragging one, then another, is two steps — but the
     // hundred frames of a single drag are one.
-    fun moveClip(clipId: String, deltaMs: Long) = record("Move $clipId") {
-        if (_state.value.textOverlays.any { it.id == clipId }) shiftOverlay(clipId, deltaMs)
-        else mutateTimeline { it.withClipMoved(clipId, deltaMs) }
+    /**
+     * A strip drag: the clip to start at [startMs], as near as its track allows.
+     * The step is taken from the clip as it is now, not as the strip last drew it
+     * - a second touch event can arrive before the first one's move is on screen,
+     * and a step worked out there would be applied twice.
+     */
+    fun moveClipTo(clipId: String, startMs: Long) {
+        val current = _state.value
+        val from = current.textOverlays.firstOrNull { it.id == clipId }?.startMs
+            ?: (current.videoClips + current.audioClips).firstOrNull { it.id == clipId }?.timelineStartMs
+            ?: return
+        if (startMs != from) moveClip(clipId, startMs - from)
+    }
+
+    fun moveClip(clipId: String, deltaMs: Long) {
+        val isText = _state.value.textOverlays.any { it.id == clipId }
+        // A drag on the main track that has not yet crossed a neighbour's middle
+        // changes nothing, and must not leave an "Undo: Move clip" that undoes
+        // nothing - or worse, whatever unrecorded edit came before it.
+        if (!isText) {
+            val timeline = _state.value.toTimeline()
+            if (timeline.withClipMoved(clipId, deltaMs) === timeline) return
+        }
+        record("Move $clipId") {
+            if (isText) shiftOverlay(clipId, deltaMs)
+            else mutateTimeline { it.withClipMoved(clipId, deltaMs) }
+        }
     }
 
     /** Timeline edge drag - the handles on a selected clip. */
@@ -2078,7 +2114,12 @@ class EditorViewModel(
      */
     private fun record(label: String, change: () -> Unit) {
         history.record(label, _state.value.editSnapshot, System.currentTimeMillis())
-        change()
+        recording = label
+        try {
+            change()
+        } finally {
+            recording = null
+        }
         publishHistory()
         // Editing the bare clip while its saved edit is still on offer is the
         // answer to the offer: this is a new project. That is settled by the
@@ -2133,18 +2174,37 @@ class EditorViewModel(
             )
             val next = block(timeline)
             val video = next.clips.filter { it.kind == ClipKind.Video }
+            // Every change to how long the picture runs comes through here -
+            // trims, cuts, deletes, retimes, transitions, layer changes - so this
+            // is where effects are kept inside it. See [fittedTo]. Within one
+            // gesture they are fitted from where they were when it began, so a
+            // tail dragged in and back out in one go brings back the effect it
+            // passed over instead of leaving it cut short. Only while nothing else
+            // has touched the effects since: a list that is not the one this left
+            // is someone else's edit, and is fitted as it stands.
+            val continuing = recording != null && recording == fitLabel && current.effects === fitResult
+            val base = if (continuing) fitBase ?: current.effects else current.effects
+            val fitted = base.fittedTo(video.maxOfOrNull { it.timelineEndMs } ?: 0L)
+            fitLabel = recording
+            fitBase = base
+            fitResult = fitted
             current.copy(
                 videoClips = video,
                 audioClips = next.clips.filter { it.kind == ClipKind.Audio },
                 selectedClipId = next.selectedClipId,
-                // Every change to how long the picture runs comes through here -
-                // trims, cuts, deletes, retimes, closing gaps - so this is where
-                // effects are kept inside it. See [fittedTo].
-                effects = current.effects.fittedTo(video.maxOfOrNull { it.timelineEndMs } ?: 0L)
+                effects = fitted
             )
         }
         recomputeEstimate()
     }
+
+    /** The undo label of the edit being made, while [record] is making it. */
+    private var recording: String? = null
+
+    /** The effects a gesture began with, and what fitting them last produced. See [mutateTimeline]. */
+    private var fitLabel: String? = null
+    private var fitBase: List<TimedEffect>? = null
+    private var fitResult: List<TimedEffect>? = null
 
     /** Close enough to a butt cut that a retime should carry the next clip along. */
     private val TOUCHING_MS = 40L

@@ -142,40 +142,25 @@ fun Transform.clamped(): Transform = Transform(
 )
 
 /**
- * The part of an animation between two moments of the clip, re-based so that
- * [fromMs] becomes the new start.
+ * The same animation with every key [deltaMs] later (earlier when negative).
  *
  * Keys are measured from the clip's head, so any edit that moves the head - a
  * trim, or the second half of a cut - has to move them with it, or the move plays
  * against different frames than the ones it was drawn on. A push-in cut in half
  * used to restart from scale 1 on the second half: a visible snap at the cut.
  *
- * Where the kept range starts or ends between two keys, a key is added there with
- * the value the animation had at that moment, so both halves of a cut meet at the
- * same pose and each still reaches the pose it was heading for. A range that
- * starts before the first key ([fromMs] negative, a head revealed by trimming)
- * just shifts everything later; the animation already holds before its first key.
- *
- * The added key carries the easing of the segment it interrupts. For Linear and
- * Hold that reproduces the original curve exactly; for Smooth the path is the same
- * but the ease restarts at the cut, which is the most a single key can do.
+ * Nothing is dropped or re-sampled. Keys that end up before 0 or past the clip's
+ * end sit over footage the clip does not show, and still shape the part it does:
+ * the frames either side of a cut, or inside a trim, play exactly the pose they
+ * had, easing and all, and the move comes back whole when the footage does.
+ * Evaluation holds before the first key and after the last wherever they are,
+ * so a key outside the clip is never extrapolated past.
  */
-fun List<Keyframe>.rebased(fromMs: Long, toMs: Long): List<Keyframe> {
-    if (isEmpty()) return this
-    val to = maxOf(fromMs, toMs)
-    val length = to - fromMs
-    val out = ArrayList<Keyframe>(size + 2)
-    if (this[0].atMs < fromMs && none { it.atMs == fromMs }) {
-        out.add(Keyframe(0L, transformAt(fromMs, Transform.Identity), easingAt(fromMs)))
-    }
-    for (key in this) {
-        if (key.atMs in fromMs..to) out.add(key.copy(atMs = key.atMs - fromMs))
-    }
-    if (this[size - 1].atMs > to && out.none { it.atMs == length }) {
-        out.add(Keyframe(length, transformAt(to, Transform.Identity), easingAt(to)))
-    }
-    return out
-}
+fun List<Keyframe>.shiftedBy(deltaMs: Long): List<Keyframe> =
+    if (deltaMs == 0L || isEmpty()) this else map { it.copy(atMs = it.atMs + deltaMs) }
+
+/** The keys that fall on a clip [durationMs] long - the ones a panel can offer to edit. */
+fun List<Keyframe>.within(durationMs: Long): List<Keyframe> = filter { it.atMs in 0L..durationMs }
 
 /** The easing of the segment a moment falls in - the easing of the key it leaves. */
 fun List<Keyframe>.easingAt(atMs: Long): KeyframeEasing =

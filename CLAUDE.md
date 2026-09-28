@@ -130,6 +130,14 @@ should work through it and then delete what holds up.
   Two things only a device can answer: whether `SavedStateHandle` comes back
   set after `am kill` (that is what makes the banner modal), and whether
   `keepScreenOn` holds through a long render.
+- **Batch B2 (timeline model and strip mechanics).** The model is executed on
+  the JVM (`tools/jvm/MagneticChecks.kt`, including the per-event drag and trim
+  streams the strip sends); nothing of it has been seen on a phone. Script in
+  `docs/ROADMAP.md` §4 under B2, plus: dragging a main-track clip past its
+  neighbour swaps them and the finger keeps the clip; an overlay dragged into
+  another stops against it on its own row; the Blend sliders on an animated
+  overlay stay where they are put; Cut on beats leaves the song whole; a draft
+  saved with gaps on the main track keeps them through a trim or a cut.
 
 ## Conventions worth not rediscovering
 

@@ -59,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -90,6 +91,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.squish.app.editor.Timecode
 import com.squish.app.ui.theme.SquishColors
+import kotlin.math.roundToLong
 
 private val LANE_HEIGHT = 54.dp
 
@@ -243,7 +245,8 @@ internal class MultiTouchGuard {
 fun TimelineEditor(
     state: TimelineState,
     onSelect: (String?) -> Unit,
-    onMove: (String, Long) -> Unit,
+    /** A clip dragged: its id, and where the finger would have it start. */
+    onMoveTo: (String, Long) -> Unit,
     onTrim: (String, Long, Long) -> Unit,
     onScrub: (Long) -> Unit,
     onTransitionTap: (String) -> Unit,
@@ -285,9 +288,9 @@ fun TimelineEditor(
     val rawSelect by rememberUpdatedState(onSelect)
     val guardedScrub: (Long) -> Unit = remember { { ms -> if (!guard.blocking) rawScrub(ms) } }
     val guardedSelect: (String?) -> Unit = remember { { id -> if (!guard.blocking) rawSelect(id) } }
-    val rawMove by rememberUpdatedState(onMove)
+    val rawMove by rememberUpdatedState(onMoveTo)
     val rawTrim by rememberUpdatedState(onTrim)
-    val guardedMove: (String, Long) -> Unit = remember { { id, delta -> if (!guard.active) rawMove(id, delta) } }
+    val guardedMove: (String, Long) -> Unit = remember { { id, startMs -> if (!guard.active) rawMove(id, startMs) } }
     val guardedTrim: (String, Long, Long) -> Unit =
         remember { { id, start, end -> if (!guard.active) rawTrim(id, start, end) } }
 
@@ -545,7 +548,7 @@ fun TimelineEditor(
                         window = window,
                         accent = SquishColors.Magenta,
                         onSelect = guardedSelect,
-                        onMove = guardedMove,
+                        onMoveTo = guardedMove,
                         onTrim = guardedTrim,
                         onScrub = guardedScrub
                     )
@@ -556,7 +559,7 @@ fun TimelineEditor(
                     window = window,
                     accent = SquishColors.Violet,
                     onSelect = guardedSelect,
-                    onMove = guardedMove,
+                    onMoveTo = guardedMove,
                     onTrim = guardedTrim,
                     onScrub = guardedScrub,
                     onTransitionTap = onTransitionTap
@@ -869,7 +872,7 @@ private fun Lane(
     window: TimelineWindow,
     accent: Color,
     onSelect: (String?) -> Unit,
-    onMove: (String, Long) -> Unit,
+    onMoveTo: (String, Long) -> Unit,
     onTrim: (String, Long, Long) -> Unit,
     onScrub: (Long) -> Unit,
     onTransitionTap: ((String) -> Unit)? = null,
@@ -921,24 +924,29 @@ private fun Lane(
             // Off-screen clips are not built at all. This is what makes a timeline
             // of a hundred cuts cost the same to lay out as one of three.
             if (!window.intersects(clip.timelineStartMs, clip.timelineEndMs)) return@forEachIndexed
-            ClipView(
-                clip = clip,
-                selected = clip.id == state.selectedClipId,
-                waveform = clip.uri?.let { state.waveforms[it.toString()] },
-                window = window,
-                accent = clipColor?.invoke(clip) ?: accent,
-                onSelect = onSelect,
-                onMove = onMove,
-                onTrim = onTrim,
-                onScrub = onScrub,
-                stacked = stacked,
-                onTapAt = stackTap,
-                labelSpan = if (!stacked) null else openStretch(
-                    clip.timelineStartMs,
-                    clip.timelineEndMs,
-                    ordered.drop(i + 1).map { it.timelineStartMs..it.timelineEndMs }
+            // Keyed by clip, so a clip that changes place in the order - a
+            // main-track drag past a neighbour - keeps its own gesture instead
+            // of handing the finger to whichever clip now sits in its slot.
+            key(clip.id) {
+                ClipView(
+                    clip = clip,
+                    selected = clip.id == state.selectedClipId,
+                    waveform = clip.uri?.let { state.waveforms[it.toString()] },
+                    window = window,
+                    accent = clipColor?.invoke(clip) ?: accent,
+                    onSelect = onSelect,
+                    onMoveTo = onMoveTo,
+                    onTrim = onTrim,
+                    onScrub = onScrub,
+                    stacked = stacked,
+                    onTapAt = stackTap,
+                    labelSpan = if (!stacked) null else openStretch(
+                        clip.timelineStartMs,
+                        clip.timelineEndMs,
+                        ordered.drop(i + 1).map { it.timelineStartMs..it.timelineEndMs }
+                    )
                 )
-            )
+            }
         }
 
         if (stacked) {
@@ -1004,7 +1012,7 @@ private fun ClipView(
     window: TimelineWindow,
     accent: Color,
     onSelect: (String?) -> Unit,
-    onMove: (String, Long) -> Unit,
+    onMoveTo: (String, Long) -> Unit,
     onTrim: (String, Long, Long) -> Unit,
     onScrub: (Long) -> Unit,
     /** On a stacked lane: solid, so it hides what it lies over, and its grips live in the lane's frame. */
@@ -1014,12 +1022,13 @@ private fun ClipView(
     /** On a stacked lane, the stretch of this clip the ones on top leave showing, for its name. */
     labelSpan: LongRange? = null
 ) {
-    val latestMove by rememberUpdatedState(onMove)
+    val latestMove by rememberUpdatedState(onMoveTo)
     val latestTrim by rememberUpdatedState(onTrim)
     val latestSelect by rememberUpdatedState(onSelect)
     val latestScrub by rememberUpdatedState(onScrub)
     val latestTapAt by rememberUpdatedState(onTapAt)
     val latestWindow by rememberUpdatedState(window)
+    val latestClip by rememberUpdatedState(clip)
 
     /**
      * The part of this clip that is on screen, and only that.
@@ -1096,24 +1105,30 @@ private fun ClipView(
                     }
                 }
             }
-            // The leftover fraction is carried between events rather than thrown
-            // away. Zoomed in, one pixel is a fraction of a millisecond, and
-            // rounding each event on its own turned most of a slow drag into zero.
+            // Measured from where the clip was when the finger went down, and
+            // each event asks for the clip to start where the finger now puts it
+            // - not for a step. Sent as the step from one event to the next, the
+            // main track never moved: a clip there only changes place when its
+            // middle crosses a neighbour's, no single event's few milliseconds
+            // ever got it there, and the clip did not move in between for them
+            // to add up. The same goes for an overlay held against a neighbour:
+            // it follows the finger again as soon as there is room where the
+            // finger is. The receiver works out the step from the clip as it is
+            // then, which this composable may not have been shown yet. Nothing
+            // is rounded away per event, so a slow drag zoomed in still moves.
             .pointerInput(clip.id) {
-                var carriedMs = 0f
+                var anchorMs = 0L
+                var draggedMs = 0.0
                 detectHorizontalDragGestures(
                     onDragStart = {
-                        carriedMs = 0f
+                        anchorMs = latestClip.timelineStartMs
+                        draggedMs = 0.0
                         latestSelect(clip.id)
                     }
                 ) { change, dragAmount ->
                     change.consume()
-                    carriedMs += latestWindow.msForPx(dragAmount).toFloat()
-                    val wholeMs = carriedMs.toLong()
-                    if (wholeMs != 0L) {
-                        carriedMs -= wholeMs
-                        latestMove(clip.id, wholeMs)
-                    }
+                    draggedMs += latestWindow.msForPx(dragAmount)
+                    latestMove(clip.id, anchorMs + draggedMs.roundToLong())
                 }
             }
     ) {
