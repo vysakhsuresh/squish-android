@@ -95,6 +95,38 @@ object PreviewRules {
         }
         return -1
     }
+
+    /**
+     * The moment whose picture is shown at [t], on an edit that ends at [end].
+     *
+     * A clip, a layer or a caption covers up to, not including, its end, so at
+     * the very end - where every play-through stops and Jump to end lands -
+     * nothing covers the moment at all. The export's last frame is drawn a frame
+     * before the end, with everything that runs to it; so is the preview's.
+     */
+    fun lastFrameTime(t: Long, end: Long): Long = if (end > 0L && t >= end) end - 1 else t
+
+    /**
+     * The longest a hard cut holds the outgoing picture while the incoming shot
+     * gets ready. Enough for a cold open the lookahead did not finish; past it, a
+     * shot that still has not drawn is shown for what it is - nothing.
+     */
+    const val HOLD_MAX_MS = 2_000L
+
+    /**
+     * Whether a hard cut whose incoming shot has not drawn yet keeps the outgoing
+     * shot's last frame on screen.
+     *
+     * Only when the surface being held is showing the shot that ends at this cut
+     * ([heldShowsOutgoing]) and the playhead got here by playing across it
+     * ([arrivedByPlaying]) - after a jump the held picture is some other part of
+     * the edit. Never for a shot that has failed to load: its black is the only
+     * sign it is broken. And never for longer than [HOLD_MAX_MS], because a
+     * picture that never arrives must not leave the previous one up for the whole
+     * of its length.
+     */
+    fun holdAtCut(heldShowsOutgoing: Boolean, arrivedByPlaying: Boolean, heldForMs: Long, incomingFailed: Boolean): Boolean =
+        heldShowsOutgoing && arrivedByPlaying && !incomingFailed && heldForMs <= HOLD_MAX_MS
 }
 
 /**
@@ -177,5 +209,11 @@ class ScrubDetector(
     /** The drag ended, so the scrub is over now rather than after the quiet period. */
     fun end() {
         lastSeekAt = Long.MIN_VALUE / 2
+    }
+
+    /** The scrub has been settled by other means: nothing is in flight, and nothing will settle later. */
+    fun reset() {
+        lastSeekAt = Long.MIN_VALUE / 2
+        inFlight = false
     }
 }

@@ -57,6 +57,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -271,7 +272,14 @@ fun TimelineEditor(
     onAddVideo: (() -> Unit)? = null,
     onAddBlank: (() -> Unit)? = null,
     onOpenSound: (() -> Unit)? = null,
-    onOpenWords: (() -> Unit)? = null
+    onOpenWords: (() -> Unit)? = null,
+    /**
+     * A finger has taken hold of the playhead (true) or let go (false). The
+     * preview serves a drag from sync samples and settles it exactly the moment
+     * the finger lifts, rather than guessing both from how close together the
+     * seeks arrive.
+     */
+    onScrubbingChange: (Boolean) -> Unit = {}
 ) {
     val density = LocalDensity.current
     val totalMs = maxOf(state.durationMs, 8_000L)
@@ -326,6 +334,12 @@ fun TimelineEditor(
 
     /** True while the playhead is being dragged, which nothing else may interrupt. */
     var scrubbing by remember { mutableStateOf(false) }
+    val latestScrubbingChange by rememberUpdatedState(onScrubbingChange)
+    // Folded away mid-drag, the gesture is cancelled without its end running, and
+    // the preview would go on believing a finger was down.
+    DisposableEffect(Unit) {
+        onDispose { if (scrubbing) latestScrubbingChange(false) }
+    }
 
     fun scrollTo(ms: Double) {
         scrollMs = ms.coerceIn(0.0, latestWindow.maxScrollMs(totalMs, TAIL_DP))
@@ -598,7 +612,10 @@ fun TimelineEditor(
                 window = window,
                 height = laneHeight,
                 onScrub = guardedScrub,
-                onScrubbingChange = { scrubbing = it },
+                onScrubbingChange = {
+                    scrubbing = it
+                    latestScrubbingChange(it)
+                },
                 onTap = tapThroughPlayhead
             )
         }

@@ -28,6 +28,7 @@ import com.squish.app.media.effects.FxEffect
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.effects.LiveLookEffect
 import com.squish.app.media.effects.MaskEffect
+import com.squish.app.media.effects.PremultiplyEffect
 import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
@@ -175,6 +176,11 @@ class PreviewEngine(private val context: Context) {
          * between, because what it holds is the last frame of some other shot.
          */
         var shownClipId: String? = null
+        /**
+         * The clip a first-frame callback arrived for while the player was still
+         * busy with a seek; see [updateReadiness].
+         */
+        var firstFrameFor: String? = null
         var readyTicks = 0
         /** Set by a jump: the next sync seeks even though the clip has not changed. */
         var forceSeek = false
@@ -227,11 +233,23 @@ class PreviewEngine(private val context: Context) {
                     // times a second.
                     loadedUri = null
                     activeClipId = null
+                    // Nothing it holds is trustworthy now. Kept, the same clip id
+                    // coming back on the next sync would count as drawn at once and
+                    // show the stale frame of a player that is not playing.
+                    shownClipId = null
+                    firstFrameFor = null
                     errorAt = at
                 }
 
                 override fun onRenderedFirstFrame() {
-                    if (activeClipId != null) shownClipId = activeClipId
+                    val clip = activeClipId ?: return
+                    // A seek masks the player's state to BUFFERING the moment it is
+                    // asked for, and callbacks arrive in order on this thread. So a
+                    // callback seen while READY belongs to the latest seek; one seen
+                    // while BUFFERING may be left over from the seek before - the
+                    // previous clip's picture - and only counts once the player
+                    // has come back READY.
+                    if (player.playbackState == Player.STATE_READY) shownClipId = clip else firstFrameFor = clip
                 }
 
                 override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -254,7 +272,12 @@ class PreviewEngine(private val context: Context) {
                 // not have.
                 if (isBase) {
                     add(LiveLookEffect(liveGrade))
+                    // Writes alpha 1, so a base frame reaches its view opaque.
                     add(FxEffect { effects.get() })
+                } else {
+                    // A layer keeps its transparency all the way to the screen,
+                    // where its view blends it premultiplied; see PremultiplyEffect.
+                    add(PremultiplyEffect())
                 }
             }
             // Installed on an empty player, before anything is loaded: the order a
@@ -282,6 +305,8 @@ class PreviewEngine(private val context: Context) {
     /** Sounds positioned since the last jump: each is seeked once, on the way in. */
     private val primed = HashSet<String>()
 
+    /** The base track in timeline order, for finding the shot before a cut. */
+    private var baseClips: List<Clip> = emptyList()
     private var rollA: List<Clip> = emptyList()
     private var rollB: List<Clip> = emptyList()
     private var rollAStarts: List<Long> = emptyList()
@@ -321,6 +346,22 @@ class PreviewEngine(private val context: Context) {
     /** Told by the timeline when a finger is on the ruler; see [setScrubbing]. */
     private var scrubbingHeld = false
     private var videoSeek: SeekParameters = SeekParameters.EXACT
+    /**
+     * Some surface may be sitting on a sync sample rather than the frame asked
+     * for: seeks have been served CLOSEST_SYNC since the last exact settle.
+     */
+    private var sloppy = false
+    /** The finger has lifted; the next tick settles the scrub. */
+    private var settlePending = false
+
+    /**
+     * The shot a hard cut is holding the outgoing picture for, and since when;
+     * see [holdsCut].
+     */
+    private var holdFor: String? = null
+    private var holdSince = 0L
+    /** The base time the last tick composed, or -1 after a jump. */
+    private var lastBaseAt = -1L
 
     private var anchorTimelineMs: Long = 0
     private var anchorWallMs: Long = SystemClock.elapsedRealtime()
@@ -460,6 +501,7 @@ class PreviewEngine(private val context: Context) {
         // Matching it is not an aesthetic choice: if preview and export disagreed
         // about which shot is on which roll, a dissolve would preview one way and
         // render the other.
+        baseClips = base
         rollA = base.filterIndexed { i, _ -> i % 2 == 0 }
         rollB = base.filterIndexed { i, _ -> i % 2 == 1 }
         rollAStarts = rollA.map { it.timelineStartMs }
@@ -586,6 +628,10 @@ class PreviewEngine(private val context: Context) {
     fun play() {
         if (released) return
         if (durationMs > 0 && positionMs >= durationMs) seekTo(0)
+        // Play from a scrub still settling: the surfaces may be on sync samples,
+        // and the clock is about to be read off one of them. Land them exactly
+        // first, or playback carries on from the keyframe instead of the playhead.
+        if (sloppy || scrub.inFlight || settlePending) settle()
         playing = true
         anchorTimelineMs = positionMs
         anchorWallMs = SystemClock.elapsedRealtime()
@@ -614,12 +660,20 @@ class PreviewEngine(private val context: Context) {
         anchorTimelineMs = positionMs
         anchorWallMs = SystemClock.elapsedRealtime()
         val inScrub = scrub.onSeek(SystemClock.elapsedRealtime()) || scrubbingHeld
-        useVideoSeek(if (inScrub) SeekParameters.CLOSEST_SYNC else SeekParameters.EXACT)
+        // Sync samples only while paused. Playing, the clock is read off a
+        // player's position, so a player landed on a keyframe up to a GOP away
+        // would carry the playhead there and the place the user asked for would be
+        // lost; an exact seek costs a moment's buffering, and the clock holds
+        // through that.
+        useVideoSeek(if (inScrub && !playing) SeekParameters.CLOSEST_SYNC else SeekParameters.EXACT)
         // Every surface re-resolves its clip and seeks on the next tick, which is
         // what makes a jump land on the right frame of the right shot on every
         // layer at once.
         allSurfaces().forEach { it.forceSeek = true }
         clockClipId = null
+        // A jump is not a cut: nothing on screen is the shot before this one.
+        lastBaseAt = -1L
+        holdFor = null
         applyPendingProxy()
         // Sounds are positioned once the scrub is over, not on every pointer event.
         if (!inScrub) primeAudio(positionMs)
@@ -628,15 +682,40 @@ class PreviewEngine(private val context: Context) {
     /**
      * A finger is on the timeline (true) or has just left it (false). Optional:
      * seeks arriving close together are recognised as a scrub without it; this
-     * only ends one the moment the finger lifts rather than a moment later.
+     * ends one the moment the finger lifts rather than a moment later, and keeps
+     * a finger that rests mid-drag from being taken for the end of it.
      */
     fun setScrubbing(on: Boolean) {
         if (released || on == scrubbingHeld) return
         scrubbingHeld = on
-        if (on) useVideoSeek(SeekParameters.CLOSEST_SYNC) else scrub.end()
+        if (on) {
+            if (!playing) useVideoSeek(SeekParameters.CLOSEST_SYNC)
+        } else {
+            // Settled on the next tick even if the drag made no quick seeks at all:
+            // one drag event is still a sync-sample seek that has to be made exact.
+            scrub.end()
+            settlePending = true
+        }
+    }
+
+    /**
+     * The scrub is over: the frame it stopped on, exactly, and the sounds
+     * positioned there - once.
+     */
+    private fun settle() {
+        scrub.reset()
+        settlePending = false
+        useVideoSeek(SeekParameters.EXACT)
+        // Only surfaces that may be on a sync sample are sought again. A scrub
+        // made while playing was exact throughout, and seeking a running player
+        // onto its own position is a rebuffer for nothing.
+        if (sloppy) allSurfaces().forEach { it.forceSeek = true }
+        sloppy = false
+        primeAudio(positionMs)
     }
 
     private fun useVideoSeek(params: SeekParameters) {
+        if (params != SeekParameters.EXACT) sloppy = true
         if (params == videoSeek) return
         videoSeek = params
         allSurfaces().forEach { it.player.setSeekParameters(params) }
@@ -685,13 +764,9 @@ class PreviewEngine(private val context: Context) {
         if (released) return PreviewFrame()
         val now = SystemClock.elapsedRealtime()
 
-        // A scrub has gone quiet: the frame it stopped on, exactly, and the sounds
-        // positioned there - once.
-        if (!scrubbingHeld && scrub.settled(now)) {
-            useVideoSeek(SeekParameters.EXACT)
-            allSurfaces().forEach { it.forceSeek = true }
-            primeAudio(positionMs)
-        }
+        // A scrub has gone quiet, or the finger has lifted. Never while a finger
+        // is still down, however long it rests.
+        if (!scrubbingHeld && (settlePending || scrub.settled(now))) settle()
 
         updateReadiness()
 
@@ -734,8 +809,10 @@ class PreviewEngine(private val context: Context) {
             surfaceA.forceSeek = true
             surfaceB.forceSeek = true
         }
-        val (drawA, drawB, veil) = composeBase(t)
-        val overlays = syncOverlays(t)
+        val (drawA, drawB, veil) = composeBase(t, now)
+        // Parked on the very end, a layer or caption that runs to it is on the
+        // last frame, as in the file - not gone because nothing covers the end.
+        val overlays = syncOverlays(PreviewRules.lastFrameTime(t, durationMs))
         watchStalls(now)
 
         if (pendingRedraw && !playing && now - lastRedrawAt >= REDRAW_GAP_MS) {
@@ -764,6 +841,9 @@ class PreviewEngine(private val context: Context) {
      * The first-frame callback is the fast way; a player that has sat READY for
      * two ticks since the switch is the fallback, because a gate that never opens
      * would be a picture that never appears - far worse than a stale frame.
+     *
+     * A callback that came while a seek was still in flight counts only once the
+     * player is READY again: by then that seek has landed and its frame is up.
      */
     private fun updateReadiness() {
         allSurfaces().forEach { s ->
@@ -771,7 +851,7 @@ class PreviewEngine(private val context: Context) {
             if (s.activeClipId == null || s.shownClipId == s.activeClipId) return@forEach
             if (ready) {
                 s.readyTicks++
-                if (s.readyTicks >= READY_TICKS) s.shownClipId = s.activeClipId
+                if (s.readyTicks >= READY_TICKS || s.firstFrameFor == s.activeClipId) s.shownClipId = s.activeClipId
             } else {
                 s.readyTicks = 0
             }
@@ -780,12 +860,12 @@ class PreviewEngine(private val context: Context) {
 
     // ---- Base track and transitions ---------------------------------------------
 
-    private fun composeBase(t: Long): Triple<SurfaceDraw, SurfaceDraw, Float> {
+    private fun composeBase(t: Long, now: Long): Triple<SurfaceDraw, SurfaceDraw, Float> {
         // A clip covers up to, not including, its end - so parked exactly on the
         // end of the edit, where every play-through stops, nothing covered it and
         // the picture went to "Gap". The end shows the last frame instead.
         val end = maxOf(rollA.lastOrNull()?.timelineEndMs ?: 0L, rollB.lastOrNull()?.timelineEndMs ?: 0L)
-        val at = if (end > 0L && t == end) end - 1 else t
+        val at = PreviewRules.lastFrameTime(t, end)
         val clipA = rollA.lastOrNull { covers(it, at) }
         val clipB = rollB.lastOrNull { covers(it, at) }
 
@@ -793,8 +873,10 @@ class PreviewEngine(private val context: Context) {
         // on screen, paused on its last frame, rather than showing whatever the
         // incoming surface drew last - or black. That surface is not parked on
         // anything new while it is being held, or it would change under the eye.
-        val holdA = clipA == null && clipB != null && surfaceA.wasVisible && surfaceB.shownClipId != clipB.id
-        val holdB = clipB == null && clipA != null && surfaceB.wasVisible && surfaceA.shownClipId != clipA.id
+        val holdA = clipA == null && clipB != null && holdsCut(clipB, surfaceB, surfaceA, now)
+        val holdB = clipB == null && clipA != null && holdsCut(clipA, surfaceA, surfaceB, now)
+        if (!holdA && !holdB) holdFor = null
+        lastBaseAt = at
 
         driveRoll(surfaceA, rollA, rollAStarts, clipA, at, lookahead = !holdA)
         driveRoll(surfaceB, rollB, rollBStarts, clipB, at, lookahead = !holdB)
@@ -855,6 +937,43 @@ class PreviewEngine(private val context: Context) {
             if (aIsIncoming) outMoved else inMoved,
             veil
         )
+    }
+
+    /**
+     * Whether the cut into [incoming] should keep the outgoing picture up on
+     * [held] while [inSurface] finishes getting the new shot ready; see
+     * [PreviewRules.holdAtCut] for the rule.
+     *
+     * Only at a cut the playhead played into, and only when [held] is showing
+     * the shot that ends there. A jump arrives with the held surface showing
+     * some other part of the edit, and holding that over the new time was a
+     * frame from the wrong shot for as long as the seek took.
+     */
+    private fun holdsCut(incoming: Clip, inSurface: Surface, held: Surface, now: Long): Boolean {
+        if (inSurface.shownClipId == incoming.id) return false
+        val i = baseClips.indexOfFirst { it.id == incoming.id }
+        val before = baseClips.getOrNull(i - 1) ?: return false
+        val continuing = holdFor == incoming.id
+        val hold = PreviewRules.holdAtCut(
+            heldShowsOutgoing = held.shownClipId == before.id && before.timelineEndMs >= incoming.timelineStartMs,
+            arrivedByPlaying = continuing || (held.wasVisible && lastBaseAt in 0 until incoming.timelineStartMs),
+            heldForMs = if (continuing) now - holdSince else 0L,
+            incomingFailed = inSurface.player.playerError != null
+        )
+        if (hold && !continuing) {
+            holdFor = incoming.id
+            holdSince = now
+            // The outgoing player's own clock is what told the tick the cut had
+            // come, so by now it has drawn up to a tick past the out point - the
+            // frames the trim hides. Held, it is put back on the shot's own last
+            // frame, the way the end of the edit is.
+            runCatching {
+                held.player.seekTo(
+                    PreviewRules.seekTarget(before.sourceAt(before.timelineEndMs - 1), before.sourceInMs, before.sourceOutMs)
+                )
+            }
+        }
+        return hold
     }
 
     /** Notes what each base surface showed, for the hold at the next hard cut. */
@@ -1014,8 +1133,10 @@ class PreviewEngine(private val context: Context) {
             //
             // Only while the player is in a state where its position means
             // something, and never twice in quick succession: a seek is not free,
-            // and this runs thirty times a second.
-            !park && player.playbackState == Player.STATE_READY &&
+            // and this runs thirty times a second. Not mid-scrub either: every step
+            // of one seeks anyway, and a sync-sample seek lands up to a GOP from
+            // where it was asked, so "correcting" it only asks for the same keyframe.
+            !park && !scrubbing && player.playbackState == Player.STATE_READY &&
                 abs(player.currentPosition - wanted) > VIDEO_RESYNC_MS &&
                 now - s.lastCorrection > CORRECTION_GAP_MS -> {
                 s.lastCorrection = now
@@ -1031,6 +1152,7 @@ class PreviewEngine(private val context: Context) {
     private fun switchTo(s: Surface, clipId: String) {
         s.activeClipId = clipId
         s.readyTicks = 0
+        s.firstFrameFor = null
         s.forceSeek = false
     }
 
@@ -1077,6 +1199,11 @@ class PreviewEngine(private val context: Context) {
             }
             s.loadedUri = null
             s.activeClipId = null
+            // The view still holds the frame from before the stop. Left marked as
+            // shown, the same clip coming back on the next sync would count as
+            // drawn at once and put that stale frame up - into a blend, too.
+            s.shownClipId = null
+            s.firstFrameFor = null
         }
     }
 

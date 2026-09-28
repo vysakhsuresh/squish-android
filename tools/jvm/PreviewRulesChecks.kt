@@ -162,6 +162,40 @@ fun main() {
     scrub.onSeek(30_000L); scrub.onSeek(30_010L)
     scrub.end()
     check("a lifted finger settles at once", scrub.settled(30_011L))
+    // Settled by a lifted finger or by play: nothing settles a second time later.
+    scrub.onSeek(40_000L); scrub.onSeek(40_010L)
+    scrub.reset()
+    check("a reset scrub is not in flight", !scrub.inFlight)
+    check("and never settles again", !scrub.settled(41_000L))
+    check("the next lone seek after a reset is a jump", !scrub.onSeek(50_000L))
+
+    // ---- The end of the edit -------------------------------------------------
+    // A caption from 0 to 10 s on a 10 s edit, drawn the way CaptionRenderer
+    // decides: shown while start <= t < end.
+    fun captionUp(t: Long) = t >= 0L && t < 10_000L
+    check("parked on the end, a caption running to it is still up",
+        captionUp(PreviewRules.lastFrameTime(10_000L, 10_000L)))
+    check("inside the edit, time is untouched", PreviewRules.lastFrameTime(4_321L, 10_000L) == 4_321L)
+    check("one before the end is untouched", PreviewRules.lastFrameTime(9_999L, 10_000L) == 9_999L)
+    check("an empty edit keeps its zero", PreviewRules.lastFrameTime(0L, 0L) == 0L)
+
+    // ---- Holding the picture at a cut ----------------------------------------
+    check("played into a cut, the outgoing shot is held",
+        PreviewRules.holdAtCut(heldShowsOutgoing = true, arrivedByPlaying = true, heldForMs = 0L, incomingFailed = false))
+    check("a jump holds nothing: the old picture is from elsewhere",
+        !PreviewRules.holdAtCut(heldShowsOutgoing = true, arrivedByPlaying = false, heldForMs = 0L, incomingFailed = false))
+    check("a surface showing some other shot is never held",
+        !PreviewRules.holdAtCut(heldShowsOutgoing = false, arrivedByPlaying = true, heldForMs = 0L, incomingFailed = false))
+    check("a broken incoming shot goes black, not frozen on the last one",
+        !PreviewRules.holdAtCut(heldShowsOutgoing = true, arrivedByPlaying = true, heldForMs = 0L, incomingFailed = true))
+    // A shot that never draws: the hold, ticked at 33 ms, lets go within the cap.
+    var since = 0L
+    while (PreviewRules.holdAtCut(true, true, since, false) && since < 60_000L) {
+        since += 33L
+    }
+    check("a hold ends by itself", since < 60_000L)
+    check("and not before a cold open's two seconds", since > 1_900L)
+    check("and not much after", since <= PreviewRules.HOLD_MAX_MS + 33L)
 
     if (failures.isEmpty()) {
         println("PASS - the preview parks inside the trim, redraws without drifting, rattles no ramp, and never reloads a slow seek forever")

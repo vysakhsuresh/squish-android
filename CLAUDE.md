@@ -118,7 +118,15 @@ should work through it and then delete what holds up.
   chain (a two-tick READY fallback covers it if not), that a turned TextureView
   resizes without a stall, that the pass-through mask and key shaders cost
   nothing visible on four surfaces, the rotation direction against an export,
-  and that a paused frame comes back after Home.
+  and that a paused frame comes back after Home. Also from its review round:
+  that a keyed or masked overlay now shows clean holes over the base (its chain
+  ends in a premultiply pass; the base views went back to opaque because the
+  effects pass already writes alpha 1); that a hard cut into a shot that is not
+  ready holds the outgoing shot's *last* frame (reseeked there) for at most 2 s
+  and never after a jump; that a first-frame callback left over from an earlier
+  seek no longer opens the gate (it relies on ExoPlayer masking the state to
+  BUFFERING on seek); and that a playhead drag settles exactly the moment the
+  finger lifts.
 - **Slow motion below about 24fps out.** Stepping is arithmetic, not a fault:
   slowing footage does not create frames. The panel now says so with the number.
   True smoothing needs frame blending or optical flow and has not been built.

@@ -300,7 +300,9 @@ fun TimelinePreview(
 
             CaptionLayer(
                 captions = captions,
-                timeMs = frame.positionMs,
+                // Parked on the very end, a caption that runs to it is still up, as it
+                // is on the export's last frame.
+                timeMs = PreviewRules.lastFrameTime(frame.positionMs, frame.durationMs),
                 atRest = !frame.isPlaying,
                 frame = kept,
                 modifier = Modifier.fillMaxSize().zIndex(25f)
@@ -353,10 +355,11 @@ private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: Surface
         AndroidView(
             factory = { context ->
                 TextureView(context).also {
-                    // Not opaque, so a cut-out mask shows the black canvas behind
-                    // it, as it does in the export, instead of the colour the
-                    // alpha was hiding.
-                    it.isOpaque = false
+                    // Left opaque: the base chain ends in the effects pass, which
+                    // writes alpha 1, so there is no transparency here to show,
+                    // and a non-opaque view read that straight-alpha output as
+                    // premultiplied. Dissolves are view alpha, which an opaque
+                    // TextureView honours.
                     engine.attachSurface(player, it)
                 }
             },
@@ -397,7 +400,9 @@ private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: 
                 TextureView(context).also {
                     // A keyed or masked layer has real transparency, and an opaque
                     // view would paint it black; so would any sliver the fit
-                    // leaves before the decoder has reported its size.
+                    // leaves before the decoder has reported its size. Its chain
+                    // hands over premultiplied alpha, which is what a non-opaque
+                    // view composites.
                     it.isOpaque = false
                     engine.attachSurface(player, it)
                 }
