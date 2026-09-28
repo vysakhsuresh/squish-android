@@ -63,4 +63,69 @@ object PreviewBox {
         val byWidth = boxWidthDp to boxWidthDp / shape
         return if (byWidth.second <= boxHeightDp) byWidth else (boxHeightDp * shape) to boxHeightDp
     }
+
+    /**
+     * The size to lay the unrotated picture out at, inside a canvas of
+     * [canvasWidth] by [canvasHeight] that already has the rotated shape, so that
+     * once it is turned by [rotationDegrees] it covers the canvas exactly.
+     *
+     * The rotation is done on screen, by turning the view, rather than inside the
+     * player's effect chain. Changing a chain under a loaded player means stopping
+     * it and reloading; with a rotation that also changes the frame's shape, the
+     * pipeline wedged, the playback thread stopped answering, and every surface
+     * call on the main thread then blocked for two seconds until it timed out -
+     * a frozen picture and an editor that ignored taps. Turning a view costs
+     * nothing and cannot wedge anything.
+     */
+    fun unrotatedSize(canvasWidth: Float, canvasHeight: Float, rotationDegrees: Int): Pair<Float, Float> =
+        if (isQuarterTurn(rotationDegrees)) canvasHeight to canvasWidth else canvasWidth to canvasHeight
+
+    fun isQuarterTurn(rotationDegrees: Int): Boolean = ((rotationDegrees % 180) + 180) % 180 == 90
+
+    /**
+     * The on-screen turn that matches the export's rotation.
+     *
+     * Media3's ScaleAndRotateTransformation turns counterclockwise for positive
+     * degrees; a view's rotationZ turns clockwise. Same number, opposite way,
+     * so the preview negates it or every rotated edit previews upside down
+     * relative to the file.
+     */
+    fun screenRotation(rotationDegrees: Int): Float = -rotationDegrees.toFloat()
+
+    /**
+     * The shape a decoded frame is actually shown in: its pixel shape corrected
+     * for non-square pixels and turned by any rotation the decoder left for the
+     * display to apply. Null when there is nothing sensible to say yet.
+     */
+    fun displayAspect(width: Int, height: Int, unappliedRotationDegrees: Int, pixelWidthHeightRatio: Float): Float? {
+        if (width <= 0 || height <= 0) return null
+        val ratio = if (pixelWidthHeightRatio > 0f && pixelWidthHeightRatio.isFinite()) pixelWidthHeightRatio else 1f
+        val aspect = width * ratio / height
+        return if (isQuarterTurn(unappliedRotationDegrees)) 1f / aspect else aspect
+    }
+
+    /** A rectangle as fractions of the canvas: 0 is the left or top edge, 1 the right or bottom. */
+    data class Frame(val left: Float = 0f, val top: Float = 0f, val right: Float = 1f, val bottom: Float = 1f) {
+        val width: Float get() = right - left
+        val height: Float get() = bottom - top
+    }
+
+    /**
+     * The part of a canvas [canvasAspect] wide-to-tall that a crop of [ratio]
+     * keeps, centred on [focus] (fractions, for auto-reframe) and slid back
+     * inside the canvas. The whole canvas when there is no ratio.
+     *
+     * One definition, read by the picture's clip and by the captions, so the two
+     * can never disagree about where the frame is - they did, when each worked it
+     * out for itself.
+     */
+    fun cropFrame(canvasAspect: Float, ratio: Float?, focus: Pair<Float, Float>? = null): Frame {
+        if (ratio == null || ratio <= 0f || !ratio.isFinite() || canvasAspect <= 0f || !canvasAspect.isFinite()) return Frame()
+        val w = if (ratio < canvasAspect) ratio / canvasAspect else 1f
+        val h = if (ratio < canvasAspect) 1f else canvasAspect / ratio
+        val (fx, fy) = focus ?: (0.5f to 0.5f)
+        val left = (fx - w / 2f).coerceIn(0f, (1f - w).coerceAtLeast(0f))
+        val top = (fy - h / 2f).coerceIn(0f, (1f - h).coerceAtLeast(0f))
+        return Frame(left, top, left + w, top + h)
+    }
 }

@@ -151,6 +151,9 @@ fun EditorScreen(
     LaunchedEffect(state.failure) { if (state.failure != null) exportSheetOpen = false }
     var confirmStopExport by remember { mutableStateOf(false) }
     var confirmStartNew by remember { mutableStateOf(false) }
+    // A finger on the playhead, told to the preview so it can serve the drag from
+    // sync samples and land exactly when the finger lifts.
+    var timelineScrubbing by remember { mutableStateOf(false) }
 
     LaunchedEffect(sourceUri) { viewModel.load(sourceUri, resume) }
 
@@ -315,6 +318,8 @@ fun EditorScreen(
                     // enum's left the preview showing no crop at all until the
                     // file came out the other end.
                     cropRatio = state.previewCropRatio,
+                    // The rectangle itself, so captions sit where the export puts them.
+                    customCrop = state.cropRect.takeIf { state.cropAspect == CropAspect.Custom && !it.isFull },
                     // Auto-reframe follows a fixed ratio's frame; a hand-drawn
                     // rectangle is the frame, so the two do not combine.
                     reframe = state.reframe.takeIf { state.cropAspect.ratio != null },
@@ -325,6 +330,7 @@ fun EditorScreen(
                     onPositionChange = viewModel::setPlayhead,
                     onPlayingChange = viewModel::setPlaying,
                     onJump = viewModel::jumpBy,
+                    scrubbing = timelineScrubbing,
                     modifier = Modifier.fillMaxSize(),
                     // Inside the picture, so the crop rectangle is measured
                     // against the frame rather than against the whole box.
@@ -385,7 +391,8 @@ fun EditorScreen(
                 onAddVideo = addVideos,
                 onAddBlank = viewModel::addBlankClip,
                 onOpenSound = { tab = EditorTab.Sound },
-                onOpenWords = { tab = EditorTab.Words }
+                onOpenWords = { tab = EditorTab.Words },
+                onScrubbingChange = { timelineScrubbing = it }
             )
 
             TimelineActionBar(

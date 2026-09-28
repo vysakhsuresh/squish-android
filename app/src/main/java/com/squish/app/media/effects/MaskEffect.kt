@@ -22,13 +22,16 @@ import java.io.IOException
  * chain: keying writes a matte, masking multiplies into whatever alpha arrived. A
  * clip can therefore be keyed *and* masked and neither overwrites the other's work.
  *
- * Like the key, the same effect runs in the preview through setVideoEffects, so
- * the shape you drag is the shape that renders.
+ * The shape is read every frame, the way [BackgroundEffect] reads its setting, so
+ * the preview installs this once per surface and a slider moves a value rather
+ * than rebuilding the player's pipeline. Rebuilding on every tick of a Feather or
+ * Width drag stopped and reloaded the file thirty times a second, which is a
+ * frozen picture with extra steps. With no shape set, frames pass through.
  */
 class MaskEffect(
-    private val mask: Mask,
+    private val mask: () -> Mask?,
     /** Where in the source file the clip starts, so a tracked shape lines up after a trim. */
-    private val sourceInMs: Long = 0L,
+    private val sourceInMs: () -> Long = { 0L },
     /**
      * True when presentation times already *are* source time, which is the case in
      * the preview: the player holds the whole file, so its clock is the file's clock.
@@ -40,6 +43,10 @@ class MaskEffect(
     private val timesAreSourceTime: Boolean = false
 ) : GlEffect {
 
+    /** A fixed shape, for the export. */
+    constructor(mask: Mask, sourceInMs: Long = 0L, timesAreSourceTime: Boolean = false) :
+        this({ mask }, { sourceInMs }, timesAreSourceTime)
+
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
         MaskShaderProgram(context, useHdr, mask, sourceInMs, timesAreSourceTime)
 }
@@ -47,12 +54,20 @@ class MaskEffect(
 private class MaskShaderProgram(
     context: Context,
     useHdr: Boolean,
-    private val mask: Mask,
-    private val sourceInMs: Long,
+    private val mask: () -> Mask?,
+    private val sourceInMs: () -> Long,
     private val timesAreSourceTime: Boolean
 ) : BaseGlShaderProgram(/* useHighPrecisionColorComponents= */ useHdr, /* texturePoolCapacity= */ 1) {
 
     private val glProgram: GlProgram
+
+    /**
+     * The shape the uniforms were last loaded from. Compared by identity: a slider
+     * produces a new Mask per value, and an unchanged one is the same object, so
+     * a shape sitting still costs one reference check a frame.
+     */
+    private var loaded: Mask? = null
+    private var anyLoaded = false
 
     init {
         glProgram = try {
@@ -62,7 +77,30 @@ private class MaskShaderProgram(
         } catch (e: GlUtil.GlException) {
             throw VideoFrameProcessingException(e)
         }
+        glProgram.setBufferAttribute(
+            "aFramePosition",
+            GlUtil.getNormalizedCoordinateBounds(),
+            GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
+        )
+    }
 
+    private fun load(mask: Mask?) {
+        if (mask == null) {
+            // A rectangle far larger than the frame, cut-out mode, not inverted:
+            // every pixel is inside it, so the matte is 1 everywhere and the frame
+            // passes through untouched.
+            glProgram.setFloatsUniform("uShape", floatArrayOf(0f))
+            glProgram.setFloatsUniform("uCenter", floatArrayOf(0f, 0f))
+            glProgram.setFloatsUniform("uHalfSize", floatArrayOf(PASS_THROUGH_HALF_SIZE, PASS_THROUGH_HALF_SIZE))
+            glProgram.setFloatsUniform("uRotation", floatArrayOf(0f))
+            glProgram.setFloatsUniform("uFeather", floatArrayOf(0.001f))
+            glProgram.setFloatsUniform("uCornerRadius", floatArrayOf(0f))
+            glProgram.setFloatsUniform("uInvert", floatArrayOf(0f))
+            glProgram.setFloatsUniform("uMode", floatArrayOf(0f))
+            glProgram.setFloatsUniform("uPixelSize", floatArrayOf(0.015f))
+            glProgram.setFloatsUniform("uBlurRadius", floatArrayOf(0.015f))
+            return
+        }
         glProgram.setFloatsUniform("uShape", floatArrayOf(mask.shapeIndex))
         glProgram.setFloatsUniform(
             "uCenter",
@@ -82,12 +120,6 @@ private class MaskShaderProgram(
         glProgram.setFloatsUniform("uMode", floatArrayOf(mask.modeIndex))
         glProgram.setFloatsUniform("uPixelSize", floatArrayOf(mask.pixelSize))
         glProgram.setFloatsUniform("uBlurRadius", floatArrayOf(mask.blurRadius))
-
-        glProgram.setBufferAttribute(
-            "aFramePosition",
-            GlUtil.getNormalizedCoordinateBounds(),
-            GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
-        )
     }
 
     /**
@@ -106,16 +138,23 @@ private class MaskShaderProgram(
 
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
         try {
+            val now = mask()
+            if (!anyLoaded || now !== loaded) {
+                load(now)
+                loaded = now
+                anyLoaded = true
+            }
+
             glProgram.use()
             glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
 
             // Re-aimed every frame when the shape is following something. A static
-            // mask sets this once in the constructor and never touches it again.
-            if (mask.track != null) {
+            // mask loads its centre once and never touches it again.
+            if (now?.track != null) {
                 if (originUs == Long.MIN_VALUE) originUs = presentationTimeUs
                 val sourceMs = if (timesAreSourceTime) presentationTimeUs / 1_000L
-                else sourceInMs + (presentationTimeUs - originUs) / 1_000L
-                val (x, y) = mask.centerAt(sourceMs)
+                else sourceInMs() + (presentationTimeUs - originUs) / 1_000L
+                val (x, y) = now.centerAt(sourceMs)
                 glProgram.setFloatsUniform("uCenter", floatArrayOf(x, y))
             }
 
@@ -138,5 +177,8 @@ private class MaskShaderProgram(
     private companion object {
         const val VERTEX_SHADER_PATH = "squish_vertex_copy_es2.glsl"
         const val FRAGMENT_SHADER_PATH = "squish_mask_es2.glsl"
+
+        /** In frame fractions: a thousand frames wide, so nothing is ever outside it. */
+        const val PASS_THROUGH_HALF_SIZE = 1_000f
     }
 }
