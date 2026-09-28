@@ -318,6 +318,45 @@ fun main() {
             ExportPlan.needsCompositing(listOf(video("a", 0, 1000), video("b", 900, 1000, transition = Transition(TransitionType.CrossFade, 100)))),
             "a dissolve did not composite"
         )
+        // Rounding is not a gap - but only while what it adds up to stays under
+        // the bound the composited path holds every clip to.
+        check(!ExportPlan.needsCompositing(listOf(video("a", 0, 1000), video("b", 1010, 1000))), "a 10 ms rounding gap composited")
+        check(!ExportPlan.needsCompositing(listOf(video("a", 12, 1000), video("b", 1012, 1000))), "a 12 ms late start composited")
+        check(
+            ExportPlan.needsCompositing(listOf(video("a", 12, 1000), video("b", 1022, 1000))),
+            "12 ms late plus a 10 ms gap played end to end: the second clip 22 ms early"
+        )
+        check(
+            ExportPlan.needsCompositing(listOf(video("a", 0, 1000), video("b", 1010, 1000), video("c", 2020, 1000))),
+            "two 10 ms gaps played end to end: the third clip 20 ms early"
+        )
+        check(ExportPlan.needsCompositing(listOf(video("a", 0, 1000), video("b", 990, 1000))), "an overlap with no transition played end to end")
+        check(!ExportPlan.needsCompositing(listOf(video("a", -300, 1000), video("b", 700, 1000))), "a clip dragged before zero composited")
+
+        // Whatever the cuts-only path accepts is within the bound it is allowed.
+        for (gaps in listOf(listOf(0L, 5L, 5L, 9L), listOf(19L), listOf(3L, 3L, 3L, 3L, 3L, 3L))) {
+            var at = gaps.first()
+            val clips = mutableListOf(video("g0", at, 1000))
+            gaps.drop(1).forEachIndexed { i, g -> at += 1000 + g; clips += video("g${i + 1}", at, 1000) }
+            if (!ExportPlan.needsCompositing(clips)) {
+                var played = 0L
+                for (c in clips) {
+                    check(abs(played - c.timelineStartMs) < ExportPlan.MIN_GAP_MS, "end to end, ${c.id} is ${c.timelineStartMs - played} ms early")
+                    played += c.durationMs
+                }
+            }
+        }
+    }
+
+    // --- The clock is always there, first, however short the edit. ----------------
+    run {
+        for (end in listOf(0L, 1L, 10L, 19L, 20L, 5_000L)) {
+            val clock = ExportPlan.pieces(ExportPlan.Layer(ExportPlan.Role.Clock, emptyList()), end)
+            check(clock.size == 1 && clock[0] is ExportPlan.Piece.Gap && clock[0].durationMs >= 1L, "no clock for a $end ms edit: $clock")
+        }
+        val tiny = ExportPlan.layers(listOf(video("a", 0, 10), video("p", 0, 10, layer = 1)))
+        check(tiny.layers.first().role == ExportPlan.Role.Clock, "a 10 ms edit's first layer is not the clock")
+        check(ExportPlan.pieces(tiny.layers.first(), tiny.endMs).isNotEmpty(), "a 10 ms edit's clock has nothing in it")
     }
 
     if (problems.isEmpty()) {

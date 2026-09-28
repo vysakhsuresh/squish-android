@@ -68,14 +68,34 @@ object ExportPlan {
      * end from zero, with nothing floating over it and nothing overlapping, is one
      * sequence of clips played one after another - the cheapest export there is,
      * and the only one Media3 can copy frames through untouched.
+     *
+     * "End to end" is held to the same [MIN_GAP_MS] that [pieces] uses, and
+     * measured the same way, as the slip it adds up to. A gap of a few
+     * milliseconds left by rounding a trim or a drag used to send the edit to the
+     * compositor, where [pieces] dropped it anyway - the new path, for nothing.
+     * Played end to end instead, each such gap starts everything after it that
+     * much early, and nothing makes the slip good, so it is only allowed while
+     * the whole of it stays under [MIN_GAP_MS]: no clip, sound or caption is
+     * then further out than [pieces] would have left it.
      */
     fun needsCompositing(videoClips: List<Clip>): Boolean {
         if (videoClips.any { it.isOverlay && it.durationMs > 0 }) return true
         if (videoClips.any { !it.isOverlay && it.transitionIn.isActive }) return true
         val base = videoClips.filter { !it.isOverlay && it.durationMs > 0 }.sortedBy { it.timelineStartMs }
         if (base.isEmpty()) return false
-        if (base.first().timelineStartMs > 0L) return true
-        return base.zipWithNext().any { (a, b) -> b.timelineStartMs != a.timelineEndMs }
+        // A first clip dragged to before zero is played from its start, as it
+        // always was here; only a late one leaves something to make up.
+        var slip = base.first().timelineStartMs.coerceAtLeast(0L)
+        if (slip >= MIN_GAP_MS) return true
+        for ((a, b) in base.zipWithNext()) {
+            val gap = b.timelineStartMs - a.timelineEndMs
+            // Overlapping shots are two on screen at once, which one sequence
+            // cannot play.
+            if (gap < 0L) return true
+            slip += gap
+            if (slip >= MIN_GAP_MS) return true
+        }
+        return false
     }
 
     /**
@@ -139,8 +159,16 @@ object ExportPlan {
      * skipped, which starts the next clip those few milliseconds early; the gap
      * after it is then measured from where that clip really ended, so the slip is
      * made up at the next chance instead of being carried to the end of the edit.
+     * No clip is ever more than [MIN_GAP_MS] from its place on the timeline, the
+     * same bound [needsCompositing] holds the one-sequence export to.
+     *
+     * The clock is always one stretch, however short the edit. CompositionFactory
+     * hides its first input on the understanding that it is the clock; an edit
+     * under [MIN_GAP_MS] long used to get no clock sequence at all, and the real
+     * top layer took its place and was drawn at nothing.
      */
     fun pieces(layer: Layer, endMs: Long): List<Piece> {
+        if (layer.role == Role.Clock) return listOf(Piece.Gap(endMs.coerceAtLeast(1L)))
         val out = mutableListOf<Piece>()
         var laid = 0L
         for (clip in layer.clips) {

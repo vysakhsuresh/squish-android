@@ -172,16 +172,22 @@ class EditorViewModel(
      * The ticker calls this every second and a half; leaving the screen, the app
      * going to the background and the view model being cleared each call it once
      * more, so the last edit before a back press is on disk and not in the
-     * one-and-a-half-second gap it used to fall into. A no-op while an export is
-     * running, which flushes for itself before it starts.
+     * one-and-a-half-second gap it used to fall into.
+     *
+     * Also while an export runs. It used to skip them, on the grounds that the
+     * export flushed for itself before it started - but the editor stays usable
+     * under a render, and "exporting" now lasts through the gallery copy too, so
+     * a caption changed during a long render and the app sent behind something
+     * during the copy was on disk nowhere when the process was killed. Every
+     * step takes the slot lock, so a save here and the export's own cannot
+     * interleave.
      */
     fun saveNow() {
-        if (_state.value.isExporting) return
         persist()
     }
 
     /**
-     * [saveNow] without the export check, for the export's own flush.
+     * The save itself, behind [saveNow] and the export's own flushes.
      *
      * While a saved edit is on offer, the document behind the offer is the one
      * in the slot, and saving the bare clip there would write over it. So the
@@ -2228,10 +2234,10 @@ class EditorViewModel(
         }
 
         exportJob = viewModelScope.launch {
-            // The edit as it is goes to disk before the encode starts. Nothing is
-            // saved while an export runs, and a long export is exactly when the
-            // app is most likely to be sent to the back and killed - so a nudge
-            // made a second before Render was on disk nowhere for its length.
+            // The edit as it is goes to disk before the encode starts, not a tick
+            // later: a long export is exactly when the app is most likely to be
+            // sent to the back and killed, and a nudge made a second before
+            // Render is the edit the file was made from.
             withContext(Dispatchers.IO) { persist() }
 
             // Every sound opened and asked about before a frame is encoded: one no
@@ -2289,11 +2295,15 @@ class EditorViewModel(
                     // made a test render to check a look the one action that could
                     // never be followed by "and now one more change".
                     withContext(Dispatchers.IO) {
-                        // Unless a saved edit is still on offer: what was rendered
-                        // then is the bare clip, and the stamp would land on the
-                        // other edit's draft.
-                        if (_state.value.recovery == null) {
-                            persist()
+                        // Whatever was changed during the render is saved as any
+                        // change is; persist knows what to do with an offer.
+                        persist()
+                        // Stamped only when no saved edit was on offer, then or
+                        // now: what was rendered under an offer is the bare clip,
+                        // and the stamp would land on the other edit's draft - or,
+                        // if the offer was retired by a change made during the
+                        // render, on a draft that is not what was rendered.
+                        if (current.recovery == null && _state.value.recovery == null) {
                             autosave.markCompleted(current)
                         }
                     }
@@ -2323,12 +2333,16 @@ class EditorViewModel(
      * screen when it does, and a Stop tapped then used to cancel the hand-over
      * instead: the file was already in the gallery and in history, while the
      * editor stayed put as if the export had been stopped.
+     *
+     * False when there was nothing to stop, so the question can stay up and
+     * say the copy is under way instead of closing as if it had worked.
      */
-    fun cancelExport() {
-        val job = exportJob ?: return
+    fun cancelExport(): Boolean {
+        val job = exportJob ?: return false
         exportJob = null
         job.cancel()
         _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
+        return true
     }
 
     // ---- Crash recovery -------------------------------------------------------

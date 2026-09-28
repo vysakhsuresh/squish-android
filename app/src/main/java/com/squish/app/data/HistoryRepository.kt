@@ -1,12 +1,15 @@
 package com.squish.app.data
 
 import android.content.Context
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 /**
  * Every export Squish ever produced, persisted as a small JSON file under the
@@ -17,6 +20,11 @@ import java.util.concurrent.Executors
  * thread of its own. Callers are view models on the main thread, and the write
  * used to happen there, right before the export screen opened - the one moment
  * someone is watching for it to appear.
+ *
+ * Except that a new export waits for its write. Its record is the only thing
+ * that can reach its file - exports/ is private, and nothing else lists it - so
+ * a record queued and then lost to a kill in the next second left a video of
+ * possibly gigabytes on the phone that the app could neither show nor delete.
  */
 class HistoryRepository(context: Context) {
     private val file = File(context.filesDir, "history.json")
@@ -32,10 +40,12 @@ class HistoryRepository(context: Context) {
         Thread(runnable, "squish-history").apply { isDaemon = true }
     }
 
-    fun add(record: ExportRecord) {
+    /** Adds [record] and returns once it is on disk, or the write has failed. */
+    suspend fun add(record: ExportRecord) {
         val updated = listOf(record) + _records.value
         _records.value = updated
-        persist(updated)
+        val written = persist(updated)
+        withContext(Dispatchers.IO) { runCatching { written.get() } }
     }
 
     /**
@@ -87,9 +97,7 @@ class HistoryRepository(context: Context) {
         }.getOrDefault(emptyList())
     }
 
-    private fun persist(records: List<ExportRecord>) {
-        writer.execute { write(records) }
-    }
+    private fun persist(records: List<ExportRecord>): Future<*> = writer.submit { write(records) }
 
     private fun write(records: List<ExportRecord>) {
         val array = JSONArray()

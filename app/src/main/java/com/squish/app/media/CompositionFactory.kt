@@ -47,6 +47,15 @@ import java.io.File
  * (TransitionEffect), and the empty stretches of a layer are a transparent still
  * rather than Media3's gap, so per-input compositor settings are used only to
  * hide the clock and to name the output size.
+ *
+ * One consequence to know about: the file's colour is set from the primary's
+ * first format (VideoSampleExporter), and the primary is the clock, an sRGB
+ * still, which Media3 maps to SDR BT.709. A composited export is therefore
+ * always SDR, and any HDR clip in it is tone-mapped on the way in, while the
+ * same clips cut end to end keep HDR. Adding a transition to an HLG edit
+ * changes the look of the whole file. Deliberate for now - HDR through the
+ * compositor is the least proven path Media3 has - and it is what
+ * SquishError.MixedColourRanges tells the user when tone-mapping fails.
  */
 object CompositionFactory {
 
@@ -84,6 +93,12 @@ object CompositionFactory {
         filler: (durationMs: Long) -> EditedMediaItem,
         editedFor: (Clip, ExportPlan.Layer) -> EditedMediaItem
     ): Composited {
+        // LayerSettings hides input 0 as the clock. Anything else there would be
+        // a real layer drawn at nothing - a black file - so it is refused here,
+        // loudly, rather than rendered.
+        if (videoOut) {
+            check(layers.layers.firstOrNull()?.role == ExportPlan.Role.Clock) { "the first layer is not the clock" }
+        }
         val sequences = mutableListOf<EditedMediaItemSequence>()
         for (layer in layers.layers) {
             if (!videoOut && layer.role != ExportPlan.Role.Base) continue
@@ -93,7 +108,7 @@ object CompositionFactory {
                 else -> setOf(C.TRACK_TYPE_VIDEO)
             }
             // A layer with nothing at all in it has no pieces; the clock always
-            // has one, the edit's length.
+            // has one, the edit's length, however short (ExportPlan.pieces).
             val pieces = ExportPlan.pieces(layer, layers.endMs)
             if (pieces.isEmpty()) continue
             val builder = EditedMediaItemSequence.Builder(types)

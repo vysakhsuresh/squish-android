@@ -36,6 +36,19 @@ is assumed. Anything that changes those three facts in a later version changes
 the stacking of every layered export - check `tools/jvm/ExportPlanChecks.kt`'s
 assumptions against the new sources before upgrading.
 
+Two consequences of the clock being the primary, both deliberate. Its first
+format sets the file's colour (`VideoSampleExporter`): an sRGB still maps to
+SDR BT.709, so every composited export is SDR and HDR clips in it are
+tone-mapped on the way in, while the same clips cut end to end keep HDR. And
+`LayerSettings` hides input 0, so the clock has to be there however short the
+edit (`ExportPlan.pieces` always gives it one stretch; `buildComposited` refuses
+to build otherwise). Gaps under `ExportPlan.MIN_GAP_MS` are rounding: dropped in
+a layer, where each slip is made good at the next real gap, and allowed in a
+cuts-only export only while their sum stays under the same bound.
+
+Photos and blanks are rendered with a silent AAC track; if that render fails,
+they are rendered again picture-only, as before 1.11 (`StillClips.render`).
+
 The sections below were written against 1.4/1.5 and are kept for the history;
 where they name a call that no longer exists (`ChannelMixingMatrix.create`,
 `HslAdjustment` for saturation), that call is no longer used.

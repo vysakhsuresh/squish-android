@@ -82,7 +82,17 @@ object StillClips {
         val (outW, outH) = fit(w, h)
         val target = File(dir(context), "$name.mp4")
         val partial = File(target.absolutePath + ".part")
-        val done = withContext(Dispatchers.Main) { transcode(context.applicationContext, image, partial, outW, outH) }
+        val done = withContext(Dispatchers.Main) {
+            transcode(context.applicationContext, image, partial, outW, outH, withSound = true) || run {
+                // The silent track is a convenience, not the point. A phone whose
+                // Media3 will not make silence for a picture used to be a phone
+                // that could add photos and blanks at all; it still is, with a
+                // still that has no sound track - which the export copes with,
+                // since it declares sound on every sequence itself.
+                runCatching { partial.delete() }
+                transcode(context.applicationContext, image, partial, outW, outH, withSound = false)
+            }
+        }
         return if (done && partial.length() > 0 && partial.renameTo(target)) {
             Uri.fromFile(target)
         } else {
@@ -111,7 +121,14 @@ object StillClips {
         if (turned) bounds.outHeight to bounds.outWidth else bounds.outWidth to bounds.outHeight
     }.getOrNull()
 
-    private suspend fun transcode(context: Context, image: Uri, output: File, width: Int, height: Int): Boolean =
+    private suspend fun transcode(
+        context: Context,
+        image: Uri,
+        output: File,
+        width: Int,
+        height: Int,
+        withSound: Boolean
+    ): Boolean =
         suspendCancellableCoroutine { continuation ->
             // A photo straight off a camera is 12 or 50 megapixels, beyond what a
             // phone's encoder takes. Scaled so its short side is at most 1080.
@@ -132,15 +149,16 @@ object StillClips {
             // the front of the second roll failed every export at the first frame.
             // The export forces a sound track on every sequence as well; this makes
             // a still safe even where something else reads the file.
+            val tracks = if (withSound) setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO) else setOf(C.TRACK_TYPE_VIDEO)
             val composition = Composition.Builder(
-                EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO))
+                EditedMediaItemSequence.Builder(tracks)
                     .addItem(item)
                     .build()
             ).build()
 
             val transformer = Transformer.Builder(context)
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
-                .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                .apply { if (withSound) setAudioMimeType(MimeTypes.AUDIO_AAC) }
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         if (continuation.isActive) continuation.resume(true)

@@ -196,13 +196,18 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      * The ticker's job, and also called on the way out of the screen: an edit
      * made in the last second and a half before back was pressed used to be the
      * one edit that never reached disk.
+     *
+     * Also while an export runs, which now lasts through the gallery copy: a
+     * change made under a long render, with the app sent behind something during
+     * the copy, was on disk nowhere if the process went. ToolAutosave serialises
+     * the writes and keeps the export stamp, so this and the export's own save
+     * cannot undo each other.
      */
     fun saveNow() {
-        if (_state.value.isExporting) return
         persist()
     }
 
-    /** [saveNow] without the export check, for the export's own flush. */
+    /** The save itself, behind [saveNow] and the export's own flushes. */
     private fun persist() {
         val tool = tool ?: return
         val current = _state.value
@@ -568,9 +573,9 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val rendered = draftOf(tool, current)
 
         exportJob = viewModelScope.launch {
-            // The session as it is goes to disk before the encode starts. Nothing
-            // is saved while an export runs, and a long export is exactly when
-            // the app is most likely to be sent to the back and killed.
+            // The session as it is goes to disk before the encode starts, not a
+            // tick later: a long export is exactly when the app is most likely
+            // to be sent to the back and killed.
             withContext(Dispatchers.IO) { persist() }
 
             val outputDir = File(getApplication<Application>().getExternalFilesDir(null), "exports")
@@ -645,12 +650,16 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      * screen when it does, and a Stop tapped then used to cancel the hand-over
      * instead: the file was already in the gallery and in history, while the
      * screen stayed put as if the export had been stopped.
+     *
+     * False when there was nothing to stop, so the question can stay up and
+     * say the copy is under way instead of closing as if it had worked.
      */
-    fun cancelExport() {
-        val job = exportJob ?: return
+    fun cancelExport(): Boolean {
+        val job = exportJob ?: return false
         exportJob = null
         job.cancel()
         _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
+        return true
     }
 
     /**

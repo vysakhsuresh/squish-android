@@ -86,12 +86,26 @@ sealed class SquishError(
         cause = cause
     )
 
-    /** An HDR clip layered with SDR ones, which the compositor cannot blend. */
+    /**
+     * An HDR clip in an export that had to be converted to ordinary colour and
+     * could not be.
+     *
+     * A layered export - a transition, an overlay, a gap - is always written in
+     * ordinary (SDR) colour: its first input is the transparent clock still, and
+     * Media3 takes the file's colour from the first input (CompositionFactory).
+     * So every HDR clip in it is tone-mapped on the way in, and a phone that
+     * cannot tone-map that kind of HDR fails here. It used to say HDR and SDR
+     * clips could not be mixed, which was not the cause: two HDR clips with a
+     * dissolve between them fail the same way. A cuts-only export keeps HDR
+     * as it is, which is why taking the layering off is the way round it.
+     */
     class MixedColourRanges(cause: Throwable? = null) : SquishError(
-        title = "HDR and ordinary clips can't be layered",
-        detail = "One of the clips is HDR - newer phones record it by default - and a transition or overlay " +
-            "needs it drawn together with clips that are not.",
-        fix = "Take the transition or overlay off that clip, or convert the HDR clip to SDR first.",
+        title = "This phone can't convert the HDR clip",
+        detail = "One of the clips is HDR - newer phones record it by default. An export with a transition, " +
+            "an overlay or a gap is written in ordinary colour, so HDR clips are converted on the way in, " +
+            "and this phone couldn't convert that one.",
+        fix = "Export without transitions, overlays or gaps to keep the clip as it is, or convert the HDR clip " +
+            "to SDR first.",
         cause = cause
     )
 
