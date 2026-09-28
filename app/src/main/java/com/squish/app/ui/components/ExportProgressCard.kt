@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.squish.app.media.ExportProgress
+import com.squish.app.media.ExportStage
 import com.squish.app.ui.theme.SquishColors
 
 /**
@@ -36,7 +37,11 @@ fun ExportProgressCard(
     accent: Color = SquishColors.Cyan,
     modifier: Modifier = Modifier
 ) {
-    val fraction = progress.fraction
+    // Saving has no percentage of its own: the render is done, and what is left
+    // is a copy into the gallery that Android does not report on. The bar stays
+    // full rather than sweeping back as if the work had started again.
+    val saving = progress.stage == ExportStage.Saving
+    val fraction = if (saving) 1f else progress.fraction
     val eased by animateFloatAsState(
         targetValue = fraction ?: 0f,
         animationSpec = tween(durationMillis = 220),
@@ -50,12 +55,17 @@ fun ExportProgressCard(
             verticalAlignment = Alignment.Bottom
         ) {
             Text(
-                if (fraction == null) "Starting the encoder…" else "Rendering",
+                when {
+                    saving -> "Saving to gallery…"
+                    progress.stage == ExportStage.Preparing -> "Getting ready…"
+                    fraction == null -> "Starting the encoder…"
+                    else -> "Rendering"
+                },
                 style = MaterialTheme.typography.titleSmall,
                 color = SquishColors.TextPrimary
             )
             Text(
-                fraction?.let { "${(it * 100).toInt()}%" } ?: "",
+                if (saving) "" else fraction?.let { "${(it * 100).toInt()}%" } ?: "",
                 style = MaterialTheme.typography.titleMedium,
                 color = accent
             )
@@ -63,23 +73,29 @@ fun ExportProgressCard(
 
         ProgressTrack(fraction = fraction, eased = eased, accent = accent)
 
-        Text(
-            buildString {
-                append(clockOf(progress.elapsedMs))
-                append(" elapsed")
-                progress.remainingMs?.let {
-                    append("  ·  about ")
-                    append(clockOf(it))
-                    append(" left")
-                }
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = SquishColors.TextMuted
-        )
+        if (!saving) {
+            Text(
+                buildString {
+                    append(clockOf(progress.elapsedMs))
+                    append(" elapsed")
+                    progress.remainingMs?.let {
+                        append("  ·  about ")
+                        append(clockOf(it))
+                        append(" left")
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.TextMuted
+            )
+        }
 
         Text(
-            "Keep Squish open while this runs. Nothing is uploaded — the encoding " +
-                "is happening on this phone.",
+            if (saving) {
+                "The video is finished. Copying it into your gallery - a big file takes a few seconds."
+            } else {
+                "Keep Squish open while this runs. Nothing is uploaded — the encoding " +
+                    "is happening on this phone."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextSecondary
         )

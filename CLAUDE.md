@@ -158,6 +158,35 @@ should work through it and then delete what holds up.
   another stops against it on its own row; the Blend sliders on an animated
   overlay stay where they are put; Cut on beats leaves the song whole; a draft
   saved with gaps on the main track keeps them through a trim or a cut.
+- **Batch B5 (the export pipeline on Media3 1.11.1), all of it.** Built on the
+  desktop with no phone attached; the stacking, transition, keyframe-clock,
+  sizing, sound-slice and fold-down arithmetic is executed on the JVM
+  (`tools/jvm/ExportPlanChecks.kt`, `FramingChecks.kt`). Nothing has been
+  rendered. The device gate, in this order, before anything is built on it:
+  (1) video + photo with a Dissolve on the join, 480p - the export that failed
+  on 1.5.1 with "The preceding MediaItem does not contain any track" must now
+  complete, with the dissolve visible and sound throughout; (2) the same with the
+  photo first and the video second, and with a newly added photo (rendered with
+  a silent AAC track) and an old one from a draft (no sound track at all);
+  (3) video + photo + a video overlay starting at 2 s at 40% top-right - the PiP
+  above the base, at the size and place the preview shows, and nothing left on
+  screen after it ends; (4) a gap between two clips and a clip starting at 3 s -
+  black in the gap, no stray square in the middle (the empty stretches are a
+  transparent 16 px PNG, `files/stills/clear_16.png`); (5) Slide and Wipe both
+  ways round (in a three-clip chain the first join's incoming shot is on the
+  lower roll, the second's on the upper); (6) 9:16 crop at 720p is 720x1280 with no pillars; (7) a
+  song at 20 s on an 8 s clip + 30 s photo starts at 20 s; (8) a 6-channel AAC
+  file at camera level 50%, with music; (9) Push in at 0.5x completes at the
+  clip's end; (10) captions over a gap and over a PiP appear once; (11) the
+  Saving to gallery stage shows and "Saved to your gallery" only when it was;
+  (12) an HDR (HLG) clip exported plain keeps HDR and with a Dissolve comes out
+  SDR, tone-mapped rather than failed - a composited export is always SDR,
+  because its first input is the clock still; (13) back during "Saving to
+  gallery" says it can't be stopped and offers only OK, and a change made during
+  the render is in the draft after a kill during the copy.
+  If (1)-(4) fail, the log line `SquishExport failed: N sequences` and the
+  exception under it say which assumption in `BUILD_NOTES.md` ("what the export
+  leans on") did not hold.
 
 ## Conventions worth not rediscovering
 

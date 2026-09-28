@@ -13,6 +13,7 @@ import com.squish.app.data.SrtFile
 import com.squish.app.data.SquishRepositories
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
+import com.squish.app.media.ExportStage
 import com.squish.app.media.MediaCompat
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.SquishError
@@ -179,16 +180,22 @@ class EditorViewModel(
      * The ticker calls this every second and a half; leaving the screen, the app
      * going to the background and the view model being cleared each call it once
      * more, so the last edit before a back press is on disk and not in the
-     * one-and-a-half-second gap it used to fall into. A no-op while an export is
-     * running, which flushes for itself before it starts.
+     * one-and-a-half-second gap it used to fall into.
+     *
+     * Also while an export runs. It used to skip them, on the grounds that the
+     * export flushed for itself before it started - but the editor stays usable
+     * under a render, and "exporting" now lasts through the gallery copy too, so
+     * a caption changed during a long render and the app sent behind something
+     * during the copy was on disk nowhere when the process was killed. Every
+     * step takes the slot lock, so a save here and the export's own cannot
+     * interleave.
      */
     fun saveNow() {
-        if (_state.value.isExporting) return
         persist()
     }
 
     /**
-     * [saveNow] without the export check, for the export's own flush.
+     * The save itself, behind [saveNow] and the export's own flushes.
      *
      * While a saved edit is on offer, the document behind the offer is the one
      * in the slot, and saving the bare clip there would write over it. So the
@@ -1402,15 +1409,23 @@ class EditorViewModel(
             val isPhoto = uris.associateWith { resolver.getType(it)?.startsWith("image/") == true }
             val photos = isPhoto.count { it.value }
             if (photos > 0) _state.update { it.copy(preparingStills = it.preparingStills + photos) }
-            val sources = uris.map { uri ->
-                if (isPhoto[uri] == true) {
-                    StillClips.fromImage(getApplication(), uri)?.let { StillSource(it, displayNameOf(uri) ?: "Photo") }
-                        .also { _state.update { s -> s.copy(preparingStills = (s.preparingStills - 1).coerceAtLeast(0)) } }
-                } else {
-                    StillSource(uri, null)
+            // Counted down only once the clips are on the timeline, not when each
+            // photo finishes rendering: probing and placing them comes after, and
+            // an export started in that gap left the photo out of the file.
+            try {
+                val sources = uris.map { uri ->
+                    if (isPhoto[uri] == true) {
+                        StillClips.fromImage(getApplication(), uri)?.let { StillSource(it, displayNameOf(uri) ?: "Photo") }
+                    } else {
+                        StillSource(uri, null)
+                    }
+                }
+                addSources(sources.filterNotNull(), failedAny = sources.any { it == null }, at = at)
+            } finally {
+                if (photos > 0) {
+                    _state.update { s -> s.copy(preparingStills = (s.preparingStills - photos).coerceAtLeast(0)) }
                 }
             }
-            addSources(sources.filterNotNull(), failedAny = sources.any { it == null }, at = at)
         }
     }
 
@@ -1418,14 +1433,18 @@ class EditorViewModel(
     fun addBlankClip() {
         viewModelScope.launch {
             _state.update { it.copy(preparingStills = it.preparingStills + 1) }
-            val current = _state.value
-            val made = StillClips.blank(getApplication(), current.framedWidth, current.framedHeight)
-            _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
-            if (made == null) {
-                _state.update { it.copy(failure = SquishError.Unknown(null)) }
-                return@launch
+            try {
+                val current = _state.value
+                val made = StillClips.blank(getApplication(), current.framedWidth, current.framedHeight)
+                if (made == null) {
+                    _state.update { it.copy(failure = SquishError.Unknown(null)) }
+                    return@launch
+                }
+                addSources(listOf(StillSource(made, "Blank")), failedAny = false)
+            } finally {
+                // After it is placed, for the reason given in addVideoClips.
+                _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
             }
-            addSources(listOf(StillSource(made, "Blank")), failedAny = false)
         }
     }
 
@@ -2887,17 +2906,26 @@ class EditorViewModel(
             return
         }
 
-        _state.update { it.copy(isExporting = true, failure = null, exportProgress = ExportProgress()) }
+        _state.update {
+            it.copy(isExporting = true, failure = null, exportProgress = ExportProgress(stage = ExportStage.Preparing))
+        }
 
         exportJob = viewModelScope.launch {
-            // The edit as it is goes to disk before the encode starts. Nothing is
-            // saved while an export runs, and a long export is exactly when the
-            // app is most likely to be sent to the back and killed - so a nudge
-            // made a second before Render was on disk nowhere for its length.
+            // The edit as it is goes to disk before the encode starts, not a tick
+            // later: a long export is exactly when the app is most likely to be
+            // sent to the back and killed, and a nudge made a second before
+            // Render is the edit the file was made from.
             withContext(Dispatchers.IO) { persist() }
 
-            val outputDir = File(getApplication<Application>().getExternalFilesDir(null), "exports")
-                .apply { mkdirs() }
+            // Every sound opened and asked about before a frame is encoded: one no
+            // decoder takes used to fail minutes in, as a generic sound error.
+            SquishError.checkSounds(getApplication(), current)?.let { problem ->
+                if (exportJob === coroutineContext[Job]) exportJob = null
+                _state.update { it.copy(isExporting = false, exportProgress = ExportProgress(), failure = problem) }
+                return@launch
+            }
+
+            val outputDir = SquishError.exportsDir(getApplication()).apply { mkdirs() }
             val outputFile = File(outputDir, "squish_${System.currentTimeMillis()}.mp4")
 
             val result = processor.export(SquishError.exportable(current), outputFile) { progress ->
@@ -2906,15 +2934,20 @@ class EditorViewModel(
             // From here the file exists and is being handed over; there is
             // nothing left to stop. See cancelExport.
             if (exportJob === coroutineContext[Job]) exportJob = null
-            _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
 
             result.onSuccess { file ->
+                // Still exporting until the copy is in the gallery. The sheet used
+                // to flip back to "Render and save" the moment the encode ended,
+                // while a multi-gigabyte copy ran behind it - and a second tap
+                // started a second export over the first one's hand-over.
+                _state.update { it.copy(exportProgress = it.exportProgress.copy(stage = ExportStage.Saving)) }
                 // All or nothing: into the gallery, into history, and the draft
                 // stamped. Cancelled half-way - the screen leaving in the instant
                 // after the encode - the file was in the gallery and the draft
                 // never knew it had been exported.
                 withContext(NonCancellable) {
-                    GallerySaver.publish(getApplication(), file)
+                    val published = GallerySaver.publish(getApplication(), file)
+                    val written = current.outputResolution
                     historyRepository.add(
                         ExportRecord(
                             id = UUID.randomUUID().toString(),
@@ -2924,12 +2957,14 @@ class EditorViewModel(
                             outputSizeBytes = file.length(),
                             durationMs = current.trimmedDurationMs,
                             // The shape of the file that was written, which after a
-                            // rotation is not the shape it was shot at. The library
-                            // sizes its preview from these, so a rotated export
-                            // previewed in the wrong shape.
-                            width = current.framedWidth,
-                            height = current.framedHeight,
-                            createdAtMillis = System.currentTimeMillis()
+                            // rotation is not the shape it was shot at, and after a
+                            // crop is the crop's. The library sizes its preview from
+                            // these, so a rotated export previewed in the wrong shape.
+                            width = if (written.width > 0) written.width else current.framedWidth,
+                            height = if (written.height > 0) written.height else current.framedHeight,
+                            createdAtMillis = System.currentTimeMillis(),
+                            savedToGallery = published != null,
+                            galleryUri = published?.toString()
                         )
                     )
                     // The edit stays, marked as exported. It used to be deleted here
@@ -2937,18 +2972,25 @@ class EditorViewModel(
                     // made a test render to check a look the one action that could
                     // never be followed by "and now one more change".
                     withContext(Dispatchers.IO) {
-                        // Unless a saved edit is still on offer: what was rendered
-                        // then is the bare clip, and the stamp would land on the
-                        // other edit's draft.
-                        if (_state.value.recovery == null) {
-                            persist()
+                        // Whatever was changed during the render is saved as any
+                        // change is; persist knows what to do with an offer.
+                        persist()
+                        // Stamped only when no saved edit was on offer, then or
+                        // now: what was rendered under an offer is the bare clip,
+                        // and the stamp would land on the other edit's draft - or,
+                        // if the offer was retired by a change made during the
+                        // render, on a draft that is not what was rendered.
+                        if (current.recovery == null && _state.value.recovery == null) {
                             autosave.markCompleted(current)
                         }
                     }
                 }
+                _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
-                _state.update { it.copy(failure = SquishError.from(throwable)) }
+                _state.update {
+                    it.copy(isExporting = false, exportProgress = ExportProgress(), failure = SquishError.from(throwable))
+                }
             }
         }
     }
@@ -2968,12 +3010,16 @@ class EditorViewModel(
      * screen when it does, and a Stop tapped then used to cancel the hand-over
      * instead: the file was already in the gallery and in history, while the
      * editor stayed put as if the export had been stopped.
+     *
+     * False when there was nothing to stop, so the question can stay up and
+     * say the copy is under way instead of closing as if it had worked.
      */
-    fun cancelExport() {
-        val job = exportJob ?: return
+    fun cancelExport(): Boolean {
+        val job = exportJob ?: return false
         exportJob = null
         job.cancel()
         _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
+        return true
     }
 
     // ---- Crash recovery -------------------------------------------------------

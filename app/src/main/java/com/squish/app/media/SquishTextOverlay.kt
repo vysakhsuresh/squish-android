@@ -6,7 +6,8 @@ import android.graphics.Bitmap
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
-import androidx.media3.effect.OverlaySettings
+import androidx.media3.common.OverlaySettings
+import androidx.media3.effect.StaticOverlaySettings
 import com.squish.app.editor.TextOverlayItem
 
 /**
@@ -15,7 +16,13 @@ import com.squish.app.editor.TextOverlayItem
  * Drawn by [CaptionRenderer] rather than handed to Media3's TextOverlay, which
  * takes a string and a colour and nothing else: an outline, a box, a shadow or a
  * glow all have to be painted. The preview uses the same renderer through
- * [LiveCaptionOverlay], so what the editor shows is what the file gets.
+ * [com.squish.app.editor.CaptionLayer], so what the editor shows is what the file gets.
+ *
+ * Drawn once, on the finished frame above every layer (VideoProcessor
+ * .compositionEffects), so the presentation times it is handed are the edit's
+ * own and the frame it is sized to is the canvas the file is written at. It
+ * used to ride on each base clip, which drew a caption twice through a
+ * dissolve and not at all over a gap.
  */
 class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
 
@@ -53,9 +60,9 @@ class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
         val timeMs = presentationTimeUs / 1000L
         val frame = CaptionRenderer.frameAt(item, timeMs)
-            ?: return OverlaySettings.Builder().setAlphaScale(0f).build()
+            ?: return StaticOverlaySettings.Builder().setAlphaScale(0f).build()
         val (x, y) = item.anchorAt(timeMs)
-        return OverlaySettings.Builder()
+        return StaticOverlaySettings.Builder()
             .setBackgroundFrameAnchor(x * 2 - 1, 1 - (y - frame.rise) * 2)
             .setScale(frame.scale, frame.scale)
             .setAlphaScale(frame.alpha.coerceIn(0f, 1f))

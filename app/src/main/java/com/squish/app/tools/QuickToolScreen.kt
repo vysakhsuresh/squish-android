@@ -53,6 +53,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squish.app.ui.components.StopExportDialog
+import com.squish.app.media.ExportStage
 import com.squish.app.media.keepReadAccess
 import com.squish.app.home.countOf
 import com.squish.app.ui.components.BackOrb
@@ -269,9 +270,11 @@ fun QuickToolScreen(
 
     if (confirmStopExport) {
         StopExportDialog(
+            saving = state.exportProgress.stage == ExportStage.Saving,
             onStop = {
-                viewModel.cancelExport()
-                confirmStopExport = false
+                // Nothing to stop means the encode finished under the tap; the
+                // dialog stays and now says the copy is under way.
+                if (viewModel.cancelExport()) confirmStopExport = false
             },
             onKeepGoing = { confirmStopExport = false }
         )

@@ -199,7 +199,13 @@ fun ExportScreen(
                     }
                 }
 
-                SavedToCard(isAudio = isAudio, fileName = File(resultPath).name)
+                SavedToCard(
+                    isAudio = isAudio,
+                    fileName = File(resultPath).name,
+                    // An older record never recorded it either way; those went
+                    // through the same copy and are taken at their word.
+                    inGallery = record?.savedToGallery != false
+                )
 
                 SquishOutlinedButton(
                     text = "Save a copy to Files",
@@ -272,7 +278,7 @@ fun ExportScreen(
  * this onto my phone" has always had an answer - the app just never gave it.
  */
 @Composable
-private fun SavedToCard(isAudio: Boolean, fileName: String) {
+private fun SavedToCard(isAudio: Boolean, fileName: String, inGallery: Boolean) {
     SquishCard(accent = SquishColors.Violet) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -295,19 +301,31 @@ private fun SavedToCard(isAudio: Boolean, fileName: String) {
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    if (isAudio) "Saved to Music › Squish" else "Saved to your gallery",
+                    when {
+                        // Said only when it is true. The copy can fail - a full
+                        // phone, a storage error - and this card used to claim it
+                        // had worked whatever happened.
+                        !inGallery -> "Only saved inside Squish"
+                        isAudio -> "Saved to Music › Squish"
+                        else -> "Saved to your gallery"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = SquishColors.TextPrimary
                 )
                 Text(
-                    if (isAudio) fileName else "Movies › Squish · $fileName",
+                    when {
+                        !inGallery -> "The copy to your ${if (isAudio) "music" else "gallery"} failed. " +
+                            "Save a copy to Files below, or share it from here."
+                        isAudio -> fileName
+                        else -> "Movies › Squish · $fileName"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextMuted,
                     // One line, cut short at the end. Allowed to wrap, a name one
                     // character too long broke after the dot and the one-line limit
                     // then hid the name completely.
-                    maxLines = 1,
-                    softWrap = false,
+                    maxLines = if (inGallery) 1 else 3,
+                    softWrap = !inGallery,
                     overflow = TextOverflow.Ellipsis
                 )
             }

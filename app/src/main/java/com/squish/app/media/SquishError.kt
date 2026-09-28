@@ -28,10 +28,84 @@ sealed class SquishError(
     val cause: Throwable? = null
 ) {
 
-    class FileUnreadable(cause: Throwable? = null) : SquishError(
-        title = "Can't open that file",
+    class FileUnreadable(cause: Throwable? = null, val name: String? = null) : SquishError(
+        title = if (name != null) "Can't open “$name”" else "Can't open that file",
         detail = "The file moved, was deleted, or the app lost permission to read it since you picked it.",
-        fix = "Pick the clip again from the gallery.",
+        fix = if (name != null) "Delete that clip from the timeline and add it again from the gallery."
+        else "Pick the clip again from the gallery.",
+        cause = cause
+    )
+
+    /**
+     * A sound on the timeline that can no longer be read. Named, because "that
+     * file" sent people looking at their video clips while the song was the one
+     * whose permission had lapsed.
+     */
+    class SoundUnreadable(val name: String) : SquishError(
+        title = "Can't open the sound “$name”",
+        detail = "The file moved, was deleted, or the app lost permission to read it since you added it. " +
+            "Nothing was rendered.",
+        fix = "Delete that sound from the timeline and add it again, or remove it to export without it."
+    )
+
+    class SoundUnsupported(val name: String, val codecHint: String) : SquishError(
+        title = "This phone can't play “$name”",
+        detail = "The sound is $codecHint, which no decoder on this phone can read, so it can't be mixed into the video.",
+        fix = "Convert it to AAC or MP3 on a computer and add it again, or remove it to export without it."
+    )
+
+    class StillsPreparing(val count: Int) : SquishError(
+        title = "Still preparing ${if (count == 1) "a photo" else "$count photos"}",
+        detail = "Photos and blanks are made into clips before they reach the timeline. Exporting now would " +
+            "leave out what is still being made.",
+        fix = "Wait for “Preparing” to finish, then export."
+    )
+
+    /**
+     * The failure a photo or a silent clip at the front of a roll used to cause:
+     * Media3 meeting a clip with sound after a sequence began without any. Every
+     * sequence now carries a sound track from its start, so this should not
+     * happen - if it does, the words at least point at what is involved, where
+     * "these clips don't fit together" sent people hunting for a wrong frame size.
+     */
+    class SilentClipInMix(cause: Throwable? = null) : SquishError(
+        title = "A clip without sound stopped the export",
+        detail = "One of the clips - a photo, a blank or a silent recording - has no sound track, and the " +
+            "export could not line it up with the clips that do.",
+        fix = "Turn the clips' own sound off under Sound and export again; added music and voiceovers are kept.",
+        cause = cause
+    )
+
+    /** The compositor refused the layers: transitions, picture-in-picture, or a gap between shots. */
+    class LayersFailed(cause: Throwable? = null) : SquishError(
+        title = "The layers couldn't be put together",
+        detail = "The export stopped while stacking the picture - a transition, an overlay, or the blank " +
+            "between two shots. The clips themselves read fine.",
+        fix = "Export once without the most recent transition or overlay to find the one it refuses, then " +
+            "change or remove it.",
+        cause = cause
+    )
+
+    /**
+     * An HDR clip in an export that had to be converted to ordinary colour and
+     * could not be.
+     *
+     * A layered export - a transition, an overlay, a gap - is always written in
+     * ordinary (SDR) colour: its first input is the transparent clock still, and
+     * Media3 takes the file's colour from the first input (CompositionFactory).
+     * So every HDR clip in it is tone-mapped on the way in, and a phone that
+     * cannot tone-map that kind of HDR fails here. It used to say HDR and SDR
+     * clips could not be mixed, which was not the cause: two HDR clips with a
+     * dissolve between them fail the same way. A cuts-only export keeps HDR
+     * as it is, which is why taking the layering off is the way round it.
+     */
+    class MixedColourRanges(cause: Throwable? = null) : SquishError(
+        title = "This phone can't convert the HDR clip",
+        detail = "One of the clips is HDR - newer phones record it by default. An export with a transition, " +
+            "an overlay or a gap is written in ordinary colour, so HDR clips are converted on the way in, " +
+            "and this phone couldn't convert that one.",
+        fix = "Export without transitions, overlays or gaps to keep the clip as it is, or convert the HDR clip " +
+            "to SDR first.",
         cause = cause
     )
 
@@ -158,9 +232,29 @@ sealed class SquishError(
             if (state.sourceUri == null) return FileUnreadable()
             if (state.trimmedDurationMs <= 0L) return NothingToExport()
             if (state.audioOnly && !state.sourceHasAudio && !state.hasSeparateAudio) return NoAudioTrack()
+            // A photo still being made into a clip is not on the timeline yet, so
+            // an export now would silently leave it out and it would turn up in
+            // the edit a moment after the file was written without it.
+            if (state.preparingStills > 0) return StillsPreparing(state.preparingStills)
+
+            // Each clip by name, so the one to replace can be found. The source is
+            // checked last: with clips on the timeline it may not be in the edit.
+            for (clip in state.videoClips) {
+                val uri = clip.uri ?: state.sourceUri
+                if (!canRead(context, uri)) return FileUnreadable(name = clip.label.takeIf { it.isNotBlank() })
+            }
+            if (state.videoClips.isEmpty() && !canRead(context, state.sourceUri)) return FileUnreadable()
+            // Sounds are read too. They used to be left out, so a song whose grant
+            // had lapsed failed minutes into the encode as "Can't open that file".
+            if (!state.audioOnly || state.hasSeparateAudio) {
+                for (clip in state.audioClips) {
+                    val uri = clip.uri ?: continue
+                    if (!canRead(context, uri)) return SoundUnreadable(soundName(clip.label))
+                    MediaCompat.cached(uri)?.audioProblem?.let { return SoundUnsupported(soundName(clip.label), it) }
+                }
+            }
 
             val sources = (state.videoClips.mapNotNull { it.uri } + state.sourceUri).distinct()
-            if (sources.any { !canRead(context, it) }) return FileUnreadable()
 
             // Answered in the background when each file was opened; only read here.
             // A picture no decoder takes cannot export at all. Sound that none takes
@@ -172,8 +266,11 @@ sealed class SquishError(
                 reports.firstNotNullOfOrNull { it.audioProblem }?.let { return UnsupportedAudio(it) }
             }
 
+            // Measured where the file is written, and for both copies of it: the
+            // render lands in the app's exports folder and is then copied whole
+            // into the gallery, so for a moment the phone holds it twice.
             val needed = (estimatedBytes * SPACE_HEADROOM).toLong().coerceAtLeast(MIN_SPACE_BYTES)
-            val free = freeBytes(context.filesDir)
+            val free = freeBytes(exportsDir(context))
             if (free in 1 until needed) return NotEnoughSpace(needed, free)
 
             val pixels = state.outputResolution.pixels
@@ -201,17 +298,76 @@ sealed class SquishError(
          * thousands band carries the rest - a band never gets renumbered, so this
          * stays correct across library upgrades.
          */
-        fun from(throwable: Throwable?): SquishError = when (throwable) {
-            null -> Unknown(null)
-            is OutOfMemoryError -> OutOfMemory(throwable)
-            is ExportException -> fromExport(throwable)
-            else -> when {
-                throwable.cause is ExportException -> fromExport(throwable.cause as ExportException)
-                throwable is java.io.FileNotFoundException -> FileUnreadable(throwable)
-                throwable is SecurityException -> FileUnreadable(throwable)
-                else -> Unknown(throwable)
+        fun from(throwable: Throwable?): SquishError {
+            if (throwable == null) return Unknown(null)
+            // A few failures are only told apart by what Media3 wrote in the
+            // message, and they are wrapped - an IllegalStateException inside a
+            // playback error inside an ExportException - so the whole chain is read.
+            fromMessages(throwable)?.let { return it }
+            return when (throwable) {
+                is OutOfMemoryError -> OutOfMemory(throwable)
+                is ExportException -> fromExport(throwable)
+                else -> when {
+                    throwable.cause is ExportException -> fromExport(throwable.cause as ExportException)
+                    throwable is java.io.FileNotFoundException -> FileUnreadable(throwable)
+                    throwable is SecurityException -> FileUnreadable(throwable)
+                    else -> Unknown(throwable)
+                }
             }
         }
+
+        /**
+         * The cases a code alone would misname. "The preceding MediaItem does not
+         * contain any track" came through as a runtime-check failure, which read
+         * "These clips don't fit together" - about a photo followed by a video, two
+         * clips that fit together perfectly well.
+         */
+        private fun fromMessages(throwable: Throwable): SquishError? {
+            var t: Throwable? = throwable
+            var depth = 0
+            while (t != null && depth < 8) {
+                val message = t.message.orEmpty()
+                when {
+                    message.contains("does not contain any", ignoreCase = true) ||
+                        message.contains("ForceAudioTrack", ignoreCase = true) ||
+                        message.contains("ForceVideoTrack", ignoreCase = true) -> return SilentClipInMix(throwable)
+                    message.contains("ColorInfo", ignoreCase = true) ||
+                        message.contains("HDR input is not supported", ignoreCase = true) ->
+                        return MixedColourRanges(throwable)
+                    message.contains("Gaps", ignoreCase = true) &&
+                        message.contains("not supported", ignoreCase = true) -> return LayersFailed(throwable)
+                }
+                t = t.cause
+                depth++
+            }
+            return null
+        }
+
+        /**
+         * What cannot be known without opening each sound: whether this phone
+         * decodes it. Opening a file was already being done in the background
+         * when a clip was picked, but a sound added before that finished, or a
+         * draft restored from disk, has no answer yet - and a DTS track found
+         * that way fails the encode minutes in, as a generic sound error.
+         */
+        suspend fun checkSounds(context: Context, state: EditorUiState): SquishError? {
+            if (state.audioOnly && !state.hasSeparateAudio) return null
+            for (clip in state.audioClips) {
+                val uri = clip.uri ?: continue
+                // No report is not a verdict: preflight has already opened the
+                // file, and a slow provider timing out here must not refuse an
+                // export that would have worked. Only a decoder's no is.
+                val report = MediaCompat.check(context, uri) ?: continue
+                report.audioProblem?.let { return SoundUnsupported(soundName(clip.label), it) }
+            }
+            return null
+        }
+
+        /** Where exports are written; the space check has to measure that volume. */
+        fun exportsDir(context: Context): File =
+            File(context.getExternalFilesDir(null) ?: context.filesDir, "exports")
+
+        private fun soundName(label: String): String = label.takeIf { it.isNotBlank() } ?: "sound"
 
         private fun fromExport(e: ExportException): SquishError = when {
             e.cause is OutOfMemoryError -> OutOfMemory(e)
@@ -244,7 +400,10 @@ sealed class SquishError(
         }.getOrDefault(false)
 
         private fun freeBytes(dir: File): Long = runCatching {
-            StatFs(dir.absolutePath).availableBytes
+            // The folder is made on the first export; its volume is what counts.
+            var at: File? = dir
+            while (at != null && !at.exists()) at = at.parentFile
+            StatFs((at ?: dir).absolutePath).availableBytes
         }.getOrDefault(-1L)
 
         fun formatBytes(bytes: Long): String = when {
@@ -275,7 +434,12 @@ sealed class SquishError(
 
         private val CODEC_NAMES = listOf("HEVC", "H.265", "VP9", "AV1", "Dolby Vision", "ProRes", "MPEG-4")
 
-        private const val SPACE_HEADROOM = 1.6
+        /**
+         * Two copies of the estimate - the render and the gallery copy made from
+         * it - with a tenth over each for an encoder that overshoots its bitrate.
+         * It was 1.6, for one copy, while every export was written twice.
+         */
+        private const val SPACE_HEADROOM = 2.2
         private const val MIN_SPACE_BYTES = 40L * 1_000_000
         private const val HUGE_FRAME_PIXELS = 8_500_000L // beyond 4K DCI
     }

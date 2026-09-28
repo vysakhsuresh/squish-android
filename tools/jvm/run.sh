@@ -22,7 +22,7 @@ run() {
 
 run looks      "$SRC/media/effects/Look.kt" tools/jvm/LookChecks.kt
 run lookpreview "$SRC/media/effects/Look.kt" "$SRC/media/effects/LookPreview.kt" tools/jvm/LookPreviewChecks.kt
-run framing    "$SRC/media/ExportPresets.kt" tools/jvm/stub/Quality.kt tools/jvm/FramingChecks.kt
+run framing    "$SRC/media/ExportPresets.kt" "$SRC/editor/CropRect.kt" tools/jvm/stub/Quality.kt tools/jvm/FramingChecks.kt
 run crop       "$SRC/editor/CropRect.kt" tools/jvm/CropChecks.kt
 run frames     "$SRC/media/video/FrameBatch.kt" tools/jvm/stub/Bitmap.kt \
                tools/jvm/stub/MediaMetadataRetriever.kt tools/jvm/FrameBatchChecks.kt
@@ -56,5 +56,12 @@ run editrules  "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
                tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
                "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
                tools/jvm/stub/Uri.kt tools/jvm/EditRulesChecks.kt
+
+run exportplan "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
+               "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
+               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
+               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
+               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
+               tools/jvm/stub/Uri.kt "$SRC/media/ExportPlan.kt" tools/jvm/ExportPlanChecks.kt
 
 rm -rf "$OUT"

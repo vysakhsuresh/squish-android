@@ -45,6 +45,11 @@ import com.squish.app.ui.theme.SquishColors
  * Eight options in two rows of four: Original, six sizes by name, and Custom for
  * anything else. A size bigger than the source is allowed and says so - it makes
  * a bigger file, but it cannot add detail the camera never recorded.
+ *
+ * [sourceWidth] and [sourceHeight] are the frame the size is applied to, which
+ * for an edit is the picture after its rotation and crop (EditorUiState
+ * .croppedFrame) - the same numbers the encoder is given, so the summary is the
+ * file's size and not the camera's.
  */
 @Composable
 fun OutputSizePicker(

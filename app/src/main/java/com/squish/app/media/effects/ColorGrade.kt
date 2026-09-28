@@ -4,40 +4,22 @@ package com.squish.app.media.effects
 
 import androidx.media3.common.Effect
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.effect.Contrast
-import androidx.media3.effect.HslAdjustment
-import androidx.media3.effect.RgbAdjustment
 
 /**
- * Turns a [Grade] into Media3 effects. One implementation, used by both the export
- * pipeline and the preview player - if these two ever built their effects
- * separately, what you saw would stop being what you rendered.
+ * Turns a [Grade] into Media3 effects for the export.
+ *
+ * Every grade goes through the look shader, the one the preview runs on every
+ * surface (LiveLookEffect is the same program reading a live value). The simpler
+ * looks used to be handed to Media3's built-in colour effects instead, on the
+ * grounds that they were cheaper - but HslAdjustment scales saturation in HSL
+ * space and the shader mixes against luma, which are different curves: a Vivid
+ * red came out another red in the file than on screen, for fourteen of the looks
+ * and for the Saturation slider on its own. One pass of the same maths is the
+ * only way "what you see is what you render" is true rather than approximately
+ * true.
  */
 object ColorGrade {
 
-    fun effects(grade: Grade): List<Effect> {
-        if (grade.isIdentity) return emptyList()
-
-        // A look with grain, a vignette or bloom in it does the whole grade in one
-        // shader pass. Splitting the colour work back out to the built-ins would
-        // mean four passes where one will do, over every frame.
-        if (grade.needsShader) return listOf(LookEffect(grade))
-
-        val out = mutableListOf<Effect>()
-
-        if (grade.hasChannelGain) {
-            out.add(
-                RgbAdjustment.Builder()
-                    .setRedScale(grade.redScale)
-                    .setGreenScale(grade.greenScale)
-                    .setBlueScale(grade.blueScale)
-                    .build()
-            )
-        }
-        if (grade.hasContrast) out.add(Contrast(grade.contrast))
-        if (grade.hasSaturation) {
-            out.add(HslAdjustment.Builder().adjustSaturation(grade.saturation * 100f).build())
-        }
-        return out
-    }
+    fun effects(grade: Grade): List<Effect> =
+        if (grade.isIdentity) emptyList() else listOf(LookEffect(grade))
 }

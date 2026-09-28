@@ -4,10 +4,12 @@ package com.squish.app.media
 
 import android.content.Context
 import android.os.SystemClock
+import androidx.media3.common.C
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.audio.SpeedChangingAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Crop
@@ -32,23 +34,35 @@ import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
 import com.squish.app.editor.VoiceEffect
 import com.squish.app.media.audio.VoiceProcessor
-import androidx.media3.common.audio.SonicAudioProcessor
+import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.FxEffect
-import com.squish.app.media.effects.ReframeEffect
 import com.squish.app.media.effects.MaskEffect
-import com.squish.app.media.effects.BackgroundEffect
-import com.squish.app.media.effects.Looks
+import com.squish.app.media.effects.ReframeEffect
+import com.squish.app.media.effects.TransitionEffect
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.SpeedRamp
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import kotlin.coroutines.resume
+
+/** What an export is doing, as far as anyone waiting on it needs to know. */
+enum class ExportStage {
+    /** Checking the edit and getting the encoder ready; nothing is being written yet. */
+    Preparing,
+    Rendering,
+    /** The file is written and being copied into the gallery. */
+    Saving
+}
 
 /** How far along an export is, as the encoder itself reports it. */
 data class ExportProgress(
@@ -59,7 +73,8 @@ data class ExportProgress(
      * Projected from the rate so far, once there is enough of it to project from.
      * Null early on rather than a wild number that halves every second.
      */
-    val remainingMs: Long? = null
+    val remainingMs: Long? = null,
+    val stage: ExportStage = ExportStage.Rendering
 )
 
 class VideoProcessor(private val context: Context) {
@@ -109,8 +124,17 @@ class VideoProcessor(private val context: Context) {
 
         var result: Result<File>? = null
         try {
-            result = runExport(state, outputFile) { active.set(it) }
-            result
+            // The transparent still that fills a layer's empty stretches, written
+            // once and kept. Only a composited export needs it.
+            val needsClear = !state.audioOnly && CompositionFactory.needsCompositing(state)
+            val clear = if (needsClear) withContext(Dispatchers.IO) { StillClips.clearFrame(context) } else null
+            val outcome = if (needsClear && clear == null) {
+                Result.failure(IOException("Could not write the blank frame the layers are padded with"))
+            } else {
+                runExport(state, outputFile, clear) { active.set(it) }
+            }
+            result = outcome
+            outcome
         } finally {
             poll.cancel()
             // A file that did not finish is not an export. Left behind, a
@@ -124,42 +148,15 @@ class VideoProcessor(private val context: Context) {
     private suspend fun runExport(
         state: EditorUiState,
         outputFile: File,
+        clear: File?,
         onTransformer: (Transformer) -> Unit
     ): Result<File> =
         suspendCancellableCoroutine { continuation ->
-            // The video track as the timeline holds it. Every clip carries its own
-            // source window, so a split is just two clips over the same file and
-            // nothing is re-encoded twice.
-            val track = state.videoClips
-            val videoSequences: List<EditedMediaItemSequence> = when {
-                track.isEmpty() -> CompositionFactory.buildCutsOnly(
-                    listOf(editedVideo(state, state.sourceUri, state.trimStartMs, state.trimEndMs))
-                )
-                // Only an edit that actually uses transitions or layers pays the
-                // cost - and the risk - of the compositing path.
-                CompositionFactory.needsCompositing(state) ->
-                    CompositionFactory.buildComposited(state) { clip -> editedClip(state, clip) }
-                else -> CompositionFactory.buildCutsOnly(track.map { editedClip(state, it) })
+            val built = runCatching { buildComposition(state, clear) }
+            val composition = built.getOrElse {
+                continuation.resume(Result.failure(it))
+                return@suspendCancellableCoroutine
             }
-
-            val headSourceIn = track.firstOrNull()?.sourceInMs ?: state.trimStartMs
-            val timelineDuration = state.trimmedDurationMs
-
-            val sequences = videoSequences.toMutableList()
-            // One sequence per added sound. A Composition mixes its sequences
-            // together, so overlapping music, a voiceover and a second mic all
-            // land in the same output without any of them being a special case.
-            sequences.addAll(buildAudioSequences(state, headSourceIn, timelineDuration))
-
-            val composition = Composition.Builder(ImmutableList.copyOf(sequences))
-                .setEffects(compositionEffects(state))
-                // Silence is generated for whatever stretch has no sound in it.
-                // Without this, a run of clips where only some carry an audio
-                // track is an inconsistent composition, and Media3 gives up on it
-                // with a code that carries no explanation - which is exactly what
-                // "Export stopped unexpectedly" was.
-                .experimentalSetForceAudioTrack(needsForcedAudio(state))
-                .build()
 
             val bitrate = state.exportVideoBitrate
 
@@ -210,6 +207,7 @@ class VideoProcessor(private val context: Context) {
                         exportResult: ExportResult,
                         exportException: ExportException
                     ) {
+                        android.util.Log.w("SquishExport", "failed: ${composition.sequences.size} sequences", exportException)
                         if (continuation.isActive) continuation.resume(Result.failure(exportException))
                     }
                 })
@@ -226,69 +224,113 @@ class VideoProcessor(private val context: Context) {
         }
 
     /**
-     * Effects that apply to the whole composition rather than to one clip.
+     * The edit as Media3 objects: the picture's sequences, one sequence per added
+     * sound, and what is drawn over the whole frame.
+     */
+    private fun buildComposition(state: EditorUiState, clear: File?): Composition {
+        val track = state.videoClips
+        val videoOut = !state.audioOnly
+        // A sound-only export keeps the camera's sound even when the picture's
+        // mute is on - sound is all it was asked for.
+        val baseAudio = state.audioOnly || !state.muteOriginal
+        val canvas = state.outputResolution.takeIf { it.width > 0 && it.height > 0 }
+
+        var settings: androidx.media3.common.VideoCompositorSettings? = null
+        val videoSequences: List<EditedMediaItemSequence> = when {
+            // One file and no clips: the quick tools. The sequence takes whatever
+            // tracks the file has, which is what lets a plain cut be copied
+            // rather than re-encoded.
+            track.isEmpty() -> {
+                @Suppress("DEPRECATION")
+                val single = EditedMediaItemSequence.Builder(
+                    listOf(editedVideo(state, state.sourceUri, state.trimStartMs, state.trimEndMs, isPlainTrim(state)))
+                ).build()
+                listOf(single)
+            }
+            // Only an edit that actually uses transitions, layers or gaps pays the
+            // cost - and the risk - of the compositing path.
+            CompositionFactory.needsCompositing(state) -> {
+                val layers = ExportPlan.layers(track)
+                val rate = frameRateOf(state)
+                val composited = CompositionFactory.buildComposited(
+                    layers = layers,
+                    canvas = canvas,
+                    videoOut = videoOut,
+                    baseAudio = baseAudio,
+                    filler = { ms -> CompositionFactory.filler(checkNotNull(clear), ms, rate) },
+                    editedFor = { clip, layer ->
+                        if (layer.role == ExportPlan.Role.Overlay) editedOverlay(state, clip, canvas)
+                        else editedClip(state, clip, canvas, layers.baseRolls)
+                    }
+                )
+                settings = composited.settings
+                composited.sequences
+            }
+            // In time order, which is what "one after another" means; a clip
+            // trimmed to nothing is left out rather than handed to Media3 as an
+            // empty window.
+            else -> CompositionFactory.buildCutsOnly(
+                track.filter { it.durationMs > 0 }.sortedBy { it.timelineStartMs }
+                    .map { editedClip(state, it, canvas, rolls = null) },
+                trackTypesFor(videoOut, baseAudio)
+            )
+        }
+
+        val sequences = videoSequences.toMutableList()
+        // One sequence per added sound. A Composition mixes its sequences
+        // together, so overlapping music, a voiceover and a second mic all
+        // land in the same output without any of them being a special case.
+        sequences.addAll(buildAudioSequences(state))
+        if (sequences.isEmpty()) throw IllegalStateException("Nothing to export")
+
+        return Composition.Builder(ImmutableList.copyOf(sequences))
+            .setEffects(compositionEffects(state))
+            .apply { settings?.let { setVideoCompositorSettings(it) } }
+            .build()
+    }
+
+    /**
+     * The tracks the one-sequence export carries. The sound track is declared
+     * rather than inferred, so a run of clips that opens on a photo or a silent
+     * clip still has sound from its first moment - Media3 will not start a
+     * sequence without it and pick it up later.
+     */
+    private fun trackTypesFor(videoOut: Boolean, withAudio: Boolean): Set<Int> = when {
+        !videoOut -> setOf(C.TRACK_TYPE_AUDIO)
+        withAudio -> setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO)
+        else -> setOf(C.TRACK_TYPE_VIDEO)
+    }
+
+    /**
+     * Drawn once over the finished frame, above every layer: the captions and the
+     * effects library.
      *
-     * This is where a merge gets its frame size. Several files joined end to end
-     * are almost never the same shape - a gallery holds portrait and landscape
-     * side by side - and nothing in a cuts-only sequence reconciles them unless
-     * something says what the output is. Per-clip Presentation was not enough:
-     * it was skipped entirely at Original quality, and skipped again whenever the
-     * source dimensions were unknown, which for a merge they always were.
-     *
-     * A single export needs none of this. Its own frame size is the answer, and
-     * an extra pass over every frame to restate it is a waste.
+     * They rode on each base clip before, which drew a caption twice across a
+     * dissolve (both rolls carried it), left it off a picture-in-picture, and
+     * dropped it over a gap - a title on a black cold open was simply not in the
+     * file. Here the frames carry the edit's own time, which is the clock both
+     * run on.
      */
     private fun compositionEffects(state: EditorUiState): Effects {
-        if (!isMultiSource(state) || state.audioOnly) return Effects.EMPTY
-        val size = outputSize(state) ?: return Effects.EMPTY
-
-        // Widened at the declaration, for the same reason the caption overlays are:
-        // Effects takes List<Effect>, Java generics are invariant, and a list
-        // inferred as ImmutableList<Presentation> will not do.
-        val framing: List<Effect> = listOf(
-            // Fit rather than crop: a landscape clip in a portrait merge is
-            // letterboxed, not cut in half. Losing half of someone's footage to an
-            // automatic decision would be the worst surprise of the two.
-            Presentation.createForWidthAndHeight(
-                size.width,
-                size.height,
-                Presentation.LAYOUT_SCALE_TO_FIT
-            )
-        )
-        return Effects(ImmutableList.of(), ImmutableList.copyOf(framing))
+        if (state.audioOnly) return Effects.EMPTY
+        // Widened at the declaration: Effects takes List<Effect>, Java generics are
+        // invariant, and a list inferred as a subtype will not do.
+        val effects = mutableListOf<Effect>()
+        // The effects library before the captions, so a shake or a glitch moves
+        // the picture and leaves the words readable on top.
+        if (state.effects.isNotEmpty()) {
+            val timed = state.effects
+            effects.add(FxEffect { timed })
+        }
+        if (state.textOverlays.isNotEmpty()) {
+            // Widened at the declaration: OverlayEffect takes List<TextureOverlay>.
+            val overlays: List<TextureOverlay> = state.textOverlays.map { SquishTextOverlay(it) }
+            effects.add(OverlayEffect(ImmutableList.copyOf(overlays)))
+        }
+        if (effects.isEmpty()) return Effects.EMPTY
+        return Effects(ImmutableList.of(), ImmutableList.copyOf(effects))
     }
 
-    /**
-     * The frame the whole composition is drawn into: the leading clip's shape, at
-     * the chosen quality. Null when nothing measured it, in which case forcing a
-     * guessed size would be worse than letting Media3 decide.
-     */
-    private fun outputSize(state: EditorUiState): ExportPresets.Resolution? {
-        val width = state.framedWidth
-        val height = state.framedHeight
-        if (width <= 0 || height <= 0) return null
-
-        val resolution = ExportPresets.resolutionFor(state.outputP, width, height)
-        if (resolution.width <= 0 || resolution.height <= 0) return null
-        // Encoders want even dimensions, and a scaled odd number is how you get a
-        // configuration failure on one device and not another.
-        return ExportPresets.Resolution(
-            width = (resolution.width / 2) * 2,
-            height = (resolution.height / 2) * 2
-        )
-    }
-
-    /** More than one file in the video track: the case that has to be reconciled. */
-    private fun isMultiSource(state: EditorUiState): Boolean =
-        state.videoClips.mapNotNull { it.uri }.distinct().size > 1
-
-    /**
-     * Whether the output must carry an audio track whatever the inputs do.
-     *
-     * Any time the sources might disagree about having sound: several files, or a
-     * separate cue mixed over the top. Forcing it on a single silent clip would
-     * add a pointless track, so that case is left alone.
-     */
     /**
      * One file, cut, with nothing changed about its picture or sound - which is
      * Snip. The editor's clips are left out even when there is only one: a clip
@@ -301,24 +343,43 @@ class VideoProcessor(private val context: Context) {
             state.audioClips.isEmpty() &&
             !state.fitToSize &&
             state.outputP == OutputSize.ORIGINAL &&
-            gainOnly(state.originalVolume).isEmpty() &&
+            state.originalVolume >= 0.999f &&
             state.voiceEffect == VoiceEffect.None &&
-            buildVideoEffects(state).isEmpty()
+            singleFileEffects(state).isEmpty() &&
+            state.effects.isEmpty() &&
+            state.textOverlays.isEmpty()
 
-    private fun needsForcedAudio(state: EditorUiState): Boolean =
-        !state.audioOnly && (isMultiSource(state) || state.audioClips.isNotEmpty())
+    /** The rate the layers are drawn at: the source's, as a whole number, within what encoders take. */
+    private fun frameRateOf(state: EditorUiState): Int {
+        val fps = state.fps
+        return if (fps.isFinite() && fps >= 1f) Math.round(fps).coerceIn(MIN_FPS, MAX_FPS) else DEFAULT_FPS
+    }
+
+    // ---- Picture -------------------------------------------------------------------
 
     /**
-     * The separate audio track, positioned on the output timeline.
+     * One base clip: its own look and placement, the edit's rotation, grade and
+     * crop, fitted to the canvas, retimed, and - where it shares the screen with
+     * another shot - its part in the transition.
      *
-     * Media3 sequences always begin at zero, so to start a music cue partway in we
-     * need leading silence. Rather than encoding a silent file, the pad is a slice
-     * of the source video's own audio played at zero gain: exactly the right length,
-     * guaranteed decodable, and no extra encoder in the path. If the source has no
-     * audio track to borrow, the cue starts with the clip instead.
+     * The order is the preview's. The stabilizer's correction is measured on the
+     * frame the camera recorded, so it goes on before the rotation; what the
+     * editor asked for is applied to the picture as it is seen, after it. The
+     * grade comes before the crop, so a vignette falls off towards the corners of
+     * the whole picture as it does on screen, not towards the corners of a 9:16
+     * slice of it. Everything that reads a clock and wants source time - the
+     * stabilizer, a tracked mask, the reframe - sits before the speed change;
+     * the transition wants played time and sits after it.
+     *
+     * @param canvas the frame every layer is fitted to; null when nothing measured it.
+     * @param rolls the base rolls, top first, when the clip is on one.
      */
-    /** One timeline clip, with the look applied and overlay geometry if it floats. */
-    private fun editedClip(state: EditorUiState, clip: Clip): EditedMediaItem {
+    private fun editedClip(
+        state: EditorUiState,
+        clip: Clip,
+        canvas: ExportPresets.Resolution?,
+        rolls: List<List<Clip>>?
+    ): EditedMediaItem {
         val item = MediaItem.Builder()
             .setUri(clip.uri ?: state.sourceUri)
             .setClippingConfiguration(
@@ -329,36 +390,33 @@ class VideoProcessor(private val context: Context) {
             )
             .build()
 
-        val effects = if (clip.isOverlay) {
-            // Overlays carry their placement inside overlayEffects already.
-            // Also the rotated shape: an overlay is placed as a fraction of the
-            // frame it lands on, and after a quarter turn that frame is the other
-            // way round. Measured against the source, a caption pinned near the
-            // bottom of a rotated clip drifted off the side of it.
-            CompositionFactory.overlayEffects(clip, state.framedWidth, state.framedHeight)
-        } else {
-            // A base shot can be animated too - a push-in, a drift, a slow turn -
-            // so its transform goes on first, in source space, ahead of rotation,
-            // crop and the output resolution.
-            val moved = clip.keyframes.isNotEmpty() || clip.stabilizer.isNotEmpty() ||
-                !clip.staticTransform.isIdentity
-            val leading = buildList<Effect> {
-                clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
-                clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
-                clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
-                if (moved) add(ClipTransformEffect(clip.keyframes, clip.staticTransform, clip.stabilizer, clip.sourceInMs))
+        val effects: List<Effect> = if (state.audioOnly) emptyList() else buildList {
+            clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
+            clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
+            clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
+            ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
+            rotation(state)?.let { add(it) }
+            addAll(ColorGrade.effects(state.grade))
+            ClipTransformEffect.of(clip, ExportPlan.MotionPart.User)?.let { add(it) }
+            crop(state, clip)?.let { add(it) }
+            if (canvas != null) {
+                // Fit rather than crop: a landscape clip in a portrait edit is
+                // letterboxed, not cut in half. Losing half of someone's footage
+                // to an automatic decision would be the worst surprise of the two.
+                add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT))
             }
-            val timed = leading + speedEffects(clip)
-            if (timed.isEmpty()) buildVideoEffects(state) else timed + buildVideoEffects(state)
+            addAll(speedEffects(clip))
+            if (rolls != null && ExportPlan.takesPartInBlend(rolls, clip)) {
+                add(TransitionEffect(clip, ExportPlan.neighbourhood(rolls, clip)))
+            }
         }
 
         return EditedMediaItem.Builder(item)
-            .setRemoveAudio(clip.isOverlay || (state.muteOriginal && !state.audioOnly))
+            .setRemoveAudio(state.muteOriginal && !state.audioOnly)
             .setRemoveVideo(state.audioOnly)
             .setEffects(
                 Effects(
-                    if (clip.isOverlay) ImmutableList.of()
-                    else buildAudioProcessors(clip, state.originalVolume, state.voiceEffect),
+                    buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, state.originalVolume, state.voiceEffect),
                     ImmutableList.copyOf(effects)
                 )
             )
@@ -366,24 +424,35 @@ class VideoProcessor(private val context: Context) {
     }
 
     /**
-     * The clip's retime, for the picture.
-     *
-     * An unramped clip at 1x gets nothing at all rather than a no-op effect: every
-     * entry here is a pass over every frame, and SpeedChangeEffect can only skip
-     * itself when its provider reports one rate and no upcoming change.
+     * A floating clip: silent (an overlay's sound is not mixed yet), placed on the
+     * canvas and retimed. See CompositionFactory.overlayEffects.
      */
-    private fun speedEffects(clip: Clip): List<Effect> {
-        if (clip.speedRamp.isIdentity) return emptyList()
-        val segments = clip.speedRamp.segments(clip.sourceSpanMs)
-        if (segments.isEmpty()) return emptyList()
-        return listOf(SpeedChangeEffect(RampSpeedProvider(segments)))
+    private fun editedOverlay(state: EditorUiState, clip: Clip, canvas: ExportPresets.Resolution?): EditedMediaItem {
+        val item = MediaItem.Builder()
+            .setUri(clip.uri ?: state.sourceUri)
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(clip.sourceInMs)
+                    .setEndPositionMs(clip.sourceOutMs.coerceAtLeast(clip.sourceInMs))
+                    .build()
+            )
+            .build()
+        // The same retime the preview plays it at. Overlays used to get none, so
+        // a slowed picture-in-picture ran at full speed and ended early.
+        val effects = CompositionFactory.overlayEffects(clip, canvas, speedEffects(clip))
+        return EditedMediaItem.Builder(item)
+            .setRemoveAudio(true)
+            .setEffects(Effects(ImmutableList.of(), ImmutableList.copyOf(effects)))
+            .build()
     }
 
+    /** The whole file as one item, for the quick tools. */
     private fun editedVideo(
         state: EditorUiState,
         uri: android.net.Uri?,
         startMs: Long,
-        endMs: Long
+        endMs: Long,
+        plainTrim: Boolean
     ): EditedMediaItem {
         val item = MediaItem.Builder()
             .setUri(uri)
@@ -400,213 +469,158 @@ class VideoProcessor(private val context: Context) {
             .setRemoveVideo(state.audioOnly)
             .setEffects(
                 Effects(
-                    // No clip, so no ramp: this path is the whole file, untimed.
-                    gainOnly(state.originalVolume, state.voiceEffect),
-                    if (state.audioOnly) ImmutableList.of() else buildVideoEffects(state)
+                    // A copied stream takes no processing at all: any processor,
+                    // even one that would change nothing, makes Media3 decode the
+                    // sound and cancels the copy.
+                    if (plainTrim) ImmutableList.of()
+                    else buildAudioProcessors(SpeedRamp(), 0L, state.originalVolume, state.voiceEffect),
+                    if (state.audioOnly) ImmutableList.of() else ImmutableList.copyOf(singleFileEffects(state))
                 )
             )
             .build()
     }
 
     /**
-     * Every added sound, each as its own sequence.
-     *
-     * @param headSourceIn where in the source file the first video clip starts -
-     *   the silent pad is borrowed from there.
-     * @param timelineDuration total length of the assembled video track.
+     * The one-file path's picture: the edit's rotation, grade and crop, and a
+     * resize only when one was asked for - a file exported at its own size is
+     * not given a pass over every frame that changes nothing.
      */
-    private fun buildAudioSequences(
-        state: EditorUiState,
-        headSourceIn: Long,
-        timelineDuration: Long
-    ): List<EditedMediaItemSequence> {
-        if (state.audioOnly) return emptyList()
-        return state.audioClips.mapNotNull { clip ->
-            buildAudioSequence(state, clip, headSourceIn, timelineDuration)
+    private fun singleFileEffects(state: EditorUiState): List<Effect> = buildList {
+        rotation(state)?.let { add(it) }
+        addAll(ColorGrade.effects(state.grade))
+        crop(state, clip = null)?.let { add(it) }
+        if (state.outputP != OutputSize.ORIGINAL && !state.fitToSize) {
+            val canvas = state.outputResolution
+            if (canvas.width > 0 && canvas.height > 0) {
+                add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT))
+            }
         }
     }
 
-    private fun buildAudioSequence(
-        state: EditorUiState,
-        clip: Clip,
-        headSourceIn: Long,
-        timelineDuration: Long
-    ): EditedMediaItemSequence? {
+    private fun rotation(state: EditorUiState): Effect? =
+        if (state.rotationDegrees == 0) null
+        else ScaleAndRotateTransformation.Builder().setRotationDegrees(state.rotationDegrees.toFloat()).build()
+
+    /**
+     * The kept part of the frame, for [clip] (null: the one-file path).
+     *
+     * A hand-drawn crop is a rectangle, so it is cut rather than fitted: a
+     * Presentation can only take the middle of the frame at a given shape, which
+     * is exactly the limitation the custom crop exists to remove.
+     *
+     * Auto-reframe follows a track measured on one file - the clip it was run on
+     * - so only clips of that file follow it; any other clip is cropped to the
+     * same shape about its centre. Handed a track from another file, a clip's
+     * window chased where a subject had been in different footage.
+     */
+    private fun crop(state: EditorUiState, clip: Clip?): Effect? {
+        val rect = state.effectiveCrop
+        if (state.cropAspect == CropAspect.Custom) {
+            if (rect.isFull) return null
+            val ndc = rect.toNdc()
+            return Crop(ndc[0], ndc[1], ndc[2], ndc[3])
+        }
+        val ratio = state.cropAspect.ratio ?: return null
+        val follow = state.reframe
+        if (follow != null && !follow.isEmpty) {
+            val analysed = state.videoClips.firstOrNull()
+            when {
+                clip == null -> return ReframeEffect(ratio, follow, state.trimStartMs)
+                analysed != null && (clip.uri ?: state.sourceUri) == (analysed.uri ?: state.sourceUri) ->
+                    return ReframeEffect(ratio, follow, clip.sourceInMs)
+            }
+        }
+        return Presentation.createForAspectRatio(ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP)
+    }
+
+    /**
+     * The clip's retime, for the picture.
+     *
+     * An unramped clip at 1x gets nothing at all rather than a no-op effect: every
+     * entry here is a pass over every frame, and SpeedChangeEffect can only skip
+     * itself when its provider reports one rate and no upcoming change.
+     */
+    private fun speedEffects(clip: Clip): List<Effect> {
+        if (clip.speedRamp.isIdentity) return emptyList()
+        val segments = clip.speedRamp.segments(clip.sourceSpanMs)
+        if (segments.isEmpty()) return emptyList()
+        return listOf(SpeedChangeEffect(RampSpeedProvider(segments)))
+    }
+
+    // ---- Sound ---------------------------------------------------------------------
+
+    /**
+     * Every added sound, each as its own sequence: silence up to where it was
+     * placed, then the part of the file that plays.
+     *
+     * The silence is Media3's own gap, which an audio sequence takes. It used to
+     * be a slice of the source video's sound played at zero volume, which came up
+     * short whenever the timeline ran longer than that file - a photo or a slowed
+     * clip after it, and the song started early by the difference - and was
+     * skipped outright on a silent source, where the song started at zero.
+     */
+    private fun buildAudioSequences(state: EditorUiState): List<EditedMediaItemSequence> =
+        state.audioClips.mapNotNull { clip -> buildAudioSequence(state, clip) }
+
+    private fun buildAudioSequence(state: EditorUiState, clip: Clip): EditedMediaItemSequence? {
         val audioUri = clip.uri ?: return null
-
-        val requestedPad = clip.timelineStartMs.coerceAtLeast(0L)
-        val padMs = if (state.sourceHasAudio) requestedPad else 0L
-
-        val roomAfterPad = (timelineDuration - padMs).coerceAtLeast(0L)
-        var sliceMs = clip.durationMs.coerceAtMost(roomAfterPad)
-        if (clip.sourceDurationMs > 0) {
-            sliceMs = sliceMs.coerceAtMost(clip.sourceDurationMs - clip.sourceInMs)
-        }
-        if (sliceMs <= 0) return null
-
-        val items = mutableListOf<EditedMediaItem>()
-
-        if (padMs > 0) {
-            val padItem = MediaItem.Builder()
-                .setUri(state.sourceUri)
-                .setClippingConfiguration(
-                    MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs(headSourceIn)
-                        .setEndPositionMs(headSourceIn + padMs)
-                        .build()
-                )
-                .build()
-            items.add(
-                EditedMediaItem.Builder(padItem)
-                    .setRemoveVideo(true)
-                    .setEffects(Effects(silentProcessors(), ImmutableList.of()))
-                    .build()
-            )
-        }
+        val slice = ExportPlan.audioSlice(clip, state.trimmedDurationMs) ?: return null
 
         val trackItem = MediaItem.Builder()
             .setUri(audioUri)
             .setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder()
-                    .setStartPositionMs(clip.sourceInMs)
-                    .setEndPositionMs(clip.sourceInMs + sliceMs)
+                    .setStartPositionMs(slice.sourceInMs)
+                    .setEndPositionMs(slice.sourceOutMs)
                     .build()
             )
             .build()
-        items.add(
+
+        // A clip heard from part-way through its window has its curve cut to
+        // match, or the ramp would run from its start on footage that is past it.
+        val span = clip.sourceSpanMs - slice.skippedSourceMs
+        val ramp = if (slice.skippedSourceMs > 0L) clip.speedRamp.sliced(slice.skippedSourceMs, clip.sourceSpanMs)
+        else clip.speedRamp
+
+        val sequence = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO))
+        if (slice.leadMs > 0L) sequence.addGap(slice.leadMs * 1_000L)
+        sequence.addItem(
             EditedMediaItem.Builder(trackItem)
                 .setRemoveVideo(true)
                 // A sound's own ramp, which is almost always none. Speed is a
                 // property of a clip now, so a slowed shot no longer drags the
                 // music with it - which was never what anyone wanted.
-                .setEffects(Effects(buildAudioProcessors(clip, clip.volume), ImmutableList.of()))
+                .setEffects(Effects(buildAudioProcessors(ramp, span, clip.volume), ImmutableList.of()))
                 .build()
         )
-
-        val sequence = EditedMediaItemSequence.Builder()
-        items.forEach { sequence.addItem(it) }
         return sequence.build()
     }
 
     /**
-     * The lead-in pad: silence, one second of it per second of timeline.
+     * A clip's sound: folded to stereo at its level, retimed by its own ramp,
+     * then given its voice.
      *
-     * The pad's length is read off the timeline, and the timeline is in played
-     * time now, so the slice is already the right length and nothing retimes it.
+     * The fold-down comes first and is always there, so every input reaches
+     * Media3's mixer as mono or stereo whatever it was recorded as (see
+     * AudioMixing). SpeedChangingAudioProcessor takes the same provider the
+     * picture does, from the same segments, so the two cannot end up different
+     * lengths. It preserves pitch, which is the only reason a ramp is usable on
+     * anything with a voice in it.
      */
-    private fun silentProcessors(): ImmutableList<AudioProcessor> {
-        val silence = AudioMixing.gain(0f)
-        return if (silence == null) ImmutableList.of() else ImmutableList.of(silence)
-    }
-
-    private fun buildVideoEffects(state: EditorUiState): ImmutableList<Effect> {
-        val effects = mutableListOf<Effect>()
-
-        if (state.rotationDegrees != 0) {
-            effects.add(
-                ScaleAndRotateTransformation.Builder()
-                    .setRotationDegrees(state.rotationDegrees.toFloat())
-                    .build()
-            )
-        }
-
-        // A hand-drawn crop is a rectangle, so it is cut rather than fitted: a
-        // Presentation can only take the middle of the frame at a given shape,
-        // which is exactly the limitation the custom crop exists to remove.
-        val crop = state.effectiveCrop
-        if (state.cropAspect == CropAspect.Custom && !crop.isFull) {
-            val ndc = crop.toNdc()
-            effects.add(Crop(ndc[0], ndc[1], ndc[2], ndc[3]))
-        } else {
-            state.cropAspect.ratio?.let { ratio ->
-                val follow = state.reframe
-                if (follow != null && !follow.isEmpty) {
-                    // Auto-reframe: the same crop, its window following the subject.
-                    // The track is in the main source's time; frames arrive in
-                    // timeline time, so the head clip's offset converts one to the other.
-                    val head = state.videoClips.firstOrNull()
-                    val offset = if (head != null) head.sourceInMs - head.timelineStartMs else state.trimStartMs
-                    effects.add(ReframeEffect(ratio, follow, offset))
-                } else {
-                    effects.add(Presentation.createForAspectRatio(ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
-                }
-            }
-        }
-
-        if (state.outputP != OutputSize.ORIGINAL && !state.fitToSize) {
-            val resolution = state.outputResolution
-            if (resolution.width > 0 && resolution.height > 0) {
-                effects.add(
-                    Presentation.createForWidthAndHeight(
-                        resolution.width,
-                        resolution.height,
-                        Presentation.LAYOUT_SCALE_TO_FIT
-                    )
-                )
-            }
-        }
-
-        // The chosen look and the manual sliders, folded into one set of moves and
-        // built by the same code the preview uses - so the graded frame on screen
-        // is the graded frame that gets written.
-        effects.addAll(
-            ColorGrade.effects(
-                Looks.grade(
-                    lookId = state.lookId,
-                    intensity = state.lookIntensity,
-                    brightness = state.brightness,
-                    contrast = state.contrast,
-                    saturation = state.saturation
-                )
-            )
-        )
-
-        // The effects library, after the grade and before the captions, so a shake
-        // or a glitch moves the picture and leaves the words readable on top.
-        if (state.effects.isNotEmpty()) {
-            val timed = state.effects
-            effects.add(FxEffect { timed })
-        }
-
-        if (state.textOverlays.isNotEmpty()) {
-            // Widened at the declaration: OverlayEffect takes List<TextureOverlay>,
-            // and Java generics are invariant, so a list of the subtype will not do.
-            val overlays: List<TextureOverlay> = state.textOverlays.map { SquishTextOverlay(it) }
-            effects.add(OverlayEffect(ImmutableList.copyOf(overlays)))
-        }
-
-        return ImmutableList.copyOf(effects)
-    }
-
-    private companion object {
-        /** Often enough to feel live, rare enough not to compete with the encoder. */
-        val PROGRESS_POLL = 200.milliseconds
-    }
-
-    /**
-     * A clip's sound: retimed by its own ramp, then set to its level.
-     *
-     * SpeedChangingAudioProcessor takes the same provider the picture does, from
-     * the same segments, so the two cannot end up different lengths. It preserves
-     * pitch, which is the only reason a ramp is usable on anything with a voice in
-     * it - a rate change without it is a slide whistle.
-     */
-    private fun buildAudioProcessors(clip: Clip, volume: Float, voice: VoiceEffect = VoiceEffect.None): ImmutableList<AudioProcessor> {
-        val processors = mutableListOf<AudioProcessor>()
-        if (!clip.speedRamp.isIdentity) {
-            val segments = clip.speedRamp.segments(clip.sourceSpanMs)
+    private fun buildAudioProcessors(
+        ramp: SpeedRamp,
+        spanMs: Long,
+        volume: Float,
+        voice: VoiceEffect = VoiceEffect.None
+    ): ImmutableList<AudioProcessor> {
+        val processors = mutableListOf<AudioProcessor>(AudioMixing.processor(volume))
+        if (!ramp.isIdentity && spanMs > 0L) {
+            val segments = ramp.segments(spanMs)
             if (segments.isNotEmpty()) {
                 processors.add(SpeedChangingAudioProcessor(RampSpeedProvider(segments)))
             }
         }
         processors.addAll(voiceProcessors(voice))
-        AudioMixing.gain(volume)?.let { processors.add(it) }
-        return ImmutableList.copyOf(processors)
-    }
-
-    /** Level only, for the one path that has no clip to read a ramp from. */
-    private fun gainOnly(volume: Float, voice: VoiceEffect = VoiceEffect.None): ImmutableList<AudioProcessor> {
-        val processors = voiceProcessors(voice) + listOfNotNull(AudioMixing.gain(volume))
         return ImmutableList.copyOf(processors)
     }
 
@@ -619,5 +633,14 @@ class VideoProcessor(private val context: Context) {
         voice == VoiceEffect.None -> emptyList()
         voice.pitch != 1f -> listOf(SonicAudioProcessor().apply { setPitch(voice.pitch) })
         else -> listOf(VoiceProcessor { voice })
+    }
+
+    private companion object {
+        /** Often enough to feel live, rare enough not to compete with the encoder. */
+        val PROGRESS_POLL = 200.milliseconds
+
+        const val DEFAULT_FPS = 30
+        const val MIN_FPS = 10
+        const val MAX_FPS = 60
     }
 }

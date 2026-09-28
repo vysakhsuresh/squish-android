@@ -38,13 +38,16 @@ import com.squish.app.ui.theme.SquishColors
  * [caution] is the sentence that says what cannot be undone. It is a separate
  * argument rather than another line of [body] so that it cannot be left out by
  * accident, and so it can be drawn in a colour that stops the eye.
+ *
+ * A null [confirmLabel] leaves only the way out: the same card, used to say why
+ * what was asked for is no longer on offer, rather than to offer it.
  */
 @Composable
 fun ConfirmDialog(
     title: String,
     body: String,
     caution: String,
-    confirmLabel: String,
+    confirmLabel: String?,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     dismissLabel: String = "Keep",
@@ -112,11 +115,13 @@ fun ConfirmDialog(
                     modifier = Modifier.weight(1f),
                     onClick = onDismiss
                 )
-                SquishDangerButton(
-                    text = confirmLabel,
-                    modifier = Modifier.weight(1f),
-                    onClick = onConfirm
-                )
+                if (confirmLabel != null) {
+                    SquishDangerButton(
+                        text = confirmLabel,
+                        modifier = Modifier.weight(1f),
+                        onClick = onConfirm
+                    )
+                }
             }
         }
     }

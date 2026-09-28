@@ -125,11 +125,15 @@ fun ExportSheet(
                     }
                 )
 
+                // The frame the file is cut to - rotated and cropped - not the one
+                // the camera shot. After a quarter turn the sheet said 1920 × 1080
+                // for a file that came out 1080 × 1920, and after a crop it
+                // promised the whole frame.
                 OutputSizePicker(
                     outputP = state.outputP,
                     fitToSize = state.fitToSize,
-                    sourceWidth = state.sourceWidth,
-                    sourceHeight = state.sourceHeight,
+                    sourceWidth = state.croppedFrame.width,
+                    sourceHeight = state.croppedFrame.height,
                     estimatedBytes = state.estimatedOutputBytes,
                     originalBytes = state.originalSizeBytes,
                     accent = SquishColors.Blue,
@@ -176,9 +180,20 @@ fun ExportSheet(
                     }
                 }
 
+                // A photo still being made into a clip is not on the timeline yet;
+                // rendering now would leave it out of the file.
+                if (state.preparingStills > 0) {
+                    Text(
+                        "Preparing ${countOf(state.preparingStills, "photo")} for the timeline - " +
+                            "Render is ready when they are.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SquishColors.Amber
+                    )
+                }
+
                 SquishPrimaryButton(
                     text = "Render and save",
-                    enabled = !state.isLoadingSource,
+                    enabled = !state.isLoadingSource && state.preparingStills == 0,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onRender
                 )

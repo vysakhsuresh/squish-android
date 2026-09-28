@@ -327,6 +327,12 @@ All on the moto g84 (`adb -s ZY32J8HF2S`), `adb logcat -G 16M` first, build with
 8. Export a 2 GB-class file: the progress card reads "Saving to gallery…" until the Photos entry exists; deleting the gallery copy first then exporting shows the honest message.
 9. Add 3 photos and tap Export immediately: Render is disabled until "Preparing" finishes.
 10. Delete a song's file after adding it: Export refuses before starting, naming the sound.
+11. The 2026-09-28 failures, re-run on the new build: A + a photo with a Dissolve on the join, 480p → completes (it failed on 1.5.1 with "The preceding MediaItem does not contain any track of type 2", shown as "These clips don't fit together"); the photo first then A; A + photo + a video overlay → completes with the PiP on top. Use a photo added before this build too (its clip has no sound track) as well as a new one (silent AAC).
+12. A, a 2 s gap, B, and a clip starting at 3 s on a fresh timeline: black in the gaps, no small square in the middle of the frame; captions over the gap are in the file.
+13. Three clips with Slide on both joins, then Wipe on both: the first join has the incoming shot on the lower roll and the second on the upper; both match the preview.
+14. An HLG clip (the phone's HDR video setting) cut to a second one, exported; then the same with a Dissolve: the first file is HDR, the second SDR and tone-mapped (see BUILD_NOTES, "what the export leans on"), not failed and not washed out. If tone-mapping fails, the message names HDR conversion, not the transition.
+15. During the "Saving to gallery" stage of a large export, press back: the dialog says it is saving and can't be stopped, with only OK; during the render it still offers Stop. Change a caption during the render, then press home during the copy and `am kill`: the change is in the draft.
+16. Add a photo: if the log shows `SquishStill could not render` once, the picture-only retry must still add it.
 
 **B6**
 1. Open A: header shows name, Undo, Redo, Export; tap the name and rename it; Drafts shows the new name.

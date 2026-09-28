@@ -46,6 +46,7 @@ PROVIDED_BY = {
     "androidx.media3.common": "media3.common",
     "androidx.media3.effect": "media3.effect",
     "androidx.media3.exoplayer": "media3.exoplayer",
+    "androidx.media3.inspector": "media3.inspector",
     "androidx.media3.transformer": "media3.transformer",
     "androidx.media3.ui": "media3.ui",
     "androidx.navigation": "androidx.navigation.compose",

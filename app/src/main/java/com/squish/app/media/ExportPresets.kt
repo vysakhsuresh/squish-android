@@ -27,6 +27,48 @@ object ExportPresets {
     }
 
     /**
+     * The part of the frame a crop keeps, in pixels: [cropWidth] and [cropHeight]
+     * are the kept rectangle's sides as fractions of the rotated frame.
+     *
+     * This is what every size downstream starts from. The size used to be worked
+     * out from the whole frame and the crop applied first, so a 9:16 cut of a
+     * landscape clip - a 608 pixel wide picture - was then fitted into a
+     * 1920x1080 box and written with black pillars down both sides, while the
+     * sheet promised a size nobody got.
+     */
+    fun croppedFrame(framedWidth: Int, framedHeight: Int, cropWidth: Float, cropHeight: Float): Resolution {
+        if (framedWidth <= 0 || framedHeight <= 0) return Resolution(framedWidth, framedHeight)
+        val w = (framedWidth * cropWidth.coerceIn(0f, 1f)).toInt()
+        val h = (framedHeight * cropHeight.coerceIn(0f, 1f)).toInt()
+        return even(w, h)
+    }
+
+    /**
+     * The frame an export is written at: the kept part of the picture, at the
+     * chosen size. The canvas every layer is drawn on, the encoder's frame, the
+     * size the sheet shows and the pixels the bitrate pays for - one number.
+     */
+    fun canvasFor(outputP: Int, framedWidth: Int, framedHeight: Int, cropWidth: Float, cropHeight: Float): Resolution {
+        val uncropped = cropWidth >= 1f - CROP_EPSILON && cropHeight >= 1f - CROP_EPSILON
+        if (uncropped || framedWidth <= 0 || framedHeight <= 0) return resolutionFor(outputP, framedWidth, framedHeight)
+        if (outputP == OutputSize.ORIGINAL) return croppedFrame(framedWidth, framedHeight, cropWidth, cropHeight)
+        // Scaled from the exact cut, not from its pixels rounded down to even:
+        // 9:16 of 1920x1080 is 607.5 pixels wide, and scaling the rounded 606 to
+        // 720 made the file 720x1282 - two rows of black under the picture.
+        val keptW = framedWidth * cropWidth.coerceIn(0f, 1f)
+        val keptH = framedHeight * cropHeight.coerceIn(0f, 1f)
+        val shortEdge = minOf(keptW, keptH)
+        if (shortEdge <= 0f) return croppedFrame(framedWidth, framedHeight, cropWidth, cropHeight)
+        val scale = outputP / shortEdge
+        return Resolution(nearestEven(keptW * scale), nearestEven(keptH * scale))
+    }
+
+    private fun nearestEven(v: Float): Int = (Math.round(v / 2f) * 2).coerceAtLeast(2)
+
+    /** A crop within this of the whole frame is no crop - CropRect's own tolerance. */
+    private const val CROP_EPSILON = 0.002f
+
+    /**
      * Rounded down to even, and never to nothing.
      *
      * Hardware encoders want even dimensions and a good many simply refuse odd
@@ -67,8 +109,16 @@ object ExportPresets {
      *
      * With no source bitrate to go on, a nominal rate for the frame size is used.
      */
-    fun bitrateFor(outputP: Int, sourceWidth: Int, sourceHeight: Int, fps: Float, sourceVideoBps: Long): Int {
-        val out = resolutionFor(outputP, sourceWidth, sourceHeight)
+    fun bitrateFor(outputP: Int, sourceWidth: Int, sourceHeight: Int, fps: Float, sourceVideoBps: Long): Int =
+        bitrateForFrame(resolutionFor(outputP, sourceWidth, sourceHeight), sourceWidth, sourceHeight, fps, sourceVideoBps)
+
+    /**
+     * The same, for an output frame already worked out - a cropped one, whose
+     * pixels are fewer than the source's at the same size. Budgeting a 9:16 cut
+     * of a landscape clip as if it were the whole frame spent three times the bits
+     * the picture needed.
+     */
+    fun bitrateForFrame(out: Resolution, sourceWidth: Int, sourceHeight: Int, fps: Float, sourceVideoBps: Long): Int {
         val nominal = nominalBitrate(out, fps)
         if (sourceVideoBps <= 0L || sourceWidth <= 0 || sourceHeight <= 0) return nominal
 
