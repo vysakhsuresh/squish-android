@@ -86,6 +86,15 @@ object EditRules {
     }
 
     /**
+     * Whether Cut means the selected caption, sticker or effect rather than the
+     * tracks: only with the playhead on it. Adding text selects it, so "selected"
+     * alone meant a Cut ten seconds further on, nowhere near the sticker, did
+     * nothing at all - where it used to cut the video and music under the
+     * playhead.
+     */
+    fun cutsItem(startMs: Long, endMs: Long, atMs: Long): Boolean = atMs in (startMs + 1) until endMs
+
+    /**
      * The markers after "Snap to the beat": the chosen beats, plus every marker
      * placed by hand.
      *
@@ -127,6 +136,12 @@ object EditRules {
     data class SyncPlacement(val sourceInMs: Long, val timelineStartMs: Long, val sourceOutMs: Long)
 
     /**
+     * Media put into the main track: [index] clips stay before it, the first new
+     * clip starts at [atMs], and every clip from [index] on moves [followersShiftMs].
+     */
+    data class Insertion(val index: Int, val atMs: Long, val followersShiftMs: Long)
+
+    /**
      * A sound placed so that it lines up with the picture.
      *
      * [fileOffsetMs] is the analyser's answer - how far the sound file runs ahead
@@ -165,22 +180,39 @@ object EditRules {
     }
 
     /**
-     * Where media added "at the playhead" goes on the main track: on a cut, never
-     * inside a shot.
+     * Where media added "at the playhead" goes on the main track, and how far the
+     * shots after it move to make room.
      *
-     * Inside a clip it is whichever of its two edges is nearer - the one the
-     * person was closer to - and in a gap it is straight after the clip before it.
-     * Past the end it is the end. [spans] are the main track's clips.
+     * On a cut, never inside a shot. Inside a clip it is whichever of its two
+     * edges is nearer - the one the person was closer to - and in a gap it is
+     * straight after the clip before it. Past the end it is the end.
+     *
+     * A cut is between two clips, not at a moment: with a transition the second
+     * clip starts before the first one ends. So the new media goes after the
+     * first clip's *end*, and the clips from the second on move far enough that
+     * none of them overlaps it - the second keeps its transition, now over the
+     * new clip, cut down to half the new clip if that is shorter. Placing at a
+     * moment and moving only the clips that started after it left the second
+     * clip where it was, under the new one: two shots on the main track at once.
+     *
+     * @param spans the main track's clips, in track order.
+     * @param addedMs the lengths of what is being added, in order.
      */
-    fun insertionPoint(spans: List<Span>, playheadMs: Long): Long {
-        val sorted = spans.sortedBy { it.startMs }
-        if (sorted.isEmpty()) return 0L
-        val inside = sorted.firstOrNull { playheadMs > it.startMs && playheadMs < it.endMs }
-        if (inside != null) {
-            return if (playheadMs - inside.startMs <= inside.endMs - playheadMs) inside.startMs else inside.endMs
-        }
-        return sorted.lastOrNull { it.endMs <= playheadMs }?.endMs
-            ?: sorted.first().startMs.coerceAtMost(playheadMs.coerceAtLeast(0L))
+    fun insertion(spans: List<Span>, playheadMs: Long, addedMs: List<Long>): Insertion {
+        if (spans.isEmpty()) return Insertion(0, 0L, 0L)
+        val inside = spans.indexOfFirst { playheadMs > it.startMs && playheadMs < it.endMs }
+        val index = if (inside >= 0) {
+            val s = spans[inside]
+            if (playheadMs - s.startMs <= s.endMs - playheadMs) inside else inside + 1
+        } else spans.count { it.endMs <= playheadMs }
+        val at = if (index == 0) spans[0].startMs.coerceAtMost(playheadMs.coerceAtLeast(0L)) else spans[index - 1].endMs
+        if (index == spans.size) return Insertion(index, at, 0L)
+        val next = spans[index]
+        // How far the next clip reached back over the cut, and how much of that
+        // it can keep over the last of the new clips.
+        val reachBack = (at - next.startMs).coerceAtLeast(0L)
+        val kept = minOf(reachBack, (addedMs.lastOrNull() ?: 0L) / 2)
+        return Insertion(index, at, addedMs.sum() + reachBack - kept)
     }
 
     /**

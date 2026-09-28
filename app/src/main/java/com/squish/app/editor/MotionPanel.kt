@@ -309,7 +309,10 @@ private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorVie
                 color = SquishColors.Yellow
             )
 
-            status.finished -> Text(
+            // Only while the clip still carries the correction: undo takes the
+            // keyframes away and leaves this report, which then described a zoom
+            // the clip no longer has.
+            status.finished && clip.isStabilized -> Text(
                 "Measured ${status.framesAnalysed} frames. Zoomed in " +
                     "${(status.crop * 100).toInt()}% to hide the edges the correction exposes.",
                 style = MaterialTheme.typography.bodySmall,

@@ -275,6 +275,17 @@ fun AudioPanel(
                     textAlign = TextAlign.Center
                 )
             }
+            // A sound playing at its own speed cannot follow a shot that does not:
+            // it can meet it at one moment and drifts from there. Said, rather
+            // than letting a zero above read as "in sync all the way through".
+            if (state.headVideoClip?.speedRamp?.isIdentity == false) {
+                Text(
+                    "The first shot is retimed, so a sound at normal speed can only match it at one " +
+                        "moment. Squish lines them up at the shot's first frame, and reads the offset there.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SquishColors.Yellow
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                 NudgeButton("-1f", Modifier.weight(1f)) { viewModel.nudgeAudioOffsetFrames(target.id, -1) }
                 NudgeButton("-10ms", Modifier.weight(1f)) { viewModel.nudgeAudioOffset(target.id, -10) }
@@ -288,7 +299,7 @@ fun AudioPanel(
                     onClick = { viewModel.runAutoSync(target.id) }
                 )
                 SquishOutlinedButton(
-                    text = "Reset",
+                    text = "Start at 0:00",
                     modifier = Modifier.weight(1f),
                     onClick = { viewModel.resetAudioAlignment(target.id) }
                 )

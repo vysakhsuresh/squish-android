@@ -31,6 +31,16 @@ package com.squish.app.editor
  * **Redo dies on a new edit.** Standard, and the only sane reading: once the
  * timeline has diverged, the old forward path describes an edit that no longer
  * exists.
+ *
+ * **Work that lands in the background** is not pushed on top like an edit. A
+ * job that runs for minutes - auto-captioning - has its step opened when it
+ * starts ([record] with a tag) and every piece that lands later is folded into
+ * that step with [amend], which writes it into every state recorded since. So
+ * the person can keep editing while it runs: their edits stay their own steps,
+ * undoing one of them keeps the lines that landed after it, and one undo of
+ * the run takes all of it. A one-off result - a measurement finishing - goes
+ * *under* a gesture in progress with [recordBeneathOpen], so a drag the person
+ * is in the middle of stays one step.
  */
 class UndoStack<T>(private val maxDepth: Int = MAX_DEPTH) {
 
@@ -40,7 +50,8 @@ class UndoStack<T>(private val maxDepth: Int = MAX_DEPTH) {
         val atMillis: Long,
         val gesture: String? = null,
         val holdMs: Long = COALESCE_MS,
-        val open: Boolean = gesture != null
+        val open: Boolean = gesture != null,
+        val tag: String? = null
     )
 
     private val past = ArrayDeque<Entry<T>>()
@@ -68,13 +79,15 @@ class UndoStack<T>(private val maxDepth: Int = MAX_DEPTH) {
      *   which is always a step of its own.
      * @param holdMs how long the gesture may go quiet and still continue. Typing
      *   pauses between words far longer than a drag pauses between frames.
+     * @param tag names the step so that background work can later [amend] it.
      */
     fun record(
         label: String,
         before: T,
         atMillis: Long,
         gesture: String? = null,
-        holdMs: Long = COALESCE_MS
+        holdMs: Long = COALESCE_MS,
+        tag: String? = null
     ) {
         val top = past.lastOrNull()
         // A gesture still in progress: the stack already holds where it started.
@@ -88,9 +101,69 @@ class UndoStack<T>(private val maxDepth: Int = MAX_DEPTH) {
 
         // Whatever was on top is finished: something else has happened since.
         if (top != null && top.open) past[past.size - 1] = top.copy(open = false)
-        past.addLast(Entry(label, before, atMillis, gesture, holdMs))
+        past.addLast(Entry(label, before, atMillis, gesture, holdMs, tag = tag))
         while (past.size > maxDepth) past.removeFirst()
         future.clear()
+    }
+
+    /**
+     * A result that finished in the background, recorded as a step of its own
+     * without cutting short a gesture the person is in the middle of.
+     *
+     * With a gesture still moving on top, the result goes beneath it: the new
+     * step returns to where the gesture began, and the gesture's own "before"
+     * gains the result through [apply]. Undo then takes the rest of the drag
+     * first and the result second - the same states, in the same order, as if
+     * the result had landed just before the finger went down. With nothing in
+     * progress it is an ordinary step.
+     *
+     * @param before the state now, used when nothing is in progress.
+     * @param apply the result, applied to a recorded state.
+     */
+    fun recordBeneathOpen(label: String, before: T, atMillis: Long, apply: (T) -> T) {
+        val top = past.lastOrNull()
+        if (top == null || !top.open || atMillis - top.atMillis > top.holdMs) {
+            record(label, before, atMillis)
+            return
+        }
+        past.removeLast()
+        past.addLast(Entry(label, top.value, atMillis))
+        past.addLast(top.copy(value = apply(top.value)))
+        while (past.size > maxDepth) past.removeFirst()
+        future.clear()
+    }
+
+    /**
+     * Folds more of a tagged step's work into it, after other steps may have
+     * been recorded on top: every state recorded since the step - each a "before"
+     * that undo can go back to, and each redo target - gets [change] as well, so
+     * no undo of a later edit takes it away. The step's own "before" is left as
+     * it is, so undoing the step takes all of it.
+     *
+     * @return false when the step has been undone, so the work has nowhere to
+     *   go and must not be applied. A step that has aged out of the history is
+     *   part of every state still in it.
+     */
+    fun amend(tag: String, change: (T) -> T): Boolean {
+        if (future.any { it.tag == tag }) return false
+        val at = past.indexOfFirst { it.tag == tag }
+        for (i in (at + 1) until past.size) past[i] = past[i].copy(value = change(past[i].value))
+        for (i in future.indices) future[i] = future[i].copy(value = change(future[i].value))
+        return true
+    }
+
+    /** The tag of the step undo would reverse, if it has one. */
+    val undoTag: String? get() = past.lastOrNull()?.tag
+
+    /**
+     * Takes a tagged step out of the history. Only for a step that turned out to
+     * change nothing - a run that found nothing to add - where it would be an
+     * undo that does nothing; the states either side of it are then the same,
+     * so removing it leaves every other step where it was.
+     */
+    fun drop(tag: String) {
+        past.removeAll { it.tag == tag }
+        future.removeAll { it.tag == tag }
     }
 
     /**

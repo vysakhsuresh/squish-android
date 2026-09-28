@@ -83,6 +83,11 @@ fun main() {
         check(EditRules.splitAt(1_000, 5_000, 1_100, minMs) == null, "a split leaving a 100 ms sliver was allowed")
         check(EditRules.splitAt(1_000, 5_000, 4_900, minMs) == null, "a split leaving a 100 ms tail was allowed")
         check(EditRules.splitAt(1_000, 5_000, 6_000, minMs) == null, "a split outside the caption was allowed")
+        // Cut goes to the selected item only with the playhead on it; elsewhere
+        // it razors the tracks, as it did before anything was selected.
+        check(EditRules.cutsItem(1_000, 5_000, 2_500), "the playhead on the caption did not cut it")
+        check(!EditRules.cutsItem(1_000, 5_000, 10_000), "a Cut far past the selected sticker went to the sticker")
+        check(!EditRules.cutsItem(1_000, 5_000, 1_000) && !EditRules.cutsItem(1_000, 5_000, 5_000), "an edge counted as on it")
     }
 
     // --- Snap to the beat keeps hand-placed markers (A10). --------------------
@@ -154,13 +159,58 @@ fun main() {
         check(EditRules.reordered(ids, "x", 1) == ids, "an unknown id changed the order")
 
         val spans = listOf(Span(0, 4_000), Span(4_000, 10_000))
-        check(EditRules.insertionPoint(spans, 1_000) == 0L, "near a clip's head")
-        check(EditRules.insertionPoint(spans, 3_000) == 4_000L, "near a clip's tail")
-        check(EditRules.insertionPoint(spans, 4_000) == 4_000L, "on a cut")
-        check(EditRules.insertionPoint(spans, 15_000) == 10_000L, "past the end")
-        check(EditRules.insertionPoint(emptyList(), 5_000) == 0L, "an empty track")
+        fun at(s: List<Span>, p: Long, added: List<Long> = listOf(3_000)) = EditRules.insertion(s, p, added)
+        check(at(spans, 1_000).atMs == 0L && at(spans, 1_000).index == 0, "near a clip's head")
+        check(at(spans, 3_000).atMs == 4_000L && at(spans, 3_000).index == 1, "near a clip's tail")
+        check(at(spans, 4_000).atMs == 4_000L, "on a cut")
+        check(at(spans, 3_000).followersShiftMs == 3_000L, "butted followers moved ${at(spans, 3_000).followersShiftMs}")
+        check(at(spans, 15_000).let { it.atMs == 10_000L && it.index == 2 && it.followersShiftMs == 0L }, "past the end")
+        check(EditRules.insertion(emptyList(), 5_000, listOf(3_000)).atMs == 0L, "an empty track")
         val gap = listOf(Span(0, 2_000), Span(5_000, 8_000))
-        check(EditRules.insertionPoint(gap, 3_000) == 2_000L, "in a gap")
+        check(at(gap, 3_000).atMs == 2_000L, "in a gap")
+        check(at(gap, 3_000).followersShiftMs == 3_000L, "a gap after the cut was not kept")
+
+        // A 1 s dissolve: B starts at 4 s, a second before A ends.
+        val dissolve = listOf(Span(0, 5_000), Span(4_000, 9_000))
+        val tail = at(dissolve, 3_500)
+        check(tail.index == 1 && tail.atMs == 5_000L, "near A's end: $tail")
+        // B keeps its second of dissolve, now over the new clip, and no more.
+        check(4_000 + tail.followersShiftMs == 5_000L + 3_000L - 1_000L, "B landed at ${4_000 + tail.followersShiftMs}")
+        // Near B's head, inside B: still after all of A, not at B's start inside A.
+        val head = at(dissolve, 5_500)
+        check(head.index == 1 && head.atMs == 5_000L, "near B's head the new clip went at ${head.atMs}")
+        // A new clip shorter than two dissolves: B's overlap is cut to half of it.
+        val short = at(dissolve, 3_500, listOf(1_000))
+        check(4_000 + short.followersShiftMs == 5_000L + 1_000L - 500L, "over a short clip B landed at ${4_000 + short.followersShiftMs}")
+
+        // A sweep: whatever the track and the playhead, nothing lands under the
+        // clip before the cut, and the next clip overlaps the new media by at most
+        // half the last new clip, never more than it overlapped before.
+        val rnd = java.util.Random(7)
+        repeat(2_000) {
+            var cursor = 0L
+            val track = (0 until 1 + rnd.nextInt(5)).map {
+                val len = 400L + rnd.nextInt(6_000)
+                val back = if (it > 0 && rnd.nextBoolean()) minOf(rnd.nextInt(1_500).toLong(), len / 2) else 0L
+                val gapMs = if (back == 0L && rnd.nextInt(4) == 0) rnd.nextInt(2_000).toLong() else 0L
+                val start = (cursor - back + gapMs).coerceAtLeast(0L)
+                Span(start, start + len).also { s -> cursor = s.endMs }
+            }
+            val added = (0 until 1 + rnd.nextInt(3)).map { 200L + rnd.nextInt(5_000) }
+            val p = rnd.nextInt(cursor.toInt() + 3_000).toLong()
+            val ins = EditRules.insertion(track, p, added)
+            if (ins.index > 0) check(ins.atMs >= track[ins.index - 1].endMs, "new media under the clip before the cut: $track at $p")
+            if (ins.index < track.size) {
+                val next = track[ins.index]
+                val newStart = next.startMs + ins.followersShiftMs
+                val addedEnd = ins.atMs + added.sum()
+                val overlap = addedEnd - newStart
+                val before = (ins.atMs - next.startMs).coerceAtLeast(0L)
+                check(overlap <= added.last() / 2 && overlap <= before.coerceAtLeast(0L) || overlap <= 0L,
+                    "the next clip overlapped the new media by $overlap: $track at $p adding $added")
+                check(newStart >= ins.atMs, "the next clip starts before the new media: $track at $p")
+            }
+        }
     }
 
     // --- Auto-captions keep to the part of the file a clip plays (X1). --------

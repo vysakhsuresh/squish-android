@@ -106,6 +106,7 @@ fun TransitionPanel(
                         onValueChange = {
                             viewModel.setTransition(selected.id, current.type, it.toLong())
                         },
+                        onValueChangeFinished = viewModel::endGesture,
                         valueRange = 150f..2000f,
                         colors = SliderDefaults.colors(
                             thumbColor = SquishColors.Primary,
@@ -152,16 +153,16 @@ fun TransitionPanel(
                 )
 
                 if (selected.layer > 0) {
-                    LabeledSlider("Opacity", selected.opacity, 0f..1f) {
+                    LabeledSlider("Opacity", selected.opacity, 0f..1f, onFinished = viewModel::endGesture) {
                         viewModel.setOverlayGeometry(selected.id, opacity = it)
                     }
-                    LabeledSlider("Size", selected.scale, 0.1f..1f) {
+                    LabeledSlider("Size", selected.scale, 0.1f..1f, onFinished = viewModel::endGesture) {
                         viewModel.setOverlayGeometry(selected.id, scale = it)
                     }
-                    LabeledSlider("Across", selected.offsetXFraction, -1f..1f) {
+                    LabeledSlider("Across", selected.offsetXFraction, -1f..1f, onFinished = viewModel::endGesture) {
                         viewModel.setOverlayGeometry(selected.id, offsetX = it)
                     }
-                    LabeledSlider("Up / down", selected.offsetYFraction, -1f..1f) {
+                    LabeledSlider("Up / down", selected.offsetYFraction, -1f..1f, onFinished = viewModel::endGesture) {
                         viewModel.setOverlayGeometry(selected.id, offsetY = it)
                     }
                 }

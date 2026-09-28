@@ -290,7 +290,8 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         onResize = { size ->
                             viewModel.restyleCaption(caption.id, { it.copy(sizeSp = size) }, dragging = true)
                         },
-                        onGestureEnd = viewModel::endGesture
+                        onGestureEnd = viewModel::endGesture,
+                        onTypingEnd = { viewModel.endCaptionTyping(caption.id) }
                     )
                 }
             }
@@ -468,9 +469,14 @@ private fun CaptionRow(
     onRemove: () -> Unit,
     onRestyle: ((TextOverlayItem) -> TextOverlayItem) -> Unit,
     onResize: (Int) -> Unit,
-    onGestureEnd: () -> Unit
+    onGestureEnd: () -> Unit,
+    onTypingEnd: () -> Unit
 ) {
     var styling by remember(caption.id) { mutableStateOf(false) }
+    // Compose reports focus once as the field is attached - unfocused - and that
+    // is not the cursor leaving. Answering it ended whatever step was open each
+    // time a row appeared, which while auto-captioning was once a line.
+    var hadFocus by remember(caption.id) { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -512,7 +518,10 @@ private fun CaptionRow(
             onValueChange = onEdit,
             // Typing in one line is one undo step; leaving the field ends it, so
             // coming back to correct a word is a step of its own.
-            modifier = Modifier.fillMaxWidth().onFocusChanged { if (!it.isFocused) onGestureEnd() },
+            modifier = Modifier.fillMaxWidth().onFocusChanged {
+                if (hadFocus && !it.isFocused) onTypingEnd()
+                hadFocus = it.isFocused
+            },
             placeholder = { Text("Type what is said here…", color = SquishColors.TextMuted) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = SquishColors.Primary,

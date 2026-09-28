@@ -97,6 +97,82 @@ fun main() {
         check(s.depth == 2, "ending the named gesture did not end it (${s.depth})")
     }
 
+    // --- A background run is one step, and the person's edits stay theirs. ---
+    run {
+        val s = UndoStack<Set<String>>()
+        var state = setOf<String>()
+        fun land(line: String) {
+            check(s.amend("run") { it + line }, "a line had nowhere to go while the run was live")
+            state = state + line
+        }
+        s.record("Auto-caption", state, 0, tag = "run")
+        land("L1")
+        // Typing a correction while lines keep landing: one step, never split.
+        s.record("Caption text", state, 100, gesture = "Text c", holdMs = 5_000); state = state + "T"
+        land("L2")
+        s.record("Caption text", state, 200, gesture = "Text c", holdMs = 5_000); state = state + "T2"
+        land("L3")
+        s.record("Caption text", state, 300, gesture = "Text c", holdMs = 5_000); state = state + "T3"
+        check(s.depth == 2, "typing during the run became ${s.depth} steps, not run + typing")
+
+        // Undoing the typing keeps every line, including those that landed after it began.
+        val afterTypingUndo = s.undo(state)!!
+        check(afterTypingUndo == setOf("L1", "L2", "L3"), "undoing the typing gave $afterTypingUndo")
+        state = afterTypingUndo
+        check(s.undoTag == "run", "the run's step is not next to undo")
+
+        // A line landing now also reaches the redo, so redo does not take it away.
+        land("L4")
+        val redone = s.redo(state)!!
+        check(redone == setOf("L1", "L2", "L3", "L4", "T", "T2", "T3"), "redo lost a line: $redone")
+        state = redone
+
+        s.undo(state)?.let { state = it }
+        val beforeRun = s.undo(state)
+        check(beforeRun == emptySet<String>(), "one undo of the run left $beforeRun")
+        check(!s.amend("run") { it + "L5" }, "a line was folded into a run that was undone")
+    }
+
+    // --- A run's step that aged out: its lines belong to every state left. ----
+    run {
+        val s = UndoStack<Set<String>>(maxDepth = 3)
+        var state = setOf<String>()
+        s.record("Auto-caption", state, 0, tag = "run")
+        repeat(5) { i -> s.record("edit$i", state, 10L + i); state = state + "e$i" }
+        check(s.amend("run") { it + "L" }, "an aged-out run refused a line")
+        state = state + "L"
+        while (s.canUndo) state = s.undo(state)!!
+        check("L" in state, "undoing edits made after an aged-out run took its line: $state")
+    }
+
+    // --- A run that made nothing leaves no step behind. -----------------------
+    run {
+        val s = UndoStack<String>()
+        s.record("Auto-caption", "a", 0, tag = "run")
+        s.record("Cut", "a", 10)
+        s.drop("run")
+        check(s.depth == 1 && s.undoLabel == "Cut", "dropping an empty run left ${s.depth} step(s), top ${s.undoLabel}")
+        check(s.undo("b") == "a" && !s.canUndo, "dropping the run disturbed the step after it")
+    }
+
+    // --- A late result goes under a drag in progress, not through it. ---------
+    run {
+        val s = UndoStack<String>()
+        s.record("Level", "a", 0, gesture = "Level x")            // a -> b
+        s.recordBeneathOpen("Stabilize", "b", 10) { it + "S" }     // b -> bS
+        s.record("Level", "bS", 20, gesture = "Level x")          // bS -> cS
+        check(s.depth == 2, "a result landing split the drag: ${s.depth} steps")
+        check(s.undoLabel == "Level", "the drag is not the first thing undone")
+        check(s.undo("cS") == "aS", "undoing the drag lost the result that landed during it")
+        check(s.undo("aS") == "a", "undoing the result did not return to before it")
+
+        // Nothing in progress, or a gesture long gone quiet: an ordinary step on top.
+        val t = UndoStack<String>()
+        t.record("Level", "a", 0, gesture = "Level x")
+        t.recordBeneathOpen("Stabilize", "b", 5_000) { it + "S" }
+        check(t.undoLabel == "Stabilize" && t.undo("bS") == "b", "a result after a finished drag was not on top")
+    }
+
     // --- Two sliders, or two clips, are two gestures. -------------------------
     run {
         val s = UndoStack<String>()

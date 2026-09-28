@@ -93,13 +93,13 @@ fun ChromaKeyPanel(clip: Clip, playheadMs: Long, viewModel: EditorViewModel) {
 
         FrameSampler(clip = clip, playheadMs = playheadMs, viewModel = viewModel, current = key)
 
-        LabeledSlider("Similarity", key.similarity, ChromaKey.SIMILARITY_RANGE) {
+        LabeledSlider("Similarity", key.similarity, ChromaKey.SIMILARITY_RANGE, onFinished = viewModel::endGesture) {
             viewModel.updateChromaKey(clip.id, similarity = it)
         }
-        LabeledSlider("Edge softness", key.smoothness, 0.005f..0.3f) {
+        LabeledSlider("Edge softness", key.smoothness, 0.005f..0.3f, onFinished = viewModel::endGesture) {
             viewModel.updateChromaKey(clip.id, smoothness = it)
         }
-        LabeledSlider("Spill removal", key.spill, 0.005f..0.3f) {
+        LabeledSlider("Spill removal", key.spill, 0.005f..0.3f, onFinished = viewModel::endGesture) {
             viewModel.updateChromaKey(clip.id, spill = it)
         }
 

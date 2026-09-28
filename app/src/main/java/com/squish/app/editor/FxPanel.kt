@@ -86,7 +86,8 @@ fun FxPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     playheadMs = state.playheadMs,
                     onJump = { viewModel.scrubTo(effect.startMs) },
                     onChange = { change -> viewModel.changeEffect(effect.id, change) },
-                    onRemove = { viewModel.removeEffect(effect.id) }
+                    onRemove = { viewModel.removeEffect(effect.id) },
+                    onGestureEnd = viewModel::endGesture
                 )
             }
         }
@@ -99,7 +100,8 @@ private fun PlacedEffect(
     playheadMs: Long,
     onJump: () -> Unit,
     onChange: ((TimedEffect) -> TimedEffect) -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onGestureEnd: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -129,7 +131,7 @@ private fun PlacedEffect(
                 modifier = Modifier.clickable(onClick = onRemove)
             )
         }
-        LabeledSlider("Strength", effect.intensity, 0.1f..1f) { v -> onChange { it.copy(intensity = v) } }
+        LabeledSlider("Strength", effect.intensity, 0.1f..1f, onFinished = onGestureEnd) { v -> onChange { it.copy(intensity = v) } }
         // The playhead is the most exact pointer on a phone; these move either end to it.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             SquishOutlinedButton(

@@ -68,7 +68,9 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -599,16 +601,19 @@ class EditorViewModel(
         nudgeAudioOffset(clipId, frames * _state.value.frameMs)
 
     /**
-     * Back to no offset against the picture: the sound's file and the head
-     * shot's file start together, wherever the head shot has been trimmed or
-     * moved to. It used to put both at zero, which only meant that for an
-     * untouched clip.
+     * The sound back to the top of its file at the top of the timeline - all of
+     * it, from its first second.
+     *
+     * Not "no offset against the head shot's file": with the first shot trimmed
+     * five seconds in, that entered the sound five seconds in too, and a music
+     * bed lost its opening to a button called Reset. Lining the sound up with
+     * the picture is what Auto-sync and the nudges are for; the readout above
+     * says truthfully where this leaves it.
      */
     fun resetAudioAlignment(clipId: String) {
         record("Reset alignment") {
-            val headDelta = _state.value.headPictureDeltaMs
             updateAudioClip(clipId) { clip ->
-                val placed = EditRules.syncPlacement(0L, headDelta, clip.sourceOutMs, clip.sourceDurationMs, MIN_CLIP_MS)
+                val placed = EditRules.syncPlacement(0L, 0L, clip.sourceOutMs, clip.sourceDurationMs, MIN_CLIP_MS)
                 clip.copy(
                     sourceInMs = placed.sourceInMs,
                     timelineStartMs = placed.timelineStartMs,
@@ -652,21 +657,24 @@ class EditorViewModel(
                 // Measured when the answer lands, not when the question was asked:
                 // the head shot may have been trimmed while this was listening.
                 val headDelta = _state.value.headPictureDeltaMs
-                record("Auto-sync") {
-                    updateAudioClip(clipId) { existing ->
-                        val placed = EditRules.syncPlacement(
-                            result.offsetMs, headDelta, existing.sourceOutMs, existing.sourceDurationMs, MIN_CLIP_MS
-                        )
-                        existing.copy(
-                            sourceInMs = placed.sourceInMs,
-                            timelineStartMs = placed.timelineStartMs,
-                            sourceOutMs = placed.sourceOutMs
-                        )
-                    }
-                }
-                _state.update {
-                    it.copy(syncStatus = SyncStatus.Matched, syncConfidence = result.confidence)
-                }
+                recordLate(
+                    "Auto-sync",
+                    edit = { snapshot ->
+                        snapshot.copy(audioClips = snapshot.audioClips.map { existing ->
+                            if (existing.id != clipId) existing else {
+                                val placed = EditRules.syncPlacement(
+                                    result.offsetMs, headDelta, existing.sourceOutMs, existing.sourceDurationMs, MIN_CLIP_MS
+                                )
+                                existing.copy(
+                                    sourceInMs = placed.sourceInMs,
+                                    timelineStartMs = placed.timelineStartMs,
+                                    sourceOutMs = placed.sourceOutMs
+                                )
+                            }
+                        })
+                    },
+                    alongside = { it.copy(syncStatus = SyncStatus.Matched, syncConfidence = result.confidence) }
+                )
             }
         }
     }
@@ -799,9 +807,12 @@ class EditorViewModel(
 
             // A step of its own: the grid is what "Snap to the beat" and "Cut on
             // the beat" act on, and undo puts the previous one back.
-            record("Find the beat") {
-                _state.update { it.copy(beats = map.toProgress(target, label)) }
-            }
+            val found = map.toProgress(target, label)
+            recordLate(
+                "Find the beat",
+                edit = { it.copy(beats = found) },
+                alongside = { it.copy(beats = found) }
+            )
         }
     }
 
@@ -1448,13 +1459,17 @@ class EditorViewModel(
             }
             record("Add $what") {
                 _state.update { current ->
-                    val base = current.videoClips.filter { it.layer == 0 }
-                    val insertAt = if (at == null) base.maxOfOrNull { c -> c.timelineEndMs } ?: 0L
-                    else EditRules.insertionPoint(base.map { Span(it.timelineStartMs, it.timelineEndMs) }, at)
+                    val base = current.videoClips.filter { it.layer == 0 }.sortedBy { it.timelineStartMs }
+                    // A still lands short and can be dragged out to its full render.
+                    val lengths = probed.map { (_, meta, label) ->
+                        if (label != null) minOf(StillClips.DEFAULT_MS, meta.durationMs) else meta.durationMs
+                    }
+                    val insertion = if (at == null) null
+                    else EditRules.insertion(base.map { Span(it.timelineStartMs, it.timelineEndMs) }, at, lengths)
+                    val insertAt = insertion?.atMs ?: base.maxOfOrNull { c -> c.timelineEndMs } ?: 0L
                     var start = insertAt
                     val added = probed.mapIndexed { i, (uri, meta, label) ->
-                        // A still lands short and can be dragged out to its full render.
-                        val placed = if (label != null) minOf(StillClips.DEFAULT_MS, meta.durationMs) else meta.durationMs
+                        val placed = lengths[i]
                         Clip(
                             kind = ClipKind.Video,
                             uri = uri,
@@ -1465,10 +1480,12 @@ class EditorViewModel(
                             sourceDurationMs = meta.durationMs
                         ).also { start += placed }
                     }
-                    val room = start - insertAt
                     // Only when inserting: an append has nothing after it to move.
-                    val existing = if (at == null) current.videoClips else current.videoClips.map { c ->
-                        if (c.layer == 0 && c.timelineStartMs >= insertAt) c.copy(timelineStartMs = c.timelineStartMs + room)
+                    // Which clips follow is by track order, not by start time - a
+                    // clip transitioning in starts before the cut it follows.
+                    val followers = insertion?.let { ins -> base.drop(ins.index).map { it.id }.toSet() }.orEmpty()
+                    val existing = if (insertion == null) current.videoClips else current.videoClips.map { c ->
+                        if (c.id in followers) c.copy(timelineStartMs = c.timelineStartMs + insertion.followersShiftMs)
                         else c
                     }
                     current.copy(
@@ -1684,101 +1701,136 @@ class EditorViewModel(
         if (shots.isEmpty()) return
 
         captionJob?.cancel()
-        val run = "Auto-caption ${UUID.randomUUID()}"
+        val run = CaptionRun("Auto-caption ${UUID.randomUUID()}")
         captionRun = run
         _state.update {
             it.copy(captions = CaptionProgress(running = true, stage = "Listening to the audio"))
         }
-        // A second run replaces the first rather than stacking a copy of every
-        // line on it. The removal opens this run's undo step, and every line that
-        // lands joins it - see [landAutoCaption] - so one undo takes the whole run
-        // back and puts the previous one back with it.
-        record("Auto-caption", gesture = run, holdMs = Long.MAX_VALUE) {
-            _state.update { it.copy(textOverlays = it.textOverlays.filterNot { o -> o.isAutoCaption }) }
-        }
+        // The run's undo step opens now, where the run began, and every line
+        // that lands is folded into it - see [landAutoCaption] - so one undo takes
+        // the whole run back, whatever was edited while it ran. Nothing is
+        // removed yet: the previous run's lines go when the first new line
+        // arrives. Taking them here, before a single byte was decoded, meant a
+        // pass that found no sound or was stopped straight away left forty
+        // hand-corrected lines gone and nothing in their place.
+        history.record("Auto-caption", _state.value.editSnapshot, System.currentTimeMillis(), tag = run.tag)
+        publishHistory()
 
         captionJob = viewModelScope.launch {
-            // One decode and one pass of the segmenter per file, however many
-            // shots are cut from it.
-            val decoded = HashMap<Uri, MonoPcm?>()
-            val found = HashMap<Uri, List<SpeechSegment>>()
-            val planned = ArrayList<PlannedCaption>()
-            var anySound = false
-            for (shot in shots) {
-                val uri = shot.uri ?: continue
-                // 16 kHz mono is what speech recognisers expect, and it is plenty
-                // for finding utterance boundaries.
-                val pcm = if (decoded.containsKey(uri)) decoded[uri] else PcmDecoder.decodeMono(
-                    getApplication(), uri,
-                    targetSampleRate = 16_000,
-                    maxDurationMs = 30 * 60_000L
-                ).also { decoded[uri] = it }
-                if (pcm == null) continue
-                anySound = true
-                val segments = found[uri] ?: withContext(Dispatchers.Default) { SpeechSegmenter.segment(pcm) }
-                    .also { found[uri] = it }
-                EditRules.speechInWindow(
-                    segments.map { Span(it.startMs, it.endMs) },
-                    shot.sourceInMs, shot.sourceOutMs, MIN_CAPTION_MS
-                ).forEach { planned += PlannedCaption(shot.id, pcm, SpeechSegment(it.startMs, it.endMs)) }
-            }
-
-            if (!anySound) {
-                // Said in the panel, as what it is. The failure card this used to
-                // raise talked about audio-only exports.
-                _state.update { it.copy(captions = CaptionProgress(finished = true, noAudio = true)) }
-                return@launch
-            }
-            if (planned.isEmpty()) {
-                _state.update { it.copy(captions = CaptionProgress(finished = true, total = 0)) }
-                return@launch
-            }
-
-            val canTranscribe = Transcriber.isAvailable(getApplication())
-            _state.update {
-                it.copy(
-                    captions = CaptionProgress(
-                        running = true,
-                        stage = if (canTranscribe) "Transcribing" else "Timing the captions",
-                        total = planned.size,
-                        recognitionAvailable = canTranscribe
-                    )
-                )
-            }
-
-            val language = Locale.getDefault().toLanguageTag()
-            var transcribed = 0
-            var made = 0
-
-            // Each line lands on the timeline as soon as it is done, rather than all
-            // of them at the end. So stopping part-way keeps what was already made,
-            // and a long clip shows its captions arriving instead of a spinner.
-            planned.forEachIndexed { index, plan ->
-                val words = if (canTranscribe) {
-                    Transcriber.transcribe(getApplication(), plan.pcm, plan.segment, language)
-                } else null
-                if (!words.isNullOrBlank()) transcribed++
-                if (landAutoCaption(run, plan, words?.takeIf { it.isNotBlank() } ?: "")) made++
-                _state.update { it.copy(captions = it.captions.copy(transcribed = transcribed, done = index + 1)) }
-            }
-
-            history.endGesture(run)
-            _state.update {
-                it.copy(
-                    captions = CaptionProgress(
-                        finished = true,
-                        total = made,
-                        transcribed = transcribed,
-                        done = planned.size,
-                        recognitionAvailable = canTranscribe
-                    )
-                )
+            try {
+                captionPass(run, shots)
+            } finally {
+                settleCaptionRun(run)
             }
         }
     }
 
-    /** The undo gesture the running auto-caption pass files its lines under. */
-    private var captionRun: String? = null
+    /** The listening and transcribing of one auto-caption run, lines landing as they are done. */
+    private suspend fun captionPass(run: CaptionRun, shots: List<Clip>) {
+        // One decode and one pass of the segmenter per file, however many
+        // shots are cut from it.
+        val decoded = HashMap<Uri, MonoPcm?>()
+        val found = HashMap<Uri, List<SpeechSegment>>()
+        val planned = ArrayList<PlannedCaption>()
+        var anySound = false
+        for (shot in shots) {
+            val uri = shot.uri ?: continue
+            // 16 kHz mono is what speech recognisers expect, and it is plenty
+            // for finding utterance boundaries.
+            val pcm = if (decoded.containsKey(uri)) decoded[uri] else PcmDecoder.decodeMono(
+                getApplication(), uri,
+                targetSampleRate = 16_000,
+                maxDurationMs = 30 * 60_000L
+            ).also { decoded[uri] = it }
+            if (pcm == null) continue
+            anySound = true
+            val segments = found[uri] ?: withContext(Dispatchers.Default) { SpeechSegmenter.segment(pcm) }
+                .also { found[uri] = it }
+            EditRules.speechInWindow(
+                segments.map { Span(it.startMs, it.endMs) },
+                shot.sourceInMs, shot.sourceOutMs, MIN_CAPTION_MS
+            ).forEach { planned += PlannedCaption(shot.id, pcm, SpeechSegment(it.startMs, it.endMs)) }
+        }
+
+        if (!anySound) {
+            // Said in the panel, as what it is. The failure card this used to
+            // raise talked about audio-only exports.
+            _state.update { it.copy(captions = CaptionProgress(finished = true, noAudio = true)) }
+            return
+        }
+        if (planned.isEmpty()) {
+            _state.update { it.copy(captions = CaptionProgress(finished = true, total = 0)) }
+            return
+        }
+
+        val canTranscribe = Transcriber.isAvailable(getApplication())
+        _state.update {
+            it.copy(
+                captions = CaptionProgress(
+                    running = true,
+                    stage = if (canTranscribe) "Transcribing" else "Timing the captions",
+                    total = planned.size,
+                    recognitionAvailable = canTranscribe
+                )
+            )
+        }
+
+        val language = Locale.getDefault().toLanguageTag()
+        var transcribed = 0
+        var made = 0
+
+        // Each line lands on the timeline as soon as it is done, rather than all
+        // of them at the end. So stopping part-way keeps what was already made,
+        // and a long clip shows its captions arriving instead of a spinner.
+        planned.forEachIndexed { index, plan ->
+            val words = if (canTranscribe) {
+                Transcriber.transcribe(getApplication(), plan.pcm, plan.segment, language)
+            } else null
+            // A recogniser that ignores cancellation can still hand back words
+            // after Stop; they must not land.
+            currentCoroutineContext().ensureActive()
+            if (!words.isNullOrBlank()) transcribed++
+            if (landAutoCaption(run, plan, words?.takeIf { it.isNotBlank() } ?: "")) made++
+            _state.update { it.copy(captions = it.captions.copy(transcribed = transcribed, done = index + 1)) }
+        }
+
+        _state.update {
+            it.copy(
+                captions = CaptionProgress(
+                    finished = true,
+                    total = made,
+                    transcribed = transcribed,
+                    done = planned.size,
+                    recognitionAvailable = canTranscribe
+                )
+            )
+        }
+    }
+
+    /**
+     * One auto-caption run: the tag its undo step carries, and whether any line
+     * has landed yet - the first one is what retires the previous run's lines,
+     * and a run that lands none leaves no step behind.
+     */
+    private class CaptionRun(val tag: String) {
+        var landed = false
+    }
+
+    /** The run in progress, or null once it has finished or been stopped. */
+    private var captionRun: CaptionRun? = null
+
+    /**
+     * After a run, whichever way it ended. A run that made nothing - no sound, no
+     * speech, stopped before its first line - changed nothing, and an "Undo:
+     * Auto-caption" that does nothing is not left on the button.
+     */
+    private fun settleCaptionRun(run: CaptionRun) {
+        if (!run.landed) {
+            history.drop(run.tag)
+            publishHistory()
+        }
+        if (captionRun === run) captionRun = null
+    }
 
     /** One line of speech to caption: which shot carries it, and where it is in that shot's file. */
     private class PlannedCaption(val clipId: String, val pcm: MonoPcm, val segment: SpeechSegment)
@@ -1788,11 +1840,22 @@ class EditorViewModel(
      *
      * Mapped through the shot as it is *now*: a shot trimmed or moved while the
      * run was listening carries its speech with it, and speech it has since
-     * trimmed away is dropped. Joins the run's undo step while nothing else has
-     * been recorded since; after another edit it starts a fresh one, so an undo
-     * never takes a caption that landed after the edit it names.
+     * trimmed away is dropped.
+     *
+     * The line is part of the run's undo step, however much has been edited since
+     * the run began - [UndoStack.amend] writes it into every state recorded after
+     * that step. It used to be pushed on top like an edit, which closed whatever
+     * the person was doing each time a line landed: typing a correction while
+     * lines arrived became a dozen alternating steps, and a sixty-line run
+     * became sixty steps that pushed the one holding the previous run's lines
+     * out of the history.
+     *
+     * The first line to land takes the previous run's lines away, so a second
+     * run replaces the first instead of stacking a copy of every line on it -
+     * and only once there is something to replace them with.
      */
-    private fun landAutoCaption(run: String, plan: PlannedCaption, text: String): Boolean {
+    private fun landAutoCaption(run: CaptionRun, plan: PlannedCaption, text: String): Boolean {
+        if (captionRun !== run) return false
         val shot = _state.value.videoClips.firstOrNull { it.id == plan.clipId } ?: return false
         val start = maxOf(plan.segment.startMs, shot.sourceInMs)
         val end = minOf(plan.segment.endMs, shot.sourceOutMs)
@@ -1805,9 +1868,23 @@ class EditorViewModel(
             colorArgb = android.graphics.Color.WHITE
         )
         if (line.endMs <= line.startMs) return false
-        record("Auto-caption", gesture = run, holdMs = Long.MAX_VALUE) {
-            _state.update { it.copy(textOverlays = it.textOverlays + line) }
+        val replacing = !run.landed
+        val land = { lines: List<TextOverlayItem> ->
+            (if (replacing) lines.filterNot { it.isAutoCaption } else lines) + line
         }
+        if (!history.amend(run.tag) { it.copy(textOverlays = land(it.textOverlays)) }) return false
+        run.landed = true
+        _state.update { current ->
+            val kept = land(current.textOverlays)
+            // A selected line of the previous run has gone; nothing is selected in its place.
+            val selectionGone = current.textOverlays.any { it.id == current.selectedClipId } &&
+                kept.none { it.id == current.selectedClipId }
+            current.copy(
+                textOverlays = kept,
+                selectedClipId = if (selectionGone) null else current.selectedClipId
+            )
+        }
+        edited()
         return true
     }
 
@@ -1822,7 +1899,9 @@ class EditorViewModel(
         if (!_state.value.captions.running) return
         captionJob?.cancel()
         captionJob = null
-        captionRun?.let(history::endGesture)
+        // Nothing more lands from here, even from a recogniser that does not
+        // notice it was cancelled.
+        captionRun = null
         _state.update {
             val progress = it.captions
             it.copy(
@@ -1843,7 +1922,7 @@ class EditorViewModel(
      * step - pauses between words included - and leaving the field ends it.
      */
     fun updateCaptionText(id: String, text: String) =
-        record("Caption text", gesture = "Text $id", holdMs = TYPING_HOLD_MS) {
+        record("Caption text", gesture = typingGesture(id), holdMs = TYPING_HOLD_MS) {
             _state.update { current ->
                 current.copy(
                     textOverlays = current.textOverlays.map {
@@ -2145,12 +2224,15 @@ class EditorViewModel(
                 return@launch
             }
 
-            record("Stabilize") {
-                _state.update { state ->
-                    state.copy(
-                        videoClips = state.videoClips.map {
-                            if (it.id == clipId) it.copy(stabilizer = result.keyframes) else it
-                        },
+            recordLate(
+                "Stabilize",
+                edit = { snapshot ->
+                    snapshot.copy(videoClips = snapshot.videoClips.map {
+                        if (it.id == clipId) it.copy(stabilizer = result.keyframes) else it
+                    })
+                },
+                alongside = {
+                    it.copy(
                         stabilize = StabilizeProgress(
                             finished = true,
                             crop = result.crop,
@@ -2159,7 +2241,7 @@ class EditorViewModel(
                         )
                     )
                 }
-            }
+            )
         }
     }
 
@@ -2410,8 +2492,9 @@ class EditorViewModel(
     /**
      * Cut at the playhead.
      *
-     * With a caption or sticker selected, that item is cut in two, same words and
-     * style on both sides; with an effect selected, the effect. Otherwise a razor
+     * With a caption or sticker selected and the playhead on it, that item is cut
+     * in two, same words and style on both sides; with an effect, the effect - a
+     * sliver too short to stand is refused, as a clip's is. Otherwise a razor
      * through picture and sound alike - this used to be handed only the video
      * clips, which is why a music bed could never be cut on the strip.
      *
@@ -2424,7 +2507,7 @@ class EditorViewModel(
         val current = _state.value
         val selected = current.selectedClipId
         val at = current.playheadMs
-        val text = current.textOverlays.firstOrNull { it.id == selected }
+        val text = current.textOverlays.firstOrNull { it.id == selected && EditRules.cutsItem(it.startMs, it.endMs, at) }
         if (text != null) {
             val halves = EditRules.splitAt(text.startMs, text.endMs, at, MIN_CLIP_MS) ?: return
             record("Cut") {
@@ -2444,7 +2527,7 @@ class EditorViewModel(
             }
             return
         }
-        val effect = current.effects.firstOrNull { it.id == selected }
+        val effect = current.effects.firstOrNull { it.id == selected && EditRules.cutsItem(it.startMs, it.endMs, at) }
         if (effect != null) {
             val halves = EditRules.splitAt(effect.startMs, effect.endMs, at, MIN_EFFECT_MS) ?: return
             record("Cut") {
@@ -2524,6 +2607,11 @@ class EditorViewModel(
         }
         if (_state.value.editSnapshot == before) return
         history.record(label, before, System.currentTimeMillis(), gesture, holdMs)
+        edited()
+    }
+
+    /** What follows every change that reaches the history. */
+    private fun edited() {
         publishHistory()
         // Editing the bare clip while its saved edit is still on offer is the
         // answer to the offer: this is a new project. That is settled by the
@@ -2536,10 +2624,44 @@ class EditorViewModel(
     }
 
     /**
-     * The finger lifted - off a slider, a handle, a text field. The next change
-     * to the same thing is a new step, however soon it comes.
+     * Files a result that finished in the background - a measurement, a match, a
+     * beat grid - as an undo step of its own.
+     *
+     * Through [record] it closed whatever gesture was open, so a slider being
+     * dragged when Stabilize finished became two steps, one either side of it.
+     * Here the result goes beneath a gesture still moving, which needs it as a
+     * change to a recorded state, [edit], rather than to the screen. [alongside]
+     * is what else changes on screen and is not part of the edit: the card that
+     * reports the result.
+     */
+    private fun recordLate(
+        label: String,
+        edit: (EditSnapshot) -> EditSnapshot,
+        alongside: (EditorUiState) -> EditorUiState = { it }
+    ) {
+        val before = _state.value.editSnapshot
+        val after = edit(before)
+        _state.update { alongside(if (after == before) it else it.restoring(after)) }
+        if (after == before) return
+        history.recordBeneathOpen(label, before, System.currentTimeMillis(), edit)
+        edited()
+        recomputeEstimate()
+    }
+
+    /**
+     * The finger lifted - off a slider, a handle. The next change to the same
+     * thing is a new step, however soon it comes.
      */
     fun endGesture() = history.endGesture()
+
+    /**
+     * The caption's text field lost focus. Only that caption's typing ends: the
+     * panel may be showing a dozen rows, and a row that never had the cursor has
+     * no business closing a drag or a run of typing somewhere else.
+     */
+    fun endCaptionTyping(id: String) = history.endGesture(typingGesture(id))
+
+    private fun typingGesture(id: String) = "Text $id"
 
     private fun publishHistory() = _state.update {
         it.copy(undoLabel = history.undoLabel?.let(::shownLabel), redoLabel = history.redoLabel?.let(::shownLabel))
@@ -2563,12 +2685,15 @@ class EditorViewModel(
     }
 
     /**
-     * Undo and redo stop an auto-caption run first. Its lines land as they are
-     * transcribed, each joining the run's step; one landing after an undo would
-     * start a new step and throw away the redo the person just made room for.
+     * Undoing the auto-caption run itself stops it, since there is no longer a
+     * step for its lines to join. Undoing anything else lets it carry on: the
+     * lines it has made are written into every state the history holds (see
+     * [landAutoCaption]), so they survive the undo and the redo. Every undo used
+     * to stop the run, and nudging a slider during a long pass then undoing the
+     * nudge threw away the rest of the pass.
      */
     fun undo() {
-        stopCaptions()
+        if (captionRun?.let { history.undoTag == it.tag } == true) stopCaptions()
         val restored = history.undo(_state.value.editSnapshot) ?: return
         _state.update { it.restoring(restored) }
         publishHistory()
@@ -2576,7 +2701,6 @@ class EditorViewModel(
     }
 
     fun redo() {
-        stopCaptions()
         val restored = history.redo(_state.value.editSnapshot) ?: return
         _state.update { it.restoring(restored) }
         publishHistory()

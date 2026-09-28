@@ -611,6 +611,12 @@ data class EditorUiState(
      * How far the head shot's file runs ahead of the timeline: file time minus
      * timeline time at its first frame. Zero for an untrimmed clip at the start,
      * and exactly the error every sync calculation made once it was not.
+     *
+     * Taken at the first frame because that is the one moment whose file time
+     * is known whatever the shot's speed curve: the curve starts there. On a
+     * retimed shot file time and timeline time drift apart from there on, and a
+     * sound at its own speed cannot follow - one delta can match it at one
+     * moment only. The Sound panel says so when the head shot is retimed.
      */
     val headPictureDeltaMs: Long
         get() = headVideoClip?.let { it.sourceInMs - it.timelineStartMs } ?: 0L
