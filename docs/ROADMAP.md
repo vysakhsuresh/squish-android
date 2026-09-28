@@ -327,6 +327,9 @@ All on the moto g84 (`adb -s ZY32J8HF2S`), `adb logcat -G 16M` first, build with
 8. Export a 2 GB-class file: the progress card reads "Saving to gallery…" until the Photos entry exists; deleting the gallery copy first then exporting shows the honest message.
 9. Add 3 photos and tap Export immediately: Render is disabled until "Preparing" finishes.
 10. Delete a song's file after adding it: Export refuses before starting, naming the sound.
+11. The 2026-09-28 failures, re-run on the new build: A + a photo with a Dissolve on the join, 480p → completes (it failed on 1.5.1 with "The preceding MediaItem does not contain any track of type 2", shown as "These clips don't fit together"); the photo first then A; A + photo + a video overlay → completes with the PiP on top. Use a photo added before this build too (its clip has no sound track) as well as a new one (silent AAC).
+12. A, a 2 s gap, B, and a clip starting at 3 s on a fresh timeline: black in the gaps, no small square in the middle of the frame; captions over the gap are in the file.
+13. Three clips with Slide on both joins, then Wipe on both: the first join has the incoming shot on the lower roll and the second on the upper; both match the preview.
 
 **B6**
 1. Open A: header shows name, Undo, Redo, Export; tap the name and rename it; Drafts shows the new name.

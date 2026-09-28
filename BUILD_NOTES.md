@@ -15,6 +15,31 @@ instead of a rewrite.
 Paste any compiler error back and it will be fixed directly — the list below is
 so you can also fix it yourself in thirty seconds.
 
+## Media3 1.11.1, and what the export leans on
+
+Media3 is at 1.11.1 (Kotlin 2.2.10, compileSdk 36 - both needed by it). The
+breaks that came with it, all fixed: `MetadataRetriever` is an instance per
+file in the new `media3-inspector` module; `OverlaySettings` is an interface in
+`media3-common` with `StaticOverlaySettings.Builder` in `media3-effect`;
+`ChannelMixingMatrix.create` is gone (the constructor takes explicit
+coefficients); `MediaCodecInfo.isFormatSupported` takes a `Context`; and
+sequences declare their tracks with `EditedMediaItemSequence.Builder(setOf(...))`.
+
+The composited export (`CompositionFactory`) depends on exactly these, read in
+the 1.11.1 sources: the compositor's primary input is the first sequence with
+video and it draws inputs back to front, index 0 on top
+(`DefaultCompositorGlProgram.drawFrame`); `getOverlaySettings(inputId, …)` is
+keyed by sequence index; a sequence declared with an audio track fills any item
+without one with silence. Transitions are drawn into each shot's own pixels and
+empty stretches are a transparent still, so nothing else about the compositor
+is assumed. Anything that changes those three facts in a later version changes
+the stacking of every layered export - check `tools/jvm/ExportPlanChecks.kt`'s
+assumptions against the new sources before upgrading.
+
+The sections below were written against 1.4/1.5 and are kept for the history;
+where they name a call that no longer exists (`ChannelMixingMatrix.create`,
+`HslAdjustment` for saturation), that call is no longer used.
+
 ## Ranked by likelihood of needing a touch
 
 ### 1. `EditedMediaItemSequence` construction — `media/VideoProcessor.kt`
