@@ -88,7 +88,7 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         label = preset.label,
                         selected = false,
                         modifier = Modifier.weight(1f),
-                        onClick = { viewModel.applyMotionPreset(clip.id, preset) }
+                        onClick = { viewModel.clips.applyMotionPreset(clip.id, preset) }
                     )
                 }
             }
@@ -98,7 +98,7 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         label = preset.label,
                         selected = false,
                         modifier = Modifier.weight(1f),
-                        onClick = { viewModel.applyMotionPreset(clip.id, preset) }
+                        onClick = { viewModel.clips.applyMotionPreset(clip.id, preset) }
                     )
                 }
             }
@@ -117,20 +117,20 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 accent = SquishColors.Amber
             )
             LabeledSlider("Scale", here.scale, 0.2f..3f, onFinished = viewModel::endGesture) {
-                viewModel.setClipTransform(clip.id, scale = it)
+                viewModel.clips.setClipTransform(clip.id, scale = it)
             }
             LabeledSlider("Across", here.offsetXFraction, -1f..1f, onFinished = viewModel::endGesture) {
-                viewModel.setClipTransform(clip.id, offsetX = it)
+                viewModel.clips.setClipTransform(clip.id, offsetX = it)
             }
             LabeledSlider("Up / down", here.offsetYFraction, -1f..1f, onFinished = viewModel::endGesture) {
-                viewModel.setClipTransform(clip.id, offsetY = it)
+                viewModel.clips.setClipTransform(clip.id, offsetY = it)
             }
             LabeledSlider(
                 "Rotation", here.rotationDegrees, -45f..45f,
                 readout = Readout.degrees,
                 onFinished = viewModel::endGesture
             ) {
-                viewModel.setClipTransform(clip.id, rotation = it)
+                viewModel.clips.setClipTransform(clip.id, rotation = it)
             }
         }
 
@@ -146,7 +146,7 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
                             "Clear",
                             style = MaterialTheme.typography.labelSmall,
                             color = SquishColors.Pink,
-                            modifier = Modifier.clickable { viewModel.clearKeyframes(clip.id) }
+                            modifier = Modifier.clickable { viewModel.clips.clearKeyframes(clip.id) }
                         )
                     }
                 }
@@ -155,7 +155,7 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
             SquishOutlinedButton(
                 text = "Add key at playhead",
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { viewModel.addKeyframeAtPlayhead(clip.id) }
+                onClick = { viewModel.clips.addKeyframeAtPlayhead(clip.id) }
             )
 
             if (!animated) {
@@ -171,8 +171,8 @@ fun MotionPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         key = key,
                         atPlayhead = isUnderPlayhead(clip, key, state),
                         onGoTo = { viewModel.scrubTo(clip.timelineStartMs + key.atMs) },
-                        onEasing = { viewModel.setKeyframeEasing(clip.id, key.atMs, it) },
-                        onRemove = { viewModel.removeKeyframe(clip.id, key.atMs) }
+                        onEasing = { viewModel.clips.setKeyframeEasing(clip.id, key.atMs, it) },
+                        onRemove = { viewModel.clips.removeKeyframe(clip.id, key.atMs) }
                     )
                 }
             }
@@ -275,7 +275,7 @@ private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorVie
                         "Remove",
                         style = MaterialTheme.typography.labelSmall,
                         color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.clearStabilization(clip.id) }
+                        modifier = Modifier.clickable { viewModel.analysis.clearStabilization(clip.id) }
                     )
                 }
             }
@@ -337,7 +337,7 @@ private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorVie
         LabeledSlider(
             "Strength", state.stabilizeStrength, 0f..1f,
             onFinished = viewModel::endGesture,
-            onChange = viewModel::setStabilizeStrength
+            onChange = viewModel.analysis::setStabilizeStrength
         )
         Text(
             "Stronger holds the frame steadier and crops in further to afford it.",
@@ -359,7 +359,7 @@ private fun StabilizeCard(state: EditorUiState, clip: Clip, viewModel: EditorVie
                 else -> "Stabilize this clip"
             },
             modifier = Modifier.fillMaxWidth(),
-            onClick = { if (!status.running && !busyElsewhere) viewModel.stabilizeClip(clip.id) }
+            onClick = { if (!status.running && !busyElsewhere) viewModel.analysis.stabilizeClip(clip.id) }
         )
     }
 }

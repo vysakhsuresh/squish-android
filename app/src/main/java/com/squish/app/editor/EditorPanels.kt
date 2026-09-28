@@ -71,7 +71,7 @@ fun PrecisionTrimPanel(state: EditorUiState, viewModel: EditorViewModel) {
     // These controls trim a clip on the timeline, so they must read that clip's
     // source window - not the old whole-video trim range, which the exporter no
     // longer consults now that the timeline is authoritative.
-    val clip = viewModel.trimTargetClip(state)
+    val clip = viewModel.clips.trimTargetClip(state)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = SquishColors.Violet) {
@@ -84,16 +84,16 @@ fun PrecisionTrimPanel(state: EditorUiState, viewModel: EditorViewModel) {
             TrimPointRow(
                 label = "In",
                 value = Timecode.formatWithFrame(clip?.sourceInMs ?: 0L, state.fps),
-                onNudgeBack = { viewModel.nudgeTrim(isStart = true, frames = -1) },
-                onNudgeForward = { viewModel.nudgeTrim(isStart = true, frames = 1) },
-                onSetToPlayhead = { viewModel.setTrimPointToPlayhead(isStart = true) }
+                onNudgeBack = { viewModel.clips.nudgeTrim(isStart = true, frames = -1) },
+                onNudgeForward = { viewModel.clips.nudgeTrim(isStart = true, frames = 1) },
+                onSetToPlayhead = { viewModel.clips.setTrimPointToPlayhead(isStart = true) }
             )
             TrimPointRow(
                 label = "Out",
                 value = Timecode.formatWithFrame(clip?.sourceOutMs ?: 0L, state.fps),
-                onNudgeBack = { viewModel.nudgeTrim(isStart = false, frames = -1) },
-                onNudgeForward = { viewModel.nudgeTrim(isStart = false, frames = 1) },
-                onSetToPlayhead = { viewModel.setTrimPointToPlayhead(isStart = false) }
+                onNudgeBack = { viewModel.clips.nudgeTrim(isStart = false, frames = -1) },
+                onNudgeForward = { viewModel.clips.nudgeTrim(isStart = false, frames = 1) },
+                onSetToPlayhead = { viewModel.clips.setTrimPointToPlayhead(isStart = false) }
             )
             Text(
                 "${Timecode.format(clip?.durationMs ?: 0L)} this shot · " +
@@ -114,12 +114,12 @@ fun PrecisionTrimPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 SquishOutlinedButton(
                     text = "Drop marker",
                     modifier = Modifier.weight(1f),
-                    onClick = { viewModel.addMarkerAtPlayhead() }
+                    onClick = { viewModel.clips.addMarkerAtPlayhead() }
                 )
                 SquishOutlinedButton(
                     text = if (state.markers.isEmpty()) "No markers" else "Clear ${state.markers.size}",
                     modifier = Modifier.weight(1f),
-                    onClick = { viewModel.clearMarkers() }
+                    onClick = { viewModel.clips.clearMarkers() }
                 )
             }
             Row(
@@ -128,7 +128,7 @@ fun PrecisionTrimPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Snap to markers", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
-                SquishToggleSwitch(checked = state.snapToMarkers, onCheckedChange = viewModel::setSnapToMarkers)
+                SquishToggleSwitch(checked = state.snapToMarkers, onCheckedChange = viewModel.clips::setSnapToMarkers)
             }
         }
     }
@@ -183,16 +183,16 @@ private fun AutoReframeRow(state: EditorUiState, viewModel: EditorViewModel) {
                 progress.running -> SquishOutlinedButton(
                     text = "Stop",
                     modifier = Modifier.weight(1f),
-                    onClick = viewModel::cancelReframe
+                    onClick = viewModel.analysis::cancelReframe
                 )
                 following -> {
-                    SquishOutlinedButton(text = "Again", modifier = Modifier.weight(1f), onClick = viewModel::autoReframe)
-                    SquishOutlinedButton(text = "Centre it", modifier = Modifier.weight(1f), onClick = viewModel::clearReframe)
+                    SquishOutlinedButton(text = "Again", modifier = Modifier.weight(1f), onClick = viewModel.analysis::autoReframe)
+                    SquishOutlinedButton(text = "Centre it", modifier = Modifier.weight(1f), onClick = viewModel.analysis::clearReframe)
                 }
                 else -> SquishOutlinedButton(
                     text = "Auto-reframe",
                     modifier = Modifier.weight(1f),
-                    onClick = viewModel::autoReframe
+                    onClick = viewModel.analysis::autoReframe
                 )
             }
         }
@@ -220,7 +220,7 @@ fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     label = aspect.label,
                     selected = state.cropAspect == aspect,
                     accentColor = SquishColors.Purple,
-                    onClick = { viewModel.setCropAspect(aspect) }
+                    onClick = { viewModel.clips.setCropAspect(aspect) }
                 )
             }
         }
@@ -243,7 +243,7 @@ fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 Text("Rotation", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
                 Text("${state.rotationDegrees}°", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
             }
-            SquishOutlinedButton(text = "Rotate 90°", onClick = { viewModel.toggleRotate() })
+            SquishOutlinedButton(text = "Rotate 90°", onClick = { viewModel.clips.toggleRotate() })
         }
     }
 }

@@ -58,7 +58,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         "Clear",
                         style = MaterialTheme.typography.labelSmall,
                         color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.clearBeats() }
+                        modifier = Modifier.clickable { viewModel.audio.clearBeats() }
                     )
                 }
             }
@@ -91,7 +91,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 SquishOutlinedButton(
                     text = "Try again",
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { viewModel.detectBeats() }
+                    onClick = { viewModel.audio.detectBeats() }
                 )
             }
 
@@ -111,17 +111,17 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     SquishOutlinedButton(
                         text = "÷2",
                         modifier = Modifier.weight(1f),
-                        onClick = { viewModel.scaleBeats(faster = false) }
+                        onClick = { viewModel.audio.scaleBeats(faster = false) }
                     )
                     SquishOutlinedButton(
                         text = "×2",
                         modifier = Modifier.weight(1f),
-                        onClick = { viewModel.scaleBeats(faster = true) }
+                        onClick = { viewModel.audio.scaleBeats(faster = true) }
                     )
                     SquishOutlinedButton(
                         text = "Shift bar",
                         modifier = Modifier.weight(1.4f),
-                        onClick = { viewModel.nudgeDownbeat() }
+                        onClick = { viewModel.audio.nudgeDownbeat() }
                     )
                 }
                 Text(
@@ -139,7 +139,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         "in point and moving a caption all snap to markers already. " +
                         "Markers you placed yourself stay.",
                     accent = SquishColors.Amber
-                ) { n -> viewModel.markBeats(n) }
+                ) { n -> viewModel.audio.markBeats(n) }
 
                 BeatAction(
                     icon = Icons.Filled.ContentCut,
@@ -147,7 +147,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     body = "Razors the main video track at once, cutting every shot " +
                         "where the beat lands. The music and any overlays stay whole.",
                     accent = SquishColors.Violet
-                ) { n -> viewModel.cutOnBeats(n) }
+                ) { n -> viewModel.audio.cutOnBeats(n) }
             }
 
             else -> {
@@ -161,7 +161,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 SquishOutlinedButton(
                     text = "Find the beat",
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { viewModel.detectBeats() }
+                    onClick = { viewModel.audio.detectBeats() }
                 )
             }
         }

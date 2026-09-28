@@ -58,7 +58,7 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
 
     LaunchedEffect(clip.id, stale) {
         if (stale) {
-            frame = viewModel.sampleFrame(clip, state.playheadMs)
+            frame = viewModel.analysis.sampleFrame(clip, state.playheadMs)
             stale = false
         }
     }
@@ -75,7 +75,7 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                         "Discard",
                         style = MaterialTheme.typography.labelSmall,
                         color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.clearTrack() }
+                        modifier = Modifier.clickable { viewModel.analysis.clearTrack() }
                     )
                 }
             }
@@ -98,7 +98,7 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                         .fillMaxSize()
                         .pointerInput(clip.id) {
                             detectTapGestures { offset ->
-                                viewModel.setTrackPoint(
+                                viewModel.analysis.setTrackPoint(
                                     offset.x / size.width,
                                     offset.y / size.height
                                 )
@@ -132,7 +132,7 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
             }
         }
 
-        LabeledSlider("Box size", tracking.boxFraction, 0.06f..0.35f, viewModel::setTrackBox)
+        LabeledSlider("Box size", tracking.boxFraction, 0.06f..0.35f, viewModel.analysis::setTrackBox)
         Text(
             "Tight enough to be mostly the object, loose enough to include some of its pattern. " +
                 "A box of flat color has nothing to lock onto.",
@@ -190,7 +190,7 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
         SquishOutlinedButton(
             text = if (tracking.running) "Following…" else "Track from the playhead",
             modifier = Modifier.fillMaxWidth(),
-            onClick = { if (!tracking.running) viewModel.startTracking(clip.id) }
+            onClick = { if (!tracking.running) viewModel.analysis.startTracking(clip.id) }
         )
 
         if (tracking.track != null) {
@@ -208,21 +208,21 @@ private fun PinTargets(state: EditorUiState, clip: Clip, viewModel: EditorViewMo
         text = if (clip.mask?.track != null) "✓ Hiding a face or plate on this clip"
         else "Hide a face or plate here",
         modifier = Modifier.fillMaxWidth(),
-        onClick = { viewModel.pinMaskToTrack(clip.id) }
+        onClick = { viewModel.analysis.pinMaskToTrack(clip.id) }
     )
 
     if (clip.isOverlay) {
         SquishOutlinedButton(
             text = "Pin this layer to it",
             modifier = Modifier.fillMaxWidth(),
-            onClick = { viewModel.pinLayerToTrack(clip.id) }
+            onClick = { viewModel.analysis.pinLayerToTrack(clip.id) }
         )
     } else {
         state.videoClips.filter { it.isOverlay }.forEach { layer ->
             SquishOutlinedButton(
                 text = "Pin ${layer.label} to it",
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { viewModel.pinLayerToTrack(layer.id) }
+                onClick = { viewModel.analysis.pinLayerToTrack(layer.id) }
             )
         }
     }
@@ -244,14 +244,14 @@ private fun PinTargets(state: EditorUiState, clip: Clip, viewModel: EditorViewMo
                 SquishOutlinedButton(
                     text = if (caption.track != null) "✓ $label" else "Pin “$label”",
                     modifier = Modifier.weight(1f),
-                    onClick = { viewModel.pinCaptionToTrack(caption.id) }
+                    onClick = { viewModel.analysis.pinCaptionToTrack(caption.id) }
                 )
                 if (caption.track != null) {
                     Text(
                         "Unpin",
                         style = MaterialTheme.typography.labelSmall,
                         color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.unpinCaption(caption.id) }
+                        modifier = Modifier.clickable { viewModel.analysis.unpinCaption(caption.id) }
                     )
                 }
             }

@@ -54,7 +54,7 @@ import kotlin.math.ln
  */
 @Composable
 fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
-    val clip = viewModel.speedTargetClip(state)
+    val clip = viewModel.clips.speedTargetClip(state)
 
     if (clip == null) {
         PanelSurface(accent = SquishColors.Blue) {
@@ -84,7 +84,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                             "Reset",
                             style = MaterialTheme.typography.labelSmall,
                             color = SquishColors.Pink,
-                            modifier = Modifier.clickable { viewModel.clearSpeed(clip.id) }
+                            modifier = Modifier.clickable { viewModel.clips.clearSpeed(clip.id) }
                         )
                     }
                 }
@@ -105,7 +105,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
             SmoothToggle(
                 sourceFps = state.fps,
                 speed = ramp.slowestSpeed,
-                onHold = { viewModel.keepSmooth(clip.id) }
+                onHold = { viewModel.clips.keepSmooth(clip.id) }
             )
 
             if (ramp.isRamped) {
@@ -132,7 +132,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 // is crushed into the first fifth and unusable.
                 Slider(
                     value = speedToSlider(ramp.flatSpeed),
-                    onValueChange = { viewModel.setClipSpeed(clip.id, sliderToSpeed(it), dragging = true) },
+                    onValueChange = { viewModel.clips.setClipSpeed(clip.id, sliderToSpeed(it), dragging = true) },
                     onValueChangeFinished = viewModel::endGesture,
                     valueRange = 0f..1f,
                     colors = SliderDefaults.colors(
@@ -149,7 +149,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                             selected = abs(ramp.flatSpeed - preset) < 0.01f,
                             accentColor = SquishColors.Blue,
                             modifier = Modifier.weight(1f),
-                            onClick = { viewModel.setClipSpeed(clip.id, preset) }
+                            onClick = { viewModel.clips.setClipSpeed(clip.id, preset) }
                         )
                     }
                 }
@@ -171,7 +171,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                             selected = false,
                             accentColor = SquishColors.Cyan,
                             modifier = Modifier.weight(1f),
-                            onClick = { viewModel.applyRampShape(clip.id, shape) }
+                            onClick = { viewModel.clips.applyRampShape(clip.id, shape) }
                         )
                     }
                     repeat(3 - row.size) { Box(modifier = Modifier.weight(1f)) }
@@ -199,7 +199,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         text = if (speed < 1f) "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}x"
                         else "${speed.toInt()}x",
                         modifier = Modifier.weight(1f),
-                        onClick = { viewModel.setSpeedPointAtPlayhead(clip.id, speed) }
+                        onClick = { viewModel.clips.setSpeedPointAtPlayhead(clip.id, speed) }
                     )
                 }
             }
@@ -237,7 +237,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         tint = SquishColors.Pink,
                         modifier = Modifier
                             .size(16.dp)
-                            .clickable { viewModel.removeSpeedPoint(clip.id, point.atMs) }
+                            .clickable { viewModel.clips.removeSpeedPoint(clip.id, point.atMs) }
                     )
                 }
             }

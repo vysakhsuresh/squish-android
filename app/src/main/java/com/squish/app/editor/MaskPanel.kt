@@ -55,7 +55,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
                             .clip(RoundedCornerShape(6.dp))
                             .background(SquishColors.Background)
                             .pointerInput(clip.id) {
-                                detectTapGestures { viewModel.setMask(clip.id, null) }
+                                detectTapGestures { viewModel.layers.setMask(clip.id, null) }
                             }
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
@@ -73,7 +73,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
             SquishOutlinedButton(
                 text = "Add a mask",
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { viewModel.setMask(clip.id, Mask()) }
+                onClick = { viewModel.layers.setMask(clip.id, Mask()) }
             )
             return@PanelSurface
         }
@@ -84,7 +84,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
                     label = mode.label,
                     selected = mask.mode == mode,
                     modifier = Modifier.weight(1f),
-                    onClick = { viewModel.updateMask(clip.id, mode = mode) }
+                    onClick = { viewModel.layers.updateMask(clip.id, mode = mode) }
                 )
             }
         }
@@ -100,7 +100,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
 
         if (mask.mode != MaskMode.Cutout) {
             LabeledSlider("Obscure strength", mask.strength, 0f..1f, onFinished = viewModel::endGesture) {
-                viewModel.updateMask(clip.id, strength = it)
+                viewModel.layers.updateMask(clip.id, strength = it)
             }
             if (mask.track != null) {
                 Row(
@@ -117,7 +117,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
                         "Unpin",
                         style = MaterialTheme.typography.labelSmall,
                         color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.unpinMask(clip.id) }
+                        modifier = Modifier.clickable { viewModel.analysis.unpinMask(clip.id) }
                     )
                 }
             }
@@ -129,7 +129,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
                     label = shape.label,
                     selected = mask.shape == shape,
                     modifier = Modifier.weight(1f),
-                    onClick = { viewModel.updateMask(clip.id, shape = shape) }
+                    onClick = { viewModel.layers.updateMask(clip.id, shape = shape) }
                 )
             }
         }
@@ -146,7 +146,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
             )
             SquishToggleSwitch(
                 checked = mask.inverted,
-                onCheckedChange = { viewModel.updateMask(clip.id, inverted = it) }
+                onCheckedChange = { viewModel.layers.updateMask(clip.id, inverted = it) }
             )
         }
 
@@ -154,10 +154,10 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
         // would be controls that visibly do nothing.
         if (mask.track == null) {
             LabeledSlider("Across", mask.centerXFraction, -1f..1f, onFinished = viewModel::endGesture) {
-                viewModel.updateMask(clip.id, centerX = it)
+                viewModel.layers.updateMask(clip.id, centerX = it)
             }
             LabeledSlider("Up / down", mask.centerYFraction, -1f..1f, onFinished = viewModel::endGesture) {
-                viewModel.updateMask(clip.id, centerY = it)
+                viewModel.layers.updateMask(clip.id, centerY = it)
             }
         }
 
@@ -166,17 +166,17 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
         // someone to drag them and conclude the mask is broken.
         if (mask.shape == MaskShape.Rectangle || mask.shape == MaskShape.Ellipse) {
             LabeledSlider("Width", mask.widthFraction, 0.02f..1.5f, onFinished = viewModel::endGesture) {
-                viewModel.updateMask(clip.id, width = it)
+                viewModel.layers.updateMask(clip.id, width = it)
             }
         }
         if (mask.shape != MaskShape.Linear) {
             LabeledSlider("Height", mask.heightFraction, 0.02f..1.5f, onFinished = viewModel::endGesture) {
-                viewModel.updateMask(clip.id, height = it)
+                viewModel.layers.updateMask(clip.id, height = it)
             }
         }
         if (mask.shape == MaskShape.Rectangle) {
             LabeledSlider("Corner round", mask.cornerRadius, 0f..0.5f, onFinished = viewModel::endGesture) {
-                viewModel.updateMask(clip.id, cornerRadius = it)
+                viewModel.layers.updateMask(clip.id, cornerRadius = it)
             }
         }
 
@@ -185,10 +185,10 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
             readout = Readout.degrees,
             onFinished = viewModel::endGesture
         ) {
-            viewModel.updateMask(clip.id, rotation = it)
+            viewModel.layers.updateMask(clip.id, rotation = it)
         }
         LabeledSlider("Feather", mask.feather, 0.001f..0.4f, onFinished = viewModel::endGesture) {
-            viewModel.updateMask(clip.id, feather = it)
+            viewModel.layers.updateMask(clip.id, feather = it)
         }
     }
 }

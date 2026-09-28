@@ -79,7 +79,7 @@ fun AudioPanel(
                                         if (on) SquishColors.Cyan else SquishColors.Border,
                                         RoundedCornerShape(14.dp)
                                     )
-                                    .clickable { viewModel.setVoiceEffect(effect) }
+                                    .clickable { viewModel.audio.setVoiceEffect(effect) }
                                     .padding(vertical = 10.dp)
                             ) {
                                 GlyphTile(effect.glyph, size = 36.dp)
@@ -109,7 +109,7 @@ fun AudioPanel(
                 trailing = {
                     SquishToggleSwitch(
                         checked = !state.muteOriginal,
-                        onCheckedChange = { viewModel.setMuteOriginal(!it) }
+                        onCheckedChange = { viewModel.audio.setMuteOriginal(!it) }
                     )
                 }
             )
@@ -117,7 +117,7 @@ fun AudioPanel(
                 LabeledSlider(
                     "Level", state.originalVolume, 0f..1f,
                     onFinished = viewModel::endGesture,
-                    onChange = viewModel::setOriginalVolume
+                    onChange = viewModel.audio::setOriginalVolume
                 )
             }
         }
@@ -149,7 +149,7 @@ fun AudioPanel(
                         clip = clip,
                         selected = clip.id == target?.id,
                         onSelect = { viewModel.selectClip(clip.id) },
-                        onRemove = { viewModel.removeAudioClip(clip.id) }
+                        onRemove = { viewModel.audio.removeAudioClip(clip.id) }
                     )
                 }
             }
@@ -188,7 +188,7 @@ fun AudioPanel(
             )
 
             LabeledSlider("Level", target.volume, 0f..1f, onFinished = viewModel::endGesture) {
-                viewModel.setAudioClipVolume(target.id, it)
+                viewModel.audio.setAudioClipVolume(target.id, it)
             }
         }
 
@@ -202,14 +202,14 @@ fun AudioPanel(
             AudioPointRow(
                 label = "In",
                 value = Timecode.format(target.sourceInMs),
-                onBack = { viewModel.setAudioTrim(target.id, target.sourceInMs - 100, target.sourceOutMs) },
-                onForward = { viewModel.setAudioTrim(target.id, target.sourceInMs + 100, target.sourceOutMs) }
+                onBack = { viewModel.audio.setAudioTrim(target.id, target.sourceInMs - 100, target.sourceOutMs) },
+                onForward = { viewModel.audio.setAudioTrim(target.id, target.sourceInMs + 100, target.sourceOutMs) }
             )
             AudioPointRow(
                 label = "Out",
                 value = Timecode.format(target.sourceOutMs),
-                onBack = { viewModel.setAudioTrim(target.id, target.sourceInMs, target.sourceOutMs - 100) },
-                onForward = { viewModel.setAudioTrim(target.id, target.sourceInMs, target.sourceOutMs + 100) }
+                onBack = { viewModel.audio.setAudioTrim(target.id, target.sourceInMs, target.sourceOutMs - 100) },
+                onForward = { viewModel.audio.setAudioTrim(target.id, target.sourceInMs, target.sourceOutMs + 100) }
             )
             Text(
                 "${Timecode.format(target.durationMs)} of audio selected",
@@ -237,7 +237,7 @@ fun AudioPanel(
                 )
                 SquishOutlinedButton(
                     text = "Move to playhead",
-                    onClick = { viewModel.placeAudioAtPlayhead(target.id) }
+                    onClick = { viewModel.audio.placeAudioAtPlayhead(target.id) }
                 )
             }
             if (target.timelineStartMs > 0 && !state.sourceHasAudio) {
@@ -287,21 +287,21 @@ fun AudioPanel(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                NudgeButton("-1f", Modifier.weight(1f)) { viewModel.nudgeAudioOffsetFrames(target.id, -1) }
-                NudgeButton("-10ms", Modifier.weight(1f)) { viewModel.nudgeAudioOffset(target.id, -10) }
-                NudgeButton("+10ms", Modifier.weight(1f)) { viewModel.nudgeAudioOffset(target.id, 10) }
-                NudgeButton("+1f", Modifier.weight(1f)) { viewModel.nudgeAudioOffsetFrames(target.id, 1) }
+                NudgeButton("-1f", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffsetFrames(target.id, -1) }
+                NudgeButton("-10ms", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffset(target.id, -10) }
+                NudgeButton("+10ms", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffset(target.id, 10) }
+                NudgeButton("+1f", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffsetFrames(target.id, 1) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 SquishOutlinedButton(
                     text = if (state.syncStatus == SyncStatus.Analyzing) "Listening…" else "Auto-sync",
                     modifier = Modifier.weight(1f),
-                    onClick = { viewModel.runAutoSync(target.id) }
+                    onClick = { viewModel.audio.runAutoSync(target.id) }
                 )
                 SquishOutlinedButton(
                     text = "Start at 0:00",
                     modifier = Modifier.weight(1f),
-                    onClick = { viewModel.resetAudioAlignment(target.id) }
+                    onClick = { viewModel.audio.resetAudioAlignment(target.id) }
                 )
             }
         }

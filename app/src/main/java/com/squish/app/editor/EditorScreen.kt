@@ -191,14 +191,14 @@ fun EditorScreen(
             runCatching {
                 context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            viewModel.addAudioTrack(it)
+            viewModel.audio.addAudioTrack(it)
         }
     }
     // Several at once, added in the order picked - one video at a time made
     // building an edit from a handful of shots a chore.
     val pickExtraClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
         uris.forEach { context.keepReadAccess(it) }
-        viewModel.addVideoClips(uris)
+        viewModel.clips.addVideoClips(uris)
     }
     val addVideos = {
         pickExtraClips.launch(
@@ -208,7 +208,7 @@ fun EditorScreen(
         )
     }
     val pickOverlayClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { context.keepReadAccess(it); viewModel.addOverlayClip(it) }
+        uri?.let { context.keepReadAccess(it); viewModel.layers.addOverlayClip(it) }
     }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
@@ -346,8 +346,8 @@ fun EditorScreen(
                                 // Live while dragging, recorded once at the end:
                                 // the view model coalesces, so a gesture is one
                                 // undo step rather than one per frame of movement.
-                                onChange = viewModel::setCropRect,
-                                onCommit = { viewModel.setCropRect(state.cropRect) },
+                                onChange = viewModel.clips::setCropRect,
+                                onCommit = { viewModel.clips.setCropRect(state.cropRect) },
                                 modifier = Modifier.fillMaxSize()
                             )
                             tab == EditorTab.Frame || state.cropAspect != CropAspect.Original ->
@@ -375,8 +375,8 @@ fun EditorScreen(
             TimelineEditor(
                 state = timeline,
                 onSelect = viewModel::selectClip,
-                onMoveTo = viewModel::moveClipTo,
-                onTrim = viewModel::trimClip,
+                onMoveTo = viewModel.clips::moveClipTo,
+                onTrim = viewModel.clips::trimClip,
                 onScrub = viewModel::scrubTo,
                 onTransitionTap = { clipId ->
                     viewModel.selectClip(clipId)
@@ -387,10 +387,10 @@ fun EditorScreen(
                 isPlaying = state.isPlaying,
                 fitNonce = state.fitNonce,
                 onZoomTo = viewModel::setPixelsPerSecond,
-                onEffectMove = viewModel::moveEffect,
-                onEffectTrim = viewModel::trimEffect,
+                onEffectMove = viewModel.clips::moveEffect,
+                onEffectTrim = viewModel.clips::trimEffect,
                 onAddVideo = addVideos,
-                onAddBlank = viewModel::addBlankClip,
+                onAddBlank = viewModel.clips::addBlankClip,
                 onOpenSound = { tab = EditorTab.Sound },
                 onOpenWords = { tab = EditorTab.Words },
                 onScrubbingChange = { timelineScrubbing = it }
@@ -398,9 +398,9 @@ fun EditorScreen(
 
             TimelineActionBar(
                 state = timeline,
-                onSplit = viewModel::splitAtPlayhead,
-                onDelete = viewModel::deleteSelectedClip,
-                onCloseGaps = viewModel::closeGaps,
+                onSplit = viewModel.clips::splitAtPlayhead,
+                onDelete = viewModel.clips::deleteSelectedClip,
+                onCloseGaps = viewModel.clips::closeGaps,
                 onZoomIn = viewModel::zoomIn,
                 onZoomOut = viewModel::zoomOut,
                 onFit = viewModel::fitTimeline,

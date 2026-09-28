@@ -66,7 +66,7 @@ fun ChromaKeyPanel(clip: Clip, playheadMs: Long, viewModel: EditorViewModel) {
                         modifier = Modifier.clip(RoundedCornerShape(6.dp))
                             .background(SquishColors.Background)
                             .pointerInput(clip.id) {
-                                detectTapGestures { viewModel.setChromaKey(clip.id, null) }
+                                detectTapGestures { viewModel.layers.setChromaKey(clip.id, null) }
                             }
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
@@ -82,10 +82,10 @@ fun ChromaKeyPanel(clip: Clip, playheadMs: Long, viewModel: EditorViewModel) {
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 SquishOutlinedButton(text = "Key green", modifier = Modifier.weight(1f)) {
-                    viewModel.setChromaKey(clip.id, ChromaKey(keyColorArgb = ChromaKey.STANDARD_GREEN))
+                    viewModel.layers.setChromaKey(clip.id, ChromaKey(keyColorArgb = ChromaKey.STANDARD_GREEN))
                 }
                 SquishOutlinedButton(text = "Key blue", modifier = Modifier.weight(1f)) {
-                    viewModel.setChromaKey(clip.id, ChromaKey(keyColorArgb = ChromaKey.STANDARD_BLUE))
+                    viewModel.layers.setChromaKey(clip.id, ChromaKey(keyColorArgb = ChromaKey.STANDARD_BLUE))
                 }
             }
             return@PanelSurface
@@ -94,13 +94,13 @@ fun ChromaKeyPanel(clip: Clip, playheadMs: Long, viewModel: EditorViewModel) {
         FrameSampler(clip = clip, playheadMs = playheadMs, viewModel = viewModel, current = key)
 
         LabeledSlider("Similarity", key.similarity, ChromaKey.SIMILARITY_RANGE, onFinished = viewModel::endGesture) {
-            viewModel.updateChromaKey(clip.id, similarity = it)
+            viewModel.layers.updateChromaKey(clip.id, similarity = it)
         }
         LabeledSlider("Edge softness", key.smoothness, 0.005f..0.3f, onFinished = viewModel::endGesture) {
-            viewModel.updateChromaKey(clip.id, smoothness = it)
+            viewModel.layers.updateChromaKey(clip.id, smoothness = it)
         }
         LabeledSlider("Spill removal", key.spill, 0.005f..0.3f, onFinished = viewModel::endGesture) {
-            viewModel.updateChromaKey(clip.id, spill = it)
+            viewModel.layers.updateChromaKey(clip.id, spill = it)
         }
 
         if (key.keyColorArgb == ChromaKey.STANDARD_BLUE) {
@@ -135,7 +135,7 @@ private fun FrameSampler(
     // of playback would be absurd. The button below re-samples on demand.
     LaunchedEffect(clip.id, stale) {
         if (stale) {
-            frame = viewModel.sampleFrame(clip, playheadMs)
+            frame = viewModel.analysis.sampleFrame(clip, playheadMs)
             stale = false
         }
     }
@@ -181,7 +181,7 @@ private fun FrameSampler(
                             .coerceIn(0, bitmap.width - 1)
                         val py = (offset.y / size.height * bitmap.height).toInt()
                             .coerceIn(0, bitmap.height - 1)
-                        viewModel.updateChromaKey(clip.id, keyColorArgb = bitmap[px, py])
+                        viewModel.layers.updateChromaKey(clip.id, keyColorArgb = bitmap[px, py])
                     }
                 }
         )
@@ -192,13 +192,13 @@ private fun FrameSampler(
             label = "Green",
             selected = current.keyColorArgb == ChromaKey.STANDARD_GREEN,
             modifier = Modifier.weight(1f),
-            onClick = { viewModel.updateChromaKey(clip.id, keyColorArgb = ChromaKey.STANDARD_GREEN) }
+            onClick = { viewModel.layers.updateChromaKey(clip.id, keyColorArgb = ChromaKey.STANDARD_GREEN) }
         )
         SelectableChip(
             label = "Blue",
             selected = current.keyColorArgb == ChromaKey.STANDARD_BLUE,
             modifier = Modifier.weight(1f),
-            onClick = { viewModel.updateChromaKey(clip.id, keyColorArgb = ChromaKey.STANDARD_BLUE) }
+            onClick = { viewModel.layers.updateChromaKey(clip.id, keyColorArgb = ChromaKey.STANDARD_BLUE) }
         )
     }
 }

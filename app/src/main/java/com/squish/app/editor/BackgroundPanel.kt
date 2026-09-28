@@ -36,7 +36,7 @@ private val BACKDROPS = listOf(
  */
 @Composable
 fun BackgroundPanel(state: EditorUiState, viewModel: EditorViewModel) {
-    val clip = viewModel.backgroundTarget(state) ?: return
+    val clip = viewModel.analysis.backgroundTarget(state) ?: return
     val removal = clip.background
     val progress = state.backgroundProgress
 
@@ -67,7 +67,7 @@ fun BackgroundPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         label = fill.label,
                         selected = removal.fill == fill,
                         accentColor = SquishColors.Magenta,
-                        onClick = { viewModel.setBackgroundFill(clip.id, fill) }
+                        onClick = { viewModel.analysis.setBackgroundFill(clip.id, fill) }
                     )
                 }
             }
@@ -87,7 +87,7 @@ fun BackgroundPanel(state: EditorUiState, viewModel: EditorViewModel) {
                                     if (removal.colorArgb == argb) SquishColors.Primary else SquishColors.Border,
                                     CircleShape
                                 )
-                                .clickable { viewModel.setBackgroundFill(clip.id, BackgroundFill.Colour, argb) }
+                                .clickable { viewModel.analysis.setBackgroundFill(clip.id, BackgroundFill.Colour, argb) }
                         )
                     }
                 }
@@ -106,17 +106,17 @@ fun BackgroundPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 progress.running -> SquishOutlinedButton(
                     text = "Stop",
                     modifier = Modifier.weight(1f),
-                    onClick = viewModel::cancelBackground
+                    onClick = viewModel.analysis::cancelBackground
                 )
                 removal != null -> SquishOutlinedButton(
                     text = "Turn off",
                     modifier = Modifier.weight(1f),
-                    onClick = { viewModel.setBackground(clip.id, null) }
+                    onClick = { viewModel.analysis.setBackground(clip.id, null) }
                 )
                 else -> SquishOutlinedButton(
                     text = "Remove background",
                     modifier = Modifier.weight(1f),
-                    onClick = viewModel::removeBackground
+                    onClick = viewModel.analysis::removeBackground
                 )
             }
         }

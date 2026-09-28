@@ -74,7 +74,7 @@ fun StickersPanel(state: EditorUiState, viewModel: EditorViewModel) {
                                 .weight(1f)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(SquishColors.Background)
-                                .clickable { viewModel.addSticker(emoji) }
+                                .clickable { viewModel.text.addSticker(emoji) }
                                 .padding(vertical = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -97,9 +97,9 @@ fun StickersPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 PlacedSticker(
                     sticker = sticker,
                     onJump = { viewModel.scrubTo(sticker.startMs) },
-                    onRemove = { viewModel.removeTextOverlay(sticker.id) },
-                    onChange = { change -> viewModel.restyleCaption(sticker.id, change) },
-                    onDrag = { change -> viewModel.restyleCaption(sticker.id, change, dragging = true) },
+                    onRemove = { viewModel.text.removeTextOverlay(sticker.id) },
+                    onChange = { change -> viewModel.text.restyleCaption(sticker.id, change) },
+                    onDrag = { change -> viewModel.text.restyleCaption(sticker.id, change, dragging = true) },
                     onDragEnd = viewModel::endGesture
                 )
             }

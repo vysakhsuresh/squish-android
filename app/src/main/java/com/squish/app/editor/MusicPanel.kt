@@ -122,7 +122,7 @@ fun MusicPanel(viewModel: EditorViewModel) {
                             preparing = null
                             player.pause()
                             playingKey = null
-                            viewModel.addAudioTrack(uri, style.title)
+                            viewModel.audio.addAudioTrack(uri, style.title)
                         }
                     }
                 )
@@ -134,7 +134,7 @@ fun MusicPanel(viewModel: EditorViewModel) {
                 onAdd = { track ->
                     player.pause()
                     playingKey = null
-                    viewModel.addAudioTrack(track.uri, track.title)
+                    viewModel.audio.addAudioTrack(track.uri, track.title)
                 }
             )
         }

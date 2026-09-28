@@ -87,20 +87,20 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             confirmLabel = "Clear all",
             onConfirm = {
                 confirmClear = false
-                viewModel.clearCaptions()
+                viewModel.text.clearCaptions()
             },
             onDismiss = { confirmClear = false }
         )
     }
 
     val importSrt = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { viewModel.importSrt(it) }
+        uri?.let { viewModel.text.importSrt(it) }
     }
     val exportSrt = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/x-subrip")
     ) { uri ->
         uri?.let {
-            viewModel.exportSrt(it) { ok ->
+            viewModel.text.exportSrt(it) { ok ->
                 notice = if (ok) "Saved the subtitle file" else "Could not write that file"
             }
         }
@@ -120,7 +120,7 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
             ) {
                 TitlePreset.entries.forEach { preset ->
-                    TitleTile(preset = preset, onClick = { viewModel.addTitle(preset) })
+                    TitleTile(preset = preset, onClick = { viewModel.text.addTitle(preset) })
                 }
             }
         }
@@ -223,7 +223,7 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 },
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    if (state.captions.running) viewModel.stopCaptions() else viewModel.generateCaptions()
+                    if (state.captions.running) viewModel.text.stopCaptions() else viewModel.text.generateCaptions()
                 }
             )
 
@@ -272,7 +272,7 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             SquishOutlinedButton(
                 text = "Add a line at the playhead",
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { viewModel.addCaptionAtPlayhead() }
+                onClick = { viewModel.text.addCaptionAtPlayhead() }
             )
 
             lines.sortedBy { it.startMs }.forEach { caption ->
@@ -284,14 +284,14 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     CaptionRow(
                         caption = caption,
                         onJump = { viewModel.scrubTo(caption.startMs) },
-                        onEdit = { viewModel.updateCaptionText(caption.id, it) },
-                        onRemove = { viewModel.removeTextOverlay(caption.id) },
-                        onRestyle = { change -> viewModel.restyleCaption(caption.id, change) },
+                        onEdit = { viewModel.text.updateCaptionText(caption.id, it) },
+                        onRemove = { viewModel.text.removeTextOverlay(caption.id) },
+                        onRestyle = { change -> viewModel.text.restyleCaption(caption.id, change) },
                         onResize = { size ->
-                            viewModel.restyleCaption(caption.id, { it.copy(sizeSp = size) }, dragging = true)
+                            viewModel.text.restyleCaption(caption.id, { it.copy(sizeSp = size) }, dragging = true)
                         },
                         onGestureEnd = viewModel::endGesture,
-                        onTypingEnd = { viewModel.endCaptionTyping(caption.id) }
+                        onTypingEnd = { viewModel.text.endCaptionTyping(caption.id) }
                     )
                 }
             }

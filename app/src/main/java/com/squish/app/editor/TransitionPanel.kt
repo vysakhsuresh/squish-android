@@ -78,7 +78,7 @@ fun TransitionPanel(
                             label = type.label,
                             selected = current.type == type,
                             modifier = Modifier.weight(1f),
-                            onClick = { viewModel.setTransition(selected.id, type, current.durationMs) }
+                            onClick = { viewModel.layers.setTransition(selected.id, type, current.durationMs) }
                         )
                     }
                 }
@@ -88,7 +88,7 @@ fun TransitionPanel(
                             label = type.label,
                             selected = current.type == type,
                             modifier = Modifier.weight(1f),
-                            onClick = { viewModel.setTransition(selected.id, type, current.durationMs) }
+                            onClick = { viewModel.layers.setTransition(selected.id, type, current.durationMs) }
                         )
                     }
                 }
@@ -105,7 +105,7 @@ fun TransitionPanel(
                     Slider(
                         value = current.durationMs.toFloat(),
                         onValueChange = {
-                            viewModel.setTransition(selected.id, current.type, it.toLong())
+                            viewModel.layers.setTransition(selected.id, current.type, it.toLong())
                         },
                         onValueChangeFinished = viewModel::endGesture,
                         valueRange = 150f..2000f,
@@ -143,8 +143,8 @@ fun TransitionPanel(
                         color = SquishColors.TextPrimary
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SquishOutlinedButton(text = "Lower") { viewModel.changeLayer(selected.id, -1) }
-                        SquishOutlinedButton(text = "Raise") { viewModel.changeLayer(selected.id, +1) }
+                        SquishOutlinedButton(text = "Lower") { viewModel.layers.changeLayer(selected.id, -1) }
+                        SquishOutlinedButton(text = "Raise") { viewModel.layers.changeLayer(selected.id, +1) }
                     }
                 }
                 Text(
@@ -161,16 +161,16 @@ fun TransitionPanel(
                     // another one set.
                     val placement = selected.placementAt(state.playheadMs)
                     LabeledSlider("Opacity", selected.opacity, 0f..1f, onFinished = viewModel::endGesture) {
-                        viewModel.setOverlayGeometry(selected.id, opacity = it)
+                        viewModel.layers.setOverlayGeometry(selected.id, opacity = it)
                     }
                     LabeledSlider("Size", placement.scale, TransformLimits.SCALE_MIN..TransformLimits.SCALE_MAX, onFinished = viewModel::endGesture) {
-                        viewModel.setOverlayGeometry(selected.id, scale = it)
+                        viewModel.layers.setOverlayGeometry(selected.id, scale = it)
                     }
                     LabeledSlider("Across", placement.offsetXFraction, -TransformLimits.OFFSET_MAX..TransformLimits.OFFSET_MAX, onFinished = viewModel::endGesture) {
-                        viewModel.setOverlayGeometry(selected.id, offsetX = it)
+                        viewModel.layers.setOverlayGeometry(selected.id, offsetX = it)
                     }
                     LabeledSlider("Up / down", placement.offsetYFraction, -TransformLimits.OFFSET_MAX..TransformLimits.OFFSET_MAX, onFinished = viewModel::endGesture) {
-                        viewModel.setOverlayGeometry(selected.id, offsetY = it)
+                        viewModel.layers.setOverlayGeometry(selected.id, offsetY = it)
                     }
                     if (selected.keyframes.isNotEmpty()) {
                         Text(

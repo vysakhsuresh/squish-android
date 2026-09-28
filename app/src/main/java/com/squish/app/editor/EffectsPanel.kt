@@ -65,7 +65,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
     // The main-track shot under the playhead, at the frame the preview shows -
     // through its trim and its speed. Over a gap there is nothing to judge on,
     // and the chips fall back to their swatches.
-    val picture = viewModel.pictureAt(state, state.playheadMs)
+    val picture = viewModel.analysis.pictureAt(state, state.playheadMs)
     val frame = rememberLookFrame(picture?.first, picture?.second ?: 0L)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -88,7 +88,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                             .clip(RoundedCornerShape(14.dp))
                             .background(SquishColors.Background)
                             .border(1.dp, SquishColors.Border, RoundedCornerShape(14.dp))
-                            .clickable { viewModel.applyTemplate(template) }
+                            .clickable { viewModel.clips.applyTemplate(template) }
                             .padding(12.dp)
                     ) {
                         GlyphTile(template.glyph, size = 40.dp)
@@ -143,7 +143,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         // strength for a look you have pulled back to a third.
                         intensity = if (look.id == state.lookId) state.lookIntensity else 1f,
                         selected = look.id == state.lookId || (state.lookId == null && look.id == Looks.None.id),
-                        onClick = { viewModel.setLook(look.id.takeIf { it != Looks.None.id }) }
+                        onClick = { viewModel.clips.setLook(look.id.takeIf { it != Looks.None.id }) }
                     )
                 }
             }
@@ -167,7 +167,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 LabeledSlider(
                     "Strength", state.lookIntensity, 0f..1f,
                     onFinished = viewModel::endGesture,
-                    onChange = viewModel::setLookIntensity
+                    onChange = viewModel.clips::setLookIntensity
                 )
             }
         }
@@ -180,9 +180,9 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 accent = SquishColors.Magenta
             )
             val done = viewModel::endGesture
-            LabeledSlider("Brightness", state.brightness, -1f..1f, onFinished = done, onChange = viewModel::setBrightness)
-            LabeledSlider("Contrast", state.contrast, -1f..1f, onFinished = done, onChange = viewModel::setContrast)
-            LabeledSlider("Saturation", state.saturation, -1f..1f, onFinished = done, onChange = viewModel::setSaturation)
+            LabeledSlider("Brightness", state.brightness, -1f..1f, onFinished = done, onChange = viewModel.clips::setBrightness)
+            LabeledSlider("Contrast", state.contrast, -1f..1f, onFinished = done, onChange = viewModel.clips::setContrast)
+            LabeledSlider("Saturation", state.saturation, -1f..1f, onFinished = done, onChange = viewModel.clips::setSaturation)
         }
     }
 }

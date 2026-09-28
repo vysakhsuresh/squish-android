@@ -54,7 +54,7 @@ fun FxPanel(state: EditorUiState, viewModel: EditorViewModel) {
                                 .weight(1f)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(SquishColors.Background)
-                                .clickable { viewModel.addEffect(kind) }
+                                .clickable { viewModel.clips.addEffect(kind) }
                                 .padding(vertical = 10.dp)
                         ) {
                             Icon(kind.icon, contentDescription = null, tint = SquishColors.TextSecondary, modifier = Modifier.size(22.dp))
@@ -85,8 +85,8 @@ fun FxPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     effect = effect,
                     playheadMs = state.playheadMs,
                     onJump = { viewModel.scrubTo(effect.startMs) },
-                    onChange = { change -> viewModel.changeEffect(effect.id, change) },
-                    onRemove = { viewModel.removeEffect(effect.id) },
+                    onChange = { change -> viewModel.clips.changeEffect(effect.id, change) },
+                    onRemove = { viewModel.clips.removeEffect(effect.id) },
                     onGestureEnd = viewModel::endGesture
                 )
             }
