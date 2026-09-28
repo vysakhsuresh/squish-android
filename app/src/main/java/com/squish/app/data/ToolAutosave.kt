@@ -77,7 +77,11 @@ class ToolAutosave(context: Context) {
         if (draft.uris.isEmpty()) return false
 
         val document = encode(draft)
-        val signature = document.toString()
+        // The signature is the session without its export stamp, so the tick
+        // after markCompleted - which saves with the stamp - sees nothing new.
+        // With the stamp in it, that tick rewrote the file with a later save
+        // time and the list read "edited since" the moment the export ended.
+        val signature = keyOf(draft)
         if (lastSignature[draft.slot] == signature) return false
 
         // The export stamp is kept from the file already there, so a save after
