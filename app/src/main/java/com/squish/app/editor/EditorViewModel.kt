@@ -60,6 +60,9 @@ import com.squish.app.timeline.withClipMoved
 import com.squish.app.timeline.withClipRemoved
 import com.squish.app.timeline.withClipTrimmed
 import com.squish.app.timeline.withSplitAtPlayhead
+import com.squish.app.timeline.withSplitAllTracks
+import com.squish.app.timeline.withClipAdded
+import com.squish.app.timeline.MAX_LAYER
 import com.squish.app.timeline.zoomedBy
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
@@ -811,7 +814,7 @@ class EditorViewModel(
         // beats and then pressing undo forty times is not undo.
         record("Cut on the beat") {
             cuts.forEach { at ->
-                mutateTimeline { timeline -> timeline.copy(playheadMs = at).withSplitAtPlayhead() }
+                mutateTimeline { timeline -> timeline.copy(playheadMs = at).withSplitAllTracks() }
             }
             _state.update { it.copy(selectedClipId = null) }
         }
@@ -1364,7 +1367,14 @@ class EditorViewModel(
                     offsetXFraction = 0.45f,
                     offsetYFraction = -0.45f
                 )
-                current.copy(videoClips = current.videoClips + clip, selectedClipId = clip.id)
+                // Onto the first row free at this moment, never on top of another
+                // overlay: the preview shows one clip per row, the export all of them.
+                val placed = TimelineState(clips = current.videoClips).withClipAdded(clip)
+                if (placed.clips.size == current.videoClips.size) {
+                    current.copy(failure = SquishError.OverlayRowsFull(MAX_LAYER))
+                } else {
+                    current.copy(videoClips = placed.clips, selectedClipId = clip.id)
+                }
             }
             recomputeEstimate()
             checkDecodable(uri)

@@ -86,6 +86,12 @@ sealed class SquishError(
         fix = "Add a clip, or widen a trim handle."
     )
 
+    class OverlayRowsFull(val rows: Int) : SquishError(
+        title = "No room for another overlay here",
+        detail = "All $rows overlay rows already have something playing at this point, and two overlays on one row would hide each other.",
+        fix = "Move the playhead to where a row is free, or shorten or delete one of the overlays."
+    )
+
     class NoAudioTrack : SquishError(
         title = "This clip has no sound",
         detail = "You asked for an audio-only export, but the source file carries no audio track.",

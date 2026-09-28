@@ -117,3 +117,73 @@ fun composeTransform(
         rotationDegrees = user.rotationDegrees + fix.rotationDegrees
     )
 }
+
+/**
+ * The one set of limits on where a picture can be put.
+ *
+ * There used to be four: the Blend sliders stopped at 1x, the model clamped to 2x,
+ * Motion's slider stopped at 3x and the view model clamped to 4x, with offsets of
+ * ±1 in one place and ±1.5 in another. A value set in one panel was silently cut
+ * down by the next one to touch the clip.
+ */
+object TransformLimits {
+    const val SCALE_MIN = 0.1f
+    const val SCALE_MAX = 4f
+    /** Half a canvas past the edge, so a picture can be slid almost out of frame. */
+    const val OFFSET_MAX = 1.5f
+    const val ROTATION_MAX = 180f
+}
+
+fun Transform.clamped(): Transform = Transform(
+    scale = scale.coerceIn(TransformLimits.SCALE_MIN, TransformLimits.SCALE_MAX),
+    offsetXFraction = offsetXFraction.coerceIn(-TransformLimits.OFFSET_MAX, TransformLimits.OFFSET_MAX),
+    offsetYFraction = offsetYFraction.coerceIn(-TransformLimits.OFFSET_MAX, TransformLimits.OFFSET_MAX),
+    rotationDegrees = rotationDegrees.coerceIn(-TransformLimits.ROTATION_MAX, TransformLimits.ROTATION_MAX)
+)
+
+/**
+ * The part of an animation between two moments of the clip, re-based so that
+ * [fromMs] becomes the new start.
+ *
+ * Keys are measured from the clip's head, so any edit that moves the head - a
+ * trim, or the second half of a cut - has to move them with it, or the move plays
+ * against different frames than the ones it was drawn on. A push-in cut in half
+ * used to restart from scale 1 on the second half: a visible snap at the cut.
+ *
+ * Where the kept range starts or ends between two keys, a key is added there with
+ * the value the animation had at that moment, so both halves of a cut meet at the
+ * same pose and each still reaches the pose it was heading for. A range that
+ * starts before the first key ([fromMs] negative, a head revealed by trimming)
+ * just shifts everything later; the animation already holds before its first key.
+ *
+ * The added key carries the easing of the segment it interrupts. For Linear and
+ * Hold that reproduces the original curve exactly; for Smooth the path is the same
+ * but the ease restarts at the cut, which is the most a single key can do.
+ */
+fun List<Keyframe>.rebased(fromMs: Long, toMs: Long): List<Keyframe> {
+    if (isEmpty()) return this
+    val to = maxOf(fromMs, toMs)
+    val length = to - fromMs
+    val out = ArrayList<Keyframe>(size + 2)
+    if (this[0].atMs < fromMs && none { it.atMs == fromMs }) {
+        out.add(Keyframe(0L, transformAt(fromMs, Transform.Identity), easingAt(fromMs)))
+    }
+    for (key in this) {
+        if (key.atMs in fromMs..to) out.add(key.copy(atMs = key.atMs - fromMs))
+    }
+    if (this[size - 1].atMs > to && out.none { it.atMs == length }) {
+        out.add(Keyframe(length, transformAt(to, Transform.Identity), easingAt(to)))
+    }
+    return out
+}
+
+/** The easing of the segment a moment falls in - the easing of the key it leaves. */
+fun List<Keyframe>.easingAt(atMs: Long): KeyframeEasing =
+    lastOrNull { it.atMs <= atMs }?.easing ?: firstOrNull()?.easing ?: KeyframeEasing.Smooth
+
+/**
+ * Inserts a key, or replaces the one already within [toleranceMs] of it. Two keys a
+ * frame apart are a fight, not an animation.
+ */
+fun List<Keyframe>.upserted(key: Keyframe, toleranceMs: Long): List<Keyframe> =
+    (filterNot { kotlin.math.abs(it.atMs - key.atMs) <= toleranceMs } + key).sortedBy { it.atMs }
