@@ -30,11 +30,32 @@ data class TimedEffect(
     val endMs: Long,
     val intensity: Float = 0.7f
 ) {
-    /** The same effect in a clip's own source clock, for the preview player that plays that clip. */
-    fun shiftedInto(clip: Clip): TimedEffect {
-        val delta = clip.sourceInMs - clip.timelineStartMs
-        return copy(startMs = startMs + delta, endMs = endMs + delta)
-    }
+    /**
+     * The same effect in a clip's own source clock, for the preview player that
+     * plays that clip.
+     *
+     * Through the clip's speed curve, not by a constant offset: on a clip at
+     * double speed an effect over two seconds of timeline covers four seconds
+     * of the file, and shifting its ends by the trim alone showed it for one.
+     */
+    fun shiftedInto(clip: Clip): TimedEffect =
+        copy(startMs = clip.sourceAtExtended(startMs), endMs = clip.sourceAtExtended(endMs))
+}
+
+/**
+ * The source moment on screen at [timelineMs], extended past the clip's ends at
+ * normal speed.
+ *
+ * [Clip.sourceAt] pins anything outside the clip to its first or last frame,
+ * which is right for choosing a frame and wrong for an interval: a caption that
+ * starts before the clip and ends after it would be squeezed onto the clip's
+ * edges, and its end would land on the last frame exactly, where "until the end"
+ * means "gone one frame early". Outside the clip the file simply carries on.
+ */
+fun Clip.sourceAtExtended(timelineMs: Long): Long = when {
+    timelineMs < timelineStartMs -> sourceInMs - (timelineStartMs - timelineMs)
+    timelineMs > timelineEndMs -> sourceOutMs + (timelineMs - timelineEndMs)
+    else -> sourceAt(timelineMs)
 }
 
 /**
