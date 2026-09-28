@@ -20,7 +20,10 @@ sealed class Destination(val route: String) {
      * tap, the draft's own for the drafts list, which is also the only caller
      * that sets [resume]. Carried in the route so it survives process death
      * with the screen: a session that came back under a different name would
-     * write a second draft beside the one it was.
+     * write a second draft beside the one it was. The screen reloads whatever
+     * its slot holds, whichever way it was opened - that is what brings a
+     * dashboard session back after a kill - so [resume] only records where the
+     * session was opened from.
      */
     data object QuickTool : Destination("tool/{toolId}?slot={slot}&resume={resume}") {
         fun buildRoute(toolId: String, encodedSlot: String, resume: Boolean = false) =

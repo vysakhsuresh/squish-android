@@ -64,6 +64,7 @@ import com.squish.app.timeline.zoomedBy
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -115,6 +116,31 @@ class EditorViewModel(
     private var wroteDraft = false
 
     /**
+     * The offered edit, when editing the bare clip set it aside: what it was, and
+     * the bin entry it went to. Kept so that undoing back to the bare clip puts
+     * it back and offers it again - the first edit retired it, so the undo of
+     * that edit has to un-retire it, or an accidental drag and its undo quietly
+     * moved a two-hour project into the bin.
+     */
+    private var setAside: Pair<ProjectSnapshot, String>? = null
+
+    /**
+     * This session's own draft, when undoing back to the bare clip moved it into
+     * the bin. The next edit takes it back out before saving, so undo and redo
+     * past the bare clip move one draft back and forth instead of leaving a copy
+     * in the bin every time.
+     */
+    private var undoneDraft: String? = null
+
+    /**
+     * Held by every step that decides what the slot holds - a save, retiring or
+     * re-offering the saved edit, accepting it. The ticker runs them on IO and a
+     * flush on leaving runs them on Main, and two of them interleaved could bin
+     * the draft the other had just written.
+     */
+    private val slotLock = Any()
+
+    /**
      * True from the moment a clip is opened until the process dies, and true
      * again the instant a view model is rebuilt from the saved entry afterwards.
      * That second case is the only way a brand-new view model finds it set.
@@ -146,28 +172,74 @@ class EditorViewModel(
      * going to the background and the view model being cleared each call it once
      * more, so the last edit before a back press is on disk and not in the
      * one-and-a-half-second gap it used to fall into. A no-op while an export is
-     * running (nothing can change) and while a saved edit is waiting to be
-     * restored or set aside: the offer and the document behind it are the same
-     * edit, and saving the bare video here wrote over it the moment anything was
-     * touched - so the banner went on offering work that was already gone.
+     * running, which flushes for itself before it starts.
      */
     fun saveNow() {
+        if (_state.value.isExporting) return
+        persist()
+    }
+
+    /**
+     * [saveNow] without the export check, for the export's own flush.
+     *
+     * While a saved edit is on offer, the document behind the offer is the one
+     * in the slot, and saving the bare clip there would write over it. So the
+     * offer is answered first - and it is answered by any change at all to the
+     * bare clip, not only by the changes that go through undo: a caption typed
+     * or a beat grid found under the banner used to be saved nowhere, and lost
+     * on leaving. The offered document goes to the bin, the new work is saved,
+     * and undoing back to the bare clip reverses both.
+     *
+     * The modal offer, after the app was killed, blocks the editor, so nothing
+     * can have changed under it; it is left alone.
+     */
+    private fun persist(): Unit = synchronized(slotLock) {
         val current = _state.value
-        if (current.isExporting || current.recovery != null) return
         val uri = current.sourceUri ?: return
         val start = baseline ?: return
-        if (autosave.editKey(current) == start) {
-            // Undone all the way back to the untouched clip. The draft is set
-            // aside rather than removed: the undo history that would restore it
-            // lives only in memory.
+        val offer = current.recovery
+        if (offer?.modal == true) return
+        val untouched = autosave.editKey(current) == start
+
+        if (untouched) {
+            if (offer != null) return
+            // Undone all the way back to the untouched clip. This session's draft
+            // is set aside rather than removed - the undo history that would
+            // restore it lives only in memory - and a saved edit the first change
+            // retired is put back and offered again.
             if (wroteDraft) {
-                autosave.clear(uri)
+                undoneDraft = autosave.clear(uri) ?: undoneDraft
                 wroteDraft = false
             }
-        } else if (autosave.save(current)) {
-            wroteDraft = true
+            setAside?.let { (snapshot, trashId) ->
+                setAside = null
+                if (autosave.restore(trashId)) {
+                    _state.update { it.copy(recovery = RecoveryOffer(snapshot), setAsideNotice = false) }
+                }
+            }
+            return
         }
+
+        if (offer != null) {
+            val trashId = autosave.clear(offer.snapshot.sourceUri)
+            // Left standing if the move failed: the new work is not saved over a
+            // document that could not be moved out of its way, and the next tick
+            // tries again.
+            if (trashId == null && autosave.peek(offer.snapshot.sourceUri) != null) return
+            setAside = trashId?.let { offer.snapshot to it }
+            _state.update { it.copy(recovery = null, setAsideNotice = trashId != null) }
+        }
+        // Back past the bare clip after an undo to it: the draft that undo set
+        // aside comes back out of the bin first, and this save goes on top of it.
+        undoneDraft?.let { trashId ->
+            undoneDraft = null
+            autosave.restore(trashId)
+        }
+        if (autosave.save(_state.value)) wroteDraft = true
     }
+
+    /** The notice that editing set the saved edit aside, read and closed. */
+    fun dismissSetAsideNotice() = _state.update { it.copy(setAsideNotice = false) }
 
     /**
      * Opens a video. With [resume] - a draft chosen from the drafts list - its
@@ -1995,14 +2067,17 @@ class EditorViewModel(
      * into it.
      */
     private fun record(label: String, change: () -> Unit) {
-        // Editing the bare clip while its saved edit is still on offer is the
-        // answer to the offer: this is a new project. The old one is set aside
-        // in the bin, not lost, and the autosave - paused while the offer stood -
-        // starts covering the new work from this edit on.
-        _state.value.recovery?.let { retireRecovery(it.snapshot) }
         history.record(label, _state.value.editSnapshot, System.currentTimeMillis())
         change()
         publishHistory()
+        // Editing the bare clip while its saved edit is still on offer is the
+        // answer to the offer: this is a new project. That is settled by the
+        // save, which covers every kind of change - see persist - and is asked
+        // for now rather than at the next tick, so the offer goes the moment
+        // the edit is made instead of standing a second longer over it.
+        if (_state.value.recovery?.modal == false) {
+            viewModelScope.launch(Dispatchers.IO) { saveNow() }
+        }
     }
 
     private fun publishHistory() = _state.update {
@@ -2138,6 +2213,12 @@ class EditorViewModel(
         _state.update { it.copy(isExporting = true, failure = null, exportProgress = ExportProgress()) }
 
         exportJob = viewModelScope.launch {
+            // The edit as it is goes to disk before the encode starts. Nothing is
+            // saved while an export runs, and a long export is exactly when the
+            // app is most likely to be sent to the back and killed - so a nudge
+            // made a second before Render was on disk nowhere for its length.
+            withContext(Dispatchers.IO) { persist() }
+
             val outputDir = File(getApplication<Application>().getExternalFilesDir(null), "exports")
                 .apply { mkdirs() }
             val outputFile = File(outputDir, "squish_${System.currentTimeMillis()}.mp4")
@@ -2145,38 +2226,47 @@ class EditorViewModel(
             val result = processor.export(SquishError.exportable(current), outputFile) { progress ->
                 _state.update { it.copy(exportProgress = progress) }
             }
+            // From here the file exists and is being handed over; there is
+            // nothing left to stop. See cancelExport.
+            if (exportJob === coroutineContext[Job]) exportJob = null
             _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
 
             result.onSuccess { file ->
-                GallerySaver.publish(getApplication(), file)
-                historyRepository.add(
-                    ExportRecord(
-                        id = UUID.randomUUID().toString(),
-                        title = displayNameOf(sourceUri) ?: "Squished video",
-                        outputPath = file.absolutePath,
-                        originalSizeBytes = current.originalSizeBytes,
-                        outputSizeBytes = file.length(),
-                        durationMs = current.trimmedDurationMs,
-                        // The shape of the file that was written, which after a
-                        // rotation is not the shape it was shot at. The library
-                        // sizes its preview from these, so a rotated export
-                        // previewed in the wrong shape.
-                        width = current.framedWidth,
-                        height = current.framedHeight,
-                        createdAtMillis = System.currentTimeMillis()
+                // All or nothing: into the gallery, into history, and the draft
+                // stamped. Cancelled half-way - the screen leaving in the instant
+                // after the encode - the file was in the gallery and the draft
+                // never knew it had been exported.
+                withContext(NonCancellable) {
+                    GallerySaver.publish(getApplication(), file)
+                    historyRepository.add(
+                        ExportRecord(
+                            id = UUID.randomUUID().toString(),
+                            title = displayNameOf(sourceUri) ?: "Squished video",
+                            outputPath = file.absolutePath,
+                            originalSizeBytes = current.originalSizeBytes,
+                            outputSizeBytes = file.length(),
+                            durationMs = current.trimmedDurationMs,
+                            // The shape of the file that was written, which after a
+                            // rotation is not the shape it was shot at. The library
+                            // sizes its preview from these, so a rotated export
+                            // previewed in the wrong shape.
+                            width = current.framedWidth,
+                            height = current.framedHeight,
+                            createdAtMillis = System.currentTimeMillis()
+                        )
                     )
-                )
-                // The edit stays, marked as exported. It used to be deleted here
-                // on the grounds that the work had reached the gallery - which
-                // made a test render to check a look the one action that could
-                // never be followed by "and now one more change".
-                withContext(Dispatchers.IO) {
-                    // Unless a saved edit is still on offer: what was rendered
-                    // then is the bare clip, and the stamp would land on the
-                    // other edit's draft.
-                    if (_state.value.recovery == null) {
-                        saveNow()
-                        autosave.markCompleted(sourceUri)
+                    // The edit stays, marked as exported. It used to be deleted here
+                    // on the grounds that the work had reached the gallery - which
+                    // made a test render to check a look the one action that could
+                    // never be followed by "and now one more change".
+                    withContext(Dispatchers.IO) {
+                        // Unless a saved edit is still on offer: what was rendered
+                        // then is the bare clip, and the stamp would land on the
+                        // other edit's draft.
+                        if (_state.value.recovery == null) {
+                            persist()
+                            autosave.markCompleted(current)
+                        }
                     }
                 }
                 onResult(file.absolutePath)
@@ -2186,17 +2276,26 @@ class EditorViewModel(
         }
     }
 
-    /** The running export, so back can stop it rather than abandon it. */
+    /**
+     * The running export, so back can stop it rather than abandon it. Cleared
+     * the moment the encode returns, before the file is published.
+     */
     private var exportJob: Job? = null
 
     /**
      * Stops an export part-way. The encoder is cancelled through the coroutine
      * and the half-written file is removed by the processor; the edit itself is
      * untouched, so it can simply be rendered again.
+     *
+     * Nothing once the encode has finished. "Stop exporting?" can still be on
+     * screen when it does, and a Stop tapped then used to cancel the hand-over
+     * instead: the file was already in the gallery and in history, while the
+     * editor stayed put as if the export had been stopped.
      */
     fun cancelExport() {
-        exportJob?.cancel()
+        val job = exportJob ?: return
         exportJob = null
+        job.cancel()
         _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
     }
 
@@ -2233,28 +2332,30 @@ class EditorViewModel(
      * "Start a new project": the saved edit is set aside in the bin and the
      * editor carries on with the untouched clip. Nothing is deleted; the drafts
      * screen can bring it back for a month.
+     *
+     * The move is made before the offer is withdrawn, under the lock the saves
+     * take, so no save can land the new session on the old document first. It
+     * is a handful of renames.
      */
     fun dismissRecovery() {
-        val snapshot = _state.value.recovery?.snapshot ?: return
-        retireRecovery(snapshot)
-    }
-
-    /**
-     * Moves the offered document into the bin, then withdraws the offer - in
-     * that order, and on this thread. The ticker does not save while an offer
-     * stands, so the document is untouched until it has been moved aside; the
-     * other order, or a move handed to another thread, left a window in which
-     * the new session was saved over the old document first. The move is a
-     * handful of renames.
-     */
-    private fun retireRecovery(snapshot: ProjectSnapshot) {
-        autosave.clear(snapshot.sourceUri)
-        _state.update { it.copy(recovery = null) }
+        synchronized(slotLock) {
+            val snapshot = _state.value.recovery?.snapshot ?: return
+            autosave.clear(snapshot.sourceUri)
+            // Chosen, not stumbled into: undoing back to the bare clip does not
+            // bring this one back the way it does after an accidental edit.
+            setAside = null
+            _state.update { it.copy(recovery = null, setAsideNotice = false) }
+        }
     }
 
     fun acceptRecovery() {
-        val snapshot = _state.value.recovery?.snapshot ?: return
-        _state.update { it.copy(recovery = null, isLoadingSource = true) }
+        val snapshot = synchronized(slotLock) {
+            // Gone already if a save answered the offer a moment ago; the notice
+            // it put up says where the edit went.
+            val offered = _state.value.recovery?.snapshot ?: return
+            _state.update { it.copy(recovery = null, setAsideNotice = false, isLoadingSource = true) }
+            offered
+        }
 
         viewModelScope.launch {
             // Metadata is re-probed rather than trusted from the file: the same clip

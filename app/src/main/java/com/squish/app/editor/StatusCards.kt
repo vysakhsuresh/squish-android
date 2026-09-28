@@ -137,6 +137,45 @@ fun RecoveryBanner(
 }
 
 /**
+ * Said once the first change to the bare clip has answered the offer above: the
+ * saved edit went to the bin, and where it went and how to get it back are both
+ * on screen. The offer used to vanish at the first edit with nothing said, so a
+ * slip of the finger looked like the loss of a whole project.
+ */
+@Composable
+fun SetAsideNotice(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SquishColors.Surface)
+            .border(1.dp, SquishColors.Amber.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                Icons.Filled.HistoryToggleOff,
+                contentDescription = null,
+                tint = SquishColors.Amber,
+                modifier = Modifier.size(18.dp)
+            )
+            Text("Started a new project", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
+        }
+        Text(
+            "Your saved edit of this clip moved to Recently discarded on the Unfinished screen. " +
+                "Undo back to the untouched clip to have it offered again.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextSecondary
+        )
+        SquishOutlinedButton(text = "Got it", onClick = onDismiss)
+    }
+}
+
+/**
  * Only ever shown for footage heavy enough to need it, and only while it matters.
  * Says plainly that the preview is the low-resolution copy and the export is not.
  */

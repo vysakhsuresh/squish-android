@@ -16,6 +16,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Something just set aside that can be put straight back: a discard, or the
+ * version an "earlier version" replaced. [message] is what the snackbar says.
+ */
+data class UndoOffer(val message: String, val entry: TrashedDraft)
+
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val historyRepository = SquishRepositories.history(application)
     private val autosave = SquishRepositories.autosave(application)
@@ -31,11 +37,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val trashed: StateFlow<List<TrashedDraft>> = _trashed.asStateFlow()
 
     /**
-     * The discard just made, for the drafts screen's Undo. Cleared when the
-     * offer to undo it has been shown and gone.
+     * The set-aside just made, for the drafts screen's Undo. Cleared when the
+     * offer has been shown and gone, and when the screen showing it goes away:
+     * this view model outlives that screen, and an Undo that came back on a
+     * later visit could put an old draft over one made since.
      */
-    private val _lastDiscarded = MutableStateFlow<TrashedDraft?>(null)
-    val lastDiscarded: StateFlow<TrashedDraft?> = _lastDiscarded.asStateFlow()
+    private val _undoOffer = MutableStateFlow<UndoOffer?>(null)
+    val undoOffer: StateFlow<UndoOffer?> = _undoOffer.asStateFlow()
 
     /**
      * Reads the draft sidecars, off the main thread.
@@ -48,10 +56,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val (live, binned) = withContext(Dispatchers.IO) {
                 val edits = autosave.drafts()
-                val tools = toolAutosave.drafts().mapNotNull { it.summary() }
+                val tools = toolAutosave.drafts().mapNotNull { it.summary(withEarlier = true) }
                 val bin = autosave.trashed() + toolAutosave.trashed().mapNotNull { (trashId, draft) ->
                     val at = DraftHousekeeping.parseTrashName(trashId)?.second ?: return@mapNotNull null
-                    TrashedDraft(trashId, draft.summary() ?: return@mapNotNull null, at)
+                    TrashedDraft(trashId, draft.summary(withEarlier = false) ?: return@mapNotNull null, at)
                 }
                 (edits + tools).sortedByDescending { it.savedAtMillis } to bin.sortedByDescending { it.discardedAtMillis }
             }
@@ -60,7 +68,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun ToolDraft.summary(): DraftSummary? {
+    /** On IO: reads the session's snapshots when [withEarlier] asks. */
+    private fun ToolDraft.summary(withEarlier: Boolean): DraftSummary? {
         val first = uris.firstOrNull() ?: return null
         return DraftSummary(
             id = slot,
@@ -70,7 +79,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             clipCount = uris.size,
             savedAtMillis = savedAtMillis,
             toolId = toolId,
-            exportedAtMillis = exportedAtMillis
+            exportedAtMillis = exportedAtMillis,
+            editFingerprint = toolAutosave.fingerprintOf(this),
+            exportedFingerprint = exportedFingerprint,
+            earlierSavedAtMillis = if (withEarlier) toolAutosave.earlierSavedAt(this) else null
         )
     }
 
@@ -83,7 +95,31 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 // discard has to go to the store the draft came from.
                 if (draft.toolId != null) toolAutosave.delete(draft.id) else autosave.delete(draft.id)
             }
-            if (trashId != null) _lastDiscarded.value = TrashedDraft(trashId, draft, System.currentTimeMillis())
+            if (trashId != null) {
+                _undoOffer.value = UndoOffer(
+                    message = "Discarded \"${draft.title}\"",
+                    entry = TrashedDraft(trashId, draft, System.currentTimeMillis())
+                )
+            }
+            refreshDrafts()
+        }
+    }
+
+    /**
+     * Puts a draft's earlier version back; the version it replaces goes into
+     * the bin, with an Undo straight away.
+     */
+    fun revertDraft(draft: DraftSummary) {
+        viewModelScope.launch {
+            val trashId = withContext(Dispatchers.IO) {
+                if (draft.toolId != null) toolAutosave.revertToEarlier(draft.id) else autosave.revertToEarlier(draft.id)
+            }
+            if (trashId != null) {
+                _undoOffer.value = UndoOffer(
+                    message = "Went back to the earlier version",
+                    entry = TrashedDraft(trashId, draft, System.currentTimeMillis())
+                )
+            }
             refreshDrafts()
         }
     }
@@ -93,7 +129,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.IO) {
                 if (entry.draft.toolId != null) toolAutosave.restore(entry.trashId) else autosave.restore(entry.trashId)
             }
-            if (_lastDiscarded.value?.trashId == entry.trashId) _lastDiscarded.value = null
+            if (_undoOffer.value?.entry?.trashId == entry.trashId) _undoOffer.value = null
             refreshDrafts()
         }
     }
@@ -104,12 +140,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.IO) {
                 if (entry.draft.toolId != null) toolAutosave.purge(entry.trashId) else autosave.purge(entry.trashId)
             }
-            if (_lastDiscarded.value?.trashId == entry.trashId) _lastDiscarded.value = null
+            if (_undoOffer.value?.entry?.trashId == entry.trashId) _undoOffer.value = null
             refreshDrafts()
         }
     }
 
-    fun dismissLastDiscarded() {
-        _lastDiscarded.value = null
+    fun dismissUndoOffer() {
+        _undoOffer.value = null
     }
 }

@@ -112,8 +112,13 @@ is atomic: a temporary file is flushed to the platter with `fsync`, then `rename
 over the live document. `rename(2)` is atomic, so the saved project is always either
 the complete previous version or the complete new version — never a truncated file,
 however abruptly Android kills the process. The previous version is kept beside it as
-a second parachute, and a third copy — the snapshot — is refreshed at most every ten
-minutes so that a run of bad saves cannot roll over every good version there was.
+a second parachute, and two snapshots move along every ten minutes — the pending one
+is taken from the live file, and ten minutes later it becomes the snapshot — so the
+snapshot always holds a version at least ten minutes old and a run of bad saves
+cannot roll over every good version there was. The Unfinished list offers it as
+"Earlier version"; going back puts the current version in the bin. Tool sessions
+keep the same backup and snapshots. "Exported · edited since" compares a
+fingerprint of the edit with the one that was rendered, never save times.
 Leaving the editor, the app going behind something and the view model being
 cleared each flush the edit once more, so nothing falls into the ticker's gap.
 On reopening, the edit is *offered* rather than silently applied, because

@@ -276,6 +276,13 @@ All on the moto g84 (`adb -s ZY32J8HF2S`), `adb logcat -G 16M` first, build with
 8. Open A via Files app "Open with" (document URI) → editor loads the video.
 9. Phone in system light mode: status-bar clock is white on navy.
 10. Start Stitch with 3 clips, back out, start another Stitch → Drafts lists both.
+11. Export an edit, Back to editor, scrub and pinch-zoom for 5 s, back out → Drafts says "Exported", not "Exported · edited since". Reopen it from Drafts, look, back out → still "Exported". Make a cut → "edited since". Same for a Compress session: export, back, reopen from Drafts, back → "Exported".
+12. Open A with a saved edit so the inline banner shows; without touching the banner add a caption and type into it (unrecorded edits), press back → Drafts has the caption edit, and the old edit is under Recently discarded. Repeat, but drag a trim handle then Undo at once → the banner comes back and nothing new is in Recently discarded; the "Started a new project" card showed between the two.
+13. Dashboard → Stitch, pick 4 clips, reorder, wait 2 s, `am kill` from the background, reopen → the 4-clip merge is back, no picker over it.
+14. Open a trimmed Compress draft from Drafts and press back the instant the preview appears → reopen: the trim is intact.
+15. Start an export, press back, leave "Stop exporting?" open until the export finishes → the dialog closes by itself and the done screen follows.
+16. Discard a draft and press back before the snackbar goes; reopen Unfinished → no Undo snackbar.
+17. Edit a draft for 25 minutes (or set the clock forward 11 min between two edits, twice) → Drafts shows "Earlier version · N min ago"; tap it, confirm → the older edit opens; Undo on the snackbar puts the newer one back.
 
 **B2**
 1. Open A + B (Add). Zoom in ×6, drag the tail handle of the last clip slowly: the strip does not jump to 0 and the handle follows the finger at sub-pixel speed.

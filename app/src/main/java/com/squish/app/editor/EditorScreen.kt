@@ -177,6 +177,10 @@ fun EditorScreen(
         view.keepScreenOn = state.isExporting
         onDispose { view.keepScreenOn = false }
     }
+    // An export that finishes while "Stop exporting?" is open takes the question
+    // with it: there is nothing left to stop, and a Stop tapped then looked as if
+    // it had thrown away a file that was already in the gallery.
+    LaunchedEffect(state.isExporting) { if (!state.isExporting) confirmStopExport = false }
 
     val pickAudioTrack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -409,6 +413,12 @@ fun EditorScreen(
                     offer = offer,
                     onContinue = viewModel::acceptRecovery,
                     onStartNew = { confirmStartNew = true },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+            if (state.setAsideNotice && state.recovery == null) {
+                SetAsideNotice(
+                    onDismiss = viewModel::dismissSetAsideNotice,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }

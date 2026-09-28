@@ -90,8 +90,6 @@ fun QuickToolScreen(
     onBack: () -> Unit,
     onExported: (String) -> Unit,
     onOpenInEditor: (Uri) -> Unit,
-    /** True when opened from the drafts list, to carry on; false from the dashboard, to start fresh. */
-    resume: Boolean = false,
     viewModel: QuickToolViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -118,6 +116,10 @@ fun QuickToolScreen(
         view.keepScreenOn = state.isExporting
         onDispose { view.keepScreenOn = false }
     }
+    // An export that finishes while "Stop exporting?" is open takes the question
+    // with it: there is nothing left to stop, and a Stop tapped then looked as if
+    // it had thrown away a file that was already in the gallery.
+    LaunchedEffect(state.isExporting) { if (!state.isExporting) confirmStopExport = false }
     // Bumped when a trim handle moves, which tells the preview to jump to the
     // handle being dragged. Seeing the cut is the entire point of the preview.
     var seekNonce by remember { mutableStateOf(0L) }
@@ -144,11 +146,12 @@ fun QuickToolScreen(
 
     // Straight to the picker: the tile tap already said what they want to do.
     //
-    // Unless this was opened from the drafts list to carry on. Six videos chosen
+    // Unless the slot already holds a session - one reopened from the drafts
+    // list, or this one, back after the app was killed under it. Six videos chosen
     // and ordered for a merge is ten minutes of work, and throwing the picker over
     // the top of it would mean starting that again.
     LaunchedEffect(tool) {
-        val draft = viewModel.begin(tool, slot, resume)
+        val draft = viewModel.begin(tool, slot)
         if (draft != null) {
             viewModel.restore(draft)
         } else if (!state.hasSource) {

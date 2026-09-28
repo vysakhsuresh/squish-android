@@ -32,7 +32,7 @@ run window     "$SRC/timeline/TimelineWindow.kt" tools/jvm/WindowChecks.kt
 run span       "$SRC/timeline/TimelineSpan.kt" tools/jvm/SpanChecks.kt
 run filmstrip  "$SRC/media/video/Filmstrip.kt" tools/jvm/FilmstripChecks.kt
 run undo       "$SRC/editor/UndoStack.kt" tools/jvm/UndoChecks.kt
-run housekeeping "$SRC/data/DraftHousekeeping.kt" tools/jvm/HousekeepingChecks.kt
+run housekeeping "$SRC/data/DraftHousekeeping.kt" "$SRC/data/DraftFiles.kt" tools/jvm/HousekeepingChecks.kt
 run slowmo     "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/SlowMotion.kt" tools/jvm/SlowMotionChecks.kt
 run ramp       "$SRC/timeline/SpeedRamp.kt" tools/jvm/RampChecks.kt
 run slice      "$SRC/timeline/SpeedRamp.kt" tools/jvm/SliceChecks.kt

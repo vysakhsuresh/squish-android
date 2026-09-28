@@ -107,7 +107,7 @@ fun SquishNavHost(
             val homeViewModel: HomeViewModel = viewModel(homeEntry)
             val drafts by homeViewModel.drafts.collectAsState()
             val trashed by homeViewModel.trashed.collectAsState()
-            val lastDiscarded by homeViewModel.lastDiscarded.collectAsState()
+            val undoOffer by homeViewModel.undoOffer.collectAsState()
 
             // Re-read on arrival: something may have been finished or thrown away
             // since the dashboard last looked.
@@ -116,7 +116,7 @@ fun SquishNavHost(
             DraftsScreen(
                 drafts = drafts,
                 trashed = trashed,
-                lastDiscarded = lastDiscarded,
+                undoOffer = undoOffer,
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onOpenEdit = { draft ->
                     navController.fromTopOf(entry) {
@@ -134,9 +134,10 @@ fun SquishNavHost(
                     }
                 },
                 onDiscard = homeViewModel::discardDraft,
+                onRevert = homeViewModel::revertDraft,
                 onRestore = homeViewModel::restoreDraft,
                 onPurge = homeViewModel::purgeDraft,
-                onDismissLastDiscarded = homeViewModel::dismissLastDiscarded
+                onDismissUndoOffer = homeViewModel::dismissUndoOffer
             )
         }
 
@@ -165,7 +166,6 @@ fun SquishNavHost(
             QuickToolScreen(
                 tool = tool,
                 slot = slot,
-                resume = entry.arguments?.getBoolean("resume") ?: false,
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onExported = { path ->
                     // The tool stays underneath, session and all: the done screen's

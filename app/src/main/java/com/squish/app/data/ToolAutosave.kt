@@ -26,8 +26,9 @@ import java.util.UUID
  * Written the same way the editor's is: scratch file, flushed to the platter,
  * renamed over the live one. rename(2) is atomic, so what is on disk is always
  * either the last complete session or this one, never half of each. And like the
- * editor's, nothing here is ever deleted outright: a discarded session goes into
- * a bin for a month.
+ * editor's, it keeps a backup and two snapshots that fall behind on purpose, and
+ * nothing here is ever deleted outright: a discarded session goes into a bin for
+ * a month.
  */
 data class ToolDraft(
     /**
@@ -49,7 +50,9 @@ data class ToolDraft(
     val targetSizeMb: Int,
     val savedAtMillis: Long,
     /** When this session last produced a file, or null if it never has. */
-    val exportedAtMillis: Long? = null
+    val exportedAtMillis: Long? = null,
+    /** Which session that file was made from; see [com.squish.app.data.DraftHousekeeping.editedSinceExport]. */
+    val exportedFingerprint: String? = null
 )
 
 class ToolAutosave(context: Context) {
@@ -59,7 +62,13 @@ class ToolAutosave(context: Context) {
 
     private fun liveFile(slot: String) = File(dir, "$slot.json")
     private fun backupFile(slot: String) = File(dir, "$slot.bak.json")
+    private fun snapshotFile(slot: String) = File(dir, "$slot.snap.json")
+    private fun pendingSnapshotFile(slot: String) = File(dir, "$slot.pending.snap.json")
     private fun scratchFile(slot: String) = File(dir, "$slot.tmp.json")
+    private fun snapshotScratchFile(slot: String) = File(dir, "$slot.snap.tmp.json")
+
+    private fun slotFiles(slot: String) =
+        listOf(liveFile(slot), backupFile(slot), snapshotFile(slot), pendingSnapshotFile(slot))
 
     /** Cheap change detector, so an idle tool screen never touches the disk. */
     private val lastSignature = HashMap<String, String>()
@@ -76,75 +85,88 @@ class ToolAutosave(context: Context) {
     fun save(draft: ToolDraft): Boolean = synchronized(lock) {
         if (draft.uris.isEmpty()) return false
 
-        val document = encode(draft)
         // The signature is the session without its export stamp, so the tick
         // after markCompleted - which saves with the stamp - sees nothing new.
-        // With the stamp in it, that tick rewrote the file with a later save
-        // time and the list read "edited since" the moment the export ended.
         val signature = keyOf(draft)
         if (lastSignature[draft.slot] == signature) return false
 
-        // The export stamp is kept from the file already there, so a save after
-        // an export does not quietly un-export the session. Read only once a
-        // write is certain, so an idle screen still never touches the disk.
-        if (draft.exportedAtMillis == null) {
-            read(liveFile(draft.slot))?.exportedAtMillis?.let { document.put("exportedAtMillis", it) }
-        }
-        document.put("savedAtMillis", System.currentTimeMillis())
-
         val live = liveFile(draft.slot)
-        val backup = backupFile(draft.slot)
-        val scratch = scratchFile(draft.slot)
+        val onDisk = read(live, draft.slot)
+        // A session reopened from the list has no signature yet, so its first
+        // tick would rewrite a file that already says exactly this. Skipped:
+        // a rewrite is a flash write for nothing.
+        if (onDisk != null && keyOf(onDisk) == signature && draft.exportedAtMillis == null) {
+            lastSignature[draft.slot] = signature
+            return false
+        }
+
+        val document = encode(draft)
+        // The export stamp is kept from the file already there, so a save after
+        // an export does not quietly un-export the session.
+        if (draft.exportedAtMillis == null && onDisk?.exportedAtMillis != null) {
+            document.put("exportedAtMillis", onDisk.exportedAtMillis)
+            onDisk.exportedFingerprint?.let { document.put("exportedFingerprint", it) }
+        }
+        val now = System.currentTimeMillis()
+        document.put("savedAtMillis", now)
+
         val ok = runCatching {
-            FileOutputStream(scratch).use { out ->
+            FileOutputStream(scratchFile(draft.slot)).use { out ->
                 out.write(document.toString().toByteArray())
                 out.flush()
                 out.fd.sync()
             }
-            if (live.exists()) {
-                backup.delete()
-                live.copyTo(backup, overwrite = true)
-            }
-            check(scratch.renameTo(live)) { "atomic rename refused" }
+            // The same pair of stale-on-purpose snapshots the editor keeps; a
+            // merge rebuilt wrongly over ten minutes is as much lost work as a
+            // timeline.
+            DraftFiles.rotateSnapshots(
+                live, snapshotFile(draft.slot), pendingSnapshotFile(draft.slot), snapshotScratchFile(draft.slot), now
+            )
+            if (live.exists()) live.copyTo(backupFile(draft.slot), overwrite = true)
+            DraftFiles.replace(scratchFile(draft.slot), live)
         }.isSuccess
 
         if (ok) lastSignature[draft.slot] = signature
         ok
     }
 
+    /** The session in this slot, if there is one; the backup and then the snapshots stand in for a bad file. */
     fun peek(slot: String): ToolDraft? = synchronized(lock) {
-        read(liveFile(slot)) ?: read(backupFile(slot))
+        read(liveFile(slot), slot) ?: read(backupFile(slot), slot)
+            ?: read(pendingSnapshotFile(slot), slot) ?: read(snapshotFile(slot), slot)
     }
 
     /** Everything that makes this session this session, and nothing about when. */
-    fun keyOf(draft: ToolDraft): String = encode(draft).apply { remove("exportedAtMillis") }.toString()
+    fun keyOf(draft: ToolDraft): String = encode(draft.copy(exportedAtMillis = null, exportedFingerprint = null)).toString()
 
-    /** Moves a session into the bin; the bin entry's name, or null if nothing was on disk. */
+    /** [keyOf], shortened for keeping. */
+    fun fingerprintOf(draft: ToolDraft): String = DraftHousekeeping.fingerprint(keyOf(draft))
+
+    /** Moves a session into the bin; the bin entry's name, or null if nothing was on disk or it could not be moved. */
     fun delete(slot: String): String? = synchronized(lock) {
         lastSignature.remove(slot)
         scratchFile(slot).delete()
-        val present = listOf(liveFile(slot), backupFile(slot)).filter { it.exists() }
-        if (present.isEmpty()) return null
-        var at = System.currentTimeMillis()
-        while (File(trashDir, DraftHousekeeping.trashName(slot, at)).exists()) at += 1
-        val name = DraftHousekeeping.trashName(slot, at)
-        val target = File(trashDir, name)
-        runCatching {
-            check(target.mkdirs()) { "bin folder refused" }
-            present.forEach { file -> check(file.renameTo(File(target, file.name))) { "move into bin refused" } }
-            name
-        }.getOrElse {
-            present.forEach { file -> File(target, file.name).takeIf { it.exists() }?.renameTo(file) }
-            target.delete()
-            null
-        }
+        snapshotScratchFile(slot).delete()
+        DraftFiles.moveToBin(trashDir, slot, slotFiles(slot))
     }
 
-    /** Stamps the session as exported. It stays, so "back to the tool" can carry on with it. */
-    fun markCompleted(slot: String) {
+    /**
+     * Stamps the session as exported: when, and which session - [exported] is
+     * the one the file was made from. It stays, so "back to the tool" can carry
+     * on with it.
+     *
+     * The save time and the stamp are the same instant, and the fingerprint is
+     * what "edited since" is decided by, so neither the millisecond between
+     * them nor a later rewrite of the same session can make an untouched
+     * export look changed.
+     */
+    fun markCompleted(slot: String, exported: ToolDraft) {
         synchronized(lock) {
-            val current = read(liveFile(slot)) ?: return
-            val stamped = current.copy(exportedAtMillis = System.currentTimeMillis())
+            val current = read(liveFile(slot), slot) ?: return
+            val stamped = current.copy(
+                exportedAtMillis = System.currentTimeMillis(),
+                exportedFingerprint = fingerprintOf(exported)
+            )
             // Through the same path as any save, but bypassing the change detector:
             // the stamp is the change.
             lastSignature.remove(slot)
@@ -156,10 +178,52 @@ class ToolAutosave(context: Context) {
     fun drafts(): List<ToolDraft> = synchronized(lock) {
         runCatching {
             val files: Array<File> = dir.listFiles() ?: return@runCatching emptyList()
-            files.filter { it.isFile && it.name.endsWith(".json") && !it.name.endsWith(".tmp.json") && !it.name.endsWith(".bak.json") }
-                .mapNotNull { read(it) }
+            files.filter { it.isFile && it.name.endsWith(".json") }
+                .filter { !it.name.endsWith(".tmp.json") && !it.name.endsWith(".bak.json") && !it.name.endsWith(".snap.json") }
+                .mapNotNull { read(it, it.name.removeSuffix(".json")) }
                 .sortedByDescending { it.savedAtMillis }
         }.getOrDefault(emptyList())
+    }
+
+    /**
+     * When the earlier version of this session that [revertToEarlier] would put
+     * back was saved, or null when there is none that differs from it.
+     */
+    fun earlierSavedAt(draft: ToolDraft): Long? = synchronized(lock) { earlierOf(draft)?.savedAtMillis }
+
+    private fun earlierOf(draft: ToolDraft): ToolDraft? {
+        val snapshot = read(snapshotFile(draft.slot), draft.slot)
+        val pending = read(pendingSnapshotFile(draft.slot), draft.slot)
+        return when (
+            DraftHousekeeping.earlierVersion(
+                fingerprintOf(draft),
+                snapshot?.let { DraftHousekeeping.Version(it.savedAtMillis, fingerprintOf(it)) },
+                pending?.let { DraftHousekeeping.Version(it.savedAtMillis, fingerprintOf(it)) }
+            )
+        ) {
+            DraftHousekeeping.Earlier.Snapshot -> snapshot
+            DraftHousekeeping.Earlier.Pending -> pending
+            null -> null
+        }
+    }
+
+    /**
+     * Puts the session's earlier version back. The version it replaces goes
+     * into the bin whole, so this is undone by restoring that entry; its name is
+     * returned, or null when nothing changed.
+     */
+    fun revertToEarlier(slot: String): String? = synchronized(lock) {
+        val current = read(liveFile(slot), slot) ?: return null
+        val earlier = earlierOf(current) ?: return null
+        val text = runCatching {
+            encode(earlier).apply { put("savedAtMillis", earlier.savedAtMillis) }.toString()
+        }.getOrNull() ?: return null
+        val binned = delete(slot) ?: return null
+        val placed = runCatching { DraftFiles.writeAtomically(scratchFile(slot), liveFile(slot), text.toByteArray()) }.isSuccess
+        if (placed) return binned
+        slotFiles(slot).forEach { it.delete() }
+        restore(binned)
+        null
     }
 
     /** Everything in the bin, newest first, with anything past its month gone. */
@@ -173,28 +237,25 @@ class ToolAutosave(context: Context) {
                     entry.deleteRecursively()
                     return@mapNotNull null
                 }
-                val draft = read(File(entry, liveFile(slot).name)) ?: read(File(entry, backupFile(slot).name))
+                val draft = read(File(entry, liveFile(slot).name), slot) ?: read(File(entry, backupFile(slot).name), slot)
                     ?: return@mapNotNull null
                 entry.name to draft
             }.sortedByDescending { (name, _) -> DraftHousekeeping.parseTrashName(name)?.second ?: 0L }
         }.getOrDefault(emptyList())
     }
 
-    /** Puts a bin entry back. A newer session in the same slot goes into the bin in its place. */
+    /**
+     * Puts a bin entry back. A newer session in the same slot goes into the bin
+     * in its place, and if it cannot be moved, nothing is restored - a rename
+     * over it would have destroyed it with no copy left.
+     */
     fun restore(trashId: String): Boolean = synchronized(lock) {
         val entry = File(trashDir, trashId)
         if (!entry.isDirectory) return false
         val (slot, _) = DraftHousekeeping.parseTrashName(trashId) ?: return false
-        if (liveFile(slot).exists()) delete(slot)
+        if (slotFiles(slot).any { it.exists() } && delete(slot) == null) return false
         lastSignature.remove(slot)
-        val moved = runCatching {
-            listOf(liveFile(slot), backupFile(slot)).forEach { file ->
-                val kept = File(entry, file.name)
-                if (kept.exists()) check(kept.renameTo(file)) { "move out of bin refused" }
-            }
-        }.isSuccess
-        if (moved) entry.deleteRecursively()
-        moved
+        DraftFiles.moveOutOfBin(entry, slotFiles(slot))
     }
 
     /** Removes a bin entry for good. Only ever from a confirmed tap on the list. */
@@ -205,11 +266,14 @@ class ToolAutosave(context: Context) {
         }
     }
 
-    private fun read(file: File): ToolDraft? {
+    /**
+     * The slot is handed in rather than read off the file's name: a snapshot or
+     * a backup is named after its slot but is not called "<slot>.json", and a
+     * session written before slots existed - "stitch.json" - still resumes as
+     * itself because its slot is its name.
+     */
+    private fun read(file: File, slot: String): ToolDraft? {
         if (!file.exists()) return null
-        // The slot is the file's name, which is what makes a session written
-        // before slots existed - "stitch.json" - still resume as itself.
-        val slot = file.name.removeSuffix(".bak.json").removeSuffix(".json")
         return runCatching { decode(slot, JSONObject(file.readText())) }.getOrNull()
     }
 
@@ -224,6 +288,7 @@ class ToolAutosave(context: Context) {
         put("fitToSize", draft.fitToSize)
         put("targetSizeMb", draft.targetSizeMb)
         draft.exportedAtMillis?.let { put("exportedAtMillis", it) }
+        draft.exportedFingerprint?.let { put("exportedFingerprint", it) }
     }
 
     private fun decode(slot: String, json: JSONObject): ToolDraft? {
@@ -247,7 +312,8 @@ class ToolAutosave(context: Context) {
             fitToSize = json.optBoolean("fitToSize"),
             targetSizeMb = json.optInt("targetSizeMb", 16),
             savedAtMillis = json.optLong("savedAtMillis"),
-            exportedAtMillis = json.optLong("exportedAtMillis", 0L).takeIf { it > 0L }
+            exportedAtMillis = json.optLong("exportedAtMillis", 0L).takeIf { it > 0L },
+            exportedFingerprint = json.optString("exportedFingerprint").takeIf { it.isNotBlank() }
         )
     }
 

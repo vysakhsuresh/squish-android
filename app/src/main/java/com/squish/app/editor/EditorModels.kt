@@ -381,6 +381,12 @@ data class EditorUiState(
 
     // A session that survived the process being killed, waiting to be accepted.
     val recovery: RecoveryOffer? = null,
+    /**
+     * Set when editing the bare clip answered the offer above for the user: the
+     * saved edit went to the bin, and the editor says so rather than letting it
+     * vanish without a word. Undoing back to the bare clip brings the offer back.
+     */
+    val setAsideNotice: Boolean = false,
 
     // The last failure, in sentences. Null whenever the editor is healthy.
     val failure: SquishError? = null,

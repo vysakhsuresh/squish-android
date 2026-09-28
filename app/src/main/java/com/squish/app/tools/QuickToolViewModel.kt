@@ -27,6 +27,7 @@ import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -148,19 +149,32 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     private var wroteDraft = false
 
     /**
-     * Starts saving this tool's session and, when [resume] asks for it, hands
-     * back the one it left behind.
+     * True from the moment a saved session starts coming back until all of it is
+     * on screen; nothing is saved in between. Stays true if the file turned out
+     * unreadable, so the empty result of that never replaces the saved session -
+     * until another video is chosen, which is a new session in the same slot.
+     */
+    @Volatile
+    private var restoring = false
+
+    /**
+     * Starts saving this tool's session and hands back the one already in its
+     * slot, if there is one.
      *
-     * Only the drafts list resumes. Tapping the tool on the dashboard is asking
-     * for the tool, fresh: the last video appearing again there was a session
-     * nobody asked to continue.
+     * The drafts list opens a session's own slot and so always finds it. A
+     * dashboard tap opens a slot nobody has used, which is empty - unless the
+     * app was killed under this very session and the screen has come back with
+     * its route. Then the slot holds what was built before the kill, and it is
+     * picked up rather than an empty screen offered over it: the first thing
+     * saved from that empty screen went into the same slot and wrote over the
+     * six-clip merge that was there.
      *
      * Called once, as the screen opens. The ticker is the editor's: a fixed
      * interval, a no-op when nothing changed, and never on the frame loop. What is
      * saved is only the choices - which files, in which order, where the handles
      * are - so the cost of a tick is a short string comparison.
      */
-    suspend fun begin(tool: QuickTool, slot: String, resume: Boolean): ToolDraft? {
+    suspend fun begin(tool: QuickTool, slot: String): ToolDraft? {
         if (this.tool != null) return null
         this.tool = tool
         this.slot = slot
@@ -172,7 +186,6 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        if (!resume) return null
         return withContext(Dispatchers.IO) { autosave.peek(slot) }?.also { resumed = true }
     }
 
@@ -184,9 +197,19 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      * one edit that never reached disk.
      */
     fun saveNow() {
+        if (_state.value.isExporting) return
+        persist()
+    }
+
+    /** [saveNow] without the export check, for the export's own flush. */
+    private fun persist() {
         val tool = tool ?: return
         val current = _state.value
-        if (current.isExporting || current.isLoading) return
+        // A reopened session is only itself once all of it is back. Saved in
+        // between - after the probe but before the trim went on - it wrote the
+        // whole clip over the cut, and a back press in that gap cleared the view
+        // model before the trim could land at all.
+        if (current.isLoading || restoring) return
         val draft = draftOf(tool, current)
         val untouched = !resumed && (baseline == null || autosave.keyOf(draft) == baseline)
         if (untouched) {
@@ -239,6 +262,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun restore(draft: ToolDraft) {
         val tool = QuickTool.fromId(draft.toolId)
+        restoring = true
         _state.update {
             it.copy(
                 outputP = draft.outputP,
@@ -248,22 +272,33 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         if (tool == QuickTool.Stitch) {
-            addMergeClips(draft.uris)
+            viewModelScope.launch {
+                // Every file stays in the list even if it no longer reads, so
+                // what is saved after this is never less than what was.
+                appendMergeClips(draft.uris)
+                restoring = false
+            }
             return
         }
 
-        val uri = draft.uris.firstOrNull() ?: return
+        val uri = draft.uris.firstOrNull() ?: run {
+            restoring = false
+            return
+        }
         viewModelScope.launch {
-            load(uri)
-            // load() marks itself loading before it returns and probes on its own
-            // coroutine, resetting the handles to the whole clip when it lands. So
-            // the saved range can only go on afterwards - and it waits on the state
-            // flow itself rather than on a fixed delay, because how long a probe
-            // takes is a property of the file, not something to guess at.
+            loadSource(uri)
+            // loadSource() marks itself loading before it returns and probes on its
+            // own coroutine, resetting the handles to the whole clip when it lands.
+            // So the saved range can only go on afterwards - and it waits on the
+            // state flow itself rather than on a fixed delay, because how long a
+            // probe takes is a property of the file, not something to guess at.
             _state.first { !it.isLoading && it.sourceUri == uri }
             if (draft.trimEndMs > draft.trimStartMs) {
                 setTrim(draft.trimStartMs, draft.trimEndMs)
             }
+            // A file that no longer reads comes back with no length, and a save
+            // of that would put a zero-length cut over the one on disk.
+            restoring = _state.value.durationMs <= 0L
         }
     }
 
@@ -273,14 +308,21 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      * with one clip in the wrong place is fixed by moving that clip, not by
      * choosing six files again. Nothing is stamped for a session that never
      * differed from its first pick, since no draft was written for it.
+     * [exported] is the session the file was made from.
      */
-    private fun markExported() {
+    private fun markExported(exported: ToolDraft) {
         val slot = slot ?: return
-        saveNow()
-        autosave.markCompleted(slot)
+        persist()
+        autosave.markCompleted(slot, exported)
     }
 
+    /** A video chosen on this screen: a new start, whatever was being restored. */
     fun load(uri: Uri) {
+        restoring = false
+        loadSource(uri)
+    }
+
+    private fun loadSource(uri: Uri) {
         if (_state.value.sourceUri == uri) return
         _state.update { it.copy(sourceUri = uri, isLoading = true) }
 
@@ -321,32 +363,36 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun addMergeClips(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        viewModelScope.launch {
-            // The first pick fills an empty list, and is the starting point rather
-            // than an edit. Anything added after that is.
-            val firstPick = _state.value.mergeClips.isEmpty()
-            val added = uris.map { uri ->
-                val meta = ThumbnailExtractor.probe(getApplication(), uri)
-                launch { MediaCompat.check(getApplication(), uri) }
-                val clip = Clip(
-                    kind = ClipKind.Video,
-                    uri = uri,
-                    label = displayNameOf(uri) ?: "Clip",
-                    sourceInMs = 0,
-                    sourceOutMs = meta.durationMs,
-                    timelineStartMs = 0,
-                    sourceDurationMs = meta.durationMs
-                )
-                // The frame size was being probed and thrown away, which is what
-                // made every merge export with no output resolution set at all.
-                mergeMeta[clip.id] = meta
-                mergeSizes[clip.id] = fileSizeOf(uri)
-                clip
-            }
-            _state.update { current -> current.withMerge(current.mergeClips + added) }
-            recomputeEstimate()
-            if (firstPick) markBaseline()
+        viewModelScope.launch { appendMergeClips(uris) }
+    }
+
+    /** [addMergeClips], for a caller that needs to know when the clips are in. */
+    private suspend fun appendMergeClips(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        // The first pick fills an empty list, and is the starting point rather
+        // than an edit. Anything added after that is.
+        val firstPick = _state.value.mergeClips.isEmpty()
+        val added = uris.map { uri ->
+            val meta = ThumbnailExtractor.probe(getApplication(), uri)
+            viewModelScope.launch { MediaCompat.check(getApplication(), uri) }
+            val clip = Clip(
+                kind = ClipKind.Video,
+                uri = uri,
+                label = displayNameOf(uri) ?: "Clip",
+                sourceInMs = 0,
+                sourceOutMs = meta.durationMs,
+                timelineStartMs = 0,
+                sourceDurationMs = meta.durationMs
+            )
+            // The frame size was being probed and thrown away, which is what
+            // made every merge export with no output resolution set at all.
+            mergeMeta[clip.id] = meta
+            mergeSizes[clip.id] = fileSizeOf(uri)
+            clip
         }
+        _state.update { current -> current.withMerge(current.mergeClips + added) }
+        recomputeEstimate()
+        if (firstPick) markBaseline()
     }
 
     fun moveMergeClip(clipId: String, delta: Int) {
@@ -518,8 +564,14 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         _state.update { it.copy(isExporting = true, exportProgress = ExportProgress()) }
+        val rendered = draftOf(tool, current)
 
         exportJob = viewModelScope.launch {
+            // The session as it is goes to disk before the encode starts. Nothing
+            // is saved while an export runs, and a long export is exactly when
+            // the app is most likely to be sent to the back and killed.
+            withContext(Dispatchers.IO) { persist() }
+
             val outputDir = File(getApplication<Application>().getExternalFilesDir(null), "exports")
                 .apply { mkdirs() }
             val extension = if (audioOnly) "m4a" else "mp4"
@@ -528,32 +580,41 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             val result = processor.export(SquishError.exportable(editorState), outputFile) { progress ->
                 _state.update { it.copy(exportProgress = progress) }
             }
+            // From here the file exists and is being handed over; there is
+            // nothing left to stop. See cancelExport.
+            if (exportJob === coroutineContext[Job]) exportJob = null
             _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
 
             result.onSuccess { file ->
-                if (audioOnly) {
-                    GallerySaver.publishAudio(getApplication(), file)
-                } else {
-                    GallerySaver.publish(getApplication(), file)
-                }
-                historyRepository.add(
-                    ExportRecord(
-                        id = UUID.randomUUID().toString(),
-                        title = if (tool == QuickTool.Stitch) {
-                            "${countOf(current.mergeClips.size, "clip")} merged"
-                        } else {
-                            current.name ?: tool.title
-                        },
-                        outputPath = file.absolutePath,
-                        originalSizeBytes = current.originalSizeBytes,
-                        outputSizeBytes = file.length(),
-                        durationMs = editorState.trimmedDurationMs,
-                        width = current.width,
-                        height = current.height,
-                        createdAtMillis = System.currentTimeMillis()
+                // All or nothing: the file into the gallery, into history and the
+                // session stamped. Cancelled half-way - the screen leaving in the
+                // instant after the encode - it was in the gallery and never
+                // stamped.
+                withContext(NonCancellable) {
+                    if (audioOnly) {
+                        GallerySaver.publishAudio(getApplication(), file)
+                    } else {
+                        GallerySaver.publish(getApplication(), file)
+                    }
+                    historyRepository.add(
+                        ExportRecord(
+                            id = UUID.randomUUID().toString(),
+                            title = if (tool == QuickTool.Stitch) {
+                                "${countOf(current.mergeClips.size, "clip")} merged"
+                            } else {
+                                current.name ?: tool.title
+                            },
+                            outputPath = file.absolutePath,
+                            originalSizeBytes = current.originalSizeBytes,
+                            outputSizeBytes = file.length(),
+                            durationMs = editorState.trimmedDurationMs,
+                            width = current.width,
+                            height = current.height,
+                            createdAtMillis = System.currentTimeMillis()
+                        )
                     )
-                )
-                withContext(Dispatchers.IO) { markExported() }
+                    withContext(Dispatchers.IO) { markExported(rendered) }
+                }
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
                 // Same typed vocabulary as the editor, so a failure reads the same
@@ -564,13 +625,24 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    /** The running export, so back can stop it rather than abandon it. */
+    /**
+     * The running export, so back can stop it rather than abandon it. Cleared
+     * the moment the encode returns, before the file is published.
+     */
     private var exportJob: Job? = null
 
-    /** Stops an export part-way; the processor removes the half-written file. */
+    /**
+     * Stops an export part-way; the processor removes the half-written file.
+     *
+     * Nothing once the encode has finished. "Stop exporting?" can still be on
+     * screen when it does, and a Stop tapped then used to cancel the hand-over
+     * instead: the file was already in the gallery and in history, while the
+     * screen stayed put as if the export had been stopped.
+     */
     fun cancelExport() {
-        exportJob?.cancel()
+        val job = exportJob ?: return
         exportJob = null
+        job.cancel()
         _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
     }
 

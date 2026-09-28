@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RestoreFromTrash
 import androidx.compose.material3.Icon
@@ -33,6 +34,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import com.squish.app.data.DraftSummary
 import com.squish.app.data.TrashedDraft
 import com.squish.app.editor.Timecode
+import com.squish.app.home.UndoOffer
 import com.squish.app.home.agoOf
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.canReadMedia
@@ -82,18 +85,21 @@ import com.squish.app.ui.theme.SquishColors
 fun DraftsScreen(
     drafts: List<DraftSummary>,
     trashed: List<TrashedDraft>,
-    /** The discard just made, offered for undoing; null once that offer is over. */
-    lastDiscarded: TrashedDraft?,
+    /** The set-aside just made, offered for undoing; null once that offer is over. */
+    undoOffer: UndoOffer?,
     onBack: () -> Unit,
     onOpenEdit: (DraftSummary) -> Unit,
     onOpenTool: (DraftSummary) -> Unit,
     onDiscard: (DraftSummary) -> Unit,
+    /** Puts the draft's earlier version back; see [DraftSummary.earlierSavedAtMillis]. */
+    onRevert: (DraftSummary) -> Unit,
     onRestore: (TrashedDraft) -> Unit,
     onPurge: (TrashedDraft) -> Unit,
-    onDismissLastDiscarded: () -> Unit
+    onDismissUndoOffer: () -> Unit
 ) {
     var previewing by remember { mutableStateOf<DraftSummary?>(null) }
     var pendingDiscard by remember { mutableStateOf<DraftSummary?>(null) }
+    var pendingRevert by remember { mutableStateOf<DraftSummary?>(null) }
     var pendingPurge by remember { mutableStateOf<TrashedDraft?>(null) }
     val snackbar = remember { SnackbarHostState() }
 
@@ -101,18 +107,23 @@ fun DraftsScreen(
         if (draft.toolId != null) onOpenTool(draft) else onOpenEdit(draft)
     }
 
-    // The discard's undo, right where the thumb is. A discard used to be final the
-    // moment the dialog closed; now it is a snackbar's length from being nothing.
-    LaunchedEffect(lastDiscarded) {
-        val entry = lastDiscarded ?: return@LaunchedEffect
+    // The undo, right where the thumb is. A discard used to be final the moment
+    // the dialog closed; now it is a snackbar's length from being nothing.
+    LaunchedEffect(undoOffer) {
+        val offer = undoOffer ?: return@LaunchedEffect
         val result = snackbar.showSnackbar(
-            message = "Discarded \"${entry.draft.title}\"",
+            message = offer.message,
             actionLabel = "Undo",
             withDismissAction = true
         )
-        if (result == SnackbarResult.ActionPerformed) onRestore(entry)
-        onDismissLastDiscarded()
+        if (result == SnackbarResult.ActionPerformed) onRestore(offer.entry)
+        onDismissUndoOffer()
     }
+    // Leaving mid-snackbar cancels the effect above before it can clear the
+    // offer, and the view model holding it outlives this screen - so the Undo
+    // came back on a later visit, when the slot might hold a newer draft that
+    // restoring would have swapped out.
+    DisposableEffect(Unit) { onDispose { onDismissUndoOffer() } }
 
     Scaffold(
         containerColor = SquishColors.Background,
@@ -170,7 +181,8 @@ fun DraftsScreen(
                                 draft = draft,
                                 onOpen = { open(draft) },
                                 onPreview = { previewing = draft },
-                                onDiscard = { pendingDiscard = draft }
+                                onDiscard = { pendingDiscard = draft },
+                                onEarlier = { pendingRevert = draft }
                             )
                         }
 
@@ -225,6 +237,26 @@ fun DraftsScreen(
                 open(draft)
             },
             onDismiss = { previewing = null }
+        )
+    }
+
+    pendingRevert?.let { draft ->
+        val earlier = draft.earlierSavedAtMillis
+        ConfirmDialog(
+            title = "Go back to the earlier version?",
+            body = "The version of \"${draft.title}\" saved " +
+                "${earlier?.let(::agoOf) ?: "earlier"} takes the place of the one saved ${agoOf(draft.savedAtMillis)}.",
+            caution = "The version you have now moves to Recently discarded, below, for 30 days, " +
+                "so this can be undone.",
+            confirmLabel = "Go back",
+            dismissLabel = "Cancel",
+            icon = Icons.Filled.History,
+            accent = SquishColors.Cyan,
+            onConfirm = {
+                onRevert(draft)
+                pendingRevert = null
+            },
+            onDismiss = { pendingRevert = null }
         )
     }
 
@@ -283,7 +315,8 @@ private fun DraftCard(
     draft: DraftSummary,
     onOpen: () -> Unit,
     onPreview: () -> Unit,
-    onDiscard: () -> Unit
+    onDiscard: () -> Unit,
+    onEarlier: () -> Unit
 ) {
     val context = LocalContext.current
     var thumb by remember(draft.sourceUri) { mutableStateOf<Bitmap?>(null) }
@@ -353,6 +386,29 @@ private fun DraftCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextMuted.copy(alpha = 0.7f)
                 )
+            }
+            // The snapshot that falls behind on purpose, offered by name. Kept on
+            // disk and never reachable, it protected nothing: a run of bad saves
+            // is only recoverable if someone can ask for the version before it.
+            draft.earlierSavedAtMillis?.let { earlier ->
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onEarlier)
+                        .padding(vertical = 4.dp, horizontal = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(Icons.Filled.History, contentDescription = null, tint = SquishColors.Cyan, modifier = Modifier.size(13.dp))
+                    Text(
+                        "Earlier version · ${agoOf(earlier)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.Cyan,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
 

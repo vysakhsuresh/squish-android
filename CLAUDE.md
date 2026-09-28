@@ -120,7 +120,13 @@ should work through it and then delete what holds up.
   on disk; the first edit under the recovery banner retires the offer; the
   banner is modal after `am kill`; the custom crop and the beat grid survive a
   kill; back mid-export asks "Stop exporting?" and leaves no file in
-  `exports/`; "Open with" a document URI loads; each Stitch gets its own draft.
+  `exports/`; "Open with" a document URI loads; each Stitch gets its own draft;
+  any change under the inline banner, recorded or not, retires it and undoing
+  back to the bare clip brings it back; "edited since" goes by content, not by
+  save time; a quick-tool session started from the dashboard comes back after
+  a kill; the drafts list offers the ten-minute snapshot as "Earlier version".
+  The snapshot rotation and the all-or-nothing bin moves are executed on the
+  JVM (`tools/jvm/HousekeepingChecks.kt`); their use on Android storage is not.
   Two things only a device can answer: whether `SavedStateHandle` comes back
   set after `am kill` (that is what makes the banner modal), and whether
   `keepScreenOn` holds through a long render.

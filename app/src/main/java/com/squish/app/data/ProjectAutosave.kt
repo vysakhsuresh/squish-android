@@ -48,9 +48,10 @@ import java.io.FileOutputStream
  * one. rename(2) is atomic, so the saved project is always either the previous
  * complete version or the new complete version - never a half-written file, no
  * matter when the process dies. The previous version is kept alongside as a second
- * parachute in case the JSON itself is ever unreadable, and a third copy - the
- * snapshot - is allowed to fall ten minutes behind on purpose, so that a run of
- * bad saves cannot roll over every good version there was.
+ * parachute in case the JSON itself is ever unreadable, and two snapshots are
+ * allowed to fall behind on purpose, so that a run of bad saves cannot roll over
+ * every good version there was - see [DraftHousekeeping.SNAPSHOT_INTERVAL_MS].
+ * The drafts screen can put the older one back.
  *
  * Nothing here deletes a draft. Every path that used to - a finished export,
  * "Start a new project", discarding from the list, undoing back to the untouched
@@ -79,10 +80,18 @@ data class DraftSummary(
      * exported edit stays: a test render to check a look, then one more tweak,
      * is the commonest reason to come back to a project.
      */
-    val exportedAtMillis: Long? = null
+    val exportedAtMillis: Long? = null,
+    /** The edit's content as it is now, and as it was rendered; see [DraftHousekeeping.editedSinceExport]. */
+    val editFingerprint: String? = null,
+    val exportedFingerprint: String? = null,
+    /**
+     * When the earlier version the drafts screen can go back to was saved, or
+     * null when there is none that differs from this one.
+     */
+    val earlierSavedAtMillis: Long? = null
 ) {
     val editedSinceExport: Boolean
-        get() = DraftHousekeeping.editedSinceExport(savedAtMillis, exportedAtMillis)
+        get() = DraftHousekeeping.editedSinceExport(savedAtMillis, exportedAtMillis, editFingerprint, exportedFingerprint)
 }
 
 /** A draft in the bin: what it was, and when it went there. */
@@ -114,7 +123,10 @@ class ProjectAutosave(context: Context) {
     private fun liveFile(slot: String) = File(dir, "$slot.json")
     private fun backupFile(slot: String) = File(dir, "$slot.bak.json")
     private fun snapshotFile(slot: String) = File(dir, "$slot.snap.json")
+    /** Named to end in .snap.json, so every listing that skips snapshots skips it too. */
+    private fun pendingSnapshotFile(slot: String) = File(dir, "$slot.pending.snap.json")
     private fun scratchFile(slot: String) = File(dir, "$slot.tmp.json")
+    private fun snapshotScratchFile(slot: String) = File(dir, "$slot.snap.tmp.json")
     private fun metaScratchFile(slot: String) = File(dir, "$slot.meta.tmp.json")
 
     /**
@@ -126,7 +138,7 @@ class ProjectAutosave(context: Context) {
 
     /** The files that make up one slot, in the order they matter. */
     private fun slotFiles(slot: String) =
-        listOf(liveFile(slot), backupFile(slot), snapshotFile(slot), metaFile(slot))
+        listOf(liveFile(slot), backupFile(slot), snapshotFile(slot), pendingSnapshotFile(slot), metaFile(slot))
 
     /** Cheap change detector, so an idle editor never touches the disk. */
     private val lastSignature = HashMap<String, String>()
@@ -141,52 +153,85 @@ class ProjectAutosave(context: Context) {
     /**
      * Persists the edit if anything has changed since the last write. Safe to call
      * on a timer; it is a no-op when nothing moved.
+     *
+     * "Anything" includes the playhead and the zoom, so a draft reopens where it
+     * was left. Whether the *edit* changed - which is what "edited since export"
+     * means - is carried separately, as a fingerprint of [editKey].
      */
     fun save(state: EditorUiState): Boolean = synchronized(lock) {
         val uri = state.sourceUri ?: return false
         if (state.isLoadingSource) return false
         val slot = slotFor(uri)
         val live = liveFile(slot)
-        val backup = backupFile(slot)
-        val snapshot = snapshotFile(slot)
-        val scratch = scratchFile(slot)
 
-        // The signature is taken from the edit alone. Stamping the time first would
-        // make every tick look like a change and turn "save when something moved"
-        // into "write to flash every 1.5 seconds, forever".
+        // The signature is taken from the document alone. Stamping the time first
+        // would make every tick look like a change and turn "save when something
+        // moved" into "write to flash every 1.5 seconds, forever".
         val document = encode(state)
         val signature = document.toString()
         if (signature == lastSignature[slot]) return false
 
         val now = System.currentTimeMillis()
+        val fingerprint = DraftHousekeeping.fingerprint(editKey(state))
         document.put("savedAtMillis", now)
+        val previous = readMetaJson(metaFile(slot))
 
         val ok = runCatching {
-            FileOutputStream(scratch).use { out ->
+            // Nothing below touches the live file until the new version is safely
+            // on disk beside it.
+            FileOutputStream(scratchFile(slot)).use { out ->
                 out.write(document.toString().toByteArray())
                 out.flush()
                 out.fd.sync()          // on the platter, not just in the page cache
             }
-            if (live.exists()) {
-                // The snapshot is refreshed from the version about to be
-                // overwritten, and only when the one it holds has had its ten
-                // minutes. See DraftHousekeeping for why it is meant to be stale.
-                val snapshotAt = snapshot.takeIf { it.exists() }?.lastModified()
-                if (DraftHousekeeping.snapshotDue(snapshotAt, now)) {
-                    live.copyTo(snapshot, overwrite = true)
-                }
-                backup.delete()
-                live.copyTo(backup, overwrite = true)
-            }
+            val snapshots = rotateSnapshots(slot, previous, now)
+            if (live.exists()) live.copyTo(backupFile(slot), overwrite = true)
             // The sidecar goes first, atomically. It used to be a plain truncating
             // write after the rename, so a kill in the gap left a draft that was
             // whole on disk and missing from the list.
-            writeMeta(slot, state, uri, now)
-            check(scratch.renameTo(live)) { "atomic rename refused" }
+            writeMeta(slot, state, uri, now, fingerprint, previous, snapshots)
+            DraftFiles.replace(scratchFile(slot), live)
         }.isSuccess
 
         if (ok) lastSignature[slot] = signature
         ok
+    }
+
+    /**
+     * Moves the two snapshots along when they are due and returns what the
+     * sidecar should now say about them. The version a new pending snapshot is
+     * taken from is the live file, read here for its time and fingerprint -
+     * which happens once every ten minutes at most.
+     */
+    private fun rotateSnapshots(slot: String, previous: JSONObject?, now: Long): SnapshotInfo {
+        val carried = SnapshotInfo(
+            snapshot = versionIn(previous, "snapshot"),
+            pending = versionIn(previous, "pending")
+        )
+        val live = liveFile(slot)
+        val pending = pendingSnapshotFile(slot)
+        if (!live.exists() || !DraftHousekeeping.snapshotDue(pending.takeIf { it.exists() }?.lastModified(), now)) {
+            return carried
+        }
+        val liveVersion = runCatching { JSONObject(live.readText()) }.getOrNull()?.let { json ->
+            DraftHousekeeping.Version(json.optLong("savedAtMillis"), DraftHousekeeping.fingerprint(editKeyOf(json)))
+        }
+        val rotation = DraftFiles.rotateSnapshots(live, snapshotFile(slot), pending, snapshotScratchFile(slot), now)
+        return SnapshotInfo(
+            snapshot = if (rotation.promoted) carried.pending else carried.snapshot,
+            pending = when {
+                rotation.taken -> liveVersion
+                rotation.promoted -> null
+                else -> carried.pending
+            }
+        )
+    }
+
+    private data class SnapshotInfo(val snapshot: DraftHousekeeping.Version?, val pending: DraftHousekeeping.Version?)
+
+    private fun versionIn(meta: JSONObject?, prefix: String): DraftHousekeeping.Version? {
+        val at = meta?.optLong("${prefix}SavedAtMillis", 0L)?.takeIf { it > 0L } ?: return null
+        return DraftHousekeeping.Version(at, meta.optString("${prefix}Fingerprint").takeIf { it.isNotBlank() })
     }
 
     /**
@@ -198,18 +243,30 @@ class ProjectAutosave(context: Context) {
      * for edits rather than edits - they are saved with a draft, but they do
      * not make one.
      */
-    fun editKey(state: EditorUiState): String =
-        encode(state).apply {
-            remove("playheadMs")
-            remove("pixelsPerSecond")
-            remove("snapToMarkers")
-            remove("stabilizeStrength")
-        }.toString()
+    fun editKey(state: EditorUiState): String = editKeyOf(encode(state))
 
-    /** A recoverable session for this video, if one survived. */
+    /**
+     * The same key read off a saved document, so a snapshot on disk can be
+     * compared with the edit on screen. A document read back prints exactly as
+     * it was written - org.json keeps the order of the keys and the spelling of
+     * the numbers - so the two agree whenever the edits do. Takes the document
+     * apart, so it is only ever handed a fresh one.
+     */
+    private fun editKeyOf(document: JSONObject): String = document.apply {
+        remove("playheadMs")
+        remove("pixelsPerSecond")
+        remove("snapToMarkers")
+        remove("stabilizeStrength")
+        remove("savedAtMillis")
+    }.toString()
+
+    /**
+     * A recoverable session for this video, if one survived. The snapshots are
+     * the last resort, behind the live file and its backup.
+     */
     fun peek(uri: Uri): ProjectSnapshot? = synchronized(lock) {
         val slot = slotFor(uri)
-        read(liveFile(slot)) ?: read(backupFile(slot)) ?: read(snapshotFile(slot))
+        read(liveFile(slot)) ?: read(backupFile(slot)) ?: read(pendingSnapshotFile(slot)) ?: read(snapshotFile(slot))
     }
 
     /**
@@ -227,67 +284,121 @@ class ProjectAutosave(context: Context) {
             val files: Array<File> = dir.listFiles() ?: return@runCatching emptyList()
             files.filter { it.isFile && it.name.endsWith(".json") && !it.name.contains(".tmp.") }
                 .filter { !it.name.endsWith(".bak.json") && !it.name.endsWith(".snap.json") && !it.name.endsWith(".meta.json") }
-                .mapNotNull { live -> summaryOf(live.name.removeSuffix(".json"), live, metaFile(live.name.removeSuffix(".json"))) }
+                .mapNotNull { live ->
+                    val slot = live.name.removeSuffix(".json")
+                    summaryOf(slot, live, metaFile(slot))?.let { summary ->
+                        summary.copy(earlierSavedAtMillis = earlierOf(slot, summary)?.second?.savedAtMillis)
+                    }
+                }
                 .sortedByDescending { it.savedAtMillis }
         }.getOrDefault(emptyList())
     }
 
     private fun summaryOf(slot: String, live: File, meta: File): DraftSummary? {
         readMeta(meta)?.let { return it.copy(id = slot) }
-        val snapshot = read(live) ?: return null
+        val json = runCatching { JSONObject(live.readText()) }.getOrNull() ?: return null
+        val snapshot = decode(json) ?: return null
         return DraftSummary(
             id = slot,
             title = snapshot.clips.firstOrNull()?.label ?: "Untitled edit",
             sourceUri = snapshot.sourceUri,
             durationMs = snapshot.totalDurationMs,
             clipCount = snapshot.clipCount,
-            savedAtMillis = snapshot.savedAtMillis
+            savedAtMillis = snapshot.savedAtMillis,
+            editFingerprint = DraftHousekeeping.fingerprint(editKeyOf(json))
         )
     }
 
     /**
+     * The snapshot worth offering as an earlier version of this draft, and what
+     * the sidecar knows of it; null when neither is on disk or both hold the
+     * same edit as the draft.
+     */
+    private fun earlierOf(slot: String, summary: DraftSummary): Pair<File, DraftHousekeeping.Version>? {
+        val meta = readMetaJson(metaFile(slot))
+        val snapshot = snapshotFile(slot).takeIf { it.exists() }?.let { file ->
+            versionIn(meta, "snapshot") ?: DraftHousekeeping.Version(file.lastModified(), null)
+        }
+        val pending = pendingSnapshotFile(slot).takeIf { it.exists() }?.let { file ->
+            versionIn(meta, "pending") ?: DraftHousekeeping.Version(file.lastModified(), null)
+        }
+        return when (DraftHousekeeping.earlierVersion(summary.editFingerprint, snapshot, pending)) {
+            DraftHousekeeping.Earlier.Snapshot -> snapshot?.let { snapshotFile(slot) to it }
+            DraftHousekeeping.Earlier.Pending -> pending?.let { pendingSnapshotFile(slot) to it }
+            null -> null
+        }
+    }
+
+    /**
+     * Puts the draft's earlier version back in its place. The version it
+     * replaces goes into the bin whole - live file, backup, snapshots and all -
+     * so this is undone by restoring that bin entry. Returns the entry's name,
+     * or null when there was nothing to go back to or the swap could not be
+     * made, in which case the draft is as it was.
+     */
+    fun revertToEarlier(slot: String): String? = synchronized(lock) {
+        val summary = summaryOf(slot, liveFile(slot), metaFile(slot)) ?: return null
+        val (file, version) = earlierOf(slot, summary) ?: return null
+        val text = runCatching { file.readText() }.getOrNull() ?: return null
+        val earlier = runCatching { decode(JSONObject(text)) }.getOrNull() ?: return null
+        val binned = delete(slot) ?: return null
+        val placed = runCatching {
+            // The sidecar first, as a save writes it.
+            val meta = JSONObject().apply {
+                put("id", slot)
+                put("title", earlier.clips.firstOrNull()?.label ?: "Untitled edit")
+                put("uri", earlier.sourceUri.toString())
+                put("durationMs", earlier.totalDurationMs)
+                put("clipCount", earlier.clipCount)
+                put("savedAtMillis", earlier.savedAtMillis.takeIf { it > 0L } ?: version.savedAtMillis)
+                put("editFingerprint", DraftHousekeeping.fingerprint(editKeyOf(JSONObject(text))))
+            }
+            DraftFiles.writeAtomically(metaScratchFile(slot), metaFile(slot), meta.toString().toByteArray())
+            DraftFiles.writeAtomically(scratchFile(slot), liveFile(slot), text.toByteArray())
+        }.isSuccess
+        if (placed) return binned
+        // Whatever got written is dropped - it is a copy of a file still in the
+        // bin - and the draft comes back as it was.
+        slotFiles(slot).forEach { it.delete() }
+        restore(binned)
+        null
+    }
+
+    /**
      * Moves a slot into the bin and returns the bin entry's name, or null when
-     * there was nothing on disk to move.
+     * there was nothing on disk to move or the move failed - in which case the
+     * slot is exactly as it was.
      */
     fun delete(slot: String): String? = synchronized(lock) {
         lastSignature.remove(slot)
         scratchFile(slot).delete()
+        snapshotScratchFile(slot).delete()
         metaScratchFile(slot).delete()
-        val present = slotFiles(slot).filter { it.exists() }
-        if (present.isEmpty()) return null
-        // A name of its own, even if the same slot was binned this millisecond -
-        // a restore that finds a newer draft in the slot bins that one first.
-        var at = System.currentTimeMillis()
-        while (File(trashDir, DraftHousekeeping.trashName(slot, at)).exists()) at += 1
-        val name = DraftHousekeeping.trashName(slot, at)
-        val target = File(trashDir, name)
-        runCatching {
-            check(target.mkdirs()) { "bin folder refused" }
-            present.forEach { file -> check(file.renameTo(File(target, file.name))) { "move into bin refused" } }
-            name
-        }.getOrElse {
-            // Half-moved is worse than not moved: put back whatever went across.
-            present.forEach { file -> File(target, file.name).takeIf { it.exists() }?.renameTo(file) }
-            target.delete()
-            null
-        }
+        DraftFiles.moveToBin(trashDir, slot, slotFiles(slot))
     }
 
     fun clear(uri: Uri): String? = delete(slotFor(uri))
 
     /**
-     * Stamps the draft as exported. It stays where it is, exported and all: the
-     * work reached the gallery, and the commonest thing to want next is one more
-     * change to it. Nothing to stamp when the edit never differed from the bare
-     * clip, since no draft was ever written for it.
+     * Stamps the draft as exported: when, and which edit - [rendered] is the
+     * state the file was made from, so a change made while it rendered still
+     * reads as "edited since". The draft stays where it is, exported and all:
+     * the work reached the gallery, and the commonest thing to want next is one
+     * more change to it. Nothing to stamp when the edit never differed from the
+     * bare clip, since no draft was ever written for it.
      */
-    fun markCompleted(uri: Uri) {
+    fun markCompleted(rendered: EditorUiState) {
+        val uri = rendered.sourceUri ?: return
+        val fingerprint = DraftHousekeeping.fingerprint(editKey(rendered))
         synchronized(lock) {
             val slot = slotFor(uri)
             if (!liveFile(slot).exists()) return
             val existing = readMetaJson(metaFile(slot)) ?: return
             existing.put("exportedAtMillis", System.currentTimeMillis())
-            writeAtomically(metaScratchFile(slot), metaFile(slot), existing.toString())
+            existing.put("exportedFingerprint", fingerprint)
+            runCatching {
+                DraftFiles.writeAtomically(metaScratchFile(slot), metaFile(slot), existing.toString().toByteArray())
+            }
         }
     }
 
@@ -316,22 +427,17 @@ class ProjectAutosave(context: Context) {
     /**
      * Puts a bin entry back as the live draft of its clip. A newer draft already
      * in that slot goes into the bin in its place, so nothing is overwritten
-     * either way.
+     * either way - and if that draft cannot be moved aside, nothing is restored.
+     * A rename replaces its target, so going ahead regardless wrote the old
+     * draft over the newer one with no copy of it anywhere.
      */
     fun restore(trashId: String): Boolean = synchronized(lock) {
         val entry = File(trashDir, trashId)
         if (!entry.isDirectory) return false
         val (slot, _) = DraftHousekeeping.parseTrashName(trashId) ?: return false
-        if (liveFile(slot).exists()) delete(slot)
+        if (slotFiles(slot).any { it.exists() } && delete(slot) == null) return false
         lastSignature.remove(slot)
-        val moved = runCatching {
-            slotFiles(slot).forEach { file ->
-                val kept = File(entry, file.name)
-                if (kept.exists()) check(kept.renameTo(file)) { "move out of bin refused" }
-            }
-        }.isSuccess
-        if (moved) entry.deleteRecursively()
-        moved
+        DraftFiles.moveOutOfBin(entry, slotFiles(slot))
     }
 
     /** Removes a bin entry for good. Only ever from a confirmed tap on the list. */
@@ -342,11 +448,15 @@ class ProjectAutosave(context: Context) {
         }
     }
 
-    private fun writeMeta(slot: String, state: EditorUiState, uri: Uri, savedAtMillis: Long) {
-        // The export stamp is the one thing in the sidecar the edit does not
-        // carry, so it is kept from the previous sidecar rather than lost on
-        // the next save.
-        val exportedAt = readMetaJson(metaFile(slot))?.optLong("exportedAtMillis", 0L)?.takeIf { it > 0L }
+    private fun writeMeta(
+        slot: String,
+        state: EditorUiState,
+        uri: Uri,
+        savedAtMillis: Long,
+        fingerprint: String,
+        previous: JSONObject?,
+        snapshots: SnapshotInfo
+    ) {
         val json = JSONObject().apply {
             put("id", slot)
             put("title", state.videoClips.firstOrNull()?.label ?: "Untitled edit")
@@ -354,20 +464,22 @@ class ProjectAutosave(context: Context) {
             put("durationMs", state.trimmedDurationMs)
             put("clipCount", state.videoClips.size)
             put("savedAtMillis", savedAtMillis)
-            exportedAt?.let { put("exportedAtMillis", it) }
-        }
-        writeAtomically(metaScratchFile(slot), metaFile(slot), json.toString())
-    }
-
-    private fun writeAtomically(scratch: File, target: File, text: String) {
-        runCatching {
-            FileOutputStream(scratch).use { out ->
-                out.write(text.toByteArray())
-                out.flush()
-                out.fd.sync()
+            put("editFingerprint", fingerprint)
+            // The export stamp is the one thing in the sidecar the edit does not
+            // carry, so it is kept from the previous sidecar rather than lost on
+            // the next save.
+            previous?.optLong("exportedAtMillis", 0L)?.takeIf { it > 0L }?.let { put("exportedAtMillis", it) }
+            previous?.optString("exportedFingerprint")?.takeIf { it.isNotBlank() }?.let { put("exportedFingerprint", it) }
+            snapshots.snapshot?.let { v ->
+                put("snapshotSavedAtMillis", v.savedAtMillis)
+                v.fingerprint?.let { put("snapshotFingerprint", it) }
             }
-            check(scratch.renameTo(target)) { "atomic rename refused" }
+            snapshots.pending?.let { v ->
+                put("pendingSavedAtMillis", v.savedAtMillis)
+                v.fingerprint?.let { put("pendingFingerprint", it) }
+            }
         }
+        DraftFiles.writeAtomically(metaScratchFile(slot), metaFile(slot), json.toString().toByteArray())
     }
 
     private fun readMetaJson(file: File): JSONObject? =
@@ -383,7 +495,9 @@ class ProjectAutosave(context: Context) {
             durationMs = json.optLong("durationMs"),
             clipCount = json.optInt("clipCount", 1),
             savedAtMillis = json.optLong("savedAtMillis"),
-            exportedAtMillis = json.optLong("exportedAtMillis", 0L).takeIf { it > 0L }
+            exportedAtMillis = json.optLong("exportedAtMillis", 0L).takeIf { it > 0L },
+            editFingerprint = json.optString("editFingerprint").takeIf { it.isNotBlank() },
+            exportedFingerprint = json.optString("exportedFingerprint").takeIf { it.isNotBlank() }
         )
     }.getOrNull()
 
