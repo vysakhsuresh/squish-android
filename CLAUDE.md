@@ -102,11 +102,23 @@ should work through it and then delete what holds up.
   knew about the rotation, so the chain asked a 1920x1080 frame to fit a
   720x1280 box. The arithmetic is fixed and checked (`tools/jvm/FramingChecks.kt`);
   what nobody has seen is the resulting file.
-- **Rotate 90° freezing the editor.** A corrective seek ran thirty times a second
-  with no regard for whether the player's position meant anything, and a pipeline
-  rebuild makes it read zero — so each seek interrupted the rebuild that would
-  have stopped the next one. The loop is closed. Whether it was *the* freeze is
-  unconfirmed; a logcat around the moment of rotating would settle it.
+- **Rotate 90° freezing the editor.** Seen on the phone: the picture shrank to a
+  corner, the clock stuck at zero, and logcat repeated "Detaching surface timed
+  out" from `clearVideoTextureView` on the main thread every two seconds. The
+  rotation was an effect in every player's chain, so rotating stopped,
+  re-chained and reloaded each player; the pipeline wedged, and the stall reload
+  then let go of the surface on the main thread, which waits on the stuck
+  playback thread. Batch B4 took rotation, crop and captions out of the players
+  (the view is turned on screen; no chain is ever changed after a player is
+  made) and the reload no longer touches the surface. Built, not yet seen.
+- **Batch B4 of the roadmap (preview engine), all of it.** Built with no phone
+  attached; `docs/ROADMAP.md` §4 has the script. The decisions are executed on
+  the JVM (`tools/jvm/PreviewRulesChecks.kt`, `PreviewChecks.kt`); what only a
+  device answers: that `onRenderedFirstFrame` fires after a seek with an effect
+  chain (a two-tick READY fallback covers it if not), that a turned TextureView
+  resizes without a stall, that the pass-through mask and key shaders cost
+  nothing visible on four surfaces, the rotation direction against an export,
+  and that a paused frame comes back after Home.
 - **Slow motion below about 24fps out.** Stepping is arithmetic, not a fault:
   slowing footage does not create frames. The panel now says so with the number.
   True smoothing needs frame blending or optical flow and has not been built.

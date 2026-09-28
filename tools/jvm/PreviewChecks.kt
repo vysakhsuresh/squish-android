@@ -73,6 +73,46 @@ fun main() {
     val (zw, zh) = PreviewBox.fittedSizeDp(1.78f, 0f, 0f)
     check("a zero box has no picture in it", zw == 0f && zh == 0f)
 
+    // ---- Rotation on screen ----------------------------------------------------
+    // The case that froze the editor on the phone: a 640x480 clip, Rotate 90. The
+    // canvas takes the rotated shape; the view laid out inside it must cover it
+    // exactly once turned, or the picture sits small in a corner.
+    for (degrees in intArrayOf(0, 90, 180, 270, -90, 360, 450)) {
+        val turned = PreviewBox.isQuarterTurn(degrees)
+        val canvasW = if (turned) 480f else 640f
+        val canvasH = if (turned) 640f else 480f
+        val (vw, vh) = PreviewBox.unrotatedSize(canvasW, canvasH, degrees)
+        check("rotation $degrees: the view has the source's own shape", abs(vw / vh - 640f / 480f) < 0.001f)
+        // A view turned a quarter swaps its bounding box.
+        val (bw, bh) = if (turned) vh to vw else vw to vh
+        check("rotation $degrees: turned, it covers the canvas exactly", abs(bw - canvasW) < 0.01f && abs(bh - canvasH) < 0.01f)
+    }
+    check("the screen turns the export's way", PreviewBox.screenRotation(90) == -90f)
+
+    // ---- A layer's own shape --------------------------------------------------
+    val portrait = PreviewBox.displayAspect(1080, 1920, 0, 1f)!!
+    check("a portrait layer is portrait", abs(portrait - 0.5625f) < 0.001f)
+    val sideways = PreviewBox.displayAspect(1920, 1080, 90, 1f)!!
+    check("rotation the decoder left undone is applied", abs(sideways - 0.5625f) < 0.001f)
+    check("non-square pixels are corrected", abs(PreviewBox.displayAspect(1440, 1080, 0, 4f / 3f)!! - 16f / 9f) < 0.001f)
+    check("no size, no shape", PreviewBox.displayAspect(0, 0, 0, 1f) == null)
+    // Fitted into a landscape canvas: the portrait reaction clip gets a column,
+    // with no black bars inside its own box.
+    val (lw, lh) = PreviewBox.fittedSizeDp(portrait, 1920f, 1080f)
+    check("a portrait layer fits a landscape canvas as a column", abs(lw - 607.5f) < 0.5f && abs(lh - 1080f) < 0.5f)
+
+    // ---- The kept frame ---------------------------------------------------------
+    val full = PreviewBox.cropFrame(16f / 9f, null)
+    check("no crop keeps everything", full == PreviewBox.Frame())
+    val square = PreviewBox.cropFrame(16f / 9f, 1f)
+    check("1:1 of 16:9 keeps the middle", abs(square.width - 0.5625f) < 0.001f && abs(square.left - 0.21875f) < 0.001f)
+    check("1:1 keeps full height", square.top == 0f && square.bottom == 1f)
+    val tall = PreviewBox.cropFrame(1f, 16f / 9f)
+    check("a wide crop of a square keeps full width", tall.left == 0f && abs(tall.height - 0.5625f) < 0.001f)
+    val followed = PreviewBox.cropFrame(16f / 9f, 1f, focus = 0.95f to 0.5f)
+    check("auto-reframe slides the crop but not off the frame", abs(followed.right - 1f) < 0.001f)
+    check("a nonsense ratio keeps everything", PreviewBox.cropFrame(16f / 9f, Float.NaN) == PreviewBox.Frame())
+
     if (failures.isEmpty()) {
         println("PASS - every shape of footage is shown whole, and shown as large as it can be")
     } else {

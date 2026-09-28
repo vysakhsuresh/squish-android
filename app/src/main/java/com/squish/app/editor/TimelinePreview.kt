@@ -31,6 +31,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -40,23 +41,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.squish.app.media.effects.Grade
@@ -64,6 +69,7 @@ import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
 import com.squish.app.ui.theme.SquishColors
 import com.squish.app.ui.theme.tabularFigures
+import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 
@@ -73,6 +79,11 @@ import kotlinx.coroutines.delay
  * Two base surfaces run as A/B roll so a transition has both of its shots on
  * screen at once, and each overlay layer gets a surface above them. The engine
  * decides what each one shows and how it should be drawn; this only paints it.
+ *
+ * Framing happens here, on screen, not in the players: the rotation turns the
+ * base views, the crop clips them, and captions are drawn over everything by
+ * [CaptionLayer]. None of that ever touches a player's pipeline, which is what
+ * makes Rotate 90 or a new crop instant instead of a reload that could wedge.
  *
  * Every surface is a TextureView. A SurfaceView is punched through the window and
  * composited by the system, so it ignores view alpha, transforms and clipping - on
@@ -96,6 +107,7 @@ fun TimelinePreview(
     reframe: MotionTrack? = null,
     reframeOffsetMs: Long = 0L,
     voiceEffect: VoiceEffect = VoiceEffect.None,
+    /** The shape of the picture after the rotation: the canvas everything is composed on. */
     sourceAspect: Float,
     playheadMs: Long,
     scrubNonce: Long,
@@ -104,6 +116,16 @@ fun TimelinePreview(
     /** Rewind (negative) or forward by a step. Routed through the edit so the playhead and picture move together. */
     onJump: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
+    /**
+     * A hand-drawn crop, when there is one. The picture is shown whole beneath it
+     * (the crop tool dims what is cut away), but captions are laid out inside the
+     * rectangle itself, where the export puts them - not in a centred box of the
+     * same shape, which put a caption under the middle of the frame when the crop
+     * was in a corner.
+     */
+    customCrop: CropRect? = null,
+    /** A finger is on the timeline. Optional: the engine recognises a scrub from its seeks anyway. */
+    scrubbing: Boolean = false,
     /**
      * Drawn over the picture, inside its bounds.
      *
@@ -123,55 +145,46 @@ fun TimelinePreview(
 
     DisposableEffect(engine) { onDispose { engine.release() } }
 
-    // Positions and trims are read fresh every tick, so this only has to run when
-    // the set of clips itself changes shape.
-    val editSignature = remember(
-        videoClips, audioClips, captions, effects, proxyUri, muteOriginal, originalVolume,
-        grade, rotationDegrees, cropRatio
-    ) {
-        videoClips.joinToString("|") {
-            "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}" +
-                ":L${it.layer}:${it.opacity}:${it.staticTransform}" +
-                ":${it.transitionIn.type}/${it.transitionIn.durationMs}" +
-                ":K${it.keyframes}" +
-                // Keying, masking and stabilisation are things the engine already
-                // applies and this signature did not mention, so changing one of
-                // them did not reach the preview: you set a green-screen colour,
-                // nothing happened, and it only appeared once some unrelated edit
-                // happened to change the signature. Anything the picture depends
-                // on belongs here, or the preview is not a preview.
-                ":C${it.chromaKey}" +
-                ":M${it.mask}" +
-                ":B${it.background}" +
-                ":S${it.stabilizer.size}"
-        } +
-            "//" + audioClips.joinToString("|") { "${it.id}@${it.timelineStartMs}:${it.sourceInMs}-${it.sourceOutMs}:${it.volume}" } +
-            "//" + proxyUri + muteOriginal + originalVolume + grade + captions + effects +
-            rotationDegrees + cropRatio +
-            // Speed is a clip property now, so a ramp edit has to reach the engine
-            // through the same signature every other clip edit does.
-            videoClips.joinToString("|") { it.speedRamp.toString() } +
-            audioClips.joinToString("|") { it.speedRamp.toString() }
-    }
-
-    LaunchedEffect(reframe) { engine.setReframe(reframe) }
-    LaunchedEffect(voiceEffect) { engine.setVoice(voiceEffect) }
-
-    LaunchedEffect(editSignature, fallbackUri) {
+    // Every change, however small, reaches the engine: it reads positions,
+    // opacity and placement from the clips it was last handed, so a change left
+    // out of here is a change the preview does not show. Handing it over is
+    // cheap - the engine itself decides what, if anything, needs a seek.
+    // Captions are not the engine's any more (see CaptionLayer), and neither are
+    // rotation and crop.
+    LaunchedEffect(videoClips, audioClips, effects, fallbackUri, proxyUri, muteOriginal, originalVolume, grade) {
         engine.setTimeline(
-            videoClips, audioClips, captions, effects, fallbackUri, proxyUri,
-            muteOriginal, originalVolume, grade, rotationDegrees, cropRatio
+            videoClips, audioClips, effects, fallbackUri, proxyUri,
+            muteOriginal, originalVolume, grade
         )
     }
+
+    LaunchedEffect(voiceEffect) { engine.setVoice(voiceEffect) }
+    LaunchedEffect(scrubbing) { engine.setScrubbing(scrubbing) }
 
     // A deliberate jump - scrubbing the ruler, a nudge - as opposed to the playhead
     // simply advancing. Only the former should move the players.
     LaunchedEffect(scrubNonce) { engine.seekTo(playheadMs) }
 
+    // Nothing plays behind the user's back. Home, the lock button, a call, the
+    // photo picker: the transport stops, and it is where it was on the way back.
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { engine.pause() }
+
+    // Back in front, the paused frame is asked for again: the window may have
+    // let go of the surfaces' buffers while it was hidden, and a paused player
+    // draws nothing new on its own.
+    var resumes by remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumes++ }
+    LaunchedEffect(resumes) {
+        if (resumes == 0) return@LaunchedEffect
+        delay(RESUME_SETTLE)
+        engine.redraw()
+    }
+
     // A new picture size, once the view underneath has actually taken it. Asking
-    // for the frame during the layout pass got it drawn at the old size.
+    // for the frame during the layout pass got it drawn at the old size. A
+    // rotation lands here too: it changes the canvas's shape.
     var pictureSize by remember { mutableStateOf(IntSize.Zero) }
-    LaunchedEffect(pictureSize) {
+    LaunchedEffect(pictureSize, rotationDegrees) {
         if (pictureSize == IntSize.Zero) return@LaunchedEffect
         delay(REDRAW_SETTLE)
         engine.redraw()
@@ -188,6 +201,8 @@ fun TimelinePreview(
             delay(TICK)
         }
     }
+
+    val canvasAspect = if (sourceAspect > 0f) sourceAspect else 16f / 9f
 
     // The transport sits under the picture rather than over it. Laid over the
     // bottom of the frame it hid whatever was there - a caption, a subtitle, the
@@ -221,55 +236,80 @@ fun TimelinePreview(
         // the footage's own shape that fits, and nothing of the frame is lost.
         Box(
             modifier = Modifier
-                .aspectRatio(
-                    ratio = if (sourceAspect > 0f) sourceAspect else 16f / 9f,
-                    matchHeightConstraintsFirst = true
-                )
+                .aspectRatio(ratio = canvasAspect, matchHeightConstraintsFirst = true)
                 .onSizeChanged { pictureSize = it }
         ) {
-            // The frame shape, applied by clipping the picture here rather than by
-            // the player's effect chain. A centred crop is exactly the middle of
-            // the full frame, so this is pixel-for-pixel what the export writes -
-            // and changing it costs nothing, where rebuilding the chain for it
-            // could leave the player unable to draw again.
             val focus = reframe?.sampleAt(frame.positionMs + reframeOffsetMs)?.let { it.xFraction to it.yFraction }
-            Box(modifier = Modifier.fillMaxSize().clip(CentredCrop(cropRatio, focus))) {
-                VideoSurface(engine, engine.baseA, frame.surfaceA)
-                VideoSurface(engine, engine.baseB, frame.surfaceB)
+            // The part of the canvas the export keeps. A fixed ratio is clipped
+            // here, which is pixel-for-pixel what the export writes; a hand-drawn
+            // rectangle is left visible and dimmed by the crop tool instead.
+            val kept = if (customCrop != null) {
+                PreviewBox.Frame(customCrop.left, customCrop.top, customCrop.right, customCrop.bottom)
+            } else {
+                PreviewBox.cropFrame(canvasAspect, cropRatio, focus)
             }
+            val clipped = if (customCrop != null) PreviewBox.Frame() else kept
+            val overlayCovers = frame.overlays.any { it.covers }
 
-            if (frame.blackVeil > 0f) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .zIndex(5f)
-                        .background(Color.Black.copy(alpha = frame.blackVeil.coerceIn(0f, 1f)))
-                )
-            }
+            // Everything the export composites, clipped to the frame it keeps -
+            // layers included: the export cuts a picture-in-picture off at the
+            // crop, so showing it whole over cropped-away footage was a promise the
+            // file did not keep.
+            Box(modifier = Modifier.fillMaxSize().clip(FrameShape(clipped))) {
+                VideoSurface(engine, engine.baseA, frame.surfaceA, rotationDegrees)
+                VideoSurface(engine, engine.baseB, frame.surfaceB, rotationDegrees)
 
-            pictureOverlay()
+                if (frame.blackVeil > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(5f)
+                            .background(Color.Black.copy(alpha = frame.blackVeil.coerceIn(0f, 1f)))
+                    )
+                }
 
-            frame.overlays.forEach { placement ->
-                // Keyed by layer. Without this, deleting layer 1 shifts layer 2 into
-                // its slot, and the TextureView already bound to layer 1's player
-                // gets reused for layer 2 - two layers driving one surface.
-                key(placement.layer) {
-                    OverlaySurface(engine.overlayPlayer(placement.layer), placement)
+                // Empty space on the base track is a real part of the edit, and
+                // the exported file goes black here. Showing the last frame frozen
+                // instead would be a quiet lie about what you are about to render.
+                // Beneath the layers: a picture-in-picture running on past the base
+                // is still in the file, so it is still on screen.
+                if (frame.inGap) {
+                    Box(modifier = Modifier.fillMaxSize().zIndex(6f).background(Color.Black)) {
+                        if (!overlayCovers) {
+                            Text(
+                                // After the last clip, with a song still going, the
+                                // picture has simply ended; between clips it is a hole.
+                                if (frame.pictureEnded) "End of picture" else "Gap — no clip here",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SquishColors.TextMuted,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        }
+                    }
+                }
+
+                frame.overlays.forEach { placement ->
+                    // Keyed by layer. Without this, deleting layer 1 shifts layer 2 into
+                    // its slot, and the TextureView already bound to layer 1's player
+                    // gets reused for layer 2 - two layers driving one surface.
+                    key(placement.layer) {
+                        OverlaySurface(engine, engine.overlayPlayer(placement.layer), placement)
+                    }
                 }
             }
-        }
 
-        // Empty space on the timeline is a real part of the edit, and the exported
-        // file goes black here. Showing the last frame frozen instead would be a
-        // quiet lie about what you are about to render.
-        if (frame.inGap) {
-            Box(modifier = Modifier.fillMaxSize().zIndex(20f).background(Color.Black)) {
-                Text(
-                    "Gap — no clip here",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.TextMuted,
-                    modifier = Modifier.align(Alignment.Center)
-                )
+            CaptionLayer(
+                captions = captions,
+                timeMs = frame.positionMs,
+                atRest = !frame.isPlaying,
+                frame = kept,
+                modifier = Modifier.fillMaxSize().zIndex(25f)
+            )
+
+            // Above every layer: the crop rectangle and its handles are drawn over
+            // a picture-in-picture, never under it.
+            Box(modifier = Modifier.fillMaxSize().zIndex(30f)) {
+                pictureOverlay()
             }
         }
     }
@@ -280,9 +320,11 @@ fun TimelinePreview(
 
 /** One base surface, drawn the way the engine asked for. */
 @Composable
-private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: SurfaceDraw) {
-    AndroidView(
-        factory = { context -> TextureView(context).also { engine.attachSurface(player, it) } },
+private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: SurfaceDraw, rotationDegrees: Int) {
+    // The outer box is the canvas: the clip's placement and the transition act on
+    // it, in the canvas's own units, after the rotation - which is the order the
+    // export applies them in. The view inside is laid out unrotated and turned.
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(draw.zIndex.toFloat())
@@ -307,18 +349,35 @@ private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: Surface
                     }
                 }
             }
-    )
+    ) {
+        AndroidView(
+            factory = { context ->
+                TextureView(context).also {
+                    // Not opaque, so a cut-out mask shows the black canvas behind
+                    // it, as it does in the export, instead of the colour the
+                    // alpha was hiding.
+                    it.isOpaque = false
+                    engine.attachSurface(player, it)
+                }
+            },
+            modifier = Modifier.turned(rotationDegrees)
+        )
+    }
 }
 
 /**
  * A floating layer. The offsets are fractions of half the canvas, so ±1 puts the
  * layer's center on the edge - the same convention the export's placement matrix
  * uses, which is what keeps the two agreeing.
+ *
+ * The view is the layer's own shape, fitted into the canvas - the fit the export's
+ * Presentation gives it - and not the whole canvas. A canvas-sized view had the
+ * player letterbox the picture inside it, so a portrait reaction clip over a
+ * landscape edit came with black bars down both sides of its own box.
  */
 @Composable
-private fun OverlaySurface(player: ExoPlayer, placement: OverlayPlacement) {
-    AndroidView(
-        factory = { context -> TextureView(context).also { player.setVideoTextureView(it) } },
+private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: OverlayPlacement) {
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(10f + placement.layer)
@@ -327,10 +386,60 @@ private fun OverlaySurface(player: ExoPlayer, placement: OverlayPlacement) {
                 rotationZ = placement.transform.rotationDegrees
                 scaleX = placement.transform.scale
                 scaleY = placement.transform.scale
+                // Measured against the canvas, not the layer's own box, so an
+                // offset means the same distance whatever shape the layer is.
                 translationX = placement.transform.offsetXFraction * size.width / 2f
                 translationY = placement.transform.offsetYFraction * size.height / 2f
             }
+    ) {
+        AndroidView(
+            factory = { context ->
+                TextureView(context).also {
+                    // A keyed or masked layer has real transparency, and an opaque
+                    // view would paint it black; so would any sliver the fit
+                    // leaves before the decoder has reported its size.
+                    it.isOpaque = false
+                    engine.attachSurface(player, it)
+                }
+            },
+            modifier = Modifier.fitted(placement.aspect)
+        )
+    }
+}
+
+/**
+ * Lays the content out unrotated - the canvas's sides swapped for a quarter turn -
+ * centred, then turns it, so it covers the canvas exactly.
+ */
+private fun Modifier.turned(rotationDegrees: Int): Modifier = layout { measurable, constraints ->
+    if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+        val placeable = measurable.measure(constraints)
+        return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }
+    val w = constraints.maxWidth
+    val h = constraints.maxHeight
+    val (cw, ch) = PreviewBox.unrotatedSize(w.toFloat(), h.toFloat(), rotationDegrees)
+    val placeable = measurable.measure(Constraints.fixed(cw.roundToInt(), ch.roundToInt()))
+    layout(w, h) {
+        placeable.placeWithLayer((w - placeable.width) / 2, (h - placeable.height) / 2) {
+            rotationZ = PreviewBox.screenRotation(rotationDegrees)
+        }
+    }
+}
+
+/** The largest rectangle of [aspect] that fits, centred; all of it when the shape is not known yet. */
+private fun Modifier.fitted(aspect: Float?): Modifier = layout { measurable, constraints ->
+    if (aspect == null || !constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+        val placeable = measurable.measure(constraints)
+        return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }
+    val w = constraints.maxWidth
+    val h = constraints.maxHeight
+    val (fw, fh) = PreviewBox.fittedSizeDp(aspect, w.toFloat(), h.toFloat())
+    val placeable = measurable.measure(
+        Constraints.fixed(fw.roundToInt().coerceAtLeast(1), fh.roundToInt().coerceAtLeast(1))
     )
+    layout(w, h) { placeable.place((w - placeable.width) / 2, (h - placeable.height) / 2) }
 }
 
 @Composable
@@ -405,19 +514,18 @@ private val TICK = 33.milliseconds
 /** Long enough for the view system to finish a resize the layout pass started. */
 private val REDRAW_SETTLE = 150.milliseconds
 
-/** The centred rectangle of [ratio] inside whatever it clips, or all of it when there is none. */
-private class CentredCrop(private val ratio: Float?, private val focus: Pair<Float, Float>? = null) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val r = ratio
-        if (r == null || r <= 0f || size.width <= 0f || size.height <= 0f) {
-            return Outline.Rectangle(Rect(0f, 0f, size.width, size.height))
-        }
-        val aspect = size.width / size.height
-        val w = if (r < aspect) size.height * r else size.width
-        val h = if (r < aspect) size.height else size.width / r
-        val (fx, fy) = focus ?: (0.5f to 0.5f)
-        val left = (fx * size.width - w / 2f).coerceIn(0f, (size.width - w).coerceAtLeast(0f))
-        val top = (fy * size.height - h / 2f).coerceIn(0f, (size.height - h).coerceAtLeast(0f))
-        return Outline.Rectangle(Rect(left, top, left + w, top + h))
-    }
+/** Long enough for a window coming back to hand its surfaces over again. */
+private val RESUME_SETTLE = 300.milliseconds
+
+/** A [PreviewBox.Frame] of whatever it clips. */
+private class FrameShape(private val frame: PreviewBox.Frame) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
+        Outline.Rectangle(
+            Rect(
+                frame.left * size.width,
+                frame.top * size.height,
+                frame.right * size.width,
+                frame.bottom * size.height
+            )
+        )
 }

@@ -315,6 +315,8 @@ fun EditorScreen(
                     // enum's left the preview showing no crop at all until the
                     // file came out the other end.
                     cropRatio = state.previewCropRatio,
+                    // The rectangle itself, so captions sit where the export puts them.
+                    customCrop = state.cropRect.takeIf { state.cropAspect == CropAspect.Custom && !it.isFull },
                     // Auto-reframe follows a fixed ratio's frame; a hand-drawn
                     // rectangle is the frame, so the two do not combine.
                     reframe = state.reframe.takeIf { state.cropAspect.ratio != null },
