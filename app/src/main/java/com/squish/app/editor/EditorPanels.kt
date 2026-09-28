@@ -265,8 +265,9 @@ fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () 
             OutputSizePicker(
                 outputP = state.outputP,
                 fitToSize = state.fitToSize,
-                sourceWidth = state.sourceWidth,
-                sourceHeight = state.sourceHeight,
+                // Rotated and cropped, as the file is: see ExportSheet.
+                sourceWidth = state.croppedFrame.width,
+                sourceHeight = state.croppedFrame.height,
                 estimatedBytes = state.estimatedOutputBytes,
                 originalBytes = state.originalSizeBytes,
                 accent = SquishColors.Blue,

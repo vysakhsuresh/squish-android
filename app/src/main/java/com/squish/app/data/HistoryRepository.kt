@@ -6,16 +6,31 @@ import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.Executors
 
 /**
  * Every export Squish ever produced, persisted as a small JSON file under the
  * app's private storage. No cloud, no server, no third-party SDK - matches the
  * "everything happens on your device" promise on the Settings screen.
+ *
+ * The list in memory changes at once; the file is written behind it, on a
+ * thread of its own. Callers are view models on the main thread, and the write
+ * used to happen there, right before the export screen opened - the one moment
+ * someone is watching for it to appear.
  */
 class HistoryRepository(context: Context) {
     private val file = File(context.filesDir, "history.json")
     private val _records = MutableStateFlow(loadFromDisk())
     val records: StateFlow<List<ExportRecord>> = _records
+
+    /**
+     * One writer, in order. Two writes racing on a pool could land the older
+     * list last; on a single thread each write is the list as it stood when it
+     * was queued, and the last one queued wins.
+     */
+    private val writer = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "squish-history").apply { isDaemon = true }
+    }
 
     fun add(record: ExportRecord) {
         val updated = listOf(record) + _records.value
@@ -43,8 +58,11 @@ class HistoryRepository(context: Context) {
         val updated = _records.value.filterNot { it.id == id }
         _records.value = updated
         persist(updated)
-        record?.let { runCatching { File(it.outputPath).delete() } }
+        record?.let { writer.execute { runCatching { File(it.outputPath).delete() } } }
     }
+
+    /** The record for an export's file, if it is one of these. */
+    fun forPath(outputPath: String): ExportRecord? = _records.value.firstOrNull { it.outputPath == outputPath }
 
     private fun loadFromDisk(): List<ExportRecord> {
         if (!file.exists()) return emptyList()
@@ -61,13 +79,19 @@ class HistoryRepository(context: Context) {
                     durationMs = obj.getLong("durationMs"),
                     width = obj.getInt("width"),
                     height = obj.getInt("height"),
-                    createdAtMillis = obj.getLong("createdAtMillis")
+                    createdAtMillis = obj.getLong("createdAtMillis"),
+                    savedToGallery = if (obj.has("savedToGallery")) obj.getBoolean("savedToGallery") else null,
+                    galleryUri = obj.optString("galleryUri").takeIf { it.isNotEmpty() }
                 )
             }
         }.getOrDefault(emptyList())
     }
 
     private fun persist(records: List<ExportRecord>) {
+        writer.execute { write(records) }
+    }
+
+    private fun write(records: List<ExportRecord>) {
         val array = JSONArray()
         records.forEach { r ->
             array.put(
@@ -81,9 +105,20 @@ class HistoryRepository(context: Context) {
                     put("width", r.width)
                     put("height", r.height)
                     put("createdAtMillis", r.createdAtMillis)
+                    r.savedToGallery?.let { put("savedToGallery", it) }
+                    r.galleryUri?.let { put("galleryUri", it) }
                 }
             )
         }
-        runCatching { file.writeText(array.toString()) }
+        // Whole or not at all: a kill mid-write used to leave half a JSON array,
+        // which reads back as an empty history.
+        runCatching {
+            val scratch = File(file.absolutePath + ".tmp")
+            scratch.writeText(array.toString())
+            if (!scratch.renameTo(file)) {
+                file.writeText(array.toString())
+                scratch.delete()
+            }
+        }
     }
 }

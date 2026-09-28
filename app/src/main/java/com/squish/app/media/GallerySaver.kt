@@ -15,6 +15,11 @@ import java.io.File
  * Without this, exports live in app-private storage: invisible in Photos/Gallery and
  * deleted when the app is uninstalled. Users reasonably expect a finished video to
  * just be in their gallery.
+ *
+ * Returns where the copy landed, or null when it did not. Callers keep that
+ * answer (ExportRecord.galleryUri): the export screen used to say "Saved to your
+ * gallery" whatever happened here, so a failed copy left people looking in
+ * Photos for a video that was only inside the app.
  */
 object GallerySaver {
 
@@ -55,7 +60,11 @@ object GallerySaver {
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
 
-        val target = resolver.insert(collection, values) ?: return@withContext null
+        // Inside the catch too: a provider that throws from insert rather than
+        // returning null (a full volume, a revoked write) escaped this function
+        // and took the export's hand-over with it, after the file was written.
+        val target = runCatching { resolver.insert(collection, values) }.getOrNull()
+            ?: return@withContext null
 
         try {
             resolver.openOutputStream(target)?.use { output ->

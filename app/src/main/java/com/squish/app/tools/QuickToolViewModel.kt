@@ -14,6 +14,7 @@ import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
+import com.squish.app.media.ExportStage
 import com.squish.app.media.MediaCompat
 import com.squish.app.media.GallerySaver
 import com.squish.app.media.SquishError
@@ -583,15 +584,17 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             // From here the file exists and is being handed over; there is
             // nothing left to stop. See cancelExport.
             if (exportJob === coroutineContext[Job]) exportJob = null
-            _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
 
             result.onSuccess { file ->
+                // Still exporting until the copy is in the gallery, so the button
+                // cannot start a second export over this one's hand-over.
+                _state.update { it.copy(exportProgress = it.exportProgress.copy(stage = ExportStage.Saving)) }
                 // All or nothing: the file into the gallery, into history and the
                 // session stamped. Cancelled half-way - the screen leaving in the
                 // instant after the encode - it was in the gallery and never
                 // stamped.
                 withContext(NonCancellable) {
-                    if (audioOnly) {
+                    val published = if (audioOnly) {
                         GallerySaver.publishAudio(getApplication(), file)
                     } else {
                         GallerySaver.publish(getApplication(), file)
@@ -610,13 +613,17 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                             durationMs = editorState.trimmedDurationMs,
                             width = current.width,
                             height = current.height,
-                            createdAtMillis = System.currentTimeMillis()
+                            createdAtMillis = System.currentTimeMillis(),
+                            savedToGallery = published != null,
+                            galleryUri = published?.toString()
                         )
                     )
                     withContext(Dispatchers.IO) { markExported(rendered) }
                 }
+                _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
+                _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
                 // Same typed vocabulary as the editor, so a failure reads the same
                 // way whichever door the user came in through.
                 val problem = SquishError.from(throwable)
