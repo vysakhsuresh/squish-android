@@ -1,5 +1,6 @@
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.RampShape
 import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.TimelineState
@@ -11,9 +12,12 @@ import kotlin.system.exitProcess
 val problems = mutableListOf<String>()
 fun check(ok: Boolean, msg: String) { if (!ok) problems += msg }
 
+// A sound clip: these checks are about where frames land under a ramp, which
+// needs a lane where clips stay where they are put. The main track is magnetic
+// and re-lays itself from zero after every edit; MagneticChecks covers that.
 fun clip(id: String, ramp: SpeedRamp, srcIn: Long = 0, srcOut: Long = 4000, start: Long = 0) =
     Clip(
-        id = id, kind = ClipKind.Video, label = id,
+        id = id, kind = ClipKind.Audio, label = id,
         sourceInMs = srcIn, sourceOutMs = srcOut,
         timelineStartMs = start, sourceDurationMs = 20_000, speedRamp = ramp
     )
@@ -52,8 +56,13 @@ fun main() {
         val whole = c.durationMs
         for (frac in listOf(0.1, 0.25, 0.5, 0.75, 0.9)) {
             val cut = (whole * frac).toLong()
-            val after = TimelineState(clips = listOf(c), playheadMs = cut).withSplitAtPlayhead()
-            check(after.clips.size == 2, "$name cut@$frac: split produced ${after.clips.size} clips")
+            val after = TimelineState(clips = listOf(c), playheadMs = cut).withSplitAtPlayhead("a")
+            // A cut whose frame falls within MIN_CLIP_MS of either end of the file
+            // window is refused, not nudged (a nudged cut overlapped its halves).
+            // On a ramp, 10% of the played length can be that close.
+            val offset = ramp.sourceOffsetAt(cut, c.sourceSpanMs)
+            val refusable = offset < MIN_CLIP_MS || offset > c.sourceSpanMs - MIN_CLIP_MS
+            check(after.clips.size == (if (refusable) 1 else 2), "$name cut@$frac: split produced ${after.clips.size} clips (source $offset)")
             if (after.clips.size != 2) continue
             val (first, second) = after.clips.sortedBy { it.timelineStartMs }
 
@@ -73,7 +82,16 @@ fun main() {
                 first.sourceInMs == c.sourceInMs && second.sourceOutMs == c.sourceOutMs,
                 "$name cut@$frac: the halves do not span the original window"
             )
-            check(second.timelineStartMs == cut, "$name cut@$frac: second half starts at ${second.timelineStartMs}, not $cut")
+            // Butted, whatever the ramp did to the rounding, and within a tread
+            // of the playhead - where the cut frame really lands.
+            check(
+                second.timelineStartMs == first.timelineEndMs,
+                "$name cut@$frac: halves not butted, ${first.timelineEndMs} vs ${second.timelineStartMs}"
+            )
+            check(
+                abs(second.timelineStartMs - cut) <= slack,
+                "$name cut@$frac: second half starts at ${second.timelineStartMs}, playhead $cut (slack $slack)"
+            )
             check(first.durationMs > 0 && second.durationMs > 0, "$name cut@$frac: a half has no length")
         }
     }
@@ -117,7 +135,7 @@ fun main() {
     // --- An unramped clip must behave exactly as it did before ramps existed. -
     run {
         val c = clip("a", SpeedRamp(), start = 500)
-        val after = TimelineState(clips = listOf(c), playheadMs = 2500).withSplitAtPlayhead()
+        val after = TimelineState(clips = listOf(c), playheadMs = 2500).withSplitAtPlayhead("a")
         val (first, second) = after.clips.sortedBy { it.timelineStartMs }
         check(first.sourceOutMs == 2000L, "1x split cut at source ${first.sourceOutMs}, expected 2000")
         check(second.timelineStartMs == 2500L, "1x split placed the second half at ${second.timelineStartMs}")

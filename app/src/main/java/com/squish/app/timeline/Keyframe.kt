@@ -117,3 +117,58 @@ fun composeTransform(
         rotationDegrees = user.rotationDegrees + fix.rotationDegrees
     )
 }
+
+/**
+ * The one set of limits on where a picture can be put.
+ *
+ * There used to be four: the Blend sliders stopped at 1x, the model clamped to 2x,
+ * Motion's slider stopped at 3x and the view model clamped to 4x, with offsets of
+ * ±1 in one place and ±1.5 in another. A value set in one panel was silently cut
+ * down by the next one to touch the clip.
+ */
+object TransformLimits {
+    const val SCALE_MIN = 0.1f
+    const val SCALE_MAX = 4f
+    /** Half a canvas past the edge, so a picture can be slid almost out of frame. */
+    const val OFFSET_MAX = 1.5f
+    const val ROTATION_MAX = 180f
+}
+
+fun Transform.clamped(): Transform = Transform(
+    scale = scale.coerceIn(TransformLimits.SCALE_MIN, TransformLimits.SCALE_MAX),
+    offsetXFraction = offsetXFraction.coerceIn(-TransformLimits.OFFSET_MAX, TransformLimits.OFFSET_MAX),
+    offsetYFraction = offsetYFraction.coerceIn(-TransformLimits.OFFSET_MAX, TransformLimits.OFFSET_MAX),
+    rotationDegrees = rotationDegrees.coerceIn(-TransformLimits.ROTATION_MAX, TransformLimits.ROTATION_MAX)
+)
+
+/**
+ * The same animation with every key [deltaMs] later (earlier when negative).
+ *
+ * Keys are measured from the clip's head, so any edit that moves the head - a
+ * trim, or the second half of a cut - has to move them with it, or the move plays
+ * against different frames than the ones it was drawn on. A push-in cut in half
+ * used to restart from scale 1 on the second half: a visible snap at the cut.
+ *
+ * Nothing is dropped or re-sampled. Keys that end up before 0 or past the clip's
+ * end sit over footage the clip does not show, and still shape the part it does:
+ * the frames either side of a cut, or inside a trim, play exactly the pose they
+ * had, easing and all, and the move comes back whole when the footage does.
+ * Evaluation holds before the first key and after the last wherever they are,
+ * so a key outside the clip is never extrapolated past.
+ */
+fun List<Keyframe>.shiftedBy(deltaMs: Long): List<Keyframe> =
+    if (deltaMs == 0L || isEmpty()) this else map { it.copy(atMs = it.atMs + deltaMs) }
+
+/** The keys that fall on a clip [durationMs] long - the ones a panel can offer to edit. */
+fun List<Keyframe>.within(durationMs: Long): List<Keyframe> = filter { it.atMs in 0L..durationMs }
+
+/** The easing of the segment a moment falls in - the easing of the key it leaves. */
+fun List<Keyframe>.easingAt(atMs: Long): KeyframeEasing =
+    lastOrNull { it.atMs <= atMs }?.easing ?: firstOrNull()?.easing ?: KeyframeEasing.Smooth
+
+/**
+ * Inserts a key, or replaces the one already within [toleranceMs] of it. Two keys a
+ * frame apart are a fight, not an animation.
+ */
+fun List<Keyframe>.upserted(key: Keyframe, toleranceMs: Long): List<Keyframe> =
+    (filterNot { kotlin.math.abs(it.atMs - key.atMs) <= toleranceMs } + key).sortedBy { it.atMs }

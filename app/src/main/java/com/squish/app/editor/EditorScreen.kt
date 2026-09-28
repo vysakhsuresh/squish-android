@@ -368,7 +368,7 @@ fun EditorScreen(
             TimelineEditor(
                 state = timeline,
                 onSelect = viewModel::selectClip,
-                onMove = viewModel::moveClip,
+                onMoveTo = viewModel::moveClipTo,
                 onTrim = viewModel::trimClip,
                 onScrub = viewModel::scrubTo,
                 onTransitionTap = { clipId ->

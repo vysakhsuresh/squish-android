@@ -59,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -83,11 +84,14 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.squish.app.editor.Timecode
 import com.squish.app.ui.theme.SquishColors
+import kotlin.math.roundToLong
 
 private val LANE_HEIGHT = 54.dp
 
@@ -241,7 +245,8 @@ internal class MultiTouchGuard {
 fun TimelineEditor(
     state: TimelineState,
     onSelect: (String?) -> Unit,
-    onMove: (String, Long) -> Unit,
+    /** A clip dragged: its id, and where the finger would have it start. */
+    onMoveTo: (String, Long) -> Unit,
     onTrim: (String, Long, Long) -> Unit,
     onScrub: (Long) -> Unit,
     onTransitionTap: (String) -> Unit,
@@ -283,9 +288,9 @@ fun TimelineEditor(
     val rawSelect by rememberUpdatedState(onSelect)
     val guardedScrub: (Long) -> Unit = remember { { ms -> if (!guard.blocking) rawScrub(ms) } }
     val guardedSelect: (String?) -> Unit = remember { { id -> if (!guard.blocking) rawSelect(id) } }
-    val rawMove by rememberUpdatedState(onMove)
+    val rawMove by rememberUpdatedState(onMoveTo)
     val rawTrim by rememberUpdatedState(onTrim)
-    val guardedMove: (String, Long) -> Unit = remember { { id, delta -> if (!guard.active) rawMove(id, delta) } }
+    val guardedMove: (String, Long) -> Unit = remember { { id, startMs -> if (!guard.active) rawMove(id, startMs) } }
     val guardedTrim: (String, Long, Long) -> Unit =
         remember { { id, start, end -> if (!guard.active) rawTrim(id, start, end) } }
 
@@ -351,12 +356,23 @@ fun TimelineEditor(
      *
      * Fitting is the answer to seeing all of it; following, below, is the answer
      * to seeing the part that is playing.
+     *
+     * Once per request. This used to be keyed on the edit's length as well, and
+     * the nonce is never reset, so every change to where the edit ends - each
+     * event of a drag on the last clip's tail, a speed change, a delete - threw
+     * the view back to zero and changed the zoom under the finger mid-drag. The
+     * length is only waited on (a load asks before its clip has arrived), and
+     * the request is marked done in [StripMemory], which outlives the strip
+     * being folded away for a panel; otherwise reopening it would refit too.
      */
-    LaunchedEffect(fitNonce, viewportPx, state.durationMs) {
-        if (fitNonce <= 0L || viewportPx <= 0) return@LaunchedEffect
+    val memory: StripMemory = viewModel()
+    val hasContent = state.durationMs > 0L
+    LaunchedEffect(fitNonce, viewportPx, hasContent) {
+        if (fitNonce <= memory.fittedNonce || viewportPx <= 0 || !hasContent) return@LaunchedEffect
         val seconds = (totalMs / 1000f).coerceAtLeast(0.001f)
         val usableDp = with(density) { viewportPx.toDp().value } - 24f
         if (usableDp <= 0f) return@LaunchedEffect
+        memory.fittedNonce = fitNonce
         scrollTo(0.0)
         onZoomTo((usableDp / seconds).coerceIn(MIN_PPS, MAX_PPS))
     }
@@ -532,7 +548,7 @@ fun TimelineEditor(
                         window = window,
                         accent = SquishColors.Magenta,
                         onSelect = guardedSelect,
-                        onMove = guardedMove,
+                        onMoveTo = guardedMove,
                         onTrim = guardedTrim,
                         onScrub = guardedScrub
                     )
@@ -543,7 +559,7 @@ fun TimelineEditor(
                     window = window,
                     accent = SquishColors.Violet,
                     onSelect = guardedSelect,
-                    onMove = guardedMove,
+                    onMoveTo = guardedMove,
                     onTrim = guardedTrim,
                     onScrub = guardedScrub,
                     onTransitionTap = onTransitionTap
@@ -856,7 +872,7 @@ private fun Lane(
     window: TimelineWindow,
     accent: Color,
     onSelect: (String?) -> Unit,
-    onMove: (String, Long) -> Unit,
+    onMoveTo: (String, Long) -> Unit,
     onTrim: (String, Long, Long) -> Unit,
     onScrub: (Long) -> Unit,
     onTransitionTap: ((String) -> Unit)? = null,
@@ -908,24 +924,29 @@ private fun Lane(
             // Off-screen clips are not built at all. This is what makes a timeline
             // of a hundred cuts cost the same to lay out as one of three.
             if (!window.intersects(clip.timelineStartMs, clip.timelineEndMs)) return@forEachIndexed
-            ClipView(
-                clip = clip,
-                selected = clip.id == state.selectedClipId,
-                waveform = clip.uri?.let { state.waveforms[it.toString()] },
-                window = window,
-                accent = clipColor?.invoke(clip) ?: accent,
-                onSelect = onSelect,
-                onMove = onMove,
-                onTrim = onTrim,
-                onScrub = onScrub,
-                stacked = stacked,
-                onTapAt = stackTap,
-                labelSpan = if (!stacked) null else openStretch(
-                    clip.timelineStartMs,
-                    clip.timelineEndMs,
-                    ordered.drop(i + 1).map { it.timelineStartMs..it.timelineEndMs }
+            // Keyed by clip, so a clip that changes place in the order - a
+            // main-track drag past a neighbour - keeps its own gesture instead
+            // of handing the finger to whichever clip now sits in its slot.
+            key(clip.id) {
+                ClipView(
+                    clip = clip,
+                    selected = clip.id == state.selectedClipId,
+                    waveform = clip.uri?.let { state.waveforms[it.toString()] },
+                    window = window,
+                    accent = clipColor?.invoke(clip) ?: accent,
+                    onSelect = onSelect,
+                    onMoveTo = onMoveTo,
+                    onTrim = onTrim,
+                    onScrub = onScrub,
+                    stacked = stacked,
+                    onTapAt = stackTap,
+                    labelSpan = if (!stacked) null else openStretch(
+                        clip.timelineStartMs,
+                        clip.timelineEndMs,
+                        ordered.drop(i + 1).map { it.timelineStartMs..it.timelineEndMs }
+                    )
                 )
-            )
+            }
         }
 
         if (stacked) {
@@ -991,7 +1012,7 @@ private fun ClipView(
     window: TimelineWindow,
     accent: Color,
     onSelect: (String?) -> Unit,
-    onMove: (String, Long) -> Unit,
+    onMoveTo: (String, Long) -> Unit,
     onTrim: (String, Long, Long) -> Unit,
     onScrub: (Long) -> Unit,
     /** On a stacked lane: solid, so it hides what it lies over, and its grips live in the lane's frame. */
@@ -1001,12 +1022,13 @@ private fun ClipView(
     /** On a stacked lane, the stretch of this clip the ones on top leave showing, for its name. */
     labelSpan: LongRange? = null
 ) {
-    val latestMove by rememberUpdatedState(onMove)
+    val latestMove by rememberUpdatedState(onMoveTo)
     val latestTrim by rememberUpdatedState(onTrim)
     val latestSelect by rememberUpdatedState(onSelect)
     val latestScrub by rememberUpdatedState(onScrub)
     val latestTapAt by rememberUpdatedState(onTapAt)
     val latestWindow by rememberUpdatedState(window)
+    val latestClip by rememberUpdatedState(clip)
 
     /**
      * The part of this clip that is on screen, and only that.
@@ -1083,24 +1105,30 @@ private fun ClipView(
                     }
                 }
             }
-            // The leftover fraction is carried between events rather than thrown
-            // away. Zoomed in, one pixel is a fraction of a millisecond, and
-            // rounding each event on its own turned most of a slow drag into zero.
+            // Measured from where the clip was when the finger went down, and
+            // each event asks for the clip to start where the finger now puts it
+            // - not for a step. Sent as the step from one event to the next, the
+            // main track never moved: a clip there only changes place when its
+            // middle crosses a neighbour's, no single event's few milliseconds
+            // ever got it there, and the clip did not move in between for them
+            // to add up. The same goes for an overlay held against a neighbour:
+            // it follows the finger again as soon as there is room where the
+            // finger is. The receiver works out the step from the clip as it is
+            // then, which this composable may not have been shown yet. Nothing
+            // is rounded away per event, so a slow drag zoomed in still moves.
             .pointerInput(clip.id) {
-                var carriedMs = 0f
+                var anchorMs = 0L
+                var draggedMs = 0.0
                 detectHorizontalDragGestures(
                     onDragStart = {
-                        carriedMs = 0f
+                        anchorMs = latestClip.timelineStartMs
+                        draggedMs = 0.0
                         latestSelect(clip.id)
                     }
                 ) { change, dragAmount ->
                     change.consume()
-                    carriedMs += latestWindow.msForPx(dragAmount).toFloat()
-                    val wholeMs = carriedMs.toLong()
-                    if (wholeMs != 0L) {
-                        carriedMs -= wholeMs
-                        latestMove(clip.id, wholeMs)
-                    }
+                    draggedMs += latestWindow.msForPx(dragAmount)
+                    latestMove(clip.id, anchorMs + draggedMs.roundToLong())
                 }
             }
     ) {
@@ -1252,13 +1280,13 @@ private fun ClipView(
         // chose - it is the edge of the view, not the edge of the shot. On a
         // stacked lane the grips are the lane's, drawn over whatever lies on top.
         if (selected && headVisible && !stacked) {
-            TrimHandle(accent, handleWidth, Alignment.CenterStart) { deltaDp ->
-                latestTrim(clip.id, latestWindow.msForDp(deltaDp).toLong(), 0L)
+            TrimHandle(accent, handleWidth, Alignment.CenterStart, { latestWindow.msForDp(it) }) { ms ->
+                latestTrim(clip.id, ms, 0L)
             }
         }
         if (selected && tailVisible && !stacked) {
-            TrimHandle(accent, handleWidth, Alignment.CenterEnd) { deltaDp ->
-                latestTrim(clip.id, 0L, latestWindow.msForDp(deltaDp).toLong())
+            TrimHandle(accent, handleWidth, Alignment.CenterEnd, { latestWindow.msForDp(it) }) { ms ->
+                latestTrim(clip.id, 0L, ms)
             }
         }
     }
@@ -1550,13 +1578,13 @@ private fun SelectionFrame(
             }
         }
         if (headVisible) {
-            TrimHandle(color, grip, Alignment.CenterStart) { deltaDp ->
-                latestTrim(id, latestWindow.msForDp(deltaDp).toLong(), 0L)
+            TrimHandle(color, grip, Alignment.CenterStart, { latestWindow.msForDp(it) }) { ms ->
+                latestTrim(id, ms, 0L)
             }
         }
         if (tailVisible) {
-            TrimHandle(color, grip, Alignment.CenterEnd) { deltaDp ->
-                latestTrim(id, 0L, latestWindow.msForDp(deltaDp).toLong())
+            TrimHandle(color, grip, Alignment.CenterEnd, { latestWindow.msForDp(it) }) { ms ->
+                latestTrim(id, 0L, ms)
             }
         }
     }
@@ -1576,15 +1604,25 @@ private fun SelectionFrame(
 private fun Modifier.spanWidth(width: Dp): Modifier =
     wrapContentWidth(Alignment.Start, unbounded = true).width(width)
 
-/** Receives drag in dp so the caller only has to convert time. */
+/**
+ * A trim grip. Reports whole milliseconds, converted by [msForDp] at the zoom of
+ * the moment.
+ *
+ * The leftover fraction is carried between events, as the clip drag and the
+ * playhead already did. It used to be truncated per event, and zoomed in - where
+ * a pixel is a fraction of a millisecond, and precise trimming is the point - a
+ * slow drag was all remainders: the handle did not move at all.
+ */
 @Composable
 private fun BoxScope.TrimHandle(
     accent: Color,
     width: Dp,
     alignment: Alignment,
-    onDragDp: (Float) -> Unit
+    msForDp: (Float) -> Double,
+    onDragMs: (Long) -> Unit
 ) {
-    val latestDrag by rememberUpdatedState(onDragDp)
+    val latestToMs by rememberUpdatedState(msForDp)
+    val latestDrag by rememberUpdatedState(onDragMs)
     Box(
         modifier = Modifier
             .align(alignment)
@@ -1592,9 +1630,15 @@ private fun BoxScope.TrimHandle(
             .fillMaxHeight()
             .background(accent)
             .pointerInput(alignment) {
-                detectHorizontalDragGestures { change, dragAmount ->
+                var carriedMs = 0.0
+                detectHorizontalDragGestures(onDragStart = { carriedMs = 0.0 }) { change, dragAmount ->
                     change.consume()
-                    latestDrag(dragAmount / density)
+                    carriedMs += latestToMs(dragAmount / density)
+                    val wholeMs = carriedMs.toLong()
+                    if (wholeMs != 0L) {
+                        carriedMs -= wholeMs
+                        latestDrag(wholeMs)
+                    }
                 }
             },
         contentAlignment = Alignment.Center
@@ -1628,7 +1672,14 @@ fun TimelineActionBar(
     modifier: Modifier = Modifier
 ) {
     val selected = state.selectedClip
-    val splittable = state.clips.any { it.spans(state.playheadMs) }
+    // Picture and sound only: text is cut by the editor's own list, not the
+    // model, so asking about it here would light the button for a cut the model
+    // would then hand to the main track. Same rule as the cut itself, so the
+    // button is never lit for a cut that does nothing - it used to light for any
+    // clip under the playhead, including ones too short to cut at all.
+    val cuttable = state.copy(clips = state.clips.filter { it.kind != ClipKind.Text })
+    val splittable = cuttable.canSplit()
+    val nearEdge = !splittable && selected == null && cuttable.mainClipAt(state.playheadMs) != null
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
@@ -1727,7 +1778,8 @@ fun TimelineActionBar(
                 // screen to find out what happened.
                 undoLabel != null -> "Undo: $undoLabel · tap anywhere to move the playhead"
                 selected != null -> "${selected.label} selected · drag to move, drag its ends to trim"
-                splittable -> "Cut splits every track under the playhead"
+                splittable -> "Cut splits the clip under the playhead"
+                nearEdge -> "Too close to the end of the clip to cut here"
                 else -> "Tap anywhere to move the playhead · pinch to zoom"
             },
             style = MaterialTheme.typography.labelSmall,
@@ -1807,4 +1859,16 @@ private fun MiniAction(
             modifier = Modifier.size(19.dp)
         )
     }
+}
+
+/**
+ * What the strip has to remember for longer than it is on screen.
+ *
+ * The strip is folded away while a panel has the room, and everything it
+ * `remember`s goes with it. Scoped to the editor's screen, like the editor's own
+ * view model, so it lasts exactly as long as the edit it belongs to.
+ */
+class StripMemory : ViewModel() {
+    /** The last fit request carried out; requests are numbers that only go up. */
+    var fittedNonce: Long = 0L
 }

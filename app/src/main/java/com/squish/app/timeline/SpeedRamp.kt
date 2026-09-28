@@ -126,8 +126,18 @@ data class SpeedRamp(val points: List<SpeedPoint> = emptyList()) {
         return total.roundToLong().coerceAtLeast(0L)
     }
 
-    /** Where a source offset lands in the played clip. */
+    /**
+     * Where a source offset lands in the played clip.
+     *
+     * A negative offset is footage before the window - what dragging a head
+     * handle outwards is about to reveal - and comes back negative. It used to be
+     * clamped to zero, so revealing earlier footage never moved the clip's start
+     * and the clip grew out of its tail instead, over whatever came next. The
+     * curve holds its opening rate before its first point, which is also the rate
+     * [sliced] gives the revealed stretch, so the two agree on how long it plays.
+     */
     fun outputOffsetAt(sourceMs: Long, spanMs: Long): Long {
+        if (sourceMs < 0L) return -((-sourceMs) / speedAt(0L).toDouble()).roundToLong()
         val target = sourceMs.coerceIn(0L, spanMs.coerceAtLeast(0L))
         var total = 0.0
         for (s in segments(spanMs)) {
@@ -175,10 +185,14 @@ data class SpeedRamp(val points: List<SpeedPoint> = emptyList()) {
      * The ends are pinned to whatever the curve read there, so a slice through the
      * middle of a ramp keeps its rate continuous across the cut instead of jumping
      * back to the shape's starting rate.
+     *
+     * [fromMs] may be negative: a head trim that reveals earlier footage. The
+     * revealed stretch plays at the curve's opening rate, the same rate
+     * [outputOffsetAt] assumes for it.
      */
     fun sliced(fromMs: Long, toMs: Long): SpeedRamp {
         if (!isRamped) return this
-        val from = minOf(fromMs, toMs).coerceAtLeast(0L)
+        val from = minOf(fromMs, toMs)
         val to = maxOf(fromMs, toMs).coerceAtLeast(from)
         if (to == from) return flattenedTo(speedAt(from))
 
