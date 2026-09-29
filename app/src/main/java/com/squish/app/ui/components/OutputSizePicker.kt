@@ -80,7 +80,9 @@ fun OutputSizePicker(
     onPick: (Int) -> Unit,
     modifier: Modifier = Modifier,
     ceilingP: Int = 0,
-    detail: String? = null
+    detail: String? = null,
+    /** Whether a size bigger than the source is offered: not in Squeeze, whose whole job is a smaller file. */
+    allowUpscale: Boolean = true
 ) {
     val sourceP = if (sourceWidth > 0 && sourceHeight > 0) minOf(sourceWidth, sourceHeight) else 0
     val isCustom = !fitToSize && outputP != OutputSize.ORIGINAL && outputP !in OutputSize.PRESETS
@@ -145,7 +147,8 @@ fun OutputSizePicker(
                         null -> isCustom || editingCustom
                         else -> outputP == p && !editingCustom
                     }
-                    val beyond = p != null && ExportSettings.aboveCeiling(p, ceilingP)
+                    val beyond = p != null && (ExportSettings.aboveCeiling(p, ceilingP) ||
+                        (!allowUpscale && sourceP > 0 && p != OutputSize.ORIGINAL && p > sourceP))
                     SelectableChip(
                         label = label,
                         selected = selected,

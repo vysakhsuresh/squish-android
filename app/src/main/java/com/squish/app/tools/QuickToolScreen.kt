@@ -463,7 +463,7 @@ private fun CompressControls(state: QuickToolViewModel.UiState, viewModel: Quick
     SquishCard(accent = SquishColors.Blue) {
         SectionHeading(
             title = "Size",
-            subtitle = "Bigger means sharper and heavier",
+            subtitle = "Smaller is lighter, and never bigger than it was",
             icon = Icons.Filled.HighQuality,
             accent = SquishColors.Blue
         )
@@ -477,7 +477,10 @@ private fun CompressControls(state: QuickToolViewModel.UiState, viewModel: Quick
             estimatedBytes = state.estimatedOutputBytes,
             originalBytes = state.originalSizeBytes,
             accent = SquishColors.Blue,
-            onPick = viewModel::setOutputP
+            onPick = viewModel::setOutputP,
+            // A squeeze never grows the frame: 1080p and 4K were offered for a
+            // 940 x 718 file, in the tool for making files smaller.
+            allowUpscale = false
         )
 
         Row(

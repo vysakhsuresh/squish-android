@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.squish.app.data.ProjectRules
 import com.squish.app.home.countOf
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.SquishRepositories
@@ -641,11 +642,23 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             .openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
     }.getOrDefault(0L)
 
-    private fun displayNameOf(uri: Uri): String? = runCatching {
-        getApplication<Application>().contentResolver
-            .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-    }.getOrNull() ?: uri.lastPathSegment
+    /**
+     * What a picked file is called here. The photo picker names every file by
+     * its number ("1001319364.mp4"), and cameras by a stamp; those show as the
+     * day the video was taken, "Video · 29 Sep" (ProjectRules.displayTitle).
+     */
+    private fun displayNameOf(uri: Uri): String? {
+        val resolver = getApplication<Application>().contentResolver
+        val name = runCatching {
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        }.getOrNull() ?: uri.lastPathSegment
+        val taken = runCatching {
+            resolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DATE_TAKEN), null, null, null)
+                ?.use { cursor -> if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null }
+        }.getOrNull() ?: 0L
+        return ProjectRules.displayTitle(name, taken, prefix = "Video").takeIf { it != "Untitled edit" } ?: name
+    }
 
     fun export(tool: QuickTool, onResult: (String) -> Unit, onError: (String) -> Unit) {
         val current = _state.value
