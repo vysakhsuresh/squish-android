@@ -54,6 +54,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -81,6 +83,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.squish.app.editor.edits.TextEdits
 import com.squish.app.home.countOf
 import com.squish.app.media.ExportStage
 import com.squish.app.media.keepReadAccess
@@ -149,6 +152,14 @@ fun EditorScreen(
     // A finger on the playhead, told to the preview so it can serve the drag from
     // sync samples and land exactly when the finger lifts.
     var timelineScrubbing by remember { mutableStateOf(false) }
+    // A colour being picked off the picture, and who asked for it - the text
+    // sheet's colour picker. While set, the picture takes one tap and answers.
+    var eyedropper by remember { mutableStateOf<((Int) -> Unit)?>(null) }
+    // Given up with whatever asked for it: the sheet closing, the selection
+    // changing. It stayed over the picture, its one tap recolouring a line no
+    // longer selected, and the box could not be grabbed until its small Cancel
+    // was found.
+    LaunchedEffect(openTool, state.selectedClipId) { eyedropper = null }
 
     LaunchedEffect(sourceUri) { viewModel.load(sourceUri, resume) }
 
@@ -179,6 +190,8 @@ fun EditorScreen(
         when {
             state.isExporting -> confirmStopExport = true
             exportSheetOpen -> exportSheetOpen = false
+            // The eyedropper is the innermost thing of all: back gives up the pick, not the sheet.
+            eyedropper != null -> eyedropper = null
             else -> when (backStep(fullscreen, openTool != null, state.selectedClipId != null)) {
                 BackStep.ExitFullscreen -> fullscreen = false
                 BackStep.CloseSheet -> openToolName = null
@@ -278,6 +291,8 @@ fun EditorScreen(
             Tool.Delete -> viewModel.clips.deleteSelectedClip()
             Tool.ToOverlay -> state.selectedClipId?.let(viewModel.layers::switchToOverlay)
             Tool.ExtractAudio -> state.selectedClipId?.let(viewModel.audio::extractAudio)
+            Tool.Speak -> state.selectedClipId?.let(viewModel.text::speak)
+            Tool.Flip -> state.selectedClipId?.let(viewModel.text::flip)
             Tool.ToMain -> state.videoClips.firstOrNull { it.id == state.selectedClipId }?.let { clip ->
                 // A photo dragged out long is minutes of rendering on the main
                 // track; asked about rather than started with a spinner.
@@ -317,6 +332,8 @@ fun EditorScreen(
                 onFullscreen = { fullscreen = it },
                 onCloseSheet = { openToolName = null },
                 onOpenTool = { tool -> openToolName = tool.name },
+                eyedropper = eyedropper,
+                onEyedropperDone = { eyedropper = null },
                 modifier = modifier
             )
         }
@@ -337,7 +354,19 @@ fun EditorScreen(
                 // comes back scrolled where it was), and the sheet sits on the
                 // keyboard with the picture above it, where the words being typed
                 // can be seen landing.
-                val typing = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+                val density = LocalDensity.current
+                val imePx = WindowInsets.ime.getBottom(density)
+                val typing = imePx > 0
+                // The keyboard's height, from the last time it was up. The Edit
+                // sheet's tabs fold the keyboard, and the sheet then takes the
+                // keyboard's room so its tab row stays where the finger found it
+                // - as CapCut holds its text panel. It used to change to the
+                // sheet's own height with the strip unfolding above it, so the
+                // tabs jumped on every tab tapped and fast taps landed on the strip.
+                var keyboardPx by rememberSaveable { mutableIntStateOf(0) }
+                LaunchedEffect(imePx) { if (imePx > keyboardPx) keyboardPx = imePx }
+                val holding = openTool == Tool.Edit && !typing && keyboardPx > 0
+                val keyboardDp = with(density) { keyboardPx.toDp() }
                 val cardsScroll = rememberScrollState()
                 val stripScroll = rememberScrollState()
 
@@ -393,7 +422,11 @@ fun EditorScreen(
                         onAddOverlay = addOverlay,
                         onCloseGap = viewModel.clips::closeGap,
                         onOpenSound = { openToolName = Tool.Sound.name },
-                        onOpenWords = { openToolName = Tool.Text.name },
+                        // A line at once, as the video and overlay heads add at
+                        // once (section 2's track heads); the Text sheet is on
+                        // the toolbar. It opened the sheet, and a second "Add
+                        // text" was needed there.
+                        onOpenWords = addText,
                         onScrubbingChange = { timelineScrubbing = it },
                         compact = compactStrip,
                         onFit = viewModel::fitTimeline
@@ -420,6 +453,10 @@ fun EditorScreen(
                             when (tool) {
                                 Tool.Clip -> state.videoClips.any { it.isMain }
                                 Tool.Split -> state.canSplitHere
+                                // Greyed while the voice is made, so a second tap
+                                // has somewhere to go other than nowhere; and on a
+                                // line with nothing to say.
+                                Tool.Speak -> state.selectedClipId?.let { TextEdits.canSpeak(state, it) } == true
                                 else -> true
                             }
                         },
@@ -441,6 +478,12 @@ fun EditorScreen(
                             onSelectSound = { id ->
                                 viewModel.selectClip(id)
                                 openToolName = null
+                            },
+                            onEyedropper = { pick -> eyedropper = pick },
+                            onEyedropperCancel = { eyedropper = null },
+                            onEditLine = { id ->
+                                viewModel.selectClip(id)
+                                openToolName = Tool.Edit.name
                             },
                             modifier = modifier
                         )
@@ -483,7 +526,7 @@ fun EditorScreen(
                             // toolbar leave, and the rows sized to it so the action bar
                             // under them fits.
                             BoxWithConstraints(
-                                modifier = if (typing) Modifier.heightIn(max = 0.dp) else Modifier.weight(1f)
+                                modifier = if (typing || holding) Modifier.heightIn(max = 0.dp) else Modifier.weight(1f)
                             ) {
                                 val room = maxHeight
                                 Column(modifier = Modifier.verticalScroll(stripScroll)) {
@@ -491,7 +534,7 @@ fun EditorScreen(
                                 }
                             }
                             if (sheetOpen) {
-                                sheet(if (typing) Modifier.weight(1f) else Modifier.height(available * LANDSCAPE_SHEET_SHARE))
+                                sheet(if (typing || holding) Modifier.weight(1f) else Modifier.height(available * LANDSCAPE_SHEET_SHARE))
                             } else toolbar()
                         }
                     }
@@ -513,7 +556,7 @@ fun EditorScreen(
                             modifier = Modifier
                                 .heightIn(
                                     max = when {
-                                        typing -> 0.dp
+                                        typing || holding -> 0.dp
                                         sheetOpen -> available * STRIP_SHARE_WITH_SHEET
                                         else -> available * STRIP_SHARE
                                     }
@@ -524,7 +567,16 @@ fun EditorScreen(
                             controls(sheetOpen, stripRowsHeight(available * STRIP_SHARE))
                         }
                         if (sheetOpen) {
-                            sheet(Modifier.height(if (typing) typingSheetHeightFor(available) else sheetHeight))
+                            sheet(
+                                Modifier.height(
+                                    when {
+                                        typing -> typingSheetHeightFor(available)
+                                        // The keyboard's room and the height it had over the keyboard: the same top edge.
+                                        holding -> typingSheetHeightFor(available - keyboardDp) + keyboardDp
+                                        else -> sheetHeight
+                                    }
+                                )
+                            )
                         } else toolbar()
                     }
                 }
@@ -663,6 +715,9 @@ private fun EditorPreview(
     onCloseSheet: () -> Unit,
     /** Opens a tool's sheet. */
     onOpenTool: (Tool) -> Unit,
+    /** A colour wanted off the picture, and who wants it; null when none is. */
+    eyedropper: ((Int) -> Unit)?,
+    onEyedropperDone: () -> Unit,
     modifier: Modifier
 ) {
     Box(
@@ -682,7 +737,11 @@ private fun EditorPreview(
         val latestOpenTool by rememberUpdatedState(openTool)
         val latestCloseSheet by rememberUpdatedState(onCloseSheet)
         val latestOpenToolSheet by rememberUpdatedState(onOpenTool)
+        // The painted size of each line of text, from the caption layer, for the
+        // box round it.
+        val textBoxes = remember { mutableStateMapOf<String, TextBox>() }
         val boxActions = remember(viewModel) {
+            val textItem = { id: String -> viewModel.state.value.textOverlays.firstOrNull { it.id == id } }
             OverlayHandleActions(
                 // As a tap on the strip: a layer picked while an add-things sheet
                 // is up is a new job, and the sheet makes way for its tools.
@@ -696,15 +755,28 @@ private fun EditorPreview(
                         id, scale = t.scale, offsetX = t.offsetXFraction, offsetY = t.offsetYFraction, rotation = t.rotationDegrees
                     )
                 },
+                onPlaceText = viewModel.text::placeText,
                 onPlaceEnd = viewModel::endGesture,
                 onDelete = { id ->
                     viewModel.selectClip(id)
                     viewModel.clips.deleteSelectedClip()
                 },
-                onDuplicate = viewModel.layers::duplicateInPlace,
+                onDuplicate = { id ->
+                    if (textItem(id) != null) viewModel.text.duplicateInPlace(id) else viewModel.layers.duplicateInPlace(id)
+                },
+                // A line's Edit is its keyboard, as CapCut's is; a sticker has no
+                // words, so its numbers.
                 onEdit = { id ->
                     viewModel.selectClip(id)
-                    latestOpenToolSheet(Tool.Placement)
+                    val item = textItem(id)
+                    latestOpenToolSheet(if (item == null || item.sticker) Tool.Placement else Tool.Edit)
+                },
+                onOpen = { id ->
+                    val item = textItem(id)
+                    if (item != null) {
+                        viewModel.selectClip(id)
+                        latestOpenToolSheet(if (item.sticker) Tool.Placement else Tool.Edit)
+                    }
                 }
             )
         }
@@ -714,7 +786,8 @@ private fun EditorPreview(
         // touch on the picture whenever no overlay was selected, so an overlay
         // could not be tapped on the picture to select it.
         val editingCrop = state.cropAspect == CropAspect.Custom && openTool == Tool.Frame
-        val overlayActions = boxActions.takeIf { !editingCrop }
+        // Nor while a colour is being picked: that one tap is the eyedropper's.
+        val overlayActions = boxActions.takeIf { !editingCrop && eyedropper == null }
         TimelinePreview(
             videoClips = state.videoClips,
             audioClips = state.audioClips,
@@ -760,6 +833,7 @@ private fun EditorPreview(
             scrubbing = timelineScrubbing,
             selectedClipId = state.selectedClipId,
             overlayActions = overlayActions,
+            textBoxes = textBoxes,
             modifier = Modifier.fillMaxSize(),
             // Inside the picture, so the crop rectangle is measured
             // against the frame rather than against the whole box.
@@ -771,6 +845,13 @@ private fun EditorPreview(
                 // which is for watching.
                 when {
                     fullscreen -> Unit
+                    eyedropper != null -> EyedropperLayer(
+                        onPick = { colour ->
+                            colour?.let { eyedropper.invoke(it) }
+                            onEyedropperDone()
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
                     state.cropAspect == CropAspect.Custom -> CustomCropOverlay(
                         rect = state.cropRect,
                         editable = editingCrop,
@@ -907,6 +988,7 @@ private fun StatusCards(state: EditorUiState, viewModel: EditorViewModel, onStar
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
     )
     PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+    SpeakingIndicator(speaking = state.speakingId != null, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
 
     // Only the inline offer lives here; the modal one is over everything.
     state.recovery?.takeIf { !it.modal }?.let { offer ->

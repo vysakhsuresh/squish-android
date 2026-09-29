@@ -65,7 +65,11 @@ class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
         return StaticOverlaySettings.Builder()
             .setBackgroundFrameAnchor(x * 2 - 1, 1 - (y - frame.rise) * 2)
             .setScale(frame.scale, frame.scale)
-            .setAlphaScale(frame.alpha.coerceIn(0f, 1f))
+            // Media3 turns counter-clockwise in a frame whose y runs up; the
+            // editor's degrees are clockwise on screen, as the preview's
+            // graphicsLayer and ExportPlan.placementMatrix take them.
+            .setRotationDegrees(-(item.rotationDegrees + frame.tilt))
+            .setAlphaScale((frame.alpha * item.opacity).coerceIn(0f, 1f))
             .build()
     }
 }

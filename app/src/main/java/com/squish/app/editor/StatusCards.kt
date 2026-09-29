@@ -253,6 +253,27 @@ fun PreparingIndicator(count: Int, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * A line being read aloud: the phone's engine takes seconds to bind and speak,
+ * and with nothing said the button looked dead and got tapped again.
+ */
+@Composable
+fun SpeakingIndicator(speaking: Boolean, modifier: Modifier = Modifier) {
+    if (!speaking) return
+    Row(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        CircularProgressIndicator(color = SquishColors.Amber, strokeWidth = 2.dp, modifier = Modifier.size(12.dp))
+        Text(
+            "Reading the line aloud… it lands as a sound clip where the line starts.",
+            style = MaterialTheme.typography.labelSmall,
+            color = SquishColors.Amber
+        )
+    }
+}
+
 private fun relativeTime(millis: Long): String {
     if (millis <= 0L) return "recently"
     val elapsed = System.currentTimeMillis() - millis

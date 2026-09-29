@@ -129,6 +129,63 @@ object SpeechSegmenter {
             .flatMap { splitLong(it) }
     }
 
+    /**
+     * Where each of [words] words in [segment] begins, from the segment's start:
+     * the first at 0, the rest at the quietest dips between them - a word
+     * boundary is a dip in energy, and the deepest dips are the surest. A
+     * segment with fewer dips than words, or too short to tell, is spaced
+     * evenly instead, which is right often enough to read as timed and never
+     * puts a word after its neighbour. The count is the transcript's, since the
+     * recogniser says how many words there were and the sound says where.
+     */
+    fun wordStarts(pcm: MonoPcm, segment: SpeechSegment, words: Int): List<Long> {
+        val length = segment.durationMs
+        if (words <= 1) return listOf(0L)
+        val rate = pcm.sampleRate
+        if (rate <= 0) return evenWordStarts(words, length)
+        val frameSize = (rate * FRAME_MS / 1000).coerceAtLeast(1)
+        val from = (segment.startMs * rate / 1000L).toInt().coerceIn(0, pcm.samples.size)
+        val to = (segment.endMs * rate / 1000L).toInt().coerceIn(from, pcm.samples.size)
+        val frameCount = (to - from) / frameSize
+        val apart = MIN_WORD_MS / FRAME_MS
+        if (frameCount < words * apart) return evenWordStarts(words, length)
+
+        val energy = FloatArray(frameCount)
+        for (f in 0 until frameCount) {
+            var sum = 0.0
+            val base = from + f * frameSize
+            for (i in 0 until frameSize) {
+                val s = pcm.samples[base + i]
+                sum += s.toDouble() * s
+            }
+            energy[f] = kotlin.math.sqrt(sum / frameSize).toFloat()
+        }
+        // Smoothed over three frames, so a single quiet frame inside a word is not a dip.
+        val smooth = FloatArray(frameCount) { f ->
+            val a = energy[(f - 1).coerceAtLeast(0)]
+            val c = energy[(f + 1).coerceAtMost(frameCount - 1)]
+            (a + energy[f] + c) / 3f
+        }
+        val median = percentile(smooth.sortedArray(), 0.5f)
+        val dips = (1 until frameCount - 1)
+            .filter { f -> smooth[f] <= smooth[f - 1] && smooth[f] <= smooth[f + 1] && smooth[f] < median && f >= apart && f <= frameCount - apart }
+            .sortedBy { smooth[it] }
+        val picked = ArrayList<Int>()
+        for (f in dips) {
+            if (picked.size == words - 1) break
+            if (picked.all { kotlin.math.abs(it - f) >= apart }) picked += f
+        }
+        if (picked.size < words - 1) return evenWordStarts(words, length)
+        return listOf(0L) + picked.sorted().map { frameToMs(it) }
+    }
+
+    /** [words] starts spread evenly over [lengthMs]. */
+    fun evenWordStarts(words: Int, lengthMs: Long): List<Long> =
+        (0 until words.coerceAtLeast(1)).map { lengthMs * it / words.coerceAtLeast(1) }
+
+    /** Shorter than this, a stretch between two dips is a syllable, not a word. */
+    private const val MIN_WORD_MS = 120
+
     private fun frameToMs(frame: Int): Long = frame.toLong() * FRAME_MS
 
     private fun percentile(sortedAscending: FloatArray, p: Float): Float {

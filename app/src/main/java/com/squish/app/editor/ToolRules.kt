@@ -54,6 +54,10 @@ enum class Tool(val label: String, val sheet: Boolean) {
     Edit("Edit", true),
     Style("Style", true),
     Strength("Strength", true),
+    /** A line read aloud by the phone into a sound clip at its start. Acts at once. */
+    Speak("Read aloud", false),
+    /** A sticker mirrored to face the other way. Acts at once. */
+    Flip("Flip", false),
     Duplicate("Duplicate", false),
     ToOverlay("To overlay", false),
     ToMain("To main", false),
@@ -83,11 +87,15 @@ val LEVEL_ZERO: List<Tool> = listOf(
  * level; the camera sound for the whole edit stays on Sound (Mic & camera).
  *
  * Section 2's lists are longer; the rest arrive with the batch that builds what
- * they act on (docs/ROADMAP.md, B6, "Deferred"): Opacity on text (B10);
- * Rotate, Mirror, Freeze, Reverse and Replace (B11); Filters, Adjust and Crop
- * per clip (B12). A button for a tool that does not exist yet would be one
- * more thing that does nothing. B9 brought Fade and Voice to sounds, Voice to
- * every clip with sound, and Extract audio to footage.
+ * they act on (docs/ROADMAP.md, B6, "Deferred"): Rotate, Mirror, Freeze,
+ * Reverse and Replace (B11); Filters, Adjust and Crop per clip (B12). A button
+ * for a tool that does not exist yet would be one more thing that does nothing.
+ * B9 brought Fade and Voice to sounds, Voice to every clip with sound, and
+ * Extract audio to footage; B10 brought Opacity, Speak and Flip to text.
+ *
+ * Text: Edit first, since the keyboard is what a line is usually selected for;
+ * a line has no Placement sheet - it is moved on the picture, and Style has
+ * the numbers. A sticker keeps Placement, and Flip instead of the keyboard.
  */
 fun toolsFor(kind: SelectionKind, canTransition: Boolean = false): List<Tool> = when (kind) {
     SelectionKind.None -> LEVEL_ZERO
@@ -110,10 +118,10 @@ fun toolsFor(kind: SelectionKind, canTransition: Boolean = false): List<Tool> = 
         Tool.Split, Tool.Volume, Tool.Fade, Tool.Speed, Tool.Beats, Tool.Sync, Tool.Voice, Tool.Duplicate, Tool.Delete
     )
     SelectionKind.Text -> listOf(
-        Tool.Edit, Tool.Style, Tool.Animation, Tool.Track, Tool.Split, Tool.Duplicate, Tool.Delete
+        Tool.Edit, Tool.Style, Tool.Animation, Tool.Opacity, Tool.Speak, Tool.Track, Tool.Split, Tool.Duplicate, Tool.Delete
     )
     SelectionKind.Sticker -> listOf(
-        Tool.Placement, Tool.Animation, Tool.Track, Tool.Split, Tool.Duplicate, Tool.Delete
+        Tool.Placement, Tool.Animation, Tool.Opacity, Tool.Flip, Tool.Track, Tool.Split, Tool.Duplicate, Tool.Delete
     )
     SelectionKind.Effect -> listOf(Tool.Strength, Tool.Split, Tool.Duplicate, Tool.Delete)
 }

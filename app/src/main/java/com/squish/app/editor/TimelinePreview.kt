@@ -72,6 +72,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import com.squish.app.media.CaptionRenderer
 import com.squish.app.media.StillClips
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.video.MotionTrack
@@ -165,6 +166,11 @@ fun TimelinePreview(
      */
     overlayActions: OverlayHandleActions? = null,
     /**
+     * The painted size of each line of text, filled in by the caption layer and
+     * read to put the box round the letters. Null leaves text without a box.
+     */
+    textBoxes: MutableMap<String, TextBox>? = null,
+    /**
      * Drawn over the picture, inside its bounds.
      *
      * A slot rather than a sibling of the preview, because the picture no longer
@@ -206,6 +212,8 @@ fun TimelinePreview(
     // Photos on overlay rows, drawn here rather than by a player: a picture needs
     // no decoder, and keeps its transparency. Their shapes, once read, for the box.
     val stillAspects = remember { mutableStateMapOf<String, Float>() }
+    // Where each line's box gesture began: its placement and the Transform its box had.
+    val textStarts = remember { HashMap<String, Pair<TextPlacement, Transform>>() }
 
     LaunchedEffect(muted) { engine.setMuted(muted) }
 
@@ -401,7 +409,8 @@ fun TimelinePreview(
                 timeMs = PreviewRules.lastFrameTime(frame.positionMs, frame.durationMs),
                 atRest = !frame.isPlaying,
                 frame = kept,
-                modifier = Modifier.fillMaxSize().zIndex(25f)
+                modifier = Modifier.fillMaxSize().zIndex(25f),
+                boxes = textBoxes
             )
 
             // Above every layer: the crop rectangle and its handles are drawn over
@@ -429,12 +438,58 @@ fun TimelinePreview(
                     clip.uri?.let { stillAspects[it.toString()] }
                 )
             }
+            val keptFrame = keptOnArea(kept, pictureSize, areaSize)
+            // Text and stickers, above every picture layer as they are drawn:
+            // the box round the letters the layer painted (TextGeometry), so
+            // what is grabbed is what is on screen.
+            val words = if (textBoxes == null) emptyList() else captions.mapIndexedNotNull { index, item ->
+                if (CaptionRenderer.frameAt(item, layerTime) == null) return@mapIndexedNotNull null
+                val box = textBoxes[item.id] ?: return@mapIndexedNotNull null
+                val (x, y) = item.anchorAt(layerTime)
+                val placed = TextGeometry.transformOf(x, y, item.rotationDegrees, box.width, box.height, keptFrame.width, keptFrame.height)
+                val size = item.sizeSp
+                OverlayOnPicture(
+                    clipId = item.id,
+                    layer = TEXT_LAYER_BASE + index,
+                    drawn = placed,
+                    placed = placed,
+                    aspect = TextGeometry.aspect(box.width, box.height),
+                    limit = { t -> TextGeometry.limited(t, placed, size) },
+                    readout = { t, moving -> TextGeometry.readout(t, placed, size, moving) }
+                )
+            }
+            // A line's gesture is handed on in the line's own terms. The box
+            // gives the whole gesture from where it began, so the letters'
+            // size is measured against the placement the gesture started from
+            // - kept here from its first event, since by the next the line
+            // has already changed under it.
+            val actions = OverlayHandleActions(
+                onSelect = overlayActions.onSelect,
+                onPlace = { id, t ->
+                    val item = captions.firstOrNull { it.id == id }
+                    val word = words.firstOrNull { it.clipId == id }
+                    if (item == null || word == null) overlayActions.onPlace(id, t)
+                    else {
+                        val (before, start) = textStarts.getOrPut(id) { item.placement to word.placed }
+                        overlayActions.onPlaceText?.invoke(id, TextGeometry.placed(before, start, t))
+                    }
+                },
+                onPlaceEnd = {
+                    textStarts.clear()
+                    overlayActions.onPlaceEnd()
+                },
+                onDelete = overlayActions.onDelete,
+                onDuplicate = overlayActions.onDuplicate,
+                onEdit = overlayActions.onEdit,
+                onOpen = overlayActions.onOpen,
+                onPlaceText = overlayActions.onPlaceText
+            )
             OverlayHandles(
-                overlays = onPicture,
+                overlays = onPicture + words,
                 selectedId = selectedClipId,
-                frame = keptOnArea(kept, pictureSize, areaSize),
+                frame = keptFrame,
                 showBox = !frame.isPlaying,
-                actions = overlayActions,
+                actions = actions,
                 onTouch = { engine.pause() },
                 onEmptyTap = { if (!onPictureTap()) engine.togglePlay() },
                 modifier = Modifier.fillMaxSize()
@@ -793,6 +848,9 @@ private val REDRAW_SETTLE = 150.milliseconds
 
 /** Long enough for a window coming back to hand its surfaces over again. */
 private val RESUME_SETTLE = 300.milliseconds
+
+/** Text sits above every overlay row on the picture, so a tap where the two overlap takes the words. */
+private const val TEXT_LAYER_BASE = 1_000
 
 /** A [PreviewBox.Frame] of whatever it clips. */
 private class FrameShape(private val frame: PreviewBox.Frame) : Shape {
