@@ -295,6 +295,20 @@ should work through it and then delete what holds up.
   empty lane; a PiP moved To main under a camera mute says it is silent there;
   a photo overlay longer than a minute asks before To main renders it.
 
+- **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them.** Built on
+  the desktop with no phone attached; each entry there under "Fixed (pending
+  device check)" says what to do on the phone. The ones that lean on something
+  only a device shows: the clock as a Media3 gap declaring sound
+  (`ExportPlan.sequenceTracks`, executed in `tools/jvm/ExportPlanChecks.kt`) -
+  the failing overlay export must complete, the gap's black 16 px frame must
+  not show (it is hidden as the still was, by `LayerSettings`), and the camera
+  sound is now resampled to the gap's 44.1 kHz by the mixer; the encoder ceiling
+  (`EncoderCeiling`) must agree with what the file comes out at, on 4K and on a
+  portrait clip; a title opening with its sample words selected; "Open with"
+  reaching the running app through `onNewIntent` with the activity single-task;
+  the preview clock crossing the stretch after the last shot
+  (`PreviewRules.baseTime`) and stopping at the true end.
+
 ## Conventions worth not rediscovering
 
 - **A tool's `id` is a handle, not a name.** `QuickTool.id` is in the navigation
