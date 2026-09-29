@@ -35,9 +35,12 @@ object MediaCompat {
     /**
      * What cannot be decoded, in words, or null for each part that is fine; and
      * whether the file has any sound at all, for what a file with none needs no
-     * room for (EditorUiState.hasAnyAudio).
+     * room for (EditorUiState.hasAnyAudio). [sampleRateHz] is the highest rate
+     * of a sound track this phone decodes, or zero when there is none or the
+     * file does not say - for the rate a layered export mixes at
+     * (ExportPlan.mixerSampleRate).
      */
-    data class Report(val videoProblem: String?, val audioProblem: String?, val hasAudio: Boolean = true)
+    data class Report(val videoProblem: String?, val audioProblem: String?, val hasAudio: Boolean = true, val sampleRateHz: Int = 0)
 
     private val reports = ConcurrentHashMap<String, Report>()
 
@@ -80,7 +83,8 @@ object MediaCompat {
         val report = Report(
             videoProblem = if (video.isNotEmpty() && video.none { decodable(context, it) }) describe(video.first()) else null,
             audioProblem = if (audio.isNotEmpty() && audio.none { decodable(context, it) }) describe(audio.first()) else null,
-            hasAudio = audio.isNotEmpty()
+            hasAudio = audio.isNotEmpty(),
+            sampleRateHz = audio.filter { decodable(context, it) }.maxOfOrNull { it.sampleRate }?.coerceAtLeast(0) ?: 0
         )
         reports[uri.toString()] = report
         return report

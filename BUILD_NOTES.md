@@ -58,15 +58,32 @@ has none makes `SequenceAssetLoader` force a sound track with
 `checkNotNull(listener.onOutputFormat(...))`, and the listener answers null
 until the lowest sequence declaring sound has made the sound exporter. An image
 loader loses that race to a video decoder ("Asset loader error", a
-NullPointerException in `SequenceAssetLoader.onOutputFormat`). So the clock is
-Media3's own gap, declared with sound whenever any layer is
+NullPointerException in `SequenceAssetLoader.onOutputFormat`). So the clock
+opens on Media3's own gap, declared with sound whenever any layer is
 (`ExportPlan.sequenceTracks`): a gap loader announces both tracks before it
 starts, and as sequence 0 it makes the sound exporter first and the picture's
 second, so no layer can get past its own picture - and ask for sound - before
-the exporter exists. What that leans on: `GapSignalingAssetLoader` outputs
-audio before video, the primary for a track is the lowest sequence that
-registered one, and the mixer takes its format from the first input registered
-(the gap's 44.1 kHz stereo; every other input is resampled to it).
+the exporter exists. Read in the 1.11.1 bytecode: a sequence asks for the
+forced sound track only after its own picture consumer was granted, and the
+gap loader asks sound-then-picture inside one call, so the order cannot be
+lost; a still as the first item would ask picture-then-sound and open a
+window. What that leans on: `GapSignalingAssetLoader` outputs audio before
+video, the primary for a track is the lowest sequence that registered one, and
+the mixer takes its format from the first input registered.
+
+Two more from the gap, both handled in `CompositionFactory`. A gap's blank
+frames come at a fixed 30 fps (`SequenceAssetLoader.insertBlankFrames`) and
+the compositor writes one output frame per primary frame, so a clock that was
+all gap wrote every layered export at 30 fps; the clock is one frame of gap
+(`ExportPlan.clockLeadMs`) and then the transparent still at the edit's own
+rate. And the gap's fixed format is 44.1 kHz stereo, which became the mixer's
+rate, so 48 kHz camera sound was stepped down under any overlay; the gap item
+is built by hand - `EditedMediaItem.isGap` knows a gap by the media id
+`androidx-media3-GapMediaItem`, which `addGap` sets and which is not public -
+so it can carry a `SonicAudioProcessor` to the highest rate any sound in the
+edit has (`ExportPlan.mixerSampleRate`, from `MediaCompat`'s reports). If a
+later Media3 renames the id, the export fails on its first item at once
+rather than quietly changing.
 
 Photos and blanks are rendered with a silent AAC track; if that render fails,
 they are rendered again picture-only, as before 1.11 (`StillClips.render`).

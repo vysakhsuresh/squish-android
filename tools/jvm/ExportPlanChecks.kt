@@ -148,10 +148,13 @@ fun main() {
             }
             at += piece.durationMs
         }
-        check(pieces.last() is ExportPlan.Piece.Gap, "no trailing blank: a layer that stops freezes its last frame")
+        check(pieces.last() is ExportPlan.Piece.Clear, "no trailing blank: a layer that stops freezes its last frame")
+        check(pieces.none { it is ExportPlan.Piece.Gap }, "a layer's empty stretch is Media3's black gap, not the still: $pieces")
 
-        val clock = ExportPlan.pieces(ExportPlan.Layer(ExportPlan.Role.Clock, emptyList()), end)
-        check(clock == listOf(ExportPlan.Piece.Gap(end)), "the clock is not one stretch the length of the edit: $clock")
+        // The clock: one frame of gap, then a still to the end.
+        val lead = ExportPlan.clockLeadMs(60)
+        val clock = ExportPlan.pieces(ExportPlan.Layer(ExportPlan.Role.Clock, emptyList()), end, lead)
+        check(clock == listOf(ExportPlan.Piece.Gap(lead), ExportPlan.Piece.Clear(end - lead)), "the clock is not a frame of gap and a still to the end: $clock")
 
         // Many small slips must not add up: each is made good at the next real gap.
         val drifty = (0 until 50).map { video("s$it", it * 1015L, 1000) }
@@ -396,13 +399,77 @@ fun main() {
 
     // --- The clock is always there, first, however short the edit. ----------------
     run {
-        for (end in listOf(0L, 1L, 10L, 19L, 20L, 5_000L)) {
-            val clock = ExportPlan.pieces(ExportPlan.Layer(ExportPlan.Role.Clock, emptyList()), end)
-            check(clock.size == 1 && clock[0] is ExportPlan.Piece.Gap && clock[0].durationMs >= 1L, "no clock for a $end ms edit: $clock")
+        for (rate in listOf(24, 30, 60)) for (end in listOf(0L, 1L, 10L, 19L, 20L, 40L, 60L, 5_000L)) {
+            val lead = ExportPlan.clockLeadMs(rate)
+            val clock = ExportPlan.pieces(ExportPlan.Layer(ExportPlan.Role.Clock, emptyList()), end, lead)
+            check(clock.isNotEmpty() && clock[0] is ExportPlan.Piece.Gap && clock[0].durationMs >= 1L, "no gap to open a $end ms edit's clock: $clock")
+            check(clock.sumOf { it.durationMs } == maxOf(end, 1L), "a $end ms edit's clock runs ${clock.sumOf { it.durationMs }}")
+            check(clock.size <= 2 && (clock.size == 1 || clock[1] is ExportPlan.Piece.Clear), "a $end ms edit's clock: $clock")
+            // The still is there whenever there is a frame's worth of edit after the gap.
+            check((clock.size == 2) == (end - lead >= ExportPlan.MIN_GAP_MS), "a $end ms edit at $rate fps has the wrong clock: $clock")
         }
         val tiny = ExportPlan.layers(listOf(video("a", 0, 10), video("p", 0, 10, layer = 1)))
         check(tiny.layers.first().role == ExportPlan.Role.Clock, "a 10 ms edit's first layer is not the clock")
         check(ExportPlan.pieces(tiny.layers.first(), tiny.endMs).isNotEmpty(), "a 10 ms edit's clock has nothing in it")
+    }
+
+    // --- The clock's opening gap and the file's cadence. -------------------------
+    run {
+        check(ExportPlan.clockLeadMs(60) == 17L, "60 fps lead ${ExportPlan.clockLeadMs(60)}")
+        check(ExportPlan.clockLeadMs(30) == 33L, "30 fps lead ${ExportPlan.clockLeadMs(30)}")
+        check(ExportPlan.clockLeadMs(120) == 8L, "120 fps lead ${ExportPlan.clockLeadMs(120)}")
+        // Slower than the gap's own rate, the lead is one gap frame, not one
+        // source frame: a longer gap would draw a second blank frame at 33 ms.
+        check(ExportPlan.clockLeadMs(24) == 33L, "24 fps lead ${ExportPlan.clockLeadMs(24)}")
+        check(ExportPlan.clockLeadMs(0) == 33L, "an unknown rate's lead ${ExportPlan.clockLeadMs(0)}")
+        val gapFrameUs = 1_000_000L / ExportPlan.GAP_FPS
+        for (rate in listOf(24, 25, 30, 50, 60, 120)) {
+            val lead = ExportPlan.clockLeadMs(rate)
+            // Replayed: the gap draws frames at its fixed rate for its length,
+            // then the still draws at the edit's from where the gap ended. The
+            // compositor writes one output frame per frame of this.
+            val stamps = mutableListOf<Long>()
+            var t = 0L
+            while (t < lead * 1_000L) { stamps += t; t += gapFrameUs }
+            val step = 1_000_000.0 / rate
+            var k = 0
+            while (lead * 1_000L + (k * step).toLong() < 2_000_000L) { stamps += lead * 1_000L + (k * step).toLong(); k++ }
+            check(stamps.size == 1 + k, "$rate fps: the gap drew ${stamps.size - k} frames")
+            check(abs(stamps.size - rate * 2) <= 1, "$rate fps: ${stamps.size} frames in two seconds, not ${rate * 2}")
+            val intervals = stamps.zipWithNext { a, b -> b - a }
+            check(intervals.drop(1).all { abs(it - step) <= 1_000L }, "$rate fps: uneven cadence after the first frame: ${intervals.take(4)}")
+            check(intervals.first() <= step.toLong() + 1_000L, "$rate fps: the first interval is long: ${intervals.first()}")
+            // The old clock, for the record: every frame at the gap's rate.
+            val old = (2_000_000L / gapFrameUs).toInt()
+            if (rate != ExportPlan.GAP_FPS) check(abs(old - rate * 2) > 1, "the whole-gap clock would have been right at $rate fps")
+        }
+    }
+
+    // --- The mixer's rate: the highest any sound has, never stepped down. --------
+    run {
+        check(ExportPlan.mixerSampleRate(listOf(48_000, 44_100)) == 48_000, "48 k under a 44.1 k song was stepped down")
+        check(ExportPlan.mixerSampleRate(listOf(44_100)) == 44_100, "a 44.1 k edit was resampled for nothing")
+        check(ExportPlan.mixerSampleRate(emptyList()) == ExportPlan.DEFAULT_SAMPLE_RATE_HZ, "nothing known: not the default")
+        check(ExportPlan.mixerSampleRate(listOf(0, -1)) == ExportPlan.DEFAULT_SAMPLE_RATE_HZ, "unknown rates counted")
+        check(ExportPlan.mixerSampleRate(listOf(192_000)) == ExportPlan.MAX_SAMPLE_RATE_HZ, "a rate past what AAC takes was kept")
+        check(ExportPlan.mixerSampleRate(listOf(4_000)) == ExportPlan.MIN_SAMPLE_RATE_HZ, "a rate under what AAC takes was kept")
+    }
+
+    // --- The file runs to a sound dragged out past the picture. ------------------
+    run {
+        val shot = listOf(video("a", 0, 8_000))
+        check(!ExportPlan.needsCompositing(shot), "one shot composited")
+        check(!ExportPlan.needsCompositing(shot, 8_010), "a rounding tail composited")
+        check(ExportPlan.needsCompositing(shot, 20_000), "a sound past the picture was not composited: the file would stop at the shot")
+        val long = ExportPlan.layers(shot, 20_000)
+        check(long.endMs == 20_000L, "the edit ends at ${long.endMs}, not with the sound")
+        val roll = ExportPlan.pieces(long.baseLayers.single(), long.endMs)
+        check(roll == listOf(ExportPlan.Piece.Item(shot[0]), ExportPlan.Piece.Clear(12_000)), "the roll does not run black to the sound's end: $roll")
+        val clock = ExportPlan.pieces(long.layers.first(), long.endMs, ExportPlan.clockLeadMs(30))
+        check(clock.sumOf { it.durationMs } == 20_000L, "the clock stops short of the sound: $clock")
+        // Never shorter than the picture, whatever it is told.
+        check(ExportPlan.layers(shot, 5_000).endMs == 8_000L, "an end before the picture's was taken")
+        check(ExportPlan.pictureEnd(shot) == 8_000L, "picture end ${ExportPlan.pictureEnd(shot)}")
     }
 
     if (problems.isEmpty()) {

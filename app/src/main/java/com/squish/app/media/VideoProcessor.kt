@@ -254,7 +254,9 @@ class VideoProcessor(private val context: Context) {
             // Only an edit that actually uses transitions, layers or gaps pays the
             // cost - and the risk - of the compositing path.
             CompositionFactory.needsCompositing(state) -> {
-                val layers = ExportPlan.layers(track)
+                // To the edit's end, sounds included: a song dragged out past
+                // the last shot runs on over black, as the preview plays it.
+                val layers = ExportPlan.layers(track, state.trimmedDurationMs)
                 val rate = frameRateOf(state)
                 val composited = CompositionFactory.buildComposited(
                     layers = layers,
@@ -262,6 +264,8 @@ class VideoProcessor(private val context: Context) {
                     videoOut = videoOut,
                     baseAudio = baseAudio,
                     filler = { ms -> CompositionFactory.filler(checkNotNull(clear), ms, rate) },
+                    clockLeadMs = ExportPlan.clockLeadMs(rate),
+                    mixerSampleRateHz = ExportPlan.mixerSampleRate(soundSampleRates(state, baseAudio)),
                     overlaySound = ::overlayHeard,
                     editedFor = { clip, layer ->
                         if (layer.role == ExportPlan.Role.Overlay) editedOverlay(state, clip, canvas, rate)
@@ -353,6 +357,21 @@ class VideoProcessor(private val context: Context) {
             singleFileEffects(state).isEmpty() &&
             state.effects.isEmpty() &&
             state.textOverlays.isEmpty()
+
+    /**
+     * The sample rates of every sound that reaches the file, as far as the
+     * background check has read them (MediaCompat); a file not yet checked
+     * contributes nothing. Read here so the mixer can run at the highest of
+     * them rather than at the clock's 44.1 kHz - see ExportPlan.mixerSampleRate.
+     */
+    private fun soundSampleRates(state: EditorUiState, baseAudio: Boolean): List<Int> {
+        val sources = buildList {
+            if (baseAudio) state.videoClips.filter { !it.isOverlay }.forEach { clip -> (clip.uri ?: state.sourceUri)?.let { add(it) } }
+            state.videoClips.filter { it.isOverlay && overlayHeard(it) }.forEach { clip -> clip.uri?.let { add(it) } }
+            state.audioClips.forEach { clip -> clip.uri?.let { add(it) } }
+        }
+        return sources.distinct().mapNotNull { MediaCompat.cached(it)?.sampleRateHz }
+    }
 
     /** The rate the layers are drawn at: the source's, as a whole number, within what encoders take. */
     private fun frameRateOf(state: EditorUiState): Int {

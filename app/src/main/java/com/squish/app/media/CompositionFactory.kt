@@ -9,6 +9,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.OverlaySettings
 import androidx.media3.common.VideoCompositorSettings
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.AlphaScale
@@ -48,27 +50,30 @@ import java.io.File
  * rather than Media3's gap, so per-input compositor settings are used only to
  * hide the clock and to name the output size.
  *
- * The clock itself is Media3's own gap, declared with sound whenever any layer
- * is (ExportPlan.sequenceTracks says why): a gap's loader announces both of its
- * tracks before it starts and, being the first sequence, makes the sound
- * exporter and then the picture's, so a layer that opens on a still can never
- * ask for its sound track before the exporter exists. The gap's frames are
- * opaque black, and it is hidden the way the still was: LayerSettings draws
- * input 0 at nothing.
+ * The clock opens on Media3's own gap and is a transparent still from there
+ * (ExportPlan.pieces says why the two, in that order). The gap is declared with
+ * sound whenever any layer is (ExportPlan.sequenceTracks): its loader announces
+ * both of its tracks before it starts and, being the first sequence, makes the
+ * sound exporter and then the picture's, so a layer that opens on a still can
+ * never ask for its sound track before the exporter exists. The gap's one frame
+ * is opaque black and the still is clear; both are hidden the same way,
+ * LayerSettings drawing input 0 at nothing. The gap is built here rather than
+ * by the sequence builder's addGap, so it can carry the resampler that sets the
+ * mixer's rate (clockGap).
  *
  * One consequence to know about: the file's colour is set from the primary's
- * first format (VideoSampleExporter), and the primary is the clock, an sRGB
- * still, which Media3 maps to SDR BT.709. A composited export is therefore
- * always SDR, and any HDR clip in it is tone-mapped on the way in, while the
- * same clips cut end to end keep HDR. Adding a transition to an HLG edit
- * changes the look of the whole file. Deliberate for now - HDR through the
+ * first format (VideoSampleExporter), and the primary is the clock, whose gap
+ * frame is sRGB, which Media3 maps to SDR BT.709. A composited export is
+ * therefore always SDR, and any HDR clip in it is tone-mapped on the way in,
+ * while the same clips cut end to end keep HDR. Adding a transition to an HLG
+ * edit changes the look of the whole file. Deliberate for now - HDR through the
  * compositor is the least proven path Media3 has - and it is what
  * SquishError.MixedColourRanges tells the user when tone-mapping fails.
  */
 object CompositionFactory {
 
     fun needsCompositing(state: com.squish.app.editor.EditorUiState): Boolean =
-        ExportPlan.needsCompositing(state.videoClips)
+        ExportPlan.needsCompositing(state.videoClips, state.trimmedDurationMs)
 
     /** The one-sequence export: every clip end to end, with the tracks [trackTypes] names. */
     fun buildCutsOnly(items: List<EditedMediaItem>, trackTypes: Set<Int>): List<EditedMediaItemSequence> =
@@ -90,8 +95,10 @@ object CompositionFactory {
      *   a roll that opens on a photo, a blank or an empty stretch is filled with
      *   silence rather than refused - which is how a Dissolve between a video and
      *   a photo failed every export on the device.
-     * @param filler a transparent still [durationMs] long, for a layer's empty
-     *   stretches. Not the clock's: that is Media3's own gap, see the class note.
+     * @param filler a transparent still [durationMs] long, at the edit's frame
+     *   rate: a layer's empty stretches, and the clock after its opening gap.
+     * @param clockLeadMs how long the clock's opening gap is; ExportPlan.clockLeadMs.
+     * @param mixerSampleRateHz the rate every sound is mixed at; ExportPlan.mixerSampleRate.
      * @param overlaySound whether an overlay clip is heard: footage at a level
      *   above nothing. An overlay row with one such clip carries a sound track
      *   from its first moment, as a base roll does, and every other stretch of
@@ -104,6 +111,8 @@ object CompositionFactory {
         videoOut: Boolean,
         baseAudio: Boolean,
         filler: (durationMs: Long) -> EditedMediaItem,
+        clockLeadMs: Long,
+        mixerSampleRateHz: Int = ExportPlan.DEFAULT_SAMPLE_RATE_HZ,
         overlaySound: (Clip) -> Boolean = { false },
         editedFor: (Clip, ExportPlan.Layer) -> EditedMediaItem
     ): Composited {
@@ -123,27 +132,61 @@ object CompositionFactory {
                 if (declared.sound) add(C.TRACK_TYPE_AUDIO)
             }
             // A layer with nothing at all in it has no pieces; the clock always
-            // has one, the edit's length, however short (ExportPlan.pieces).
-            val pieces = ExportPlan.pieces(layer, layers.endMs)
+            // has some, the edit's length, however short (ExportPlan.pieces).
+            val pieces = ExportPlan.pieces(layer, layers.endMs, clockLeadMs)
             if (pieces.isEmpty()) continue
             val builder = EditedMediaItemSequence.Builder(types)
             for (piece in pieces) {
-                when {
-                    // Sound only, an overlay that makes none is a stretch of silence.
-                    piece is ExportPlan.Piece.Item && (videoOut || layer.role == ExportPlan.Role.Base || overlaySound(piece.clip)) ->
-                        builder.addItem(editedFor(piece.clip, layer))
-                    // The clock, and every stretch of a sound-only export, are
-                    // Media3's own gap. A layer's empty stretch is not: the gap's
+                when (piece) {
+                    is ExportPlan.Piece.Item ->
+                        // Sound only, an overlay that makes none is a stretch of silence.
+                        if (videoOut || layer.role == ExportPlan.Role.Base || overlaySound(piece.clip)) {
+                            builder.addItem(editedFor(piece.clip, layer))
+                        } else {
+                            builder.addGap(piece.durationMs * 1_000L)
+                        }
+                    // The clock's gap sets the mixer's rate; any other is plain.
+                    is ExportPlan.Piece.Gap ->
+                        if (layer.role == ExportPlan.Role.Clock && declared.sound) builder.addItem(clockGap(piece.durationMs, mixerSampleRateHz))
+                        else builder.addGap(piece.durationMs * 1_000L)
+                    // A layer's empty stretch is the still, not a gap: the gap's
                     // frames are opaque black, and the still is the path the
-                    // device has rendered.
-                    !videoOut || layer.role == ExportPlan.Role.Clock -> builder.addGap(piece.durationMs * 1_000L)
-                    else -> builder.addItem(filler(piece.durationMs))
+                    // device has rendered. Sound only, it is silence.
+                    is ExportPlan.Piece.Clear ->
+                        if (videoOut) builder.addItem(filler(piece.durationMs)) else builder.addGap(piece.durationMs * 1_000L)
                 }
             }
             sequences.add(builder.build())
         }
         return Composited(sequences, if (videoOut) LayerSettings(canvas) else null)
     }
+
+    /**
+     * The clock's opening gap, [durationMs] long, with the resampler that makes
+     * the mixer run at [mixerSampleRateHz].
+     *
+     * Media3's mixer takes its format from the first sound it is handed, which
+     * in a composited export is this gap's: a fixed 44.1 kHz stereo, so every
+     * 48 kHz camera track was stepped down to it. A sequence's first item is
+     * what the sound input is built from, its own audio processors included,
+     * so a resampler here is the one place the mixer's rate can be set. The
+     * builder's addGap makes an item just like this one, but takes no effects;
+     * Media3 knows a gap by its media id (EditedMediaItem.isGap), which is not
+     * public, so the id is spelt out - a rename would not be a quiet
+     * regression: the first item would be a media item with no file, and the
+     * export would fail on it at once.
+     */
+    private fun clockGap(durationMs: Long, mixerSampleRateHz: Int): EditedMediaItem {
+        val resampler = SonicAudioProcessor().apply { setOutputSampleRateHz(mixerSampleRateHz) }
+        val processors: List<AudioProcessor> = listOf(resampler)
+        return EditedMediaItem.Builder(MediaItem.Builder().setMediaId(GAP_MEDIA_ID).build())
+            .setDurationUs(durationMs * 1_000L)
+            .setEffects(Effects(ImmutableList.copyOf(processors), ImmutableList.of()))
+            .build()
+    }
+
+    /** What EditedMediaItemSequence.Builder.addGap names its item, in Media3 1.11.1. */
+    private const val GAP_MEDIA_ID = "androidx-media3-GapMediaItem"
 
     /**
      * A photo kept as a picture on an overlay row, shown for [durationMs] at
@@ -167,7 +210,8 @@ object CompositionFactory {
      * A transparent still of [durationMs] at [frameRate], from [clearFrame] (see
      * StillClips.clearFrame). The alpha is also scaled to nothing, so the still
      * stays invisible even if some step between the file and the compositor
-     * drops its transparency and hands on black.
+     * drops its transparency and hands on black. As the clock's body its
+     * [frameRate] is the file's: one output frame per frame of it.
      */
     fun filler(clearFrame: File, durationMs: Long, frameRate: Int): EditedMediaItem {
         val item = MediaItem.Builder()
@@ -223,7 +267,8 @@ object CompositionFactory {
      * Every layer arrives at the canvas's size already - fitted in its own chain
      * - so each is drawn one to one. The size is stated rather than left to
      * Media3, whose default is "whatever the first input is", and the first input
-     * is the clock: the 16 pixel black frame Media3 fills a gap with.
+     * is the clock: the 16 pixel black frame Media3 fills a gap with, then a
+     * 16 pixel still.
      */
     private class LayerSettings(private val canvas: ExportPresets.Resolution?) : VideoCompositorSettings {
 

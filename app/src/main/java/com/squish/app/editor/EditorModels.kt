@@ -469,12 +469,21 @@ data class EditorUiState(
      * clips can be dragged apart - which is what makes manual sync possible - a
      * gap is part of the edit, and summing durations would report a video shorter
      * than the one that actually gets written.
+     *
+     * Sounds count. A song added to an edit is cut to end with the picture
+     * (EditRules.soundLanding), so a file is never longer than its shots by
+     * accident; but one dragged out past the last shot runs on, over black, as
+     * the strip shows it and the preview plays it - and the file is the same
+     * length, as in every other editor. It used to stop at the last shot while
+     * the preview played on, so the preview promised a stretch the file left
+     * out. One number, read by the header, the export sheet, the file and the
+     * recovery card alike.
      */
     val trimmedDurationMs: Long
         get() = if (videoClips.isEmpty()) (trimEndMs - trimStartMs).coerceAtLeast(0)
-        else videoClips.maxOf { it.timelineEndMs }
+        else maxOf(videoClips.maxOf { it.timelineEndMs }, audioClips.maxOfOrNull { it.timelineEndMs } ?: 0L)
 
-    /** The full span the preview has to cover, sound included. */
+    /** The full span the strip has to cover: the edit, and any line an old draft left past its end. */
     val timelineDurationMs: Long
         get() = maxOf(
             trimmedDurationMs,

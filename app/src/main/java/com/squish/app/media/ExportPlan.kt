@@ -46,10 +46,15 @@ object ExportPlan {
         val baseRolls: List<List<Clip>> get() = baseLayers.map { it.clips }
     }
 
-    fun layers(videoClips: List<Clip>): Layers {
+    /**
+     * @param endMs where the edit ends: the last picture's end, or further when a
+     *   sound has been dragged out past it - the file runs to the sound's end,
+     *   black under it, as the preview plays it. Left out, the picture's end.
+     */
+    fun layers(videoClips: List<Clip>, endMs: Long = pictureEnd(videoClips)): Layers {
         val base = videoClips.filter { !it.isOverlay && it.durationMs > 0 }.sortedBy { it.timelineStartMs }
         val overlays = videoClips.filter { it.isOverlay && it.durationMs > 0 }
-        val end = videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
+        val end = maxOf(endMs, pictureEnd(videoClips))
 
         val out = mutableListOf(Layer(Role.Clock, emptyList()))
         // Highest layer on top. A layer whose clips overlap in time spills onto an
@@ -78,7 +83,7 @@ object ExportPlan {
      * the whole of it stays under [MIN_GAP_MS]: no clip, sound or caption is
      * then further out than [pieces] would have left it.
      */
-    fun needsCompositing(videoClips: List<Clip>): Boolean {
+    fun needsCompositing(videoClips: List<Clip>, endMs: Long = pictureEnd(videoClips)): Boolean {
         if (videoClips.any { it.isOverlay && it.durationMs > 0 }) return true
         if (videoClips.any { !it.isOverlay && it.transitionIn.isActive }) return true
         val base = videoClips.filter { !it.isOverlay && it.durationMs > 0 }.sortedBy { it.timelineStartMs }
@@ -95,8 +100,14 @@ object ExportPlan {
             slip += gap
             if (slip >= MIN_GAP_MS) return true
         }
-        return false
+        // A sound running on past the last shot: one sequence of shots would end
+        // with them and the file would stop short of what the timeline plays.
+        slip += (endMs - base.last().timelineEndMs).coerceAtLeast(0L)
+        return slip >= MIN_GAP_MS
     }
+
+    /** Where the last picture ends - the shots and the overlays. */
+    fun pictureEnd(videoClips: List<Clip>): Long = videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
 
     /**
      * The base track dealt onto as few rolls as it needs.
@@ -135,10 +146,20 @@ object ExportPlan {
         return tracks
     }
 
-    /** One stretch of a sequence: nothing for a while, or a clip. */
+    /** One stretch of a sequence: Media3's own gap, a transparent still, or a clip. */
     sealed class Piece {
         abstract val durationMs: Long
+
+        /**
+         * Media3's own gap: silence, and black frames at its fixed 30 fps. Only
+         * ever the clock's opening frame - see [pieces] - and, in a sound-only
+         * export, every empty stretch.
+         */
         data class Gap(override val durationMs: Long) : Piece()
+
+        /** A transparent still at the edit's frame rate: a layer's empty stretch, and the clock's body. */
+        data class Clear(override val durationMs: Long) : Piece()
+
         data class Item(val clip: Clip) : Piece() {
             override val durationMs: Long get() = clip.durationMs
         }
@@ -162,26 +183,43 @@ object ExportPlan {
      * No clip is ever more than [MIN_GAP_MS] from its place on the timeline, the
      * same bound [needsCompositing] holds the one-sequence export to.
      *
-     * The clock is always one stretch, however short the edit. CompositionFactory
-     * hides its first input on the understanding that it is the clock; an edit
-     * under [MIN_GAP_MS] long used to get no clock sequence at all, and the real
-     * top layer took its place and was drawn at nothing.
+     * The clock is always there, however short the edit. CompositionFactory hides
+     * its first input on the understanding that it is the clock; an edit under
+     * [MIN_GAP_MS] long used to get no clock sequence at all, and the real top
+     * layer took its place and was drawn at nothing. It opens on Media3's own gap,
+     * [clockLeadMs] long, and is a transparent still from there to the end:
+     *
+     *  - the gap first, because its loader is what makes the export's sound and
+     *    picture exporters in the right order ([sequenceTracks] says why), and
+     *    only the first item of a sequence gets to do that;
+     *  - the still after it, because the clock is the compositor's primary and
+     *    the file gets exactly one frame per primary frame, stamped with its
+     *    time - and a gap's frames come at a fixed 30 fps whatever the footage.
+     *    A whole clock of gap wrote every layered export at 30 fps: 60 fps
+     *    footage under a PiP lost every other frame, and 24 fps juddered.
+     *    The still runs at the edit's own rate, so after its first frame the
+     *    file does too.
      */
-    fun pieces(layer: Layer, endMs: Long): List<Piece> {
-        if (layer.role == Role.Clock) return listOf(Piece.Gap(endMs.coerceAtLeast(1L)))
+    fun pieces(layer: Layer, endMs: Long, clockLeadMs: Long = clockLeadMs(GAP_FPS)): List<Piece> {
+        if (layer.role == Role.Clock) {
+            val end = endMs.coerceAtLeast(1L)
+            val lead = clockLeadMs.coerceIn(1L, end)
+            // An edit too short for a still after the frame is the frame alone.
+            return if (end - lead < MIN_GAP_MS) listOf(Piece.Gap(end)) else listOf(Piece.Gap(lead), Piece.Clear(end - lead))
+        }
         val out = mutableListOf<Piece>()
         var laid = 0L
         for (clip in layer.clips) {
             val gap = clip.timelineStartMs - laid
             if (gap >= MIN_GAP_MS) {
-                out.add(Piece.Gap(gap))
+                out.add(Piece.Clear(gap))
                 laid += gap
             }
             out.add(Piece.Item(clip))
             laid += clip.durationMs
         }
         val tail = endMs - laid
-        if (tail >= MIN_GAP_MS) out.add(Piece.Gap(tail))
+        if (tail >= MIN_GAP_MS) out.add(Piece.Clear(tail))
         return out
     }
 
@@ -190,6 +228,20 @@ object ExportPlan {
      * a blank still for it would be one frame of nothing or none at all.
      */
     const val MIN_GAP_MS = 20L
+
+    /** The rate Media3 1.11.1 draws a gap's blank frames at (SequenceAssetLoader.insertBlankFrames), not a choice. */
+    const val GAP_FPS = 30
+
+    /**
+     * How long the clock's opening gap is for an edit at [frameRate]: one frame,
+     * so the still that follows starts where the second frame is due and the
+     * file's cadence is even from the first frame. One frame of the gap's own
+     * rate when the edit is slower than that - a longer gap would draw a second
+     * blank frame at 33 ms, and the file would carry a duplicate at the start;
+     * one short interval is the lesser blemish.
+     */
+    fun clockLeadMs(frameRate: Int): Long =
+        Math.round(1000.0 / maxOf(frameRate, GAP_FPS).coerceAtLeast(1)).coerceAtLeast(1L)
 
     // ---- What each sequence declares ---------------------------------------------
 
@@ -424,6 +476,28 @@ object ExportPlan {
     }
 
     // ---- Sound -----------------------------------------------------------------
+
+    /** What a composited export mixes at when nothing in it says: the rate every phone records at. */
+    const val DEFAULT_SAMPLE_RATE_HZ = 48_000
+
+    /**
+     * The rate the mixer runs at, from the [sampleRatesHz] of every sound in the
+     * edit that is known (zero or less for one that is not).
+     *
+     * Media3 mixes every sound at the rate of the first input it is handed, and
+     * in a composited export that is the clock's gap, whose fixed format is
+     * 44.1 kHz - so a 48 kHz camera track under an overlay was resampled down
+     * on the way to the file while the same footage cut end to end kept its
+     * rate. The clock's gap carries a resampler to this rate instead
+     * (CompositionFactory.clockGap): the highest rate any sound has, so nothing
+     * is stepped down, and [DEFAULT_SAMPLE_RATE_HZ] when none is known. Within
+     * what an AAC encoder takes.
+     */
+    fun mixerSampleRate(sampleRatesHz: Iterable<Int>): Int =
+        (sampleRatesHz.filter { it > 0 }.maxOrNull() ?: DEFAULT_SAMPLE_RATE_HZ).coerceIn(MIN_SAMPLE_RATE_HZ, MAX_SAMPLE_RATE_HZ)
+
+    const val MIN_SAMPLE_RATE_HZ = 8_000
+    const val MAX_SAMPLE_RATE_HZ = 96_000
 
     /**
      * How much of a sound file to read, and where it starts in the edit.
