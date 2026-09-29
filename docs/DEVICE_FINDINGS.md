@@ -17,6 +17,73 @@ of the transport rather than two screenshots.
 
 ## Fixed (pending device check)
 
+### Post-merge bug round (over bf6753e) - commits c44c54b to f162c5a
+Found by reading the merged B1-B16 code, fixed on the desktop with no phone
+attached; the pure parts are executed in `tools/jvm` (Housekeeping, ClipOps,
+Lane, FrameRules, PreviewRules), none of it has been seen. What the phone must
+check, most important first:
+
+- **The effects library over the canvas (f162c5a).** On Android 13+ (the g84 is
+  15) the preview now draws Shake/Punch/Glitch/Invert/Flash/VHS/Blur/Rainbow as
+  an AGSL render effect over the whole picture layer instead of in the base
+  players' chains. First: that any effect shows at all (a shader that fails to
+  compile falls back to the chains - check logcat for a RuntimeShader error).
+  Then against an export: a Shake over a PiP shakes the PiP; an Invert over a gap
+  and over a song's tail past the last shot is white in both; a padded canvas's
+  blurred backdrop is affected in both; with the edit rotated 90 a Shake wobbles
+  the same way in both; on a 9:16 crop a Punch zooms about the crop's centre.
+  Captions stay unaffected on top. Watch the frame rate with Blur + Split on a
+  1080p edit, and that a dissolve under an effect still blends.
+- **Stabilizer on the frame (f162c5a).** A stabilized shot, then Rotate 90 on it,
+  then a per-clip crop: the preview's correction should run along the same axis
+  as the export's, and the zoomed edges stay cut to the picture (no spill over
+  letterbox bars). The overlay box outlines the frame, not the shaking picture.
+- **Crop no longer rebuilds the surface (f162c5a).** Open Crop on a shot, tap a
+  ratio chip, then Free, then flip twice while paused and while playing: no
+  black flash, no "Detaching surface timed out" in logcat.
+- **Empty main track (c44c54b).** Delete the only shot (and, separately, leave
+  only a song and a caption), back out, reopen from the grid: the project opens
+  empty with Add media, not with the deleted shot and not "Can't open". Export
+  on it says "Nothing on the timeline" rather than writing the source file.
+  Reopen any project: its export title in the notification is the file name,
+  and the estimate matches what it was before the reopen; a silent source
+  reopened does not offer the camera switch. Rename an exported project from
+  the grid: the card stays "Exported", not "edited". "Earlier version" shows
+  the right cover and a size on the card at once.
+- **Selection (7331732).** Select more, pick two sounds, Done selecting, then
+  long-press one and drag: both move. Two butted selected overlays on one row:
+  long-press the first and drag right a little - the pair moves, and the ghost
+  does not snap to the second's old edge. Hold still on a non-lead member's trim
+  grip: it trims, it does not lift. Tap a keyframe diamond on a selected clip
+  with Select more on: it stays in the set. Add an overlay, Select more, tap a
+  shot, Undo: nothing is left looking selected and Delete is not inert. Open the
+  Replace sheet on shot A, Undo a step made with shot B selected: the sheet
+  closes.
+- **Overlay rows stay clear (e579db5).** Slow an overlay with a butted follower
+  and another a little further on: none overlap, all three play in the
+  preview. Paste 0.5x attributes onto an overlay: the same. Add an effect at the
+  playhead past the last shot (song running on): it lands inside the picture.
+- **Undo steps (f018fb9).** Strength Reset then drag within a second: two undo
+  steps. Drag a slider while Cut out runs: one step for the drag, one for
+  "Background".
+- **Transport (4dcb1c1).** Add text / a title / a sticker while playing: the
+  picture stops, the transport shows Play. Tap Render while playing: playback
+  stops. Play the exported file on the done screen, press Home: sound stops.
+  While playing, delete an earlier shot (or Undo a Float): the clock keeps
+  running smoothly with the picture, no stall or drift.
+- **Process death (0d56336).** `am kill` behind the photo picker opened from a
+  Squeeze session with a trim moved, pick another video: the new video stays.
+  Same for Stitch: new picks land after the saved ones. Editor Replace and
+  Relink picked after a kill land once the draft is open. Share a file into
+  Squish during a long export, toggle dark mode: the file opens when the export
+  ends.
+
+Left as they were, on purpose: the photo overlay's CPU grade still has no grain,
+bloom or sharpen (documented in CLAUDE.md); the reframe window over a transition
+is still one window for the frame in the preview and one per shot in the file;
+Stop mid-export still waits on `Transformer.cancel()` on the main thread, which
+is how Media3 is meant to be used - watch for an ANR on Stop over a 4K render.
+
 ### Export with an overlay fails: "Asset loader error" (build efbe483, waves 0-1) - commit 79fafe2
 Edit: video (VID-...0104.mp4, 200x150, 5.2 s, with audio) + photo clip + Dissolve on
 the join + a video overlay (8 s, Blend > Add overlay clip) starting at 0. Export 480p.
