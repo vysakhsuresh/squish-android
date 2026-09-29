@@ -46,15 +46,25 @@ private inline fun NavController.fromTopOf(entry: NavBackStackEntry, block: () -
     if (currentBackStackEntry === entry) block()
 }
 
+/**
+ * A video handed over by "Open with" or "Share", [stamp]ed with when it was
+ * asked for: the same file opened twice is two requests, and the host acts
+ * on each.
+ */
+data class OpenRequest(val uri: Uri, val stamp: Long)
+
 @Composable
 fun SquishNavHost(
-    /** A video handed over by "Open with" or "Share", opened in the editor over the dashboard. */
-    openVideo: Uri? = null
+    /** The video "Open with" or "Share" last asked for, opened in the editor over whatever is showing. */
+    open: OpenRequest? = null
 ) {
     val navController = rememberNavController()
 
-    LaunchedEffect(openVideo) {
-        if (openVideo != null) navController.navigate(Destination.Editor.buildRoute(Uri.encode(openVideo.toString())))
+    // Over whatever is on screen - the dashboard on a fresh start, or another
+    // edit when the app was already running - which stays underneath, its
+    // draft saved as any edit's is.
+    LaunchedEffect(open) {
+        if (open != null) navController.navigate(Destination.Editor.buildRoute(Uri.encode(open.uri.toString())))
     }
 
     // Straight to the dashboard. The launch animation is the system splash, which

@@ -4,16 +4,32 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.IntentCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import com.squish.app.navigation.OpenRequest
 import com.squish.app.navigation.SquishNavHost
 import com.squish.app.ui.theme.SquishTheme
 
 class MainActivity : ComponentActivity() {
+
+    /**
+     * The video "Open with" or "Share" last asked for, whenever it asked. A
+     * fresh start sets it from the launching intent; a running app is handed
+     * the intent through onNewIntent instead (the activity is single-task, so
+     * a second copy of the editor is never stacked on the first) - which used
+     * to be ignored outright, so opening a file while Squish was open did
+     * nothing at all.
+     */
+    private var openRequest by mutableStateOf<OpenRequest?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Installs the animated launch icon as the system splash, then hands
         // straight to the dashboard. No second in-app splash.
@@ -29,12 +45,22 @@ class MainActivity : ComponentActivity() {
         )
         // Only on a fresh start: a restored activity is already wherever the
         // video took it, and opening it again would stack a second editor.
-        val opened = if (savedInstanceState == null) videoFrom(intent) else null
+        if (savedInstanceState == null) openRequest = videoFrom(intent)?.let { OpenRequest(it, SystemClock.elapsedRealtimeNanos()) }
         setContent {
             SquishTheme {
-                SquishNavHost(openVideo = opened)
+                SquishNavHost(open = openRequest)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Kept as the activity's intent, so a recreation after this sees the
+        // file that was opened last rather than the one it was launched with.
+        setIntent(intent)
+        // Stamped, so the same file opened twice is two requests: the nav host
+        // acts on a change, and an equal value would not be one.
+        videoFrom(intent)?.let { openRequest = OpenRequest(it, SystemClock.elapsedRealtimeNanos()) }
     }
 
     /** The video handed over by "Open with" or "Share", if that is how the app was started. */

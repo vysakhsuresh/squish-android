@@ -20,9 +20,13 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Squish">
 
+        <!-- One task, one copy: "Open with" while Squish is running reaches the
+             running copy through onNewIntent instead of stacking a second one
+             with its own editor. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.Squish.Starting"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
