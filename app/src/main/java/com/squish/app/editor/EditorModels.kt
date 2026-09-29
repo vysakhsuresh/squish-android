@@ -105,7 +105,14 @@ data class TextOverlayItem(
      * [startMs] and [endMs], because that is the clock the overlay renderer is
      * already handed.
      */
-    val track: MotionTrack? = null
+    val track: MotionTrack? = null,
+
+    /**
+     * Which of the text rows on the timeline strip this line would rather be on,
+     * where nothing else is in the way there (see TimelineLanes.rows). Only where
+     * it is drawn: it changes nothing on the picture.
+     */
+    val stripRow: Int = 0
 ) {
     /** Where the caption sits at a moment, following its track if it has one. */
     fun anchorAt(timelineMs: Long): Pair<Float, Float> {
@@ -704,7 +711,9 @@ fun EditorUiState.toTimeline(): TimelineState {
             sourceOutMs = (overlay.endMs - overlay.startMs).coerceAtLeast(MIN_CLIP_MS),
             timelineStartMs = overlay.startMs,
             sourceDurationMs = durationMs,
-            text = overlay.text
+            text = overlay.text,
+            // The strip reads a line's preferred row where it reads a sound's.
+            layer = overlay.stripRow
         )
     }
 
