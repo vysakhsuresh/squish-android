@@ -40,6 +40,8 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -1981,6 +1983,19 @@ private fun ClipView(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        } else if (clip.kind != ClipKind.Video && width > 16.dp) {
+            // Too narrow for a name, a line or a song was a blank block; a
+            // glyph still says which it is, as CapCut's short clips do.
+            Icon(
+                when {
+                    clip.kind == ClipKind.Text -> Icons.Filled.TextFields
+                    clip.isVoiceover -> Icons.Filled.Mic
+                    else -> Icons.Filled.MusicNote
+                },
+                contentDescription = null,
+                tint = SquishColors.TextPrimary.copy(alpha = 0.85f),
+                modifier = Modifier.align(Alignment.Center).size(12.dp)
+            )
         }
 
         // A missing file says so where a retimed clip says its speed, so the

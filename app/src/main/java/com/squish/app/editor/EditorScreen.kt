@@ -83,6 +83,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.squish.app.data.ProjectRules
 import com.squish.app.editor.edits.TextEdits
 import com.squish.app.home.countOf
 import com.squish.app.media.ExportStage
@@ -1057,7 +1058,7 @@ private fun EditorHeader(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    state.projectName ?: state.videoClips.firstOrNull()?.label ?: "Your edit",
+                    state.projectName ?: ProjectRules.displayTitle(state.videoClips.firstOrNull()?.label, state.startedAtMillis),
                     style = MaterialTheme.typography.titleMedium,
                     color = SquishColors.TextPrimary,
                     maxLines = 1,

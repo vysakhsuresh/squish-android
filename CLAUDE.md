@@ -60,6 +60,9 @@ function first; if it can, it can be checked.
 - **Build with JDK 21, not Android Studio's bundled one.** Studio ships JBR 25,
   and Gradle 8.9 cannot run on it; the only symptom is a bare "25.0.3".
   `JAVA_HOME=$HOME/.jdks/jbr-21.0.11 ./gradlew assembleDebug`.
+- **A `VerifyError` on the phone after an install is a stale incremental dex,
+  not the code.** Seen on `TimelinePreviewKt` ("copy-cat1 ... PictureTool"):
+  the editor crashed on open. `./gradlew clean assembleDebug` cured it.
 - **There are no unit tests.** `./gradlew testDebugUnitTest` succeeds by having
   nothing to run, so it proves nothing. The `tools/jvm` suites are the tests.
 - **Python is not installed here**, so the `tools/check_*.py` checkers only run

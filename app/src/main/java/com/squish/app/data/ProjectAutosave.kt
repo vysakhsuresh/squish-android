@@ -730,6 +730,12 @@ class ProjectAutosave(context: Context) {
         DraftFiles.writeAtomically(metaScratchFile(slot), metaFile(slot), json.toString().toByteArray())
     }
 
+    /** When [slot] was started - its first save - or 0 for one not saved yet. */
+    fun startedAt(slot: String): Long = synchronized(lock) {
+        val meta = readMetaJson(metaFile(slot)) ?: return 0L
+        meta.optLong("createdAtMillis", 0L).takeIf { it > 0L } ?: meta.optLong("savedAtMillis", 0L)
+    }
+
     private fun readMetaJson(file: File): JSONObject? =
         if (!file.exists()) null else runCatching { JSONObject(file.readText()) }.getOrNull()
 

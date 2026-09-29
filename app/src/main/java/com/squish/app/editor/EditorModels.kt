@@ -483,6 +483,8 @@ data class EditorUiState(
      * feel immediate; the export's title and its record take this instead.
      */
     val sourceName: String? = null,
+    /** When the project was started, for the name it shows until it is given one. */
+    val startedAtMillis: Long = 0L,
     val isLoadingSource: Boolean = true,
     val durationMs: Long = 0,
     val sourceWidth: Int = 0,

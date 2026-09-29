@@ -210,6 +210,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             // Off the main thread: a draft with a few thousand motion samples
             // in it was a visible hitch on entry.
+            // When it was started, which an unnamed project is called by (ProjectRules.displayTitle).
+            val startedAt = withContext(Dispatchers.IO) { autosave.startedAt(projectId) }
+            _state.update { it.copy(startedAtMillis = startedAt.takeIf { at -> at > 0L } ?: System.currentTimeMillis()) }
             val draft = withContext(Dispatchers.IO) { autosave.peek(projectId) }
             if (draft != null) {
                 applyDraft(draft)
