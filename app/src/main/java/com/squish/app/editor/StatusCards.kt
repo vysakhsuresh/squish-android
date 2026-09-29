@@ -178,10 +178,14 @@ fun SetAsideNotice(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
 /**
  * Only ever shown for footage heavy enough to need it, and only while it matters.
  * Says plainly that the preview is the low-resolution copy and the export is not.
+ *
+ * With more than one heavy file in the edit - a 4K overlay over a 4K shot - it
+ * counts them: [ready] of [total] copies made.
  */
 @Composable
-fun ProxyIndicator(status: ProxyStatus, modifier: Modifier = Modifier) {
+fun ProxyIndicator(status: ProxyStatus, modifier: Modifier = Modifier, ready: Int = 0, total: Int = 0) {
     if (status == ProxyStatus.NotNeeded) return
+    val count = if (total > 1) " ($ready of $total ready)" else ""
 
     Row(
         modifier = modifier
@@ -199,9 +203,9 @@ fun ProxyIndicator(status: ProxyStatus, modifier: Modifier = Modifier) {
         }
         Text(
             when (status) {
-                ProxyStatus.Building -> "Building a light preview copy — editing stays responsive while it works"
+                ProxyStatus.Building -> "Building a light preview copy$count — editing stays responsive while it works"
                 ProxyStatus.Ready -> "Previewing at 540p for smooth scrubbing · exports at full resolution"
-                ProxyStatus.Failed -> "Playing the original — scrubbing may stutter on footage this large"
+                ProxyStatus.Failed -> "Playing the original$count — scrubbing may stutter on footage this large"
                 ProxyStatus.NotNeeded -> ""
             },
             style = MaterialTheme.typography.labelSmall,

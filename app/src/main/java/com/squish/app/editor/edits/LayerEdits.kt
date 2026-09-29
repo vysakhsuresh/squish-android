@@ -1,7 +1,11 @@
 package com.squish.app.editor.edits
 
 import android.net.Uri
+import com.squish.app.editor.OverlayRules.withMainOnOverlay
+import com.squish.app.editor.OverlayRules.withOverlayCopiedInPlace
+import com.squish.app.editor.OverlayRules.withOverlayOnMain
 import com.squish.app.media.SquishError
+import com.squish.app.media.StillClips
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
@@ -9,6 +13,8 @@ import com.squish.app.timeline.Mask
 import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.MIN_CLIP_MS
+import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
@@ -18,48 +24,119 @@ import com.squish.app.timeline.withTransition
 import com.squish.app.timeline.withClipAdded
 import com.squish.app.timeline.MAX_LAYER
 import com.squish.app.timeline.OVERLAY_LANDING
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.UUID
 import com.squish.app.editor.*
 
 /** Layers: overlays, their placement and stacking, transitions, green screen and masks. */
 internal class LayerEdits(host: EditHost) : EditArea(host) {
 
-    /** Adds a clip on an overlay layer, starting at the playhead. */
-    fun addOverlayClip(uri: Uri) {
+    /** Something picked for an overlay row, ready to place: a video, or a photo kept as a picture. */
+    private data class Picked(val uri: Uri, val label: String, val lengthMs: Long, val still: Boolean)
+
+    /**
+     * Adds videos and photos as overlays, each starting at the playhead - where
+     * it was when they were picked, not where it has got to by the time the
+     * photos are made - on the lowest row free there. One undo step for the
+     * pick; the last one added is selected, so its box is on the picture.
+     *
+     * A photo stays a picture (StillClips.overlayFromImage), so a transparent
+     * logo is transparent. Each lands no longer than the main track runs past
+     * the playhead (OverlayRules.landingLengthMs); its handles drag it out.
+     */
+    fun addOverlayClips(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val at = _state.value.playheadMs
         viewModelScope.launch {
-            val meta = ThumbnailExtractor.probe(app, uri)
-            // Refused with a reason rather than added as an invisible layer with
-            // no length, the way an unreadable sound used to be.
-            if (meta.durationMs <= 0L) {
-                _state.update { it.copy(failure = SquishError.FileUnreadable()) }
-                return@launch
-            }
-            record("Add overlay") { _state.update { current ->
-                val clip = Clip(
-                    kind = ClipKind.Video,
-                    uri = uri,
-                    label = displayNameOf(uri) ?: "Overlay",
-                    sourceInMs = 0,
-                    sourceOutMs = meta.durationMs,
-                    timelineStartMs = current.playheadMs,
-                    sourceDurationMs = meta.durationMs,
-                    layer = 1,
-                    scale = OVERLAY_LANDING.scale,
-                    offsetXFraction = OVERLAY_LANDING.offsetXFraction,
-                    offsetYFraction = OVERLAY_LANDING.offsetYFraction
-                )
-                // Onto the first row free at this moment, never on top of another
-                // overlay: the preview shows one clip per row, the export all of them.
-                val placed = TimelineState(clips = current.videoClips).withClipAdded(clip)
-                if (placed.clips.size == current.videoClips.size) {
-                    current.copy(failure = SquishError.OverlayRowsFull(MAX_LAYER))
-                } else {
-                    current.copy(videoClips = placed.clips, selectedClipId = clip.id)
+            val resolver = app.contentResolver
+            val photo = uris.associateWith { resolver.getType(it)?.startsWith("image/") == true }
+            val photos = photo.count { it.value }
+            if (photos > 0) _state.update { it.copy(preparingStills = it.preparingStills + photos) }
+            // Counted down once the overlays are on the timeline, not as each photo
+            // is made: an export started in between would leave them out.
+            try {
+                val picked = uris.map { uri ->
+                    if (photo[uri] == true) {
+                        withContext(Dispatchers.IO) { StillClips.overlayFromImage(app, uri) }
+                            ?.let { Picked(it, displayNameOf(uri) ?: "Photo", OverlayRules.STILL_LANDING_MS, still = true) }
+                    } else {
+                        val meta = ThumbnailExtractor.probe(app, uri)
+                        // Refused with a reason rather than added as an invisible
+                        // layer with no length, the way an unreadable sound used to be.
+                        if (meta.durationMs <= 0L) null
+                        else Picked(uri, displayNameOf(uri) ?: "Overlay", meta.durationMs, still = false)
+                    }
                 }
-            } }
-            recomputeEstimate()
-            checkDecodable(uri)
+                val ready = picked.filterNotNull()
+                if (ready.size < picked.size) _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+                if (ready.isEmpty()) return@launch
+                place(ready, at)
+                recomputeEstimate()
+                val videos = ready.filterNot { it.still }.map { it.uri }
+                videos.forEach(::checkDecodable)
+                ensureProxies(videos)
+            } finally {
+                if (photos > 0) {
+                    _state.update { it.copy(preparingStills = (it.preparingStills - photos).coerceAtLeast(0)) }
+                }
+            }
+        }
+    }
+
+    private fun place(ready: List<Picked>, at: Long) {
+        record(if (ready.size > 1) "Add ${ready.size} overlays" else "Add overlay") {
+            _state.update { current ->
+                var timeline = TimelineState(clips = current.videoClips)
+                val mainEnd = timeline.baseVideoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
+                var full = false
+                var last: String? = null
+                for (p in ready) {
+                    val length = OverlayRules.landingLengthMs(p.lengthMs, at, mainEnd)
+                    val (inMs, outMs, fileMs) = if (p.still) OverlayRules.stillWindow(length)
+                    else Triple(0L, length, p.lengthMs)
+                    val clip = Clip(
+                        kind = ClipKind.Video,
+                        uri = p.uri,
+                        label = p.label,
+                        sourceInMs = inMs,
+                        sourceOutMs = outMs,
+                        timelineStartMs = at,
+                        sourceDurationMs = fileMs,
+                        layer = 1,
+                        scale = OVERLAY_LANDING.scale,
+                        offsetXFraction = OVERLAY_LANDING.offsetXFraction,
+                        offsetYFraction = OVERLAY_LANDING.offsetYFraction
+                    )
+                    // Onto the first row free at this moment, never on top of another
+                    // overlay: the preview shows one clip per row, the export all of them.
+                    val next = timeline.withClipAdded(clip)
+                    if (next.clips.size == timeline.clips.size) full = true
+                    else {
+                        timeline = next
+                        last = clip.id
+                    }
+                }
+                current.copy(
+                    videoClips = timeline.clips,
+                    selectedClipId = last ?: current.selectedClipId,
+                    failure = if (full) SquishError.OverlayRowsFull(MAX_LAYER) else current.failure
+                )
+            }
+        }
+    }
+
+    /**
+     * The box's Duplicate: a copy at the same moment, a row up, nudged so both
+     * show (OverlayRules.withOverlayCopiedInPlace). Said, when there is no row.
+     */
+    fun duplicateInPlace(clipId: String) {
+        val copyId = UUID.randomUUID().toString()
+        record("Duplicate") { mutateTimeline { it.withOverlayCopiedInPlace(clipId, copyId) } }
+        if (_state.value.videoClips.none { it.id == copyId }) {
+            _state.update { it.copy(failure = SquishError.OverlayRowsFull(MAX_LAYER)) }
         }
     }
 
@@ -79,52 +156,91 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
         }
     }
 
-    fun changeLayer(clipId: String, delta: Int) = record(if (delta > 0) "Raise layer" else "Lower layer") {
-        mutateTimeline { it.withLayerChanged(clipId, delta) }
+    /**
+     * Up or down the overlay rows. Down from the lowest row is onto the main
+     * track, which is [switchToMain]'s move - full frame, at the playhead, and a
+     * photo made into a clip - never the bare change of row it used to be, which
+     * put a corner picture into the main track (and a PNG where only video plays).
+     */
+    fun changeLayer(clipId: String, delta: Int) {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return
+        if (clip.isOverlay && clip.layer + delta <= 0) {
+            switchToMain(clipId)
+            return
+        }
+        record(if (delta > 0) "Raise layer" else "Lower layer") {
+            mutateTimeline { it.withLayerChanged(clipId, delta) }
+        }
     }
 
     /**
-     * A shot lifted off the main track onto the lowest overlay row free over it;
-     * the track closes up behind it. With every row taken there, it says so
+     * A shot lifted off the main track onto the lowest overlay row free over it,
+     * landing in the corner an added overlay lands in; the track closes up behind
+     * it (OverlayRules.withMainOnOverlay). With every row taken there, it says so
      * rather than leaving a button that did nothing.
      */
     fun switchToOverlay(clipId: String) {
         val clip = _state.value.videoClips.firstOrNull { it.id == clipId && it.isMain } ?: return
-        record("To overlay") { mutateTimeline { it.withLayerChanged(clip.id, +1) } }
+        record("To overlay") { mutateTimeline { it.withMainOnOverlay(clip.id) } }
         if (_state.value.videoClips.firstOrNull { it.id == clipId }?.isMain == true) {
             _state.update { it.copy(failure = SquishError.OverlayRowsFull(MAX_LAYER)) }
         }
     }
 
     /**
-     * An overlay dropped onto the main track, from whichever row it is on, and
-     * slotted in where it sits; the shots after it move along to make room.
-     * Lowering one row at a time only reaches the main track from the row just
-     * above it, so the clip is put on that row first - a step inside this one
-     * edit, never seen - and lowered from there.
+     * An overlay dropped onto the main track at the playhead - on the nearer cut,
+     * full frame - with the shots after it moved along to make room
+     * (OverlayRules.withOverlayOnMain). It used to keep its corner placement and
+     * its place in time, which made a small picture over black in the middle of
+     * the edit (O9).
+     *
+     * A photo kept as a picture is made into a clip first, as a photo added to
+     * the main track is, long enough for however far it had been dragged out:
+     * the main track plays video files.
      */
     fun switchToMain(clipId: String) {
-        _state.value.videoClips.firstOrNull { it.id == clipId && it.isOverlay } ?: return
-        record("To main track") {
-            mutateTimeline { timeline ->
-                timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(layer = 1) else it })
-                    .withLayerChanged(clipId, -1)
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId && it.isOverlay } ?: return
+        val at = _state.value.playheadMs
+        val picture = clip.uri
+        if (!StillClips.isStill(picture) || picture == null) {
+            record("To main track") { mutateTimeline { it.withOverlayOnMain(clipId, at) } }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(preparingStills = it.preparingStills + 1) }
+            try {
+                val made = StillClips.fromImage(app, picture, clip.durationMs + StillClips.DEFAULT_MS)
+                val fileMs = made?.let { ThumbnailExtractor.probe(app, it).durationMs } ?: 0L
+                if (made == null || fileMs <= 0L) {
+                    _state.update { it.copy(failure = SquishError.Unknown(null)) }
+                    return@launch
+                }
+                record("To main track") {
+                    mutateTimeline { timeline ->
+                        // As it is now, not as it was when this began: it may have
+                        // been trimmed, moved or deleted while the clip was made.
+                        val now = timeline.clips.firstOrNull { it.id == clipId && it.isOverlay }
+                            ?: return@mutateTimeline timeline
+                        val filmed = now.copy(
+                            uri = made,
+                            sourceInMs = 0L,
+                            sourceOutMs = now.durationMs.coerceIn(MIN_CLIP_MS, fileMs),
+                            sourceDurationMs = fileMs,
+                            speedRamp = SpeedRamp()
+                        )
+                        timeline.copy(clips = timeline.clips.map { if (it.id == clipId) filmed else it })
+                            .withOverlayOnMain(clipId, at)
+                    }
+                }
+            } finally {
+                _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
             }
         }
     }
 
-    /** One slider on the overlay sheet. Each slider, on each clip, is a gesture of its own. */
-    fun setOverlayGeometry(
-        clipId: String,
-        opacity: Float? = null,
-        scale: Float? = null,
-        offsetX: Float? = null,
-        offsetY: Float? = null
-    ) = record(
-        if (opacity != null && scale == null && offsetX == null && offsetY == null) "Opacity" else "Placement",
-        gesture = "Layer ${fieldsNamed("opacity" to opacity, "scale" to scale, "x" to offsetX, "y" to offsetY)} $clipId"
-    ) {
-        mutateTimeline { it.withOverlayGeometry(clipId, opacity, scale, offsetX, offsetY) }
+    /** The Opacity sheet's slider. Each drag, on each clip, is one step. */
+    fun setOpacity(clipId: String, opacity: Float) = record("Opacity", gesture = "Opacity $clipId") {
+        mutateTimeline { it.withOverlayGeometry(clipId, opacity = opacity) }
     }
 
     // ---- Green screen -------------------------------------------------------------

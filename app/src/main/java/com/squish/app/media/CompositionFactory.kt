@@ -83,6 +83,10 @@ object CompositionFactory {
      *   silence rather than refused - which is how a Dissolve between a video and
      *   a photo failed every export on the device.
      * @param filler a transparent still [durationMs] long, for the empty stretches.
+     * @param overlaySound whether an overlay clip is heard: footage at a level
+     *   above nothing. An overlay row with one such clip carries a sound track
+     *   from its first moment, as a base roll does, and every other stretch of
+     *   it - a gap, a photo, a muted clip - is silence.
      * @param editedFor the clip as an item of its layer.
      */
     fun buildComposited(
@@ -91,6 +95,7 @@ object CompositionFactory {
         videoOut: Boolean,
         baseAudio: Boolean,
         filler: (durationMs: Long) -> EditedMediaItem,
+        overlaySound: (Clip) -> Boolean = { false },
         editedFor: (Clip, ExportPlan.Layer) -> EditedMediaItem
     ): Composited {
         // LayerSettings hides input 0 as the clock. Anything else there would be
@@ -101,10 +106,13 @@ object CompositionFactory {
         }
         val sequences = mutableListOf<EditedMediaItemSequence>()
         for (layer in layers.layers) {
-            if (!videoOut && layer.role != ExportPlan.Role.Base) continue
+            val heard = layer.role == ExportPlan.Role.Overlay && layer.clips.any(overlaySound)
+            // Sound only: the base rolls, and the overlay rows that have any.
+            if (!videoOut && layer.role != ExportPlan.Role.Base && !heard) continue
             val types = when {
                 !videoOut -> setOf(C.TRACK_TYPE_AUDIO)
                 layer.role == ExportPlan.Role.Base && baseAudio -> setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO)
+                heard -> setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO)
                 else -> setOf(C.TRACK_TYPE_VIDEO)
             }
             // A layer with nothing at all in it has no pieces; the clock always
@@ -113,16 +121,35 @@ object CompositionFactory {
             if (pieces.isEmpty()) continue
             val builder = EditedMediaItemSequence.Builder(types)
             for (piece in pieces) {
-                when (piece) {
-                    is ExportPlan.Piece.Item -> builder.addItem(editedFor(piece.clip, layer))
-                    is ExportPlan.Piece.Gap ->
-                        if (videoOut) builder.addItem(filler(piece.durationMs))
-                        else builder.addGap(piece.durationMs * 1_000L)
+                when {
+                    // Sound only, an overlay that makes none is a stretch of silence.
+                    piece is ExportPlan.Piece.Item && (videoOut || layer.role == ExportPlan.Role.Base || overlaySound(piece.clip)) ->
+                        builder.addItem(editedFor(piece.clip, layer))
+                    videoOut -> builder.addItem(filler(piece.durationMs))
+                    else -> builder.addGap(piece.durationMs * 1_000L)
                 }
             }
             sequences.add(builder.build())
         }
         return Composited(sequences, if (videoOut) LayerSettings(canvas) else null)
+    }
+
+    /**
+     * A photo kept as a picture on an overlay row, shown for [durationMs] at
+     * [frameRate]. Handed over as the image it is - PNG, alpha and all - so a
+     * transparent logo is transparent in the file; a still rendered to H.264, as
+     * a main-track photo is, has no alpha to keep.
+     */
+    fun stillItem(uri: Uri, durationMs: Long, frameRate: Int, effects: List<Effect>): EditedMediaItem {
+        val item = MediaItem.Builder()
+            .setUri(uri)
+            .setMimeType(MimeTypes.IMAGE_PNG)
+            .setImageDurationMs(durationMs.coerceAtLeast(1L))
+            .build()
+        return EditedMediaItem.Builder(item)
+            .setFrameRate(frameRate)
+            .setEffects(Effects(ImmutableList.of(), ImmutableList.copyOf(effects)))
+            .build()
     }
 
     /**

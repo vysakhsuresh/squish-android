@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.compose.runtime.mutableIntStateOf
+import com.squish.app.media.StillClips
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,7 +49,13 @@ object FilmstripLoader {
     private val cache = BoundedCache<Bitmap>(BUDGET_BYTES) { it.byteCount.toLong() }
 
     fun cached(uri: Uri, timeMs: Long): Bitmap? =
-        cache.get(FilmstripPlan.key(uri.toString(), timeMs))
+        cache.get(FilmstripPlan.key(uri.toString(), tileTime(uri, timeMs)))
+
+    /**
+     * A photo on an overlay row is one picture however long it runs, so every
+     * tile of it is the same one, decoded once.
+     */
+    private fun tileTime(uri: Uri, timeMs: Long): Long = if (StillClips.isStill(uri)) 0L else timeMs
 
     /** Bumped on the main thread each time a thumbnail lands, so strips waiting on one redraw. */
     val arrivals = mutableIntStateOf(0)
@@ -80,7 +87,7 @@ object FilmstripLoader {
     fun request(context: Context, uri: Uri, times: List<Long>) {
         val app = context.applicationContext
         synchronized(pending) {
-            times.forEach { t ->
+            times.map { tileTime(uri, it) }.distinct().forEach { t ->
                 val key = FilmstripPlan.key(uri.toString(), t)
                 if (cache.get(key) != null) return@forEach
                 pending.remove(key)
@@ -109,6 +116,14 @@ object FilmstripLoader {
                 val (key, ask) = next
                 val (uri, timeMs) = ask
                 if (cache.get(key) != null) continue
+                // A picture, not footage: no retriever reads a PNG.
+                if (StillClips.isStill(uri)) {
+                    StillClips.previewBitmap(context, uri, TILE_PX)?.let { picture ->
+                        cache.put(key, picture)
+                        withContext(Dispatchers.Main) { arrivals.intValue++ }
+                    }
+                    continue
+                }
                 if (uri != openUri) {
                     runCatching { retriever?.release() }
                     openUri = uri

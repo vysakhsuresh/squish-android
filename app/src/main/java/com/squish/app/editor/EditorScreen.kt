@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -244,13 +245,16 @@ fun EditorScreen(
                 .build()
         )
     }
-    val pickOverlayClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { context.keepReadAccess(it); viewModel.layers.addOverlayClip(it) }
+    // Photos and videos, several at once: a logo, a cut-out and a reaction clip
+    // are all overlays. It was one video at a time.
+    val pickOverlayClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
+        uris.forEach { context.keepReadAccess(it) }
+        viewModel.layers.addOverlayClips(uris)
     }
     val addOverlay = {
-        pickOverlayClip.launch(
+        pickOverlayClips.launch(
             PickVisualMediaRequest.Builder()
-                .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                 .build()
         )
     }
@@ -300,6 +304,7 @@ fun EditorScreen(
                 fullscreen = fullscreen,
                 timelineScrubbing = timelineScrubbing,
                 onFullscreen = { fullscreen = it },
+                onCloseSheet = { openToolName = null },
                 modifier = modifier
             )
         }
@@ -603,6 +608,8 @@ private fun EditorPreview(
     fullscreen: Boolean,
     timelineScrubbing: Boolean,
     onFullscreen: (Boolean) -> Unit,
+    /** Closes whatever sheet is open. */
+    onCloseSheet: () -> Unit,
     modifier: Modifier
 ) {
     Box(
@@ -616,13 +623,46 @@ private fun EditorPreview(
         val reframeOffset = state.videoClips.firstOrNull()?.let { it.sourceInMs - it.timelineStartMs } ?: 0L
         val reframeFocus = state.reframe?.takeIf { state.cropAspect.ratio != null }
             ?.sampleAt(state.playheadMs + reframeOffset)?.let { it.xFraction to it.yFraction }
+        // The overlay box on the picture. Its moves go through the one way
+        // placement is written, so a drag is one undo step and an animated
+        // overlay is keyed at the playhead; each gesture ends its step.
+        val latestOpenTool by rememberUpdatedState(openTool)
+        val latestCloseSheet by rememberUpdatedState(onCloseSheet)
+        val overlayActions = remember(viewModel) {
+            OverlayHandleActions(
+                // As a tap on the strip: a layer picked while an add-things sheet
+                // is up is a new job, and the sheet makes way for its tools.
+                onSelect = { id ->
+                    val before = viewModel.state.value.selectedClipId
+                    viewModel.selectClip(id)
+                    if (id != before && latestOpenTool?.levelZero == true) latestCloseSheet()
+                },
+                onPlace = { id, t ->
+                    viewModel.clips.setClipTransform(
+                        id, scale = t.scale, offsetX = t.offsetXFraction, offsetY = t.offsetYFraction, rotation = t.rotationDegrees
+                    )
+                },
+                onPlaceEnd = viewModel::endGesture,
+                onDelete = { id ->
+                    viewModel.selectClip(id)
+                    viewModel.clips.deleteSelectedClip()
+                },
+                onDuplicate = viewModel.layers::duplicateInPlace,
+                onReset = viewModel.clips::resetPlacement
+            )
+        }
+        // The hand-drawn crop takes every touch on the picture while it is up,
+        // so with an overlay selected it waits for the Frame sheet, where it is
+        // the thing being worked on; otherwise the overlay's box could not be
+        // taken hold of anywhere under it.
+        val overlaySelected = state.selectionKind.let { it == SelectionKind.Overlay || it == SelectionKind.PhotoOverlay }
         TimelinePreview(
             videoClips = state.videoClips,
             audioClips = state.audioClips,
             captions = state.textOverlays,
             effects = state.effects,
             fallbackUri = sourceUri,
-            proxyUri = state.proxyUri,
+            proxies = state.proxyUris,
             muteOriginal = state.muteOriginal,
             voiceEffect = state.voiceEffect,
             originalVolume = state.originalVolume,
@@ -657,6 +697,8 @@ private fun EditorPreview(
                 } else false
             },
             scrubbing = timelineScrubbing,
+            selectedClipId = state.selectedClipId,
+            overlayActions = overlayActions,
             modifier = Modifier.fillMaxSize(),
             // Inside the picture, so the crop rectangle is measured
             // against the frame rather than against the whole box.
@@ -668,6 +710,7 @@ private fun EditorPreview(
                 // which is for watching.
                 when {
                     fullscreen -> Unit
+                    state.cropAspect == CropAspect.Custom && overlaySelected && openTool != Tool.Frame -> Unit
                     state.cropAspect == CropAspect.Custom -> CustomCropOverlay(
                         rect = state.cropRect,
                         // Live while dragging, recorded once at the end:
@@ -795,7 +838,13 @@ private fun HeaderIcon(icon: ImageVector, label: String, enabled: Boolean, onCli
 /** What is happening outside the edit itself: proxies, stills, a saved edit on offer, a failure. */
 @Composable
 private fun StatusCards(state: EditorUiState, viewModel: EditorViewModel, onStartNew: () -> Unit) {
-    ProxyIndicator(status = state.proxyStatus, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+    val proxies = state.proxiesInEdit.values.filter { it != ProxyStatus.NotNeeded }
+    ProxyIndicator(
+        status = state.proxyStatus,
+        ready = proxies.count { it == ProxyStatus.Ready },
+        total = proxies.size,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+    )
     PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
 
     // Only the inline offer lives here; the modal one is over everything.

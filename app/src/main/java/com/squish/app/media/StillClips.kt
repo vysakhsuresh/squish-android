@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.ImageDecoder
 import android.media.ExifInterface
 import android.net.Uri
 import androidx.media3.common.C
@@ -41,6 +42,10 @@ import kotlin.coroutines.resume
  * Each is rendered [RENDER_MS] long and placed at [DEFAULT_MS], so there is room
  * to drag its end out, as in other editors, without making it again. Kept under
  * files/, not the cache: a draft refers to the file, and Android empties caches.
+ *
+ * A photo on an overlay row is the exception: it stays a picture (see
+ * [overlayFromImage]), because a logo or a cut-out is transparent and a video
+ * file cannot be.
  */
 object StillClips {
 
@@ -53,9 +58,95 @@ object StillClips {
     /** Tall enough for a phone-sized export, small enough to render in a few seconds. */
     private const val MAX_SHORT_SIDE = 1080
 
-    /** A clip made from the picture at [image], or null if it could not be read or rendered. */
-    suspend fun fromImage(context: Context, image: Uri): Uri? =
-        render(context, image, "photo_${System.currentTimeMillis()}")
+    /**
+     * A clip made from the picture at [image], or null if it could not be read or
+     * rendered. At least [minMs] long - a photo overlay dropped onto the main
+     * track may already have been dragged out past [RENDER_MS].
+     */
+    suspend fun fromImage(context: Context, image: Uri, minMs: Long = RENDER_MS): Uri? =
+        render(context, image, "photo_${System.currentTimeMillis()}", maxOf(RENDER_MS, minMs))
+
+    /**
+     * A picture for an overlay row, kept a picture: upright, no larger than an
+     * export needs, and written as a PNG so a logo's or a cut-out's transparency
+     * survives - the H.264 a main-track photo becomes has no alpha at all.
+     *
+     * The export hands the file to Media3 as an image item (CompositionFactory),
+     * and the preview draws it itself (TimelinePreview); neither needs a decoder
+     * for it. Blocking; call it off the main thread. Null if it could not be read.
+     */
+    fun overlayFromImage(context: Context, image: Uri): Uri? = runCatching {
+        val source = ImageDecoder.createSource(context.contentResolver, image)
+        val decoded = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            // Software, so it can be scaled and written; sampled down on the way
+            // in, so a 50-megapixel photo never sits whole in memory.
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val short = minOf(info.size.width, info.size.height).coerceAtLeast(1)
+            var sample = 1
+            while (short / (sample * 2) >= MAX_SHORT_SIDE) sample *= 2
+            decoder.setTargetSampleSize(sample)
+        }
+        val (w, h) = overlayFit(decoded.width, decoded.height)
+        val bitmap = if (w == decoded.width && h == decoded.height) decoded
+        else Bitmap.createScaledBitmap(decoded, w, h, true).also { if (it !== decoded) decoded.recycle() }
+        val target = File(dir(context), "overlay_${System.currentTimeMillis()}.png")
+        val partial = File(target.absolutePath + ".part")
+        try {
+            FileOutputStream(partial).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        } finally {
+            bitmap.recycle()
+        }
+        if (partial.length() <= 0L || !partial.renameTo(target)) {
+            partial.delete()
+            error("could not keep $target")
+        }
+        Uri.fromFile(target)
+    }.onFailure { android.util.Log.w("SquishStill", "could not make an overlay of $image", it) }.getOrNull()
+
+    /**
+     * Whether a clip's file is a picture kept as a picture - an overlay made by
+     * [overlayFromImage] - rather than footage. Only this app writes those, and
+     * only as PNGs in its own folder; everything picked from the gallery arrives
+     * as a content:// address.
+     */
+    fun isStill(uri: Uri?): Boolean =
+        uri != null && uri.scheme == "file" && uri.path?.let { it.endsWith(".png") && it.contains("/$DIR/") } == true
+
+    /** The picture's width over its height, from its header alone. Blocking. */
+    fun aspectOf(context: Context, uri: Uri): Float? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) null else bounds.outWidth.toFloat() / bounds.outHeight
+    }.getOrNull()
+
+    /**
+     * A picture for the preview to draw, at most [maxSide] on its long side.
+     * Blocking. Null if it cannot be read.
+     */
+    fun previewBitmap(context: Context, uri: Uri, maxSide: Int): Bitmap? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        val long = maxOf(bounds.outWidth, bounds.outHeight)
+        if (long <= 0) return@runCatching null
+        var sample = 1
+        while (long / (sample * 2) >= maxSide) sample *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+    }.getOrNull()
+
+    /**
+     * An overlay picture's size: its short side at most [MAX_SHORT_SIDE] and its
+     * long side at most [MAX_LONG_SIDE] - a panorama at 1080 tall would be ten
+     * thousand pixels wide, far past anything a layer is drawn at.
+     */
+    private fun overlayFit(width: Int, height: Int): Pair<Int, Int> {
+        val scale = minOf(
+            1f,
+            MAX_SHORT_SIDE.toFloat() / minOf(width, height).coerceAtLeast(1),
+            MAX_LONG_SIDE.toFloat() / maxOf(width, height).coerceAtLeast(1)
+        )
+        return (width * scale).toInt().coerceAtLeast(1) to (height * scale).toInt().coerceAtLeast(1)
+    }
 
     /**
      * A plain black clip, [width] by [height] - the edit's own frame shape, so it
@@ -74,23 +165,23 @@ object StillClips {
             }
             if (!made) return null
         }
-        return render(context, Uri.fromFile(frame), "blank_${System.currentTimeMillis()}")
+        return render(context, Uri.fromFile(frame), "blank_${System.currentTimeMillis()}", RENDER_MS)
     }
 
-    private suspend fun render(context: Context, image: Uri, name: String): Uri? {
+    private suspend fun render(context: Context, image: Uri, name: String, lengthMs: Long): Uri? {
         val (w, h) = withContext(Dispatchers.IO) { uprightSize(context, image) } ?: return null
         val (outW, outH) = fit(w, h)
         val target = File(dir(context), "$name.mp4")
         val partial = File(target.absolutePath + ".part")
         val done = withContext(Dispatchers.Main) {
-            transcode(context.applicationContext, image, partial, outW, outH, withSound = true) || run {
+            transcode(context.applicationContext, image, partial, outW, outH, lengthMs, withSound = true) || run {
                 // The silent track is a convenience, not the point. A phone whose
                 // Media3 will not make silence for a picture used to be a phone
                 // that could add photos and blanks at all; it still is, with a
                 // still that has no sound track - which the export copes with,
                 // since it declares sound on every sequence itself.
                 runCatching { partial.delete() }
-                transcode(context.applicationContext, image, partial, outW, outH, withSound = false)
+                transcode(context.applicationContext, image, partial, outW, outH, lengthMs, withSound = false)
             }
         }
         return if (done && partial.length() > 0 && partial.renameTo(target)) {
@@ -127,6 +218,7 @@ object StillClips {
         output: File,
         width: Int,
         height: Int,
+        lengthMs: Long,
         withSound: Boolean
     ): Boolean =
         suspendCancellableCoroutine { continuation ->
@@ -136,7 +228,7 @@ object StillClips {
                 Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT)
             )
             val item = EditedMediaItem.Builder(
-                MediaItem.Builder().setUri(image).setImageDurationMs(RENDER_MS).build()
+                MediaItem.Builder().setUri(image).setImageDurationMs(lengthMs).build()
             )
                 .setFrameRate(FRAME_RATE)
                 .setEffects(Effects(ImmutableList.of(), ImmutableList.copyOf(scale)))
@@ -210,7 +302,12 @@ object StillClips {
         }.getOrNull()
     }
 
-    private fun dir(context: Context): File = File(context.filesDir, "stills").apply { mkdirs() }
+    private fun dir(context: Context): File = File(context.filesDir, DIR).apply { mkdirs() }
+
+    private const val DIR = "stills"
+
+    /** An overlay picture's longest side; see [overlayFit]. */
+    private const val MAX_LONG_SIDE = 3840
 
     /** Small, because it is drawn at nothing; even, because some decoders insist. */
     private const val CLEAR_SIDE = 16

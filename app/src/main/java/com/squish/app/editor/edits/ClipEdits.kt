@@ -493,7 +493,29 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             }
             recomputeEstimate()
             probed.forEach { (uri, _, label) -> if (label == null) checkDecodable(uri) }
+            ensureProxies(probed.filter { it.third == null }.map { it.first })
         }
+    }
+
+    // ---- Sound of a picture ---------------------------------------------------------
+
+    /**
+     * A shot's or an overlay's own level. Each slider drag on each clip is one
+     * step. A shot's is heard under the camera sound for the whole edit (see
+     * OverlayRules.effectiveVolume).
+     */
+    fun setClipVolume(clipId: String, volume: Float) = record("Volume", gesture = "Volume $clipId") {
+        writeVolume(clipId, volume)
+    }
+
+    /** Mute, or back to [restoreTo] - the level it had - as one step. */
+    fun setClipMuted(clipId: String, muted: Boolean, restoreTo: Float = 1f) =
+        record(if (muted) "Mute" else "Unmute") { writeVolume(clipId, if (muted) 0f else restoreTo.coerceIn(0.05f, 1f)) }
+
+    private fun writeVolume(clipId: String, volume: Float) = mutateTimeline { timeline ->
+        timeline.copy(clips = timeline.clips.map {
+            if (it.id == clipId && it.kind == ClipKind.Video) it.copy(volume = volume.coerceIn(0f, 1f)) else it
+        })
     }
 
     /**

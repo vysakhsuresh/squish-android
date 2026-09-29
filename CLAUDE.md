@@ -219,6 +219,29 @@ should work through it and then delete what holds up.
   overlay with every row taken says so; a rename alone keeps a draft, and the
   drafts list shows the name.
 
+- **Batch B8 (overlays), all of it.** Built on the desktop with no phone
+  attached. The decisions - landing length, the main track and back, the box's
+  copy, per-clip levels and the old-draft move, and the box itself (hit test,
+  drag, pinch, corner handle, snapping, readout) - are executed on the JVM
+  (`tools/jvm/OverlayChecks.kt`), including that the box's corners are exactly
+  where `ExportPlan.placementMatrix` draws the layer. Script in
+  `docs/ROADMAP.md` §4 under B8, plus: overlays are now laid out in the frame the
+  export keeps, so with a 9:16 or hand-drawn crop a PiP sits inside the crop on
+  screen as in the file (it used to be placed against the uncropped picture);
+  a photo overlay is a PNG under `files/stills/` drawn by Compose, not a player -
+  check its transparency, that it exports through Media3's image input with its
+  alpha (the one path here that leans on that), and its filmstrip tile; an
+  overlay row declared with sound fills its photos, gaps and muted clips with
+  silence (the BUILD_NOTES fact B5 leans on for base rolls, now on overlay rows
+  too); overlay audio is heard in the preview at its Volume and not under the
+  camera switch, and a shot's Volume is under the camera level; an overlay row
+  with nothing within 5 s lets its decoder go and reloads before its next clip
+  (watch for a late first frame); six rows of footage at once is the decoder
+  budget the cap assumes; a draft from before this build opens with its
+  overlays at Volume 0 and its shots at the old camera level; the hand-drawn
+  crop's handles give way to the overlay box while an overlay is selected, and
+  come back on the Frame sheet.
+
 ## Conventions worth not rediscovering
 
 - **A tool's `id` is a handle, not a name.** `QuickTool.id` is in the navigation

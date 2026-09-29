@@ -37,6 +37,17 @@ sealed class SquishError(
     )
 
     /**
+     * An overlay whose file can no longer be read - named, with its row, because
+     * the row on the strip still shows a clip and the preview only a black layer,
+     * and "that file" sent people looking at the main track.
+     */
+    class LayerUnreadable(val name: String, val row: Int) : SquishError(
+        title = "Can't open the overlay “$name”",
+        detail = "The overlay on row $row moved, was deleted, or the app lost permission to read it since you added it.",
+        fix = "Delete that overlay and add it again from the gallery, or delete it to export without it."
+    )
+
+    /**
      * A sound on the timeline that can no longer be read. Named, because "that
      * file" sent people looking at their video clips while the song was the one
      * whose permission had lapsed.
@@ -241,7 +252,9 @@ sealed class SquishError(
             // checked last: with clips on the timeline it may not be in the edit.
             for (clip in state.videoClips) {
                 val uri = clip.uri ?: state.sourceUri
-                if (!canRead(context, uri)) return FileUnreadable(name = clip.label.takeIf { it.isNotBlank() })
+                if (canRead(context, uri)) continue
+                return if (clip.isOverlay) LayerUnreadable(clip.label.ifBlank { "Overlay" }, clip.layer)
+                else FileUnreadable(name = clip.label.takeIf { it.isNotBlank() })
             }
             if (state.videoClips.isEmpty() && !canRead(context, state.sourceUri)) return FileUnreadable()
             // Sounds are read too. They used to be left out, so a song whose grant
@@ -286,10 +299,19 @@ sealed class SquishError(
          * the export completes silent rather than failing in the audio pipeline.
          */
         fun exportable(state: EditorUiState): EditorUiState {
-            if (state.audioOnly || state.muteOriginal) return state
-            val sources = (state.videoClips.mapNotNull { it.uri } + listOfNotNull(state.sourceUri)).distinct()
+            if (state.audioOnly) return state
+            // An overlay carries its own sound now; one no decoder takes is
+            // silenced on its own, and the rest of the mix is kept.
+            val overlays = state.videoClips.map { clip ->
+                val deaf = clip.isOverlay && clip.volume > 0f &&
+                    (clip.uri ?: state.sourceUri)?.let { MediaCompat.cached(it)?.audioProblem } != null
+                if (deaf) clip.copy(volume = 0f) else clip
+            }
+            val quieted = if (overlays == state.videoClips) state else state.copy(videoClips = overlays)
+            if (quieted.muteOriginal) return quieted
+            val sources = (quieted.videoClips.filter { !it.isOverlay }.mapNotNull { it.uri } + listOfNotNull(quieted.sourceUri)).distinct()
             val soundless = sources.any { MediaCompat.cached(it)?.audioProblem != null }
-            return if (soundless) state.copy(muteOriginal = true) else state
+            return if (soundless) quieted.copy(muteOriginal = true) else quieted
         }
 
         /**

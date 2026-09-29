@@ -65,6 +65,13 @@ run exportplan "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
                "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
                tools/jvm/stub/Uri.kt "$SRC/media/ExportPlan.kt" tools/jvm/ExportPlanChecks.kt
 
+run overlay    "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
+               "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
+               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" "$SRC/editor/EditRules.kt" \
+               "$SRC/editor/OverlayRules.kt" tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
+               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
+               tools/jvm/stub/Uri.kt "$SRC/media/ExportPlan.kt" tools/jvm/OverlayChecks.kt
+
 run timecode   "$SRC/editor/Timecode.kt" "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
                "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
                "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \

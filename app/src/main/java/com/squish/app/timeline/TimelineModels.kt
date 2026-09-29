@@ -279,7 +279,13 @@ data class TimelineState(
 const val MIN_CLIP_MS = 200L
 const val ZOOM_MIN = 0.05f
 const val ZOOM_MAX = 2_000f
-const val MAX_LAYER = 3
+/**
+ * Overlay rows. Three was a cap a logo, a reaction clip and a caption card
+ * already filled. Each row that holds footage is a decoder in the preview, and
+ * with the two main-track rolls this stays within what a mid-range phone runs
+ * at once; a photo on a row costs no decoder at all.
+ */
+const val MAX_LAYER = 6
 
 /**
  * How close two key times may be before they are the same key, when a placement

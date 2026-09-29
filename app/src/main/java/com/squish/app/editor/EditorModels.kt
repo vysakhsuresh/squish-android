@@ -424,9 +424,15 @@ data class EditorUiState(
     val undoLabel: String? = null,
     val redoLabel: String? = null,
 
-    // Proxy media. The preview plays [proxyUri] when it exists; export never does.
-    val proxyUri: Uri? = null,
-    val proxyStatus: ProxyStatus = ProxyStatus.NotNeeded,
+    /**
+     * Proxy media: each heavy file's light stand-in, by the file's address. The
+     * preview plays these; the export never does. Per file, not per project -
+     * only the file first opened used to get one, so a 4K reaction clip over a
+     * 4K shot was two full-size decodes in the preview (P8).
+     */
+    val proxyUris: Map<Uri, Uri> = emptyMap(),
+    /** Where each file that needs a stand-in has got to. A file that needs none is not here. */
+    val proxyStatuses: Map<Uri, ProxyStatus> = emptyMap(),
     /** How many photos or blanks are being made into clips right now. */
     val preparingStills: Int = 0,
 
@@ -631,8 +637,38 @@ data class EditorUiState(
             ?: base.maxByOrNull { it.timelineEndMs }?.takeIf { it.timelineEndMs == timelineMs }
     }
 
-    /** Whether any audio at all reaches the exported file. */
-    val hasAnyAudio: Boolean get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio
+    /**
+     * Whether any audio at all reaches the exported file: the shots' own sound,
+     * an overlay's, or an added one.
+     */
+    val hasAnyAudio: Boolean
+        get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio ||
+            videoClips.any { it.isOverlay && it.volume > 0f && !com.squish.app.media.StillClips.isStill(it.uri) }
+
+    /** The stand-in for the file first opened, for the analyses that read it. */
+    val proxyUri: Uri? get() = sourceUri?.let { proxyUris[it] }
+
+    /** The stand-ins of the files still in the edit, by where each has got to. */
+    val proxiesInEdit: Map<Uri, ProxyStatus>
+        get() {
+            val inEdit = videoClips.mapNotNull { it.uri }.toSet().ifEmpty { setOfNotNull(sourceUri) }
+            return proxyStatuses.filterKeys { it in inEdit }
+        }
+
+    /**
+     * The stand-ins taken together, for the one line that reports them: building
+     * while any is, failed if any did, ready if any is.
+     */
+    val proxyStatus: ProxyStatus
+        get() {
+            val statuses = proxiesInEdit.values
+            return when {
+                ProxyStatus.Building in statuses -> ProxyStatus.Building
+                ProxyStatus.Failed in statuses -> ProxyStatus.Failed
+                ProxyStatus.Ready in statuses -> ProxyStatus.Ready
+                else -> ProxyStatus.NotNeeded
+            }
+        }
 
     /** The part of the rotated frame the crop keeps, in pixels, before any size is chosen. */
     val croppedFrame: ExportPresets.Resolution
