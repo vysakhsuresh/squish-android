@@ -187,10 +187,17 @@ fun EditorScreen(
         else if (openToolName == Tool.Replace.name) openToolName = null
     }
     // The file to go under the selected clip, for Replace.
+    // The clip Replace was pressed on, kept across a recreation: the selection
+    // is not, and after the app was killed behind the picker the pick arrived
+    // with nothing selected and was dropped. The view model holds it until
+    // the edit is open again (replaceWhenOpened).
+    var replaceTarget by rememberSaveable { mutableStateOf<String?>(null) }
     val pickReplacement = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        val target = replaceTarget ?: viewModel.state.value.selectedClipId
+        replaceTarget = null
         if (uri != null) {
             context.keepReadAccess(uri)
-            viewModel.state.value.selectedClipId?.let { viewModel.clips.beginReplace(it, uri) }
+            target?.let { viewModel.replaceWhenOpened(it, uri) }
         }
     }
     // The file to go under every clip that plays one that can no longer be
@@ -199,13 +206,13 @@ fun EditorScreen(
     val pickRelink = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             context.keepReadAccess(uri)
-            viewModel.relink(uri)
+            viewModel.relinkWhenOpened(uri)
         }
     }
     val browseRelink = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             context.keepReadAccess(uri)
-            viewModel.relink(uri)
+            viewModel.relinkWhenOpened(uri)
         }
     }
 
@@ -351,11 +358,14 @@ fun EditorScreen(
             Tool.Mirror -> state.selectedClipId?.let(viewModel.clips::mirrorClip)
             Tool.Freeze -> state.selectedClipId?.let(viewModel.clips::freezeFrame)
             Tool.Reverse -> state.selectedClipId?.let(viewModel.clips::reverseClip)
-            Tool.Replace -> pickReplacement.launch(
-                PickVisualMediaRequest.Builder()
-                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                    .build()
-            )
+            Tool.Replace -> {
+                replaceTarget = state.selectedClipId
+                pickReplacement.launch(
+                    PickVisualMediaRequest.Builder()
+                        .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                        .build()
+                )
+            }
             Tool.CopyAttributes -> state.selectedClipId?.let(viewModel.clips::copyAttributes)
             Tool.PasteAttributes -> state.selectedClipId?.let(viewModel.clips::pasteAttributes)
             // On with something selected; pressed again ("Done selecting"), the

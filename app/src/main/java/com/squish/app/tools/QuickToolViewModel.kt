@@ -284,7 +284,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      * The trim is applied after the probe for the same reason, clamped to the
      * length the file actually turned out to have.
      */
-    fun restore(draft: ToolDraft) {
+    private fun restore(draft: ToolDraft, thenAdd: List<Uri> = emptyList()) {
         val tool = QuickTool.fromId(draft.toolId)
         restoring = true
         _state.update {
@@ -301,6 +301,8 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                 // what is saved after this is never less than what was.
                 appendMergeClips(draft.uris)
                 restoring = false
+                // Picked while the session was coming back: after it, as an add.
+                appendMergeClips(thenAdd)
             }
             return
         }
@@ -340,8 +342,48 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         autosave.markCompleted(slot, exported)
     }
 
+    /**
+     * Whether the screen has settled what it opened on - the session in its
+     * slot, or none (see [settle]). Until it has, a pick is held rather than
+     * shown: after the app was killed behind the picker, the result is handed
+     * to the new screen as its launcher registers, before [begin] has read
+     * the slot - and the restore that followed replaced the video just picked
+     * with the old one, or put the old merge after the new picks.
+     */
+    private var settled = false
+    private var pendingLoad: Uri? = null
+    private var pendingAdds: List<Uri> = emptyList()
+
+    /**
+     * The screen's answer to [begin]: [draft] is the session in the slot, or
+     * null. A video picked before this lands (above) wins over the saved one -
+     * it is the newer choice; clips picked for a merge go after the saved ones.
+     * Returns whether anything is on its way to the screen, so the screen knows
+     * whether to open the picker.
+     */
+    fun settle(draft: ToolDraft?): Boolean {
+        if (settled) return true
+        settled = true
+        val load = pendingLoad
+        val adds = pendingAdds
+        pendingLoad = null
+        pendingAdds = emptyList()
+        when {
+            // A new pick in the slot is a new session, not the saved one resumed.
+            load != null -> { resumed = false; load(load) }
+            draft != null -> restore(draft, thenAdd = adds)
+            adds.isNotEmpty() -> addMergeClips(adds)
+            else -> return false
+        }
+        return true
+    }
+
     /** A video chosen on this screen: a new start, whatever was being restored. */
     fun load(uri: Uri) {
+        if (!settled) {
+            pendingLoad = uri
+            return
+        }
         restoring = false
         loadSource(uri)
     }
@@ -387,6 +429,10 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun addMergeClips(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        if (!settled) {
+            pendingAdds = pendingAdds + uris
+            return
+        }
         viewModelScope.launch { appendMergeClips(uris) }
     }
 

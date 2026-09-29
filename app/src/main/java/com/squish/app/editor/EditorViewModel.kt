@@ -329,6 +329,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (probed.size < sources.size || sources.size < start.uris.size) {
             _state.update { it.copy(failure = SquishError.FileUnreadable()) }
         }
+        markOpened()
         val files = clips.mapNotNull { it.uri }.distinct()
         files.filterNot(StillClips::isStill).forEach(::checkDecodable)
         ensureProxies(files)
@@ -1131,9 +1132,38 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         ensureProxies(files)
         confirmSourceAudio(snapshot.sourceUri)
         reportMissingMedia(snapshot.clips + snapshot.audioClips)
+        markOpened()
         files.filterNot(StillClips::isStill).forEach(::checkDecodable)
         restoreAudioWaveforms(snapshot.audioClips)
     }
+
+    /**
+     * Whether the project's edit is on screen yet, missing files named. A
+     * picker's result can arrive before that: killed behind the photo picker,
+     * the app comes back with a new view model still reading the draft when
+     * the launcher hands the pick over, and a Replace (no clip selected yet)
+     * or a Relink (no missing file named yet) was dropped without a word.
+     * Such a pick waits here for the edit instead.
+     */
+    private var opened = false
+    private val whenOpened = ArrayList<() -> Unit>()
+
+    private fun markOpened() {
+        opened = true
+        val waiting = whenOpened.toList()
+        whenOpened.clear()
+        waiting.forEach { it() }
+    }
+
+    private fun onceOpened(action: () -> Unit) {
+        if (opened) action() else whenOpened += action
+    }
+
+    /** A file picked to go under [clipId] (Replace), once the edit is open. */
+    fun replaceWhenOpened(clipId: String, uri: Uri) = onceOpened { clips.beginReplace(clipId, uri) }
+
+    /** A file picked for the missing one (Relink), once the edit is open and it is named. */
+    fun relinkWhenOpened(uri: Uri) = onceOpened { relink(uri) }
 
     /**
      * An opened edit whose files are not all readable any more - a grant that

@@ -178,10 +178,10 @@ fun QuickToolScreen(
     // over a screen whose first picker had been cancelled.
     var askedOnce by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(tool) {
-        val draft = viewModel.begin(tool, slot)
-        if (draft != null) {
-            viewModel.restore(draft)
-        } else if (!state.hasSource && !askedOnce) {
+        // A pick handed over after the app was killed behind the picker has
+        // already arrived, and settle() puts it ahead of the saved session.
+        val coming = viewModel.settle(viewModel.begin(tool, slot))
+        if (!coming && !state.hasSource && !askedOnce) {
             askedOnce = true
             openPicker()
         }
