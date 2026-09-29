@@ -37,7 +37,6 @@ import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Mask
-import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.TransitionType
 import java.util.concurrent.atomic.AtomicReference
@@ -647,14 +646,15 @@ class PreviewEngine(private val context: Context) {
      * The pitch a player runs at for [clip] at [speed]: its voice's shift, and
      * the speed's own on top when the clip lets the pitch follow the speed -
      * the same choice the export makes (VideoProcessor.buildAudioProcessors).
-     * Clamped as the speed is, since the player's sink resamples by it.
+     * Held to what the player is actually asked for (PreviewRules.playerRate),
+     * since the sink resamples by it and holds pitch to the same limits.
      */
     private fun pitchFor(clip: Clip, speed: Float): Float =
-        if (clip.pitchFollowsSpeed) (clip.voice.pitch * speed.coerceIn(SpeedRamp.MIN_SPEED, SpeedRamp.MAX_SPEED)).coerceIn(0.1f, 100f)
+        if (clip.pitchFollowsSpeed) PreviewRules.playerRate(clip.voice.pitch * PreviewRules.playerRate(speed))
         else clip.voice.pitch
 
     private fun setSpeed(player: ExoPlayer, rate: Rate, clipId: String, wanted: Float, pitch: Float) {
-        val safe = wanted.coerceIn(SpeedRamp.MIN_SPEED, SpeedRamp.MAX_SPEED)
+        val safe = PreviewRules.playerRate(wanted)
         val now = SystemClock.elapsedRealtime()
         val push = PreviewRules.shouldPushSpeed(rate.speed, safe, now - rate.pushedAt, rate.clipId != clipId) ||
             rate.pitch != pitch

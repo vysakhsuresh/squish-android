@@ -249,6 +249,8 @@ object AudioRules {
             voice = clip.voice,
             speedRamp = clip.speedRamp
         )
-        return Extraction(sound, clip.copy(volume = 0f))
+        // Muted by the switch, not by a level of nothing: on a keyed shot that
+        // level would land as one key, and the shot would go on being heard.
+        return Extraction(sound, clip.copy(muted = true))
     }
 }

@@ -86,6 +86,26 @@ fun drawPixel(d: ExportPlan.Draw, src: Float, dst: Float, x: Float, y: Float): F
 }
 
 /**
+ * The same pixel the way the shader itself computes it, from the uniforms the
+ * program is handed (ExportPlan.Draw.shaderUniforms), in the texture's own
+ * space: [y] is the screen's, down the picture, and the texture's row is
+ * 1 - y. squish_transition_es2.glsl line for line, so a draw that reads right
+ * on the preview and upside down in the file fails here rather than on the
+ * phone - which is where the first vertical transitions failed.
+ */
+fun shaderPixel(u: ExportPlan.ShaderUniforms, src: Float, dst: Float, x: Float, y: Float): Float {
+    val uvx = x
+    val uvy = 1f - y
+    val sx = (uvx - u.shiftX - 0.5f) / maxOf(u.scale, 0.001f) + 0.5f
+    val sy = (uvy - u.shiftY - 0.5f) / maxOf(u.scale, 0.001f) + 0.5f
+    val inside = sx >= 0f && sx <= 1f && sy >= 0f && sy <= 1f &&
+        uvx >= u.keepFromX && uvx <= u.keepToX && uvy >= u.keepFromY && uvy <= u.keepToY
+    val lit = src + (1f - src) * u.white
+    val a = if (inside) u.alpha else 0f
+    return lit * a + dst * (1 - a)
+}
+
+/**
  * What the four original transitions looked like on screen before the preview
  * drew from ExportPlan.blend itself: outgoing [o] into incoming [i] at progress
  * [p], pixel [x]. Kept as the record of what the phone was shown, so the shared
@@ -221,6 +241,10 @@ fun main() {
                     val shown = previewPixel(type, p, x, y, 0.2f, 0.9f)
                     compared++
                     check(abs(got - shown) < 0.01f, "$type incomingOnTop=$incomingOnTop p=$p x=$x y=$y: file $got, preview $shown")
+                    // And the shader itself, fed the uniforms the program sets,
+                    // in the texture's upside-down space: the same pixel again.
+                    val shaded = shaderPixel(inDraw.shaderUniforms(), 0.9f, shaderPixel(outDraw.shaderUniforms(), 0.2f, 0f, x, y), x, y)
+                    check(abs(shaded - shown) < 0.01f, "$type p=$p x=$x y=$y: the shader draws $shaded, the preview $shown")
                 }
             }
             // Outside the overlap each shot is simply itself.
@@ -317,6 +341,33 @@ fun main() {
         // On the main track a transition is the rolls' business, not the clip's own draw.
         val main = video("m", 0, 2000, transition = Transition(TransitionType.CrossFade, 500))
         check(ExportPlan.ownDrawAt(main, 100L).isPlain && !ExportPlan.drawsOwn(main), "a main-track transition is drawn twice")
+
+        // Every kind is a whole arrival on its own: the overlay is never gone for
+        // the first half (the dips, the jitter and the flash hide the incoming
+        // shot until the cut when there are two shots), and it has landed by the end.
+        for (type in TransitionType.entries.filter { it != TransitionType.None }) {
+            val early = (1..9).map { ExportPlan.arrival(type, it / 20f) }
+            check(early.any { it.alpha > 0f }, "$type: an overlay arriving by it is invisible for the whole first half")
+            check(ExportPlan.arrival(type, 1f).isPlain, "$type: the arrival has not landed at its end: ${ExportPlan.arrival(type, 1f)}")
+            val dipping = plain.copy(transitionIn = Transition(type, 1000))
+            check(ExportPlan.ownDrawAt(dipping, 100L).alpha > 0f || ExportPlan.ownDrawAt(dipping, 400L).alpha > 0f, "$type: the overlay's head is a hole")
+        }
+        check(abs(ExportPlan.arrival(TransitionType.DipToBlack, 0.5f).alpha - 0.5f) < 1e-4f, "a dip to black as an arrival is not a fade up")
+        check(ExportPlan.arrival(TransitionType.DipToWhite, 0f).white >= 0.99f, "a dip to white as an arrival does not open on white")
+        // The transition's draw with the clip's own laid on it.
+        val stacked = ExportPlan.Draw(alpha = 0.5f, shiftX = 0.2f).over(ExportPlan.Draw(alpha = 0.5f, keepTo = 0.6f, white = 0.3f))
+        check(abs(stacked.alpha - 0.25f) < 1e-5f && stacked.shiftX == 0.2f && stacked.keepTo == 0.6f && stacked.white == 0.3f, "over: $stacked")
+        // The shader's space: down is minus, and the kept band is mirrored.
+        val u = ExportPlan.Draw(shiftY = 0.25f, keepFromY = 0.1f, keepToY = 0.4f).shaderUniforms()
+        check(u.shiftY == -0.25f && abs(u.keepFromY - 0.6f) < 1e-5f && abs(u.keepToY - 0.9f) < 1e-5f, "shader uniforms: $u")
+
+        // A join on an overlay row: another overlay ending where this one starts.
+        val first = video("f", 0, 2000, layer = 1)
+        val butted = video("g", 2000, 1000, layer = 1)
+        check(ExportPlan.hasOverlayJoin(butted, listOf(first, butted)), "a butted overlay has no join")
+        check(!ExportPlan.hasOverlayJoin(butted.copy(timelineStartMs = 2500), listOf(first, butted)), "a gap is a join")
+        check(!ExportPlan.hasOverlayJoin(butted.copy(layer = 2), listOf(first, butted)), "a join across rows")
+        check(!ExportPlan.hasOverlayJoin(video("h", 2000, 1000), listOf(first)), "a main-track shot has an overlay join")
     }
 
     // --- Placement matrix: square pixels, clockwise degrees, screen-down Y. ------

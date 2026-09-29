@@ -161,7 +161,10 @@ fun main() {
         check(e.sound.speedRamp == shot.speedRamp, "the sound lost the shot's speed")
         check(e.sound.voice == VoiceEffect.Robot && e.sound.fadeOutMs == 500L, "the sound lost the shot's voice or fade")
         check(near(e.sound.volume, 0.6f), "the sound is not at the shot's level")
-        check(e.muted.volume == 0f && e.muted.id == shot.id, "the shot was not silenced")
+        // By the switch, with its level and keys kept: a level of nothing on a
+        // keyed shot was one key, and the shot played on.
+        check(e.muted.muted && !e.muted.isHeard && e.muted.id == shot.id, "the shot was not silenced")
+        check(e.muted.volume == shot.volume && e.muted.volumeKeys == shot.volumeKeys, "silencing the shot rewrote its level")
         check(e.sound.layer == 0 && e.sound.keyframes.isEmpty(), "the sound carried picture fields")
         // A muted shot's sound comes out audible.
         check(AudioRules.extracted(shot.copy(volume = 0f), "s2").sound.volume == 1f, "a muted shot gave a silent sound")

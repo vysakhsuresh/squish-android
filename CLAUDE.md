@@ -435,27 +435,55 @@ should work through it and then delete what holds up.
   export through `TransitionEffect`'s `uOpaque` darkening on the cuts-only
   path and as alpha over black on the composited path - the two must look the
   same; an overlay's transition (offered when another overlay ends where it
-  starts on its row) plays over its head in the preview and the file; the
-  sound's pitch - Media3's speed change was found to pitch with the rate, so
-  the file used to disagree with the preview on every retimed clip -
-  `KeepPitchSpeedProcessor` must hold a voice at 0.5x and 2x and through a
-  Hero ramp with no gap or click at a tread boundary, and "Pitch follows
-  speed" must tape-pitch both the preview (`PlaybackParameters` pitch) and the
-  file; the speed slider to 100x plays and exports (ExoPlayer's sink and
-  Sonic at that rate are the question); dragging a point on the curve moves
-  it and a tap adds one; "Blend frames" on a 0.25x clip gives a file that
+  starts on its row, marked on the strip like a shot's join, and dropped -
+  `withOverlayTransitionsFitted` - when that join goes) plays over its head
+  in the preview and the file as one shot's arrival (`ExportPlan.arrival`:
+  the dips, the flash, the jitter and the flicker run their second half over
+  the whole of it, since there is no old shot to hand the first half to), and
+  its tiles show that one shot arriving; the sound's pitch - Media3's
+  one-argument speed change was found to pitch with the rate, so the file
+  used to disagree with the preview on every retimed clip - is now Media3's
+  own `SpeedChangingAudioProcessor(provider, false, shouldMaintainPitch)`,
+  which must hold a voice at 0.5x and 2x and through a Hero ramp with no gap
+  or click at a tread boundary, and "Pitch follows speed" must tape-pitch
+  both the preview (`PlaybackParameters` pitch) and the file; the speed slider
+  to 100x exports at 100x and previews at eight (`PreviewRules.playerRate`,
+  the sink's ceiling: the strip and the file are the clip's rate, the preview
+  runs slower and must not stall); dragging a point on the curve moves it
+  under the finger with no sideways slide on a vertical drag, a tap adds one
+  at the curve's own rate there, and a swipe that starts off a point scrolls
+  the sheet; "Blend frames" on a 0.25x clip gives a file that
   blurs through the steps rather than stepping, at the edit's frame rate,
   with no dropped or reordered frames (`FrameBlendEffect` is the one shader
   program here that emits more frames than it takes - watch for a stall in
-  the encoder or a `VideoFrameProcessingException`); a Strength drag on a
-  stabilized clip re-solves live with no "Measuring…"; the effect tiles and
+  the encoder or a `VideoFrameProcessingException`; its texture pool is
+  sized from the slowest stretch, `FrameBlendPlan.framesPerInput`, and gives
+  up textures rather than the export when the GPU refuses one); a Strength
+  drag on a stabilized clip re-solves that clip live with no "Measuring…"
+  and leaves every other stabilized clip as it was (the strength is the
+  clip's, `Clip.stabilizeStrength`); the effect tiles and
   the transition tiles animate without dropping the sheet's frame rate; the
   keyframe button on Placement, Opacity and the two Volume sheets lights up
-  under a key and the slider then keys the playhead; an effect's own knob
-  (Speed on Shake, Beats on Punch…) reads in the preview and the file.
+  under a key and the slider then keys the playhead, and every opacity and
+  level key is a diamond on the strip (violet, cyan) that parks the playhead
+  when tapped; Mute on the Clip sound sheet is a switch over the level
+  (`Clip.muted`), so a ducked shot mutes and comes back with its duck, the
+  slider moved above nothing unmutes, and a draft that wrote Mute as a level
+  of nothing still reads muted; an effect's own knob
+  (Speed on Shake, Beats on Punch…) reads in the preview and the file;
+  every vertical transition (Slide up, Slide down, and any kept band) is the
+  same way up in the file as in the preview (`Draw.shaderUniforms` turns the
+  draw over for the texture, checked in `ExportPlanChecks.shaderPixel`); a
+  Flash or Dip to white on a picture-in-picture whitens the
+  picture-in-picture alone in the preview as in the file (the white is
+  blended `SrcAtop` inside an offscreen layer - check a keyed overlay's
+  hole stays clear through a flash, and that a TextureView inside such a
+  layer still draws).
   Not built: mask and filter keyframes - a mask already moves on its Track,
   and per-clip filters arrive with B12, whose files they would key; the
-  `ValueKey` track built here is what they would use.
+  `ValueKey` track built here is what they would use - and keyframes on a
+  line of words or a sticker, which are not clips and have their own
+  arrival, leaving and loop from B10.
 
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry

@@ -26,6 +26,7 @@ import com.squish.app.editor.OverlayRules.canStep
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.ValueTrack
 import com.squish.app.timeline.hasValueKeyAt
+import com.squish.app.timeline.readsMuted
 import com.squish.app.timeline.valueAt
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
@@ -128,7 +129,9 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
     // Changes from elsewhere - Reset, undo - but not mid-drag.
     LaunchedEffect(clip.volume) { if (dragFrom == null && clip.volume > 0f) lastHeard = clip.volume }
     val accent = if (clip.isOverlay) SquishColors.Magenta else SquishColors.Violet
-    val muted = clip.volume <= 0f && clip.volumeKeys.isEmpty()
+    // The switch, over the level: a keyed clip is muted by the switch alone,
+    // and a draft that wrote Mute as a level of nothing still reads off.
+    val muted = clip.readsMuted
     val onClip = state.playheadMs in clip.timelineStartMs..clip.timelineEndMs
     PanelSurface(accent = accent) {
         PanelHeading(

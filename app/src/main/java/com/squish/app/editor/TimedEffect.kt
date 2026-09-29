@@ -3,6 +3,7 @@ package com.squish.app.editor
 import com.squish.app.timeline.Clip
 import kotlin.math.PI
 import kotlin.math.exp
+import kotlin.math.pow
 import kotlin.math.sin
 
 /**
@@ -158,7 +159,14 @@ data class FxParams(
                     EffectKind.Mono -> p.copy(mono = maxOf(p.mono, k))
                     EffectKind.Invert -> p.copy(invert = maxOf(p.invert, k))
                     EffectKind.Blur -> p.copy(blur = p.blur + 0.012f * k * twice)
-                    EffectKind.Rainbow -> p.copy(hue = p.hue + (t * amount % 1f) * 2f * PI.toFloat() * k)
+                    // The knob is how fast the hue turns: a quarter of the usual
+                    // rate at the left end, four times at the right, and one in
+                    // the middle. It used to be the rate itself, so the left end
+                    // was not "slow" but off, with Strength then doing nothing.
+                    EffectKind.Rainbow -> {
+                        val rate = 2.0.pow(((amount - 0.5f) * 4f).toDouble()).toFloat()
+                        p.copy(hue = p.hue + (t * rate % 1f) * 2f * PI.toFloat() * k)
+                    }
                 }
             }
             return p

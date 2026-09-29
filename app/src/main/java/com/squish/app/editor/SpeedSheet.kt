@@ -3,8 +3,10 @@ package com.squish.app.editor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -154,15 +156,19 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
                         inactiveTrackColor = SquishColors.Border
                     )
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                    listOf(0.25f, 0.5f, 1f, 2f, 4f, 10f).forEach { preset ->
-                        SelectableChip(
-                            label = rateLabel(preset),
-                            selected = abs(ramp.flatSpeed - preset) < 0.01f,
-                            accentColor = accent,
-                            modifier = Modifier.weight(1f),
-                            onClick = { viewModel.clips.setClipSpeed(clip.id, preset) }
-                        )
+                // Two rows of three, as the Curves chips are: six across cut
+                // "0.25x" to ".25" on a narrow phone.
+                listOf(0.25f, 0.5f, 1f, 2f, 4f, 10f).chunked(3).forEach { presets ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        presets.forEach { preset ->
+                            SelectableChip(
+                                label = rateLabel(preset),
+                                selected = abs(ramp.flatSpeed - preset) < 0.01f,
+                                accentColor = accent,
+                                modifier = Modifier.weight(1f),
+                                onClick = { viewModel.clips.setClipSpeed(clip.id, preset) }
+                            )
+                        }
                     }
                 }
             }
@@ -334,13 +340,17 @@ private fun FrameBlendRow(clip: Clip, sourceFps: Float, viewModel: EditorViewMod
  * same ramp would appear to slow down too early, because the slow part occupies
  * more of the screen than it does of the file.
  *
- * A drag takes hold of the nearest point and moves it: sideways along the clip
- * (a point is anchored in source time, so the finger's played position is read
- * through the curve as it was when the drag began, or the point would chase
- * its own movement), up and down through the same log scale the slider uses.
- * The point is followed by its place in the list, which a move never changes
- * (SpeedRamp.withPointMoved). A tap where there is no point adds one at the
- * rate the curve has there.
+ * A finger put down on a point takes hold of it at once and moves it: sideways
+ * along the clip, up and down through the same log scale the slider uses. The
+ * point is followed by its place in the list, which a move never changes
+ * (SpeedRamp.withPointMoved). Sideways is read through the clocks the drag
+ * began on - the curve, and the clip's played length - both fixed for the
+ * drag: a point is anchored in source time, and every move of it retimes the
+ * clip, so read against the live length the same finger gave a different
+ * moment on every event and a point dragged straight up slid sideways. A
+ * finger put down anywhere else is left to the sheet: a tap adds a point
+ * there, at the rate the curve already has, and a swipe scrolls the sheet -
+ * the curve used to take every drag on it and scroll nothing.
  */
 @Composable
 private fun RampCurve(clip: Clip, playheadMs: Long, accent: Color, viewModel: EditorViewModel) {
@@ -348,9 +358,8 @@ private fun RampCurve(clip: Clip, playheadMs: Long, accent: Color, viewModel: Ed
     val played = clip.durationMs.coerceAtLeast(1L)
     val latestClip by rememberUpdatedState(clip)
     val hitRadius = with(LocalDensity.current) { 24.dp.toPx() }
-    // The point being dragged, by its index in the ordered list, and the curve
-    // the drag began on.
-    var drag by remember(clip.id) { mutableStateOf<Pair<Int, SpeedRamp>?>(null) }
+    // The point under the finger, by its index in the ordered list.
+    var held by remember(clip.id) { mutableStateOf<Int?>(null) }
 
     Canvas(
         modifier = Modifier
@@ -359,43 +368,36 @@ private fun RampCurve(clip: Clip, playheadMs: Long, accent: Color, viewModel: Ed
             .clip(RoundedCornerShape(12.dp))
             .background(SquishColors.Background)
             .pointerInput(clip.id) {
-                detectDragGestures(
-                    onDragStart = { at ->
-                        val c = latestClip
-                        val index = nearestPoint(c, at, size.width.toFloat(), size.height.toFloat(), hitRadius)
-                        drag = index?.let { it to c.speedRamp }
-                    },
-                    onDrag = { change, _ ->
-                        val (index, startRamp) = drag ?: return@detectDragGestures
-                        val c = latestClip
-                        val current = c.speedRamp.ordered.getOrNull(index) ?: return@detectDragGestures
-                        val w = size.width.toFloat()
-                        val h = size.height.toFloat()
-                        val playedAt = (change.position.x / w).coerceIn(0f, 1f) * c.durationMs
-                        val atMs = startRamp.sourceOffsetAt(playedAt.toLong(), c.sourceSpanMs)
-                        val speed = speedFromY(change.position.y, h)
-                        viewModel.clips.moveSpeedPoint(c.id, current.atMs, atMs, speed)
-                        change.consume()
-                    },
-                    onDragEnd = {
-                        drag = null
-                        viewModel.endGesture()
-                    },
-                    onDragCancel = {
-                        drag = null
-                        viewModel.endGesture()
-                    }
-                )
-            }
-            .pointerInput(clip.id) {
-                detectTapGestures { at ->
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
                     val c = latestClip
                     val w = size.width.toFloat()
                     val h = size.height.toFloat()
-                    if (nearestPoint(c, at, w, h, hitRadius) != null) return@detectTapGestures
-                    val playedAt = (at.x / w).coerceIn(0f, 1f) * c.durationMs
-                    val atMs = c.speedRamp.sourceOffsetAt(playedAt.toLong(), c.sourceSpanMs)
-                    viewModel.clips.setSpeedPoint(c.id, atMs, speedFromY(at.y, h))
+                    val index = nearestPoint(c, down.position, w, h, hitRadius)
+                    if (index == null) {
+                        // Not on a point: the sheet may scroll by this, so
+                        // nothing is taken; it is a tap only if it ends here.
+                        val up = waitForUpOrCancellation() ?: return@awaitEachGesture
+                        up.consume()
+                        val playedAt = (up.position.x / w).coerceIn(0f, 1f) * c.durationMs
+                        val atMs = c.speedRamp.sourceOffsetAt(playedAt.toLong(), c.sourceSpanMs)
+                        viewModel.clips.setSpeedPoint(c.id, atMs, c.speedRamp.speedAt(atMs))
+                        return@awaitEachGesture
+                    }
+                    down.consume()
+                    val startRamp = c.speedRamp
+                    val startPlayed = c.durationMs.coerceAtLeast(1L)
+                    held = index
+                    drag(down.id) { change ->
+                        val now = latestClip
+                        val current = now.speedRamp.ordered.getOrNull(index) ?: return@drag
+                        val playedAt = (change.position.x / w).coerceIn(0f, 1f) * startPlayed
+                        val atMs = startRamp.sourceOffsetAt(playedAt.toLong(), now.sourceSpanMs)
+                        viewModel.clips.moveSpeedPoint(now.id, current.atMs, atMs, speedFromY(change.position.y, h))
+                        change.consume()
+                    }
+                    held = null
+                    viewModel.endGesture()
                 }
             }
     ) {
@@ -432,9 +434,9 @@ private fun RampCurve(clip: Clip, playheadMs: Long, accent: Color, viewModel: Ed
         ramp.ordered.forEachIndexed { index, point ->
             val outMs = ramp.outputOffsetAt(point.atMs, clip.sourceSpanMs)
             val px = w * (outMs.toFloat() / played).coerceIn(0f, 1f)
-            val held = drag?.first == index
-            drawCircle(color = accent, radius = if (held) 9f else 6f, center = Offset(px, yForSpeed(point.speed, h)))
-            if (held) drawCircle(color = SquishColors.TextPrimary, radius = 3f, center = Offset(px, yForSpeed(point.speed, h)))
+            val underFinger = held == index
+            drawCircle(color = accent, radius = if (underFinger) 9f else 6f, center = Offset(px, yForSpeed(point.speed, h)))
+            if (underFinger) drawCircle(color = SquishColors.TextPrimary, radius = 3f, center = Offset(px, yForSpeed(point.speed, h)))
         }
 
         // The playhead, but only while it is over this clip.

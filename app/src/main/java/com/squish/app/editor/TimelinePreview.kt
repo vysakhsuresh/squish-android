@@ -47,9 +47,12 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -523,12 +526,19 @@ private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: Surface
                     draw.transform.offsetXFraction * size.width / 2f
                 translationY = draw.translateYFraction * size.height +
                     draw.transform.offsetYFraction * size.height / 2f
+                // Whitened, the surface draws into its own buffer so the white
+                // lands on this shot's pixels alone (see whitened).
+                compositingStrategy = if (draw.white > 0f) CompositingStrategy.Offscreen else CompositingStrategy.Auto
             }
             .drawWithContent {
                 // A wipe, or the old shot cut away under a slide: only the
-                // kept rectangle is drawn, as the export's shader keeps it.
+                // kept rectangle is drawn, as the export's shader keeps it -
+                // and the white goes only where the picture is drawn, as the
+                // shader's does (by the pixel's own coverage), not over the
+                // cut-away part of the surface.
                 if (draw.revealFrom <= 0f && draw.revealFraction >= 1f && draw.revealFromY <= 0f && draw.revealToY >= 1f) {
                     drawContent()
+                    whitened(draw.white)
                 } else {
                     clipRect(
                         left = size.width * draw.revealFrom.coerceIn(0f, 1f),
@@ -537,10 +547,9 @@ private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: Surface
                         bottom = size.height * draw.revealToY.coerceIn(0f, 1f)
                     ) {
                         this@drawWithContent.drawContent()
+                        whitened(draw.white)
                     }
                 }
-                // Flash, glow, dip to white: the picture mixed towards white.
-                if (draw.white > 0f) drawRect(Color.White, alpha = draw.white.coerceIn(0f, 1f))
             }
     ) {
         AndroidView(
@@ -735,6 +744,12 @@ private fun Modifier.drawnAs(draw: ExportPlan.Draw): Modifier {
             scaleY = draw.scale
             translationX = draw.shiftX * size.width
             translationY = draw.shiftY * size.height
+            // Its own buffer, so the white below lands on this layer's pixels
+            // and nothing under it. The layer is the whole canvas with the
+            // picture fitted inside it; a flash painted over the layer whitened
+            // the base shot round a picture-in-picture, where the file whitens
+            // only the picture-in-picture.
+            compositingStrategy = CompositingStrategy.Offscreen
         }
         .drawWithContent {
             clipRect(
@@ -744,9 +759,20 @@ private fun Modifier.drawnAs(draw: ExportPlan.Draw): Modifier {
                 bottom = size.height * draw.keepToY.coerceIn(0f, 1f)
             ) {
                 this@drawWithContent.drawContent()
+                whitened(draw.white)
             }
-            if (draw.white > 0f) drawRect(Color.White, alpha = draw.white.coerceIn(0f, 1f))
         }
+}
+
+/**
+ * The picture mixed [white] of the way towards white - flash, glow, dip to
+ * white - by each pixel's own coverage, which is how the transition shader
+ * mixes it (uWhite * c.a): a keyed-out hole, the fit's transparent margin and
+ * everything outside the picture stay as they are.
+ */
+private fun DrawScope.whitened(white: Float) {
+    if (white <= 0f) return
+    drawRect(Color.White, alpha = white.coerceIn(0f, 1f), blendMode = BlendMode.SrcAtop)
 }
 
 /** The largest rectangle of [aspect] that fits, centred; all of it when the shape is not known yet. */

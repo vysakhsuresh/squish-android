@@ -281,11 +281,16 @@ fun KeyframeButton(
             }
         }
         if (count > 0) {
+            // A target the size of a finger, and its own: the row round it
+            // toggles a key, so a miss here used to add one instead of clearing them.
             Text(
                 "Clear",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = SquishColors.Pink,
-                modifier = Modifier.clickable(onClick = onClear)
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onClear)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
             )
         }
     }
@@ -524,15 +529,16 @@ fun StabilizePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
             )
         }
 
+        // This clip's own strength; the edit's default until it has one.
         LabeledSlider(
-            "Strength", state.stabilizeStrength, 0f..1f,
+            "Strength", viewModel.analysis.strengthFor(clip, state), 0f..1f,
             onFinished = viewModel::endGesture,
-            onChange = viewModel.analysis::setStabilizeStrength
+            onChange = { viewModel.analysis.setStabilizeStrength(clip.id, it) }
         )
         Text(
             when {
                 measured && clip.isStabilized -> "Stronger holds the frame steadier and crops in further to afford it. " +
-                    "Solved again from the measurement as the slider moves."
+                    "This clip is solved again from its measurement as the slider moves; other clips keep theirs."
                 clip.isStabilized -> "Stronger holds the frame steadier and crops in further to afford it. " +
                     "This clip was measured before measurements were kept: measure again for the slider to act on it."
                 else -> "Stronger holds the frame steadier and crops in further to afford it."

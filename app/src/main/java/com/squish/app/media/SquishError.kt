@@ -374,9 +374,9 @@ sealed class SquishError(
             // An overlay carries its own sound now; one no decoder takes is
             // silenced on its own, and the rest of the mix is kept.
             val overlays = state.videoClips.map { clip ->
-                val deaf = clip.isOverlay && clip.volume > 0f &&
+                val deaf = clip.isOverlay && clip.isHeard &&
                     (clip.uri ?: state.sourceUri)?.let { MediaCompat.cached(it)?.audioProblem } != null
-                if (deaf) clip.copy(volume = 0f) else clip
+                if (deaf) clip.copy(muted = true) else clip
             }
             val quieted = if (overlays == state.videoClips) state else state.copy(videoClips = overlays)
             if (quieted.muteOriginal) return quieted

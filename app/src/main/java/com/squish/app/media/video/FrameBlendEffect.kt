@@ -36,10 +36,14 @@ import java.util.concurrent.Executor
  * draw into - and hands the chain one input's worth of output before asking
  * for the next.
  */
-class FrameBlendEffect(private val intervalUs: Long) : GlEffect {
+class FrameBlendEffect(
+    private val intervalUs: Long,
+    /** Frames out per frame in, at most (FrameBlendPlan.framesPerInput): what the pool is sized to. */
+    private val framesPerInput: Int = FrameBlendPlan.MAX_FRAMES_PER_INPUT
+) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        FrameBlendShaderProgram(context, useHdr, intervalUs)
+        FrameBlendShaderProgram(context, useHdr, intervalUs, framesPerInput.coerceIn(1, FrameBlendPlan.MAX_FRAMES_PER_INPUT))
 
     /** Nothing to blend into a gap shorter than the interval: identity for the frame rate itself. */
     override fun isNoOp(inputWidth: Int, inputHeight: Int): Boolean = intervalUs <= 0L
@@ -48,7 +52,8 @@ class FrameBlendEffect(private val intervalUs: Long) : GlEffect {
 private class FrameBlendShaderProgram(
     context: Context,
     private val useHdr: Boolean,
-    private val intervalUs: Long
+    private val intervalUs: Long,
+    private val capacity: Int
 ) : GlShaderProgram {
 
     private var inputListener: GlShaderProgram.InputListener = object : GlShaderProgram.InputListener {}
@@ -73,8 +78,8 @@ private class FrameBlendShaderProgram(
     private var holding = false
 
     /** Textures drawn into and handed on; back on [free] when the chain releases them. */
-    private val outputs = ArrayList<GlTextureInfo>(CAPACITY)
-    private val free = ArrayDeque<GlTextureInfo>(CAPACITY)
+    private val outputs = ArrayList<GlTextureInfo>(capacity)
+    private val free = ArrayDeque<GlTextureInfo>(capacity)
 
     init {
         glProgram.setBufferAttribute(
@@ -168,7 +173,20 @@ private class FrameBlendShaderProgram(
         width = w
         height = h
         held = newTexture(provider, w, h)
-        repeat(CAPACITY) { outputs.add(newTexture(provider, w, h)) }
+        // As many as the slowest stretch needs, and fewer if the GPU will not
+        // give them: each is a whole frame of the file, and at 4K on a phone
+        // that is short of memory the allocation can fail part way. Down to
+        // the one texture the frame itself needs, the export still completes
+        // - with thinner blends, or none, rather than no file at all.
+        var wanted = capacity
+        while (outputs.size < wanted) {
+            try {
+                outputs.add(newTexture(provider, w, h))
+            } catch (e: GlUtil.GlException) {
+                if (outputs.isEmpty()) throw e
+                wanted = outputs.size
+            }
+        }
         free.addAll(outputs)
         holding = false
         // The first time, the chain was told nothing was ready (no textures
@@ -209,12 +227,5 @@ private class FrameBlendShaderProgram(
     private companion object {
         const val VERTEX_SHADER_PATH = "squish_vertex_copy_es2.glsl"
         const val FRAGMENT_SHADER_PATH = "squish_blend_es2.glsl"
-
-        /**
-         * Frames out per frame in, at most: the frame itself and seven between.
-         * Enough for an eighth speed at the file's own rate; slower than that the
-         * blends thin out, and slower than that is a slideshow whatever is done.
-         */
-        const val CAPACITY = 8
     }
 }

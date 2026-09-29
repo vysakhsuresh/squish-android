@@ -226,9 +226,10 @@ object ExportPlan {
 
     /**
      * Below this a gap is rounding, not a gap: shorter than a frame at 50 fps, so
-     * a blank still for it would be one frame of nothing or none at all.
+     * a blank still for it would be one frame of nothing or none at all. The
+     * model's own number, so an overlay's join is butted by the same rule.
      */
-    const val MIN_GAP_MS = 20L
+    const val MIN_GAP_MS = com.squish.app.timeline.MIN_GAP_MS
 
     /** The rate Media3 1.11.1 draws a gap's blank frames at (SequenceAssetLoader.insertBlankFrames), not a choice. */
     const val GAP_FPS = 30
@@ -320,7 +321,55 @@ object ExportPlan {
 
         /** This draw at [factor] of its opacity: a clip's own fade under its transition. */
         fun faded(factor: Float): Draw = if (factor >= 1f) this else copy(alpha = alpha * factor.coerceIn(0f, 1f))
+
+        /** This draw on top of [own]: the transition's, then the clip's own laid on it - both fade, and an overlay's own arrival supplies the movement. */
+        fun over(own: Draw): Draw = Draw(
+            alpha = alpha * own.alpha,
+            shiftX = shiftX + own.shiftX,
+            shiftY = shiftY + own.shiftY,
+            scale = scale * own.scale,
+            keepFrom = maxOf(keepFrom, own.keepFrom),
+            keepTo = minOf(keepTo, own.keepTo),
+            keepFromY = maxOf(keepFromY, own.keepFromY),
+            keepToY = minOf(keepToY, own.keepToY),
+            white = maxOf(white, own.white)
+        )
+
+        /**
+         * The numbers the transition shader is given, in its own space. The
+         * draw's Y runs down the picture, as the preview's and the sheet's do;
+         * the frame texture's Y runs up it (the same NDC-is-up fact
+         * [placementMatrix] negates). So the shift is turned over and the kept
+         * band mirrored: [shiftY] is the picture moved down, and down in the
+         * texture is minus. Every vertical transition was mirrored between the
+         * preview and the file before this was one function checked against the
+         * preview's pixel (ExportPlanChecks.shaderPixel).
+         */
+        fun shaderUniforms(): ShaderUniforms = ShaderUniforms(
+            alpha = alpha.coerceIn(0f, 1f),
+            shiftX = shiftX,
+            shiftY = -shiftY,
+            scale = scale,
+            keepFromX = keepFrom,
+            keepFromY = 1f - keepToY,
+            keepToX = keepTo,
+            keepToY = 1f - keepFromY,
+            white = white.coerceIn(0f, 1f)
+        )
     }
+
+    /** [Draw.shaderUniforms]: what goes into uAlpha, uShift, uScale, uKeep and uWhite, texture-space Y. */
+    data class ShaderUniforms(
+        val alpha: Float,
+        val shiftX: Float,
+        val shiftY: Float,
+        val scale: Float,
+        val keepFromX: Float,
+        val keepFromY: Float,
+        val keepToX: Float,
+        val keepToY: Float,
+        val white: Float
+    )
 
     val PLAIN = Draw()
     private val HIDDEN = Draw(alpha = 0f)
@@ -496,10 +545,10 @@ object ExportPlan {
     /**
      * How a clip fades itself at [playedMs] into it, whatever the transition
      * around it: its opacity track, its arrival's or leaving's fade, and - on
-     * an overlay with a transition set - the transition's incoming half, drawn
-     * over the head of the clip on its own. An overlay has no shot under it on
-     * its row to blend with, so its transition is its arrival, from the same
-     * blend the main track draws.
+     * an overlay with a transition set - the transition as its [arrival],
+     * drawn over the head of the clip on its own. An overlay has no shot under
+     * it on its row to blend with, so its transition is its arrival, from the
+     * same blend the main track draws.
      */
     fun ownDrawAt(clip: Clip, playedMs: Long): Draw {
         val alpha = clip.alphaAt(playedMs)
@@ -508,8 +557,31 @@ object ExportPlan {
         val length = overlayTransitionMs(clip)
         if (length <= 0L || playedMs >= length) return PLAIN.faded(alpha)
         val p = (playedMs.toFloat() / length).coerceIn(0f, 1f)
-        return blend(transition.type, p, incomingOnTop = true).first.faded(alpha)
+        return arrival(transition.type, p).faded(alpha)
     }
+
+    /**
+     * A transition as one shot's arrival, [p] of the way in: the incoming half
+     * of [blend], over whatever is beneath. The kinds that show one shot at a
+     * time - the dips, the jitter, the flash, the flicker - hide the incoming
+     * shot for their whole first half, since the old shot has the screen then;
+     * with no old shot to hand it to, that half is a hole. Those run their
+     * second half over the whole arrival instead: a dip to black is a fade up,
+     * a dip to white opens on white and settles, a flash dies away from the
+     * first frame, a jitter shakes itself still.
+     */
+    fun arrival(type: TransitionType, p: Float): Draw {
+        val q = if (type in ONE_AT_A_TIME) 0.5f + p.coerceIn(0f, 1f) / 2f else p
+        return blend(type, q, incomingOnTop = true).first
+    }
+
+    private val ONE_AT_A_TIME = setOf(
+        TransitionType.DipToBlack, TransitionType.DipToWhite, TransitionType.Jitter,
+        TransitionType.Flash, TransitionType.Flicker
+    )
+
+    /** Whether [clip], an overlay, has another overlay on its row ending where it starts: the model's rule (Clip.hasOverlayJoin). */
+    fun hasOverlayJoin(clip: Clip, others: List<Clip>): Boolean = clip.hasOverlayJoin(others)
 
     /** How long an overlay's transition runs over its head: what was asked for, within the clip. */
     fun overlayTransitionMs(clip: Clip): Long =

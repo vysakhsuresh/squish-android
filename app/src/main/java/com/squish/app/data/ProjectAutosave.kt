@@ -618,6 +618,7 @@ class ProjectAutosave(context: Context) {
         put("timelineStartMs", clip.timelineStartMs)
         put("sourceDurationMs", clip.sourceDurationMs)
         put("volume", clip.volume.toDouble())
+        if (clip.muted) put("muted", true)
         if (clip.fadeInMs > 0L) put("fadeInMs", clip.fadeInMs)
         if (clip.fadeOutMs > 0L) put("fadeOutMs", clip.fadeOutMs)
         if (clip.voice != VoiceEffect.None) put("voice", clip.voice.name)
@@ -656,6 +657,7 @@ class ProjectAutosave(context: Context) {
                 put("confidence", JSONArray().apply { m.motions.forEach { put(it.confidence.toDouble()) } })
             })
         }
+        clip.stabilizeStrength?.let { put("stabilizeStrength", it.toDouble()) }
         if (clip.opacityKeys.isNotEmpty()) put("opacityKeys", JSONArray().apply { clip.opacityKeys.forEach { put(encodeValueKey(it)) } })
         if (clip.volumeKeys.isNotEmpty()) put("volumeKeys", JSONArray().apply { clip.volumeKeys.forEach { put(encodeValueKey(it)) } })
         if (clip.arrival != ClipArrival.None) put("arrival", clip.arrival.name)
@@ -949,6 +951,7 @@ class ProjectAutosave(context: Context) {
             timelineStartMs = json.optLong("timelineStartMs"),
             sourceDurationMs = json.optLong("sourceDurationMs"),
             volume = json.optDouble("volume", 1.0).toFloat(),
+            muted = json.optBoolean("muted", false),
             fadeInMs = json.optLong("fadeInMs").coerceAtLeast(0L),
             fadeOutMs = json.optLong("fadeOutMs").coerceAtLeast(0L),
             voice = enumOrNull<VoiceEffect>(json.optString("voice")) ?: VoiceEffect.None,
@@ -975,6 +978,9 @@ class ProjectAutosave(context: Context) {
                 (0 until array.length()).mapNotNull { i -> decodeKeyframe(array.optJSONObject(i)) }
             }.orEmpty().sortedBy { it.atMs },
             stabilizerMeasurement = decodeMeasurement(json.optJSONObject("stabilizerMeasurement")),
+            // Absent on a draft from before the strength was the clip's: the
+            // edit's one strength then, which the sheet falls back to.
+            stabilizeStrength = if (json.has("stabilizeStrength")) json.optDouble("stabilizeStrength", 0.5).toFloat().coerceIn(0f, 1f) else null,
             opacityKeys = decodeValueKeys(json.optJSONArray("opacityKeys")),
             volumeKeys = decodeValueKeys(json.optJSONArray("volumeKeys")),
             arrival = enumOrNull<ClipArrival>(json.optString("arrival")) ?: ClipArrival.None,
@@ -1188,7 +1194,7 @@ data class ProjectSnapshot(
             !muteOriginal && originalVolume == 1f &&
             clips.first().let {
                 it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs &&
-                    it.volume == 1f && it.voice == VoiceEffect.None && it.fadeInMs == 0L && it.fadeOutMs == 0L &&
+                    it.volume == 1f && !it.muted && it.voice == VoiceEffect.None && it.fadeInMs == 0L && it.fadeOutMs == 0L &&
                     it.chromaKey == null && it.mask == null && it.background == null &&
                     it.keyframes.isEmpty() && it.stabilizer.isEmpty() && it.speedRamp == com.squish.app.timeline.SpeedRamp() &&
                     // An arrival, a keyed fade or a switched pitch is an edit as much as a trim is.

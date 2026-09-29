@@ -76,6 +76,14 @@ data class Clip(
     val volume: Float = 1f,
 
     /**
+     * The sound switched off, over whatever [volume] and [volumeKeys] say, so
+     * a shot ducked by hand can be silenced and brought back with its duck
+     * intact. Mute used to write a level of nothing, which on a keyed clip
+     * dropped a key at the playhead and silenced nothing.
+     */
+    val muted: Boolean = false,
+
+    /**
      * The sound's rise from silence at its start and fall to it at its end, in
      * played milliseconds - the strip's clock, so a fade drawn as a wedge on
      * the clip is the length it plays. A music bed trimmed to the picture's end
@@ -150,6 +158,14 @@ data class Clip(
     val stabilizerMeasurement: com.squish.app.media.video.StabilizerMeasurement? = null,
 
     /**
+     * The strength this clip's correction was solved at, once its Strength
+     * slider has been touched; null means the edit's default. Per clip, because
+     * the slider sits on the clip's own sheet: one number for the edit meant a
+     * nudge on one shot quietly re-solved every other.
+     */
+    val stabilizeStrength: Float? = null,
+
+    /**
      * Opacity over the clip, in played time from its head, over [opacity] when
      * there are none; see [ValueKey]. A picture-in-picture fading up while a
      * placement key moves it is two tracks, keyed on their own moments.
@@ -211,6 +227,27 @@ data class Clip(
 
     /** A take recorded in the editor (see [isVoiceover]): the strip marks it with a mic. */
     val isVoiceover: Boolean get() = isVoiceover(uri?.toString())
+
+    /**
+     * Whether the clip's own sound is ever heard: not muted, and its level -
+     * the keys when it has any, the one level otherwise - above nothing
+     * somewhere. What decides whether a row carries sound in the file and
+     * whether the edit has any sound at all.
+     */
+    val isHeard: Boolean
+        get() = !muted && (if (volumeKeys.isEmpty()) volume > 0f else volumeKeys.any { it.value > 0f })
+
+    /**
+     * Whether another overlay among [others] ends where this one starts on its
+     * row - within the slip a drag leaves ([MIN_GAP_MS]) - which is when the
+     * toolbar offers a transition, when the strip marks the join, and for as
+     * long as a transition set there is kept ([withOverlayTransitionsFitted]).
+     */
+    fun hasOverlayJoin(others: List<Clip>): Boolean =
+        isOverlay && others.any {
+            it.id != id && it.kind == kind && it.layer == layer &&
+                abs(it.timelineEndMs - timelineStartMs) < MIN_GAP_MS
+        }
 
     /**
      * The highest overlay row this clip may sit on. Footage stops at
@@ -387,11 +424,11 @@ data class Clip(
             leaving != ClipLeaving.None || loop == ClipLoop.Flicker
 
     /**
-     * The level at [localMs] into the played clip: the volume track, or the one
-     * level when there is none. Not through the fades, which are the caller's
-     * (AudioRules.fadeGain), as they were.
+     * The level at [localMs] into the played clip: nothing while [muted], else
+     * the volume track, or the one level when there is none. Not through the
+     * fades, which are the caller's (AudioRules.fadeGain), as they were.
      */
-    fun volumeAt(localMs: Long): Float = volumeKeys.valueAt(localMs, volume)
+    fun volumeAt(localMs: Long): Float = if (muted) 0f else volumeKeys.valueAt(localMs, volume)
 
     /** [volumeAt] for a moment of the timeline. */
     fun volumeAtTimeline(timelineMs: Long): Float = volumeAt(timelineMs - timelineStartMs)
@@ -618,6 +655,31 @@ fun TimelineState.withTransition(clipId: String, transition: Transition): Timeli
     val order = baseVideoClips.map { if (it.id == clipId) it.copy(transitionIn = transition) else it }
     return tagged.layOutMain(order, mainSpacing())
 }
+
+/**
+ * Every overlay whose transition has lost its join - the overlay before it on
+ * its row moved, trimmed short or gone - with that transition dropped. An
+ * overlay's transition is its arrival over that join (ExportPlan.ownDrawAt) and
+ * the toolbar offers it only while the join is there, so a transition kept past
+ * it played on with no way back to its sheet to turn it off. Run on every change
+ * to the timeline, the way the main track drops a transition from whichever shot
+ * comes first (see [layOutMain]); the undo step that broke the join is where it
+ * comes back from.
+ */
+fun TimelineState.withOverlayTransitionsFitted(): TimelineState {
+    if (clips.none { it.isOverlay && it.transitionIn.isActive }) return this
+    val overlays = clips.filter { it.kind == ClipKind.Video && it.isOverlay }
+    return copy(clips = clips.map {
+        if (it.isOverlay && it.transitionIn.isActive && !it.hasOverlayJoin(overlays)) it.copy(transitionIn = Transition()) else it
+    })
+}
+
+/**
+ * Below this a gap is rounding, not a gap: shorter than a frame at 50 fps. Two
+ * clips this close are butted, for the export's pieces (ExportPlan) and for an
+ * overlay's join alike.
+ */
+const val MIN_GAP_MS = 20L
 
 /**
  * A stretch of the main track with no picture on it: before [clipId], from

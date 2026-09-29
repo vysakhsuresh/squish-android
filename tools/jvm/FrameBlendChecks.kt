@@ -50,6 +50,24 @@ fun main() {
     check(FrameBlendPlan.between(0L, 200_000L, 0L, 8).isEmpty(), "a zero interval did not refuse")
     check(FrameBlendPlan.between(0L, 200_000L, at30, 0).isEmpty(), "no textures did not refuse")
 
+    // --- The pool is sized from the slowest stretch, not always eight. ----------
+    // 30 fps footage at half speed into a 30 fps file: a frame every 66 ms, one
+    // blend between - two textures, not eight.
+    check(FrameBlendPlan.framesPerInput(30f, 0.5f, 30) == 2, "0.5x wants ${FrameBlendPlan.framesPerInput(30f, 0.5f, 30)} textures")
+    check(FrameBlendPlan.framesPerInput(30f, 0.25f, 30) == 4, "0.25x wants ${FrameBlendPlan.framesPerInput(30f, 0.25f, 30)}")
+    check(FrameBlendPlan.framesPerInput(30f, 0.1f, 30) == FrameBlendPlan.MAX_FRAMES_PER_INPUT, "0.1x is not capped at the pool's ceiling")
+    check(FrameBlendPlan.framesPerInput(60f, 0.5f, 30) == 1, "60 fps at half speed into 30 fps needs no blends but was given ${FrameBlendPlan.framesPerInput(60f, 0.5f, 30)}")
+    check(FrameBlendPlan.framesPerInput(30f, 0.5f, 60) == 4, "a 60 fps file wants twice the frames")
+    check(FrameBlendPlan.framesPerInput(0f, 0.5f, 30) == FrameBlendPlan.MAX_FRAMES_PER_INPUT, "an unknown source rate did not take the safe ceiling")
+    // What the pool holds is enough for what the plan then asks of it.
+    for ((fps, speed) in listOf(30f to 0.5f, 30f to 0.25f, 24f to 0.3f, 60f to 0.125f)) {
+        val frames = FrameBlendPlan.framesPerInput(fps, speed, 30)
+        val gapUs = (1_000_000.0 / fps / speed).toLong()
+        val blends = FrameBlendPlan.between(0L, gapUs, at30, frames - 1)
+        val wanted = FrameBlendPlan.between(0L, gapUs, at30, FrameBlendPlan.MAX_FRAMES_PER_INPUT - 1)
+        check(blends.size == wanted.size, "$fps fps at ${speed}x: the pool of $frames gives ${blends.size} blends, a full pool ${wanted.size}")
+    }
+
     println()
     if (problems.isEmpty()) println("PASS - blended frames land only where the footage has none, at the file's cadence")
     else { println("FAIL (${problems.size})"); problems.take(25).forEach { println("  - $it") }; exitProcess(1) }

@@ -93,6 +93,23 @@ fun Clip.withValueKeysCleared(track: ValueTrack): Clip {
     return withKeys(track, emptyList()).withStatic(track, settled)
 }
 
+/**
+ * The clip muted, or heard again. Mute is a switch over the level, not a level
+ * of nothing written into it: the one level and every key stay as they were,
+ * so a duck drawn by hand comes back exactly when the switch does. Only a
+ * clip left at nothing with no keys - the way Mute used to be written - is
+ * given [restoreTo] on the way back, or the switch would come on to silence.
+ */
+fun Clip.withMuted(muted: Boolean, restoreTo: Float = 1f): Clip = when {
+    muted -> copy(muted = true)
+    volumeKeys.isEmpty() && volume <= 0f -> copy(muted = false, volume = restoreTo.coerceIn(0.05f, 1f))
+    else -> copy(muted = false)
+}
+
+/** Whether the sound switch reads off: muted, or - a draft from before the switch was its own - left at nothing with no keys. */
+val Clip.readsMuted: Boolean
+    get() = muted || (volume <= 0f && volumeKeys.isEmpty())
+
 /** Whether a key sits under the playhead on [track] - what lights the keyframe button. */
 fun Clip.hasValueKeyAt(track: ValueTrack, playheadMs: Long, toleranceMs: Long = KEY_TOLERANCE_MS): Boolean =
     valueKeys(track).hasKeyNear(playheadMs - timelineStartMs, toleranceMs)

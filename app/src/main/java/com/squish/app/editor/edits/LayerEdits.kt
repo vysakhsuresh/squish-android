@@ -249,7 +249,7 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
     private fun sayIfSilencedOnMain(overlay: Clip) {
         val now = _state.value
         val moved = now.videoClips.firstOrNull { it.id == overlay.id }?.isMain == true
-        if (moved && now.muteOriginal && overlay.volume > 0f && !overlay.isStillPicture) {
+        if (moved && now.muteOriginal && overlay.isHeard && !overlay.isStillPicture) {
             _state.update { it.copy(failure = SquishError.SilentOnMainTrack()) }
         }
     }

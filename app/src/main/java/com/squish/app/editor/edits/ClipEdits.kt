@@ -19,6 +19,7 @@ import com.squish.app.timeline.Transform
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.ValueTrack
 import com.squish.app.timeline.hasValueKeyAt
+import com.squish.app.timeline.withMuted
 import com.squish.app.timeline.withValueAt
 import com.squish.app.timeline.withValueKeyAdded
 import com.squish.app.timeline.withValueKeyRemoved
@@ -201,8 +202,15 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         record("Remove speed point") { retime(clipId, clip.speedRamp.withoutPoint(atMs)) }
     }
 
+    /**
+     * Speed's Reset: the rate back to one, and the sheet's two switches off with
+     * it. Reset is the sheet's, as Animation's is: a ramp cleared with Blend
+     * frames and Pitch follows speed left on had the next slow-down blend and
+     * tape-pitch without anyone choosing it again.
+     */
     fun clearSpeed(clipId: String) = record("Reset speed") {
         retime(clipId, SpeedRamp())
+        updateClip(clipId) { it.copy(frameBlend = false, pitchFollowsSpeed = false) }
     }
 
     /**
@@ -503,20 +511,30 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         writeVolume(clipId, volume)
     }
 
-    /** Volume's Reset: full level, its keys gone, as one step. */
+    /** Volume's Reset: full level, heard, its keys gone, as one step. */
     fun resetClipVolume(clipId: String) = record("Volume") {
-        updateClip(clipId) { if (it.kind == ClipKind.Video) it.copy(volume = 1f, volumeKeys = emptyList()) else it }
+        updateClip(clipId) { if (it.kind == ClipKind.Video) it.copy(volume = 1f, volumeKeys = emptyList(), muted = false) else it }
     }
 
-    /** Mute, or back to [restoreTo] - the level it had - as one step. */
+    /**
+     * Mute, or heard again, as one step: a switch over the level (Clip.muted),
+     * so the level and its keys are exactly as they were when it comes back.
+     * [restoreTo] is only for a clip left at nothing with no keys, the way Mute
+     * used to be written (ValueTracks.withMuted).
+     */
     fun setClipMuted(clipId: String, muted: Boolean, restoreTo: Float = 1f) =
-        record(if (muted) "Mute" else "Unmute") { writeVolume(clipId, if (muted) 0f else restoreTo.coerceIn(0.05f, 1f)) }
+        record(if (muted) "Mute" else "Unmute") {
+            updateClip(clipId) { if (it.kind == ClipKind.Video) it.withMuted(muted, restoreTo) else it }
+        }
 
     private fun writeVolume(clipId: String, volume: Float) = mutateTimeline { timeline ->
         timeline.copy(clips = timeline.clips.map {
             // Through the track's rule (ValueTracks): a key at the playhead once
-            // the clip has any, the one level until then.
-            if (it.id == clipId && it.kind == ClipKind.Video) it.withValueAt(ValueTrack.Volume, timeline.playheadMs, volume, 0f..1f) else it
+            // the clip has any, the one level until then. A level set on a muted
+            // clip is meant to be heard, so the slider takes the switch with it.
+            if (it.id == clipId && it.kind == ClipKind.Video) {
+                it.withValueAt(ValueTrack.Volume, timeline.playheadMs, volume, 0f..1f).let { set -> if (volume > 0f) set.copy(muted = false) else set }
+            } else it
         })
     }
 

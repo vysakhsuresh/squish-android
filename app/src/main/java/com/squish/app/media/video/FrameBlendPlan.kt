@@ -46,4 +46,31 @@ object FrameBlendPlan {
 
     /** The interval a file at [frameRate] wants its frames at. */
     fun intervalUs(frameRate: Int): Long = (1_000_000L / frameRate.coerceAtLeast(1)).coerceAtLeast(1L)
+
+    /**
+     * How many frames out each frame in can need - itself and the blends into
+     * the gap after it - for footage at [sourceFps] slowed to [slowestSpeed]
+     * in a file at [fileFps]: the gap is one source frame stretched by the
+     * speed, and the file wants a frame every interval of it. At most
+     * [MAX_FRAMES_PER_INPUT], the pool's ceiling; never fewer than the frame
+     * itself. What the effect sizes its textures from, since each is a whole
+     * frame of the file and a 0.5x clip has no use for eight of them.
+     */
+    fun framesPerInput(sourceFps: Float, slowestSpeed: Float, fileFps: Int): Int {
+        if (!(sourceFps > 0f) || !(slowestSpeed > 0f) || fileFps <= 0) return MAX_FRAMES_PER_INPUT
+        val gapUs = 1_000_000.0 / sourceFps / slowestSpeed
+        val interval = intervalUs(fileFps).toDouble()
+        // The blends [between] makes: one per interval into the gap, none closer
+        // than a quarter interval to the next real frame - so a gap of two
+        // intervals and a hair is one blend, not two.
+        val blends = if (gapUs <= interval * 1.25) 0 else Math.floor((gapUs - interval / 4) / interval).toInt()
+        return (blends + 1).coerceIn(1, MAX_FRAMES_PER_INPUT)
+    }
+
+    /**
+     * Frames out per frame in, at most: the frame itself and seven between.
+     * Enough for an eighth speed at the file's own rate; slower than that the
+     * blends thin out, and slower than that is a slideshow whatever is done.
+     */
+    const val MAX_FRAMES_PER_INPUT = 8
 }

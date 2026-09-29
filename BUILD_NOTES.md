@@ -107,14 +107,20 @@ always active; `FadeProcessor` is only built when a fade is set).
 
 Animation, speed and transitions (B13) lean on four more things, each read in
 the 1.11.1 bytecode. `SpeedChangingAudioProcessor.updateSpeed` calls
-`setPitch(newSpeed)` as well as `setSpeed`, so Media3's own retime pitches the
-sound with the rate like a tape - the file's sound went up an octave at double
-speed while the preview held it. `KeepPitchSpeedProcessor` walks the same
-segments with the pitch at one, changing Sonic's rate the way Media3 does
-(`queueEndOfStream` at a tread's boundary, drain, `setSpeed`, `flush`), and
-reports its length through `SpeedProviderUtil.getDurationAfterSpeedProviderApplied`
-so the sequence timing is the one the picture has; `Clip.pitchFollowsSpeed`
-chooses Media3's processor for both preview and file instead. `FrameBlendEffect`
+`setPitch(newSpeed)` as well as `setSpeed` unless the processor was made with
+`shouldMaintainPitch`, so the one-argument constructor - which passes
+`(false, false)` - retimes like a tape: the file's sound went up an octave at
+double speed while the preview held it. The three-argument constructor is
+`(SpeedProvider, areInputTimestampsAdjusted, shouldMaintainPitch)`, and
+`VideoProcessor.buildAudioProcessors` passes `!clip.pitchFollowsSpeed` as the
+third, so the pitch is held or let go by Media3's own walk of the segments
+(a hand-rolled copy of it, `KeepPitchSpeedProcessor`, carried the held path
+until that flag was found). The preview's `ExoPlayer` is asked for the same
+choice through `PlaybackParameters` pitch, but never for more than
+`DefaultAudioSink.MAX_PLAYBACK_SPEED` (8, and the same for pitch): above it the
+sink held the sound at eight while the video renderer was asked for a hundred,
+so `PreviewRules.playerRate` caps what a player is asked for and the preview of
+a 100x clip runs at eight - the file is the clip's own rate. `FrameBlendEffect`
 is a `GlShaderProgram` written from the interface, not a `BaseGlShaderProgram`:
 it hands the chain several output frames per input, on textures it makes
 itself with `GlUtil.createTexture` and `GlObjectsProvider.createBuffersForTexture`,

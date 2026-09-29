@@ -86,26 +86,17 @@ private class TransitionShaderProgram(
             val playedUs = presentationTimeUs - originUs
             val blend = if (rolls == null) ExportPlan.PLAIN else ExportPlan.drawAt(rolls, clip, ExportPlan.timelineUs(clip, playedUs))
             val own = ExportPlan.ownDrawAt(clip, playedUs / 1_000L)
-            // The transition's draw, then the clip's own laid on it: both fade,
-            // and an overlay's own arrival supplies the movement.
-            val draw = ExportPlan.Draw(
-                alpha = blend.alpha * own.alpha,
-                shiftX = blend.shiftX + own.shiftX,
-                shiftY = blend.shiftY + own.shiftY,
-                scale = blend.scale * own.scale,
-                keepFrom = maxOf(blend.keepFrom, own.keepFrom),
-                keepTo = minOf(blend.keepTo, own.keepTo),
-                keepFromY = maxOf(blend.keepFromY, own.keepFromY),
-                keepToY = minOf(blend.keepToY, own.keepToY),
-                white = maxOf(blend.white, own.white)
-            )
+            // The transition's draw with the clip's own laid on it, turned into
+            // the texture's own space - its Y runs up the picture, the draw's
+            // down (ExportPlan.Draw.shaderUniforms).
+            val u = blend.over(own).shaderUniforms()
             glProgram.use()
             glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
-            glProgram.setFloatsUniform("uAlpha", floatArrayOf(draw.alpha.coerceIn(0f, 1f)))
-            glProgram.setFloatsUniform("uShift", floatArrayOf(draw.shiftX, draw.shiftY))
-            glProgram.setFloatsUniform("uScale", floatArrayOf(draw.scale))
-            glProgram.setFloatsUniform("uKeep", floatArrayOf(draw.keepFrom, draw.keepFromY, draw.keepTo, draw.keepToY))
-            glProgram.setFloatsUniform("uWhite", floatArrayOf(draw.white.coerceIn(0f, 1f)))
+            glProgram.setFloatsUniform("uAlpha", floatArrayOf(u.alpha))
+            glProgram.setFloatsUniform("uShift", floatArrayOf(u.shiftX, u.shiftY))
+            glProgram.setFloatsUniform("uScale", floatArrayOf(u.scale))
+            glProgram.setFloatsUniform("uKeep", floatArrayOf(u.keepFromX, u.keepFromY, u.keepToX, u.keepToY))
+            glProgram.setFloatsUniform("uWhite", floatArrayOf(u.white))
             glProgram.setFloatsUniform("uOpaque", floatArrayOf(if (opaque) 1f else 0f))
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)

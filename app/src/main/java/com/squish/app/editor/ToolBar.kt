@@ -203,10 +203,7 @@ val EditorUiState.selectedCanTransition: Boolean
             val base = videoClips.filter { it.layer == 0 }.sortedBy { it.timelineStartMs }
             return base.indexOfFirst { it.id == clip.id } > 0
         }
-        return videoClips.any {
-            it.id != clip.id && it.layer == clip.layer &&
-                kotlin.math.abs(it.timelineEndMs - clip.timelineStartMs) < com.squish.app.media.ExportPlan.MIN_GAP_MS
-        }
+        return clip.hasOverlayJoin(videoClips)
     }
 
 /**

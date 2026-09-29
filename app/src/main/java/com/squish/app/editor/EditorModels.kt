@@ -855,7 +855,7 @@ data class EditorUiState(
     val hasAnyAudio: Boolean
         get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio ||
             videoClips.any { clip ->
-                clip.isOverlay && clip.volume > 0f && !clip.isStillPicture &&
+                clip.isOverlay && clip.isHeard && !clip.isStillPicture &&
                     clip.uri?.let { com.squish.app.media.MediaCompat.cached(it) }
                         .let { it == null || (it.hasAudio && it.audioProblem == null) }
             }

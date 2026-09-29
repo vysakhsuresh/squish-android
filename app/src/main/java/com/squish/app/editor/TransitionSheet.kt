@@ -35,6 +35,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.squish.app.media.ExportPlan
@@ -77,21 +78,12 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = accent) {
+            // Back to a cut is the sheet's Reset; a second "None" here did the same thing.
             PanelHeading(
                 if (clip.isOverlay) "Transition" else "Transition in",
                 if (current.isActive) "${current.type.label} · how ${clip.label} arrives" else "How ${clip.label} arrives",
                 icon = Icons.Filled.Transform,
-                accent = accent,
-                trailing = {
-                    if (current.isActive) {
-                        Text(
-                            "None",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = SquishColors.Pink,
-                            modifier = Modifier.clickable { viewModel.layers.setTransition(clip.id, TransitionType.None, current.durationMs) }
-                        )
-                    }
-                }
+                accent = accent
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                 TransitionCategory.entries.forEach { category ->
@@ -111,6 +103,7 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
                             type = type,
                             selected = current.type == type,
                             accent = accent,
+                            arrival = clip.isOverlay,
                             modifier = Modifier.weight(1f),
                             onClick = { viewModel.layers.setTransition(clip.id, type, current.durationMs) }
                         )
@@ -142,13 +135,16 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
                     style = MaterialTheme.typography.bodySmall,
                     color = if (plays < current.durationMs) SquishColors.Amber else SquishColors.TextMuted
                 )
-                if (!clip.isOverlay) {
-                    SquishOutlinedButton(
-                        text = "Apply to all cuts",
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { viewModel.layers.applyTransitionToAll(clip.id) }
-                    )
-                }
+            }
+            // Offered on a plain cut too, where it takes the transition off
+            // every join: with it only under a set transition, an edit that
+            // was to lose its dissolves had to be visited join by join.
+            if (!clip.isOverlay) {
+                SquishOutlinedButton(
+                    text = if (current.isActive) "Apply to all cuts" else "Plain cuts everywhere",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { viewModel.layers.applyTransitionToAll(clip.id) }
+                )
             }
         }
     }
@@ -157,13 +153,18 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
 /**
  * One transition as a small moving picture: two shots, one dark and one light,
  * with the transition running between them over and over. Drawn from
- * ExportPlan.blend with the incoming shot on top, as the preview draws it.
+ * ExportPlan.blend with the incoming shot on top, as the preview draws it. As
+ * an [arrival] - an overlay's, which has no shot under it on its row - the one
+ * shot arriving over nothing, from ExportPlan.arrival, since that is what plays:
+ * a tile of two shots blending promised a dip through black that the row,
+ * empty before the overlay, could not make.
  */
 @Composable
 private fun TransitionTile(
     type: TransitionType,
     selected: Boolean,
     accent: Color,
+    arrival: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -193,16 +194,23 @@ private fun TransitionTile(
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color.Black)
         ) {
-            val (incoming, outgoing) = ExportPlan.blend(type, p.coerceIn(0f, 1f), incomingOnTop = true)
-            drawShot(outgoing, OUTGOING)
-            drawShot(incoming, INCOMING)
+            if (arrival) {
+                drawShot(ExportPlan.arrival(type, p.coerceIn(0f, 1f)), INCOMING)
+            } else {
+                val (incoming, outgoing) = ExportPlan.blend(type, p.coerceIn(0f, 1f), incomingOnTop = true)
+                drawShot(outgoing, OUTGOING)
+                drawShot(incoming, INCOMING)
+            }
         }
+        // Two lines' room, every tile the same height: four across on a narrow
+        // phone, "Dip to black" and "Dip to white" both ended in "Dip to…".
         Text(
             type.label,
             style = MaterialTheme.typography.labelSmall,
             color = if (selected) accent else SquishColors.TextSecondary,
-            maxLines = 1,
-            softWrap = false,
+            textAlign = TextAlign.Center,
+            minLines = 2,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
     }

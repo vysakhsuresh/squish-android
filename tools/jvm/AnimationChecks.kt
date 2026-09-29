@@ -6,20 +6,26 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.ClipLeaving
 import com.squish.app.timeline.ClipLoop
 import com.squish.app.timeline.KEY_TOLERANCE_MS
+import com.squish.app.timeline.MIN_GAP_MS
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
 import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.Transform
+import com.squish.app.timeline.Transition
+import com.squish.app.timeline.TransitionType
 import com.squish.app.timeline.ValueKey
 import com.squish.app.timeline.ValueTrack
 import com.squish.app.timeline.animated
 import com.squish.app.timeline.hasValueKeyAt
+import com.squish.app.timeline.readsMuted
 import com.squish.app.timeline.shiftedBy
 import com.squish.app.timeline.upserted
 import com.squish.app.timeline.valueAt
 import com.squish.app.timeline.withClipTrimmed
+import com.squish.app.timeline.withMuted
 import com.squish.app.timeline.withOverlayGeometry
+import com.squish.app.timeline.withOverlayTransitionsFitted
 import com.squish.app.timeline.withSplitAtPlayhead
 import com.squish.app.timeline.withValueAt
 import com.squish.app.timeline.withValueKeyAdded
@@ -204,6 +210,64 @@ fun main() {
         val slow = overlay("o", 0L, 2000L).copy(speedRamp = SpeedRamp.flat(0.5f), arrival = ClipArrival.Fade, arrivalMs = 1000L)
         check(slow.durationMs == 4000L, "test clip plays ${slow.durationMs}")
         check(slow.opacityAt(500L) < 1f && slow.opacityAt(1000L) == 1f, "the arrival did not run on played time")
+    }
+
+    // --- Mute: a switch over the level, so a duck survives it. -----------------
+    run {
+        val duck = listOf(ValueKey(0L, 1f), ValueKey(2000L, 0.2f), ValueKey(4000L, 1f))
+        val ducked = overlay("d", 0L, 4000L).copy(volumeKeys = duck)
+        check(!ducked.readsMuted && ducked.isHeard, "a ducked clip reads muted before the switch")
+        val muted = ducked.withMuted(true)
+        check(muted.readsMuted && !muted.isHeard, "the switch did not mute a keyed clip")
+        check(muted.volumeAt(0L) == 0f && muted.volumeAt(2000L) == 0f && muted.volumeAt(4000L) == 0f, "a muted clip is still heard: ${muted.volumeAt(0L)}")
+        check(muted.volumeKeys == duck && muted.volume == 1f, "muting rewrote the level or its keys")
+        // The old way - a level of nothing at the playhead - was a key, not a mute.
+        val keyed = ducked.withValueAt(ValueTrack.Volume, 1000L, 0f, 0f..1f)
+        check(keyed.volumeAt(0L) == 1f && keyed.volumeAt(4000L) == 1f, "the old mute silenced a keyed clip after all")
+        val back = muted.withMuted(false, restoreTo = 0.4f)
+        check(back == ducked, "unmuting did not give the duck back exactly: $back")
+        check(near(back.volumeAt(2000L), 0.2f), "the duck is not heard again")
+        // A clip left at nothing with no keys, the way Mute used to be written:
+        // reads muted, and comes back at the level it had.
+        val old = overlay("o", 0L, 1000L).copy(volume = 0f)
+        check(old.readsMuted && !old.isHeard, "an old-style mute does not read muted")
+        check(near(old.withMuted(false, restoreTo = 0.6f).volume, 0.6f), "an old-style mute did not come back at its level")
+        check(old.withMuted(false, restoreTo = 0f).volume >= 0.05f, "an old-style mute came back to silence")
+        // The slider moved above nothing is meant to be heard.
+        val heard = muted.withValueAt(ValueTrack.Volume, 2000L, 0.5f, 0f..1f).copy(muted = false)
+        check(heard.isHeard && near(heard.volumeAt(2000L), 0.5f), "a level set on a muted clip is not heard")
+        val silentKeys = overlay("s", 0L, 1000L).copy(volumeKeys = listOf(ValueKey(0L, 0f), ValueKey(500L, 0f)))
+        check(!silentKeys.isHeard, "keys all at nothing count as heard")
+    }
+
+    // --- An overlay's join, and the transition that lives on it. ---------------
+    run {
+        val first = overlay("f", 0L, 2000L)
+        val butted = overlay("g", 2000L, 1000L).copy(transitionIn = Transition(TransitionType.SlideLeft, 400L))
+        check(butted.hasOverlayJoin(listOf(first, butted)), "a butted overlay has no join")
+        check(butted.copy(timelineStartMs = 2000L + MIN_GAP_MS - 1L).hasOverlayJoin(listOf(first, butted)), "a slip inside the rounding broke the join")
+        check(!butted.copy(timelineStartMs = 2000L + MIN_GAP_MS).hasOverlayJoin(listOf(first, butted)), "a gap is a join")
+        check(!butted.copy(layer = 2).hasOverlayJoin(listOf(first, butted)), "a join across rows")
+        check(!first.hasOverlayJoin(listOf(first, butted)), "the first overlay has a join")
+        val main = overlay("m", 2000L, 1000L, layer = 0)
+        check(!main.hasOverlayJoin(listOf(first, main)), "a main-track shot has an overlay join")
+
+        // Kept while the join is there; dropped when the neighbour goes, moves
+        // or is trimmed short - and the clip's other settings left alone.
+        val joined = TimelineState(clips = listOf(first, butted)).withOverlayTransitionsFitted()
+        check(joined.clips.first { it.id == "g" }.transitionIn.isActive, "a transition on a join was dropped")
+        val gone = TimelineState(clips = listOf(butted)).withOverlayTransitionsFitted()
+        check(!gone.clips.first { it.id == "g" }.transitionIn.isActive, "the neighbour gone, the transition stayed")
+        val moved = TimelineState(clips = listOf(first, butted.copy(timelineStartMs = 4000L))).withOverlayTransitionsFitted()
+        check(!moved.clips.first { it.id == "g" }.transitionIn.isActive, "the overlay moved away, the transition stayed")
+        val trimmed = TimelineState(clips = listOf(first.copy(sourceOutMs = 1000L), butted)).withOverlayTransitionsFitted()
+        check(!trimmed.clips.first { it.id == "g" }.transitionIn.isActive, "the neighbour trimmed short, the transition stayed")
+        check(trimmed.clips.first { it.id == "g" }.copy(transitionIn = butted.transitionIn) == butted, "dropping the transition changed something else")
+        // Back butted, a transition set again is kept; a main-track transition is not this rule's.
+        val mainCut = TimelineState(clips = listOf(overlay("a", 0L, 2000L, layer = 0), main.copy(transitionIn = Transition(TransitionType.CrossFade, 300L))))
+        check(mainCut.withOverlayTransitionsFitted() == mainCut, "the overlay rule touched the main track")
+        val untouched = TimelineState(clips = listOf(first, butted.copy(transitionIn = Transition())))
+        check(untouched.withOverlayTransitionsFitted() === untouched, "nothing to drop still made a new timeline")
     }
 
     println()

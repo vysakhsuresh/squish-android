@@ -102,6 +102,16 @@ fun main() {
     clip = "b"
     check("a hard cut to 4x is not delayed", PreviewRules.shouldPushSpeed(1f, 4f, 1L, clipChanged = clip == "b"))
 
+    // ---- What a player is asked for --------------------------------------------
+    // The clip goes to 100x; the sink stops at 8 (DefaultAudioSink.MAX_PLAYBACK_SPEED),
+    // so the player is asked for 8 and the preview runs slower rather than racing.
+    check("a rate inside the sink's range is the clip's", PreviewRules.playerRate(4f) == 4f)
+    check("0.25x is the clip's", PreviewRules.playerRate(0.25f) == 0.25f)
+    check("100x is asked for as the sink's ceiling", PreviewRules.playerRate(100f) == PreviewRules.PLAYER_MAX_SPEED)
+    check("the ceiling is the sink's eight", PreviewRules.PLAYER_MAX_SPEED == 8f)
+    check("below the sink's floor is its floor", PreviewRules.playerRate(0.05f) == PreviewRules.PLAYER_MIN_SPEED)
+    check("a pitch that follows 100x is capped the same", PreviewRules.playerRate(1f * PreviewRules.playerRate(100f)) == 8f)
+
     // ---- Lookahead ------------------------------------------------------------
     val starts = listOf(0L, 5_200L, 9_000L)
     check("nothing parked 2 s out", PreviewRules.upcoming(starts, 3_000L, 1_500L) == -1)

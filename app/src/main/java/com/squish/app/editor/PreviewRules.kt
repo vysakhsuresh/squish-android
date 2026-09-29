@@ -81,6 +81,25 @@ object PreviewRules {
     }
 
     /**
+     * The rate a player is asked for when the clip wants [wanted]: the same up
+     * to [PLAYER_MAX_SPEED], and that ceiling above it.
+     *
+     * The clip may go to a hundred times, and the file does (Media3's
+     * SpeedChangeEffect drops what it must). ExoPlayer's sink does not: Media3
+     * 1.11.1's DefaultAudioSink holds speed and pitch to 0.1..8 (MAX_PLAYBACK_SPEED),
+     * so above eight the sound ran at eight while the video renderer was asked for
+     * a hundred and the clock raced the frames it could not decode. The preview's
+     * clock is read off the driving player, so a capped rate is a slower preview
+     * of the same edit, never a stuck one; the strip's length and the file are
+     * the clip's own rate.
+     */
+    fun playerRate(wanted: Float): Float = wanted.coerceIn(PLAYER_MIN_SPEED, PLAYER_MAX_SPEED)
+
+    /** DefaultAudioSink.MIN_PLAYBACK_SPEED and MAX_PLAYBACK_SPEED in Media3 1.11.1, and its pitch limits. */
+    const val PLAYER_MIN_SPEED = 0.1f
+    const val PLAYER_MAX_SPEED = 8f
+
+    /**
      * The index of the clip in [starts] that begins after [t] and within [window],
      * or -1. [starts] is in timeline order.
      *

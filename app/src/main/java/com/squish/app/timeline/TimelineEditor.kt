@@ -816,7 +816,10 @@ fun TimelineEditor(
                                     trims = trims,
                                     trimming = trimming,
                                     liftedId = lift?.id,
-                                    onKeyTap = keyTap
+                                    onKeyTap = keyTap,
+                                    // An overlay butted after another on its row takes
+                                    // a transition as a shot does, marked the same way.
+                                    onTransitionTap = onTransitionTap
                                 )
                                 Group.Main -> Lane(
                                     clips = mainShown,
@@ -1531,11 +1534,15 @@ private fun Lane(
             gaps.forEach { gap -> GapMark(gap, window, onCloseGap) }
 
             // A tappable marker on every cut, so adding a dissolve is a tap on the
-            // join rather than a hunt through a menu.
+            // join rather than a hunt through a menu. On the main track every
+            // shot but the first has a join; on an overlay row only an overlay
+            // butted after another does (Clip.hasOverlayJoin), and the mark
+            // goes when the join does, as the transition itself does.
             onTransitionTap?.let { tap ->
-                clips.drop(1).forEach { clip ->
+                val joined = if (clips.any { it.isMain }) clips.drop(1) else clips.filter { it.hasOverlayJoin(clips) }
+                joined.forEach { clip ->
                     if (!window.intersects(clip.timelineStartMs, clip.timelineStartMs)) return@forEach
-                    TransitionBadge(clip = clip, window = window, onTap = { tap(clip.id) })
+                    TransitionBadge(clip = clip, window = window, accent = accent, onTap = { tap(clip.id) })
                 }
             }
 
@@ -1612,11 +1619,11 @@ private fun BoxScope.AddMedia(x: Dp, onClick: () -> Unit) {
 
 /**
  * The mark on a join: tap it for the transition sheet. Two wedges meeting, solid
- * in the video track's colour once a transition is set - the way the join reads
- * at a glance - and an outline on a plain cut.
+ * in the lane's colour once a transition is set - the way the join reads at a
+ * glance - and an outline on a plain cut.
  */
 @Composable
-private fun BoxScope.TransitionBadge(clip: Clip, window: TimelineWindow, onTap: () -> Unit) {
+private fun BoxScope.TransitionBadge(clip: Clip, window: TimelineWindow, accent: Color, onTap: () -> Unit) {
     val active = clip.transitionIn.isActive
     Box(
         modifier = Modifier
@@ -1624,10 +1631,10 @@ private fun BoxScope.TransitionBadge(clip: Clip, window: TimelineWindow, onTap: 
             .align(Alignment.CenterStart)
             .size(20.dp)
             .clip(RoundedCornerShape(6.dp))
-            .background(if (active) Concept.Video.accent else SquishColors.Surface)
+            .background(if (active) accent else SquishColors.Surface)
             .border(
                 width = 1.dp,
-                color = if (active) Concept.Video.accent else SquishColors.Border,
+                color = if (active) accent else SquishColors.Border,
                 shape = RoundedCornerShape(6.dp)
             )
             .clickable(onClickLabel = if (active) "Change the transition" else "Add a transition", onClick = onTap),
@@ -1881,29 +1888,12 @@ private fun ClipView(
         // Keyframes, where they sit along the clip. An animated shot should be
         // readable as animated from the strip, and a tap on a diamond goes to it -
         // the playhead lands on the key, so the pose there is on the picture.
-        clip.keyframes.forEach { frame ->
-            val atTimeline = clip.timelineStartMs + frame.atMs
-            if (atTimeline < drawnStartMs || atTimeline > drawnEndMs) return@forEach
-            val x = window.widthDp(atTimeline - drawnStartMs).dp
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .offset(x = x - KEY_TARGET / 2)
-                    .size(KEY_TARGET)
-                    .pointerInput(clip.id, frame.atMs) {
-                        detectTapGestures { onKeyTap(clip.id, latestClip.timelineStartMs + frame.atMs) }
-                    },
-                contentAlignment = Alignment.BottomCenter
-            ) {
-                Box(
-                    modifier = Modifier
-                        .padding(bottom = 3.dp)
-                        .size(7.dp)
-                        .rotate(45f)
-                        .background(SquishColors.Amber)
-                )
-            }
-        }
+        // The placement keys in amber; a keyed opacity or level in its sheet's
+        // colour, smaller, the same tap - a ducked song used to show nothing on
+        // the strip, and its keys had to be hunted for with the sheet's diamond.
+        clip.keyframes.forEach { frame -> KeyDiamond(clip, frame.atMs, SquishColors.Amber, 7.dp, drawnStartMs, drawnEndMs, window, latestClip, onKeyTap) }
+        clip.opacityKeys.forEach { key -> KeyDiamond(clip, key.atMs, SquishColors.Violet, 6.dp, drawnStartMs, drawnEndMs, window, latestClip, onKeyTap) }
+        clip.volumeKeys.forEach { key -> KeyDiamond(clip, key.atMs, SquishColors.Cyan, 6.dp, drawnStartMs, drawnEndMs, window, latestClip, onKeyTap) }
 
         // Only on an edge that is really there. A handle at the side of a clip
         // that carries on past the screen would trim from a point the user never
@@ -1924,6 +1914,42 @@ private fun ClipView(
                 onEnd = trims.end
             )
         }
+    }
+}
+
+/** One key's diamond at [atMs] into the clip, if it is on the drawn part; a tap on it parks the playhead there. */
+@Composable
+private fun BoxScope.KeyDiamond(
+    clip: Clip,
+    atMs: Long,
+    colour: Color,
+    size: Dp,
+    drawnStartMs: Long,
+    drawnEndMs: Long,
+    window: TimelineWindow,
+    latestClip: Clip,
+    onKeyTap: (String, Long) -> Unit
+) {
+    val atTimeline = clip.timelineStartMs + atMs
+    if (atTimeline < drawnStartMs || atTimeline > drawnEndMs) return
+    val x = window.widthDp(atTimeline - drawnStartMs).dp
+    Box(
+        modifier = Modifier
+            .align(Alignment.BottomStart)
+            .offset(x = x - KEY_TARGET / 2)
+            .size(KEY_TARGET)
+            .pointerInput(clip.id, atMs) {
+                detectTapGestures { onKeyTap(clip.id, latestClip.timelineStartMs + atMs) }
+            },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(bottom = 3.dp)
+                .size(size)
+                .rotate(45f)
+                .background(colour)
+        )
     }
 }
 
