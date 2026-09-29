@@ -1,8 +1,17 @@
 package com.squish.app.data
 
+import android.net.Uri
+import java.io.File
+
 data class ExportRecord(
     val id: String,
     val title: String,
+    /**
+     * Where the render was written. The record's identity - the done screen is
+     * routed by it - and the file itself only until the gallery copy is
+     * verified, when the private copy is deleted (GallerySaver.retire); see
+     * [mediaUri] for what to open.
+     */
     val outputPath: String,
     val originalSizeBytes: Long,
     val outputSizeBytes: Long,
@@ -18,4 +27,19 @@ data class ExportRecord(
     val savedToGallery: Boolean? = null,
     /** The gallery copy's content URI, when there is one. */
     val galleryUri: String? = null
-)
+) {
+    val isAudio: Boolean get() = outputPath.endsWith(".m4a", ignoreCase = true)
+
+    val mimeType: String get() = if (isAudio) "audio/mp4" else "video/mp4"
+
+    /**
+     * The one copy to open, play and share: the gallery's when it was made,
+     * the private file otherwise. Exports are stored once now - the private
+     * copy goes after the gallery copy is verified - so a record from before
+     * that, or one whose publish failed, is the only kind with a file here.
+     */
+    val mediaUri: Uri get() = galleryUri?.let(Uri::parse) ?: Uri.fromFile(File(outputPath))
+
+    /** Whether the private copy is the one to open. */
+    val onPrivateCopy: Boolean get() = galleryUri == null
+}

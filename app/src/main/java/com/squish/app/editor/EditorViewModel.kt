@@ -4,11 +4,15 @@ import android.app.Application
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.ProjectSnapshot
+import com.squish.app.data.ProjectStart
 import com.squish.app.data.SquishRepositories
+import com.squish.app.media.importCopy
+import com.squish.app.timeline.Transition
+import com.squish.app.timeline.TransitionType
+import com.squish.app.timeline.withTransition
 import com.squish.app.media.EncoderCeiling
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
@@ -61,15 +65,7 @@ import com.squish.app.editor.edits.LayerEdits
 import com.squish.app.editor.edits.TextEdits
 import kotlinx.coroutines.CoroutineScope
 
-class EditorViewModel(
-    application: Application,
-    /**
-     * Survives process death with the screen's back-stack entry, which is how a
-     * fresh view model can tell "the app was killed under this editor" from
-     * "this clip was opened again from the dashboard".
-     */
-    private val savedState: SavedStateHandle
-) : AndroidViewModel(application) {
+class EditorViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow(EditorUiState())
     val state: StateFlow<EditorUiState> = _state.asStateFlow()
@@ -78,7 +74,8 @@ class EditorViewModel(
     private val historyRepository = SquishRepositories.history(application)
     private val autosave = SquishRepositories.autosave(application)
 
-    private var loadedUri: Uri? = null
+    /** The project this editor is open on, once [open] has been called. */
+    private var openedId: String? = null
     private var proxyJob: Job? = null
 
     /**
@@ -126,50 +123,10 @@ class EditorViewModel(
     internal val analysis = AnalysisEdits(host, clips)
 
     /**
-     * The timeline as it stood the moment its clip finished loading.
-     *
-     * Opening a video is not an edit. Saving from that moment on put every video
-     * that was merely opened and backed out of on the dashboard as "pick up where
-     * you left off". The edit is only saved once it differs from this.
-     */
-    @Volatile
-    private var baseline: String? = null
-
-    /** Whether this session has put a draft on disk, so undoing back to nothing can take it off. */
-    @Volatile
-    private var wroteDraft = false
-
-    /**
-     * The offered edit, when editing the bare clip set it aside: what it was, and
-     * the bin entry it went to. Kept so that undoing back to the bare clip puts
-     * it back and offers it again - the first edit retired it, so the undo of
-     * that edit has to un-retire it, or an accidental drag and its undo quietly
-     * moved a two-hour project into the bin.
-     */
-    private var setAside: Pair<ProjectSnapshot, String>? = null
-
-    /**
-     * This session's own draft, when undoing back to the bare clip moved it into
-     * the bin. The next edit takes it back out before saving, so undo and redo
-     * past the bare clip move one draft back and forth instead of leaving a copy
-     * in the bin every time.
-     */
-    private var undoneDraft: String? = null
-
-    /**
-     * Held by every step that decides what the slot holds - a save, retiring or
-     * re-offering the saved edit, accepting it. The ticker runs them on IO and a
-     * flush on leaving runs them on Main, and two of them interleaved could bin
-     * the draft the other had just written.
+     * Held by every save. The ticker saves on IO and a flush on leaving saves
+     * on Main, and two of them interleaved could rename over each other.
      */
     private val slotLock = Any()
-
-    /**
-     * True from the moment a clip is opened until the process dies, and true
-     * again the instant a view model is rebuilt from the saved entry afterwards.
-     * That second case is the only way a brand-new view model finds it set.
-     */
-    private val restoredAfterDeath: Boolean = savedState.get<Boolean>(KEY_OPENED) == true
 
     init {
         // Aggressive by design. Each save is atomic, and skipped entirely when
@@ -215,80 +172,23 @@ class EditorViewModel(
     }
 
     /**
-     * The save itself, behind [saveNow] and the export's own flushes.
-     *
-     * While a saved edit is on offer, the document behind the offer is the one
-     * in the slot, and saving the bare clip there would write over it. So the
-     * offer is answered first - and it is answered by any change at all to the
-     * bare clip, not only by the changes that go through undo: a caption typed
-     * or a beat grid found under the banner used to be saved nowhere, and lost
-     * on leaving. The offered document goes to the bin, the new work is saved,
-     * and undoing back to the bare clip reverses both.
-     *
-     * The modal offer, after the app was killed, blocks the editor, so nothing
-     * can have changed under it; it is left alone.
+     * The save itself, behind [saveNow] and the export's own flushes. A
+     * project is a draft from the moment it is made, so this is a plain save
+     * of whatever the edit is: the untouched-clip rule, the offer of a saved
+     * edit and the bin dance around them went with projects keyed by video.
      */
     private fun persist(): Unit = synchronized(slotLock) {
         val current = _state.value
-        val uri = current.sourceUri ?: return
-        val start = baseline ?: return
-        val offer = current.recovery
-        if (offer?.modal == true) return
-        val untouched = autosave.editKey(current) == start
-
-        if (untouched) {
-            if (offer != null) return
-            // Undone all the way back to the untouched clip. This session's draft
-            // is set aside rather than removed - the undo history that would
-            // restore it lives only in memory - and a saved edit the first change
-            // retired is put back and offered again.
-            if (wroteDraft) {
-                undoneDraft = autosave.clear(uri) ?: undoneDraft
-                wroteDraft = false
-            }
-            setAside?.let { (snapshot, trashId) ->
-                setAside = null
-                if (autosave.restore(trashId)) {
-                    _state.update { it.copy(recovery = RecoveryOffer(snapshot), setAsideNotice = false) }
-                }
-            }
-            return
-        }
-
-        if (offer != null) {
-            val trashId = autosave.clear(offer.snapshot.sourceUri)
-            // Left standing if the move failed: the new work is not saved over a
-            // document that could not be moved out of its way, and the next tick
-            // tries again.
-            if (trashId == null && autosave.peek(offer.snapshot.sourceUri) != null) return
-            setAside = trashId?.let { offer.snapshot to it }
-            _state.update { it.copy(recovery = null, setAsideNotice = trashId != null) }
-        }
-        // Back past the bare clip after an undo to it: the draft that undo set
-        // aside comes back out of the bin first, and this save goes on top of it.
-        undoneDraft?.let { trashId ->
-            undoneDraft = null
-            autosave.restore(trashId)
-        }
-        if (autosave.save(_state.value)) wroteDraft = true
+        if (current.projectId.isBlank() || current.isLoadingSource) return
+        autosave.save(current)
     }
-
-    /** The notice that editing set the saved edit aside, read and closed. */
-    fun dismissSetAsideNotice() = _state.update { it.copy(setAsideNotice = false) }
 
     /**
      * Names the project, or with a blank name un-names it. Saved at once rather
      * than at the next tick: the rename dialog is often the last thing done
      * before leaving.
-     *
-     * Not while a saved edit is on offer. The name is part of what a save
-     * compares, so naming the bare clip counted as working on it: the offered
-     * edit went to the bin and the bare clip was saved in its slot - and since a
-     * name is not an undo step, undo could never bring the offer back. The
-     * header does not offer the rename then; this is the rule behind it.
      */
     fun renameProject(raw: String) {
-        if (_state.value.recovery != null) return
         val name = ProjectName.clean(raw)
         if (name == _state.value.projectName) return
         _state.update { it.copy(projectName = name) }
@@ -296,89 +196,143 @@ class EditorViewModel(
     }
 
     /**
-     * Opens a video. With [resume] - a draft chosen from the drafts list - its
-     * saved edit is applied at once instead of being offered: picking a draft is
-     * already the answer to "restore it?".
+     * Opens a project: its saved edit when it has one, otherwise the files it
+     * was staged to start from (ProjectAutosave.stageStart) - a project just
+     * made on the dashboard, handed over by "Open with", or sent from a quick
+     * tool. Neither on disk means the project is gone, and the editor says so
+     * rather than sitting empty.
      */
-    fun load(uri: Uri, resume: Boolean = false) {
-        if (loadedUri == uri) return
-        loadedUri?.let(OpenEditors::closed)
-        loadedUri = uri
-        // Known to be open from here until cleared, so "Open with" on this
-        // video comes back here rather than opening a second editor of it.
-        OpenEditors.opened(uri)
-        savedState[KEY_OPENED] = true
-
-        _state.update { it.copy(sourceUri = uri, isLoadingSource = true) }
+    fun open(projectId: String) {
+        if (openedId == projectId) return
+        openedId = projectId
+        _state.update { it.copy(projectId = projectId, isLoadingSource = true) }
 
         viewModelScope.launch {
-            // Read before anything else writes. The ticker is already running,
-            // but it cannot write until the load below finishes and sets the
-            // baseline, so the document is still the one to recover - and this
-            // read is off the main thread, where a draft with a few thousand
-            // motion samples in it was a visible hitch on entry.
-            val recoverable = withContext(Dispatchers.IO) { autosave.peek(uri) }
-            val meta = ThumbnailExtractor.probe(getApplication(), uri)
-            val originalSize = runCatching {
-                getApplication<Application>().contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
-            }.getOrDefault(0L)
-
-            val name = displayNameOf(uri) ?: "Clip 1"
-            _state.update {
-                it.copy(
-                    durationMs = meta.durationMs,
-                    // The shape the picture is seen in, not the shape it is stored
-                    // in. A portrait clip is a 1920x1080 stream with a rotation tag;
-                    // taking the stored numbers made the preview box landscape and
-                    // letterboxed the export into a landscape frame.
-                    sourceWidth = meta.displayWidth,
-                    sourceHeight = meta.displayHeight,
-                    sourceHasAudio = meta.hasAudio,
-                    fps = meta.fps,
-                    trimStartMs = 0L,
-                    trimEndMs = meta.durationMs,
-                    sourceName = name,
-                    isLoadingSource = false,
-                    // Fitted the moment the clip is known. At the default zoom a
-                    // ten-minute video is twenty-five thousand dp of strip, so it
-                    // opened somewhere off the right-hand edge and stayed there.
-                    fitNonce = it.fitNonce + 1,
-                    originalSizeBytes = originalSize,
-                    videoClips = listOf(
-                        Clip(
-                            kind = ClipKind.Video,
-                            uri = uri,
-                            label = name,
-                            sourceInMs = 0,
-                            sourceOutMs = meta.durationMs,
-                            timelineStartMs = 0,
-                            sourceDurationMs = meta.durationMs
-                        )
-                    )
-                    // What the last export was set to, as this project's starting
-                    // point - before the baseline is taken, so the defaults are
-                    // not read as an edit. A draft applied later brings its own.
-                ).let { fresh -> Preferences.exportDefaults(getApplication())?.let { fresh.withExportDefaults(it) } ?: fresh }
+            // Off the main thread: a draft with a few thousand motion samples
+            // in it was a visible hitch on entry.
+            val draft = withContext(Dispatchers.IO) { autosave.peek(projectId) }
+            if (draft != null) {
+                applyDraft(draft)
+                return@launch
             }
-            recomputeEstimate()
-            // Whether this phone writes HEVC is asked now, not when the sheet
-            // first opens: a remembered "Smaller file" rendered before the codec
-            // list had come back was written in H.264 without a word said.
-            probeCodecs()
-            baseline = autosave.editKey(_state.value)
+            val start = withContext(Dispatchers.IO) { autosave.peekStart(projectId) }
+            if (start == null || start.uris.isEmpty()) {
+                _state.update { it.copy(isLoadingSource = false, failure = SquishError.FileUnreadable()) }
+                return@launch
+            }
+            loadFresh(start)
+        }
+    }
+
+    /**
+     * A new project on its files, laid end to end in the order they were
+     * picked, photos as stills (StillClips) at the length Settings gives them,
+     * with the join between each pair given the default transition and the
+     * frame the default ratio - and saved at once, so the project is on the
+     * dashboard from the moment it is made, and the files handed over with a
+     * grant that ends with this process copied in first (MediaAccess.importCopy).
+     */
+    private suspend fun loadFresh(start: ProjectStart) {
+        val app = getApplication<Application>()
+        val defaults = Preferences.editorDefaults(app)
+        val stillMs = defaults.stillMs
+        val resolver = app.contentResolver
+        // The photos are counted first so the loading screen can say how many
+        // are still to render, and the count falls as each lands.
+        val images = start.uris.count { resolver.getType(it)?.startsWith("image/") == true }
+        _state.update { it.copy(preparingStills = images) }
+        val sources = try {
+            start.uris.mapNotNull { picked ->
+                val uri = if (start.copyIn) withContext(Dispatchers.IO) { app.importCopy(picked) } else picked
+                if (resolver.getType(uri)?.startsWith("image/") == true) {
+                    val still = StillClips.fromImage(app, uri)
+                    _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
+                    still?.let { Triple(it, displayNameOf(uri) ?: "Photo", true) }
+                } else {
+                    Triple(uri, displayNameOf(uri) ?: "Clip", false)
+                }
+            }
+        } finally {
+            _state.update { it.copy(preparingStills = 0) }
+        }
+        val probed = sources.map { (uri, label, still) -> Pair(Triple(uri, label, still), ThumbnailExtractor.probe(app, uri)) }
+            .filter { (_, meta) -> meta.durationMs > 0L }
+        val lead = probed.firstOrNull()
+        if (lead == null) {
             // Every real video has a length. None means the file could not be read
             // - gone, or handed over without permission - and an empty editor with
             // nothing said is the worst way to learn that.
-            if (meta.durationMs <= 0L) _state.update { it.copy(failure = SquishError.FileUnreadable()) }
-            checkDecodable(uri)
-            offerRecovery(recoverable, uri)
-            if (resume && _state.value.recovery?.snapshot?.sourceUri == uri) {
-                acceptRecovery()
-                return@launch
-            }
-            ensureProxies(listOf(uri))
-            confirmSourceAudio(uri)
+            _state.update { it.copy(isLoadingSource = false, failure = SquishError.FileUnreadable()) }
+            return
         }
+        val (leadSource, leadMeta) = lead
+        val originalSize = runCatching {
+            resolver.openFileDescriptor(leadSource.first, "r")?.use { it.statSize } ?: 0L
+        }.getOrDefault(0L)
+        var cursor = 0L
+        val clips = probed.map { (source, meta) ->
+            val (uri, label, still) = source
+            val placed = if (still) minOf(stillMs, meta.durationMs) else meta.durationMs
+            Clip(
+                kind = ClipKind.Video,
+                uri = uri,
+                label = label,
+                sourceInMs = 0,
+                sourceOutMs = placed,
+                timelineStartMs = cursor,
+                sourceDurationMs = meta.durationMs
+            ).also { cursor += placed }
+        }
+        _state.update {
+            it.copy(
+                sourceUri = leadSource.first,
+                durationMs = leadMeta.durationMs,
+                // The shape the picture is seen in, not the shape it is stored
+                // in. A portrait clip is a 1920x1080 stream with a rotation tag;
+                // taking the stored numbers made the preview box landscape and
+                // letterboxed the export into a landscape frame.
+                sourceWidth = leadMeta.displayWidth,
+                sourceHeight = leadMeta.displayHeight,
+                sourceHasAudio = leadMeta.hasAudio,
+                fps = leadMeta.fps,
+                trimStartMs = 0L,
+                trimEndMs = leadMeta.durationMs,
+                sourceName = leadSource.second,
+                isLoadingSource = false,
+                // Fitted the moment the clip is known. At the default zoom a
+                // ten-minute video is twenty-five thousand dp of strip, so it
+                // opened somewhere off the right-hand edge and stayed there.
+                fitNonce = it.fitNonce + 1,
+                originalSizeBytes = originalSize,
+                cropAspect = defaults.cropAspect,
+                videoClips = clips
+                // What the last export was set to, as this project's starting
+                // point. A draft brings its own.
+            ).let { fresh -> Preferences.exportDefaults(app)?.let { fresh.withExportDefaults(it) } ?: fresh }
+        }
+        // The default transition on every join, through the model's own fitting
+        // so a short still is never asked to overlap more than it has.
+        if (defaults.transition != TransitionType.None) {
+            clips.drop(1).forEach { clip ->
+                mutateTimeline { it.withTransition(clip.id, Transition(defaults.transition, defaults.transitionMs)) }
+            }
+        }
+        // Not an undo step: this is where the project begins.
+        history.clear()
+        publishHistory()
+        recomputeEstimate()
+        // Whether this phone writes HEVC is asked now, not when the sheet
+        // first opens: a remembered "Smaller file" rendered before the codec
+        // list had come back was written in H.264 without a word said.
+        probeCodecs()
+        withContext(Dispatchers.IO) { persist() }
+        if (probed.size < sources.size || sources.size < start.uris.size) {
+            _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+        }
+        val files = clips.mapNotNull { it.uri }.distinct()
+        files.filterNot(StillClips::isStill).forEach(::checkDecodable)
+        ensureProxies(files)
+        confirmSourceAudio(leadSource.first)
     }
 
     /**
@@ -739,14 +693,6 @@ class EditorViewModel(
     /** What follows every change that reaches the history. */
     private fun edited() {
         publishHistory()
-        // Editing the bare clip while its saved edit is still on offer is the
-        // answer to the offer: this is a new project. That is settled by the
-        // save, which covers every kind of change - see persist - and is asked
-        // for now rather than at the next tick, so the offer goes the moment
-        // the edit is made instead of standing a second longer over it.
-        if (_state.value.recovery?.modal == false) {
-            viewModelScope.launch(Dispatchers.IO) { saveNow() }
-        }
     }
 
     /**
@@ -813,6 +759,7 @@ class EditorViewModel(
         text.stopIfUndoingRun()
         val restored = history.undo(_state.value.editSnapshot) ?: return
         _state.update { it.restoring(restored) }
+        refreshMissingMedia()
         publishHistory()
         recomputeEstimate()
     }
@@ -820,6 +767,7 @@ class EditorViewModel(
     fun redo() {
         val restored = history.redo(_state.value.editSnapshot) ?: return
         _state.update { it.restoring(restored) }
+        refreshMissingMedia()
         publishHistory()
         recomputeEstimate()
     }
@@ -1008,6 +956,10 @@ class EditorViewModel(
                 val saving = _state.value.exportProgress.copy(stage = ExportStage.Saving)
                 _state.update { it.copy(exportProgress = saving) }
                 ExportService.update(saving)
+                // Measured now, before retire below deletes the private copy:
+                // read after it, a fitted export that overshot measured as
+                // nothing and was handed over as if it had fitted.
+                val size = file.length()
                 // All or nothing: into the gallery, into history, and the draft
                 // stamped. Cancelled half-way - the screen leaving in the instant
                 // after the encode - the file was in the gallery and the draft
@@ -1022,7 +974,7 @@ class EditorViewModel(
                             title = current.projectName ?: current.sourceName ?: "Squished video",
                             outputPath = file.absolutePath,
                             originalSizeBytes = current.originalSizeBytes,
-                            outputSizeBytes = file.length(),
+                            outputSizeBytes = size,
                             durationMs = current.trimmedDurationMs,
                             // The shape of the file that was written, which after a
                             // rotation is not the shape it was shot at, and after a
@@ -1041,18 +993,14 @@ class EditorViewModel(
                     // never be followed by "and now one more change".
                     withContext(Dispatchers.IO) {
                         // Whatever was changed during the render is saved as any
-                        // change is; persist knows what to do with an offer.
+                        // change is, then the draft is stamped with what was rendered.
                         persist()
-                        // Stamped only when no saved edit was on offer, then or
-                        // now: what was rendered under an offer is the bare clip,
-                        // and the stamp would land on the other edit's draft - or,
-                        // if the offer was retired by a change made during the
-                        // render, on a draft that is not what was rendered.
-                        if (current.recovery == null && _state.value.recovery == null) {
-                            autosave.markCompleted(current)
-                        }
+                        autosave.markCompleted(current)
                         // What was chosen here is the next project's starting point.
                         Preferences.rememberExport(getApplication(), current)
+                        // The private copy goes once the gallery's is known whole;
+                        // the library reads the gallery copy from here on.
+                        GallerySaver.retire(getApplication(), file, published)
                     }
                 }
                 ExportService.end(getApplication())
@@ -1061,7 +1009,6 @@ class EditorViewModel(
                 // already - but one that missed is not handed over as if it had
                 // fitted: the sheet says by how much and offers a tighter run.
                 val target = current.targetSizeMb * 1_000_000L
-                val size = file.length()
                 if (current.fitToSize && !current.audioOnly && ExportSettings.overshoots(size, target)) {
                     _state.update {
                         it.copy(
@@ -1126,103 +1073,155 @@ class EditorViewModel(
         return true
     }
 
-    // ---- Crash recovery -------------------------------------------------------
+    // ---- Opening a saved edit -----------------------------------------------
 
-    /**
-     * Surfaces a saved session, without applying it. The offer stands until it is
-     * accepted or dismissed; a snapshot for a clip that is not the one being opened
-     * is left on disk untouched so it re-attaches when that clip comes back.
-     */
-    private fun offerRecovery(snapshot: ProjectSnapshot?, openedUri: Uri) {
-        if (snapshot == null) return
-
-        // An untouched clip is not work, and offering to restore it would only
-        // teach the user to dismiss this banner without reading it.
-        if (snapshot.isTrivial) return
-
-        // A snapshot whose media is gone is worth nothing to restore, so only a
-        // readable source ever produces an offer for a different clip. The clip
-        // being opened has just been probed, so it is readable by definition.
-        val sameClip = snapshot.sourceUri == openedUri
-        if (!sameClip && !canRead(snapshot.sourceUri)) return
-
-        // After the app was killed under this very edit, the offer has to be
-        // answered before anything else: the person was in the middle of it, and
-        // an inline card under a live timeline let them edit the bare clip for
-        // as long as they liked with nothing being saved, then lose it all to
-        // "Continue".
-        val modal = restoredAfterDeath && sameClip
-        _state.update { it.copy(recovery = RecoveryOffer(snapshot, modal = modal)) }
+    /** The project's saved edit, poured back into the editor. */
+    private suspend fun applyDraft(snapshot: ProjectSnapshot) {
+        // Metadata is re-probed rather than trusted from the file: the same clip
+        // can come back through a different provider with a different rotation.
+        // A source that cannot be read any more probes as nothing, and every
+        // frame and crop is measured against nothing (framedWidth 0): the first
+        // main-track shot that still reads stands in for its shape, so the
+        // edit is laid out right while the missing file waits for Relink.
+        val app = getApplication<Application>()
+        val meta = ThumbnailExtractor.probe(app, snapshot.sourceUri).takeIf { it.durationMs > 0L }
+            ?: snapshot.clips.filter { it.isMain }.sortedBy { it.timelineStartMs }.mapNotNull { it.uri }.distinct()
+                .filter { it != snapshot.sourceUri }
+                .firstNotNullOfOrNull { uri -> ThumbnailExtractor.probe(app, uri).takeIf { it.durationMs > 0L } }
+            ?: ThumbnailExtractor.probe(app, snapshot.sourceUri)
+        _state.update {
+            it.applying(snapshot, meta.durationMs, meta.displayWidth, meta.displayHeight, meta.fps)
+                // Drafts saved before effects were fitted can carry some
+                // running far past the end; tidy those on the way in.
+                .let { s -> s.copy(effects = s.effects.fittedTo(s.videoClips.maxOfOrNull { c -> c.timelineEndMs } ?: 0L)) }
+        }
+        recomputeEstimate()
+        probeCodecs()
+        val files = (snapshot.clips.mapNotNull { it.uri } + snapshot.sourceUri).distinct()
+        ensureProxies(files)
+        confirmSourceAudio(snapshot.sourceUri)
+        reportMissingMedia(snapshot.clips + snapshot.audioClips)
+        files.filterNot(StillClips::isStill).forEach(::checkDecodable)
+        restoreAudioWaveforms(snapshot.audioClips)
     }
 
     /**
-     * "Start a new project": the saved edit is set aside in the bin and the
-     * editor carries on with the untouched clip. Nothing is deleted; the drafts
-     * screen can bring it back for a month.
-     *
-     * The move is made before the offer is withdrawn, under the lock the saves
-     * take, so no save can land the new session on the old document first. It
-     * is a handful of renames.
+     * An opened edit whose files are not all readable any more - a grant that
+     * did not survive, a file deleted from the gallery - says which one, by
+     * name, the moment it is opened, and names the file for Relink. Every clip
+     * is checked, not only the one first opened: a missing overlay used to
+     * come back as a row with a clip on it, a black layer in the preview and
+     * an export that failed when it got there (O10). The clips stay on the
+     * strip as placeholders, so the edit's shape is kept for the relink.
      */
-    fun dismissRecovery() {
-        synchronized(slotLock) {
-            val snapshot = _state.value.recovery?.snapshot ?: return
-            autosave.clear(snapshot.sourceUri)
-            // Chosen, not stumbled into: undoing back to the bare clip does not
-            // bring this one back the way it does after an accidental edit.
-            setAside = null
-            _state.update { it.copy(recovery = null, setAsideNotice = false) }
+    private suspend fun reportMissingMedia(clips: List<Clip>) {
+        val missing = withContext(Dispatchers.IO) {
+            clips.distinctBy { it.uri }.filter { clip -> clip.uri?.let { !canRead(it) } == true }
+        }
+        missing.mapNotNullTo(unreadable) { it.uri }
+        val first = missing.firstOrNull() ?: return
+        _state.update { it.copy(missingMedia = first.uri, failure = unreadableFailure(first)) }
+    }
+
+    /**
+     * The files found unreadable since the project was opened. Undo and redo
+     * decide from this whether the Relink card should stand (refreshMissingMedia)
+     * without opening every file again; a file relinked and then undone is
+     * missing again, and the card must come back with it.
+     */
+    private val unreadable = HashSet<Uri>()
+
+    private fun unreadableFailure(missing: Clip): SquishError = when {
+        missing.kind == ClipKind.Audio -> SquishError.SoundUnreadable(missing.label.ifBlank { "sound" }, relinkable = true)
+        missing.isOverlay -> SquishError.LayerUnreadable(missing.label.ifBlank { "Overlay" }, missing.layer, relinkable = true)
+        else -> SquishError.FileUnreadable(name = missing.label.takeIf { l -> l.isNotBlank() }, relinkable = true)
+    }
+
+    /**
+     * The Relink card and its failure follow the clips through undo and redo.
+     * Neither is part of the edit snapshot, so an undone Relink used to put the
+     * unreadable file back under every clip with the card gone: the only way
+     * to it again was to leave and reopen the project.
+     */
+    private fun refreshMissingMedia() = _state.update { current ->
+        val missing = (current.videoClips + current.audioClips).firstOrNull { it.uri in unreadable }
+        when {
+            missing != null && current.missingMedia != missing.uri ->
+                current.copy(missingMedia = missing.uri, failure = unreadableFailure(missing))
+            missing == null && current.missingMedia != null ->
+                current.copy(missingMedia = null, failure = current.failure?.takeUnless { it.isUnreadable })
+            else -> current
         }
     }
 
-    fun acceptRecovery() {
-        val snapshot = synchronized(slotLock) {
-            // Gone already if a save answered the offer a moment ago; the notice
-            // it put up says where the edit went.
-            val offered = _state.value.recovery?.snapshot ?: return
-            _state.update { it.copy(recovery = null, setAsideNotice = false, isLoadingSource = true) }
-            offered
-        }
-
+    /**
+     * Puts [replacement] under every clip that plays the missing file - the
+     * source of the edit included - keeping each clip's window and everything
+     * on it, as Replace does for one clip. One undo step. A file shorter than
+     * a clip's window is cut to fit rather than refused: the point is to get
+     * the edit playing again. A photo is rendered into a still first, as Add
+     * media does, so a picture swept from files/stills can be put back from
+     * its original. Then the next missing file, if there is one, is named in
+     * turn.
+     */
+    fun relink(picked: Uri) {
+        val missing = _state.value.missingMedia ?: return
         viewModelScope.launch {
-            // Metadata is re-probed rather than trusted from the file: the same clip
-            // can come back through a different provider with a different rotation.
-            val meta = ThumbnailExtractor.probe(getApplication(), snapshot.sourceUri)
-            loadedUri = snapshot.sourceUri
-            _state.update {
-                it.applying(snapshot, meta.durationMs, meta.displayWidth, meta.displayHeight, meta.fps)
-                    // Drafts saved before effects were fitted can carry some
-                    // running far past the end; tidy those on the way in.
-                    .let { s -> s.copy(effects = s.effects.fittedTo(s.videoClips.maxOfOrNull { c -> c.timelineEndMs } ?: 0L)) }
+            val app = getApplication<Application>()
+            val image = app.contentResolver.getType(picked)?.startsWith("image/") == true
+            val replacement = if (image) {
+                _state.update { it.copy(preparingStills = it.preparingStills + 1) }
+                try {
+                    StillClips.fromImage(app, picked)
+                } finally {
+                    _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
+                }
+            } else picked
+            val meta = replacement?.let { ThumbnailExtractor.probe(app, it) }
+            if (replacement == null || meta == null || meta.durationMs <= 0L) {
+                _state.update { it.copy(failure = SquishError.FileUnreadable(name = displayNameOf(picked))) }
+                return@launch
+            }
+            val label = displayNameOf(picked) ?: if (image) "Photo" else "Clip"
+            fun Clip.relinked(): Clip {
+                if (uri != missing) return this
+                val out = minOf(sourceOutMs, meta.durationMs)
+                val into = minOf(sourceInMs, (out - 1L).coerceAtLeast(0L))
+                return copy(uri = replacement, label = label, sourceInMs = into, sourceOutMs = out, sourceDurationMs = meta.durationMs)
+            }
+            record("Relink") {
+                _state.update { current ->
+                    val source = current.sourceUri == missing
+                    current.copy(
+                        videoClips = current.videoClips.map { it.relinked() },
+                        audioClips = current.audioClips.map { it.relinked() },
+                        sourceUri = if (source) replacement else current.sourceUri,
+                        sourceName = if (source) label else current.sourceName,
+                        missingMedia = null,
+                        failure = null
+                    ).let { next ->
+                        // The source was probed as nothing when the project
+                        // opened, so every frame and crop was measured against
+                        // 0x0; the replacement's shape is the edit's shape now.
+                        if (!source) next
+                        else next.copy(
+                            durationMs = meta.durationMs,
+                            sourceWidth = meta.displayWidth,
+                            sourceHeight = meta.displayHeight,
+                            sourceHasAudio = meta.hasAudio,
+                            fps = meta.fps,
+                            trimStartMs = 0L,
+                            trimEndMs = meta.durationMs
+                        )
+                    }
+                }
             }
             recomputeEstimate()
-            val files = (snapshot.clips.mapNotNull { it.uri } + snapshot.sourceUri).distinct()
-            ensureProxies(files)
-            confirmSourceAudio(snapshot.sourceUri)
-            reportMissingLayers(snapshot.clips)
-            files.filterNot(StillClips::isStill).forEach(::checkDecodable)
-            restoreAudioWaveforms(snapshot.audioClips)
-        }
-    }
-
-    /**
-     * A restored edit whose picture files are not all readable any more - a grant
-     * that did not survive, a file deleted from the gallery - says which one, by
-     * name, the moment it is restored. The offer only checked the file first
-     * opened, so a missing overlay came back as a row with a clip on it, a black
-     * layer in the preview and an export that failed when it got there (O10).
-     */
-    private suspend fun reportMissingLayers(clips: List<Clip>) {
-        val missing = withContext(Dispatchers.IO) {
-            clips.filter { it.kind == ClipKind.Video }
-                .distinctBy { it.uri }
-                .firstOrNull { clip -> clip.uri?.let { !canRead(it) } == true }
-        } ?: return
-        _state.update {
-            it.copy(
-                failure = if (missing.isOverlay) SquishError.LayerUnreadable(missing.label, missing.layer)
-                else SquishError.FileUnreadable(name = missing.label.takeIf { l -> l.isNotBlank() })
-            )
+            probeEncoder()
+            checkDecodable(replacement)
+            ensureProxies(listOf(replacement))
+            withContext(Dispatchers.IO) { persist() }
+            reportMissingMedia(_state.value.videoClips + _state.value.audioClips)
         }
     }
 
@@ -1360,7 +1359,6 @@ class EditorViewModel(
         // write handed to another thread has no guarantee of running before the
         // process that asked for it is killed.
         saveNow()
-        loadedUri?.let(OpenEditors::closed)
         // The encode died with the scope; the notification must not outlive it.
         if (_state.value.isExporting) ExportService.end(getApplication())
         // The collector above is cancelled with the scope, so a screen cleared
@@ -1379,8 +1377,6 @@ class EditorViewModel(
     }
 
     private companion object {
-        /** Saved-state key: this entry has opened its clip. See [restoredAfterDeath]. */
-        const val KEY_OPENED = "opened"
         val AUTOSAVE_INTERVAL = 1_500.milliseconds
     }
 }

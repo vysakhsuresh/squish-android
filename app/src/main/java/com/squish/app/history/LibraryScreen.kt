@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -47,6 +48,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,12 +58,14 @@ import com.squish.app.data.SquishRepositories
 import com.squish.app.editor.Timecode
 import com.squish.app.export.ShareUtils
 import com.squish.app.home.formatSize
-import com.squish.app.media.ThumbnailExtractor
+import com.squish.app.media.ThumbnailCache
+import com.squish.app.media.canReadMedia
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.ConfirmDialog
 import com.squish.app.ui.components.VideoPreviewSheet
 import com.squish.app.ui.theme.SquishColors
-import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Everything ever exported, with a picture of it.
@@ -73,6 +77,8 @@ import java.io.File
  *
  * A row whose file has been deleted from outside the app is shown greyed rather
  * than hidden - silently dropping it would look like the app lost the work.
+ * Each export is one file, the gallery's (ExportRecord.mediaUri): the private
+ * copy went once the gallery copy was verified.
  */
 @Composable
 fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
@@ -135,9 +141,9 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                         items(shown, key = { it.id }) { record ->
                             LibraryRow(
                                 record = record,
-                                onOpen = { onOpen(record.outputPath) },
+                                onOpen = { onOpen(record.id) },
                                 onPreview = { previewing = record },
-                                onShare = { ShareUtils.share(context, record.outputPath, null) },
+                                onShare = { ShareUtils.share(context, record.mediaUri, record.mimeType) },
                                 onRemove = { pendingDelete = record }
                             )
                         }
@@ -158,35 +164,25 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             title = record.title,
             subtitle = "${Timecode.format(record.durationMs).removeSuffix(".000")}  ·  " +
                 formatSize(record.outputSizeBytes),
-            uri = android.net.Uri.fromFile(File(record.outputPath)),
+            uri = record.mediaUri,
             durationMs = record.durationMs,
             accent = SquishColors.Violet,
             // Measured off the exported file itself. The record holds the source's
             // shape, which is not the export's once it was cropped or reframed -
             // a 16:9 reframe of a portrait clip played stretched into a tall box.
+            audioOnly = record.isAudio,
             actionLabel = "Open",
             onAction = {
                 previewing = null
-                onOpen(record.outputPath)
+                onOpen(record.id)
             },
             onDismiss = { previewing = null }
         )
     }
 
     pendingDelete?.let { record ->
-        val fileStillHere = remember(record.id) { File(record.outputPath).exists() }
-        ConfirmDialog(
-            title = "Delete \"${record.title}\"?",
-            body = if (fileStillHere) {
-                "This removes it from your library and deletes the video from " +
-                    "Squish's own storage."
-            } else {
-                "The file behind this one is already gone from this phone. " +
-                    "Deleting clears the entry that is left."
-            },
-            caution = "There is no undo and no bin to fetch it back from. " +
-                "A copy you already saved to your phone's gallery stays where it is.",
-            confirmLabel = "Delete",
+        DeleteExportDialog(
+            record = record,
             onConfirm = {
                 repository.delete(record.id)
                 pendingDelete = null
@@ -194,6 +190,36 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             onDismiss = { pendingDelete = null }
         )
     }
+}
+
+/**
+ * The one question before an export goes, shared with the detail screen. The
+ * gallery copy is the export now, so deleting reaches into the gallery, and
+ * the words say so - the older wording promised the gallery copy would stay.
+ */
+@Composable
+internal fun DeleteExportDialog(record: ExportRecord, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var stillHere by remember(record.id) { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(record.id) { stillHere = withContext(Dispatchers.IO) { context.canReadMedia(record.mediaUri) } }
+    ConfirmDialog(
+        title = "Delete \"${record.title}\"?",
+        body = when {
+            stillHere == false ->
+                "The file behind this one is already gone from this phone. " +
+                    "Deleting clears the entry that is left."
+            record.onPrivateCopy ->
+                "This removes it from your library and deletes the video from Squish's own storage."
+            else ->
+                "This removes it from your library and deletes the video from your " +
+                    "${if (record.isAudio) "Music" else "gallery"} - it is the only copy Squish keeps."
+        },
+        caution = "There is no undo and no bin to fetch it back from. " +
+            "A copy you saved to Files yourself, or sent somewhere, stays where it is.",
+        confirmLabel = "Delete",
+        onConfirm = onConfirm,
+        onDismiss = onDismiss
+    )
 }
 
 @Composable
@@ -204,7 +230,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
             .clip(RoundedCornerShape(14.dp))
             .background(SquishColors.Surface)
             .border(1.dp, SquishColors.Border, RoundedCornerShape(14.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -214,7 +240,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
             tint = SquishColors.TextMuted,
             modifier = Modifier.size(18.dp)
         )
-        Box(modifier = Modifier.weight(1f)) {
+        Box(modifier = Modifier.weight(1f).padding(vertical = 8.dp)) {
             if (query.isEmpty()) {
                 Text(
                     "Search your exports",
@@ -234,12 +260,14 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
             )
         }
         if (query.isNotEmpty()) {
-            Icon(
-                Icons.Filled.Close,
-                contentDescription = "Clear",
-                tint = SquishColors.TextSecondary,
-                modifier = Modifier.size(18.dp).clickable { onQuery("") }
-            )
+            IconButton(onClick = { onQuery("") }, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = "Clear the search",
+                    tint = SquishColors.TextSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
     }
 }
@@ -272,17 +300,18 @@ private fun LibraryRow(
     onRemove: () -> Unit
 ) {
     val context = LocalContext.current
-    val exists = remember(record.outputPath) { File(record.outputPath).exists() }
+    // Whether the file is still there is a resolver call, off the main thread;
+    // it used to be a stat at composition, for every row, on every scroll.
+    var exists by remember(record.id) { mutableStateOf<Boolean?>(null) }
     var thumb by remember(record.id) { mutableStateOf<Bitmap?>(null) }
 
-    LaunchedEffect(record.id, exists) {
-        if (!exists) return@LaunchedEffect
-        thumb = ThumbnailExtractor.frameAt(
-            context,
-            android.net.Uri.fromFile(File(record.outputPath)),
-            (record.durationMs / 3).coerceAtLeast(0L)
-        )
+    LaunchedEffect(record.id) {
+        val here = withContext(Dispatchers.IO) { context.canReadMedia(record.mediaUri) }
+        exists = here
+        if (!here || record.isAudio) return@LaunchedEffect
+        thumb = ThumbnailCache.frame(context, record.mediaUri, (record.durationMs / 3).coerceAtLeast(0L))
     }
+    val gone = exists == false
 
     Row(
         modifier = Modifier
@@ -290,10 +319,10 @@ private fun LibraryRow(
             .clip(RoundedCornerShape(16.dp))
             .background(SquishColors.Surface)
             .border(1.dp, SquishColors.Border, RoundedCornerShape(16.dp))
-            .clickable(enabled = exists, onClick = onOpen)
+            .clickable(enabled = !gone, role = Role.Button, onClick = onOpen)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Box(
             modifier = Modifier
@@ -339,7 +368,7 @@ private fun LibraryRow(
             Text(
                 record.title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (exists) SquishColors.TextPrimary else SquishColors.TextMuted,
+                color = if (gone) SquishColors.TextMuted else SquishColors.TextPrimary,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis
@@ -349,7 +378,7 @@ private fun LibraryRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted
             )
-            if (!exists) {
+            if (gone) {
                 Text(
                     "File no longer on this phone",
                     style = MaterialTheme.typography.labelSmall,
@@ -358,7 +387,7 @@ private fun LibraryRow(
             }
         }
 
-        if (exists) {
+        if (!gone) {
             RowAction(Icons.Filled.PlayArrow, "Preview ${record.title}", SquishColors.Violet, onPreview)
             RowAction(Icons.Filled.Share, "Share ${record.title}", SquishColors.Cyan, onShare)
         }
@@ -366,6 +395,7 @@ private fun LibraryRow(
     }
 }
 
+/** A row's button at the size a thumb needs; see DraftsScreen's CardAction for why. */
 @Composable
 private fun RowAction(
     icon: ImageVector,
@@ -375,12 +405,14 @@ private fun RowAction(
 ) {
     Box(
         modifier = Modifier
-            .size(34.dp)
+            .size(48.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(6.dp)
             .clip(RoundedCornerShape(11.dp))
-            .background(SquishColors.Background)
-            .clickable(onClick = onClick),
+            .background(SquishColors.Background),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(17.dp))
+        Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(18.dp))
     }
 }

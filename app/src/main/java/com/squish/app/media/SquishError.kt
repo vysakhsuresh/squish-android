@@ -30,11 +30,19 @@ sealed class SquishError(
     val cause: Throwable? = null
 ) {
 
-    class FileUnreadable(cause: Throwable? = null, val name: String? = null) : SquishError(
+    /**
+     * [relinkable] when the editor is showing its Relink card for this file:
+     * the fix then names the card rather than sending people to delete the
+     * clip and add it again, which loses every cut and setting on it.
+     */
+    class FileUnreadable(cause: Throwable? = null, val name: String? = null, relinkable: Boolean = false) : SquishError(
         title = if (name != null) "Can't open “$name”" else "Can't open that file",
         detail = "The file moved, was deleted, or the app lost permission to read it since you picked it.",
-        fix = if (name != null) "Delete that clip from the timeline and add it again from the gallery."
-        else "Pick the clip again from the gallery.",
+        fix = when {
+            relinkable -> RELINK_FIX
+            name != null -> "Delete that clip from the timeline and add it again from the gallery."
+            else -> "Pick the clip again from the gallery."
+        },
         cause = cause
     )
 
@@ -43,10 +51,11 @@ sealed class SquishError(
      * the row on the strip still shows a clip and the preview only a black layer,
      * and "that file" sent people looking at the main track.
      */
-    class LayerUnreadable(val name: String, val row: Int) : SquishError(
+    class LayerUnreadable(val name: String, val row: Int, relinkable: Boolean = false) : SquishError(
         title = "Can't open the overlay “$name”",
         detail = "The overlay on row $row moved, was deleted, or the app lost permission to read it since you added it.",
-        fix = "Delete that overlay and add it again from the gallery, or delete it to export without it."
+        fix = if (relinkable) RELINK_FIX
+        else "Delete that overlay and add it again from the gallery, or delete it to export without it."
     )
 
     /**
@@ -54,12 +63,17 @@ sealed class SquishError(
      * file" sent people looking at their video clips while the song was the one
      * whose permission had lapsed.
      */
-    class SoundUnreadable(val name: String) : SquishError(
+    class SoundUnreadable(val name: String, relinkable: Boolean = false) : SquishError(
         title = "Can't open the sound “$name”",
         detail = "The file moved, was deleted, or the app lost permission to read it since you added it. " +
-            "Nothing was rendered.",
-        fix = "Delete that sound from the timeline and add it again, or remove it to export without it."
+            if (relinkable) "Its clips are kept where they were." else "Nothing was rendered.",
+        fix = if (relinkable) RELINK_FIX
+        else "Delete that sound from the timeline and add it again, or remove it to export without it."
     )
+
+    /** Whether this is one of the three above: the failures the Relink card answers. */
+    val isUnreadable: Boolean
+        get() = this is FileUnreadable || this is LayerUnreadable || this is SoundUnreadable
 
     class SoundUnsupported(val name: String, val codecHint: String) : SquishError(
         title = "This phone can't play “$name”",
@@ -350,6 +364,9 @@ sealed class SquishError(
     )
 
     companion object {
+
+        /** What the Relink card under the failure does; see EditorViewModel.relink. */
+        private const val RELINK_FIX = "Relink, below, puts another file under every clip that played it, with every cut and setting kept."
 
         /**
          * Checks that can be made *before* burning two minutes of encoding on an

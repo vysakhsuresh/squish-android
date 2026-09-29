@@ -9,13 +9,20 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.core.content.IntentCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import com.squish.app.media.keepReadAccess
 import com.squish.app.navigation.OpenRequest
 import com.squish.app.navigation.SquishNavHost
+import com.squish.app.settings.Preferences
 import com.squish.app.ui.theme.SquishTheme
 
 class MainActivity : ComponentActivity() {
@@ -24,12 +31,11 @@ class MainActivity : ComponentActivity() {
      * The video "Open with" or "Share" last asked for, whenever it asked. A
      * fresh start sets it from the launching intent; a running app is handed
      * the intent through onNewIntent instead (the activity is single-task, so
-     * a second copy of the whole app - with its own editor saving into the
-     * same draft as the first's - is never started in the caller's task) -
-     * which used to be ignored outright, so opening a file while Squish was
-     * open did nothing at all. What the request does with the screens is the
-     * nav host's decision: back to the editor already open on the video, or a
-     * new one, and not while an export runs.
+     * a second copy of the whole app - with its own editor and players - is
+     * never started in the caller's task) - which used to be ignored outright,
+     * so opening a file while Squish was open did nothing at all. What the
+     * request does with the screens is the nav host's decision: a new project
+     * on the file, and not while an export runs.
      */
     private var openRequest by mutableStateOf<OpenRequest?>(null)
 
@@ -48,10 +54,25 @@ class MainActivity : ComponentActivity() {
         )
         // Only on a fresh start: a restored activity is already wherever the
         // video took it, and opening it again would stack a second editor.
-        if (savedInstanceState == null) openRequest = videoFrom(intent)?.let { OpenRequest(it, SystemClock.elapsedRealtimeNanos()) }
+        if (savedInstanceState == null) openRequest = videoFrom(intent)
+        // Read once here rather than on every snap tick; see Preferences.hapticsOn.
+        Preferences.editorDefaults(this)
         setContent {
             SquishTheme {
-                SquishNavHost(open = openRequest)
+                // Every snap and long-press asks LocalHapticFeedback; providing a
+                // gated one here turns the Settings switch off everywhere without
+                // each strip and box knowing there is a switch.
+                val system = LocalHapticFeedback.current
+                val gated = remember(system) {
+                    object : HapticFeedback {
+                        override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+                            if (Preferences.hapticsOn) system.performHapticFeedback(hapticFeedbackType)
+                        }
+                    }
+                }
+                CompositionLocalProvider(LocalHapticFeedback provides gated) {
+                    SquishNavHost(open = openRequest)
+                }
             }
         }
     }
@@ -63,20 +84,22 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         // Stamped, so the same file opened twice is two requests: the nav host
         // acts on a change, and an equal value would not be one.
-        videoFrom(intent)?.let { openRequest = OpenRequest(it, SystemClock.elapsedRealtimeNanos()) }
+        videoFrom(intent)?.let { openRequest = it }
     }
 
     /** The video handed over by "Open with" or "Share", if that is how the app was started. */
-    private fun videoFrom(intent: Intent?): Uri? {
+    private fun videoFrom(intent: Intent?): OpenRequest? {
         val uri = when (intent?.action) {
             Intent.ACTION_VIEW -> intent.data
             Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
             else -> null
         } ?: return null
         // Kept past this session when the sender allows it, so a draft of the
-        // video can still reopen it tomorrow. Most grant only for now; that works
-        // until the app is closed.
-        runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-        return uri
+        // video can still reopen it tomorrow. Most share only for now; those
+        // are copied into the app's storage when the project opens
+        // (MediaAccess.importCopy), since a draft on a grant that ended with
+        // the process opened on nothing the next day.
+        val persisted = uri.scheme == "file" || keepReadAccess(uri)
+        return OpenRequest(uri, SystemClock.elapsedRealtimeNanos(), persisted)
     }
 }

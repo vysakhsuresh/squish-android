@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -132,5 +133,36 @@ fun SectionHeading(
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
         }
         trailing?.invoke()
+    }
+}
+
+/**
+ * A one-time hint, in one line, with the one way to close it. Shown on a
+ * screen's first visit only (Preferences.coachSeen): a first-time user lands
+ * on a dashboard and an editor that rely on gestures nothing on screen names
+ * - pinch, drag, long-press - and CapCut's one-time tips are the standard.
+ * Never a tour, never a second time.
+ */
+@Composable
+fun CoachMark(text: String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SquishColors.Primary.copy(alpha = 0.12f))
+            .border(1.dp, SquishColors.Primary.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextPrimary,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onDismiss) {
+            Text("Got it", style = MaterialTheme.typography.labelLarge, color = SquishColors.Primary)
+        }
     }
 }

@@ -4,6 +4,7 @@ import android.net.Uri
 import com.squish.app.media.ReverseRenderer
 import com.squish.app.media.SquishError
 import com.squish.app.media.StillClips
+import com.squish.app.settings.Preferences
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.effects.Adjust
 import com.squish.app.media.effects.AdjustField
@@ -612,7 +613,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     val base = current.videoClips.filter { it.layer == 0 }.sortedBy { it.timelineStartMs }
                     // A still lands short and can be dragged out to its full render.
                     val lengths = probed.map { (_, meta, label) ->
-                        if (label != null) minOf(StillClips.DEFAULT_MS, meta.durationMs) else meta.durationMs
+                        if (label != null) minOf(Preferences.stillMs(app), meta.durationMs) else meta.durationMs
                     }
                     val insertion = if (at == null) null
                     else EditRules.insertion(base.map { Span(it.timelineStartMs, it.timelineEndMs) }, at, lengths)
@@ -1331,6 +1332,9 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     uri = made,
                     label = "Freeze",
                     sourceInMs = 0L,
+                    // Three seconds, as CapCut's freeze is - not Settings' photo
+                    // length, which is for pictures dropped in: a slideshow
+                    // set to 8 s made every freeze in every project 8 s long.
                     sourceOutMs = minOf(StillClips.DEFAULT_MS, fileMs),
                     timelineStartMs = at,
                     sourceDurationMs = fileMs

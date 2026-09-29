@@ -1,6 +1,7 @@
 package com.squish.app.export
 
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -42,6 +43,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,12 +58,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
+import com.squish.app.data.ExportRecord
 import com.squish.app.data.SquishRepositories
 import com.squish.app.home.formatSize
+import com.squish.app.media.ThumbnailCache
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.VideoMeta
 import com.squish.app.ui.components.BackOrb
@@ -71,6 +75,8 @@ import com.squish.app.ui.components.SquishPrimaryButton
 import com.squish.app.ui.components.VideoPreviewSheet
 import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -89,6 +95,10 @@ import java.io.File
  * where it used to compare "before" and "after" sizes, a leftover from the
  * compress tool that made no sense of an edit with added clips and music. That
  * comparison stays where it belongs: on Squeeze's done screen.
+ *
+ * The file it plays and shares is the export's one copy - the gallery's, once
+ * that was verified (ExportRecord.mediaUri) - so the private path in the route
+ * is the record's name, not necessarily a file that still exists.
  */
 @Composable
 fun ExportScreen(
@@ -106,39 +116,13 @@ fun ExportScreen(
     onDone: () -> Unit
 ) {
     val context = LocalContext.current
-    val record = remember(resultPath) {
-        SquishRepositories.history(context).records.value.firstOrNull { it.outputPath == resultPath }
-    }
-    val isAudio = resultPath.endsWith(".m4a", ignoreCase = true)
-    val fileUri = remember(resultPath) { Uri.fromFile(File(resultPath)) }
+    // Watched rather than read once: the record lands a moment after the
+    // route, when the history's write has been awaited.
+    val records by SquishRepositories.history(context).records.collectAsState()
+    val record = records.firstOrNull { it.outputPath == resultPath }
+    val isAudio = record?.isAudio ?: resultPath.endsWith(".m4a", ignoreCase = true)
+    val fileUri = record?.mediaUri ?: Uri.fromFile(File(resultPath))
     var notice by remember { mutableStateOf<String?>(null) }
-
-    // Measured off the file, not read off the record: the record says what was
-    // asked for, the file says what was written.
-    var meta by remember(resultPath) { mutableStateOf<VideoMeta?>(null) }
-    var sizeBytes by remember(resultPath) { mutableStateOf(0L) }
-    var cover by remember(resultPath) { mutableStateOf<Bitmap?>(null) }
-    var previewing by remember { mutableStateOf(false) }
-    LaunchedEffect(resultPath) {
-        sizeBytes = File(resultPath).length()
-        meta = ThumbnailExtractor.probe(context, fileUri)
-        if (!isAudio) cover = ThumbnailExtractor.frameAt(context, fileUri, 0L)
-    }
-
-    // A second copy, wherever they want it. The automatic publish puts it in the
-    // gallery, which is right for most people and useless for anyone who wants it
-    // on an SD card or in a folder they sync.
-    val saveCopy = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument(if (isAudio) "audio/mp4" else "video/mp4")
-    ) { target ->
-        if (target == null) return@rememberLauncherForActivityResult
-        notice = runCatching {
-            context.contentResolver.openOutputStream(target)?.use { out ->
-                File(resultPath).inputStream().use { it.copyTo(out) }
-            } ?: error("no stream")
-            "Copy saved."
-        }.getOrElse { "Could not write there — try a different folder." }
-    }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -188,70 +172,21 @@ fun ExportScreen(
                     textAlign = TextAlign.Center
                 )
 
-                Cover(
-                    cover = cover,
-                    meta = meta,
-                    isAudio = isAudio,
-                    onPlay = { previewing = true }
-                )
-
-                FactsCard(
-                    meta = meta,
-                    sizeBytes = sizeBytes,
-                    isAudio = isAudio,
-                    // The comparison is the compress tool's own question. An edit
-                    // has added clips, stills and music; "before" means nothing there.
-                    originalBytes = record?.originalSizeBytes?.takeIf { jobLabel == "Squeezed" } ?: 0L
-                )
-
-                SavedToCard(
+                ExportedFile(
+                    uri = fileUri,
                     isAudio = isAudio,
                     fileName = File(resultPath).name,
+                    title = record?.title ?: File(resultPath).name,
+                    fallbackDurationMs = record?.durationMs ?: 0L,
+                    // The comparison is the compress tool's own question. An edit
+                    // has added clips, stills and music; "before" means nothing there.
+                    originalBytes = record?.originalSizeBytes?.takeIf { jobLabel == "Squeezed" } ?: 0L,
                     // An older record never recorded it either way; those went
                     // through the same copy and are taken at their word.
-                    inGallery = record?.savedToGallery != false
+                    inGallery = record?.savedToGallery != false,
+                    notice = notice,
+                    onNotice = { notice = it }
                 )
-
-                SquishOutlinedButton(
-                    text = "Save a copy to Files",
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { saveCopy.launch(File(resultPath).name) }
-                )
-
-                notice?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.Cyan)
-                }
-
-                Text(
-                    "Share",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.TextMuted,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ShareTarget("WhatsApp", ShareGlyphs.WhatsApp, ShareStyle.WhatsApp) {
-                        if (!ShareUtils.share(context, resultPath, "com.whatsapp")) {
-                            notice = "Nothing on this phone can share that."
-                        }
-                    }
-                    ShareTarget("Instagram", ShareGlyphs.Instagram, ShareStyle.Instagram) {
-                        if (!ShareUtils.share(context, resultPath, "com.instagram.android")) {
-                            notice = "Nothing on this phone can share that."
-                        }
-                    }
-                    ShareTarget("Mail", ShareGlyphs.Mail, ShareStyle.Mail) {
-                        sendByEmail(context, resultPath, isAudio) { notice = it }
-                    }
-                    ShareTarget("More", ShareGlyphs.More, ShareStyle.More) {
-                        if (!ShareUtils.share(context, resultPath, null)) {
-                            notice = "Nothing on this phone can share that."
-                        }
-                    }
-                }
 
                 Spacer(modifier = Modifier.height(10.dp))
                 SquishPrimaryButton(
@@ -274,13 +209,126 @@ fun ExportScreen(
             )
         }
     }
+}
+
+/**
+ * One exported file, as the done screen and the library's detail screen both
+ * show it: its cover (tap to play), the facts measured off it, where it went,
+ * a copy to Files, and the share row. Everything below the celebration and
+ * above the way out.
+ */
+@Composable
+fun ExportedFile(
+    uri: Uri,
+    isAudio: Boolean,
+    fileName: String,
+    title: String,
+    fallbackDurationMs: Long,
+    originalBytes: Long,
+    inGallery: Boolean,
+    notice: String?,
+    onNotice: (String?) -> Unit
+) {
+    val context = LocalContext.current
+    // Measured off the file, not read off the record: the record says what was
+    // asked for, the file says what was written.
+    var meta by remember(uri) { mutableStateOf<VideoMeta?>(null) }
+    var sizeBytes by remember(uri) { mutableStateOf(0L) }
+    var cover by remember(uri) { mutableStateOf<Bitmap?>(null) }
+    var previewing by remember { mutableStateOf(false) }
+    LaunchedEffect(uri) {
+        sizeBytes = withContext(Dispatchers.IO) {
+            runCatching { context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L }.getOrDefault(0L)
+        }
+        meta = ThumbnailExtractor.probe(context, uri)
+        if (!isAudio) cover = ThumbnailCache.frame(context, uri, 0L)
+    }
+
+    // A second copy, wherever they want it. The automatic publish puts it in the
+    // gallery, which is right for most people and useless for anyone who wants it
+    // on an SD card or in a folder they sync.
+    val saveCopy = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(if (isAudio) "audio/mp4" else "video/mp4")
+    ) { target ->
+        if (target == null) return@rememberLauncherForActivityResult
+        onNotice(
+            runCatching {
+                context.contentResolver.openOutputStream(target)?.use { out ->
+                    context.contentResolver.openInputStream(uri)?.use { it.copyTo(out) } ?: error("no source")
+                } ?: error("no stream")
+                "Copy saved."
+            }.getOrElse { "Could not write there — try a different folder." }
+        )
+    }
+
+    Cover(
+        cover = cover,
+        meta = meta,
+        isAudio = isAudio,
+        onPlay = { previewing = true }
+    )
+
+    FactsCard(
+        meta = meta,
+        sizeBytes = sizeBytes,
+        isAudio = isAudio,
+        originalBytes = originalBytes
+    )
+
+    SavedToCard(
+        isAudio = isAudio,
+        fileName = fileName,
+        inGallery = inGallery
+    )
+
+    SquishOutlinedButton(
+        text = "Save a copy to Files",
+        modifier = Modifier.fillMaxWidth(),
+        onClick = { saveCopy.launch(fileName) }
+    )
+
+    notice?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.Cyan)
+    }
+
+    val mime = if (isAudio) "audio/mp4" else "video/mp4"
+    Text(
+        "Share",
+        style = MaterialTheme.typography.labelSmall,
+        color = SquishColors.TextMuted,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ShareTarget("WhatsApp", ShareGlyphs.WhatsApp, ShareStyle.WhatsApp) {
+            if (!ShareUtils.share(context, uri, mime, "com.whatsapp")) {
+                onNotice("Nothing on this phone can share that.")
+            }
+        }
+        ShareTarget("Instagram", ShareGlyphs.Instagram, ShareStyle.Instagram) {
+            if (!ShareUtils.share(context, uri, mime, "com.instagram.android")) {
+                onNotice("Nothing on this phone can share that.")
+            }
+        }
+        ShareTarget("Mail", ShareGlyphs.Mail, ShareStyle.Mail) {
+            sendByEmail(context, uri, fileName, isAudio) { onNotice(it) }
+        }
+        ShareTarget("More", ShareGlyphs.More, ShareStyle.More) {
+            if (!ShareUtils.share(context, uri, mime, null)) {
+                onNotice("Nothing on this phone can share that.")
+            }
+        }
+    }
 
     if (previewing) {
         VideoPreviewSheet(
-            title = record?.title ?: File(resultPath).name,
+            title = title,
             subtitle = factsLine(meta, sizeBytes, isAudio),
-            uri = fileUri,
-            durationMs = meta?.durationMs ?: record?.durationMs ?: 0L,
+            uri = uri,
+            durationMs = meta?.durationMs ?: fallbackDurationMs,
             accent = SquishColors.Cyan,
             aspect = meta?.let { if (it.displayWidth > 0 && it.displayHeight > 0) it.displayWidth.toFloat() / it.displayHeight else 0f } ?: 0f,
             audioOnly = isAudio,
@@ -311,7 +359,7 @@ private fun Cover(cover: Bitmap?, meta: VideoMeta?, isAudio: Boolean, onPlay: ()
             .clip(RoundedCornerShape(18.dp))
             .background(SquishColors.Surface)
             .border(1.dp, SquishColors.Border, RoundedCornerShape(18.dp))
-            .clickable(onClick = onPlay),
+            .clickable(role = Role.Button, onClick = onPlay),
         contentAlignment = Alignment.Center
     ) {
         if (cover != null) {
@@ -502,7 +550,7 @@ private fun ShareTarget(label: String, icon: ImageVector, tile: Brush, onClick: 
             // rather than a flat swatch.
             .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.22f), Color.Transparent), endY = 90f))
             .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
-            .clickable(interactionSource = press, indication = null, onClick = onClick),
+            .clickable(interactionSource = press, indication = null, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -522,34 +570,30 @@ private fun ShareTarget(label: String, icon: ImageVector, tile: Brush, onClick: 
  * actually set up.
  */
 private fun sendByEmail(
-    context: android.content.Context,
-    path: String,
+    context: Context,
+    uri: Uri,
+    fileName: String,
     isAudio: Boolean,
     onProblem: (String) -> Unit
 ) {
-    val uri = runCatching {
-        FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            File(path)
-        )
-    }.getOrNull() ?: run {
+    val stream = ShareUtils.shareableUri(context, uri) ?: run {
         onProblem("Could not attach that file.")
         return
     }
+    val mime = if (isAudio) "audio/mp4" else "video/mp4"
 
     val intent = Intent(Intent.ACTION_SEND).apply {
-        type = if (isAudio) "audio/mp4" else "video/mp4"
-        putExtra(Intent.EXTRA_STREAM, uri)
-        putExtra(Intent.EXTRA_SUBJECT, File(path).name)
+        type = mime
+        putExtra(Intent.EXTRA_STREAM, stream)
+        putExtra(Intent.EXTRA_SUBJECT, fileName)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         // Narrows the chooser to apps that handle mail, without naming one.
-        selector = Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:"))
+        selector = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
     }
 
     try {
         context.startActivity(intent)
     } catch (_: ActivityNotFoundException) {
-        if (!ShareUtils.share(context, path, null)) onProblem("No email app set up on this phone.")
+        if (!ShareUtils.share(context, uri, mime, null)) onProblem("No email app set up on this phone.")
     }
 }

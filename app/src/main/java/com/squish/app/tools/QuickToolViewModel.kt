@@ -682,6 +682,9 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                         )
                     )
                     withContext(Dispatchers.IO) { markExported(rendered) }
+                    // The private copy goes once the gallery's is known whole;
+                    // the library reads the gallery copy from here on.
+                    GallerySaver.retire(getApplication(), file, published)
                 }
                 ExportService.end(getApplication())
                 _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }

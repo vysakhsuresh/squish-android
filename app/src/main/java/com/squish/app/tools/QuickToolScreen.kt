@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -31,10 +32,9 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -43,6 +43,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,8 +52,11 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.squish.app.editor.GlyphTile
+import com.squish.app.editor.glyph
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -94,7 +98,8 @@ fun QuickToolScreen(
     slot: String,
     onBack: () -> Unit,
     onExported: (String) -> Unit,
-    onOpenInEditor: (Uri) -> Unit,
+    /** The session's files, in playing order, for a project made from them. */
+    onOpenInEditor: (List<Uri>) -> Unit,
     viewModel: QuickToolViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -168,12 +173,16 @@ fun QuickToolScreen(
     // Unless the slot already holds a session - one reopened from the drafts
     // list, or this one, back after the app was killed under it. Six videos chosen
     // and ordered for a merge is ten minutes of work, and throwing the picker over
-    // the top of it would mean starting that again.
+    // the top of it would mean starting that again. And only once: after a
+    // recreation - a font size change, a fold - the picker came up again unasked
+    // over a screen whose first picker had been cancelled.
+    var askedOnce by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(tool) {
         val draft = viewModel.begin(tool, slot)
         if (draft != null) {
             viewModel.restore(draft)
-        } else if (!state.hasSource) {
+        } else if (!state.hasSource && !askedOnce) {
+            askedOnce = true
             openPicker()
         }
     }
@@ -189,7 +198,16 @@ fun QuickToolScreen(
                 tool = tool,
                 canOpenInEditor = state.sourceUri != null && !state.isExporting,
                 onBack = leave,
-                onOpenInEditor = { state.sourceUri?.let(onOpenInEditor) }
+                onOpenInEditor = {
+                    // The whole merge, in order: only the first clip used to go,
+                    // so a six-clip Stitch opened as a one-clip project.
+                    val uris = if (tool == QuickTool.Stitch) state.mergeClips.mapNotNull { it.uri }
+                    else listOfNotNull(state.sourceUri)
+                    if (uris.isNotEmpty()) {
+                        viewModel.saveNow()
+                        onOpenInEditor(uris)
+                    }
+                }
             )
 
             if (state.hasSource) {
@@ -211,14 +229,25 @@ fun QuickToolScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (!state.hasSource) {
+                    // What the tool does, before a file is chosen: the picker
+                    // cancelled used to leave a header and one button.
                     SquishCard(accent = tool.accent) {
-                        Text(
-                            if (tool == QuickTool.Stitch)
-                                "Choose the videos you want joined — you can pick several at once."
-                            else "Choose a video to get started.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = SquishColors.TextSecondary
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            GlyphTile(tool.glyph, size = 52.dp)
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(tool.title, style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
+                                Text(
+                                    when (tool) {
+                                        QuickTool.Squeeze -> "Pick a video, choose a size or a limit, and get a lighter file that looks the same."
+                                        QuickTool.Snip -> "Pick a video and drag two handles over its frames. Only what is between them is kept."
+                                        QuickTool.Rip -> "Pick a video and keep its sound alone, as an .m4a in Music › Squish."
+                                        QuickTool.Stitch -> "Pick several videos at once and put them in order. They play end to end as one file."
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = SquishColors.TextSecondary
+                                )
+                            }
+                        }
                         SquishOutlinedButton(
                             text = if (tool == QuickTool.Stitch) "Choose videos" else "Choose video",
                             modifier = Modifier.fillMaxWidth(),
@@ -338,8 +367,9 @@ private fun ToolHeader(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
                     .background(tool.accent.copy(alpha = 0.12f))
-                    .clickable(onClick = onOpenInEditor)
-                    .padding(horizontal = 10.dp, vertical = 7.dp)
+                    .clickable(role = Role.Button, onClick = onOpenInEditor)
+                    .heightIn(min = 44.dp)
+                    .padding(horizontal = 10.dp, vertical = 12.dp)
             )
         }
     }
@@ -412,14 +442,17 @@ private fun PreviewCard(
                     color = SquishColors.TextMuted
                 )
             }
+            // Named for what it does: a Stitch's picker appends, so "Change" on
+            // it added clips rather than replacing them.
             Text(
-                "Change",
+                if (tool == QuickTool.Stitch) "Add clips" else "Change",
                 style = MaterialTheme.typography.labelLarge,
                 color = tool.accent,
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable(onClick = onChangeSource)
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .clickable(role = Role.Button, onClick = onChangeSource)
+                    .heightIn(min = 44.dp)
+                    .padding(horizontal = 10.dp, vertical = 12.dp)
             )
         }
     }
@@ -476,7 +509,10 @@ private fun CompressControls(state: QuickToolViewModel.UiState, viewModel: Quick
 }
 
 /**
- * The in and out points, for the two tools that take a slice.
+ * The in and out points, for the two tools that take a slice: handles over
+ * the footage's own frames (TrimStrip), landing on frame boundaries, with a
+ * frame either way for the last bit of precision. It was a bare slider over
+ * the whole clip, three seconds to the pixel on a long file.
  *
  * [onRange] is handed the handle that moved as well as the new range, so the
  * preview can jump to it: dragging the out point should show you the last frame
@@ -497,32 +533,17 @@ private fun RangeControls(
             accent = tool.accent
         )
 
-        if (state.durationMs > 0) {
-            RangeSlider(
-                value = state.trimStartMs.toFloat()..state.trimEndMs.toFloat(),
-                onValueChange = { range ->
-                    val start = range.start.toLong()
-                    val end = range.endInclusive.toLong()
-                    val moved = if (start != state.trimStartMs) start else end
-                    onRange(start, end, moved)
-                },
-                valueRange = 0f..state.durationMs.toFloat(),
-                colors = SliderDefaults.colors(
-                    thumbColor = tool.accent,
-                    activeTrackColor = tool.accent,
-                    inactiveTrackColor = SquishColors.Border
-                )
+        val uri = state.sourceUri
+        if (state.durationMs > 0 && uri != null) {
+            TrimStrip(
+                uri = uri,
+                durationMs = state.durationMs,
+                fps = state.fps,
+                startMs = state.trimStartMs,
+                endMs = state.trimEndMs,
+                accent = tool.accent,
+                onRange = onRange
             )
-        }
-
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text(Timecode.format(state.trimStartMs), style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
-            Text(
-                "${Timecode.format(state.selectedDurationMs)} kept",
-                style = MaterialTheme.typography.bodySmall,
-                color = tool.accent
-            )
-            Text(Timecode.format(state.trimEndMs), style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
         }
     }
 }
@@ -544,9 +565,13 @@ private fun MergeControls(
                 if (state.mergeClips.size > 1) {
                     Text(
                         "Clear",
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelLarge,
                         color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.clearMerge() }
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(role = Role.Button) { viewModel.clearMerge() }
+                            .heightIn(min = 44.dp)
+                            .padding(horizontal = 10.dp, vertical = 12.dp)
                     )
                 }
             }
@@ -617,35 +642,39 @@ private fun MergeRow(
             )
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            MoveButton(Icons.Filled.KeyboardArrowUp, enabled = !isFirst, onClick = onUp)
-            MoveButton(Icons.Filled.KeyboardArrowDown, enabled = !isLast, onClick = onDown)
-        }
+        // Side by side rather than stacked: two 26 dp buttons one above the other
+        // were the smallest targets in the app, and a thumb took the wrong one.
+        MoveButton(Icons.Filled.KeyboardArrowUp, "Move ${clip.label} up", enabled = !isFirst, onClick = onUp)
+        MoveButton(Icons.Filled.KeyboardArrowDown, "Move ${clip.label} down", enabled = !isLast, onClick = onDown)
 
-        Icon(
-            Icons.Filled.Close,
-            contentDescription = "Remove ${clip.label}",
-            tint = SquishColors.Pink,
-            modifier = Modifier.size(18.dp).clickable(onClick = onRemove)
-        )
+        IconButton(onClick = onRemove, modifier = Modifier.size(44.dp)) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "Remove ${clip.label}",
+                tint = SquishColors.Pink,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
 @Composable
-private fun MoveButton(icon: ImageVector, enabled: Boolean, onClick: () -> Unit) {
+private fun MoveButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .size(26.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (enabled) SquishColors.Surface else SquishColors.Background)
-            .clickable(enabled = enabled, onClick = onClick),
+            .size(44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(4.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (enabled) SquishColors.Surface else SquishColors.Background),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             icon,
-            contentDescription = null,
+            contentDescription = description,
             tint = if (enabled) SquishColors.TextSecondary else SquishColors.TextMuted.copy(alpha = 0.35f),
-            modifier = Modifier.size(16.dp)
+            modifier = Modifier.size(20.dp)
         )
     }
 }

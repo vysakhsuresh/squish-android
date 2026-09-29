@@ -1,14 +1,18 @@
 package com.squish.app.home
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.squish.app.data.DraftHousekeeping
 import com.squish.app.data.DraftSummary
 import com.squish.app.data.ExportRecord
+import com.squish.app.data.ProjectRules
 import com.squish.app.data.SquishRepositories
 import com.squish.app.data.ToolDraft
 import com.squish.app.data.TrashedDraft
+import com.squish.app.editor.ProjectName
+import com.squish.app.media.releaseReadAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,10 +21,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Something just set aside that can be put straight back: a discard, or the
+ * Something just set aside that can be put straight back: a delete, or the
  * version an "earlier version" replaced. [message] is what the snackbar says.
+ * [entries] is everything the one action binned - a multi-select delete is
+ * several - so its Undo is the whole action, not the last part of it.
  */
-data class UndoOffer(val message: String, val entry: TrashedDraft)
+data class UndoOffer(val message: String, val entries: List<TrashedDraft>) {
+    constructor(message: String, entry: TrashedDraft) : this(message, listOf(entry))
+}
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val historyRepository = SquishRepositories.history(application)
@@ -29,8 +37,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     val recentExports: StateFlow<List<ExportRecord>> = historyRepository.records
 
-    private val _drafts = MutableStateFlow<List<DraftSummary>>(emptyList())
-    val drafts: StateFlow<List<DraftSummary>> = _drafts.asStateFlow()
+    /** The projects, newest first: what the dashboard's grid is. */
+    private val _projects = MutableStateFlow<List<DraftSummary>>(emptyList())
+    val projects: StateFlow<List<DraftSummary>> = _projects.asStateFlow()
+
+    /** The quick tools' unfinished sessions, listed on their own screen with the bin. */
+    private val _toolDrafts = MutableStateFlow<List<DraftSummary>>(emptyList())
+    val toolDrafts: StateFlow<List<DraftSummary>> = _toolDrafts.asStateFlow()
 
     /** Everything in the bin, from both stores, newest discard first. */
     private val _trashed = MutableStateFlow<List<TrashedDraft>>(emptyList())
@@ -54,16 +67,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun refreshDrafts() {
         viewModelScope.launch {
-            val (live, binned) = withContext(Dispatchers.IO) {
+            val (edits, tools, binned) = withContext(Dispatchers.IO) {
                 val edits = autosave.drafts()
                 val tools = toolAutosave.drafts().mapNotNull { it.summary(withEarlier = true) }
                 val bin = autosave.trashed() + toolAutosave.trashed().mapNotNull { (trashId, draft) ->
                     val at = DraftHousekeeping.parseTrashName(trashId)?.second ?: return@mapNotNull null
                     TrashedDraft(trashId, draft.summary(withEarlier = false) ?: return@mapNotNull null, at)
                 }
-                (edits + tools).sortedByDescending { it.savedAtMillis } to bin.sortedByDescending { it.discardedAtMillis }
+                Triple(edits.sortedByDescending { it.savedAtMillis }, tools.sortedByDescending { it.savedAtMillis }, bin.sortedByDescending { it.discardedAtMillis })
             }
-            _drafts.value = live
+            _projects.value = edits
+            _toolDrafts.value = tools
             _trashed.value = binned
         }
     }
@@ -82,28 +96,95 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             exportedAtMillis = exportedAtMillis,
             editFingerprint = toolAutosave.fingerprintOf(this),
             exportedFingerprint = exportedFingerprint,
-            earlierSavedAtMillis = if (withEarlier) toolAutosave.earlierSavedAt(this) else null
+            earlierSavedAtMillis = if (withEarlier) toolAutosave.earlierSavedAt(this) else null,
+            coverUri = first
         )
+    }
+
+    /**
+     * A new project on [uris], staged on disk for the editor to open
+     * (ProjectAutosave.stageStart) and handed to [onReady] by id. Staged
+     * before the editor is reached so a kill on the way still finds the files.
+     */
+    fun startProject(uris: List<Uri>, onReady: (String) -> Unit) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val id = ProjectRules.newId()
+            withContext(Dispatchers.IO) { autosave.stageStart(id, uris) }
+            onReady(id)
+        }
+    }
+
+    /** Names a project from its card; blank takes the name off again. */
+    fun renameProject(project: DraftSummary, raw: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { autosave.rename(project.id, ProjectName.clean(raw)) }
+            refreshDrafts()
+        }
+    }
+
+    /** A copy of the project, named after it, beside it in the grid. */
+    fun duplicateProject(project: DraftSummary) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { autosave.duplicate(project.id, _projects.value.map { it.title }) }
+            refreshDrafts()
+        }
     }
 
     /** Moves a draft into the bin. Never deletes: the bin keeps it for a month. */
     fun discardDraft(draft: DraftSummary) {
         viewModelScope.launch {
-            val trashId = withContext(Dispatchers.IO) {
-                // The id means different things in the two stores - a slot derived
-                // from the source video, or the tool session's own slot - so the
-                // discard has to go to the store the draft came from.
-                if (draft.toolId != null) toolAutosave.delete(draft.id) else autosave.delete(draft.id)
-            }
+            val trashId = withContext(Dispatchers.IO) { binOne(draft) }
             if (trashId != null) {
                 _undoOffer.value = UndoOffer(
-                    message = "Discarded \"${draft.title}\"",
+                    message = "Deleted \"${draft.title}\"",
                     entry = TrashedDraft(trashId, draft, System.currentTimeMillis())
                 )
             }
             refreshDrafts()
         }
     }
+
+    /**
+     * Several at once, from the grid's selection, as one snackbar whose Undo
+     * puts every one of them back. It used to restore the last one binned
+     * and leave the rest in the bin, under a label that promised otherwise.
+     */
+    fun discardDrafts(drafts: List<DraftSummary>) {
+        if (drafts.isEmpty()) return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val binned = withContext(Dispatchers.IO) {
+                drafts.mapNotNull { draft -> binOne(draft)?.let { TrashedDraft(it, draft, now) } }
+            }
+            if (binned.isNotEmpty()) {
+                _undoOffer.value = UndoOffer(
+                    message = if (binned.size == 1) "Deleted \"${binned.first().draft.title}\"" else "Deleted ${binned.size} projects",
+                    entries = binned
+                )
+            }
+            refreshDrafts()
+        }
+    }
+
+    /** The snackbar's Undo: everything the offer binned comes back, then one refresh. */
+    fun restoreAll(entries: List<TrashedDraft>) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                entries.forEach { entry ->
+                    if (entry.draft.toolId != null) toolAutosave.restore(entry.trashId) else autosave.restore(entry.trashId)
+                }
+            }
+            val ids = entries.map { it.trashId }.toSet()
+            if (_undoOffer.value?.entries?.any { it.trashId in ids } == true) _undoOffer.value = null
+            refreshDrafts()
+        }
+    }
+
+    // The id means different things in the two stores - a project's own slot,
+    // or the tool session's - so the discard goes to the store the draft came from.
+    private fun binOne(draft: DraftSummary): String? =
+        if (draft.toolId != null) toolAutosave.delete(draft.id) else autosave.delete(draft.id)
 
     /**
      * Puts a draft's earlier version back; the version it replaces goes into
@@ -129,18 +210,32 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.IO) {
                 if (entry.draft.toolId != null) toolAutosave.restore(entry.trashId) else autosave.restore(entry.trashId)
             }
-            if (_undoOffer.value?.entry?.trashId == entry.trashId) _undoOffer.value = null
+            if (_undoOffer.value?.entries?.any { it.trashId == entry.trashId } == true) _undoOffer.value = null
             refreshDrafts()
         }
     }
 
-    /** Removes a bin entry for good. Only from a confirmed tap. */
+    /**
+     * Removes a bin entry for good. Only from a confirmed tap. The app's right
+     * to read the files it named goes with it, unless another draft - live or
+     * binned, in either store - still names them (ProjectRules.releasable):
+     * the phone caps how many grants an app may hold.
+     */
     fun purgeDraft(entry: TrashedDraft) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
+                val named = if (entry.draft.toolId != null) emptySet() else autosave.urisInTrash(entry.trashId)
                 if (entry.draft.toolId != null) toolAutosave.purge(entry.trashId) else autosave.purge(entry.trashId)
+                if (named.isNotEmpty()) {
+                    val still = autosave.referencedUris() +
+                        toolAutosave.drafts().flatMap { d -> d.uris.map { it.toString() } } +
+                        toolAutosave.trashed().flatMap { (_, d) -> d.uris.map { it.toString() } }
+                    ProjectRules.releasable(named, still.toSet())
+                        .filter { it.startsWith("content://") }
+                        .forEach { getApplication<Application>().releaseReadAccess(Uri.parse(it)) }
+                }
             }
-            if (_undoOffer.value?.entry?.trashId == entry.trashId) _undoOffer.value = null
+            if (_undoOffer.value?.entries?.any { it.trashId == entry.trashId } == true) _undoOffer.value = null
             refreshDrafts()
         }
     }

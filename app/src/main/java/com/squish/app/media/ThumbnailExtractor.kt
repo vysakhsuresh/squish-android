@@ -176,6 +176,28 @@ object ThumbnailExtractor {
             }
         }
 
+    /**
+     * A frame for a list to show - a project's cover, a library row - from a
+     * video, a rendered still, or a picture: the retriever reads none of the
+     * PNGs a photo overlay is kept as, so those go through StillClips.
+     */
+    suspend fun cover(context: Context, uri: Uri, timeMs: Long): Bitmap? =
+        if (StillClips.isStill(uri)) withContext(Dispatchers.IO) { StillClips.previewBitmap(context, uri, SAMPLE_WIDTH_PX) }
+        else frameAt(context, uri, timeMs) ?: withContext(Dispatchers.IO) {
+            // A photo picked as a file - a document URI to a JPEG - has no frames either.
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeStream(input, null, bounds)
+                    var sample = 1
+                    while (bounds.outWidth / (sample * 2) >= SAMPLE_WIDTH_PX && bounds.outHeight / (sample * 2) >= SAMPLE_HEIGHT_PX) sample *= 2
+                    context.contentResolver.openInputStream(uri)?.use { again ->
+                        android.graphics.BitmapFactory.decodeStream(again, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+                    }
+                }
+            }.getOrNull()
+        }
+
     suspend fun extractFrames(context: Context, uri: Uri, count: Int, durationMs: Long): List<Bitmap> =
         withContext(Dispatchers.IO) {
             if (durationMs <= 0 || count <= 0) return@withContext emptyList()
