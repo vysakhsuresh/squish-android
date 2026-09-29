@@ -179,6 +179,42 @@ fun main() {
     check("one before the end is untouched", PreviewRules.lastFrameTime(9_999L, 10_000L) == 9_999L)
     check("an empty edit keeps its zero", PreviewRules.lastFrameTime(0L, 0L) == 0L)
 
+    // ---- The base track past its last shot -----------------------------------
+    // Shots to 7.7 s, an overlay to 8.363 s: the device's edit, whose clock sat
+    // on 7.700 for as long as the overlay ran.
+    val baseEnd = 7_700L
+    val editEnd = 8_363L
+    check("under the shots, time is untouched", PreviewRules.baseTime(4_321L, baseEnd, editEnd) == 4_321L)
+    check("past the shots, time is untouched", PreviewRules.baseTime(8_000L, baseEnd, editEnd) == 8_000L)
+    check("on the end of the shots, the picture has ended", PreviewRules.baseTime(baseEnd, baseEnd, editEnd) == baseEnd)
+    check("at the end of the edit, nothing pulls the last shot back", PreviewRules.baseTime(editEnd, baseEnd, editEnd) == editEnd)
+    check("shots to the end: the end shows their last frame", PreviewRules.baseTime(editEnd, editEnd, editEnd) == editEnd - 1)
+    check("shots to the end: inside is untouched", PreviewRules.baseTime(5_000L, editEnd, editEnd) == 5_000L)
+    check("no shots at all: time is untouched", PreviewRules.baseTime(1_000L, 0L, 3_000L) == 1_000L)
+    // The freeze, replayed: a clock read off the last shot's player, which is
+    // put back on its out point whenever the moment shown is under the shot.
+    run {
+        var t = 7_000L
+        var playerT = t
+        var ticks = 0
+        while (t < editEnd && ticks < 1_000) {
+            val at = PreviewRules.baseTime(t, baseEnd, editEnd)
+            val covered = at < baseEnd
+            playerT = if (covered) minOf(at, baseEnd) + 33L else playerT
+            t = if (covered) playerT else t + 33L
+            ticks++
+        }
+        check("the clock reaches the end of the edit past the shots", t >= editEnd)
+        check("and in about the time the stretch takes", ticks < 60)
+        // The old rule, for the record: never past the shots.
+        var old = 7_000L
+        repeat(200) {
+            val at = PreviewRules.lastFrameTime(old, baseEnd)
+            old = minOf(at, baseEnd) + 33L
+        }
+        check("the old rule sat on the end of the picture", old < editEnd)
+    }
+
     // ---- Holding the picture at a cut ----------------------------------------
     check("played into a cut, the outgoing shot is held",
         PreviewRules.holdAtCut(heldShowsOutgoing = true, arrivedByPlaying = true, heldForMs = 0L, incomingFailed = false))

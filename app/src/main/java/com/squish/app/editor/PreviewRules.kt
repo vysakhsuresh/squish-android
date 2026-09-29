@@ -107,6 +107,23 @@ object PreviewRules {
     fun lastFrameTime(t: Long, end: Long): Long = if (end > 0L && t >= end) end - 1 else t
 
     /**
+     * The moment the base track shows at [t], on an edit that runs to [editEnd]
+     * and whose last shot ends at [baseEnd].
+     *
+     * The last frame, as [lastFrameTime] - but only when the shots run to the
+     * end of the edit. When a layer or a sound runs on past the last shot, the
+     * stretch after it is a real part of the edit with no picture in it, and
+     * the clock has to cross it. Looking every moment past the shots up as
+     * "the last frame" put the last shot back under the playhead: its player
+     * was seeked back onto its out point every few hundred milliseconds, the
+     * clock was read off that player, and playback sat on the end of the
+     * picture for as long as the overlay ran - playing, going nowhere, never
+     * reaching the end.
+     */
+    fun baseTime(t: Long, baseEnd: Long, editEnd: Long): Long =
+        if (baseEnd >= editEnd) lastFrameTime(t, baseEnd) else t
+
+    /**
      * The longest a hard cut holds the outgoing picture while the incoming shot
      * gets ready. Enough for a cold open the lookahead did not finish; past it, a
      * shot that still has not drawn is shown for what it is - nothing.

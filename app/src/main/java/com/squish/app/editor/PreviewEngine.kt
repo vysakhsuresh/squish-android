@@ -879,9 +879,11 @@ class PreviewEngine(private val context: Context) {
     private fun composeBase(t: Long, now: Long): Triple<SurfaceDraw, SurfaceDraw, Float> {
         // A clip covers up to, not including, its end - so parked exactly on the
         // end of the edit, where every play-through stops, nothing covered it and
-        // the picture went to "Gap". The end shows the last frame instead.
+        // the picture went to "Gap". The end shows the last frame instead - when
+        // the shots run to it; past them, with a layer or a sound still going,
+        // the picture has ended and the clock runs on (PreviewRules.baseTime).
         val end = maxOf(rollA.lastOrNull()?.timelineEndMs ?: 0L, rollB.lastOrNull()?.timelineEndMs ?: 0L)
-        val at = PreviewRules.lastFrameTime(t, end)
+        val at = PreviewRules.baseTime(t, end, durationMs)
         val clipA = rollA.lastOrNull { covers(it, at) }
         val clipB = rollB.lastOrNull { covers(it, at) }
 
@@ -900,6 +902,10 @@ class PreviewEngine(private val context: Context) {
         if (clipA == null && clipB == null) {
             inGap = rollA.isNotEmpty() || rollB.isNotEmpty()
             pictureEnded = inGap && at >= end
+            // No shot drives the clock here: it runs on wall time. Left on the
+            // shot that just ended, a park or a redraw seek on that player read
+            // as a stall and held the clock still in the middle of a gap.
+            clockClipId = null
             return remember(SurfaceDraw(), SurfaceDraw(), 0f)
         }
         inGap = false
