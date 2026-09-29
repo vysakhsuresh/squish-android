@@ -196,7 +196,12 @@ class VideoProcessor(private val context: Context) {
             val encoderFactory = DefaultEncoderFactory.Builder(context)
                 .apply {
                     if (!trimOnly) {
-                        setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(bitrate).build())
+                        setRequestedVideoEncoderSettings(
+                            VideoEncoderSettings.Builder()
+                                .setBitrate(bitrate)
+                                .setBitrateMode(android.media.MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+                                .build()
+                        )
                     }
                 }
                 .build()
@@ -225,7 +230,7 @@ class VideoProcessor(private val context: Context) {
                             "SquishExport",
                             "done trimOnly=$trimOnly optimization=${exportResult.optimizationResult} " +
                                 "video=${exportResult.videoEncoderName} mime=${exportResult.videoMimeType} " +
-                                "bitrate=${exportResult.averageVideoBitrate} frames=${exportResult.videoFrameCount} " +
+                                "bitrate=${exportResult.averageVideoBitrate} asked=$bitrate frames=${exportResult.videoFrameCount} " +
                                 "colour=${exportResult.colorInfo} size=${exportResult.fileSizeBytes}"
                         )
                         if (continuation.isActive) continuation.resume(Result.success(outputFile))
@@ -437,9 +442,13 @@ class VideoProcessor(private val context: Context) {
      * Only the one-sequence exports carry it on their items; a layered export
      * takes its rate from the clock, which is drawn at [frameRateOf] and gives
      * the file one frame per frame of it (CompositionFactory).
+     *
+     * Kept at the footage's rate too when a shot plays faster: 2.7x of 30 fps
+     * footage is 81 frames a second, and a file of it measured 42 fps and
+     * nearly twice the size the sheet had promised.
      */
-    private fun frameDrop(state: EditorUiState): Effect? =
-        if (state.outputFps == ExportSettings.SOURCE_FPS) null
+    private fun frameDrop(state: EditorUiState, spedUp: Boolean = false): Effect? =
+        if (state.outputFps == ExportSettings.SOURCE_FPS && !spedUp) null
         else FrameDropEffect.createDefaultFrameDropEffect(frameRateOf(state).toFloat())
 
     /**
@@ -534,7 +543,7 @@ class VideoProcessor(private val context: Context) {
                 add(TransitionEffect(clip, if (blends) ExportPlan.neighbourhood(rolls!!, clip) else null, opaque = rolls == null))
             }
             // Last, after the retime, so the frames dropped are the played ones.
-            if (rolls == null) frameDrop(state)?.let { add(it) }
+            if (rolls == null) frameDrop(state, clip.spedUp)?.let { add(it) }
         }
 
         // A photo goes in as the picture it was made from, where it was kept
@@ -702,7 +711,7 @@ class VideoProcessor(private val context: Context) {
                 add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT))
             }
         }
-        frameDrop(state)?.let { add(it) }
+        frameDrop(state, state.videoClips.any { it.spedUp })?.let { add(it) }
     }
 
     private fun rotation(state: EditorUiState): Effect? =
@@ -966,3 +975,7 @@ class VideoProcessor(private val context: Context) {
         const val MAX_FPS = 60
     }
 }
+
+/** Whether any part of a clip plays faster than it was shot, so more frames a second than the file keeps. */
+private val Clip.spedUp: Boolean
+    get() = speedRamp.ordered.any { it.speed > 1.001f }
