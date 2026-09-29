@@ -80,27 +80,34 @@ object EditRules {
     data class SoundLanding(val timelineStartMs: Long, val sourceOutMs: Long)
 
     /**
-     * Where a sound of [trackMs] added at [playheadMs] lands on a picture that
-     * ends at [pictureEndMs].
+     * Where a sound of [trackMs] added at [playheadMs] lands on an edit that
+     * ends at [editEndMs].
      *
-     * At the playhead, ending with the picture: a song is usually longer than
-     * the clip it goes under, and left whole it stretched the edit to the song's
+     * At the playhead, ending with the edit: a song is usually longer than the
+     * clip it goes under, and left whole it stretched the edit to the song's
      * length - a minute of black after an eight-second video. The rest of the
-     * song is still there; drag the end out to use it. A file shorter than the
-     * room left, or one with less than [minMs] of room to fit into, plays whole.
+     * song is still there; drag the end out to use it. A file that fits in the
+     * room left plays whole, where it was put - a sound effect on the last beat
+     * stays on the last beat.
      *
-     * Within [lastMomentMs] of the end - where the playhead parks after
-     * watching the edit through - it goes in at the start instead. On the phone
-     * a song added with the playhead half a second from the end got half a
-     * second of itself under the last frames, out of sight under the sheet,
-     * and looked as if nothing had been added at all.
+     * One that does not fit, with under [lastMomentMs] of room - the playhead
+     * parked on the end after watching the edit through, or a moment short of
+     * it - is backed up to end with the edit, as a title is (see [placedAt]):
+     * a song then covers the picture from the start. On the phone a song
+     * added with the playhead half a second from the end got half a second of
+     * itself under the last frames, out of sight under the sheet, and looked as
+     * if nothing had been added at all. Past the end (a draft from before the
+     * playhead was held to the edit) there is nothing to end with, so the sound
+     * goes in whole at the playhead.
      */
-    fun soundLanding(playheadMs: Long, pictureEndMs: Long, trackMs: Long, minMs: Long, lastMomentMs: Long): SoundLanding {
+    fun soundLanding(playheadMs: Long, editEndMs: Long, trackMs: Long, lastMomentMs: Long): SoundLanding {
         val playhead = playheadMs.coerceAtLeast(0L)
-        val start = if (pictureEndMs > 0L && pictureEndMs - playhead < lastMomentMs) 0L else playhead
-        val room = pictureEndMs - start
-        val out = if (room >= minMs && room < trackMs) room else trackMs
-        return SoundLanding(start, out)
+        if (editEndMs <= 0L) return SoundLanding(playhead, trackMs)
+        val room = editEndMs - playhead
+        if (room < 0L || trackMs <= room) return SoundLanding(playhead, trackMs)
+        if (room >= lastMomentMs) return SoundLanding(playhead, room)
+        val start = (editEndMs - trackMs).coerceAtLeast(0L)
+        return SoundLanding(start, editEndMs - start)
     }
 
     /**

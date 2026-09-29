@@ -81,6 +81,7 @@ fun OutputSizePicker(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutputSummary(
             fitToSize = fitToSize,
+            outputP = outputP,
             written = written,
             estimatedBytes = estimatedBytes,
             originalBytes = originalBytes
@@ -148,11 +149,14 @@ fun OutputSizePicker(
 
 /**
  * The answer to "what will I get": frame size, weight, and the change against
- * the original, on one strip.
+ * the original, on one strip. Until the frame is known - the source not yet
+ * measured, the first estimate not yet in - the size chosen is named, so the
+ * line never says "Original size" under a 720p chip.
  */
 @Composable
 private fun OutputSummary(
     fitToSize: Boolean,
+    outputP: Int,
     written: ExportPresets.Resolution,
     estimatedBytes: Long,
     originalBytes: Long
@@ -160,7 +164,8 @@ private fun OutputSummary(
     val frame = when {
         fitToSize -> "Sized to fit"
         written.width > 0 && written.height > 0 -> "${written.width} × ${written.height}"
-        else -> "Original size"
+        outputP == OutputSize.ORIGINAL -> "Original size"
+        else -> OutputSize.label(outputP)
     }
     val change = if (originalBytes > 0 && estimatedBytes > 0) {
         val percent = ((estimatedBytes - originalBytes) * 100.0 / originalBytes).toInt()

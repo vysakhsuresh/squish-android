@@ -48,11 +48,14 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             // Recorded like every other edit, so a track added by mistake is one
             // undo away rather than a select-and-delete.
             record("Add $name") { _state.update { current ->
-                // At the playhead, ending with the video - or from the start
-                // when the playhead is parked on the last second; see
-                // EditRules.soundLanding for both.
-                val videoEnd = current.videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
-                val landing = EditRules.soundLanding(current.playheadMs, videoEnd, trackDuration, MIN_EFFECT_MS, LAST_MOMENT_MS)
+                // At the playhead, ending with the edit - or backed up to end
+                // with it when the playhead is parked on the last second; see
+                // EditRules.soundLanding for both. The playhead stays where it
+                // is, as it does for every other add: a sound backed up to the
+                // end ends under the playhead, on the row the strip shows under
+                // the sheet, so it is in sight without moving anything - and an
+                // undo of the add leaves the view where it was.
+                val landing = EditRules.soundLanding(current.playheadMs, current.trimmedDurationMs, trackDuration, LAST_MOMENT_MS)
                 val clip = Clip(
                     kind = ClipKind.Audio,
                     uri = uri,
@@ -62,16 +65,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                     timelineStartMs = landing.timelineStartMs,
                     sourceDurationMs = trackDuration
                 )
-                // Landed somewhere other than the playhead, the playhead goes
-                // there, so what was just added is under the picture and on the
-                // strip rather than out of sight behind the sheet.
-                val moved = landing.timelineStartMs != current.playheadMs
-                current.copy(
-                    audioClips = current.audioClips + clip,
-                    selectedClipId = clip.id,
-                    playheadMs = if (moved) landing.timelineStartMs else current.playheadMs,
-                    scrubNonce = if (moved) current.scrubNonce + 1 else current.scrubNonce
-                )
+                current.copy(audioClips = current.audioClips + clip, selectedClipId = clip.id)
             } }
             recomputeEstimate()
             // A readable file can still carry a codec this phone cannot decode; say
@@ -437,7 +431,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     private companion object {
         const val MIN_SYNC_CONFIDENCE = 0.28f
 
-        /** A playhead this close to the end is parked there, not placing anything; see EditRules.soundLanding. */
+        /** With less room than this left, a sound that does not fit it is backed up to end with the edit; see EditRules.soundLanding. */
         const val LAST_MOMENT_MS = 1_000L
     }
 }

@@ -37,10 +37,17 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
     /**
      * A blank line starting at the playhead. Spanning the whole clip - which is what
      * this used to do - is never what anyone wants from a caption.
+     *
+     * Recorded as the start of the typing that follows ([updateCaptionText]
+     * carries it on), so adding a line and putting words in it is one undo step,
+     * as in every other editor. Recorded apart, the first Undo after typing
+     * emptied the line instead of removing it. The step stays open until the
+     * field closes ([endCaptionTyping]) or anything else is done: however long
+     * the words take to come, they are part of the add.
      */
     fun addCaptionAtPlayhead(): String {
         val id = UUID.randomUUID().toString()
-        record("Add line", tag = addLineTag(id)) { addBlankLine(id) }
+        record("Add line", gesture = typingGesture(id), holdMs = NEW_LINE_HOLD_MS, tag = addLineTag(id)) { addBlankLine(id) }
         return id
     }
 
@@ -84,10 +91,15 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * place on the frame and motion, all at once. It is an ordinary caption from
      * then on - every part of it can be changed afterwards. Returns its id, so
      * the editor can open it for typing with the sample words selected.
+     *
+     * One step with the words typed over the sample, as [addCaptionAtPlayhead]
+     * is: Undo after typing used to bring the preset's "BIG NEWS" back, a title
+     * nobody asked for, and take a second press to remove. And tagged like a
+     * line, so a title whose words are cleared and let go of is taken back off.
      */
     fun addTitle(preset: TitlePreset): String {
         val id = UUID.randomUUID().toString()
-        record("Add title") { addTitle(id, preset) }
+        record("Add title", gesture = typingGesture(id), holdMs = NEW_LINE_HOLD_MS, tag = addLineTag(id)) { addTitle(id, preset) }
         return id
     }
 
@@ -396,9 +408,11 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
     /**
      * The words of one caption, typed. A run of typing in one line is one undo
      * step - pauses between words included - and leaving the field ends it.
+     * Typing into a line just added carries the add's own step on, under its
+     * name; see [addCaptionAtPlayhead].
      */
     fun updateCaptionText(id: String, text: String) =
-        record("Caption text", gesture = typingGesture(id), holdMs = TYPING_HOLD_MS) {
+        record(typingLabel(id), gesture = typingGesture(id), holdMs = TYPING_HOLD_MS) {
             _state.update { current ->
                 current.copy(
                     textOverlays = current.textOverlays.map {
@@ -489,6 +503,17 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
 
     private fun typingGesture(id: String) = "Text $id"
 
+    /**
+     * What a run of typing in [id] is called: the add it continues, when the
+     * step on top is this line's own add and still open to it (the step keeps
+     * the latest label it is given, so the add's has to be given again), and
+     * otherwise a change of words.
+     */
+    private fun typingLabel(id: String): String {
+        val continuesAdd = history.undoTag == addLineTag(id) && history.continues(typingGesture(id), System.currentTimeMillis())
+        return if (continuesAdd) history.undoLabel ?: "Caption text" else "Caption text"
+    }
+
     private companion object {
         const val DEFAULT_CAPTION_MS = 2_000L
 
@@ -501,5 +526,12 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
          * the line later is a new edit.
          */
         const val TYPING_HOLD_MS = 5_000L
+
+        /**
+         * How long a line just added waits for its words: as long as its field
+         * is open. Reading the picture before typing takes longer than a pause
+         * between words, and the field closing ends the step in any case.
+         */
+        const val NEW_LINE_HOLD_MS = Long.MAX_VALUE / 2
     }
 }

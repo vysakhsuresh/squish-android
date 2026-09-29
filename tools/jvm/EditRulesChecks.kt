@@ -256,24 +256,42 @@ fun main() {
 
     // --- A sound added at the playhead lands where it can be seen. --------------
     run {
-        val minMs = 100L
         val lastMoment = 1_000L
-        // Mid-edit: at the playhead, ending with the picture.
-        val mid = EditRules.soundLanding(2_000, 8_200, 60_000, minMs, lastMoment)
+        // Mid-edit: at the playhead, ending with the edit.
+        val mid = EditRules.soundLanding(2_000, 8_200, 60_000, lastMoment)
         check(mid == EditRules.SoundLanding(2_000, 6_200), "a song added mid-edit landed at $mid")
-        // The device's case: the playhead parked half a second from the end.
-        val late = EditRules.soundLanding(7_670, 8_200, 60_000, minMs, lastMoment)
-        check(late == EditRules.SoundLanding(0, 8_200), "a song added near the end landed at $late, not at the start")
-        val atEnd = EditRules.soundLanding(8_200, 8_200, 60_000, minMs, lastMoment)
+        // The device's case: the playhead parked half a second from the end. A
+        // song does not fit there, so it is backed up to end with the edit.
+        val late = EditRules.soundLanding(7_670, 8_200, 60_000, lastMoment)
+        check(late == EditRules.SoundLanding(0, 8_200), "a song added near the end landed at $late, not from the start")
+        val atEnd = EditRules.soundLanding(8_200, 8_200, 60_000, lastMoment)
         check(atEnd == EditRules.SoundLanding(0, 8_200), "a song added at the very end landed at $atEnd")
         // A second from the end is still the playhead; a hair inside it is not.
-        check(EditRules.soundLanding(7_200, 8_200, 60_000, minMs, lastMoment).timelineStartMs == 7_200L, "a second of room went to the start")
-        check(EditRules.soundLanding(7_201, 8_200, 60_000, minMs, lastMoment).timelineStartMs == 0L, "under a second of room stayed at the playhead")
+        check(EditRules.soundLanding(7_200, 8_200, 60_000, lastMoment).timelineStartMs == 7_200L, "a second of room went to the start")
+        check(EditRules.soundLanding(7_201, 8_200, 60_000, lastMoment).timelineStartMs == 0L, "under a second of room stayed at the playhead")
         // A short file plays whole; so does one added where there is no picture.
-        check(EditRules.soundLanding(1_000, 8_200, 3_000, minMs, lastMoment) == EditRules.SoundLanding(1_000, 3_000), "a short file was cut")
-        check(EditRules.soundLanding(0, 0, 3_000, minMs, lastMoment) == EditRules.SoundLanding(0, 3_000), "no picture: the file was cut")
+        check(EditRules.soundLanding(1_000, 8_200, 3_000, lastMoment) == EditRules.SoundLanding(1_000, 3_000), "a short file was cut")
+        check(EditRules.soundLanding(0, 0, 3_000, lastMoment) == EditRules.SoundLanding(0, 3_000), "no picture: the file was cut")
         // An edit shorter than the last moment: from the start, ending with it.
-        check(EditRules.soundLanding(300, 500, 3_000, minMs, lastMoment) == EditRules.SoundLanding(0, 500), "a tiny edit's song landed elsewhere")
+        check(EditRules.soundLanding(300, 500, 3_000, lastMoment) == EditRules.SoundLanding(0, 500), "a tiny edit's song landed elsewhere")
+        // A sound effect that fits the last second stays on the beat it was put on.
+        val ding = EditRules.soundLanding(7_500, 8_200, 400, lastMoment)
+        check(ding == EditRules.SoundLanding(7_500, 400), "a ding on the last beat was moved: $ding")
+        check(EditRules.soundLanding(7_800, 8_200, 400, lastMoment) == EditRules.SoundLanding(7_800, 400), "a ding ending exactly with the edit was moved")
+        // One that does not fit is backed up to end with the edit - near the
+        // playhead, as a title is - not sent to the start.
+        val backed = EditRules.soundLanding(7_500, 8_200, 900, lastMoment)
+        check(backed == EditRules.SoundLanding(7_300, 900), "a sound too long for the last second landed at $backed")
+        check(EditRules.soundLanding(8_200, 8_200, 400, lastMoment) == EditRules.SoundLanding(7_800, 400), "a short sound at the very end was not backed up")
+        // Past the end - an old draft's playhead - there is nothing to end with.
+        check(EditRules.soundLanding(20_000, 8_000, 60_000, lastMoment) == EditRules.SoundLanding(20_000, 60_000), "past the end, the song was moved")
+        // Every landing ends by the edit's end or plays whole, and never starts before zero.
+        for (playhead in 0L..9_000L step 137L) for (track in listOf(200L, 900L, 1_500L, 60_000L)) {
+            val l = EditRules.soundLanding(playhead, 8_200, track, lastMoment)
+            check(l.timelineStartMs >= 0L, "a landing before zero: $l")
+            check(l.sourceOutMs in 1L..track, "a landing playing more than the file or nothing: $l")
+            if (playhead <= 8_200L) check(l.timelineStartMs + l.sourceOutMs <= 8_200L || l.sourceOutMs == track, "a cut sound runs past the edit: $l")
+        }
     }
 
     println("edit rules: shift, resize, place, split, beat markers, smooth, sync, reorder, captions, retime, sound landing")

@@ -31,17 +31,26 @@ transparent PNG filler from `CompositionFactory.filler`), it calls
 and the listener returns null - for as long as the lowest sequence declaring sound
 has not yet created the sound exporter. An image loader loses that race to a video
 decoder; the same edit without the overlay had one fewer decoder to warm and won it.
-Fix: the clock (sequence 0) is Media3's own gap, declared with sound whenever any
-layer is (`ExportPlan.sequenceTracks`). A gap loader announces both tracks before it
-starts and, as the primary for both, makes the sound exporter first and the picture's
-second, so no layer can get past its own picture - and ask for sound - before the
-exporter exists. Executed in `tools/jvm/ExportPlanChecks.kt` on this edit. The
-exception now reads "A layer couldn't get started" with what to change.
+Fix: the clock (sequence 0) opens on Media3's own gap, declared with sound whenever
+any layer is (`ExportPlan.sequenceTracks`). A gap loader announces both tracks before
+it starts and, as the primary for both, makes the sound exporter first and the
+picture's second, so no layer can get past its own picture - and ask for sound -
+before the exporter exists. Executed in `tools/jvm/ExportPlanChecks.kt` on this edit.
+The exception now reads "A layer couldn't get started" with what to change.
+Review of the fix found two things the gap brought with it, both fixed (commit
+below): a gap's frames come at a fixed 30 fps and the file gets one frame per clock
+frame, so every layered export was written at 30 fps whatever the footage - the clock
+is one frame of gap and then the transparent still at the edit's rate
+(`ExportPlan.clockLeadMs`); and the gap's fixed 44.1 kHz stereo became the mixer's
+rate, so 48 kHz camera sound was stepped down under any overlay - the gap item
+carries a resampler to the highest rate any sound in the edit has
+(`ExportPlan.mixerSampleRate`, `CompositionFactory.clockGap`).
 Device check: this edit at 480p completes with the PiP on top and sound throughout;
 then the photo first and the video second; then a photo overlay (PNG) row above a
-heard video overlay row; then the B5 gate's (1)-(4). Listen for the camera sound
-being resampled to 44.1 kHz (the mixer takes the gap's format now) - it should be
-inaudible.
+heard video overlay row; then the B5 gate's (1)-(4). Then a 60 fps clip with a PiP:
+the file is 60 fps (`ffprobe`/MediaStore), and a 24 or 25 fps clip with a Dissolve
+comes out at its own rate with no duplicated frame after the first; and the AAC of a
+48 kHz camera clip under an overlay is 48 kHz, as it is without the overlay.
 
 ### Playback freezes where the main track ends if an overlay runs longer (build efbe483) - commit 69185aa
 Same edit as above: base track ends at 7.700 s (video 5.2 + photo 3.0 - 0.5 dissolve),
@@ -68,10 +77,16 @@ phone's H.264 encoder takes, and says nothing. Fix: `EncoderCeiling` asks the sa
 question the factory asks, the same way; the sheet shows the size that will be
 written and says in amber when it is smaller than the size picked; the export is
 built at that size and its bitrate spent on it; the history record says the same.
+Review of the fix: an answer for a size no longer chosen could land last and stand
+in for the chosen size's - tap 1080p then 4K at once and the sheet could promise
+4K's asked size with no note. Fixed: an answer is kept only for the size still
+chosen (`ProbeGate`, executed in `tools/jvm/ProbeGateChecks.kt`); the size chosen
+since has its own answer on the way.
 Device check: 4K on this edit says 1440 x 1080 in the summary with the amber note,
 the estimate is about 15 MB, and the file matches; 1080p and 720p show no note; a
 portrait clip at 4K is asked about the right way round (its note, if any, names the
-portrait numbers).
+portrait numbers); tap 1080p then 4K as fast as possible: the summary settles on
+1440 x 1080 with the note, never on 2880 x 2160.
 
 ### Export sheet chips move under the finger - commit 26d75df
 When the "Bigger than the source" warning appeared, the sheet grew upward and every
@@ -85,21 +100,34 @@ Device check: tap 1080p on a 150p source, then 480p at once: the second tap land
 ### Music "Add" places the track at the playhead even when the playhead is at the end - commit ed7e06c
 With the playhead at 7.67 s of an 8.2 s edit, Sound > Add put the song there (0.5 s
 of it audible), under the sheet where it could not be seen.
-Fix: within a second of the end - where the playhead parks after a play-through - the
-song goes in at the start, ending with the picture, and the playhead goes to where it
-landed so it is on screen (`EditRules.soundLanding`, executed in
-`tools/jvm/EditRulesChecks.kt`). Elsewhere it lands at the playhead as before.
-Device check: play through, Sound > Add: the song starts at 0, the playhead is at 0,
-the sound row shows it selected under the sheet; Add with the playhead at 3 s: at 3 s.
+Fix: a sound that does not fit the room left, with under a second of it - where the
+playhead parks after a play-through, or a moment short of it - is backed up to end
+with the edit, as a title is: a song then covers the picture from the start
+(`EditRules.soundLanding`, executed in `tools/jvm/EditRulesChecks.kt`). Elsewhere
+it lands at the playhead as before, and a sound that fits - a 0.4 s ding on the last
+beat - stays exactly where it was put; the first version of this rule moved every
+sound within a second of the end to 0, dings included. The playhead stays where it
+is, as for every other add: the song's tail is under the playhead on the sound row
+the strip shows under the sheet, and Undo of the add leaves the view where it was
+(the first version moved the playhead to 0, which Undo did not put back).
+Device check: play through, Sound > Add: the song runs 0 to the end, selected on
+the sound row under the sheet, the playhead still at the end; Add with the playhead
+at 3 s: at 3 s; a short sound effect added at 7.5 s of an 8.2 s edit: at 7.5 s.
 
 ### Adding a title never lets you type - commit ed7e06c
 Words > Titles > "BIG NEWS" dropped the preset text on the picture; no keyboard opened
 and there was no obvious way to type your own words.
 Fix: a title arrives the way Add text does - dropped at the playhead and opened in the
 line's Edit sheet with the keyboard up, its sample words selected, so the next thing
-typed replaces them.
+typed replaces them. Review found the add and the typing were two undo steps (the
+first Undo put "BIG NEWS" back), for Add text as well; now the typing into a line
+just added carries the add's step on for as long as its field is open
+(`TextEdits.addTitle`, `addCaptionAtPlayhead`), so Undo removes the title, words
+and all, as one step - as in CapCut.
 Device check: Text > Titles > BIG NEWS: keyboard up, "BIG NEWS" selected in the field;
-type "hello": the picture says hello; Done keeps it; Undo removes the title as one step.
+type "hello": the picture says hello; Done keeps it; Undo removes the title as one
+step (the button reads "Undo: Add title"); the same for Add text with words typed;
+a title whose words are deleted and then Done is gone, like a blank line.
 
 ### "Open with Squish" is ignored when Squish is already running - commit fbe53e2
 `am start -a VIEW -d content://media/... -n com.squish.app/.MainActivity` while the
@@ -107,10 +135,23 @@ app is open: "intent has been delivered to currently running top-most instance" 
 nothing happened.
 Fix: MainActivity keeps the last request as state and handles `onNewIntent`; the
 activity is single-task, so one copy runs and the editor opens over whatever is
-showing. The same file opened twice is two requests.
-Device check: the `am start` above with the app in the editor: a new editor opens on
-the file; back returns to the previous edit with its work intact; the same command
-again opens it again; from the Files app "Open with" while Squish is in the background.
+showing. Review found the first version stacked a second editor of a video that was
+already open, and the two saved into the same draft slot on their own tickers, each
+writing over the other's work; and that a request arriving mid-export covered the
+exporting screen, which let the display sleep and dropped the result. Now a video
+with an editor open (`OpenEditors`) goes back to that editor, popping whatever is
+over it (a done screen, another edit - each saves itself on the way out), and a
+request is held while any export runs (`ExportsInFlight`) and acted on the moment
+it finishes, over the done screen.
+Device check: the `am start` above with the app in the editor of another file: a new
+editor opens on the file; back returns to the previous edit with its work intact;
+the same command again while its editor is on top: nothing changes; from the
+previous edit (back), the command again: the stack pops back to the file's editor
+with its work intact rather than opening a second one, and
+`run-as com.squish.app ls files/projects` shows one draft for it; export something,
+send the command mid-render: the render finishes with its "Saved to your gallery"
+screen, and the new editor then opens over it; from the Files app "Open with" while
+Squish is in the background.
 
 ### Recovery banner length ignores overlays (pre-B1 build) and states the wrong length - commit 7509d0c
 Banner said "3 clips, 0:16.563 of edit" for an 8.36 s edit with an 8 s overlay: it
@@ -141,7 +182,40 @@ Fix (B6): Undo and Redo live in the header and never move; the Blend panel is go
 the toolbar's place, so nothing under the finger moves when one opens.
 Device check: tap a join's badge, then tap where the toolbar was: nothing is undone.
 
+### A song dragged out past the last shot plays in the preview but not in the file - review of commit 69185aa
+With the clock crossing the stretch after the last shot, an 8 s clip with a song
+dragged out to 20 s played black with music to 20 s, and the file was 8 s: the
+preview promised a stretch the file left out. The edit's length now counts sounds
+(`EditorUiState.trimmedDurationMs`, `ProjectSnapshot.totalDurationMs`): the header,
+the export sheet, the recovery card and the file all say 20 s, and the file runs
+black under the song's tail through the compositor (`ExportPlan.needsCompositing`
+and `layers` take the edit's end; executed in `tools/jvm/ExportPlanChecks.kt`), as
+every other editor does. A song *added* is still cut to end with the edit, so a file
+is never longer than its shots by accident; only a tail dragged out on purpose runs on.
+Device check: 8 s clip, add a song, drag its end to 20 s: the header says 0:20, the
+sheet says 0:20, the file is 20 s with the picture to 8 s and black with music after;
+a title can be placed over the black tail and is in the file; Undo the drag: 0:08
+everywhere and the file is 8 s. An HLG clip with a song dragged past it comes out SDR
+(every composited export does).
+
+### The Squeeze summary said "Original size" under a 720p chip - review of commit 26d75df
+Before the first estimate landed, or for a file whose size the probe could not read,
+the summary's fallback was a fixed "Original size". It names the size chosen again
+(`OutputSizePicker`).
+Device check: open Squeeze, tap 720p at once: the summary never reads "Original size"
+with 720p highlighted.
+
 ## Checked, not a defect
+
+### Back from a shared-in editor lands in Squish, not in the app that shared
+With the activity single-task, a clip shared from Gallery while Squish sits in the
+background on an editor opens in Squish's own task with that editor and the dashboard
+under it: back goes to the earlier editor, then the dashboard, then out of Squish;
+Gallery is where it was left in its own task. This is what CapCut and every
+single-task editor do, and it is also what keeps the app to one copy: with the
+standard launch mode a VIEW from Files would start a second copy of the whole app in
+Files' task, with its own editor saving into the same draft as the first's - the
+double-editor data loss above, across two activities instead of two screens. Kept.
 
 ### Rotated export at "Original" is labelled 150 x 200 but written 200x150 + rotation tag 90
 Source is 200x150. Export sheet says "150 x 200"; the file is 200x150 with

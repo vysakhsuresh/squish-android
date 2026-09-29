@@ -12,6 +12,7 @@ import com.squish.app.data.ToolAutosave
 import com.squish.app.data.ToolDraft
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
+import com.squish.app.editor.ProbeGate
 import com.squish.app.media.EncoderCeiling
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
@@ -521,14 +522,20 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         probeEncoder(editor.outputResolution)
     }
 
+    /** Which size is being asked about, and which answer to keep; see [ProbeGate]. */
+    private val probes = ProbeGate<ExportPresets.Resolution> { _state.value.encoderAnswer?.asked == it }
+
     /**
      * Asks the phone's encoder what it will write for [asked], once per size,
      * off the main thread; the estimate is worked out again when it answers.
+     * An answer for a size no longer chosen is dropped; the estimate that
+     * follows the current size's own answer is the one that stands.
      */
     private fun probeEncoder(asked: ExportPresets.Resolution) {
-        if (asked.width <= 0 || asked.height <= 0 || _state.value.encoderAnswer?.asked == asked) return
+        if (asked.width <= 0 || asked.height <= 0 || !probes.ask(asked)) return
         viewModelScope.launch {
             val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked) }
+            if (!probes.keep(asked, _state.value.outputFrame)) return@launch
             _state.update { it.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written)) }
             recomputeEstimate()
         }

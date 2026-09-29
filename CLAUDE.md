@@ -295,19 +295,30 @@ should work through it and then delete what holds up.
   empty lane; a PiP moved To main under a camera mute says it is silent there;
   a photo overlay longer than a minute asks before To main renders it.
 
-- **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them.** Built on
-  the desktop with no phone attached; each entry there under "Fixed (pending
-  device check)" says what to do on the phone. The ones that lean on something
-  only a device shows: the clock as a Media3 gap declaring sound
-  (`ExportPlan.sequenceTracks`, executed in `tools/jvm/ExportPlanChecks.kt`) -
-  the failing overlay export must complete, the gap's black 16 px frame must
-  not show (it is hidden as the still was, by `LayerSettings`), and the camera
-  sound is now resampled to the gap's 44.1 kHz by the mixer; the encoder ceiling
-  (`EncoderCeiling`) must agree with what the file comes out at, on 4K and on a
-  portrait clip; a title opening with its sample words selected; "Open with"
-  reaching the running app through `onNewIntent` with the activity single-task;
-  the preview clock crossing the stretch after the last shot
-  (`PreviewRules.baseTime`) and stopping at the true end.
+- **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
+  review of them.** Built on the desktop with no phone attached; each entry
+  there under "Fixed (pending device check)" says what to do on the phone. The
+  ones that lean on something only a device shows: the clock as one frame of
+  Media3 gap declaring sound and then the transparent still at the edit's rate
+  (`ExportPlan.pieces`, `clockLeadMs`, executed in
+  `tools/jvm/ExportPlanChecks.kt`) - the failing overlay export must complete,
+  the gap's black 16 px frame must not show (it is hidden as the still is, by
+  `LayerSettings`), the file's frame rate must be the footage's (60 fps under a
+  PiP stays 60; a whole-gap clock wrote 30), and the AAC must be at the
+  camera's 48 kHz (the gap item carries a resampler to the highest rate any
+  sound has; `BUILD_NOTES.md` says what that leans on); a song dragged out
+  past the last shot makes the file that long, black under it, through the
+  compositor; the encoder ceiling (`EncoderCeiling`) must agree with what the
+  file comes out at, on 4K and on a portrait clip, and tapping two sizes
+  before the first answers must leave the sheet on the second's answer
+  (`ProbeGate`, executed in `tools/jvm/ProbeGateChecks.kt`); a title opening
+  with its sample words selected, and Undo after typing removing it as one
+  step; "Open with" reaching the running app through `onNewIntent` with the
+  activity single-task, going back to an editor already open on that video
+  (`OpenEditors`) rather than stacking a second one on the same draft, and
+  waiting for an export to finish (`ExportsInFlight`); the preview clock
+  crossing the stretch after the last shot (`PreviewRules.baseTime`) and
+  stopping at the true end.
 
 ## Conventions worth not rediscovering
 

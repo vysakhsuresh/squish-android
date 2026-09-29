@@ -483,15 +483,21 @@ class EditorViewModel(
         recomputeEstimate()
     }
 
+    /** Which size is being asked about, and which answer to keep; see [ProbeGate]. */
+    private val probes = ProbeGate<ExportPresets.Resolution> { _state.value.encoderAnswer?.asked == it }
+
     /**
      * Asks the phone's encoder what it will write for the size now chosen, so
-     * the sheet can say so. Off the main thread: it opens the codec list.
+     * the sheet can say so. Off the main thread: it opens the codec list. An
+     * answer for a size no longer chosen is dropped - the size chosen since was
+     * asked about when it was chosen, and its own answer is on its way.
      */
     fun probeEncoder() {
         val asked = _state.value.outputResolution
-        if (_state.value.encoderAnswer?.asked == asked) return
+        if (!probes.ask(asked)) return
         viewModelScope.launch {
             val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked) }
+            if (!probes.keep(asked, _state.value.outputResolution)) return@launch
             _state.update { it.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written)) }
             recomputeEstimate()
         }
