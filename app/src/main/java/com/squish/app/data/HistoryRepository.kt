@@ -1,6 +1,8 @@
 package com.squish.app.data
 
 import android.content.Context
+import android.net.Uri
+import com.squish.app.media.GallerySaver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,10 +18,12 @@ import java.util.concurrent.Future
  * app's private storage. No cloud, no server, no third-party SDK - matches the
  * "everything happens on your device" promise on the Settings screen.
  *
- * The list in memory changes at once; the file is written behind it, on a
- * thread of its own. Callers are view models on the main thread, and the write
- * used to happen there, right before the export screen opened - the one moment
- * someone is watching for it to appear.
+ * The list in memory changes at once; the file is read and written behind it,
+ * on a thread of its own. Callers are view models on the main thread, and the
+ * write used to happen there, right before the export screen opened - the one
+ * moment someone is watching for it to appear - and the read on whichever
+ * thread first touched the list, which on a cold start was the dashboard's
+ * first frame (S8).
  *
  * Except that a new export waits for its write. Its record is the only thing
  * that can reach its file - exports/ is private, and nothing else lists it - so
@@ -27,52 +31,66 @@ import java.util.concurrent.Future
  * possibly gigabytes on the phone that the app could neither show nor delete.
  */
 class HistoryRepository(context: Context) {
+    private val appContext = context.applicationContext
     private val file = File(context.filesDir, "history.json")
-    private val _records = MutableStateFlow(loadFromDisk())
+    private val _records = MutableStateFlow<List<ExportRecord>>(emptyList())
     val records: StateFlow<List<ExportRecord>> = _records
 
     /**
      * One writer, in order. Two writes racing on a pool could land the older
      * list last; on a single thread each write is the list as it stood when it
-     * was queued, and the last one queued wins.
+     * was queued, and the last one queued wins. The read goes first on the
+     * same thread, so every change queued after it sees the loaded list.
      */
     private val writer = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "squish-history").apply { isDaemon = true }
     }
 
+    init {
+        writer.execute { _records.value = loadFromDisk() }
+    }
+
     /** Adds [record] and returns once it is on disk, or the write has failed. */
     suspend fun add(record: ExportRecord) {
-        val updated = listOf(record) + _records.value
-        _records.value = updated
-        val written = persist(updated)
+        val written = writer.submit {
+            val updated = listOf(record) + _records.value
+            _records.value = updated
+            write(updated)
+        }
         withContext(Dispatchers.IO) { runCatching { written.get() } }
     }
 
     /**
-     * Forgets an export, and deletes the file it points at.
+     * Forgets an export, and deletes the file it points at - the gallery copy
+     * when that is the one the record keeps, the private file otherwise.
      *
-     * Both, because either on its own is a lie. Exports live in the app's own
-     * external directory, which nothing but this list can reach - dropping the
-     * record and leaving the file behind would tell the user the video is gone
-     * while it quietly went on occupying a gigabyte of their phone, invisibly and
-     * forever. Deleting the file and keeping the record would leave a row that
-     * opens nothing.
-     *
-     * A copy the user separately saved to their gallery is theirs and is not
-     * touched: it lives in MediaStore under Movies/Squish, this app does not own
-     * it, and nobody expects clearing a list inside an app to reach out into their
-     * camera roll. The confirmation says so before any of this happens.
+     * Both, because either on its own is a lie. An export is stored once, and
+     * the one copy is the app's own: dropping the record and leaving the file
+     * behind would tell the user the video is gone while it quietly went on
+     * occupying a gigabyte of their phone. Deleting the file and keeping the
+     * record would leave a row that opens nothing. The confirmation says the
+     * gallery copy goes too before any of this happens. A gallery row this
+     * install did not make (a reinstall) cannot be deleted without asking, and
+     * is left; the record goes anyway.
      */
     fun delete(id: String) {
-        val record = _records.value.firstOrNull { it.id == id }
-        val updated = _records.value.filterNot { it.id == id }
-        _records.value = updated
-        persist(updated)
-        record?.let { writer.execute { runCatching { File(it.outputPath).delete() } } }
+        writer.execute {
+            val record = _records.value.firstOrNull { it.id == id }
+            val updated = _records.value.filterNot { it.id == id }
+            _records.value = updated
+            write(updated)
+            record?.let {
+                runCatching { File(it.outputPath).delete() }
+                it.galleryUri?.let { uri -> GallerySaver.remove(appContext, Uri.parse(uri)) }
+            }
+        }
     }
 
     /** The record for an export's file, if it is one of these. */
     fun forPath(outputPath: String): ExportRecord? = _records.value.firstOrNull { it.outputPath == outputPath }
+
+    /** The record by its id. */
+    fun byId(id: String): ExportRecord? = _records.value.firstOrNull { it.id == id }
 
     private fun loadFromDisk(): List<ExportRecord> {
         if (!file.exists()) return emptyList()
@@ -96,8 +114,6 @@ class HistoryRepository(context: Context) {
             }
         }.getOrDefault(emptyList())
     }
-
-    private fun persist(records: List<ExportRecord>): Future<*> = writer.submit { write(records) }
 
     private fun write(records: List<ExportRecord>) {
         val array = JSONArray()

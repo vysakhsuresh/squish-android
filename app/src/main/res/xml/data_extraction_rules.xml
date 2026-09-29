@@ -1,4 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and up; the same exclusions as backup_rules.xml, for the same
+     reasons, for both the cloud backup and a device-to-device transfer. -->
 <data-extraction-rules>
     <cloud-backup>
+        <exclude domain="file" path="projects" />
+        <exclude domain="file" path="tooldrafts" />
+        <exclude domain="file" path="stills" />
+        <exclude domain="file" path="reversed" />
+        <exclude domain="file" path="voice" />
+        <exclude domain="file" path="speech" />
+        <exclude domain="file" path="segments" />
+        <exclude domain="file" path="imports" />
+        <exclude domain="file" path="fonts" />
+        <exclude domain="external" path="exports" />
     </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="projects" />
+        <exclude domain="file" path="tooldrafts" />
+        <exclude domain="file" path="stills" />
+        <exclude domain="file" path="reversed" />
+        <exclude domain="file" path="voice" />
+        <exclude domain="file" path="speech" />
+        <exclude domain="file" path="segments" />
+        <exclude domain="file" path="imports" />
+        <exclude domain="file" path="fonts" />
+        <exclude domain="external" path="exports" />
+    </device-transfer>
 </data-extraction-rules>

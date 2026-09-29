@@ -94,6 +94,8 @@ import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.ConfirmDialog
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishPrimaryButton
+import com.squish.app.ui.components.CoachMark
+import com.squish.app.settings.Preferences
 import com.squish.app.ui.components.StopExportDialog
 import com.squish.app.ui.theme.SquishColors
 
@@ -113,9 +115,8 @@ import com.squish.app.ui.theme.SquishColors
  */
 @Composable
 fun EditorScreen(
-    sourceUri: Uri,
-    /** Opened from the drafts list: apply the saved edit straight away. */
-    resume: Boolean = false,
+    /** The project to open: its saved edit, or the files it was staged to start from. */
+    projectId: String,
     onBack: () -> Unit,
     onExported: (String) -> Unit,
     viewModel: EditorViewModel = viewModel()
@@ -145,7 +146,6 @@ fun EditorScreen(
     // Left open, "Render and save" looked as if it did nothing at all.
     LaunchedEffect(state.failure) { if (state.failure != null) exportSheetOpen = false }
     var confirmStopExport by remember { mutableStateOf(false) }
-    var confirmStartNew by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     // A photo overlay waiting on "make it a long clip?" before it goes to the main track.
     var confirmLongStill by remember { mutableStateOf<String?>(null) }
@@ -161,7 +161,7 @@ fun EditorScreen(
     // was found.
     LaunchedEffect(openTool, state.selectedClipId) { eyedropper = null }
 
-    LaunchedEffect(sourceUri) { viewModel.load(sourceUri, resume) }
+    LaunchedEffect(projectId) { viewModel.open(projectId) }
 
     val kind = state.selectionKind
     val canTransition = state.selectedCanTransition
@@ -189,6 +189,21 @@ fun EditorScreen(
         if (uri != null) {
             context.keepReadAccess(uri)
             viewModel.state.value.selectedClipId?.let { viewModel.clips.beginReplace(it, uri) }
+        }
+    }
+    // The file to go under every clip that plays one that can no longer be
+    // opened (EditorViewModel.relink): from the picker, or, for a file the
+    // picker never shows, from the file manager.
+    val pickRelink = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            context.keepReadAccess(uri)
+            viewModel.relink(uri)
+        }
+    }
+    val browseRelink = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            context.keepReadAccess(uri)
+            viewModel.relink(uri)
         }
     }
 
@@ -234,10 +249,13 @@ fun EditorScreen(
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.saveNow() }
 
     // An encode only runs while the app is in front, so the screen must not go
-    // to sleep under a long one.
+    // to sleep under a long one - nor, when Settings says so, under an edit:
+    // reading a caption back against the picture takes longer than a screen
+    // timeout, and a fading screen mid-scrub is the one thing CapCut never does.
     val view = LocalView.current
-    DisposableEffect(state.isExporting) {
-        view.keepScreenOn = state.isExporting
+    val keepAwakeWhileEditing = remember { Preferences.editorDefaults(context).keepScreenOn }
+    DisposableEffect(state.isExporting, keepAwakeWhileEditing) {
+        view.keepScreenOn = state.isExporting || keepAwakeWhileEditing
         onDispose { view.keepScreenOn = false }
     }
     // The keyboard is made room for here, by the layout (see imePadding below),
@@ -381,7 +399,9 @@ fun EditorScreen(
             EditorPreview(
                 state = state,
                 viewModel = viewModel,
-                sourceUri = sourceUri,
+                // Read here too: the file first opened is known only once the
+                // project has loaded, after this lambda was remembered.
+                sourceUri = state.sourceUri ?: Uri.EMPTY,
                 // Read here, not captured: this lambda is remembered once, and a
                 // value worked out outside it would stay whatever it first was.
                 openTool = openToolName?.let { name -> Tool.entries.firstOrNull { it.name == name } },
@@ -432,8 +452,7 @@ fun EditorScreen(
                     EditorHeader(
                         state = state,
                         onBack = leave,
-                        // Not while a saved edit is on offer - see renameProject.
-                        onRename = if (state.recovery == null) ({ renaming = true }) else null,
+                        onRename = { renaming = true },
                         onUndo = viewModel::undo,
                         onRedo = viewModel::redo,
                         onExport = { exportSheetOpen = true }
@@ -443,7 +462,18 @@ fun EditorScreen(
                 // banner pushed the compressed strip out of its capped height, and
                 // the strip is the one thing section 2 says never goes.
                 val cards = @Composable {
-                    StatusCards(state, viewModel, onStartNew = { confirmStartNew = true })
+                    StatusCards(
+                        state = state,
+                        viewModel = viewModel,
+                        onRelink = {
+                            pickRelink.launch(
+                                PickVisualMediaRequest.Builder()
+                                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                    .build()
+                            )
+                        },
+                        onBrowseRelink = { browseRelink.launch(arrayOf("video/*", "image/*", "audio/*")) }
+                    )
                 }
                 val controls = @Composable { compactStrip: Boolean, rowsHeight: Dp ->
                     val timeline = state.toTimeline()
@@ -679,43 +709,6 @@ fun EditorScreen(
                 }
             }
         }
-    }
-
-    // After the app was killed under this edit the offer blocks the editor until
-    // it is answered: nothing can be saved until it is known which edit this is,
-    // and an inline card let the bare clip be edited for as long as anyone liked
-    // with none of it reaching disk.
-    state.recovery?.takeIf { it.modal }?.let { offer ->
-        Dialog(
-            onDismissRequest = {},
-            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
-        ) {
-            RecoveryBanner(
-                offer = offer,
-                onContinue = viewModel::acceptRecovery,
-                onStartNew = { confirmStartNew = true }
-            )
-        }
-    }
-
-    // "Start a new project" sets the saved edit aside; it never deletes it. But it
-    // is still the button that makes hours of work disappear from the editor, so
-    // it asks - the way discarding from the drafts list always has.
-    if (confirmStartNew) {
-        ConfirmDialog(
-            title = "Start a new project?",
-            body = "The saved edit of this clip is set aside so you can begin again from the untouched video.",
-            caution = "It moves to Recently discarded on the Unfinished screen, where it can be brought back for 30 days.",
-            confirmLabel = "Start new",
-            dismissLabel = "Keep",
-            icon = Icons.Filled.HistoryToggleOff,
-            accent = SquishColors.Amber,
-            onConfirm = {
-                viewModel.dismissRecovery()
-                confirmStartNew = false
-            },
-            onDismiss = { confirmStartNew = false }
-        )
     }
 
     if (confirmStopExport) {
@@ -1103,9 +1096,28 @@ private fun HeaderIcon(icon: ImageVector, label: String, enabled: Boolean, onCli
     }
 }
 
-/** What is happening outside the edit itself: proxies, stills, a saved edit on offer, a failure. */
+/** What is happening outside the edit itself: proxies, stills, a file gone missing, a failure. */
 @Composable
-private fun StatusCards(state: EditorUiState, viewModel: EditorViewModel, onStartNew: () -> Unit) {
+private fun StatusCards(
+    state: EditorUiState,
+    viewModel: EditorViewModel,
+    onRelink: () -> Unit,
+    onBrowseRelink: () -> Unit
+) {
+    val context = LocalContext.current
+    // Once, on the first edit ever opened: the three gestures the strip is
+    // driven by, which nothing on screen says. Gone for good on "Got it".
+    var coach by remember { mutableStateOf(!Preferences.coachSeen(context, Preferences.COACH_EDITOR)) }
+    if (coach && !state.isLoadingSource) {
+        CoachMark(
+            text = "Tap a clip to edit it. Drag the strip to scrub, pinch to zoom, and long-press a clip to move it.",
+            onDismiss = {
+                Preferences.markCoachSeen(context, Preferences.COACH_EDITOR)
+                coach = false
+            },
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+        )
+    }
     val proxies = state.proxiesInEdit.values.filter { it != ProxyStatus.NotNeeded }
     ProxyIndicator(
         status = state.proxyStatus,
@@ -1122,27 +1134,47 @@ private fun StatusCards(state: EditorUiState, viewModel: EditorViewModel, onStar
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
     )
 
-    // Only the inline offer lives here; the modal one is over everything.
-    state.recovery?.takeIf { !it.modal }?.let { offer ->
-        RecoveryBanner(
-            offer = offer,
-            onContinue = viewModel::acceptRecovery,
-            onStartNew = onStartNew,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-        )
-    }
-    if (state.setAsideNotice && state.recovery == null) {
-        SetAsideNotice(
-            onDismiss = viewModel::dismissSetAsideNotice,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-        )
-    }
     state.failure?.let { failure ->
         FailureCard(
             error = failure,
             onDismiss = viewModel::clearFailure,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         )
+    }
+    // A file the edit plays that can no longer be opened: the clips stay on
+    // the strip as placeholders, and another file can be put under all of
+    // them at once. Under the failure that names it, and standing after the
+    // failure is dismissed, until the file is relinked or the clips deleted.
+    if (state.missingMedia != null) {
+        RelinkCard(
+            onRelink = onRelink,
+            onBrowse = onBrowseRelink,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+    }
+}
+
+@Composable
+private fun RelinkCard(onRelink: () -> Unit, onBrowse: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SquishColors.Surface)
+            .border(1.dp, SquishColors.Amber.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text("A file in this edit is missing", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
+        Text(
+            "Its clips are kept where they were. Pick the file again, or another one, and every clip that played it plays that instead.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextSecondary
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SquishPrimaryButton(text = "Relink", onClick = onRelink)
+            SquishOutlinedButton(text = "Browse files", onClick = onBrowse)
+        }
     }
 }
 

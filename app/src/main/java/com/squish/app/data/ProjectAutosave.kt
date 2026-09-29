@@ -119,7 +119,16 @@ data class DraftSummary(
      * When the earlier version the drafts screen can go back to was saved, or
      * null when there is none that differs from this one.
      */
-    val earlierSavedAtMillis: Long? = null
+    val earlierSavedAtMillis: Long? = null,
+    /**
+     * The file and the moment a cover frame is taken from - the first shot on
+     * the main track, a little way in (ProjectRules.coverTimeMs) - so the grid
+     * shows the edit rather than whatever the source's first frame is.
+     */
+    val coverUri: Uri? = null,
+    val coverAtMs: Long = 0L,
+    /** What the project keeps under the app's own storage; see [ProjectRules.ownedFile]. */
+    val sizeBytes: Long = 0L
 ) {
     val editedSinceExport: Boolean
         get() = DraftHousekeeping.editedSinceExport(savedAtMillis, exportedAtMillis, editFingerprint, exportedFingerprint)
@@ -143,17 +152,25 @@ class ProjectAutosave(context: Context) {
     private val trashDir = File(dir, "trash").apply { mkdirs() }
 
     /**
-     * One draft per source video, keyed by its URI.
+     * One draft per project, keyed by the project's own id
+     * (EditorUiState.projectId, from ProjectRules.newId).
      *
-     * That is the unit anyone thinks in — "the edit I was doing on that clip" —
-     * and it means reopening a video picks its work back up rather than offering
-     * a list of anonymous sessions. Previously there was a single slot called
-     * `current`, so opening a second video silently destroyed the first one's
-     * work the moment anything moved.
+     * It used to be keyed by the first video's URI - "the edit I was doing on
+     * that clip" - which meant one project per video: a second cut of the same
+     * footage could not exist, and reopening a clip from the dashboard asked
+     * whether this was the old edit or a new one. Drafts written then are named
+     * "p" and a hash; they are still read, since a slot is only a file name
+     * and the id an old draft is opened by is whatever its file is called.
      */
-    private fun slotFor(uri: Uri): String = "p" + uri.toString().hashCode().toUInt().toString(16)
-
     private fun liveFile(slot: String) = File(dir, "$slot.json")
+    /**
+     * The files a new project starts from, staged by whoever made it (the
+     * dashboard's picker, "Open with", a quick tool) and taken by the editor
+     * on its first open. On disk rather than handed over in memory so a kill
+     * between the two still opens the project on its files. Not ".json", so
+     * no listing mistakes it for a draft.
+     */
+    private fun startFile(slot: String) = File(dir, "$slot.start")
     private fun backupFile(slot: String) = File(dir, "$slot.bak.json")
     private fun snapshotFile(slot: String) = File(dir, "$slot.snap.json")
     /** Named to end in .snap.json, so every listing that skips snapshots skips it too. */
@@ -193,8 +210,8 @@ class ProjectAutosave(context: Context) {
      */
     fun save(state: EditorUiState): Boolean = synchronized(lock) {
         val uri = state.sourceUri ?: return false
+        val slot = state.projectId.ifBlank { return false }
         if (state.isLoadingSource) return false
-        val slot = slotFor(uri)
         val live = liveFile(slot)
 
         // The signature is taken from the document alone. Stamping the time first
@@ -224,10 +241,116 @@ class ProjectAutosave(context: Context) {
             // whole on disk and missing from the list.
             writeMeta(slot, state, uri, now, fingerprint, previous, snapshots)
             DraftFiles.replace(scratchFile(slot), live)
+            // The project has a draft now; what it started from is in it.
+            startFile(slot).delete()
         }.isSuccess
 
         if (ok) lastSignature[slot] = signature
         ok
+    }
+
+    /**
+     * Stages the files a new project is to be made from; see [startFile].
+     * [copyIn] says they were handed over with a grant that ends with this
+     * process, so the editor copies them into its own storage first.
+     */
+    fun stageStart(slot: String, uris: List<Uri>, copyIn: Boolean = false) {
+        synchronized(lock) {
+            val json = JSONObject().apply {
+                put("uris", JSONArray().apply { uris.forEach { put(it.toString()) } })
+                put("copyIn", copyIn)
+            }
+            runCatching { DraftFiles.writeAtomically(File(dir, "$slot.start.tmp"), startFile(slot), json.toString().toByteArray()) }
+        }
+    }
+
+    /** The staged start of a project that has no draft yet, if there is one. Left in place until the first save. */
+    fun peekStart(slot: String): ProjectStart? = synchronized(lock) {
+        val file = startFile(slot)
+        if (!file.exists()) return null
+        runCatching {
+            val json = JSONObject(file.readText())
+            val array = json.optJSONArray("uris") ?: return null
+            ProjectStart(
+                uris = (0 until array.length()).mapNotNull { array.optString(it).takeIf { s -> s.isNotBlank() } }.map(Uri::parse),
+                copyIn = json.optBoolean("copyIn", false)
+            )
+        }.getOrNull()
+    }
+
+    /**
+     * Gives the project a name, or with null takes it away. Written into the
+     * draft as a save writes it, and into the sidecar the list reads; an
+     * editor open on the project is never the caller - the dashboard is
+     * always under it - so nothing is writing the slot at the same time.
+     */
+    fun rename(slot: String, name: String?): Boolean = synchronized(lock) {
+        val live = liveFile(slot)
+        val json = runCatching { JSONObject(live.readText()) }.getOrNull() ?: return false
+        if (name == null) json.remove("name") else json.put("name", name)
+        val meta = readMetaJson(metaFile(slot)) ?: return false
+        meta.put("title", name ?: json.optJSONArray("clips")?.optJSONObject(0)?.optString("label")?.takeIf { it.isNotBlank() } ?: "Untitled edit")
+        meta.put("editFingerprint", DraftHousekeeping.fingerprint(editKeyOf(JSONObject(json.toString()))))
+        runCatching {
+            DraftFiles.writeAtomically(scratchFile(slot), live, json.toString().toByteArray())
+            DraftFiles.writeAtomically(metaScratchFile(slot), metaFile(slot), meta.toString().toByteArray())
+        }.onSuccess { lastSignature.remove(slot) }.isSuccess
+    }
+
+    /**
+     * A second project with the same edit in it, named after the first
+     * (ProjectRules.copyName), never exported, and its own from here on. The
+     * files the edit made for itself - stills, renders, takes - are shared by
+     * name; nothing here deletes those, so sharing costs nothing.
+     */
+    fun duplicate(slot: String, taken: Collection<String>): String? = synchronized(lock) {
+        val live = liveFile(slot)
+        val json = runCatching { JSONObject(live.readText()) }.getOrNull() ?: return null
+        val meta = readMetaJson(metaFile(slot)) ?: return null
+        val copy = ProjectRules.newId()
+        val name = ProjectRules.copyName(json.optString("name").takeIf { it.isNotBlank() } ?: meta.optString("title", "Untitled edit"), taken)
+        json.put("name", name)
+        val now = System.currentTimeMillis()
+        json.put("savedAtMillis", now)
+        meta.put("id", copy)
+        meta.put("title", name)
+        meta.put("savedAtMillis", now)
+        meta.put("editFingerprint", DraftHousekeeping.fingerprint(editKeyOf(JSONObject(json.toString()))))
+        listOf("exportedAtMillis", "exportedFingerprint", "snapshotSavedAtMillis", "snapshotFingerprint", "pendingSavedAtMillis", "pendingFingerprint")
+            .forEach { meta.remove(it) }
+        val placed = runCatching {
+            DraftFiles.writeAtomically(metaScratchFile(copy), metaFile(copy), meta.toString().toByteArray())
+            DraftFiles.writeAtomically(scratchFile(copy), liveFile(copy), json.toString().toByteArray())
+        }.isSuccess
+        if (placed) copy else {
+            slotFiles(copy).forEach { it.delete() }
+            null
+        }
+    }
+
+    /**
+     * Every media URI a draft on disk names - live, backup, snapshot or in the
+     * bin - read off the documents as text, as [referencedMaskFiles] is: what
+     * a purge may let go of is decided against this (ProjectRules.releasable).
+     */
+    fun referencedUris(): Set<String> = synchronized(lock) { urisUnder(dir) }
+
+    /** The media URIs a bin entry's documents name. */
+    fun urisInTrash(trashId: String): Set<String> = synchronized(lock) {
+        val entry = File(trashDir, trashId)
+        if (DraftHousekeeping.parseTrashName(trashId) == null || !entry.isDirectory) emptySet() else urisUnder(entry)
+    }
+
+    private fun urisUnder(root: File): Set<String> {
+        val found = HashSet<String>()
+        root.walkTopDown().filter { it.isFile && it.name.endsWith(".json") }.forEach { file ->
+            val text = runCatching { file.readText() }.getOrNull() ?: return@forEach
+            URI_FIELD.findAll(text).forEach { match ->
+                val value = match.groupValues[1].replace("\\/", "/").replace("\\\\", "\\")
+                if (value.isNotBlank() && value != "null") found += value
+            }
+        }
+        return found
     }
 
     /**
@@ -294,11 +417,10 @@ class ProjectAutosave(context: Context) {
     }.toString()
 
     /**
-     * A recoverable session for this video, if one survived. The snapshots are
-     * the last resort, behind the live file and its backup.
+     * The project's saved edit, if it has one. The snapshots are the last
+     * resort, behind the live file and its backup.
      */
-    fun peek(uri: Uri): ProjectSnapshot? = synchronized(lock) {
-        val slot = slotFor(uri)
+    fun peek(slot: String): ProjectSnapshot? = synchronized(lock) {
         read(liveFile(slot)) ?: read(backupFile(slot)) ?: read(pendingSnapshotFile(slot)) ?: read(snapshotFile(slot))
     }
 
@@ -407,24 +529,21 @@ class ProjectAutosave(context: Context) {
         scratchFile(slot).delete()
         snapshotScratchFile(slot).delete()
         metaScratchFile(slot).delete()
+        startFile(slot).delete()
         DraftFiles.moveToBin(trashDir, slot, slotFiles(slot))
     }
-
-    fun clear(uri: Uri): String? = delete(slotFor(uri))
 
     /**
      * Stamps the draft as exported: when, and which edit - [rendered] is the
      * state the file was made from, so a change made while it rendered still
      * reads as "edited since". The draft stays where it is, exported and all:
      * the work reached the gallery, and the commonest thing to want next is one
-     * more change to it. Nothing to stamp when the edit never differed from the
-     * bare clip, since no draft was ever written for it.
+     * more change to it.
      */
     fun markCompleted(rendered: EditorUiState) {
-        val uri = rendered.sourceUri ?: return
+        val slot = rendered.projectId.ifBlank { return }
         val fingerprint = DraftHousekeeping.fingerprint(editKey(rendered))
         synchronized(lock) {
-            val slot = slotFor(uri)
             if (!liveFile(slot).exists()) return
             val existing = readMetaJson(metaFile(slot)) ?: return
             existing.put("exportedAtMillis", System.currentTimeMillis())
@@ -515,6 +634,15 @@ class ProjectAutosave(context: Context) {
         previous: JSONObject?,
         snapshots: SnapshotInfo
     ) {
+        // The cover is the first shot on the main track as it stands, a
+        // little way in; the size is what the edit keeps under the app.
+        val lead = state.videoClips.filter { it.isMain }.minByOrNull { it.timelineStartMs }
+        val coverUri = lead?.uri ?: uri
+        val coverAt = lead?.let { ProjectRules.coverTimeMs(it.sourceInMs, it.sourceOutMs) } ?: 0L
+        val filesDir = appContext.filesDir.absolutePath
+        val owned = (state.videoClips + state.audioClips).mapNotNull { it.uri?.toString() }.distinct()
+            .filter { ProjectRules.ownedFile(it, filesDir) }
+            .sumOf { File(Uri.parse(it).path.orEmpty()).length() }
         val json = JSONObject().apply {
             put("id", slot)
             put("title", state.projectName ?: state.videoClips.firstOrNull()?.label ?: "Untitled edit")
@@ -523,6 +651,9 @@ class ProjectAutosave(context: Context) {
             put("clipCount", state.videoClips.size)
             put("savedAtMillis", savedAtMillis)
             put("editFingerprint", fingerprint)
+            put("coverUri", coverUri.toString())
+            put("coverAtMs", coverAt)
+            put("sizeBytes", owned + scratchFile(slot).length())
             // The export stamp is the one thing in the sidecar the edit does not
             // carry, so it is kept from the previous sidecar rather than lost on
             // the next save.
@@ -555,7 +686,11 @@ class ProjectAutosave(context: Context) {
             savedAtMillis = json.optLong("savedAtMillis"),
             exportedAtMillis = json.optLong("exportedAtMillis", 0L).takeIf { it > 0L },
             editFingerprint = json.optString("editFingerprint").takeIf { it.isNotBlank() },
-            exportedFingerprint = json.optString("exportedFingerprint").takeIf { it.isNotBlank() }
+            exportedFingerprint = json.optString("exportedFingerprint").takeIf { it.isNotBlank() },
+            // A sidecar from before covers were named falls back to the source.
+            coverUri = json.optString("coverUri").takeIf { it.isNotBlank() }?.let(Uri::parse) ?: Uri.parse(uri),
+            coverAtMs = json.optLong("coverAtMs", 0L),
+            sizeBytes = json.optLong("sizeBytes", 0L)
         )
     }.getOrNull()
 
@@ -1339,6 +1474,9 @@ class ProjectAutosave(context: Context) {
         /** A clip's "maskFile" entry, as encodeClip writes it. */
         private val MASK_FILE = Regex("\"maskFile\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
 
+        /** Every "uri" and "sourceUri" entry, as the encoders write them. */
+        private val URI_FIELD = Regex("\"(?:uri|sourceUri|coverUri|canvasImage)\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+
         /** The first version whose pictures' levels are their own; older ones are moved over on reading. */
         const val PER_CLIP_VOLUME_VERSION = 11
     }
@@ -1386,36 +1524,13 @@ data class ProjectSnapshot(
      */
     val totalDurationMs: Long
         get() = maxOf(clips.maxOfOrNull { it.timelineEndMs } ?: 0L, audioClips.maxOfOrNull { it.timelineEndMs } ?: 0L)
-
-    /**
-     * A single untrimmed clip with nothing else on it - the state a freshly opened
-     * file is already in. There is nothing here to recover.
-     */
-    val isTrivial: Boolean
-        get() = clips.size == 1 && name == null &&
-            textOverlays.isEmpty() &&
-            effects.isEmpty() &&
-            audioClips.isEmpty() &&
-            markers.isEmpty() &&
-            // A look, a crop, a found beat or a changed voice is work too, as
-            // much as a trim is.
-            !beats.hasBeats &&
-            cropAspect == CropAspect.Original && cropRect.isFull && rotationDegrees == 0 &&
-            canvasBackground == CanvasBackground.NONE &&
-            !muteOriginal && originalVolume == 1f &&
-            clips.first().let {
-                it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs &&
-                    it.volume == 1f && !it.muted && it.voice == VoiceEffect.None && it.fadeInMs == 0L && it.fadeOutMs == 0L &&
-                    it.chromaKey == null && it.mask == null && it.background == null &&
-                    !it.mirrored && it.quarterTurns == 0 && it.reversedFrom == null &&
-                    !it.isGraded && it.crop == null && it.reframe == null &&
-                    it.keyframes.isEmpty() && it.stabilizer.isEmpty() && it.speedRamp == com.squish.app.timeline.SpeedRamp()
-                    it.keyframes.isEmpty() && it.stabilizer.isEmpty() && it.speedRamp == com.squish.app.timeline.SpeedRamp() &&
-                    // An arrival, a keyed fade or a switched pitch is an edit as much as a trim is.
-                    !it.hasAnimation && it.opacityKeys.isEmpty() && it.volumeKeys.isEmpty() &&
-                    !it.frameBlend && !it.pitchFollowsSpeed
-            }
 }
+
+/**
+ * What a project not yet saved is to be made from: the files picked for it,
+ * in order, and whether they must be copied in first (ProjectAutosave.stageStart).
+ */
+data class ProjectStart(val uris: List<Uri>, val copyIn: Boolean = false)
 
 /**
  * A line's style as JSON: the fields of [TextStyleSpec], flat, beside the

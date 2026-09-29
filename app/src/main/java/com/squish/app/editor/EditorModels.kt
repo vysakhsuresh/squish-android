@@ -416,27 +416,6 @@ data class CaptionProgress(
 enum class ProxyStatus { NotNeeded, Building, Ready, Failed }
 
 /**
- * An edit recovered from disk after the app was killed, offered rather than
- * applied: silently overwriting what someone just opened would be its own kind of
- * data loss. A snapshot whose clip can no longer be opened is not offered at all -
- * the permission a gallery picker grants does not outlive the process - and is left
- * on disk to re-attach when that clip is opened again.
- */
-data class RecoveryOffer(
-    val snapshot: ProjectSnapshot,
-    /**
-     * Whether the offer blocks the editor until it is answered. It does after
-     * the app was killed under this edit: the person was in the middle of it,
-     * and the editor cannot save anything until they say which edit this is.
-     */
-    val modal: Boolean = false
-) {
-    val clipCount: Int get() = snapshot.clipCount
-    val savedAtMillis: Long get() = snapshot.savedAtMillis
-    val durationMs: Long get() = snapshot.totalDurationMs
-}
-
-/**
  * The part of the editor an undo should put back.
  *
  * Deliberately not the whole [EditorUiState]. Restoring that would drag the
@@ -482,6 +461,13 @@ data class FitOvershoot(
 )
 
 data class EditorUiState(
+    /**
+     * Which project this is (ProjectRules.newId): the draft's slot on disk,
+     * and the id in the editor's route. Blank until the editor is opened on
+     * one, and nothing is saved while it is. A project used to be its first
+     * video, so two cuts of the same footage could not both exist.
+     */
+    val projectId: String = "",
     val sourceUri: Uri? = null,
     /**
      * What the person called this project, or null for none yet - the header
@@ -647,14 +633,14 @@ data class EditorUiState(
     /** How many photos or blanks are being made into clips right now. */
     val preparingStills: Int = 0,
 
-    // A session that survived the process being killed, waiting to be accepted.
-    val recovery: RecoveryOffer? = null,
     /**
-     * Set when editing the bare clip answered the offer above for the user: the
-     * saved edit went to the bin, and the editor says so rather than letting it
-     * vanish without a word. Undoing back to the bare clip brings the offer back.
+     * A file in the edit that can no longer be opened - deleted from the
+     * gallery, or a grant that did not outlive the process - named when the
+     * project is opened, with the clips that play it left on the strip as
+     * placeholders. Relink (EditorViewModel.relink) puts another file under
+     * every one of them; null once it has, or when nothing is missing.
      */
-    val setAsideNotice: Boolean = false,
+    val missingMedia: Uri? = null,
 
     // The last failure, in sentences. Null whenever the editor is healthy.
     val failure: SquishError? = null,

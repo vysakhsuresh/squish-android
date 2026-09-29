@@ -1,4 +1,6 @@
 <paths>
     <external-files-path name="exports" path="exports/" />
     <cache-path name="cache" path="." />
+    <!-- A take recorded from the dashboard is written here by the camera app. -->
+    <files-path name="imports" path="imports/" />
 </paths>

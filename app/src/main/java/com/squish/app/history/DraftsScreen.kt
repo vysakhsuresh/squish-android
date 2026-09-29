@@ -55,7 +55,8 @@ import com.squish.app.data.TrashedDraft
 import com.squish.app.editor.Timecode
 import com.squish.app.home.UndoOffer
 import com.squish.app.home.agoOf
-import com.squish.app.media.ThumbnailExtractor
+import androidx.compose.ui.semantics.Role
+import com.squish.app.media.ThumbnailCache
 import com.squish.app.media.canReadMedia
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -66,20 +67,16 @@ import com.squish.app.ui.components.VideoPreviewSheet
 import com.squish.app.ui.theme.SquishColors
 
 /**
- * Everything left unfinished, with a picture of it.
+ * The quick tools' unfinished sessions, with a picture of each, and under
+ * them the bin.
  *
- * This was a list stacked on the dashboard, which is the same mistake the export
- * history made before it moved out: the home screen got longer every time anyone
- * left something half-done, and the list still could not show what any of it
- * was. On its own screen it can do what the library does - a frame from the
- * footage, a preview that plays without leaving the list, and one way back in.
- *
- * Edits and tool sessions sit in one list on purpose. Someone who left a merge
- * half-set-up and someone who left a cut half-made came back for the same reason,
- * and sorting their work by which screen made it would help nobody.
- *
- * Under the list is the bin. Discarding moves a draft there rather than deleting
- * it, with an Undo the moment it happens and a Restore for the month after.
+ * The editor's projects live on the dashboard now, as a grid of their own;
+ * what is left here is the other kind of half-done work - a merge set up and
+ * not run, a cut half-made in Snip - and the bin both kinds go into.
+ * Discarding moves a draft there rather than deleting it, with an Undo the
+ * moment it happens and a Restore for the month after; a project purged from
+ * the bin is gone for good, and the app's right to read its files goes with
+ * it unless another project names them.
  */
 @Composable
 fun DraftsScreen(
@@ -141,8 +138,8 @@ fun DraftsScreen(
                         color = SquishColors.TextPrimary
                     )
                     Text(
-                        if (drafts.isEmpty()) "Nothing waiting — everything is finished"
-                        else "${drafts.size} saved automatically as you worked",
+                        if (drafts.isEmpty()) "No tool session waiting — projects are on the dashboard"
+                        else "${drafts.size} tool ${if (drafts.size == 1) "session" else "sessions"} saved as you worked",
                         style = MaterialTheme.typography.bodyMedium,
                         color = SquishColors.TextMuted
                     )
@@ -161,8 +158,8 @@ fun DraftsScreen(
                                 color = SquishColors.TextPrimary
                             )
                             Text(
-                                "Anything you walk away from lands here, whichever screen " +
-                                    "you left it on, and picks up where it stopped.",
+                                "A quick tool you walk away from lands here and picks up where " +
+                                    "it stopped; anything discarded waits here for 30 days.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = SquishColors.TextMuted,
                                 textAlign = TextAlign.Center
@@ -320,19 +317,18 @@ private fun DraftCard(
 ) {
     val context = LocalContext.current
     var thumb by remember(draft.sourceUri) { mutableStateOf<Bitmap?>(null) }
-    // Null until checked. A draft whose video can no longer be opened - deleted,
-    // or picked before the app kept its access - cannot be resumed, and opening
-    // it used to crash the app.
+    // Null until checked. A tool session whose video can no longer be opened -
+    // deleted, or picked before the app kept its access - cannot be resumed,
+    // and opening it used to crash the app. (A project's missing file is the
+    // editor's to name and relink, so a project is always openable.)
     var readable by remember(draft.sourceUri) { mutableStateOf<Boolean?>(null) }
 
     LaunchedEffect(draft.sourceUri) {
-        readable = withContext(Dispatchers.IO) { context.canReadMedia(draft.sourceUri) }
+        readable = if (draft.toolId == null) true else withContext(Dispatchers.IO) { context.canReadMedia(draft.sourceUri) }
         if (readable != true) return@LaunchedEffect
-        thumb = ThumbnailExtractor.frameAt(
-            context,
-            draft.sourceUri,
-            (draft.durationMs / 3).coerceAtLeast(0L)
-        )
+        // Remembered across scrolls and restarts: each row used to decode a
+        // frame afresh every time it came back into view.
+        thumb = ThumbnailCache.frame(context, draft.coverUri ?: draft.sourceUri, draft.coverAtMs)
     }
 
     Row(
@@ -341,7 +337,7 @@ private fun DraftCard(
             .clip(RoundedCornerShape(16.dp))
             .background(SquishColors.Surface)
             .border(1.dp, SquishColors.Cyan.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
-            .clickable(enabled = readable != false, onClick = onOpen)
+            .clickable(enabled = readable != false, role = Role.Button, onClick = onOpen)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -394,8 +390,8 @@ private fun DraftCard(
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable(onClick = onEarlier)
-                        .padding(vertical = 4.dp, horizontal = 2.dp),
+                        .clickable(role = Role.Button, onClick = onEarlier)
+                        .padding(vertical = 8.dp, horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
@@ -516,6 +512,12 @@ private fun Thumb(thumb: Bitmap?, toolDraft: Boolean) {
     }
 }
 
+/**
+ * A row's button: drawn at 36 dp, pressed at 48 dp. Custom clickables get none of
+ * Material's minimum touch size, and at 34 dp these were the smallest targets
+ * in the app; the padding round the drawn square is part of the target, and
+ * the role tells a screen reader what it is.
+ */
 @Composable
 private fun CardAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -525,12 +527,14 @@ private fun CardAction(
 ) {
     Box(
         modifier = Modifier
-            .size(34.dp)
+            .size(48.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(6.dp)
             .clip(RoundedCornerShape(11.dp))
-            .background(SquishColors.Background)
-            .clickable(onClick = onClick),
+            .background(SquishColors.Background),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(17.dp))
+        Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(18.dp))
     }
 }

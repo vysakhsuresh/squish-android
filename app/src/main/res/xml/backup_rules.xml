@@ -1,2 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and below. What is backed up is what would mean something on
+     another phone: the settings, the starred songs, the saved text styles and
+     the export history's list. Drafts name content URIs that only this phone's
+     picker grants, and the files an edit made for itself - stills, renders,
+     takes - and the exports run to gigabytes against a 25 MB quota, so an
+     unfiltered backup aborted and restored nothing. -->
 <full-backup-content>
+    <exclude domain="file" path="projects" />
+    <exclude domain="file" path="tooldrafts" />
+    <exclude domain="file" path="stills" />
+    <exclude domain="file" path="reversed" />
+    <exclude domain="file" path="voice" />
+    <exclude domain="file" path="speech" />
+    <exclude domain="file" path="segments" />
+    <exclude domain="file" path="imports" />
+    <exclude domain="file" path="fonts" />
+    <exclude domain="external" path="exports" />
 </full-backup-content>

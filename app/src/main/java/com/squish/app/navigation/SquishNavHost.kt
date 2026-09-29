@@ -7,8 +7,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
@@ -17,18 +19,23 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.squish.app.data.ProjectRules
+import com.squish.app.data.SquishRepositories
 import com.squish.app.data.ToolAutosave
 import com.squish.app.editor.EditorScreen
-import com.squish.app.editor.OpenEditors
 import com.squish.app.export.ExportScreen
 import com.squish.app.media.ExportsInFlight
 import com.squish.app.history.DraftsScreen
+import com.squish.app.history.LibraryDetailScreen
 import com.squish.app.history.LibraryScreen
 import com.squish.app.home.HomeScreen
 import com.squish.app.home.HomeViewModel
 import com.squish.app.settings.SettingsScreen
 import com.squish.app.tools.QuickTool
 import com.squish.app.tools.QuickToolScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Runs [block] only while this screen is still the one on top of the back stack.
@@ -52,42 +59,12 @@ private inline fun NavController.fromTopOf(entry: NavBackStackEntry, block: () -
 }
 
 /**
- * Shows [uri] in an editor: the one already open on it, if there is one, or a
- * new one over whatever is showing - the dashboard on a fresh start, another
- * edit when the app was already running - which stays underneath, its draft
- * saved as any edit's is.
- *
- * Never a second editor of a video that is open. Every editor of a video saves
- * into the same draft slot on its own ticker, and two of them - the second
- * stacked by "Open with" on a video already being edited - took turns writing
- * their own state over it, so the work done in either could be gone from disk
- * with nothing in the bin. The editors say which videos are open
- * (OpenEditors); the one for [uri] may be several screens down, under a done
- * screen or another edit, so the stack is popped back to it a screen at a
- * time, never past the dashboard. Whatever is popped on the way has saved
- * itself on leaving.
- */
-private fun openVideo(navController: NavController, uri: Uri) {
-    val wanted = uri.toString()
-    fun NavBackStackEntry.isEditorOf(video: String) =
-        destination.route == Destination.Editor.route && arguments?.getString("videoUri") == video
-    if (OpenEditors.isOpen(uri)) {
-        while (true) {
-            val top = navController.currentBackStackEntry ?: break
-            if (top.isEditorOf(wanted)) return
-            if (top.destination.route == Destination.Home.route) break
-            if (!navController.popBackStack()) break
-        }
-    }
-    navController.navigate(Destination.Editor.buildRoute(Uri.encode(wanted)))
-}
-
-/**
  * A video handed over by "Open with" or "Share", [stamp]ed with when it was
  * asked for: the same file opened twice is two requests, and the host acts
- * on each.
+ * on each. [persisted] says the grant on it outlives this process; one that
+ * does not is copied into the app's storage when the project opens.
  */
-data class OpenRequest(val uri: Uri, val stamp: Long)
+data class OpenRequest(val uri: Uri, val stamp: Long, val persisted: Boolean = true)
 
 @Composable
 fun SquishNavHost(
@@ -95,6 +72,8 @@ fun SquishNavHost(
     open: OpenRequest? = null
 ) {
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val autosave = remember(context) { SquishRepositories.autosave(context) }
 
     // The request acted on last, so a recomposition does not act on it again.
     var actedOn by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -107,7 +86,24 @@ fun SquishNavHost(
     LaunchedEffect(open, exporting) {
         if (open == null || exporting || actedOn == open.stamp) return@LaunchedEffect
         actedOn = open.stamp
-        openVideo(navController, open.uri)
+        // A project of its own, every time: two cuts of one video are two
+        // projects now, so there is no editor to go back to. Over whatever is
+        // showing - the dashboard on a fresh start, another edit when the app
+        // was already running - which stays underneath, its draft saved as any
+        // edit's is on leaving.
+        val id = ProjectRules.newId()
+        withContext(Dispatchers.IO) { autosave.stageStart(id, listOf(open.uri), copyIn = !open.persisted) }
+        navController.navigate(Destination.Editor.buildRoute(id))
+    }
+
+    val scope = rememberCoroutineScope()
+    /** Stages [uris] as a new project and opens the editor on it, over the dashboard. */
+    fun openNewProject(uris: List<Uri>) {
+        scope.launch {
+            val id = ProjectRules.newId()
+            withContext(Dispatchers.IO) { autosave.stageStart(id, uris) }
+            navController.navigate(Destination.Editor.buildRoute(id)) { popUpTo(Destination.Home.route) }
+        }
     }
 
     // Straight to the dashboard. The launch animation is the system splash, which
@@ -117,10 +113,8 @@ fun SquishNavHost(
 
         composable(Destination.Home.route) { entry ->
             HomeScreen(
-                onOpenEditor = { uri ->
-                    navController.fromTopOf(entry) {
-                        navController.navigate(Destination.Editor.buildRoute(Uri.encode(uri.toString())))
-                    }
+                onOpenProject = { id ->
+                    navController.fromTopOf(entry) { navController.navigate(Destination.Editor.buildRoute(id)) }
                 },
                 onOpenTool = { tool ->
                     navController.fromTopOf(entry) {
@@ -141,13 +135,19 @@ fun SquishNavHost(
         composable(Destination.Library.route) { entry ->
             LibraryScreen(
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
-                onOpen = { path ->
-                    navController.fromTopOf(entry) {
-                        navController.navigate(
-                            Destination.Export.buildRoute(Uri.encode(path), Uri.encode("Exported"), Uri.encode("Back to library"))
-                        )
-                    }
+                onOpen = { recordId ->
+                    navController.fromTopOf(entry) { navController.navigate(Destination.LibraryItem.buildRoute(recordId)) }
                 }
+            )
+        }
+
+        composable(
+            route = Destination.LibraryItem.route,
+            arguments = listOf(navArgument("recordId") { type = NavType.StringType })
+        ) { entry ->
+            LibraryDetailScreen(
+                recordId = entry.arguments?.getString("recordId").orEmpty(),
+                onBack = { navController.fromTopOf(entry) { navController.popBackStack() } }
             )
         }
 
@@ -158,7 +158,7 @@ fun SquishNavHost(
             // moment either of them deleted anything.
             val homeEntry = remember(entry) { navController.getBackStackEntry(Destination.Home.route) }
             val homeViewModel: HomeViewModel = viewModel(homeEntry)
-            val drafts by homeViewModel.drafts.collectAsState()
+            val drafts by homeViewModel.toolDrafts.collectAsState()
             val trashed by homeViewModel.trashed.collectAsState()
             val undoOffer by homeViewModel.undoOffer.collectAsState()
 
@@ -172,11 +172,7 @@ fun SquishNavHost(
                 undoOffer = undoOffer,
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onOpenEdit = { draft ->
-                    navController.fromTopOf(entry) {
-                        navController.navigate(
-                            Destination.Editor.buildRoute(Uri.encode(draft.sourceUri.toString()), resume = true)
-                        )
-                    }
+                    navController.fromTopOf(entry) { navController.navigate(Destination.Editor.buildRoute(draft.id)) }
                 },
                 onOpenTool = { draft ->
                     navController.fromTopOf(entry) {
@@ -231,37 +227,20 @@ fun SquishNavHost(
                         )
                     }
                 },
-                onOpenInEditor = { uri ->
-                    navController.fromTopOf(entry) {
-                        navController.navigate(
-                            Destination.Editor.buildRoute(Uri.encode(uri.toString()))
-                        ) {
-                            popUpTo(Destination.Home.route)
-                        }
-                    }
+                onOpenInEditor = { uris ->
+                    // The whole ordered list: a six-clip merge opened as a
+                    // one-clip project before, since only the first was handed over.
+                    navController.fromTopOf(entry) { openNewProject(uris) }
                 }
             )
         }
 
         composable(
             route = Destination.Editor.route,
-            arguments = listOf(
-                navArgument("videoUri") { type = NavType.StringType },
-                navArgument("resume") {
-                    type = NavType.BoolType
-                    defaultValue = false
-                }
-            )
+            arguments = listOf(navArgument("projectId") { type = NavType.StringType })
         ) { entry ->
-            // Decoded once already, by Navigation, when the route was matched.
-            // Decoding again here turned a document URI's "%3A" into ":", which
-            // is a different URI - one the file manager's provider refuses - so
-            // "Open with" from Files failed as unreadable while the picker,
-            // whose URIs carry no escapes, worked.
-            val videoUri = entry.arguments?.getString("videoUri").orEmpty()
             EditorScreen(
-                sourceUri = Uri.parse(videoUri),
-                resume = entry.arguments?.getBoolean("resume") ?: false,
+                projectId = entry.arguments?.getString("projectId").orEmpty(),
                 onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
                 onExported = { path ->
                     // The editor stays on the stack with its timeline. Popping it
@@ -287,6 +266,9 @@ fun SquishNavHost(
                 }
             )
         ) { entry ->
+            // Decoded once already, by Navigation, when the route was matched.
+            // Decoding again turned a document URI's "%3A" into ":", which is
+            // a different URI, so nothing here decodes.
             val resultPath = entry.arguments?.getString("resultPath").orEmpty()
             val job = entry.arguments?.getString("job").orEmpty()
             val backLabel = entry.arguments?.getString("back").orEmpty()
