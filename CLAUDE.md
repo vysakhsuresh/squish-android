@@ -187,6 +187,24 @@ should work through it and then delete what holds up.
   If (1)-(4) fail, the log line `SquishExport failed: N sequences` and the
   exception under it say which assumption in `BUILD_NOTES.md` ("what the export
   leans on") did not hold.
+- **Batch B6 (the editor's layout), all of it.** Built on the desktop with no
+  phone attached. The toolbar decisions (levels, which sheet survives a change of
+  selection, back order, which shot Cut opens, project names) are executed on the
+  JVM (`tools/jvm/ToolRulesChecks.kt`), and Duplicate's model in
+  `MagneticChecks.kt`; nothing of the screen has been seen. Script in
+  `docs/ROADMAP.md` §4 under B6, plus: the colours (primary is orange now, blue
+  is effects and looks); Add text puts the keyboard up in the Edit sheet (the
+  window pans, as it did before - no insets were added); the strip compresses to
+  its ruler and the selected row under a sheet and scrolls when its rows and
+  notices pass half the screen; the phone on its side lays out in two panes and
+  carries the same players across (the preview is movable content - check the
+  picture does not go black or stall after rotating, playing and paused);
+  full screen and back keep the frame, and its scrub bar leaves no scrub
+  running when full screen closes mid-drag; a tap on the picture with something
+  selected deselects, otherwise plays; a tap on bare track deselects; a double
+  tap on the ruler fits; "Close gaps" appears only on a draft with gaps; To
+  overlay with every row taken says so; a rename alone keeps a draft, and the
+  drafts list shows the name.
 
 ## Conventions worth not rediscovering
 

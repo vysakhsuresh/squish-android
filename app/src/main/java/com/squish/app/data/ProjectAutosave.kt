@@ -7,6 +7,7 @@ import com.squish.app.editor.CropAspect
 import com.squish.app.editor.CropRect
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
+import com.squish.app.editor.ProjectName
 import com.squish.app.editor.TextFont
 import com.squish.app.editor.TextLook
 import com.squish.app.editor.TextMotion
@@ -300,7 +301,7 @@ class ProjectAutosave(context: Context) {
         val snapshot = decode(json) ?: return null
         return DraftSummary(
             id = slot,
-            title = snapshot.clips.firstOrNull()?.label ?: "Untitled edit",
+            title = snapshot.name ?: snapshot.clips.firstOrNull()?.label ?: "Untitled edit",
             sourceUri = snapshot.sourceUri,
             durationMs = snapshot.totalDurationMs,
             clipCount = snapshot.clipCount,
@@ -346,7 +347,7 @@ class ProjectAutosave(context: Context) {
             // The sidecar first, as a save writes it.
             val meta = JSONObject().apply {
                 put("id", slot)
-                put("title", earlier.clips.firstOrNull()?.label ?: "Untitled edit")
+                put("title", earlier.name ?: earlier.clips.firstOrNull()?.label ?: "Untitled edit")
                 put("uri", earlier.sourceUri.toString())
                 put("durationMs", earlier.totalDurationMs)
                 put("clipCount", earlier.clipCount)
@@ -416,7 +417,7 @@ class ProjectAutosave(context: Context) {
                 val live = File(entry, liveFile(slot).name)
                 val summary = summaryOf(slot, live, File(entry, metaFile(slot).name))
                     ?: read(File(entry, backupFile(slot).name))?.let { s ->
-                        DraftSummary(slot, s.clips.firstOrNull()?.label ?: "Untitled edit", s.sourceUri, s.totalDurationMs, s.clipCount, s.savedAtMillis)
+                        DraftSummary(slot, s.name ?: s.clips.firstOrNull()?.label ?: "Untitled edit", s.sourceUri, s.totalDurationMs, s.clipCount, s.savedAtMillis)
                     }
                     ?: return@mapNotNull null
                 TrashedDraft(trashId = entry.name, draft = summary, discardedAtMillis = at)
@@ -459,7 +460,7 @@ class ProjectAutosave(context: Context) {
     ) {
         val json = JSONObject().apply {
             put("id", slot)
-            put("title", state.videoClips.firstOrNull()?.label ?: "Untitled edit")
+            put("title", state.projectName ?: state.videoClips.firstOrNull()?.label ?: "Untitled edit")
             put("uri", uri.toString())
             put("durationMs", state.trimmedDurationMs)
             put("clipCount", state.videoClips.size)
@@ -511,6 +512,9 @@ class ProjectAutosave(context: Context) {
     private fun encode(state: EditorUiState): JSONObject = JSONObject().apply {
         put("version", FORMAT_VERSION)
         put("sourceUri", state.sourceUri.toString())
+        // Only when there is one, so every draft saved before names existed keeps
+        // the edit key it had and is not read as changed.
+        state.projectName?.let { put("name", it) }
         put("durationMs", state.durationMs)
         put("playheadMs", state.playheadMs)
         put("outputP", state.outputP)
@@ -724,6 +728,7 @@ class ProjectAutosave(context: Context) {
 
         return ProjectSnapshot(
             sourceUri = Uri.parse(sourceUri),
+            name = json.optString("name").takeIf { it.isNotBlank() }?.let(ProjectName::clean),
             savedAtMillis = json.optLong("savedAtMillis"),
             clipCount = clips.size,
             clips = clips,
@@ -990,7 +995,9 @@ data class ProjectSnapshot(
     val saturation: Float,
     val lookId: String?,
     val lookIntensity: Float,
-    val pixelsPerSecond: Float
+    val pixelsPerSecond: Float,
+    /** What the project was named, if it was; see [EditorUiState.projectName]. */
+    val name: String? = null
 ) {
     val totalDurationMs: Long get() = clips.sumOf { it.durationMs }
 
@@ -999,7 +1006,7 @@ data class ProjectSnapshot(
      * file is already in. There is nothing here to recover.
      */
     val isTrivial: Boolean
-        get() = clips.size == 1 &&
+        get() = clips.size == 1 && name == null &&
             textOverlays.isEmpty() &&
             effects.isEmpty() &&
             audioClips.isEmpty() &&

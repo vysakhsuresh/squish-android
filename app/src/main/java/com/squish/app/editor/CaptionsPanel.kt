@@ -41,6 +41,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.material.icons.filled.Animation
 import com.squish.app.ui.components.ConfirmDialog
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.mutableStateOf
@@ -51,18 +57,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.squish.app.ui.components.SquishOutlinedButton
+import com.squish.app.ui.components.SquishPrimaryButton
 import com.squish.app.ui.theme.SquishColors
 
 /**
- * Captions: found, transcribed where the device can, and editable.
+ * The Text tool: adding comes first - one tap puts a line at the playhead with
+ * the keyboard up - then titles, auto-captions and every line on the timeline.
  *
- * The panel is honest about which half did what. Finding the speech always works
- * and is the half that eats an afternoon; turning it into words needs an on-device
- * recogniser that not every phone has. Saying so plainly is the difference between
- * a useful result and a user wondering why the cards are empty.
+ * Captions are honest about which half did what. Finding the speech always
+ * works and is the half that eats an afternoon; turning it into words needs an
+ * on-device recogniser that not every phone has. Saying so plainly is the
+ * difference between a useful result and a user wondering why the cards are empty.
  */
 @Composable
-fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
+fun TextPanel(state: EditorUiState, viewModel: EditorViewModel, onAddText: () -> Unit) {
     // Words only - stickers share the caption track but have their own panel.
     val lines = state.textOverlays.filterNot { it.sticker }
     val autoLines = lines.count { it.isAutoCaption }
@@ -107,6 +115,7 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SquishPrimaryButton(text = "Add text", modifier = Modifier.fillMaxWidth(), onClick = onAddText)
 
         PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
@@ -263,17 +272,11 @@ fun CaptionsPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
             if (lines.isEmpty()) {
                 Text(
-                    "Nothing yet. Auto-caption above, import a transcript, or add a line by hand.",
+                    "Nothing yet. Add text at the top, auto-caption, or import a transcript.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.TextMuted
                 )
             }
-
-            SquishOutlinedButton(
-                text = "Add a line at the playhead",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { viewModel.text.addCaptionAtPlayhead() }
-            )
 
             lines.sortedBy { it.startMs }.forEach { caption ->
                 // Keyed, so a row's text field - its focus, its cursor, the IME's
@@ -359,12 +362,14 @@ private fun StyleEditor(
     caption: TextOverlayItem,
     onRestyle: ((TextOverlayItem) -> TextOverlayItem) -> Unit,
     onResize: (Int) -> Unit,
-    onGestureEnd: () -> Unit
+    onGestureEnd: () -> Unit,
+    /** Off in the Style tool, where motion is the Animation tool's. */
+    showMotion: Boolean = true
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ChipRow("Look", TextLook.entries, caption.look, { it.label }) { v -> onRestyle { it.copy(look = v) } }
         ChipRow("Font", TextFont.entries, caption.font, { it.label }) { v -> onRestyle { it.copy(font = v) } }
-        ChipRow("Motion", TextMotion.entries, caption.motion, { it.label }) { v -> onRestyle { it.copy(motion = v) } }
+        if (showMotion) ChipRow("Animation", TextMotion.entries, caption.motion, { it.label }) { v -> onRestyle { it.copy(motion = v) } }
 
         Text("Colour", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -533,4 +538,114 @@ private fun CaptionRow(
 
         if (styling) StyleEditor(caption, onRestyle, onResize, onGestureEnd)
     }
+}
+
+/**
+ * One line's words: the line's Edit. [focus] puts the cursor in the field and
+ * the keyboard up at once - Text then Add text is two taps to typing, where it
+ * used to be finding the new blank line in a list and tapping its field.
+ */
+@Composable
+fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel, focus: Boolean) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // Same rule as the rows in the list: the report that the field is attached
+    // unfocused is not the cursor leaving, and must not end a step.
+    var hadFocus by remember(caption.id) { mutableStateOf(false) }
+    LaunchedEffect(caption.id, focus) {
+        if (!focus) return@LaunchedEffect
+        // A frame for the field to be laid out; asking before that is ignored.
+        withFrameNanos { }
+        runCatching { focusRequester.requestFocus() }
+        keyboard?.show()
+    }
+    // Leaving the sheet ends the run of typing, even with the field still focused.
+    DisposableEffect(caption.id) { onDispose { viewModel.text.endCaptionTyping(caption.id) } }
+
+    PanelSurface(accent = SquishColors.Amber) {
+        PanelHeading(
+            "Text",
+            "${Timecode.format(caption.startMs)} → ${Timecode.format(caption.endMs)} · drag its ends on the strip to retime it",
+            icon = Icons.Filled.Title,
+            accent = SquishColors.Amber
+        )
+        OutlinedTextField(
+            value = caption.text,
+            onValueChange = { viewModel.text.updateCaptionText(caption.id, it) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                .onFocusChanged {
+                    if (hadFocus && !it.isFocused) viewModel.text.endCaptionTyping(caption.id)
+                    hadFocus = it.isFocused
+                },
+            placeholder = { Text("Type your text", color = SquishColors.TextMuted) },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = SquishColors.Amber,
+                unfocusedBorderColor = SquishColors.Border,
+                focusedTextColor = SquishColors.TextPrimary,
+                unfocusedTextColor = SquishColors.TextPrimary
+            )
+        )
+    }
+}
+
+/** How one line looks - face, colour, size, place: the line's Style. */
+@Composable
+fun TextStylePanel(caption: TextOverlayItem, viewModel: EditorViewModel) {
+    PanelSurface(accent = SquishColors.Amber) {
+        PanelHeading(
+            "Style",
+            caption.text.takeIf { it.isNotBlank() } ?: "Untitled line",
+            icon = Icons.Filled.Title,
+            accent = SquishColors.Amber
+        )
+        StyleEditor(
+            caption = caption,
+            onRestyle = { change -> viewModel.text.restyleCaption(caption.id, change) },
+            onResize = { size -> viewModel.text.restyleCaption(caption.id, { it.copy(sizeSp = size) }, dragging = true) },
+            onGestureEnd = viewModel::endGesture,
+            showMotion = false
+        )
+    }
+}
+
+/** How a line or sticker arrives: its Animation. A typewriter has no letters to type on a sticker. */
+@Composable
+fun TextAnimationPanel(item: TextOverlayItem, viewModel: EditorViewModel) {
+    val motions = if (item.sticker) TextMotion.entries.filter { it != TextMotion.Typewriter } else TextMotion.entries
+    PanelSurface(accent = SquishColors.Amber) {
+        PanelHeading(
+            "Animation",
+            "How it comes on",
+            icon = Icons.Filled.Animation,
+            accent = SquishColors.Amber
+        )
+        motions.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                row.forEach { motion ->
+                    SelectableChip(
+                        label = motion.label,
+                        selected = item.motion == motion,
+                        accentColor = SquishColors.Amber,
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.text.restyleCaption(item.id, { it.copy(motion = motion) }) }
+                    )
+                }
+                repeat(3 - row.size) { Box(modifier = Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** The style a new line starts with, for the Style tool's Reset. */
+fun TextOverlayItem.withDefaultStyle(): TextOverlayItem {
+    val fresh = TextOverlayItem(id = id, text = text, startMs = startMs, endMs = endMs, colorArgb = android.graphics.Color.WHITE)
+    return copy(
+        colorArgb = fresh.colorArgb,
+        yFraction = fresh.yFraction,
+        sizeSp = fresh.sizeSp,
+        font = fresh.font,
+        look = fresh.look
+    )
 }

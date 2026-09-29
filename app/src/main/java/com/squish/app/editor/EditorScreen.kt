@@ -7,8 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,31 +18,25 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCut
-import androidx.compose.material.icons.filled.Crop
-import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.ClosedCaption
-import androidx.compose.material.icons.filled.EmojiEmotions
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Animation
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.HistoryToggleOff
-import androidx.compose.material.icons.filled.UnfoldLess
-import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,71 +44,60 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.squish.app.ui.components.ConfirmDialog
-import com.squish.app.ui.components.StopExportDialog
+import com.squish.app.home.countOf
 import com.squish.app.media.ExportStage
 import com.squish.app.media.keepReadAccess
-import com.squish.app.home.countOf
 import com.squish.app.timeline.TimelineActionBar
 import com.squish.app.timeline.TimelineEditor
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import com.squish.app.timeline.TimelineState
+import com.squish.app.timeline.rippleVideo
 import com.squish.app.ui.components.BackOrb
-import com.squish.app.ui.components.accentSweep
+import com.squish.app.ui.components.ConfirmDialog
+import com.squish.app.ui.components.SquishOutlinedButton
+import com.squish.app.ui.components.SquishPrimaryButton
+import com.squish.app.ui.components.StopExportDialog
 import com.squish.app.ui.theme.SquishColors
 
 /**
- * The editor's tools. Each carries a colour, and it is the same colour its track
- * wears on the timeline - so the rail is a legend for the strip above it rather
- * than nine identically grey words.
+ * The editor, laid out as docs/ROADMAP.md section 2 decided:
+ *
+ * a header with the project's name, undo, redo and Export; the picture, taking
+ * whatever height is left, with its transport under it; the strip, always on
+ * screen; Split, Duplicate and Delete under the strip; and one row of tools -
+ * the ones that add things with nothing selected, the selection's own with
+ * something selected. A tool opens as a sheet in the tools' place, and the strip
+ * shrinks to its ruler and one row above it rather than folding away.
+ *
+ * It used to be eleven tabs that never changed with the selection, ten of which
+ * opened with the strip - and undo, split and the timecode with it - folded out
+ * of sight, and back left the editor from inside any of them.
  */
-enum class EditorTab(val label: String, val icon: ImageVector, val accent: Color) {
-    /** In and out points. "Cut" is what the job is called everywhere but a menu. */
-    Cut("Cut", Icons.Filled.ContentCut, SquishColors.Violet),
-
-    /**
-     * Crop and rotation together, which is framing rather than cropping - and
-     * "Frame" was already the more accurate word for a panel that does both.
-     */
-    Frame("Frame", Icons.Filled.Crop, SquishColors.Violet),
-
-    Speed("Speed", Icons.Filled.Speed, SquishColors.Blue),
-
-    /** Transitions and the layers they happen between. */
-    Blend("Blend", Icons.Filled.Layers, SquishColors.Magenta),
-
-    Motion("Motion", Icons.Filled.Animation, SquishColors.Amber),
-    Sound("Sound", Icons.Filled.GraphicEq, SquishColors.Cyan),
-    Words("Words", Icons.Filled.ClosedCaption, SquishColors.Amber),
-    Stickers("Stickers", Icons.Filled.EmojiEmotions, SquishColors.Magenta),
-    Effects("Effects", Icons.Filled.Bolt, SquishColors.Violet),
-
-    /** The look catalogue. It was called Effects and shows nothing but looks. */
-    Looks("Looks", Icons.Filled.AutoAwesome, SquishColors.Magenta),
-
-    Finish("Finish", Icons.Filled.FileUpload, SquishColors.Blue)
-}
-
 @Composable
 fun EditorScreen(
     sourceUri: Uri,
@@ -126,37 +109,45 @@ fun EditorScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    /**
-     * Which tool panel is open, or none.
-     *
-     * None, to begin with. The editor used to open with the trim panel already
-     * down, which cost a third of the screen before anything had been asked for
-     * and made the whole thing feel cramped from the first frame. What matters on
-     * arrival is the picture, the strip, and the handful of actions under it;
-     * a panel is something you ask for.
-     */
-    var tab by remember { mutableStateOf<EditorTab?>(null) }
-    /**
-     * Whether the open panel has taken the strip's room as well as its own.
-     *
-     * Panels that work on the picture or the file rather than on time - sizing
-     * the export, choosing a look, framing the shot - open with the room already
-     * taken, since the strip does nothing for them. The rest open beside the
-     * strip, and either way the panel's own button flips it.
-     */
-    var panelExpanded by remember { mutableStateOf(false) }
-    LaunchedEffect(tab) { panelExpanded = tab in ROOMY_TABS }
-    var exportSheetOpen by remember { mutableStateOf(false) }
+
+    // Which tool's sheet is open, by name so it survives a trip to the photo
+    // picker or the app being put away. None, to begin with: what matters on
+    // arrival is the picture and the strip.
+    var openToolName by rememberSaveable { mutableStateOf<String?>(null) }
+    val openTool = openToolName?.let { name -> Tool.entries.firstOrNull { it.name == name } }
+    var fullscreen by rememberSaveable { mutableStateOf(false) }
+    // Add text is two taps to typing: set when it opens Edit, so the field takes
+    // the keyboard - and cleared when Edit closes, so reopening it by hand does not.
+    var focusText by remember { mutableStateOf(false) }
+    LaunchedEffect(openTool) { if (openTool != Tool.Edit) focusText = false }
+
+    var exportSheetOpen by rememberSaveable { mutableStateOf(false) }
     // A failure is explained by a card under the picture, which the sheet covers.
     // Left open, "Render and save" looked as if it did nothing at all.
     LaunchedEffect(state.failure) { if (state.failure != null) exportSheetOpen = false }
     var confirmStopExport by remember { mutableStateOf(false) }
     var confirmStartNew by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
     // A finger on the playhead, told to the preview so it can serve the drag from
     // sync samples and land exactly when the finger lifts.
     var timelineScrubbing by remember { mutableStateOf(false) }
 
     LaunchedEffect(sourceUri) { viewModel.load(sourceUri, resume) }
+
+    val kind = state.selectionKind
+    val canTransition = state.selectedCanTransition
+    // Only a draft from before the main track was magnetic can hold a gap; the
+    // way to close one appears when there is one, and not otherwise.
+    val mainTrackHasGaps = remember(state.videoClips) {
+        val track = TimelineState(clips = state.videoClips)
+        track.rippleVideo().baseVideoClips.map { it.timelineStartMs } != track.baseVideoClips.map { it.timelineStartMs }
+    }
+    // A clip's own tool closes when the selection no longer has it - Speed with
+    // a caption selected, anything once the selection is deleted or let go.
+    LaunchedEffect(openTool, kind, canTransition) {
+        val tool = openTool ?: return@LaunchedEffect
+        if (!sheetSurvives(tool, kind, canTransition)) openToolName = null
+    }
 
     // Leaving flushes the edit first, so the last thing done before back is on
     // disk rather than in the ticker's gap. And mid-export, leaving is a
@@ -169,7 +160,19 @@ fun EditorScreen(
             onBack()
         }
     }
-    BackHandler(onBack = leave)
+    // Innermost first - see backStep. An export in progress outranks all of it.
+    BackHandler {
+        when {
+            state.isExporting -> confirmStopExport = true
+            exportSheetOpen -> exportSheetOpen = false
+            else -> when (backStep(fullscreen, openTool != null, state.selectedClipId != null)) {
+                BackStep.ExitFullscreen -> fullscreen = false
+                BackStep.CloseSheet -> openToolName = null
+                BackStep.Deselect -> viewModel.selectClip(null)
+                BackStep.Leave -> leave()
+            }
+        }
+    }
     // The app going behind something - a call, the home button - is the moment
     // it is most likely to be killed, so the edit is flushed there too.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.saveNow() }
@@ -210,298 +213,212 @@ fun EditorScreen(
     val pickOverlayClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let { context.keepReadAccess(it); viewModel.layers.addOverlayClip(it) }
     }
+    val addOverlay = {
+        pickOverlayClip.launch(
+            PickVisualMediaRequest.Builder()
+                .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                .build()
+        )
+    }
+    val addText = {
+        viewModel.text.addCaptionAtPlayhead()
+        focusText = true
+        openToolName = Tool.Edit.name
+    }
 
-    Scaffold(containerColor = SquishColors.Background) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-        Column(modifier = Modifier.fillMaxSize()) {
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                BackOrb(accent = tab?.accent ?: SquishColors.Violet, onClick = leave, size = 40.dp)
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        state.videoClips.firstOrNull()?.label ?: "Your edit",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = SquishColors.TextPrimary,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        "${countOf(state.videoClips.size, "clip")} · ${Timecode.format(state.trimmedDurationMs)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SquishColors.TextMuted
-                    )
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(if (state.isExporting) SquishColors.Surface else SquishColors.Primary)
-                        // Opens the sheet rather than firing: this is the one
-                        // irreversible, minutes-long action in the app, and it used
-                        // to be the only one with no confirmation.
-                        .clickable(enabled = !state.isExporting && !state.isLoadingSource) {
-                            exportSheetOpen = true
-                        }
-                        .padding(horizontal = 12.dp, vertical = 7.dp)
-                ) {
-                    Text(
-                        if (state.isExporting) "Exporting…" else "Export",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (state.isExporting) SquishColors.TextMuted else SquishColors.Background
-                    )
-                }
+    val onTool: (Tool) -> Unit = { tool ->
+        when (tool) {
+            Tool.Cut -> {
+                val shots = state.videoClips.filter { it.isMain }
+                    .map { ShotSpan(it.id, it.timelineStartMs, it.timelineEndMs) }
+                cutTarget(shots, state.playheadMs)?.let(viewModel::selectClip)
             }
-
-            if (state.isLoadingSource) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = SquishColors.Primary)
-                }
-                return@Column
-            }
-
-            // The preview takes its height from the footage, inside limits. A
-            // portrait clip in a fixed landscape box was showing its middle third
-            // and hiding the rest; see PreviewBox for what the limits are for.
-            //
-            // With no tool open there is no panel to make room for, so the picture
-            // takes that room instead of leaving an empty gap under the strip.
-            val panelOpen = tab != null
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .then(if (panelOpen) Modifier else Modifier.weight(1f)),
-                contentAlignment = Alignment.Center
-            ) {
-                val frameAspect = state.sourceFrameAspect
-                val boxHeight = if (panelOpen) {
-                    PreviewBox.heightDp(frameAspect, maxWidth.value).dp
-                } else {
-                    // As tall as the footage wants at full width, within the room
-                    // there is - a landscape clip does not need the whole column.
-                    val shape = frameAspect.takeIf { it > 0f && it.isFinite() } ?: PreviewBox.DEFAULT_ASPECT
-                    (maxWidth.value / shape).coerceAtLeast(PreviewBox.MIN_HEIGHT_DP).dp.coerceAtMost(maxHeight)
-                }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(boxHeight)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(SquishColors.Surface),
-                    contentAlignment = Alignment.Center
-                ) {
-                // Auto-reframe, in the head clip's source time, and where it has the
-                // crop centred at the playhead - for the outline drawn over the picture.
-                val reframeOffset = state.videoClips.firstOrNull()?.let { it.sourceInMs - it.timelineStartMs } ?: 0L
-                val reframeFocus = state.reframe?.takeIf { state.cropAspect.ratio != null }
-                    ?.sampleAt(state.playheadMs + reframeOffset)?.let { it.xFraction to it.yFraction }
-                TimelinePreview(
-                    videoClips = state.videoClips,
-                    audioClips = state.audioClips,
-                    captions = state.textOverlays,
-                    effects = state.effects,
-                    fallbackUri = sourceUri,
-                    proxyUri = state.proxyUri,
-                    muteOriginal = state.muteOriginal,
-                    voiceEffect = state.voiceEffect,
-                    originalVolume = state.originalVolume,
-                    grade = state.grade,
-                    rotationDegrees = state.rotationDegrees,
-                    // The shape actually being kept, not the chosen ratio. A
-                    // hand-drawn crop has no ratio of its own, so passing the
-                    // enum's left the preview showing no crop at all until the
-                    // file came out the other end.
-                    cropRatio = state.previewCropRatio,
-                    // The rectangle itself, so captions sit where the export puts them.
-                    customCrop = state.cropRect.takeIf { state.cropAspect == CropAspect.Custom && !it.isFull },
-                    // Auto-reframe follows a fixed ratio's frame; a hand-drawn
-                    // rectangle is the frame, so the two do not combine.
-                    reframe = state.reframe.takeIf { state.cropAspect.ratio != null },
-                    reframeOffsetMs = reframeOffset,
-                    sourceAspect = state.sourceFrameAspect,
-                    playheadMs = state.playheadMs,
-                    scrubNonce = state.scrubNonce,
-                    onPositionChange = viewModel::setPlayhead,
-                    onPlayingChange = viewModel::setPlaying,
-                    onJump = viewModel::jumpBy,
-                    scrubbing = timelineScrubbing,
-                    modifier = Modifier.fillMaxSize(),
-                    // Inside the picture, so the crop rectangle is measured
-                    // against the frame rather than against the whole box.
-                    pictureOverlay = {
-                        // Live framing while cropping, so the ratio is never
-                        // chosen blind - and with the part being cropped away
-                        // still on screen, dimmed, which is the only way to see
-                        // what a crop is actually costing.
-                        when {
-                            state.cropAspect == CropAspect.Custom -> CustomCropOverlay(
-                                rect = state.cropRect,
-                                // Live while dragging, recorded once at the end:
-                                // the view model coalesces, so a gesture is one
-                                // undo step rather than one per frame of movement.
-                                onChange = viewModel.clips::setCropRect,
-                                onCommit = { viewModel.clips.setCropRect(state.cropRect) },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            tab == EditorTab.Frame || state.cropAspect != CropAspect.Original ->
-                                CropOverlay(
-                                    aspect = state.cropAspect,
-                                    focus = reframeFocus,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                        }
-                    }
-                )
-                }
-            }
-
-            ProxyIndicator(status = state.proxyStatus, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
-            PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            val timeline = state.toTimeline()
-            // Folded away while a panel has been given the room. The picture stays:
-            // it is what the panel is changing.
-            val showStrip = !(panelOpen && panelExpanded)
-            if (showStrip) {
-            TimelineEditor(
-                state = timeline,
-                onSelect = viewModel::selectClip,
-                onMoveTo = viewModel.clips::moveClipTo,
-                onTrim = viewModel.clips::trimClip,
-                onScrub = viewModel::scrubTo,
-                onTransitionTap = { clipId ->
-                    viewModel.selectClip(clipId)
-                    tab = EditorTab.Blend
-                },
-                markers = state.markers,
-                barMarkers = state.beats.every(4),
-                isPlaying = state.isPlaying,
-                fitNonce = state.fitNonce,
-                onZoomTo = viewModel::setPixelsPerSecond,
-                onEffectMove = viewModel.clips::moveEffect,
-                onEffectTrim = viewModel.clips::trimEffect,
-                onAddVideo = addVideos,
-                onAddBlank = viewModel.clips::addBlankClip,
-                onOpenSound = { tab = EditorTab.Sound },
-                onOpenWords = { tab = EditorTab.Words },
-                onScrubbingChange = { timelineScrubbing = it }
-            )
-
-            TimelineActionBar(
-                state = timeline,
-                onSplit = viewModel.clips::splitAtPlayhead,
-                onDelete = viewModel.clips::deleteSelectedClip,
-                onCloseGaps = viewModel.clips::closeGaps,
-                onZoomIn = viewModel::zoomIn,
-                onZoomOut = viewModel::zoomOut,
-                onFit = viewModel::fitTimeline,
-                onGoToStart = viewModel::scrubToStart,
-                onGoToEnd = viewModel::scrubToEnd,
-                onUndo = viewModel::undo,
-                onRedo = viewModel::redo,
-                undoLabel = state.undoLabel,
-                redoLabel = state.redoLabel,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-            }
-
-            // Only the inline offer lives here; the modal one is over everything,
-            // at the bottom of this screen.
-            state.recovery?.takeIf { !it.modal }?.let { offer ->
-                RecoveryBanner(
-                    offer = offer,
-                    onContinue = viewModel::acceptRecovery,
-                    onStartNew = { confirmStartNew = true },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                )
-            }
-            if (state.setAsideNotice && state.recovery == null) {
-                SetAsideNotice(
-                    onDismiss = viewModel::dismissSetAsideNotice,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                )
-            }
-
-            state.failure?.let { failure ->
-                FailureCard(
-                    error = failure,
-                    onDismiss = viewModel::clearFailure,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                )
-            }
-
-            // Nothing open: no panel at all, and the picture above has the room.
-            tab?.let { openTab ->
-            PanelBar(
-                tab = openTab,
-                expanded = panelExpanded,
-                onToggleExpanded = { panelExpanded = !panelExpanded },
-                onClose = { tab = null }
-            )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp)
-            ) {
-                when (openTab) {
-                    EditorTab.Cut -> PrecisionTrimPanel(state, viewModel)
-                    EditorTab.Frame -> CropPanel(state, viewModel)
-                    EditorTab.Speed -> SpeedPanel(state, viewModel)
-                    EditorTab.Blend -> TransitionPanel(
-                        state = state,
-                        viewModel = viewModel,
-                        onAddOverlay = {
-                            pickOverlayClip.launch(
-                                PickVisualMediaRequest.Builder()
-                                    .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
-                                    .build()
-                            )
-                        }
-                    )
-                    EditorTab.Motion -> MotionPanel(state, viewModel)
-                    EditorTab.Sound -> AudioPanel(
-                        state = state,
-                        viewModel = viewModel,
-                        onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) }
-                    )
-                    EditorTab.Words -> CaptionsPanel(state, viewModel)
-                    EditorTab.Stickers -> StickersPanel(state, viewModel)
-                    EditorTab.Effects -> FxPanel(state, viewModel)
-                    EditorTab.Looks -> EffectsPanel(state, viewModel)
-                    EditorTab.Finish -> ExportPanel(
-                        state = state,
-                        viewModel = viewModel,
-                        onAddClip = addVideos
-                    )
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            }
-
-            // Tapping the open tool closes it, as does the panel's own close.
-            ToolRail(selected = tab, onSelect = { tab = if (tab == it) null else it })
+            Tool.Overlay -> addOverlay()
+            Tool.Split -> viewModel.clips.splitAtPlayhead()
+            Tool.Duplicate -> viewModel.clips.duplicateSelected()
+            Tool.Delete -> viewModel.clips.deleteSelectedClip()
+            Tool.ToOverlay -> state.selectedClipId?.let(viewModel.layers::switchToOverlay)
+            Tool.ToMain -> state.selectedClipId?.let(viewModel.layers::switchToMain)
+            else -> if (tool.sheet) openToolName = tool.name
         }
+    }
 
-        if (exportSheetOpen) {
-            ExportSheet(
+    // A clip tapped on the strip while an add-things sheet is open is a new job:
+    // the sheet goes and the clip's own tools come up. A selection the sheet
+    // made itself - a sticker it just added - is left alone.
+    val selectFromStrip: (String?) -> Unit = { id ->
+        val before = state.selectedClipId
+        viewModel.selectClip(id)
+        if (id != null && id != before && openTool?.levelZero == true) openToolName = null
+    }
+
+    // The picture, its transport and everything drawn over it. Movable, so a
+    // rotation that lays the screen out in two panes carries the same players
+    // across instead of building new ones and loading every clip again.
+    val preview = remember {
+        movableContentOf { modifier: Modifier ->
+            EditorPreview(
                 state = state,
                 viewModel = viewModel,
-                onDismiss = { exportSheetOpen = false },
-                onRender = {
-                    viewModel.export(onResult = onExported)
-                }
+                sourceUri = sourceUri,
+                // Read here, not captured: this lambda is remembered once, and a
+                // value worked out outside it would stay whatever it first was.
+                openTool = openToolName?.let { name -> Tool.entries.firstOrNull { it.name == name } },
+                fullscreen = fullscreen,
+                timelineScrubbing = timelineScrubbing,
+                onFullscreen = { fullscreen = it },
+                modifier = modifier
             )
         }
+    }
+
+    Scaffold(containerColor = SquishColors.Background) { padding ->
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(padding)) {
+            val landscape = maxWidth > maxHeight
+            val available = maxHeight
+            val sheetHeight = sheetHeightFor(available)
+            val sheetOpen = openTool != null
+
+            val header = @Composable {
+                EditorHeader(
+                    state = state,
+                    onBack = leave,
+                    onRename = { renaming = true },
+                    onUndo = viewModel::undo,
+                    onRedo = viewModel::redo,
+                    onExport = { exportSheetOpen = true }
+                )
+            }
+            val controls = @Composable { compactStrip: Boolean ->
+                StatusCards(state, viewModel, onStartNew = { confirmStartNew = true })
+                val timeline = state.toTimeline()
+                TimelineEditor(
+                    state = timeline,
+                    onSelect = selectFromStrip,
+                    onMoveTo = viewModel.clips::moveClipTo,
+                    onTrim = viewModel.clips::trimClip,
+                    onScrub = viewModel::scrubTo,
+                    onTransitionTap = { clipId ->
+                        viewModel.selectClip(clipId)
+                        openToolName = Tool.Transition.name
+                    },
+                    markers = state.markers,
+                    barMarkers = state.beats.every(4),
+                    isPlaying = state.isPlaying,
+                    fitNonce = state.fitNonce,
+                    onZoomTo = viewModel::setPixelsPerSecond,
+                    onEffectMove = viewModel.clips::moveEffect,
+                    onEffectTrim = viewModel.clips::trimEffect,
+                    onAddVideo = addVideos,
+                    onAddBlank = viewModel.clips::addBlankClip,
+                    onOpenSound = { openToolName = Tool.Sound.name },
+                    onOpenWords = { openToolName = Tool.Text.name },
+                    onScrubbingChange = { timelineScrubbing = it },
+                    compact = compactStrip,
+                    onFit = viewModel::fitTimeline
+                )
+                TimelineActionBar(
+                    state = timeline,
+                    onSplit = viewModel.clips::splitAtPlayhead,
+                    onDelete = viewModel.clips::deleteSelectedClip,
+                    onDuplicate = viewModel.clips::duplicateSelected,
+                    effectSelected = kind == SelectionKind.Effect,
+                    splittable = state.canSplitHere,
+                    onCloseGaps = if (mainTrackHasGaps) viewModel.clips::closeGaps else null,
+                    modifier = Modifier.padding(vertical = 6.dp)
+                )
+            }
+            val toolbar = @Composable {
+                val accent = kind.concept?.accent
+                ToolBar(
+                    tools = toolsFor(kind, canTransition),
+                    accentOf = { tool -> accent ?: tool.levelZeroAccent },
+                    onTool = onTool,
+                    enabled = { tool ->
+                        when (tool) {
+                            Tool.Cut -> state.videoClips.any { it.isMain }
+                            Tool.Split -> state.canSplitHere
+                            else -> true
+                        }
+                    },
+                    onBack = if (kind == SelectionKind.None) null else ({ viewModel.selectClip(null) }),
+                    backAccent = accent ?: SquishColors.TextSecondary
+                )
+            }
+            val sheet = @Composable { modifier: Modifier ->
+                openTool?.let { tool ->
+                    EditorToolSheet(
+                        tool = tool,
+                        state = state,
+                        viewModel = viewModel,
+                        onDone = { openToolName = null },
+                        onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) },
+                        onAddText = addText,
+                        focusText = focusText,
+                        modifier = modifier
+                    )
+                }
+            }
+
+            when {
+                state.isLoadingSource -> Column(modifier = Modifier.fillMaxSize()) {
+                    header()
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = SquishColors.Primary)
+                    }
+                }
+
+                // The picture and its transport, and nothing else. Back, or the
+                // transport's own button, returns.
+                fullscreen -> preview(Modifier.fillMaxSize())
+
+                // A phone on its side has no height to stack everything in, so
+                // the picture takes the left half and the tools the right.
+                landscape -> Row(modifier = Modifier.fillMaxSize()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        header()
+                        preview(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp))
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        // One place for the strip whether a sheet is open or not, so
+                        // opening one does not build a new strip scrolled to the start.
+                        Column(
+                            modifier = if (sheetOpen) Modifier
+                            else Modifier.weight(1f).verticalScroll(rememberScrollState())
+                        ) {
+                            controls(sheetOpen)
+                        }
+                        if (sheetOpen) sheet(Modifier.weight(1f)) else toolbar()
+                    }
+                }
+
+                else -> Column(modifier = Modifier.fillMaxSize()) {
+                    header()
+                    preview(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp))
+                    // Never more than its share, however many rows and notices
+                    // there are: past it the strip scrolls, and the picture keeps
+                    // a size worth looking at.
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = available * if (sheetOpen) STRIP_SHARE_WITH_SHEET else STRIP_SHARE)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        controls(sheetOpen)
+                    }
+                    if (sheetOpen) sheet(Modifier.height(sheetHeight)) else toolbar()
+                }
+            }
+
+            if (exportSheetOpen) {
+                ExportSheet(
+                    state = state,
+                    viewModel = viewModel,
+                    onDismiss = { exportSheetOpen = false },
+                    onRender = {
+                        viewModel.export(onResult = onExported)
+                    }
+                )
+            }
         }
     }
 
@@ -553,156 +470,321 @@ fun EditorScreen(
             onKeepGoing = { confirmStopExport = false }
         )
     }
+
+    if (renaming) {
+        RenameDialog(
+            current = state.projectName.orEmpty(),
+            placeholder = state.videoClips.firstOrNull()?.label ?: "Untitled edit",
+            onSave = { name ->
+                viewModel.renameProject(name)
+                renaming = false
+            },
+            onDismiss = { renaming = false }
+        )
+    }
 }
 
 /**
- * The open tool's name, and two controls: more room, and close.
- *
- * A panel shares the screen with the picture, the strip and the rail, which
- * leaves it a slot - a setting chosen at the top and its result at the bottom
- * meant scrolling between them. "More room" folds the strip away while the panel
- * is open, and the picture stays, since it is what the panel is changing.
+ * The sheet's share of the screen: enough to hold a tool without scrolling for
+ * most of them, and never so much that the picture above is a strip of its own.
+ */
+private fun sheetHeightFor(available: Dp): Dp {
+    val floor = minOf(SHEET_MIN, available * 0.5f)
+    return (available * SHEET_SHARE).coerceIn(floor, maxOf(floor, SHEET_MAX))
+}
+
+/** The picture, and what is drawn over it for the tool that is open. */
+@Composable
+private fun EditorPreview(
+    state: EditorUiState,
+    viewModel: EditorViewModel,
+    sourceUri: Uri,
+    openTool: Tool?,
+    fullscreen: Boolean,
+    timelineScrubbing: Boolean,
+    onFullscreen: (Boolean) -> Unit,
+    modifier: Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(if (fullscreen) 0.dp else 14.dp))
+            .background(SquishColors.Surface),
+        contentAlignment = Alignment.Center
+    ) {
+        // Auto-reframe, in the head clip's source time, and where it has the
+        // crop centred at the playhead - for the outline drawn over the picture.
+        val reframeOffset = state.videoClips.firstOrNull()?.let { it.sourceInMs - it.timelineStartMs } ?: 0L
+        val reframeFocus = state.reframe?.takeIf { state.cropAspect.ratio != null }
+            ?.sampleAt(state.playheadMs + reframeOffset)?.let { it.xFraction to it.yFraction }
+        TimelinePreview(
+            videoClips = state.videoClips,
+            audioClips = state.audioClips,
+            captions = state.textOverlays,
+            effects = state.effects,
+            fallbackUri = sourceUri,
+            proxyUri = state.proxyUri,
+            muteOriginal = state.muteOriginal,
+            voiceEffect = state.voiceEffect,
+            originalVolume = state.originalVolume,
+            grade = state.grade,
+            rotationDegrees = state.rotationDegrees,
+            // The shape actually being kept, not the chosen ratio. A
+            // hand-drawn crop has no ratio of its own, so passing the
+            // enum's left the preview showing no crop at all until the
+            // file came out the other end.
+            cropRatio = state.previewCropRatio,
+            // The rectangle itself, so captions sit where the export puts them.
+            customCrop = state.cropRect.takeIf { state.cropAspect == CropAspect.Custom && !it.isFull },
+            // Auto-reframe follows a fixed ratio's frame; a hand-drawn
+            // rectangle is the frame, so the two do not combine.
+            reframe = state.reframe.takeIf { state.cropAspect.ratio != null },
+            reframeOffsetMs = reframeOffset,
+            sourceAspect = state.sourceFrameAspect,
+            playheadMs = state.playheadMs,
+            scrubNonce = state.scrubNonce,
+            onPositionChange = viewModel::setPlayhead,
+            onPlayingChange = viewModel::setPlaying,
+            onJump = viewModel::jumpBy,
+            frameStepMs = state.frameMs,
+            fullscreen = fullscreen,
+            onToggleFullscreen = { onFullscreen(!fullscreen) },
+            onScrub = viewModel::scrubTo,
+            onPictureTap = {
+                // Empty picture lets go of the selection, the way bare track does;
+                // with nothing selected, the picture is the play button.
+                if (state.selectedClipId != null) {
+                    viewModel.selectClip(null)
+                    true
+                } else false
+            },
+            scrubbing = timelineScrubbing,
+            modifier = Modifier.fillMaxSize(),
+            // Inside the picture, so the crop rectangle is measured
+            // against the frame rather than against the whole box.
+            pictureOverlay = {
+                // Live framing while cropping, so the ratio is never
+                // chosen blind - and with the part being cropped away
+                // still on screen, dimmed, which is the only way to see
+                // what a crop is actually costing. Not in full screen,
+                // which is for watching.
+                when {
+                    fullscreen -> Unit
+                    state.cropAspect == CropAspect.Custom -> CustomCropOverlay(
+                        rect = state.cropRect,
+                        // Live while dragging, recorded once at the end:
+                        // the view model coalesces, so a gesture is one
+                        // undo step rather than one per frame of movement.
+                        onChange = viewModel.clips::setCropRect,
+                        onCommit = { viewModel.clips.setCropRect(state.cropRect) },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    openTool == Tool.Frame || state.cropAspect != CropAspect.Original ->
+                        CropOverlay(
+                            aspect = state.cropAspect,
+                            focus = reframeFocus,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                }
+            }
+        )
+    }
+}
+
+/**
+ * Back, the project's name, undo and redo, Export. Undo and redo live here and
+ * never leave the screen; they used to be in the strip's action bar, which ten
+ * of the eleven tools folded away.
  */
 @Composable
-private fun PanelBar(
-    tab: EditorTab,
-    expanded: Boolean,
-    onToggleExpanded: () -> Unit,
-    onClose: () -> Unit
+private fun EditorHeader(
+    state: EditorUiState,
+    onBack: () -> Unit,
+    onRename: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onExport: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 2.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Icon(tab.icon, contentDescription = null, tint = tab.accent, modifier = Modifier.size(16.dp))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            tab.label,
-            style = MaterialTheme.typography.titleSmall,
-            color = SquishColors.TextPrimary,
-            modifier = Modifier.weight(1f)
-        )
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .clip(RoundedCornerShape(9.dp))
-                .background(tab.accent.copy(alpha = 0.12f))
-                .clickable(onClick = onToggleExpanded)
-                .padding(horizontal = 10.dp, vertical = 6.dp)
-        ) {
-            Icon(
-                if (expanded) Icons.Filled.UnfoldLess else Icons.Filled.UnfoldMore,
-                contentDescription = null,
-                tint = tab.accent,
-                modifier = Modifier.size(16.dp)
-            )
-            Text(
-                if (expanded) "Show timeline" else "More room",
-                style = MaterialTheme.typography.labelMedium,
-                color = tab.accent
-            )
-        }
+        BackOrb(accent = SquishColors.Violet, onClick = onBack, size = 40.dp)
         Spacer(modifier = Modifier.width(4.dp))
-        Box(
+        // The name is the rename button: tap it. The pencil says so.
+        Column(
             modifier = Modifier
-                .size(32.dp)
+                .weight(1f)
                 .clip(RoundedCornerShape(9.dp))
-                .clickable(onClick = onClose),
-            contentAlignment = Alignment.Center
+                .clickable(onClickLabel = "Rename the project", onClick = onRename)
+                .padding(horizontal = 6.dp, vertical = 2.dp)
         ) {
-            Icon(
-                Icons.Filled.Close,
-                contentDescription = "Close ${tab.label}",
-                tint = SquishColors.TextMuted,
-                modifier = Modifier.size(18.dp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    state.projectName ?: state.videoClips.firstOrNull()?.label ?: "Your edit",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = SquishColors.TextPrimary,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(Icons.Filled.Edit, contentDescription = null, tint = SquishColors.TextMuted, modifier = Modifier.size(14.dp))
+            }
+            Text(
+                "${countOf(state.videoClips.size, "clip")} · ${Timecode.format(state.trimmedDurationMs)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.TextMuted,
+                maxLines = 1
             )
         }
+        HeaderIcon(
+            Icons.AutoMirrored.Filled.Undo,
+            // What it will undo, for a screen reader - a bare arrow is a button
+            // you press and then look at the screen to find out what changed.
+            state.undoLabel?.let { "Undo: $it" } ?: "Nothing to undo",
+            enabled = state.undoLabel != null,
+            onClick = onUndo
+        )
+        HeaderIcon(
+            Icons.AutoMirrored.Filled.Redo,
+            state.redoLabel?.let { "Redo: $it" } ?: "Nothing to redo",
+            enabled = state.redoLabel != null,
+            onClick = onRedo
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        // Opens the sheet rather than firing: this is the one irreversible,
+        // minutes-long action in the app, and it used to be the only one with
+        // no confirmation. The only way to export: the Finish tab that also did
+        // it, with other size chips, is gone.
+        Text(
+            if (state.isExporting) "Exporting…" else "Export",
+            style = MaterialTheme.typography.labelLarge,
+            color = if (state.isExporting) SquishColors.TextMuted else SquishColors.Background,
+            maxLines = 1,
+            modifier = Modifier
+                .clip(RoundedCornerShape(9.dp))
+                .background(if (state.isExporting) SquishColors.Surface else SquishColors.Primary)
+                .clickable(enabled = !state.isExporting && !state.isLoadingSource, onClick = onExport)
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+        )
     }
 }
 
 @Composable
-private fun ToolRail(selected: EditorTab?, onSelect: (EditorTab) -> Unit) {
-    val scroll = rememberScrollState()
-    val density = LocalDensity.current
-    // A tool opened from elsewhere - a track's button on the timeline - is
-    // brought into view here, or the rail shows nothing selected at all.
-    LaunchedEffect(selected) {
-        val index = selected?.ordinal ?: return@LaunchedEffect
-        val step = with(density) { (RAIL_ITEM_WIDTH + 6.dp).toPx() }
-        val target = (index * step - scroll.viewportSize / 2f + step / 2f).toInt().coerceIn(0, scroll.maxValue)
-        scroll.animateScrollTo(target)
-    }
-    Row(
+private fun HeaderIcon(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .background(SquishColors.Surface)
-            .horizontalScroll(scroll)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+            .size(40.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(enabled = enabled, onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        EditorTab.entries.forEach { entry ->
-            val isSelected = entry == selected
-            // A sprung nudge rather than a colour swap: at a glance down a row of
-            // nine, movement is what tells you which one you just pressed.
-            val scale by animateFloatAsState(if (isSelected) 1.06f else 1f, spring(), label = "tabScale")
-            val tint by animateColorAsState(
-                if (isSelected) SquishColors.Background else SquishColors.TextSecondary,
-                label = "tabTint"
-            )
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = if (enabled) SquishColors.TextPrimary else SquishColors.TextMuted.copy(alpha = 0.45f),
+            modifier = Modifier.size(22.dp)
+        )
+    }
+}
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .graphicsLayer { scaleX = scale; scaleY = scale }
-                    // One width for all nine. Sized by their labels, "Mix" came out
-                    // half the width of "Captions" and the row read as a ransom note.
-                    .width(RAIL_ITEM_WIDTH)
-                    .clip(RoundedCornerShape(12.dp))
-                    .then(
-                        if (isSelected) Modifier.background(accentSweep(entry.accent))
-                        else Modifier.background(SquishColors.Background)
-                    )
-                    .clickable { onSelect(entry) }
-                    .padding(vertical = 8.dp)
-            ) {
-                Icon(
-                    entry.icon,
-                    contentDescription = entry.label,
-                    tint = tint,
-                    modifier = Modifier.size(18.dp)
-                )
-                Text(
-                    entry.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tint,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis
-                )
+/** What is happening outside the edit itself: proxies, stills, a saved edit on offer, a failure. */
+@Composable
+private fun StatusCards(state: EditorUiState, viewModel: EditorViewModel, onStartNew: () -> Unit) {
+    ProxyIndicator(status = state.proxyStatus, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+    PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+
+    // Only the inline offer lives here; the modal one is over everything.
+    state.recovery?.takeIf { !it.modal }?.let { offer ->
+        RecoveryBanner(
+            offer = offer,
+            onContinue = viewModel::acceptRecovery,
+            onStartNew = onStartNew,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+    }
+    if (state.setAsideNotice && state.recovery == null) {
+        SetAsideNotice(
+            onDismiss = viewModel::dismissSetAsideNotice,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+    }
+    state.failure?.let { failure ->
+        FailureCard(
+            error = failure,
+            onDismiss = viewModel::clearFailure,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+    }
+}
+
+/**
+ * Naming the project. Blank means no name, and the first clip's name shows
+ * again - the placeholder says which.
+ */
+@Composable
+private fun RenameDialog(current: String, placeholder: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(TextFieldValue(current, TextRange(0, current.length))) }
+    val focus = remember { FocusRequester() }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)) {
+        // In here, with the field: the dialog is its own window, composed after
+        // the screen that asks for it, and focus asked for before the field is
+        // there throws.
+        LaunchedEffect(Unit) {
+            withFrameNanos { }
+            runCatching { focus.requestFocus() }
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(SquishColors.SurfaceElevated)
+                .border(1.dp, SquishColors.Violet.copy(alpha = 0.35f), RoundedCornerShape(24.dp))
+                .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("Name this project", style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
+            OutlinedTextField(
+                value = text,
+                // A paste of a whole paragraph is cut back here rather than held
+                // in the field; ProjectName decides the final length.
+                onValueChange = { if (it.text.length <= ProjectName.MAX_LENGTH * 2) text = it },
+                singleLine = true,
+                placeholder = { Text(placeholder, color = SquishColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onSave(text.text) }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = SquishColors.Violet,
+                    unfocusedBorderColor = SquishColors.Border,
+                    focusedTextColor = SquishColors.TextPrimary,
+                    unfocusedTextColor = SquishColors.TextPrimary
+                ),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SquishOutlinedButton(text = "Cancel", modifier = Modifier.weight(1f), onClick = onDismiss)
+                SquishPrimaryButton(text = "Save", modifier = Modifier.weight(1f), onClick = { onSave(text.text) })
             }
         }
     }
 }
 
-/**
- * Wide enough for "Motion", which is the longest label left in the rail.
- *
- * It used to be sized for "Captions". Shorter names are not only nicer to read -
- * they buy back the width, so a thumb sees more of the row before scrolling.
- */
-private val RAIL_ITEM_WIDTH = 66.dp
-
 /** The most videos one pick adds. The picker needs a number; this is well past a normal batch. */
 private const val MAX_PICK = 30
 
-/**
- * Tools that open with the timeline folded away. Every panel but Blend: on a
- * phone the strip and a panel together left the panel one row - Cut showed its
- * in point and not its out, Motion and Sound showed a paragraph and no button.
- * These work on the playhead and the picture, not on dragging clips, so the
- * strip costs them room and gives nothing; "Show timeline" is one tap away.
- * Blend keeps the strip because it acts on whichever clip is tapped there.
- */
-private val ROOMY_TABS = EditorTab.entries.toSet() - EditorTab.Blend
+/** A tool's sheet takes this much of the editor's height, within the two limits below. */
+private const val SHEET_SHARE = 0.42f
+
+/** Room for a tool's heading and its first control or two, however short the screen. */
+private val SHEET_MIN = 260.dp
+
+/** On a tall screen, past this the sheet is only taking room from the picture. */
+private val SHEET_MAX = 460.dp
+
+/** The most of the editor's height the strip and its notices take, before they scroll. */
+private const val STRIP_SHARE = 0.5f
+
+/** The same with a sheet open, when the strip is its ruler and one row. */
+private const val STRIP_SHARE_WITH_SHEET = 0.3f

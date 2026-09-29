@@ -19,10 +19,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Forward5
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Replay5
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -115,6 +119,19 @@ fun TimelinePreview(
     onPlayingChange: (Boolean) -> Unit,
     /** Rewind (negative) or forward by a step. Routed through the edit so the playhead and picture move together. */
     onJump: (Long) -> Unit = {},
+    /** One frame of the edit, for the transport's step buttons. */
+    frameStepMs: Long = 33L,
+    /** The picture has the whole screen; the transport grows a scrub bar, since the strip is gone. */
+    fullscreen: Boolean = false,
+    onToggleFullscreen: (() -> Unit)? = null,
+    /** Where the full-screen scrub bar sends the playhead. */
+    onScrub: (Long) -> Unit = {},
+    /**
+     * A tap on the picture, before it is taken as play or pause: true when it was
+     * used. A tap on empty picture lets go of the selection, and only with
+     * nothing selected is the picture the play button.
+     */
+    onPictureTap: () -> Boolean = { false },
     modifier: Modifier = Modifier,
     /**
      * A hand-drawn crop, when there is one. The picture is shown whole beneath it
@@ -143,7 +160,14 @@ fun TimelinePreview(
 
     var frame by remember { mutableStateOf(PreviewFrame()) }
 
-    DisposableEffect(engine) { onDispose { engine.release() } }
+    DisposableEffect(engine) {
+        onDispose {
+            engine.release()
+            // The players are gone, so nothing is playing - said, or the editor
+            // would go on believing the last state it was told.
+            latestPlaying(false)
+        }
+    }
 
     // Every change, however small, reaches the engine: it reads positions,
     // opacity and placement from the clips it was last handed, so a change left
@@ -159,7 +183,9 @@ fun TimelinePreview(
     }
 
     LaunchedEffect(voiceEffect) { engine.setVoice(voiceEffect) }
-    LaunchedEffect(scrubbing) { engine.setScrubbing(scrubbing) }
+    // The full-screen scrub bar is a finger on the timeline too.
+    var barScrubbing by remember { mutableStateOf(false) }
+    LaunchedEffect(scrubbing, barScrubbing) { engine.setScrubbing(scrubbing || barScrubbing) }
 
     // A deliberate jump - scrubbing the ruler, a nudge - as opposed to the playhead
     // simply advancing. Only the former should move the players.
@@ -218,10 +244,11 @@ fun TimelinePreview(
             .clipToBounds()
             .clickable(
                 // The player's own controller is off, so the picture itself is the
-                // play button - which is what people reach for anyway.
+                // play button - which is what people reach for anyway - unless
+                // something is selected, when a tap on it is the way out.
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
-                onClick = { engine.togglePlay() }
+                onClick = { if (!onPictureTap()) engine.togglePlay() }
             ),
         contentAlignment = Alignment.Center
     ) {
@@ -316,7 +343,15 @@ fun TimelinePreview(
         }
     }
 
-        Transport(frame = frame, onToggle = { engine.togglePlay() }, onJump = onJump)
+        Transport(
+            frame = frame,
+            onToggle = { engine.togglePlay() },
+            onStep = { frames -> onJump(frames * frameStepMs) },
+            fullscreen = fullscreen,
+            onToggleFullscreen = onToggleFullscreen,
+            onScrub = onScrub,
+            onBarScrubbing = { barScrubbing = it }
+        )
     }
 }
 
@@ -451,67 +486,113 @@ private fun Modifier.fitted(aspect: Float?): Modifier = layout { measurable, con
 private fun Transport(
     frame: PreviewFrame,
     onToggle: () -> Unit,
-    onJump: (Long) -> Unit,
+    /** A frame back (-1) or forward (+1). */
+    onStep: (Int) -> Unit,
+    fullscreen: Boolean,
+    onToggleFullscreen: (() -> Unit)?,
+    onScrub: (Long) -> Unit,
+    onBarScrubbing: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .background(SquishColors.Background.copy(alpha = 0.72f))
-            .padding(horizontal = 10.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        SkipButton(Icons.Filled.Replay5, "Back 5 seconds") { onJump(-SKIP_MS) }
-        Box(
-            modifier = Modifier
-                .size(30.dp)
-                .clip(RoundedCornerShape(15.dp))
-                .background(SquishColors.Primary)
-                .clickable(onClick = onToggle),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                if (frame.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = if (frame.isPlaying) "Pause" else "Play",
-                tint = SquishColors.Background,
-                modifier = Modifier.size(17.dp)
+        // Full screen has no strip to scrub on, so the bar is the strip.
+        if (fullscreen && frame.durationMs > 0L) {
+            var dragging by remember { mutableStateOf<Float?>(null) }
+            // Leaving full screen mid-drag takes the bar away without its end;
+            // the engine must not be left serving a scrub nobody is making.
+            val latestBarScrubbing by rememberUpdatedState(onBarScrubbing)
+            DisposableEffect(Unit) { onDispose { if (dragging != null) latestBarScrubbing(false) } }
+            Slider(
+                value = dragging ?: (frame.positionMs.toFloat() / frame.durationMs).coerceIn(0f, 1f),
+                onValueChange = { v ->
+                    if (dragging == null) onBarScrubbing(true)
+                    dragging = v
+                    onScrub((v * frame.durationMs).toLong())
+                },
+                onValueChangeFinished = {
+                    dragging = null
+                    onBarScrubbing(false)
+                },
+                colors = SliderDefaults.colors(
+                    thumbColor = SquishColors.TextPrimary,
+                    activeTrackColor = SquishColors.Primary,
+                    inactiveTrackColor = SquishColors.Border
+                ),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
             )
         }
-        SkipButton(Icons.Filled.Forward5, "Forward 5 seconds") { onJump(SKIP_MS) }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // A frame at a time, the unit a cut is placed in. Five-second skips
+            // were a player's controls, and the strip does long moves better.
+            TransportButton(Icons.Filled.SkipPrevious, "Back one frame") { onStep(-1) }
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(SquishColors.Primary)
+                    .clickable(onClick = onToggle),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (frame.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (frame.isPlaying) "Pause" else "Play",
+                    tint = SquishColors.Background,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            TransportButton(Icons.Filled.SkipNext, "Forward one frame") { onStep(1) }
 
-        Text(
-            Timecode.format(frame.positionMs),
-            style = MaterialTheme.typography.labelLarge.tabularFigures(),
-            color = SquishColors.TextPrimary,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            "/ ${Timecode.format(frame.durationMs)}",
-            style = MaterialTheme.typography.labelSmall,
-            color = SquishColors.TextMuted
-        )
+            Text(
+                Timecode.format(frame.positionMs),
+                style = MaterialTheme.typography.labelLarge.tabularFigures(),
+                color = SquishColors.TextPrimary,
+                maxLines = 1,
+                softWrap = false
+            )
+            Text(
+                "/ ${Timecode.format(frame.durationMs)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.TextMuted,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            onToggleFullscreen?.let { toggle ->
+                TransportButton(
+                    if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                    if (fullscreen) "Leave full screen" else "Full screen",
+                    onClick = toggle
+                )
+            }
+        }
     }
 }
 
-/** Rewind or forward, flanking play the way every player lays them out. */
+/** A frame step or the full-screen switch: a glyph in a thumb-sized target. */
 @Composable
-private fun SkipButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun TransportButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .size(30.dp)
-            .clip(RoundedCornerShape(15.dp))
-            .clickable(onClick = onClick),
+            .size(40.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = label, tint = SquishColors.TextSecondary, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = label, tint = SquishColors.TextSecondary, modifier = Modifier.size(22.dp))
     }
 }
 
-/** How far one press of rewind or forward goes. */
-private const val SKIP_MS = 5_000L
 
 /** A frame at 30fps: fast enough that the playhead does not visibly step. */
 private val TICK = 33.milliseconds

@@ -87,10 +87,12 @@ person who just needs a smaller file never meets an editor:
   from home, and every one also lives inside the editor. Each quick tool offers
   "open in the full editor" so simple work can grow up without starting over.
 
-**The editor shows one tool at a time.** Preview and timeline stay pinned; a
-bottom rail switches between Trim, Crop, Speed, Audio, Text, Color and Export.
-Everything used to be stacked in a single endless scroll, which made even trim
-and crop hard to find.
+**The editor is laid out like the editors people already know.** A header with
+the project's name, undo, redo and Export; the picture; the timeline, always on
+screen; and one row of tools that changes with the selection - sound, text,
+stickers, overlays and effects to add with nothing selected, the clip's own tools
+(split, speed, volume, animation, mask, cutout...) with a clip selected. A tool
+opens as a sheet in the toolbar's place, and the timeline stays above it.
 
 ## Everything else
 

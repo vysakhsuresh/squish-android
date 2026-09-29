@@ -81,19 +81,6 @@ internal abstract class EditArea(protected val host: EditHost) {
 
 }
 
-/**
- * How close counts as near, in milliseconds.
- *
- * Derived from the zoom rather than the clip length: what matters is how far
- * the finger moved on screen, and eight device-independent pixels is about a
- * third of a fingertip whatever the timeline is showing.
- */
-internal fun snapThreshold(current: EditorUiState): Long =
-    (SNAP_DP / current.pixelsPerSecond * 1000f).toLong().coerceIn(20L, 500L)
-
-/** A third of a fingertip, in dp. */
-private const val SNAP_DP = 8f
-
 /** The shortest an effect or a placed sound may be. */
 internal const val MIN_EFFECT_MS = 100L
 

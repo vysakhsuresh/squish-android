@@ -1,7 +1,6 @@
 package com.squish.app.editor
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -15,13 +14,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EmojiEmotions
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,17 +37,16 @@ import com.squish.app.ui.theme.SquishColors
  * system to keep in step with the first.
  */
 @Composable
-fun StickersPanel(state: EditorUiState, viewModel: EditorViewModel) {
-    val placed = state.textOverlays.filter { it.sticker }.sortedBy { it.startMs }
-    var category by remember { mutableStateOf(StickerSet.entries.first()) }
+fun StickersPanel(viewModel: EditorViewModel) {
+    var category by rememberSaveable { mutableStateOf(StickerSet.entries.first()) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        PanelSurface(accent = SquishColors.Magenta) {
+        PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
                 "Stickers",
                 "Tap one to put it on at the playhead",
                 icon = Icons.Filled.EmojiEmotions,
-                accent = SquishColors.Magenta
+                accent = SquishColors.Amber
             )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -60,7 +56,7 @@ fun StickersPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     SelectableChip(
                         label = set.label,
                         selected = set == category,
-                        accentColor = SquishColors.Magenta,
+                        accentColor = SquishColors.Amber,
                         onClick = { category = set }
                     )
                 }
@@ -85,84 +81,33 @@ fun StickersPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 }
             }
         }
-
-        PanelSurface(accent = SquishColors.Magenta) {
-            PanelHeading(
-                "On the video",
-                if (placed.isEmpty()) "None yet" else "${placed.size} placed",
-                icon = Icons.Filled.Layers,
-                accent = SquishColors.Magenta
-            )
-            placed.forEach { sticker ->
-                PlacedSticker(
-                    sticker = sticker,
-                    onJump = { viewModel.scrubTo(sticker.startMs) },
-                    onRemove = { viewModel.text.removeTextOverlay(sticker.id) },
-                    onChange = { change -> viewModel.text.restyleCaption(sticker.id, change) },
-                    onDrag = { change -> viewModel.text.restyleCaption(sticker.id, change, dragging = true) },
-                    onDragEnd = viewModel::endGesture
-                )
-            }
-        }
     }
 }
 
-/** One sticker on the video: where it is, how big, how it arrives. */
+/**
+ * Where one sticker is and how big: the sticker's Placement. The sliders are
+ * the precise way; each drag is one undo step.
+ */
 @Composable
-private fun PlacedSticker(
-    sticker: TextOverlayItem,
-    onJump: () -> Unit,
-    onRemove: () -> Unit,
-    onChange: ((TextOverlayItem) -> TextOverlayItem) -> Unit,
-    onDrag: ((TextOverlayItem) -> TextOverlayItem) -> Unit,
-    onDragEnd: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(SquishColors.Background)
-            .border(1.dp, SquishColors.Border, RoundedCornerShape(12.dp))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(sticker.text, fontSize = 28.sp, modifier = Modifier.size(44.dp).padding(end = 6.dp))
-            Text(
-                "${Timecode.format(sticker.startMs)} → ${Timecode.format(sticker.endMs)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = SquishColors.Cyan,
-                modifier = Modifier.weight(1f).clickable(onClick = onJump)
-            )
-            Text(
-                "Remove",
-                style = MaterialTheme.typography.labelSmall,
-                color = SquishColors.Pink,
-                modifier = Modifier.clickable(onClick = onRemove)
-            )
-        }
-        // Each slider drag is one undo step; the motion chips below are one per tap.
-        LabeledSlider("Across", sticker.xFraction * 2 - 1, -1f..1f, onFinished = onDragEnd) { v ->
+fun StickerPlacementPanel(sticker: TextOverlayItem, viewModel: EditorViewModel) {
+    val onDrag = { change: (TextOverlayItem) -> TextOverlayItem ->
+        viewModel.text.restyleCaption(sticker.id, change, dragging = true)
+    }
+    PanelSurface(accent = SquishColors.Amber) {
+        PanelHeading(
+            "Placement",
+            "${Timecode.format(sticker.startMs)} → ${Timecode.format(sticker.endMs)}",
+            icon = Icons.Filled.EmojiEmotions,
+            accent = SquishColors.Amber
+        )
+        LabeledSlider("Across", sticker.xFraction * 2 - 1, -1f..1f, onFinished = viewModel::endGesture) { v ->
             onDrag { it.copy(xFraction = ((v + 1) / 2).coerceIn(0.02f, 0.98f)) }
         }
-        LabeledSlider("Up / down", sticker.yFraction * 2 - 1, -1f..1f, onFinished = onDragEnd) { v ->
+        LabeledSlider("Up / down", sticker.yFraction * 2 - 1, -1f..1f, onFinished = viewModel::endGesture) { v ->
             onDrag { it.copy(yFraction = ((v + 1) / 2).coerceIn(0.02f, 0.98f)) }
         }
-        LabeledSlider("Size", sticker.sizeSp / 64f, 0.4f..3f, readout = Readout.times, onFinished = onDragEnd) { v ->
+        LabeledSlider("Size", sticker.sizeSp / 64f, 0.4f..3f, readout = Readout.times, onFinished = viewModel::endGesture) { v ->
             onDrag { it.copy(sizeSp = (v * 64).toInt().coerceIn(24, 192)) }
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-        ) {
-            TextMotion.entries.filter { it != TextMotion.Typewriter }.forEach { motion ->
-                SelectableChip(
-                    label = motion.label,
-                    selected = sticker.motion == motion,
-                    accentColor = SquishColors.Magenta,
-                    onClick = { onChange { it.copy(motion = motion) } }
-                )
-            }
         }
     }
 }

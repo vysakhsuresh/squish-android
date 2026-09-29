@@ -1,7 +1,6 @@
 package com.squish.app.editor.edits
 
 import android.net.Uri
-import androidx.lifecycle.viewModelScope
 import com.squish.app.media.SquishError
 import com.squish.app.media.StillClips
 import com.squish.app.media.ThumbnailExtractor
@@ -17,6 +16,8 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.rippleVideo
 import com.squish.app.timeline.withClipMoved
 import com.squish.app.timeline.withClipRemoved
+import com.squish.app.timeline.withClipDuplicated
+import com.squish.app.timeline.MAX_LAYER
 import com.squish.app.timeline.withClipTrimmed
 import com.squish.app.timeline.withSplitAtPlayhead
 import kotlinx.coroutines.flow.update
@@ -31,41 +32,6 @@ import com.squish.app.editor.*
  * the timed effects and templates.
  */
 internal class ClipEdits(host: EditHost) : EditArea(host) {
-
-    // ---- Precision trim -------------------------------------------------------
-
-    /**
-     * Which clip the precision controls act on: whatever is selected, falling back
-     * to the opening shot so the panel is never inert.
-     */
-    fun trimTargetClip(current: EditorUiState = _state.value): Clip? =
-        current.videoClips.firstOrNull { it.id == current.selectedClipId }
-            ?: current.videoClips.firstOrNull()
-
-    fun nudgeTrim(isStart: Boolean, frames: Int) {
-        val current = _state.value
-        val clip = trimTargetClip(current) ?: return
-        val delta = frames * current.frameMs
-        if (isStart) trimOnce(clip.id, delta, 0L) else trimOnce(clip.id, 0L, delta)
-    }
-
-    fun setTrimPointToPlayhead(isStart: Boolean) {
-        val current = _state.value
-        val clip = trimTargetClip(current) ?: return
-        val snapped = if (current.snapToMarkers) snapToNearbyMarker(current.playheadMs, current)
-        else current.playheadMs
-        // The playhead is played time; trimClip moves source points. On a ramped
-        // clip those diverge, so setting the out point to the playhead without
-        // this would cut somewhere else entirely - further in on a slowed shot,
-        // further out on a sped one.
-        val played = Timecode.quantize(snapped - clip.timelineStartMs, current.fps)
-        val intoSource = clip.speedRamp.sourceOffsetAt(played, clip.sourceSpanMs)
-        if (isStart) {
-            trimOnce(clip.id, intoSource, 0L)
-        } else {
-            trimOnce(clip.id, 0L, intoSource - clip.sourceSpanMs)
-        }
-    }
 
     // ---- Markers --------------------------------------------------------------
 
@@ -83,15 +49,20 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
 
     fun setSnapToMarkers(enabled: Boolean) = _state.update { it.copy(snapToMarkers = enabled) }
 
-    private fun snapToNearbyMarker(ms: Long, current: EditorUiState): Long {
-        val threshold = snapThreshold(current)
-        val nearest = current.markers.minByOrNull { abs(it - ms) } ?: return ms
-        return if (abs(nearest - ms) <= threshold) nearest else ms
-    }
-
+    // ---- Frame and look -------------------------------------------------------
 
     fun toggleRotate() = record("Rotate") {
         _state.update { it.copy(rotationDegrees = (it.rotationDegrees + 90) % 360) }
+    }
+
+    /** Rotate's Reset: the edit the way up it was shot. */
+    fun resetRotation() = record("Rotate") {
+        _state.update { it.copy(rotationDegrees = 0) }
+    }
+
+    /** Ratio's Reset: the whole picture, uncropped and not following anything - one step. */
+    fun resetCrop() = record("Crop") {
+        _state.update { it.copy(cropAspect = CropAspect.Original, reframe = null) }
     }
 
     fun setCropAspect(aspect: CropAspect) = record("Crop") {
@@ -268,6 +239,11 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     }
     fun setSaturation(value: Float) = record("Saturation", gesture = "Saturation") {
         _state.update { it.copy(saturation = value) }
+    }
+
+    /** Adjust's Reset: all three back to where they started, as one step. */
+    fun resetAdjust() = record("Adjust") {
+        _state.update { it.copy(brightness = 0f, contrast = 0f, saturation = 0f) }
     }
 
     // ---- Templates ----------------------------------------------------------------
@@ -518,7 +494,6 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         }
     }
 
-
     /**
      * Moves a main-track clip to [index] in the track's order and lays the track
      * end to end again - long-press, drag, drop. Transitions and everything else
@@ -562,7 +537,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         offsetY: Float? = null,
         rotation: Float? = null
     ) = record(
-        "Motion",
+        "Placement",
         gesture = "Motion ${fieldsNamed("scale" to scale, "x" to offsetX, "y" to offsetY, "rotation" to rotation)} $clipId"
     ) {
         mutateTimeline { timeline ->
@@ -704,14 +679,6 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     fun trimClip(clipId: String, startDeltaMs: Long, endDeltaMs: Long) =
         record("Trim clip", gesture = "Trim $clipId") { applyTrim(clipId, startDeltaMs, endDeltaMs) }
 
-    /**
-     * A trim by a button - a frame nudge, "set to playhead". Each press is its own
-     * step: five nudges and one undo used to step back all five, because they
-     * shared a label and arrived inside the old coalescing window.
-     */
-    private fun trimOnce(clipId: String, startDeltaMs: Long, endDeltaMs: Long) =
-        record("Trim clip") { applyTrim(clipId, startDeltaMs, endDeltaMs) }
-
     private fun applyTrim(clipId: String, startDeltaMs: Long, endDeltaMs: Long) {
         if (_state.value.textOverlays.any { it.id == clipId }) resizeOverlay(clipId, startDeltaMs, endDeltaMs)
         else mutateTimeline { it.withClipTrimmed(clipId, startDeltaMs, endDeltaMs) }
@@ -789,6 +756,51 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 _state.update { it.copy(effects = it.effects.filterNot { e -> e.id == selected }) }
             } else mutateTimeline { it.withClipRemoved(selected) }
             _state.update { it.copy(selectedClipId = null) }
+        }
+    }
+
+    /**
+     * A copy of whatever is selected, straight after it, and selected in its
+     * place so the next tap works on the copy. A shot is slotted into the main
+     * track (see [withClipDuplicated]); a caption, sticker or effect goes where
+     * the original ends, as long as it is, kept inside the picture.
+     */
+    fun duplicateSelected() {
+        val current = _state.value
+        val selected = current.selectedClipId ?: return
+        val text = current.textOverlays.firstOrNull { it.id == selected }
+        val effect = current.effects.firstOrNull { it.id == selected }
+        when {
+            text != null -> {
+                val span = EditRules.placedAt(text.endMs, text.endMs - text.startMs, current.trimmedDurationMs, MIN_CLIP_MS)
+                // A hand-made copy, even of an auto-caption: another run of
+                // auto-captions replaces its own lines, not ones made from them.
+                val copy = text.copy(id = UUID.randomUUID().toString(), startMs = span.startMs, endMs = span.endMs)
+                record("Duplicate") {
+                    _state.update { it.copy(textOverlays = it.textOverlays + copy, selectedClipId = copy.id) }
+                }
+            }
+            effect != null -> {
+                val total = current.timelineDurationMs
+                val length = effect.endMs - effect.startMs
+                val start = effect.endMs.coerceAtMost((total - length).coerceAtLeast(0L))
+                val copy = effect.copy(id = UUID.randomUUID().toString(), startMs = start, endMs = start + length)
+                record("Duplicate") {
+                    _state.update { it.copy(effects = it.effects + copy, selectedClipId = copy.id) }
+                }
+            }
+            else -> {
+                val copyId = UUID.randomUUID().toString()
+                record("Duplicate") { mutateTimeline { it.withClipDuplicated(selected, copyId) } }
+                // Every overlay row is taken where the copy would go: said, rather
+                // than a button that did nothing.
+                val after = _state.value
+                if (after.videoClips.none { it.id == copyId } && after.audioClips.none { it.id == copyId } &&
+                    current.videoClips.any { it.id == selected && it.isOverlay }
+                ) {
+                    _state.update { it.copy(failure = SquishError.OverlayRowsFull(MAX_LAYER)) }
+                }
+            }
         }
     }
 

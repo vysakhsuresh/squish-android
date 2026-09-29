@@ -1,7 +1,6 @@
 package com.squish.app.editor.edits
 
 import android.net.Uri
-import androidx.lifecycle.viewModelScope
 import com.squish.app.media.SquishError
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.audio.AudioSyncAnalyzer
@@ -180,6 +179,12 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
 
     fun setOriginalVolume(volume: Float) = record("Camera level", gesture = "Camera level") {
         _state.update { it.copy(originalVolume = volume.coerceIn(0f, 1f)) }
+    }
+
+    /** Volume's Reset for a shot: the camera's sound on, at full level, as one step. */
+    fun resetCameraSound() = record("Camera audio") {
+        _state.update { it.copy(muteOriginal = false, originalVolume = 1f) }
+        recomputeEstimate()
     }
 
     /**

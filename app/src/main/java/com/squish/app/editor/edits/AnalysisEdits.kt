@@ -1,7 +1,6 @@
 package com.squish.app.editor.edits
 
 import android.net.Uri
-import androidx.lifecycle.viewModelScope
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.video.Reframer

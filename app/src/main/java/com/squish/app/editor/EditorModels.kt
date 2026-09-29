@@ -313,6 +313,13 @@ data class EditSnapshot(
 
 data class EditorUiState(
     val sourceUri: Uri? = null,
+    /**
+     * What the person called this project, or null for none yet - the header
+     * and the drafts list then show the first clip's name, as they always did.
+     * Not an undo step: naming the project is not an edit to the video. It is
+     * saved with the draft, so a rename alone is enough to keep one.
+     */
+    val projectName: String? = null,
     val isLoadingSource: Boolean = true,
     val durationMs: Long = 0,
     val sourceWidth: Int = 0,
@@ -586,13 +593,6 @@ data class EditorUiState(
         get() = Looks.grade(lookId, lookIntensity, brightness, contrast, saturation)
 
     val hasSeparateAudio: Boolean get() = audioClips.isNotEmpty()
-
-    /**
-     * Which video clip the Motion panel acts on: whatever is selected, falling back
-     * to the opening shot so the panel is never inert.
-     */
-    val targetVideoClip: Clip?
-        get() = videoClips.firstOrNull { it.id == selectedClipId } ?: videoClips.firstOrNull()
 
     /**
      * Which audio clip the Audio panel acts on: whatever is selected, falling back

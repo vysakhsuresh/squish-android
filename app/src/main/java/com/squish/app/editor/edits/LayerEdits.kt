@@ -1,7 +1,6 @@
 package com.squish.app.editor.edits
 
 import android.net.Uri
-import androidx.lifecycle.viewModelScope
 import com.squish.app.media.SquishError
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.timeline.ChromaKey
@@ -83,6 +82,36 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
         mutateTimeline { it.withLayerChanged(clipId, delta) }
     }
 
+    /**
+     * A shot lifted off the main track onto the lowest overlay row free over it;
+     * the track closes up behind it. With every row taken there, it says so
+     * rather than leaving a button that did nothing.
+     */
+    fun switchToOverlay(clipId: String) {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId && it.isMain } ?: return
+        record("To overlay") { mutateTimeline { it.withLayerChanged(clip.id, +1) } }
+        if (_state.value.videoClips.firstOrNull { it.id == clipId }?.isMain == true) {
+            _state.update { it.copy(failure = SquishError.OverlayRowsFull(MAX_LAYER)) }
+        }
+    }
+
+    /**
+     * An overlay dropped onto the main track, from whichever row it is on, and
+     * slotted in where it sits; the shots after it move along to make room.
+     * Lowering one row at a time only reaches the main track from the row just
+     * above it, so the clip is put on that row first - a step inside this one
+     * edit, never seen - and lowered from there.
+     */
+    fun switchToMain(clipId: String) {
+        _state.value.videoClips.firstOrNull { it.id == clipId && it.isOverlay } ?: return
+        record("To main track") {
+            mutateTimeline { timeline ->
+                timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(layer = 1) else it })
+                    .withLayerChanged(clipId, -1)
+            }
+        }
+    }
+
     /** One slider on the overlay sheet. Each slider, on each clip, is a gesture of its own. */
     fun setOverlayGeometry(
         clipId: String,
@@ -96,7 +125,6 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
     ) {
         mutateTimeline { it.withOverlayGeometry(clipId, opacity, scale, offsetX, offsetY) }
     }
-
 
     // ---- Green screen -------------------------------------------------------------
 

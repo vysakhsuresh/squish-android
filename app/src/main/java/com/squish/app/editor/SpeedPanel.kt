@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -53,16 +54,16 @@ import kotlin.math.ln
  * the moment you wanted it to.
  */
 @Composable
-fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
+fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) {
     val clip = viewModel.clips.speedTargetClip(state)
 
     if (clip == null) {
-        PanelSurface(accent = SquishColors.Blue) {
+        PanelSurface(accent = accent) {
             PanelHeading(
                 "Nothing to retime",
                 "Add a clip to the timeline first",
                 icon = Icons.Filled.Speed,
-                accent = SquishColors.Blue
+                accent = accent
             )
         }
         return
@@ -72,25 +73,15 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-        PanelSurface(accent = SquishColors.Blue) {
+        PanelSurface(accent = accent) {
             PanelHeading(
                 clip.label,
                 lengthLine(clip),
                 icon = Icons.Filled.Speed,
-                accent = SquishColors.Blue,
-                trailing = {
-                    if (!ramp.isIdentity) {
-                        Text(
-                            "Reset",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = SquishColors.Pink,
-                            modifier = Modifier.clickable { viewModel.clips.clearSpeed(clip.id) }
-                        )
-                    }
-                }
+                accent = accent
             )
 
-            RampCurve(clip = clip, playheadMs = state.playheadMs)
+            RampCurve(clip = clip, playheadMs = state.playheadMs, accent = accent)
 
             // What the speed does to the frame rate, said as a number.
             //
@@ -113,7 +104,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     "Ramped · ${"%.2f".format(ramp.speedAt(0L))}x to " +
                         "${"%.2f".format(ramp.speedAt(clip.sourceSpanMs))}x",
                     style = MaterialTheme.typography.bodySmall,
-                    color = SquishColors.Cyan
+                    color = accent
                 )
             } else {
                 Row(
@@ -136,8 +127,8 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     onValueChangeFinished = viewModel::endGesture,
                     valueRange = 0f..1f,
                     colors = SliderDefaults.colors(
-                        thumbColor = SquishColors.Blue,
-                        activeTrackColor = SquishColors.Blue,
+                        thumbColor = accent,
+                        activeTrackColor = accent,
                         inactiveTrackColor = SquishColors.Border
                     )
                 )
@@ -147,7 +138,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                             label = if (preset < 1f) "${"%.2f".format(preset).trimEnd('0').trimEnd('.')}x"
                             else "${preset.toInt()}x",
                             selected = abs(ramp.flatSpeed - preset) < 0.01f,
-                            accentColor = SquishColors.Blue,
+                            accentColor = accent,
                             modifier = Modifier.weight(1f),
                             onClick = { viewModel.clips.setClipSpeed(clip.id, preset) }
                         )
@@ -156,12 +147,12 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
             }
         }
 
-        PanelSurface(accent = SquishColors.Cyan) {
+        PanelSurface(accent = accent) {
             PanelHeading(
                 "Ramps",
                 "A rate that moves across the shot",
                 icon = Icons.Filled.Timer,
-                accent = SquishColors.Cyan
+                accent = accent
             )
             RampShape.entries.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
@@ -169,7 +160,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         SelectableChip(
                             label = shape.label,
                             selected = false,
-                            accentColor = SquishColors.Cyan,
+                            accentColor = accent,
                             modifier = Modifier.weight(1f),
                             onClick = { viewModel.clips.applyRampShape(clip.id, shape) }
                         )
@@ -184,13 +175,13 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
             )
         }
 
-        PanelSurface(accent = SquishColors.Cyan) {
+        PanelSurface(accent = accent) {
             PanelHeading(
                 "Points",
                 if (ramp.ordered.isEmpty()) "Set a rate at the playhead to start a curve"
                 else "${ramp.ordered.size} on this clip",
                 icon = Icons.Filled.Timer,
-                accent = SquishColors.Cyan
+                accent = accent
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
@@ -229,7 +220,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     Text(
                         "${"%.2f".format(point.speed)}x",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = SquishColors.Cyan
+                        color = accent
                     )
                     Icon(
                         Icons.Filled.Close,
@@ -255,7 +246,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel) {
  * more of the screen than it does of the file.
  */
 @Composable
-private fun RampCurve(clip: Clip, playheadMs: Long) {
+private fun RampCurve(clip: Clip, playheadMs: Long, accent: Color) {
     val ramp = clip.speedRamp
     val played = clip.durationMs.coerceAtLeast(1L)
 
@@ -304,7 +295,7 @@ private fun RampCurve(clip: Clip, playheadMs: Long) {
         for (point in ramp.ordered) {
             val outMs = ramp.outputOffsetAt(point.atMs, clip.sourceSpanMs)
             val px = w * (outMs.toFloat() / played).coerceIn(0f, 1f)
-            drawCircle(color = SquishColors.Blue, radius = 5f, center = Offset(px, y(point.speed)))
+            drawCircle(color = accent, radius = 5f, center = Offset(px, y(point.speed)))
         }
 
         // The playhead, but only while it is over this clip.

@@ -33,7 +33,10 @@ get standing. Throwing them away costs all of that and buys a slower encoder.
 app/src/main/java/com/squish/app/
 ├── timeline/      Clip, TimelineState and the pure functions that transform them
 │                  (split, trim, move, ripple, transitions, layers)
-├── editor/        EditorViewModel + one immutable EditorUiState, all Compose panels
+├── editor/        EditorViewModel + one immutable EditorUiState, the toolbar and
+│   │              its sheets (ToolRules, ToolBar, ToolSheet), all Compose panels
+│   └── edits/     the edits themselves, one class per area (clips, audio, text,
+│                  layers, analysis), all through the view model's one state and undo
 ├── media/         Everything that touches a codec
 │   ├── effects/            the look catalogue, grading maths and the two shaders
 │   ├── video/              motion estimation, trajectory smoothing, object tracking

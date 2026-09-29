@@ -1,7 +1,6 @@
 package com.squish.app.editor.edits
 
 import android.net.Uri
-import androidx.lifecycle.viewModelScope
 import com.squish.app.data.SrtCue
 import com.squish.app.data.SrtFile
 import com.squish.app.media.SquishError
@@ -48,7 +47,8 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             endMs = span.endMs,
             colorArgb = android.graphics.Color.WHITE
         )
-        _state.update { it.copy(textOverlays = it.textOverlays + item) }
+        // Selected, so the toolbar is the line's own and Edit has something to open on.
+        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id) }
     }
 
     /**
@@ -70,7 +70,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             look = preset.look,
             motion = preset.motion
         )
-        _state.update { it.copy(textOverlays = it.textOverlays + item) }
+        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id) }
     }
 
     /**
@@ -109,7 +109,6 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
 
     /** Takes one caption or sticker off, as an undo step - from the panels and the strip alike. */
     fun removeTextOverlay(id: String) = record("Remove text") { dropTextOverlay(id) }
-
 
     // ---- Captions ---------------------------------------------------------------
 

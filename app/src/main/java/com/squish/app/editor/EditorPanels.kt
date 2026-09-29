@@ -10,16 +10,12 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
-import androidx.compose.material.icons.filled.Compress
-import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.HighQuality
-import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -29,8 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import com.squish.app.home.formatSize
-import com.squish.app.ui.components.OutputSizePicker
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
@@ -64,98 +58,46 @@ fun PanelHeading(
     trailing = trailing
 )
 
-// ---- Trim -------------------------------------------------------------------
+// ---- Markers ------------------------------------------------------------------
 
+/**
+ * Marks dropped by hand, and whether edits snap to them. In the Sync chip of
+ * Sound, beside the beat grid that fills them in; the In and out points panel
+ * they lived in has gone, since a clip is trimmed by its handles on the strip.
+ */
 @Composable
-fun PrecisionTrimPanel(state: EditorUiState, viewModel: EditorViewModel) {
-    // These controls trim a clip on the timeline, so they must read that clip's
-    // source window - not the old whole-video trim range, which the exporter no
-    // longer consults now that the timeline is authoritative.
-    val clip = viewModel.clips.trimTargetClip(state)
-
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        PanelSurface(accent = SquishColors.Violet) {
-            PanelHeading(
-                "In and out points",
-                if (clip == null) "Add a clip to trim" else "Trimming ${clip.label}",
-                icon = Icons.Filled.ContentCut,
-                accent = SquishColors.Violet
+fun MarkersPanel(state: EditorUiState, viewModel: EditorViewModel) {
+    PanelSurface(accent = SquishColors.Cyan) {
+        PanelHeading(
+            "Markers",
+            "Drop a mark at the playhead and snap cuts to it",
+            icon = Icons.Filled.Flag,
+            accent = SquishColors.Cyan
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            SquishOutlinedButton(
+                text = "Drop marker",
+                modifier = Modifier.weight(1f),
+                onClick = { viewModel.clips.addMarkerAtPlayhead() }
             )
-            TrimPointRow(
-                label = "In",
-                value = Timecode.formatWithFrame(clip?.sourceInMs ?: 0L, state.fps),
-                onNudgeBack = { viewModel.clips.nudgeTrim(isStart = true, frames = -1) },
-                onNudgeForward = { viewModel.clips.nudgeTrim(isStart = true, frames = 1) },
-                onSetToPlayhead = { viewModel.clips.setTrimPointToPlayhead(isStart = true) }
-            )
-            TrimPointRow(
-                label = "Out",
-                value = Timecode.formatWithFrame(clip?.sourceOutMs ?: 0L, state.fps),
-                onNudgeBack = { viewModel.clips.nudgeTrim(isStart = false, frames = -1) },
-                onNudgeForward = { viewModel.clips.nudgeTrim(isStart = false, frames = 1) },
-                onSetToPlayhead = { viewModel.clips.setTrimPointToPlayhead(isStart = false) }
-            )
-            Text(
-                "${Timecode.format(clip?.durationMs ?: 0L)} this shot · " +
-                    "${Timecode.format(state.trimmedDurationMs)} total · ${state.fps.toInt()} fps",
-                style = MaterialTheme.typography.bodySmall,
-                color = SquishColors.TextSecondary
+            SquishOutlinedButton(
+                text = if (state.markers.isEmpty()) "No markers" else "Clear ${state.markers.size}",
+                modifier = Modifier.weight(1f),
+                onClick = { viewModel.clips.clearMarkers() }
             )
         }
-
-        PanelSurface(accent = SquishColors.Violet) {
-            PanelHeading(
-                "Markers",
-                "Drop a mark at the playhead and snap cuts to it",
-                icon = Icons.Filled.Flag,
-                accent = SquishColors.Violet
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                SquishOutlinedButton(
-                    text = "Drop marker",
-                    modifier = Modifier.weight(1f),
-                    onClick = { viewModel.clips.addMarkerAtPlayhead() }
-                )
-                SquishOutlinedButton(
-                    text = if (state.markers.isEmpty()) "No markers" else "Clear ${state.markers.size}",
-                    modifier = Modifier.weight(1f),
-                    onClick = { viewModel.clips.clearMarkers() }
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Snap to markers", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
-                SquishToggleSwitch(checked = state.snapToMarkers, onCheckedChange = viewModel.clips::setSnapToMarkers)
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Snap to markers", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+            SquishToggleSwitch(checked = state.snapToMarkers, onCheckedChange = viewModel.clips::setSnapToMarkers)
         }
     }
 }
 
-@Composable
-private fun TrimPointRow(
-    label: String,
-    value: String,
-    onNudgeBack: () -> Unit,
-    onNudgeForward: () -> Unit,
-    onSetToPlayhead: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, style = MaterialTheme.typography.titleSmall, color = SquishColors.Primary, modifier = Modifier.width(30.dp))
-        Text(value, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary, modifier = Modifier.weight(1f))
-        NudgeButton("◀", Modifier.width(44.dp), onNudgeBack)
-        NudgeButton("▶", Modifier.width(44.dp), onNudgeForward)
-        NudgeButton("Set", Modifier.width(54.dp), onSetToPlayhead)
-    }
-}
-
-// ---- Crop -------------------------------------------------------------------
+// ---- Frame --------------------------------------------------------------------
 
 /**
  * Auto-reframe: a crop that follows the subject instead of sitting in the middle.
@@ -199,12 +141,13 @@ private fun AutoReframeRow(state: EditorUiState, viewModel: EditorViewModel) {
     }
 }
 
+/** The Ratio chip of Frame: the shape the edit is cropped to. */
 @Composable
-fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
+fun RatioPanel(state: EditorUiState, viewModel: EditorViewModel) {
     PanelSurface(accent = SquishColors.Violet) {
         PanelHeading(
-            "Shape",
-            "Crop to the aspect ratio you are posting to",
+            "Ratio",
+            "Crop to the shape you are posting to",
             icon = Icons.Filled.AspectRatio,
             accent = SquishColors.Violet
         )
@@ -219,7 +162,7 @@ fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 SelectableChip(
                     label = aspect.label,
                     selected = state.cropAspect == aspect,
-                    accentColor = SquishColors.Purple,
+                    accentColor = SquishColors.Violet,
                     onClick = { viewModel.clips.setCropAspect(aspect) }
                 )
             }
@@ -234,103 +177,26 @@ fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
         } else {
             AutoReframeRow(state, viewModel)
         }
+    }
+}
+
+/** The Rotate chip of Frame: the whole edit, a quarter turn at a time. */
+@Composable
+fun RotatePanel(state: EditorUiState, viewModel: EditorViewModel) {
+    PanelSurface(accent = SquishColors.Violet) {
+        PanelHeading(
+            "Rotate",
+            "Turns the whole edit",
+            icon = Icons.AutoMirrored.Filled.RotateRight,
+            accent = SquishColors.Violet
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text("Rotation", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
-                Text("${state.rotationDegrees}°", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
-            }
+            Text("${state.rotationDegrees}°", style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
             SquishOutlinedButton(text = "Rotate 90°", onClick = { viewModel.clips.toggleRotate() })
-        }
-    }
-}
-
-// ---- Color -----------------------------------------------------------------
-
-// ---- Export -----------------------------------------------------------------
-
-@Composable
-fun ExportPanel(state: EditorUiState, viewModel: EditorViewModel, onAddClip: () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        PanelSurface(accent = SquishColors.Blue) {
-            PanelHeading(
-                "Size",
-                "Bigger means sharper and heavier",
-                icon = Icons.Filled.HighQuality,
-                accent = SquishColors.Blue
-            )
-            OutputSizePicker(
-                outputP = state.outputP,
-                fitToSize = state.fitToSize,
-                // Rotated and cropped, as the file is: see ExportSheet.
-                sourceWidth = state.croppedFrame.width,
-                sourceHeight = state.croppedFrame.height,
-                estimatedBytes = state.estimatedOutputBytes,
-                originalBytes = state.originalSizeBytes,
-                accent = SquishColors.Blue,
-                onPick = viewModel::setOutputP
-            )
-        }
-
-        PanelSurface(accent = SquishColors.Blue) {
-            PanelHeading(
-                "Fit to a size",
-                "We pick the bitrate for you",
-                icon = Icons.Filled.Compress,
-                accent = SquishColors.Blue,
-                trailing = {
-                    SquishToggleSwitch(
-                        checked = state.fitToSize,
-                        onCheckedChange = viewModel::setFitToSize
-                    )
-                }
-            )
-            if (state.fitToSize) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    listOf(16, 25, 50).forEach { mb ->
-                        SelectableChip(
-                            label = "$mb MB",
-                            selected = state.targetSizeMb == mb,
-                            accentColor = SquishColors.Teal,
-                            modifier = Modifier.weight(1f),
-                            onClick = { viewModel.setTargetSizeMb(mb) }
-                        )
-                    }
-                }
-            }
-        }
-
-        PanelSurface(accent = SquishColors.Blue) {
-            PanelHeading(
-                "Video track",
-                "Played one after another, in order",
-                icon = Icons.Filled.Movie,
-                accent = SquishColors.Blue
-            )
-            state.videoClips.forEachIndexed { index, clip ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "${index + 1}. ${clip.label}",
-                        color = SquishColors.TextPrimary,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        Timecode.format(clip.durationMs),
-                        color = SquishColors.TextMuted,
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-            }
-            SquishOutlinedButton(text = "Add another clip", modifier = Modifier.fillMaxWidth(), onClick = onAddClip)
         }
     }
 }

@@ -51,7 +51,7 @@ import com.squish.app.ui.theme.SquishColors
  * analysis is the difference between one attempt and five.
  */
 @Composable
-fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
+fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel, accent: Color) {
     val tracking = state.tracking
     var frame by remember(clip.id) { mutableStateOf<Bitmap?>(null) }
     var stale by remember(clip.id) { mutableStateOf(true) }
@@ -63,12 +63,12 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
         }
     }
 
-    PanelSurface(accent = SquishColors.Amber) {
+    PanelSurface(accent = accent) {
         PanelHeading(
             "Track an object",
             "Pin a caption or a layer to something moving",
             icon = Icons.Filled.MyLocation,
-            accent = SquishColors.Amber,
+            accent = accent,
             trailing = {
                 if (tracking.track != null) {
                     Text(
@@ -229,7 +229,7 @@ private fun PinTargets(state: EditorUiState, clip: Clip, viewModel: EditorViewMo
 
     if (state.textOverlays.isEmpty()) {
         Text(
-            "Add a caption in the Captions tab and it can ride the track too.",
+            "Add a line with the Text tool and it can ride the track too.",
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextMuted
         )

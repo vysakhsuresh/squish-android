@@ -25,7 +25,6 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.ZOOM_MAX
 import com.squish.app.timeline.ZOOM_MIN
-import com.squish.app.timeline.zoomedBy
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -46,7 +45,6 @@ import com.squish.app.editor.edits.ClipEdits
 import com.squish.app.editor.edits.EditHost
 import com.squish.app.editor.edits.LayerEdits
 import com.squish.app.editor.edits.TextEdits
-import com.squish.app.editor.edits.snapThreshold
 import kotlinx.coroutines.CoroutineScope
 
 class EditorViewModel(
@@ -257,6 +255,18 @@ class EditorViewModel(
     fun dismissSetAsideNotice() = _state.update { it.copy(setAsideNotice = false) }
 
     /**
+     * Names the project, or with a blank name un-names it. Saved at once rather
+     * than at the next tick: the rename dialog is often the last thing done
+     * before leaving.
+     */
+    fun renameProject(raw: String) {
+        val name = ProjectName.clean(raw)
+        if (name == _state.value.projectName) return
+        _state.update { it.copy(projectName = name) }
+        viewModelScope.launch(Dispatchers.IO) { saveNow() }
+    }
+
+    /**
      * Opens a video. With [resume] - a draft chosen from the drafts list - its
      * saved edit is applied at once instead of being offered: picking a draft is
      * already the answer to "restore it?".
@@ -346,7 +356,6 @@ class EditorViewModel(
         if (pcm != null) _state.update { it.copy(sourceHasAudio = true) }
     }
 
-
     /** The playhead advancing under playback. Never moves the players. */
     fun setPlayhead(ms: Long) =
         _state.update { it.copy(playheadMs = ms.coerceIn(0L, it.timelineDurationMs)) }
@@ -383,13 +392,6 @@ class EditorViewModel(
         it.copy(playheadMs = target, scrubNonce = it.scrubNonce + 1)
     }
 
-    /** Jump straight to either end, which is otherwise a long drag on a long edit. */
-    fun scrubToStart() = scrubTo(0L)
-
-    fun scrubToEnd() = _state.update {
-        it.copy(playheadMs = it.timelineDurationMs, scrubNonce = it.scrubNonce + 1)
-    }
-
     /**
      * The nearest thing worth landing on: a clip edge, a marker, or the start.
      *
@@ -410,6 +412,19 @@ class EditorViewModel(
         val nearest = candidates.minByOrNull { abs(it - ms) } ?: return ms
         return if (abs(nearest - ms) <= threshold) nearest else ms
     }
+
+    /**
+     * How close counts as near, in milliseconds.
+     *
+     * Derived from the zoom rather than the clip length: what matters is how far
+     * the finger moved on screen, and eight device-independent pixels is about a
+     * third of a fingertip whatever the timeline is showing.
+     */
+    private fun snapThreshold(current: EditorUiState): Long =
+        (SNAP_DP / current.pixelsPerSecond * 1000f).toLong().coerceIn(20L, 500L)
+
+    /** A third of a fingertip, in dp. */
+    private val SNAP_DP = 8f
 
     fun setPlaying(playing: Boolean) = _state.update { it.copy(isPlaying = playing) }
 
@@ -462,12 +477,6 @@ class EditorViewModel(
 
     /** Asks the strip to fit the whole edit across its width. */
     fun fitTimeline() = _state.update { it.copy(fitNonce = it.fitNonce + 1) }
-
-    fun zoomIn() = _state.update { it.copy(pixelsPerSecond = it.toTimeline().zoomedBy(1.35f).pixelsPerSecond) }
-
-    fun zoomOut() = _state.update { it.copy(pixelsPerSecond = it.toTimeline().zoomedBy(1f / 1.35f).pixelsPerSecond) }
-
-
 
     // ---- Undo -------------------------------------------------------------------
 
@@ -567,8 +576,6 @@ class EditorViewModel(
      */
     fun endGesture() = history.endGesture()
 
-
-
     private fun publishHistory() = _state.update {
         it.copy(undoLabel = history.undoLabel?.let(::shownLabel), redoLabel = history.redoLabel?.let(::shownLabel))
     }
@@ -667,12 +674,8 @@ class EditorViewModel(
     private var fitBase: List<TimedEffect>? = null
     private var fitResult: List<TimedEffect>? = null
 
-
-
     /** The id on the end of an undo label - " 16ad0793-d41b-…", or a template's " tpl-…". */
     private val ID_SUFFIX = Regex(""" \S*[0-9a-f]{8}-[0-9a-f]{4}-\S*$""")
-
-
 
     private fun recomputeEstimate() {
         _state.update { it.copy(estimatedOutputBytes = it.estimatedExportBytes) }
@@ -746,7 +749,7 @@ class EditorViewModel(
                     historyRepository.add(
                         ExportRecord(
                             id = UUID.randomUUID().toString(),
-                            title = displayNameOf(sourceUri) ?: "Squished video",
+                            title = current.projectName ?: displayNameOf(sourceUri) ?: "Squished video",
                             outputPath = file.absolutePath,
                             originalSizeBytes = current.originalSizeBytes,
                             outputSizeBytes = file.length(),
@@ -912,6 +915,7 @@ class EditorViewModel(
         fps: Float
     ): EditorUiState = copy(
         sourceUri = snapshot.sourceUri,
+        projectName = snapshot.name,
         isLoadingSource = false,
         fitNonce = fitNonce + 1,
         durationMs = durationMs,
