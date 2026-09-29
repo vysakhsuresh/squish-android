@@ -347,16 +347,10 @@ encoding is one builder call away.
   audio and video tracks.
 - Timeline rows keep full height on select (after 66567bd).
 
-### Open: a quarter-turned export's thumbnails disagree with its picture (29 Sep, 23:10)
-`squish_1790638553740.mp4` (a rotate-90 export of a 200x150 clip; 200x150 +
-tag 90, see "Rotated export at Original" above) used as shot 3 plays in the
-preview, and renders into the next export, with the people sideways in a tall
-narrow box (about 0.44 wide-to-tall, where the file's shown shape is 0.75),
-while its filmstrip and filter tiles (MediaMetadataRetriever) show it upright.
-Preview and export agree, so nothing is lost between them; the open questions
-are the 0.44 box and which of the two readings is the file's. A real portrait
-camera clip (1920x1080 + tag 90) is right in both, as the first shot and as a
-later one - checked the same night.
+### Closed: a quarter-turned shot shown sideways (29 Sep, 23:10)
+`squish_1790638553740.mp4` is a Rotate-90 export of a landscape clip, made in
+an earlier test: its people are sideways in the file itself, and Google Photos
+shows them so. Squish's preview and export draw it the same way. Not a defect.
 
 ## Verified on device, 29 September late (builds 1b3c998 - f2da944)
 
@@ -369,3 +363,29 @@ later one - checked the same night.
   the copy Squish keeps of it.
 - A `VerifyError` on opening the editor after an incremental install was a
   stale dex; a clean build cured it (CLAUDE.md).
+
+## Verified on device, 30 September small hours (builds 2876a48 - 3287b05)
+
+Fixed and checked on the phone:
+- Sticker: added at the playhead, dragged, scaled; its Delete and Copy
+  buttons stay on screen when it is grown to the top; its clip shows the emoji.
+- Speed 2.7x: plays at real time over the shorter clip. Speed, Animation and
+  Crop name the shot ("Shot 2") and bring the playhead onto it, pausing
+  playback first.
+- Preview: after playing to the end, opening a sheet no longer leaves the
+  picture a third smaller in the bottom-left of its frame (stale surface size).
+- Export: a sped-up shot at Auto frame rate wrote 42 fps; now 29. Qualcomm AVC
+  in VBR overshot the requested 2.76 Mbps to 4.98 (19.2 MB against a 10.7 MB
+  promise); CBR gives 2.08 Mbps, 8.5 MB. The finished screen lays a portrait
+  file out without overlapping the cards; the floating back orb is gone.
+- Library: made-up names show as the moment ("29 Sep, 10:14 PM"); the thumbnail
+  plays; entries for deleted files delete without a loss warning.
+- Squeeze 480p: 2.6 MB against ~2.9 promised. Snip: copy-cut (trim
+  optimisation), 22.5 s, portrait tag kept. Extract audio: 22.5 s .m4a.
+  Stitch: two clips, 15.96 s.
+- Stitch session with two clips survives a force-stop and resumes.
+
+Open:
+- Squeeze and Snip show a picked file by the picker's number ("1001319364.mp4").
+- Squeeze offers 1080p/1440p/4K for a 940x718 source (an upscale in a tool
+  for making files smaller).
