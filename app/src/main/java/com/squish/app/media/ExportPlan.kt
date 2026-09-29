@@ -412,6 +412,19 @@ object ExportPlan {
     private fun covers(clip: Clip, timeUs: Long): Boolean =
         timeUs >= clip.timelineStartMs * 1_000L && timeUs < clip.timelineEndMs * 1_000L
 
+    // ---- A clip's own turn ------------------------------------------------------------
+
+    /**
+     * A clip's quarter turns as Media3's rotation: [quarterTurns] clockwise as
+     * seen, and ScaleAndRotateTransformation turns counterclockwise for positive
+     * degrees, so one turn is 270. The preview's view turns by
+     * [screenTurnDegrees], clockwise, the same number of quarters.
+     */
+    fun turnDegrees(quarterTurns: Int): Float = ((4 - (quarterTurns % 4 + 4) % 4) % 4 * 90).toFloat()
+
+    /** The same turn as a view's rotationZ, which runs clockwise. */
+    fun screenTurnDegrees(quarterTurns: Int): Float = (((quarterTurns % 4 + 4) % 4) * 90).toFloat()
+
     // ---- Motion clocks -----------------------------------------------------------
 
     /**

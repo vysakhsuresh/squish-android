@@ -35,6 +35,10 @@ internal interface EditHost {
     fun checkDecodable(uri: Uri)
     /** Starts a light preview copy of each heavy video file among [uris] that has none yet. */
     fun ensureProxies(uris: Collection<Uri>)
+    /** The one-clip selection, as a tap makes it (see the view model's own). */
+    fun selectClip(clipId: String?)
+    /** [clipId] joins the selection and leads it, while Select more is on (see the view model's own). */
+    fun joinSelection(clipId: String)
 }
 
 /**

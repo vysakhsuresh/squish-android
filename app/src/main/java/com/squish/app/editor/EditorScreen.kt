@@ -165,11 +165,31 @@ fun EditorScreen(
 
     val kind = state.selectionKind
     val canTransition = state.selectedCanTransition
+    // Select more on, or several already selected: the toolbar is the set's.
+    // From the press itself, so the mode is seen to be on before a second tap.
+    val multi = state.multiSelected || (state.selectingMore && state.selectedClipId != null)
+    // A photo, blank or freeze on a video track is a file with nothing moving
+    // in it: the tools that need footage are not offered (ToolRules.toolsFor).
+    val footage = state.videoClips.firstOrNull { it.id == state.selectedClipId }?.let { it.isFootage || it.isStillPicture } ?: true
     // A clip's own tool closes when the selection no longer has it - Speed with
     // a caption selected, anything once the selection is deleted or let go.
-    LaunchedEffect(openTool, kind, canTransition) {
+    LaunchedEffect(openTool, kind, canTransition, multi, footage) {
         val tool = openTool ?: return@LaunchedEffect
-        if (!sheetSurvives(tool, kind, canTransition)) openToolName = null
+        if (!sheetSurvives(tool, kind, canTransition, multi, footage)) openToolName = null
+    }
+    // Replace: the file is picked first, and the sheet asking where in it to
+    // start comes up when the pick has been read - or not at all for a photo,
+    // which goes straight in. The sheet goes with the question.
+    LaunchedEffect(state.replacing) {
+        if (state.replacing != null) openToolName = Tool.Replace.name
+        else if (openToolName == Tool.Replace.name) openToolName = null
+    }
+    // The file to go under the selected clip, for Replace.
+    val pickReplacement = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            context.keepReadAccess(uri)
+            viewModel.state.value.selectedClipId?.let { viewModel.clips.beginReplace(it, uri) }
+        }
     }
 
     // Leaving flushes the edit first, so the last thing done before back is on
@@ -293,6 +313,20 @@ fun EditorScreen(
             Tool.ExtractAudio -> state.selectedClipId?.let(viewModel.audio::extractAudio)
             Tool.Speak -> state.selectedClipId?.let(viewModel.text::speak)
             Tool.Flip -> state.selectedClipId?.let(viewModel.text::flip)
+            Tool.Rotate -> state.selectedClipId?.let(viewModel.clips::turnClip)
+            Tool.Mirror -> state.selectedClipId?.let(viewModel.clips::mirrorClip)
+            Tool.Freeze -> state.selectedClipId?.let(viewModel.clips::freezeFrame)
+            Tool.Reverse -> state.selectedClipId?.let(viewModel.clips::reverseClip)
+            Tool.Replace -> pickReplacement.launch(
+                PickVisualMediaRequest.Builder()
+                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                    .build()
+            )
+            Tool.CopyAttributes -> state.selectedClipId?.let(viewModel.clips::copyAttributes)
+            Tool.PasteAttributes -> state.selectedClipId?.let(viewModel.clips::pasteAttributes)
+            // On with something selected; pressed again ("Done selecting"), the
+            // adding stops and the set stays for Delete or a carry.
+            Tool.SelectMore -> viewModel.setSelectingMore(!state.selectingMore)
             Tool.ToMain -> state.videoClips.firstOrNull { it.id == state.selectedClipId }?.let { clip ->
                 // A photo dragged out long is minutes of rendering on the main
                 // track; asked about rather than started with a spinner.
@@ -310,8 +344,18 @@ fun EditorScreen(
         // The take being recorded is drawn, not in the edit: a tap on it selects nothing.
         if (id != RECORDING_CLIP_ID) {
             val before = state.selectedClipId
-            viewModel.selectClip(id)
+            // With Select more on, a tap adds to the set or takes from it.
+            if (state.selectingMore) viewModel.toggleSelected(id) else viewModel.selectClip(id)
             if (id != null && id != before && openTool?.levelZero == true) openToolName = null
+        }
+    }
+    // A clip taken hold of to be carried: selected without ever leaving the
+    // set (ClipEdits.liftClip), so a selected clip carries the selection.
+    val liftFromStrip: (String) -> Unit = { id ->
+        if (id != RECORDING_CLIP_ID) {
+            val before = state.selectedClipId
+            viewModel.clips.liftClip(id)
+            if (id != before && openTool?.levelZero == true) openToolName = null
         }
     }
 
@@ -392,6 +436,10 @@ fun EditorScreen(
                     TimelineEditor(
                         state = timeline,
                         onSelect = selectFromStrip,
+                        onLift = liftFromStrip,
+                        // Every row stays readable while clips are being added to
+                        // the set: the caption to add is on a row the lead is not.
+                        foldRows = !state.selectingMore,
                         onTrimEdge = viewModel.clips::trimEdgeTo,
                         onTrimHeadIn = viewModel.clips::trimHeadInTo,
                         onScrub = viewModel::scrubTo,
@@ -446,8 +494,15 @@ fun EditorScreen(
                 val toolbar = @Composable {
                     val accent = kind.concept?.accent
                     ToolBar(
-                        tools = toolsFor(kind, canTransition),
-                        accentOf = { tool -> accent ?: tool.levelZeroAccent },
+                        tools = toolsFor(kind, canTransition, multi, footage),
+                        // Select more wears the primary colour while it is on, and
+                        // says what the next press does: the one tool on the row
+                        // that is a state, not an action.
+                        accentOf = { tool ->
+                            if (tool == Tool.SelectMore && state.selectingMore) SquishColors.Primary
+                            else accent ?: tool.levelZeroAccent
+                        },
+                        labelOf = { tool -> if (tool == Tool.SelectMore && state.selectingMore) "Done selecting" else tool.label },
                         onTool = onTool,
                         enabled = { tool ->
                             when (tool) {
@@ -457,6 +512,11 @@ fun EditorScreen(
                                 // has somewhere to go other than nowhere; and on a
                                 // line with nothing to say.
                                 Tool.Speak -> state.selectedClipId?.let { TextEdits.canSpeak(state, it) } == true
+                                // Freeze wants the playhead on the clip; Reverse one
+                                // render of it at a time; Paste something copied.
+                                Tool.Freeze -> state.selectedClipId?.let { viewModel.clips.canFreeze(state, it) } == true
+                                Tool.Reverse -> state.selectedClipId?.let { viewModel.clips.canReverse(state, it) } == true
+                                Tool.PasteAttributes -> state.attributeClipboard != null
                                 else -> true
                             }
                         },
@@ -746,8 +806,12 @@ private fun EditorPreview(
                 // As a tap on the strip: a layer picked while an add-things sheet
                 // is up is a new job, and the sheet makes way for its tools.
                 onSelect = { id ->
-                    val before = viewModel.state.value.selectedClipId
-                    viewModel.selectClip(id)
+                    val current = viewModel.state.value
+                    val before = current.selectedClipId
+                    // With Select more on, a tap on a layer's box joins it to the
+                    // set (never leaves it - that is the strip), as a tap on the
+                    // strip would add it; it used to wipe the set to that one.
+                    if (current.selectingMore) viewModel.joinSelection(id) else viewModel.selectClip(id)
                     if (id != before && latestOpenTool?.levelZero == true) latestCloseSheet()
                 },
                 onPlace = { id, t ->
@@ -989,6 +1053,12 @@ private fun StatusCards(state: EditorUiState, viewModel: EditorViewModel, onStar
     )
     PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
     SpeakingIndicator(speaking = state.speakingId != null, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+    ReversingIndicator(
+        reversing = state.reversing,
+        nameOf = { id -> state.videoClips.firstOrNull { it.id == id }?.label ?: "clip" },
+        onCancel = viewModel.clips::cancelReverse,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+    )
 
     // Only the inline offer lives here; the modal one is over everything.
     state.recovery?.takeIf { !it.modal }?.let { offer ->

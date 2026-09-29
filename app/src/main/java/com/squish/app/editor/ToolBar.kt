@@ -20,20 +20,27 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.ContentPasteGo
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Flip
+import androidx.compose.material.icons.filled.PauseCircleOutline
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.FlipToBack
 import androidx.compose.material.icons.filled.FlipToFront
@@ -142,6 +149,14 @@ val Tool.icon: ImageVector
         Tool.Strength -> Icons.Filled.Tune
         Tool.Speak -> Icons.Filled.RecordVoiceOver
         Tool.Flip -> Icons.Filled.Flip
+        Tool.Rotate -> Icons.AutoMirrored.Filled.RotateRight
+        Tool.Mirror -> Icons.Filled.Flip
+        Tool.Freeze -> Icons.Filled.PauseCircleOutline
+        Tool.Reverse -> Icons.Filled.FastRewind
+        Tool.Replace -> Icons.Filled.SwapHoriz
+        Tool.CopyAttributes -> Icons.Filled.ContentPaste
+        Tool.PasteAttributes -> Icons.Filled.ContentPasteGo
+        Tool.SelectMore -> Icons.Filled.Checklist
         Tool.Duplicate -> Icons.Filled.ContentCopy
         Tool.ToOverlay -> Icons.Filled.FlipToFront
         Tool.ToMain -> Icons.Filled.FlipToBack
@@ -213,6 +228,8 @@ fun ToolBar(
     onTool: (Tool) -> Unit,
     modifier: Modifier = Modifier,
     enabled: (Tool) -> Boolean = { true },
+    /** What a tool's button says: its label, unless it is a state whose words change with it (Select more while on). */
+    labelOf: (Tool) -> String = { it.label },
     /** Given, a back chevron leads the row: the way from a clip's tools to level 0. */
     onBack: (() -> Unit)? = null,
     backAccent: Color = SquishColors.TextSecondary
@@ -247,15 +264,16 @@ fun ToolBar(
         }
         tools.forEach { tool ->
             val on = enabled(tool)
+            val label = labelOf(tool)
             ToolItem(
                 icon = tool.icon,
-                label = tool.label,
+                label = label,
                 tint = if (!on) SquishColors.TextMuted.copy(alpha = 0.5f)
                 // Its own colour on every toolbar, overlay's magenta included.
                 else if (tool == Tool.Delete) SquishColors.Danger
                 else accentOf(tool),
                 enabled = on,
-                description = if (tool == Tool.Clip) "Edit the shot under the playhead" else tool.label,
+                description = if (tool == Tool.Clip) "Edit the shot under the playhead" else label,
                 onClick = { onTool(tool) }
             )
         }

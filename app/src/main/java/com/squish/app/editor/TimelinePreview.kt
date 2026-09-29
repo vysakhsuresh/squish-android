@@ -73,11 +73,13 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import com.squish.app.media.CaptionRenderer
+import com.squish.app.media.ExportPlan
 import com.squish.app.media.StillClips
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Transform
+import com.squish.app.timeline.turnedAspect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.squish.app.ui.theme.SquishColors
@@ -429,13 +431,17 @@ fun TimelinePreview(
         if (overlayActions != null && !fullscreen && pictureSize != IntSize.Zero && areaSize != IntSize.Zero) {
             // The box follows the edit, not the engine's last tick, so it stays
             // under the finger; the picture catches up a tick later.
+            // The box is the shape the layer is seen in: on its side when turned.
             val onPicture = frame.overlays.mapNotNull { placement ->
                 val clip = videoClips.firstOrNull { it.id == placement.clipId } ?: return@mapNotNull null
-                OverlayOnPicture(clip.id, clip.layer, clip.transformAt(layerTime), clip.placementAt(layerTime), placement.aspect)
+                OverlayOnPicture(
+                    clip.id, clip.layer, clip.transformAt(layerTime), clip.placementAt(layerTime),
+                    turnedAspect(placement.aspect, clip.quarterTurns)
+                )
             } + stills.map { clip ->
                 OverlayOnPicture(
                     clip.id, clip.layer, clip.transformAt(layerTime), clip.placementAt(layerTime),
-                    clip.uri?.let { stillAspects[it.toString()] }
+                    turnedAspect(clip.uri?.let { stillAspects[it.toString()] }, clip.quarterTurns)
                 )
             }
             val keptFrame = keptOnArea(kept, pictureSize, areaSize)
@@ -552,7 +558,14 @@ private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: Surface
                     engine.attachSurface(player, it)
                 }
             },
-            modifier = Modifier.turned(rotationDegrees)
+            // The clip's own mirror and turn, inside the unrotated canvas and
+            // before the edit's rotation - the order the export applies them
+            // (CompositionFactory.turn before the edit's rotation). A turned
+            // base shot is fitted, standing, as the export fits it; an unturned
+            // one fills the canvas as it always has.
+            modifier = Modifier
+                .turned(rotationDegrees)
+                .turnedInside(draw.quarterTurns, draw.mirrored, draw.aspect, fit = draw.quarterTurns % 2 != 0)
         )
     }
 }
@@ -596,7 +609,10 @@ private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: 
                     engine.attachSurface(player, it)
                 }
             },
-            modifier = Modifier.fitted(placement.aspect)
+            // Fitted at the shape it is seen in - on its side, when turned - and
+            // the view laid out unturned inside that and turned, with the
+            // mirror before the turn, as the export's one effect does both.
+            modifier = Modifier.turnedInside(placement.quarterTurns, placement.mirrored, placement.aspect, fit = true)
         )
     }
 }
@@ -634,7 +650,12 @@ private fun StillOverlay(clip: Clip, transform: Transform, onAspect: (Float) -> 
             bitmap = image,
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize()
+            // Its own mirror and turn, as a layer's surface gets them.
+            modifier = Modifier.turnedInside(
+                clip.quarterTurns, clip.mirrored,
+                picture?.let { if (it.height > 0) it.width.toFloat() / it.height else null },
+                fit = true
+            )
         )
     }
 }
@@ -709,6 +730,43 @@ private fun Modifier.turned(rotationDegrees: Int): Modifier = layout { measurabl
     layout(w, h) {
         placeable.placeWithLayer((w - placeable.width) / 2, (h - placeable.height) / 2) {
             rotationZ = PreviewBox.screenRotation(rotationDegrees)
+        }
+    }
+}
+
+/**
+ * A clip's own mirror and quarter turns, applied to a view: laid out unturned
+ * at the size that, once turned, is the picture's shape fitted into the space
+ * - or the whole space, when [fit] is off and it is not turned - centred, then
+ * mirrored across and turned clockwise as the clip says (Clip.quarterTurns),
+ * the mirror first, which is the order the export's ScaleAndRotateTransformation
+ * applies them. With no shape known yet a quarter turn takes the space's own
+ * shape turned.
+ */
+private fun Modifier.turnedInside(quarterTurns: Int, mirrored: Boolean, aspect: Float?, fit: Boolean): Modifier {
+    val turns = (quarterTurns % 4 + 4) % 4
+    if (turns == 0 && !mirrored) return if (fit) fitted(aspect) else this
+    return layout { measurable, constraints ->
+        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+            val placeable = measurable.measure(constraints)
+            return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+        }
+        val w = constraints.maxWidth
+        val h = constraints.maxHeight
+        val shape = aspect ?: (w.toFloat() / h.coerceAtLeast(1))
+        val (fw, fh) = if (fit || turns % 2 != 0) {
+            PreviewBox.fittedSizeDp(turnedAspect(shape, turns) ?: shape, w.toFloat(), h.toFloat())
+        } else {
+            w.toFloat() to h.toFloat()
+        }
+        // The view's own sides, before the turn puts it on its side.
+        val (cw, ch) = if (turns % 2 != 0) fh to fw else fw to fh
+        val placeable = measurable.measure(Constraints.fixed(cw.roundToInt().coerceAtLeast(1), ch.roundToInt().coerceAtLeast(1)))
+        layout(w, h) {
+            placeable.placeWithLayer((w - placeable.width) / 2, (h - placeable.height) / 2) {
+                rotationZ = ExportPlan.screenTurnDegrees(turns)
+                scaleX = if (mirrored) -1f else 1f
+            }
         }
     }
 }

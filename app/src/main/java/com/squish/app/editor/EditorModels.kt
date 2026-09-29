@@ -10,6 +10,7 @@ import com.squish.app.media.effects.Looks
 import com.squish.app.media.audio.Waveform
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ClipAttributes
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.EffectSpan
 import com.squish.app.timeline.MIN_CLIP_MS
@@ -574,6 +575,20 @@ data class EditorUiState(
     val cropRect: CropRect = CropRect(),
 
     val selectedClipId: String? = null,
+    /**
+     * The clips selected alongside [selectedClipId] - Select more, then taps on
+     * the strip. Delete and a carry act on all of them. Let go of with the
+     * selection, as any selection is; not an undo step either.
+     */
+    val selectedClipIds: Set<String> = emptySet(),
+    /** Taps on the strip add to the selection rather than replace it: Select more is on. */
+    val selectingMore: Boolean = false,
+    /** A file picked to go under a clip, waiting on where in it to start; see [ReplaceRequest]. */
+    val replacing: ReplaceRequest? = null,
+    /** A clip's settings, copied and waiting to be pasted onto another. Not an edit until they are. */
+    val attributeClipboard: ClipAttributes? = null,
+    /** The clips whose reversed render is being made, each with how far along it is (0..1). */
+    val reversing: Map<String, Float> = emptyMap(),
     val pixelsPerSecond: Float = 42f,
     /**
      * Bumped to ask the strip to fit the whole edit across its width.
@@ -649,6 +664,12 @@ data class EditorUiState(
         )
 
     val frameMs: Long get() = Timecode.frameDurationMs(fps)
+
+    /** Every clip selected, the lead included: what Delete and a carry act on with several selected. */
+    val allSelectedIds: Set<String> get() = selectedClipIds + setOfNotNull(selectedClipId)
+
+    /** Whether several things are selected at once, so the toolbar shows what acts on all of them. */
+    val multiSelected: Boolean get() = selectedClipIds.isNotEmpty()
 
     /**
      * The shape of the picture the preview composes on: the crop if one is chosen,
@@ -990,6 +1011,7 @@ fun EditorUiState.toTimeline(): TimelineState {
     return TimelineState(
         clips = videoClips + audioClips + listOfNotNull(taking) + captions,
         selectedClipId = selectedClipId,
+        selectedIds = selectedClipIds,
         playheadMs = playheadMs,
         pixelsPerSecond = pixelsPerSecond,
         waveforms = audioWaveforms,
@@ -998,6 +1020,26 @@ fun EditorUiState.toTimeline(): TimelineState {
         },
         pictureEndMs = trimmedDurationMs
     )
+}
+
+/**
+ * A file picked to replace a clip's footage, before it goes in: the clip, the
+ * file and how long it is, and where in it the clip's window starts - chosen
+ * on the Replace sheet, whose frame shows the moment picked. The window is the
+ * clip's own ([neededMs]), so the pick is only *where*, never how much.
+ */
+data class ReplaceRequest(
+    val clipId: String,
+    val uri: Uri,
+    val label: String,
+    val fileMs: Long,
+    val neededMs: Long,
+    val inPointMs: Long = 0L,
+    /** Where the slider opened - the old clip's own in-point - and what the sheet's Reset puts back, as every sheet's does. */
+    val defaultInMs: Long = inPointMs
+) {
+    /** The last moment the window can start and still fit in the file. */
+    val latestInMs: Long get() = (fileMs - neededMs).coerceAtLeast(0L)
 }
 
 /** Where an auto-reframe analysis has got to. */

@@ -1,5 +1,8 @@
 import com.squish.app.editor.BackStep
+import com.squish.app.editor.DELETE_POSITION
+import com.squish.app.editor.FOOTAGE_TOOLS
 import com.squish.app.editor.LEVEL_ZERO
+import com.squish.app.editor.NEEDS_MOTION
 import com.squish.app.editor.ProjectName
 import com.squish.app.editor.SelectionKind
 import com.squish.app.editor.ShotSpan
@@ -39,7 +42,12 @@ fun main() {
             check(Tool.Split in tools, "$kind has no Split")
             check(Tool.Duplicate in tools, "$kind has no Duplicate")
             check(tools.distinct() == tools, "$kind lists a tool twice: $tools")
-            check(tools.last() == Tool.Delete, "$kind: Delete is not last, where a slip cannot reach it by accident")
+            // Fifth on every row (section 2, CapCut), or last of a shorter one:
+            // on the first screenful, in the same place whatever is selected.
+            // It was last, which on a shot's row of 23 was three screens away.
+            val expectedAt = minOf(DELETE_POSITION, tools.size) - 1
+            check(tools.indexOf(Tool.Delete) == expectedAt, "$kind: Delete is ${tools.indexOf(Tool.Delete) + 1}th, not ${expectedAt + 1}th: $tools")
+            check(toolsFor(kind, canTransition = false).indexOf(Tool.Delete) == expectedAt, "$kind without a transition: Delete moved")
         }
         // Speed is three taps: the clip, Speed, a preset. So it is on the first screenful.
         check(toolsFor(SelectionKind.MainVideo).indexOf(Tool.Speed) in 0..3, "Speed is not near the start for a shot")
@@ -175,6 +183,59 @@ fun main() {
         check(photo.all { it in toolsFor(SelectionKind.Overlay) }, "a photo overlay offers a tool footage does not")
         check(sheetSurvives(Tool.Opacity, SelectionKind.PhotoOverlay, false), "Opacity closed moving to a photo overlay")
         check(!sheetSurvives(Tool.Volume, SelectionKind.PhotoOverlay, false), "Volume stayed open over a photo")
+    }
+
+    // --- The clip operations (B11): on footage, and on what has settings to carry. ------
+    run {
+        val footage = listOf(Tool.Rotate, Tool.Mirror, Tool.Freeze, Tool.Reverse, Tool.Replace)
+        for (kind in listOf(SelectionKind.MainVideo, SelectionKind.Overlay)) {
+            val tools = toolsFor(kind, canTransition = true)
+            check(footage.all { it in tools }, "$kind is missing one of $footage")
+            check(Tool.CopyAttributes in tools && Tool.PasteAttributes in tools, "$kind cannot copy or paste attributes")
+            check(tools.indexOf(Tool.CopyAttributes) + 1 == tools.indexOf(Tool.PasteAttributes), "$kind: Paste is not beside Copy")
+        }
+        // A photo turns and mirrors, and carries settings; it has no footage to freeze, reverse or swap.
+        val photo = toolsFor(SelectionKind.PhotoOverlay)
+        check(Tool.Rotate in photo && Tool.Mirror in photo && Tool.CopyAttributes in photo, "a photo cannot turn, mirror or copy")
+        check(FOOTAGE_TOOLS.none { it in photo }, "a photo offers a footage tool")
+        // A sound carries its level, fades, voice and speed; nothing of the picture.
+        val sound = toolsFor(SelectionKind.Audio)
+        check(Tool.CopyAttributes in sound && Tool.PasteAttributes in sound, "a sound cannot copy or paste attributes")
+        check(sound.none { it in FOOTAGE_TOOLS || it == Tool.Rotate || it == Tool.Mirror }, "a sound offers a picture tool")
+        for (kind in listOf(SelectionKind.Text, SelectionKind.Sticker, SelectionKind.Effect)) {
+            check(toolsFor(kind).none { it in FOOTAGE_TOOLS || it == Tool.CopyAttributes || it == Tool.Rotate }, "$kind offers a clip's footage tool")
+        }
+        // Everything on the strip can be selected alongside something else; the
+        // set then offers what acts on all of it and nothing that acts on one.
+        for (kind in SelectionKind.entries.filter { it != SelectionKind.None }) {
+            check(Tool.SelectMore in toolsFor(kind, canTransition = true), "$kind has no Select more")
+            val several = toolsFor(kind, canTransition = true, multi = true)
+            check(several == listOf(Tool.SelectMore, Tool.Delete), "$kind with several selected shows $several")
+        }
+        check(toolsFor(SelectionKind.None, multi = true) == LEVEL_ZERO, "nothing selected but several: not level 0")
+        check(footage.none { it.sheet } && !Tool.CopyAttributes.sheet && !Tool.SelectMore.sheet, "a clip operation opens a sheet instead of acting")
+        // Replace's sheet - where in the new file to start - opens on the pick, and
+        // stays while a footage clip is selected; a shot's tool closes over a set.
+        check(sheetSurvives(Tool.Replace, SelectionKind.MainVideo, false), "the Replace sheet closed over a shot")
+        check(!sheetSurvives(Tool.Replace, SelectionKind.Audio, false), "the Replace sheet stayed over a sound")
+        check(!sheetSurvives(Tool.Speed, SelectionKind.MainVideo, false, multi = true), "Speed stayed open over several clips")
+        check(sheetSurvives(Tool.Sound, SelectionKind.MainVideo, false, multi = true), "the Sound sheet closed over several clips")
+        // A photo, blank or freeze rendered into a file on a video track: no
+        // frame to freeze, nothing to run backwards, no shake or motion to
+        // measure. Everything else a shot has, in the same order.
+        for (kind in listOf(SelectionKind.MainVideo, SelectionKind.Overlay)) {
+            val stillRow = toolsFor(kind, canTransition = true, footage = false)
+            check(NEEDS_MOTION.none { it in stillRow }, "$kind as a still offers a tool that needs motion: $stillRow")
+            check(FOOTAGE_TOOLS.all { it in NEEDS_MOTION } && Tool.Stabilize in NEEDS_MOTION && Tool.Track in NEEDS_MOTION, "a still is offered Stabilize or Track")
+            check(stillRow == toolsFor(kind, canTransition = true).filterNot { it in NEEDS_MOTION }, "$kind as a still reorders the row")
+            check(Tool.Delete in stillRow && Tool.Rotate in stillRow && Tool.Duplicate in stillRow, "$kind as a still lost a tool it has")
+        }
+        // A caption still follows a subject: Track is about the footage under it.
+        check(Tool.Track in toolsFor(SelectionKind.Text) && Tool.Track in toolsFor(SelectionKind.Sticker), "words lost Track")
+        check(!sheetSurvives(Tool.Stabilize, SelectionKind.MainVideo, true, footage = false), "Stabilize stayed open over a freeze")
+        check(sheetSurvives(Tool.Speed, SelectionKind.MainVideo, true, footage = false), "Speed closed over a freeze")
+        // One name per concept: a sticker's mirror and a clip's read the same.
+        check(Tool.Flip.label == Tool.Mirror.label, "a sticker mirrors as '${Tool.Flip.label}' and a clip as '${Tool.Mirror.label}'")
     }
 
     println("tool rules: toolbar levels, sheets, back, cut target, project names")

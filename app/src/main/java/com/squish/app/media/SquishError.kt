@@ -233,6 +233,61 @@ sealed class SquishError(
         fix = "Pick a clip with sound, or add music from Sound."
     )
 
+    /**
+     * A file picked to replace a clip's footage that cannot cover the clip's
+     * window. Said with the two lengths: the fix is to pick a longer file or
+     * shorten the clip, and which one is a matter of how far apart they are.
+     */
+    class ReplacementTooShort(val name: String, val fileMs: Long, val neededMs: Long) : SquishError(
+        title = "“$name” is too short to replace this clip",
+        detail = "The clip plays ${seconds(neededMs)} of footage and the file picked runs ${seconds(fileMs)}. " +
+            "Replace keeps the clip's length, speed and everything set on it.",
+        fix = "Pick a longer file, or trim the clip first and replace it then."
+    )
+
+    /** A freeze on an overlay row with something on the row where the rest of the shot would move to. */
+    class NoRoomOnRow : SquishError(
+        title = "No room on this row for the freeze",
+        detail = "The rest of the clip moves along by the freeze's length, and something else on its row is in the way.",
+        fix = "Move or shorten the overlay after it, or freeze a moment nearer this clip's end."
+    )
+
+    /** The frame under the playhead could not be read or made into a still. Not an export: it used to say one had stopped. */
+    class FreezeFailed(val name: String) : SquishError(
+        title = "Couldn't freeze a frame of “$name”",
+        detail = "The frame could not be read from the file, or the still could not be rendered.",
+        fix = "Try another moment of the clip. If no frame of it can be frozen, the phone's decoder cannot read this file."
+    )
+
+    /** The still was made, but the frame it holds was trimmed out of the clip while it was being made. */
+    class FrozenFrameGone(val name: String) : SquishError(
+        title = "That frame is no longer in “$name”",
+        detail = "The clip was trimmed or cut while the freeze was being made, and the frame frozen is not in it any more.",
+        fix = "Put the playhead on the frame to hold and press Freeze again."
+    )
+
+    /** A clip too long for a reversed render, whose sound is held whole while it is made. */
+    class TooLongToReverse(val name: String, val maxMs: Long) : SquishError(
+        title = "“$name” is too long to reverse",
+        detail = "Reversing keeps the whole clip's sound in memory while the picture is written backwards, " +
+            "so it stops at ${seconds(maxMs)}.",
+        fix = "Cut the clip and reverse the part that needs it."
+    )
+
+    /** The reversed render did not finish. Running out of memory is the one cause worth its own words. */
+    class ReverseFailed(val name: String, cause: Throwable? = null) : SquishError(
+        title = "Couldn't reverse “$name”",
+        detail = when {
+            cause is OutOfMemoryError -> "The phone ran out of memory holding the clip's frames and sound while they were written backwards."
+            else -> cause?.message?.takeIf { it.isNotBlank() }
+                ?.let { "The render stopped: $it." }
+                ?: "The phone's decoder or encoder stopped part-way through the render."
+        },
+        fix = if (cause is OutOfMemoryError) "Cut the clip and reverse the part that needs it, with other apps closed. The clip is as it was."
+        else "Try again, or cut the clip shorter first. The clip is as it was.",
+        cause = cause
+    )
+
     class CaptionsUnreadable : SquishError(
         title = "No captions in that file",
         detail = "The file opened, but nothing in it looked like subtitle timings.",
@@ -509,6 +564,13 @@ sealed class SquishError(
             bytes >= 1_000_000_000 -> "%.1f GB".format(bytes / 1_000_000_000.0)
             bytes >= 1_000_000 -> "%.0f MB".format(bytes / 1_000_000.0)
             else -> "%.0f KB".format(bytes / 1_000.0)
+        }
+
+        /** A length in whole seconds, or with a decimal under ten, as a sentence says it. */
+        fun seconds(ms: Long): String = when {
+            ms >= 60_000L -> "${ms / 60_000L} min ${(ms % 60_000L) / 1_000L} s"
+            ms >= 10_000L -> "${ms / 1_000L} s"
+            else -> "%.1f s".format(ms / 1_000.0)
         }
 
         // Media3 ExportException codes, by name, pinned as ints so a library rename

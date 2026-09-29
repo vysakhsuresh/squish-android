@@ -35,6 +35,7 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.Mask
 import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
+import com.squish.app.timeline.ReversedSource
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
 import com.squish.app.timeline.SpeedPoint
@@ -678,6 +679,27 @@ class ProjectAutosave(context: Context) {
                 put("spill", key.spill.toDouble())
             })
         }
+        // Written only when set, so an older build reading the draft sees
+        // nothing it does not know.
+        if (clip.mirrored) put("mirrored", true)
+        if (clip.quarterTurns != 0) put("quarterTurns", clip.quarterTurns)
+        clip.reversedFrom?.let { from ->
+            put("reversedFrom", JSONObject().apply {
+                put("uri", from.uri?.toString() ?: JSONObject.NULL)
+                put("sourceInMs", from.sourceInMs)
+                put("sourceOutMs", from.sourceOutMs)
+                put("durationMs", from.durationMs)
+                // The person masks measured on the original, kept for Reverse
+                // again (see Clip.reversed). Written as the clip's own are.
+                from.background?.let { bg ->
+                    put("background", JSONObject().apply {
+                        put("maskFile", bg.maskFile)
+                        put("fill", bg.fill.name)
+                        put("colorArgb", bg.colorArgb)
+                    })
+                }
+            })
+        }
     }
 
     private fun encodeKeyframe(key: Keyframe): JSONObject = JSONObject().apply {
@@ -900,15 +922,7 @@ class ProjectAutosave(context: Context) {
             stabilizer = json.optJSONArray("stabilizer")?.let { array ->
                 (0 until array.length()).mapNotNull { i -> decodeKeyframe(array.optJSONObject(i)) }
             }.orEmpty().sortedBy { it.atMs },
-            background = json.optJSONObject("background")?.let { b ->
-                b.optString("maskFile").takeIf { it.isNotBlank() }?.let { path ->
-                    BackgroundRemoval(
-                        maskFile = path,
-                        fill = enumOrNull<BackgroundFill>(b.optString("fill")) ?: BackgroundFill.Blur,
-                        colorArgb = b.optInt("colorArgb", 0xFF101828.toInt())
-                    )
-                }
-            },
+            background = json.optJSONObject("background")?.let(::decodeBackground),
             chromaKey = json.optJSONObject("chromaKey")?.let { k ->
                 ChromaKey(
                     keyColorArgb = k.optInt("keyColorArgb", ChromaKey.STANDARD_GREEN),
@@ -946,9 +960,29 @@ class ProjectAutosave(context: Context) {
                         ).takeIf { !it.isEmpty }
                     }
                 )
+            },
+            mirrored = json.optBoolean("mirrored"),
+            quarterTurns = (json.optInt("quarterTurns") % 4 + 4) % 4,
+            reversedFrom = json.optJSONObject("reversedFrom")?.let { r ->
+                ReversedSource(
+                    uri = r.optString("uri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse),
+                    sourceInMs = r.optLong("sourceInMs"),
+                    sourceOutMs = r.optLong("sourceOutMs"),
+                    durationMs = r.optLong("durationMs"),
+                    background = r.optJSONObject("background")?.let(::decodeBackground)
+                )
             }
         )
     }
+
+    private fun decodeBackground(b: JSONObject): BackgroundRemoval? =
+        b.optString("maskFile").takeIf { it.isNotBlank() }?.let { path ->
+            BackgroundRemoval(
+                maskFile = path,
+                fill = enumOrNull<BackgroundFill>(b.optString("fill")) ?: BackgroundFill.Blur,
+                colorArgb = b.optInt("colorArgb", 0xFF101828.toInt())
+            )
+        }
 
     private fun decodeKeyframe(json: JSONObject?): Keyframe? {
         if (json == null) return null
@@ -1032,8 +1066,12 @@ class ProjectAutosave(context: Context) {
          * look. The two arrived on separate branches (B9 and B10) that each
          * wrote 12 before they met, so a 12 may hold either half without the
          * other: both are told apart by their fields, not by this number.
+         *
+         * 13: a clip's own mirror and quarter turns, and the file a reversed
+         * clip was rendered from (B11). Each is written only when set, and
+         * read as unset when missing, so a 12 reads as before.
          */
-        const val FORMAT_VERSION = 12
+        const val FORMAT_VERSION = 13
         const val OLDEST_READABLE_VERSION = 9
 
         /** The first version whose pictures' levels are their own; older ones are moved over on reading. */
@@ -1105,6 +1143,7 @@ data class ProjectSnapshot(
                 it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs &&
                     it.volume == 1f && it.voice == VoiceEffect.None && it.fadeInMs == 0L && it.fadeOutMs == 0L &&
                     it.chromaKey == null && it.mask == null && it.background == null &&
+                    !it.mirrored && it.quarterTurns == 0 && it.reversedFrom == null &&
                     it.keyframes.isEmpty() && it.stabilizer.isEmpty() && it.speedRamp == com.squish.app.timeline.SpeedRamp()
             }
 }

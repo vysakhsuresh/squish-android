@@ -64,6 +64,14 @@ function first; if it can, it can be checked.
   nothing to run, so it proves nothing. The `tools/jvm` suites are the tests.
 - **Python is not installed here**, so the `tools/check_*.py` checkers only run
   in the sandbox. On this machine `assembleDebug` is the check.
+- **No `kotlinc` here either, but the `tools/jvm` suites still run:** the
+  Kotlin 2.0.20 compiler is in the Gradle cache. With `java` from JBR 21,
+  `java -cp <kotlin-compiler-embeddable;kotlin-stdlib;kotlin-reflect;kotlin-script-runtime;kotlin-daemon-embeddable;trove4j;annotations-13.0;kotlinx-coroutines-core-jvm>
+  org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib -classpath <kotlin-stdlib> -d <dir> <the suite's files from run.sh>`
+  then `java -cp "<dir>;<kotlin-stdlib>" <Suite>Kt`. Every jar is under
+  `~/.gradle/caches/modules-2/files-2.1/`.
+- **A worktree has no `local.properties`**, so a build there wants
+  `ANDROID_HOME=C:\Users\vysak\AppData\Local\Android\Sdk` in the environment.
 - **The device is the user's own phone** (moto g84 5G, serial ZY32J8HF2S),
   driven with `C:/Users/vysak/AppData/Local/Android/Sdk/platform-tools/adb`.
   Before any taps, confirm it is free: `dumpsys telephony.registry | grep
@@ -416,6 +424,78 @@ should work through it and then delete what holds up.
   question B9's voiceover asks; a draft from before this build opens with its
   looks read back through `TextStyleJson` (Outline as a stroke, Box as a
   bubble) and every animated line leaving by a fade, as it did.
+
+- **Batch B11 (clip operations), all of it.** Built on the desktop with no
+  phone attached. The decisions - a freeze cut into a shot and the track
+  closing round it, a replacement keeping the window and everything on it, a
+  reversed render under a clip and the original back (trimmed meanwhile or
+  not), the curve mirrored, the preview's and the file's turn being the same
+  turn, attributes carried as shapes, and several clips toggled, deleted and
+  carried as one - are executed on the JVM (`tools/jvm/ClipOpsChecks.kt`), and
+  the toolbar's new tools in `ToolRulesChecks.kt`; nothing has been seen.
+  Script in `docs/ROADMAP.md` §4 under B11, plus what only a device answers:
+  Rotate on a clip turns it a quarter clockwise on screen *and* in the file
+  (`CompositionFactory.turn` passes 270 for one turn, since Media3's degrees
+  run the other way - the same disagreement `PreviewBox.screenRotation`
+  settles for the edit-wide rotation; if the two disagree, `ExportPlan.turnDegrees`
+  is the one number to flip), a turned landscape shot stands pillarboxed in
+  both (`TimelinePreview.turnedInside` fits the view by the turned shape, the
+  export's Presentation fits the turned frame), and Mirror flips left to right
+  in both with the mirror applied before the turn (`ScaleAndRotateTransformation`
+  with scale -1 is the one Media3 call this leans on - check it accepts a
+  negative scale and does not refuse the frame); a photo overlay turns and
+  mirrors too (its `Image` is laid out the same way); the overlay box on a
+  turned PiP is the turned shape. Freeze grabs the frame under the playhead
+  at full size (`StillClips.freezeFrame`, `OPTION_CLOSEST`, rendered at the
+  frame's own size up to 4K and only then at 1080 - check a freeze of 4K
+  footage is as sharp as the frames either side of it in the file) and lands
+  a 3 s "Freeze" still, selected, with the shot's placement, mask (a tracked
+  one standing where the track had it), key, mirror and turn - check the
+  frozen picture is the frame that was on screen, not the nearest keyframe,
+  and that it is upright for a portrait clip; on an overlay row with no room
+  after it, it says so; the still lands where its frame is when it is ready,
+  so a trim made while "Preparing" showed does not lose it, and trimmed out
+  altogether it says so. Reverse renders the window backwards
+  with the platform codecs (`ReverseRenderer`: keyframe runs decoded forward
+  and handed to the encoder last frame first, YUV never leaving YUV, a spool
+  to disk past a quarter of the heap; the sound reversed in place and
+  AAC-encoded first; 10-bit and HDR files refused by their tags or by the
+  decoder's first picture) into `files/reversed/` and lands as one step when
+  done - beneath a gesture under way, like Stabilize - a card saying how far
+  along it is with a Cancel; the stabilizer's keys and a mask's track go
+  onto the render's clock mirrored and come back the same way, the person
+  masks come off and go back with Reverse again - check the file plays
+  backwards with its sound backwards, that a portrait clip comes out the
+  right way up (the rotation tag is copied, the pixels are not turned), that
+  a clip trimmed while the render ran keeps the frames it showed and a clip
+  cut in two meanwhile gets the render on both halves, that Reverse again
+  puts the original back at once, that Cancel and leaving the editor
+  mid-render leave no `.part` file and say nothing, that a stabilized shot
+  reversed is steady, and that a clip over three minutes is refused with the
+  message rather than attempted. Replace
+  opens the picker, then a sheet with a frame of the new file and "Start at"
+  (the old clip's own in-point when the file has that much, which is what its
+  Reset goes back to); Done puts it in
+  keeping the window, place, speed, keys and settings; a file too short says
+  so with both lengths; a photo picked goes straight in as a still; tapping
+  another shot while the sheet is up closes it. A photo, blank or freeze on
+  a video track is not offered Freeze, Reverse, Replace, Stabilize or Track.
+  Copy attributes and Paste attributes carry level, fades, voice, curve
+  (refitted to the span), opacity, placement, keys (refitted to the length),
+  mask (its shape, not its track), key colour, mirror and turn - a sound
+  takes the sound ones, a photo none of the sound ones, and a sound's pasted
+  onto a picture changes only its sound; Paste is greyed until something is
+  copied. Delete is the fifth tool on every clip's row. Select more turns the
+  button orange, reads "Done selecting" while on, and taps on the strip add
+  to the set (drawn selected together, no row folded) as does a tap on an
+  overlay's box on the picture; pressing it again keeps the set; the row is
+  then Select more and Delete only; Delete takes all as one step; a shot
+  lifted from among the selected takes them with it in their order (one
+  lifted from outside the set moves alone and joins it) and a carried sound
+  or overlay slides the selected sounds, overlays and lines together,
+  stopping the whole group against a wall on an overlay row. A draft from
+  before this build opens as it was (the new fields read as unset); one
+  saved by this build writes version 13.
 
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
