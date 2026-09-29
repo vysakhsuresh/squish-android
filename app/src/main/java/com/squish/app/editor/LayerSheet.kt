@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -94,7 +95,7 @@ fun LayerPanel(clip: Clip, viewModel: EditorViewModel) {
 fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
     // The level to come back to after Mute. Kept per clip, across a rotation.
     var lastHeard by rememberSaveable(clip.id) { mutableFloatStateOf(clip.volume.takeIf { it > 0f } ?: 1f) }
-    if (clip.volume > 0f && clip.volume != lastHeard) lastHeard = clip.volume
+    LaunchedEffect(clip.volume) { if (clip.volume > 0f) lastHeard = clip.volume }
     val accent = if (clip.isOverlay) SquishColors.Magenta else SquishColors.Violet
     val muted = clip.volume <= 0f
     PanelSurface(accent = accent) {

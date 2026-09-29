@@ -171,7 +171,7 @@ fun EditorToolSheet(
         // the whole edit is on Sound.
         Tool.Volume -> clip?.let { c ->
             if (c.kind == ClipKind.Audio) { { viewModel.audio.setAudioClipVolume(c.id, 1f) } }
-            else { { viewModel.clips.setClipMuted(c.id, muted = false, restoreTo = 1f) } }
+            else { { viewModel.clips.resetClipVolume(c.id) } }
         }
         Tool.Animation -> when {
             item != null -> { { viewModel.text.restyleCaption(item.id, { it.copy(motion = TextMotion.None) }) } }
