@@ -837,6 +837,7 @@ fun TimelineEditor(
                                     window = window,
                                     accent = Concept.Overlay.accent,
                                     waveforms = state.waveforms,
+                                    missingUris = state.missingUris,
                                     onSelect = guardedSelect,
                                     onBareTap = bareTap,
                                     trims = trims,
@@ -855,6 +856,7 @@ fun TimelineEditor(
                                     window = window,
                                     accent = Concept.Video.accent,
                                     waveforms = state.waveforms,
+                                    missingUris = state.missingUris,
                                     onSelect = guardedSelect,
                                     onBareTap = bareTap,
                                     trims = trims,
@@ -874,6 +876,7 @@ fun TimelineEditor(
                                     window = window,
                                     accent = Concept.Sound.accent,
                                     waveforms = state.waveforms,
+                                    missingUris = state.missingUris,
                                     onSelect = guardedSelect,
                                     onBareTap = bareTap,
                                     trims = trims,
@@ -893,6 +896,7 @@ fun TimelineEditor(
                                     window = window,
                                     accent = Concept.Text.accent,
                                     waveforms = state.waveforms,
+                                    missingUris = state.missingUris,
                                     onSelect = guardedSelect,
                                     onBareTap = bareTap,
                                     trims = trims,
@@ -1474,6 +1478,8 @@ private fun Lane(
     window: TimelineWindow,
     accent: Color,
     waveforms: Map<String, com.squish.app.media.audio.Waveform>,
+    /** The files that cannot be read; their clips are drawn as placeholders. */
+    missingUris: Set<String>,
     onSelect: (String?) -> Unit,
     /** A tap on bare track, away from every clip: nothing selected any more. */
     onBareTap: () -> Unit,
@@ -1533,6 +1539,7 @@ private fun Lane(
                     folded = row.folded,
                     lifted = clip.id == liftedId,
                     waveform = clip.uri?.let { waveforms[it.toString()] },
+                    missing = clip.uri?.toString() in missingUris,
                     window = window,
                     accent = clipColor?.invoke(clip) ?: accent,
                     onSelect = onSelect,
@@ -1690,6 +1697,8 @@ private fun ClipView(
     /** Being carried: drawn faint where it was, the carried copy is under the finger. */
     lifted: Boolean,
     waveform: com.squish.app.media.audio.Waveform?,
+    /** The clip's file cannot be read: a hatched placeholder and a badge stand in for its frames. */
+    missing: Boolean,
     window: TimelineWindow,
     accent: Color,
     onSelect: (String?) -> Unit,
@@ -1823,7 +1832,21 @@ private fun ClipView(
                 }
             }
         }
-        if (strip != null) {
+        if (missing) {
+            // The placeholder for a file that cannot be read (EditorUiState
+            // .missingMedia): hatched, so it is not mistaken for footage still
+            // loading, and never asked for frames - the loader would fail on
+            // every one of them at every scroll.
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val step = 12.dp.toPx()
+                val stroke = SquishColors.Amber.copy(alpha = 0.3f)
+                var x = -size.height
+                while (x < size.width) {
+                    drawLine(stroke, Offset(x, size.height), Offset(x + size.height, 0f), strokeWidth = 3.dp.toPx())
+                    x += step
+                }
+            }
+        } else if (strip != null) {
             // The frames under the part being drawn, not under the whole clip.
             // The box is a window onto the clip, so sampling the clip's whole
             // source into it would show the wrong moments - and on a long clip
@@ -1893,10 +1916,32 @@ private fun ClipView(
             }
         }
 
+        // A missing file says so where a retimed clip says its speed, so the
+        // clip to relink can be found on the strip.
+        if (missing && width > 52.dp) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 3.dp, end = handleWidth + 3.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(SquishColors.Background.copy(alpha = 0.72f))
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
+            ) {
+                Text(
+                    text = "Missing",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Amber,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
         // A retimed clip says so on the strip. Its length already tells you
         // something changed, but not what - and "this is 1.7 seconds long" is not
         // the same information as "this is running at half speed".
-        if (!clip.speedRamp.isIdentity && width > 52.dp) {
+        if (!clip.speedRamp.isIdentity && !missing && width > 52.dp) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)

@@ -44,6 +44,32 @@ object GallerySaver {
             collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         )
 
+    /**
+     * Lets the private copy go once the gallery's is known to be whole - the
+     * same length, read back through the resolver rather than trusted from the
+     * insert. Every export used to be kept twice, a gigabyte render costing two,
+     * with the second copy invisible to the user and to Settings' storage card.
+     * A copy that did not land, or reads back short, leaves the private file
+     * where it is; the library then plays that one (ExportRecord.mediaUri).
+     * Returns whether the private copy is gone.
+     */
+    suspend fun retire(context: Context, source: File, published: Uri?): Boolean = withContext(Dispatchers.IO) {
+        if (published == null) return@withContext false
+        val stored = runCatching {
+            context.contentResolver.openFileDescriptor(published, "r")?.use { it.statSize } ?: -1L
+        }.getOrDefault(-1L)
+        if (stored <= 0L || stored != source.length()) return@withContext false
+        source.delete()
+    }
+
+    /**
+     * Removes a gallery copy this app made. Only rows the app inserted can be
+     * deleted without asking; after a reinstall they are somebody else's, and
+     * the delete is refused - false then, and the file stays in the gallery.
+     */
+    fun remove(context: Context, published: Uri): Boolean =
+        runCatching { context.contentResolver.delete(published, null, null) > 0 }.getOrDefault(false)
+
     private suspend fun insert(
         context: Context,
         source: File,

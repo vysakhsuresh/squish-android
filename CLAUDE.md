@@ -760,6 +760,89 @@ should work through it and then delete what holds up.
   blend (`speedEffects`, then `frameDrop`), so the blended frames are the
   ones kept.
 
+- **Batch B15 (shell and project management), all of it.** Built on the
+  desktop with no phone attached. The decisions - a project's id and the name
+  a duplicate takes, where a cover frame is taken, which grants a purge lets
+  go of, what a storage clear may take, and where a quick trim's handles may
+  land - are executed on the JVM (`tools/jvm/ProjectRulesChecks.kt`,
+  `TrimRulesChecks.kt`); nothing of the screens has been seen. Script in
+  `docs/ROADMAP.md` §4 under B15, plus what only a device answers: a project
+  is its own id now (`EditorUiState.projectId`, the draft's slot, in the
+  editor's route), staged on disk before the editor opens
+  (`ProjectAutosave.stageStart`) and saved from the moment it is made - the
+  recovery banner, "Start a new project", the untouched-clip rule and
+  `OpenEditors` are gone with projects keyed by video, so check that a draft
+  saved by a build before this one (slot "p" and a hash) still opens from the
+  grid and saves back into the same file, and that `am kill` under a fresh
+  project with no save yet still opens it on its files; New project takes
+  photos and videos together and lays them end to end with Settings' ratio,
+  still length and transition on them (`EditorViewModel.loadFresh`), Browse
+  files takes document URIs, and Record writes under `files/imports/` through
+  the provider (`file_paths.xml`); a share whose grant cannot be kept is
+  copied into `files/imports/` when the project opens (`MediaAccess.importCopy`
+  - the copy is on the loading spinner, so a gigabyte share sits there a
+  while); a file deleted from the gallery is named on opening the project and
+  the Relink card puts a picked file under every clip that played it as one
+  undo step (`EditorViewModel.relink`; the placeholder clips are the strip's
+  ordinary clips drawn black); exports are stored once - the private copy is
+  deleted after the gallery copy reads back the same length
+  (`GallerySaver.retire`) and the library, the done screen and the detail
+  screen play, share and delete the gallery copy (`ExportRecord.mediaUri`,
+  `GallerySaver.remove`, which a reinstall's rows refuse) - check a MediaStore
+  URI plays in `VideoPreviewSheet` and shares to WhatsApp with the grant
+  flag; the dashboard's covers and the library's thumbnails come through
+  `ThumbnailCache` (memory, then `cache/thumbs/` JPEGs, one decode at a time)
+  so an 80-item library scrolls without re-decoding; the history list is read
+  on its writer thread rather than the dashboard's first frame; Settings'
+  "Ticks when snapping" is a gated `LocalHapticFeedback` provided at the
+  root, so every snap in the strip and the box obeys it without knowing;
+  "Keep the screen on while editing" holds the window flag while the editor
+  is up; the storage card clears stills, renders, takes and masks only of
+  what no draft names (`StorageRules.unreferenced`, the still's `.jpg`
+  companion kept with it); backups exclude the drafts and everything an edit
+  made for itself; the quick trim is a filmstrip with two handles landing on
+  frame boundaries and a frame button either side (`TrimStrip`, on
+  `ThumbnailExtractor.extractFrames`) - check a handle follows the finger
+  under a snap and the preview jumps to the handle moved; Stitch's row action
+  reads "Add clips" and "Open in editor" hands the whole ordered list over as
+  one project; a quick tool asks for its picker once per session
+  (`rememberSaveable`); the coach marks on the dashboard and the editor show
+  once each (SharedPreferences "settings"); the row buttons on the drafts,
+  library and merge lists are 48 dp with names, and the tool tiles grow with
+  the font rather than clipping.
+  From its review round (built, the drag arithmetic in `TrimRulesChecks.kt`,
+  nothing seen): a fitted export is measured *before* `GallerySaver.retire`
+  deletes the private copy - measured after, an overshoot read as nothing and
+  B14's "Keep this one / Try again, tighter" card could never show; the trim
+  handles read their callbacks through `rememberUpdatedState` and measure a
+  drag from where the handle stood when the finger landed plus the whole
+  travel (`TrimRules.draggedTo`) - each event alone was under half a frame
+  and rounded back, so a slow drag never moved and a fast one snapped back
+  to its start; the bars sit inside the kept stretch with 48 dp targets
+  reaching inward, so both are whole at the full range; a missing file's
+  clips are hatched with a "Missing" badge on the strip and named on the
+  Relink card, a missing sound's Relink opens the file browser on audio, a
+  picked photo is rendered to a still first, relinking the source re-probes
+  the edit's shape (opened on an unreadable source it was measured against
+  0x0 - `applyDraft` now takes the shape from the first main shot that
+  reads), and Undo of a Relink brings the card back (`refreshMissingMedia`
+  over the files found unreadable this session; the source URI itself is not
+  in the snapshot, so it stays on the replacement, which changes nothing the
+  eye can see); the dashboard is a `LazyColumn` with the selection bar pinned
+  above it, a multi-select Delete's Undo restores every project it binned,
+  the card menu offers Preview and "Earlier version" (the ten-minute
+  snapshot, which had become unreachable when projects left the drafts
+  list), one word - Delete - is used for the bin everywhere, the rename
+  dialog is the editor's (`ui/components/RenameDialog.kt`; the sidecar
+  carries `name` apart from `title`, so Save with the field blank leaves an
+  unnamed project unnamed), a Record's file path is saved state so a take
+  survives the camera killing the process, a project staged but not yet
+  saved is listed ("not opened yet") rather than lost, and the loading
+  screen counts the photos still rendering; clearing exports from Settings
+  forgets the library rows that had no gallery copy; a staged project's
+  files count for `referencedUris`, so a purge cannot release a grant it is
+  about to open; Freeze is 3 s again (Settings' photo length is for photos).
+
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The

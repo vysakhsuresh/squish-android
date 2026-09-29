@@ -11,8 +11,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,61 +24,220 @@ import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.LocalCafe
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.squish.app.BuildConfig
-import com.squish.app.media.ProxyEngine
+import com.squish.app.editor.CropAspect
+import com.squish.app.editor.OutputSize
+import com.squish.app.media.ExportSettings
 import com.squish.app.media.SquishError
+import com.squish.app.timeline.TransitionType
 import com.squish.app.ui.components.SectionHeading
+import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishCard
 import com.squish.app.ui.components.SquishLogoMark
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishPage
+import com.squish.app.ui.components.SquishToggleSwitch
 import com.squish.app.ui.theme.SquishColors
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    var proxyBytes by remember { mutableStateOf(ProxyEngine.cacheSizeBytes(context)) }
+    val scope = rememberCoroutineScope()
+    // Measured off the main thread: seven folders walked at composition was a
+    // visible hitch on the way in.
+    var storage by remember { mutableStateOf<List<StorageEntry>>(emptyList()) }
+    LaunchedEffect(Unit) { storage = StorageCleaner.measure(context) }
 
     SquishPage(
         title = "Settings",
-        subtitle = "About Squish, and what it keeps on your device",
+        subtitle = "How new projects start, and what Squish keeps on your device",
         onBack = onBack,
         accent = SquishColors.Blue
     ) {
+        DefaultsCard()
+        ExportDefaultsCard()
+        StorageCard(
+            entries = storage,
+            onClear = { kind -> scope.launch { storage = StorageCleaner.clear(context, kind) } }
+        )
         AboutCard()
         MakerCard()
         SupportCard()
         PrivacyCard()
         WhatItDoesCard()
-        StorageCard(
-            bytes = proxyBytes,
-            onClear = {
-                ProxyEngine.clearCache(context)
-                proxyBytes = ProxyEngine.cacheSizeBytes(context)
-            }
-        )
         LicencesCard()
     }
 }
+
+/**
+ * How a new project starts, and how the editor behaves. Each is a default a
+ * new project takes and a draft keeps as it was; the settings CapCut puts
+ * under its own gear, which Settings here did not have at all.
+ */
+@Composable
+private fun DefaultsCard() {
+    val context = LocalContext.current
+    var defaults by remember { mutableStateOf(Preferences.editorDefaults(context)) }
+    fun reload() { defaults = Preferences.editorDefaults(context) }
+
+    SquishCard(accent = SquishColors.Blue) {
+        SectionHeading(
+            title = "New projects",
+            subtitle = "What every project starts with",
+            icon = Icons.Filled.Tune,
+            accent = SquishColors.Blue
+        )
+
+        SettingLabel("Frame", "The shape a new project is cut to. Frame on the toolbar changes it for one project.")
+        ChipRow(
+            options = RATIO_CHOICES.map { it.label },
+            selected = RATIO_CHOICES.indexOf(defaults.cropAspect).coerceAtLeast(0),
+            onPick = { Preferences.setDefaultRatio(context, RATIO_CHOICES[it]); reload() }
+        )
+
+        SettingLabel("Photos run for", "How long a photo plays when it is dropped in or a project is made from it. Drag its end for more.")
+        ChipRow(
+            options = Preferences.STILL_CHOICES_MS.map { "${it / 1000} s" },
+            selected = Preferences.STILL_CHOICES_MS.indexOf(defaults.stillMs).coerceAtLeast(0),
+            onPick = { Preferences.setStillMs(context, Preferences.STILL_CHOICES_MS[it]); reload() }
+        )
+
+        SettingLabel("Transition", "Put on every join when a project is made. Cut means none.")
+        ChipRow(
+            options = TRANSITION_CHOICES.map { it.label },
+            selected = TRANSITION_CHOICES.indexOf(defaults.transition).coerceAtLeast(0),
+            onPick = { Preferences.setDefaultTransition(context, TRANSITION_CHOICES[it]); reload() }
+        )
+
+        SwitchRow(
+            title = "Ticks when snapping",
+            blurb = "A tap you can feel when a drag lands on a cut, a beat or the playhead.",
+            checked = defaults.haptics,
+            onChange = { Preferences.setHaptics(context, it); reload() }
+        )
+        SwitchRow(
+            title = "Keep the screen on while editing",
+            blurb = "The screen never dims in the editor. It always stays on during an export.",
+            checked = defaults.keepScreenOn,
+            onChange = { Preferences.setKeepScreenOn(context, it); reload() }
+        )
+    }
+}
+
+/** The export choices a new project starts with, as the last export left them. */
+@Composable
+private fun ExportDefaultsCard() {
+    val context = LocalContext.current
+    var remembered by remember { mutableStateOf(Preferences.exportDefaults(context)) }
+    SquishCard(accent = SquishColors.Cyan) {
+        SectionHeading(
+            title = "Export",
+            subtitle = "What the Export sheet opens on",
+            icon = Icons.Filled.HighQuality,
+            accent = SquishColors.Cyan
+        )
+        val current = remembered
+        Text(
+            if (current == null) {
+                "A new project exports at its footage's own size and rate until an export is made; " +
+                    "the choices made then become the next project's starting point."
+            } else {
+                buildString {
+                    append("New projects open on ")
+                    append(if (current.outputP == OutputSize.ORIGINAL) "Original size" else OutputSize.label(current.outputP))
+                    append(", ")
+                    append(if (current.outputFps == ExportSettings.SOURCE_FPS) "the footage's rate" else "${current.outputFps} fps")
+                    append(", ${current.quality.label.lowercase()} quality")
+                    if (current.hevc) append(", smaller file (HEVC)")
+                    if (current.keepHdr) append(", HDR kept")
+                    append(" - as the last export was set.")
+                }
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextSecondary
+        )
+        if (current != null) {
+            SquishOutlinedButton(
+                text = "Start new projects at Original again",
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    Preferences.forgetExport(context)
+                    remembered = null
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingLabel(title: String, blurb: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+        Text(blurb, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+    }
+}
+
+/** Options as chips, wrapping onto more rows at a large font rather than clipping. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChipRow(options: List<String>, selected: Int, onPick: (Int) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEachIndexed { i, label ->
+            SelectableChip(
+                label = label,
+                selected = i == selected,
+                accentColor = SquishColors.Blue,
+                onClick = { onPick(i) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SwitchRow(title: String, blurb: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+            Text(blurb, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+        }
+        SquishToggleSwitch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+/** The shapes worth a default; the hand-drawn one is a rectangle, not a setting. */
+private val RATIO_CHOICES = CropAspect.entries.filter { it != CropAspect.Custom }
+
+/** The transitions worth putting on every join by default: the quiet ones. */
+private val TRANSITION_CHOICES = listOf(TransitionType.None, TransitionType.CrossFade, TransitionType.DipToBlack, TransitionType.SlideLeft, TransitionType.ZoomIn)
 
 /**
  * Who made it and how to reach them.
@@ -350,26 +512,46 @@ private fun WhatItDoesCard() {
     }
 }
 
+/**
+ * What Squish keeps on the phone, by kind, each with what it is for and a
+ * Clear of its own. It used to list the preview cache alone, while exports
+ * and stills sat in folders nothing measured.
+ */
 @Composable
-private fun StorageCard(bytes: Long, onClear: () -> Unit) {
+private fun StorageCard(entries: List<StorageEntry>, onClear: (StorageKind) -> Unit) {
+    val total = entries.sumOf { it.bytes }
     SquishCard(accent = SquishColors.Amber) {
         SectionHeading(
-            title = "Preview cache",
-            subtitle = "Using ${SquishError.formatBytes(bytes)}",
+            title = "Storage",
+            subtitle = if (entries.isEmpty()) "Measuring…" else "Using ${SquishError.formatBytes(total)}",
             icon = Icons.Filled.Storage,
             accent = SquishColors.Amber
         )
-        Text(
-            "Light 540p copies of large clips, kept only to keep scrubbing smooth. Exports always " +
-                "read the original file, so clearing these costs nothing but a rebuild.",
-            style = MaterialTheme.typography.bodySmall,
-            color = SquishColors.TextMuted
-        )
-        SquishOutlinedButton(
-            text = "Clear preview cache",
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onClear
-        )
+        entries.forEach { entry ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(entry.kind.title, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary, modifier = Modifier.weight(1f, fill = false))
+                        Text(SquishError.formatBytes(entry.bytes), style = MaterialTheme.typography.labelSmall, color = SquishColors.Amber)
+                    }
+                    Text(entry.kind.blurb, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+                }
+                Text(
+                    "Clear",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (entry.bytes > 0L) SquishColors.TextSecondary else SquishColors.TextMuted.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(enabled = entry.bytes > 0L, role = Role.Button) { onClear(entry.kind) }
+                        .heightIn(min = 44.dp)
+                        .padding(horizontal = 12.dp, vertical = 12.dp)
+                )
+            }
+        }
     }
 }
 

@@ -3,6 +3,7 @@ package com.squish.app.export
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.FileProvider
 import java.io.File
 
@@ -21,12 +22,24 @@ object ShareUtils {
         val uri = runCatching {
             FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(path))
         }.getOrNull() ?: return false
+        return share(context, uri, mimeOf(path), targetPackage)
+    }
 
-        val mime = mimeOf(path)
+    /**
+     * [share], for a file the app reaches by URI - the gallery copy of an
+     * export, which is the only copy there is. A MediaStore row this app made
+     * can be handed on with a read grant like any content URI.
+     */
+    fun share(context: Context, uri: Uri, mime: String, targetPackage: String? = null): Boolean {
+        val shareable = if (uri.scheme == "file") {
+            runCatching {
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(uri.path.orEmpty()))
+            }.getOrNull() ?: return false
+        } else uri
 
         fun send(pkg: String?) = Intent(Intent.ACTION_SEND).apply {
             type = mime
-            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_STREAM, shareable)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             pkg?.let { setPackage(it) }
         }
@@ -49,10 +62,13 @@ object ShareUtils {
         }
     }
 
-    @Deprecated("Use share", ReplaceWith("share(context, path, targetPackage)"))
-    fun shareVideo(context: Context, path: String, targetPackage: String? = null) {
-        share(context, path, targetPackage)
-    }
+    /** A URI other apps may read, for an intent's stream: the file's own through the provider, a content URI as it is. */
+    fun shareableUri(context: Context, uri: Uri): Uri? =
+        if (uri.scheme == "file") {
+            runCatching {
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(uri.path.orEmpty()))
+            }.getOrNull()
+        } else uri
 
     private fun mimeOf(path: String): String =
         if (path.endsWith(".m4a", ignoreCase = true) || path.endsWith(".aac", ignoreCase = true)) {

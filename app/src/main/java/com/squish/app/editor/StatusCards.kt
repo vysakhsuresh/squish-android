@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.HistoryToggleOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -21,15 +20,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.squish.app.media.SquishError
 import com.squish.app.ui.components.SquishOutlinedButton
-import com.squish.app.ui.components.SquishPrimaryButton
 import com.squish.app.ui.theme.SquishColors
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * A failure the user can read and act on: what happened, why, and the one thing
@@ -66,133 +60,6 @@ fun FailureCard(error: SquishError, onDismiss: () -> Unit, modifier: Modifier = 
             color = SquishColors.Cyan
         )
         SquishOutlinedButton(text = "Dismiss", onClick = onDismiss)
-    }
-}
-
-/**
- * The parachute opening. An edit survived the app being killed, and it is offered
- * rather than applied - quietly overwriting the clip someone just opened would be
- * its own kind of data loss.
- *
- * Continue is the primary and the only filled button: it is what almost everyone
- * wants, and it keeps work. "Start a new project" is the quiet one, and it never
- * deletes anything - the saved edit goes to the bin, where the drafts screen can
- * bring it back. The card used to say "Unsaved edit found" about an edit that
- * was saved, and offer "Start fresh" in the same weight as "Restore it", one tap
- * from deleting the only copy.
- *
- * Three lines tall, the two answers side by side: the card has a capped share
- * of the screen above the strip, and stacked buttons put the second one under
- * the strip, where it could be neither seen nor tapped.
- */
-@Composable
-fun RecoveryBanner(
-    offer: RecoveryOffer,
-    onContinue: () -> Unit,
-    onStartNew: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(SquishColors.SurfaceElevated)
-            .border(1.dp, SquishColors.Amber, RoundedCornerShape(12.dp))
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                Icons.Filled.HistoryToggleOff,
-                contentDescription = null,
-                tint = SquishColors.Amber,
-                modifier = Modifier.size(18.dp)
-            )
-            Text("Your edit of this clip is saved", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
-        }
-
-        Text(
-            buildString {
-                append(offer.clipCount)
-                append(if (offer.clipCount == 1) " clip, " else " clips, ")
-                // Whole seconds. Nobody needs the milliseconds of an edit to
-                // decide whether it is theirs.
-                append(Timecode.format(offer.durationMs).substringBefore('.'))
-                append(" of edit, saved ")
-                append(relativeTime(offer.savedAtMillis))
-                append(".")
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = SquishColors.TextSecondary,
-            maxLines = 2
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            SquishPrimaryButton(
-                text = "Continue",
-                modifier = Modifier.weight(1f),
-                onClick = onContinue
-            )
-            // A plain action rather than a second bordered button: the words
-            // are long, and beside the filled one a border made two equals of
-            // an answer and its alternative.
-            Text(
-                "Start a new project",
-                style = MaterialTheme.typography.labelLarge,
-                color = SquishColors.TextSecondary,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable(onClick = onStartNew)
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-            )
-        }
-    }
-}
-
-/**
- * Said once the first change to the bare clip has answered the offer above: the
- * saved edit went to the bin, and where it went and how to get it back are both
- * on screen. The offer used to vanish at the first edit with nothing said, so a
- * slip of the finger looked like the loss of a whole project.
- */
-@Composable
-fun SetAsideNotice(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(SquishColors.Surface)
-            .border(1.dp, SquishColors.Amber.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                Icons.Filled.HistoryToggleOff,
-                contentDescription = null,
-                tint = SquishColors.Amber,
-                modifier = Modifier.size(18.dp)
-            )
-            Text("Started a new project", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
-        }
-        Text(
-            "Your saved edit of this clip moved to Recently discarded on the Unfinished screen. " +
-                "Undo back to the untouched clip to have it offered again.",
-            style = MaterialTheme.typography.bodySmall,
-            color = SquishColors.TextSecondary
-        )
-        SquishOutlinedButton(text = "Got it", onClick = onDismiss)
     }
 }
 
@@ -310,16 +177,5 @@ fun SpeakingIndicator(speaking: Boolean, modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.labelSmall,
             color = SquishColors.Amber
         )
-    }
-}
-
-private fun relativeTime(millis: Long): String {
-    if (millis <= 0L) return "recently"
-    val elapsed = System.currentTimeMillis() - millis
-    return when {
-        elapsed < 60_000 -> "moments ago"
-        elapsed < 3_600_000 -> "${elapsed / 60_000} min ago"
-        elapsed < 86_400_000 -> "${elapsed / 3_600_000} h ago"
-        else -> SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(Date(millis))
     }
 }

@@ -435,11 +435,16 @@ All on the moto g84 (`adb -s ZY32J8HF2S`), `adb logcat -G 16M` first, build with
 
 **B15**
 1. Home shows the project grid; New project with 3 videos + 2 photos: editor opens with all five butted; rename and duplicate a project; two projects from the same clip coexist.
-2. Delete a source video from the gallery, open its project: a placeholder clip with Relink; relink to B.
+2. Delete a source video from the gallery, open its project: a hatched "Missing" placeholder clip on the strip, the file named on the Relink card; relink to B (the preview box and Frame take B's shape); Undo brings the placeholder and the card back; a missing sound's Relink opens the file browser on audio; a swept photo still relinks to its JPEG.
 3. Share a video from the Files app: the project survives a process kill.
 4. Settings: default ratio 9:16 and 4 s stills are honoured; storage card lists exports, clears them; exporting keeps only the gallery copy and Library still opens/shares it.
 5. Scroll an 80-item library: no re-decode stutter; TalkBack reads every button; 200% font shows no clipping.
 6. Quick trim with the filmstrip lands on a frame; Stitch "Add clips" appends; "Open in editor" carries all clips.
+7. A draft saved before this build (slot "p" + hash) shows on the grid with a cover, opens, and saves back into the same file; `am kill` under a project made a moment ago (no save yet) reopens it on its files.
+8. Long-press a card: selection mode; Delete two, Undo on the snackbar brings both back; a card's menu offers "Earlier version" once the ten-minute snapshot differs, and a long-press on row four shows the count and Delete above the grid; purge one from the bin, then `dumpsys package com.squish.app | grep -A3 "grantedUriPermissions"` no longer lists its video (unless another project names it).
+9. Export from the editor: `run-as com.squish.app ls files/../exports` is empty afterwards, the Library row plays and shares the gallery copy, Delete on its detail screen removes it from Photos; Settings → Storage lists every kind, and Clear on "Photos and freezes" leaves the stills a project uses.
+10. Settings → Ticks when snapping off: no tick on a snap in the strip or on the overlay box; Keep screen on: the editor never dims; the first open of the dashboard and of the editor each show one hint, once.
+11. Share a video from Files (not Open with): the project opens on a copy under `files/imports/`, and after `am kill` it still plays.
 
 **B16**
 1. Walk every sheet: names consistent, no "Captions tab", no "%" on degrees, seconds on transitions, active chip highlighted.
