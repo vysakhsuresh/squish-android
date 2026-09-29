@@ -13,6 +13,7 @@ import com.squish.app.media.EncoderCeiling
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
 import com.squish.app.media.ExportStage
+import com.squish.app.media.ExportsInFlight
 import com.squish.app.media.MediaCompat
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.SquishError
@@ -36,6 +37,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -174,6 +177,11 @@ class EditorViewModel(
                 withContext(Dispatchers.IO) { saveNow() }
             }
         }
+        // Told from the state rather than at each place an export starts or
+        // stops - there are five - so nothing can be left counted as exporting.
+        viewModelScope.launch {
+            _state.map { it.isExporting }.distinctUntilChanged().collect { ExportsInFlight.set(this@EditorViewModel, it) }
+        }
     }
 
     /**
@@ -284,7 +292,11 @@ class EditorViewModel(
      */
     fun load(uri: Uri, resume: Boolean = false) {
         if (loadedUri == uri) return
+        loadedUri?.let(OpenEditors::closed)
         loadedUri = uri
+        // Known to be open from here until cleared, so "Open with" on this
+        // video comes back here rather than opening a second editor of it.
+        OpenEditors.opened(uri)
         savedState[KEY_OPENED] = true
 
         _state.update { it.copy(sourceUri = uri, isLoadingSource = true) }
@@ -1109,6 +1121,10 @@ class EditorViewModel(
         // write handed to another thread has no guarantee of running before the
         // process that asked for it is killed.
         saveNow()
+        loadedUri?.let(OpenEditors::closed)
+        // The collector above is cancelled with the scope, so a screen cleared
+        // mid-export says so itself.
+        ExportsInFlight.set(this, false)
         FilmstripLoader.evictAll()
     }
 

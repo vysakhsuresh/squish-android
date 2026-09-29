@@ -16,6 +16,7 @@ import com.squish.app.media.EncoderCeiling
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
 import com.squish.app.media.ExportStage
+import com.squish.app.media.ExportsInFlight
 import com.squish.app.media.MediaCompat
 import com.squish.app.media.GallerySaver
 import com.squish.app.media.SquishError
@@ -34,7 +35,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -109,6 +112,14 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    init {
+        // Told from the state, as the editor is, so nothing can be left counted
+        // as exporting; the nav host holds an "Open with" while any is.
+        viewModelScope.launch {
+            _state.map { it.isExporting }.distinctUntilChanged().collect { ExportsInFlight.set(this@QuickToolViewModel, it) }
+        }
+    }
 
     private val processor = VideoProcessor(application)
     private val historyRepository = SquishRepositories.history(application)
@@ -702,6 +713,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     override fun onCleared() {
         super.onCleared()
         saveNow()
+        ExportsInFlight.set(this, false)
     }
 
     private companion object {

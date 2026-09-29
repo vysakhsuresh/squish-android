@@ -24,9 +24,12 @@ class MainActivity : ComponentActivity() {
      * The video "Open with" or "Share" last asked for, whenever it asked. A
      * fresh start sets it from the launching intent; a running app is handed
      * the intent through onNewIntent instead (the activity is single-task, so
-     * a second copy of the editor is never stacked on the first) - which used
-     * to be ignored outright, so opening a file while Squish was open did
-     * nothing at all.
+     * a second copy of the whole app - with its own editor saving into the
+     * same draft as the first's - is never started in the caller's task) -
+     * which used to be ignored outright, so opening a file while Squish was
+     * open did nothing at all. What the request does with the screens is the
+     * nav host's decision: back to the editor already open on the video, or a
+     * new one, and not while an export runs.
      */
     private var openRequest by mutableStateOf<OpenRequest?>(null)
 

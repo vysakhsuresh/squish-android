@@ -5,7 +5,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
@@ -16,7 +19,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.squish.app.data.ToolAutosave
 import com.squish.app.editor.EditorScreen
+import com.squish.app.editor.OpenEditors
 import com.squish.app.export.ExportScreen
+import com.squish.app.media.ExportsInFlight
 import com.squish.app.history.DraftsScreen
 import com.squish.app.history.LibraryScreen
 import com.squish.app.home.HomeScreen
@@ -47,6 +52,37 @@ private inline fun NavController.fromTopOf(entry: NavBackStackEntry, block: () -
 }
 
 /**
+ * Shows [uri] in an editor: the one already open on it, if there is one, or a
+ * new one over whatever is showing - the dashboard on a fresh start, another
+ * edit when the app was already running - which stays underneath, its draft
+ * saved as any edit's is.
+ *
+ * Never a second editor of a video that is open. Every editor of a video saves
+ * into the same draft slot on its own ticker, and two of them - the second
+ * stacked by "Open with" on a video already being edited - took turns writing
+ * their own state over it, so the work done in either could be gone from disk
+ * with nothing in the bin. The editors say which videos are open
+ * (OpenEditors); the one for [uri] may be several screens down, under a done
+ * screen or another edit, so the stack is popped back to it a screen at a
+ * time, never past the dashboard. Whatever is popped on the way has saved
+ * itself on leaving.
+ */
+private fun openVideo(navController: NavController, uri: Uri) {
+    val wanted = uri.toString()
+    fun NavBackStackEntry.isEditorOf(video: String) =
+        destination.route == Destination.Editor.route && arguments?.getString("videoUri") == video
+    if (OpenEditors.isOpen(uri)) {
+        while (true) {
+            val top = navController.currentBackStackEntry ?: break
+            if (top.isEditorOf(wanted)) return
+            if (top.destination.route == Destination.Home.route) break
+            if (!navController.popBackStack()) break
+        }
+    }
+    navController.navigate(Destination.Editor.buildRoute(Uri.encode(wanted)))
+}
+
+/**
  * A video handed over by "Open with" or "Share", [stamp]ed with when it was
  * asked for: the same file opened twice is two requests, and the host acts
  * on each.
@@ -55,16 +91,23 @@ data class OpenRequest(val uri: Uri, val stamp: Long)
 
 @Composable
 fun SquishNavHost(
-    /** The video "Open with" or "Share" last asked for, opened in the editor over whatever is showing. */
+    /** The video "Open with" or "Share" last asked for, to be shown in its editor. */
     open: OpenRequest? = null
 ) {
     val navController = rememberNavController()
 
-    // Over whatever is on screen - the dashboard on a fresh start, or another
-    // edit when the app was already running - which stays underneath, its
-    // draft saved as any edit's is.
-    LaunchedEffect(open) {
-        if (open != null) navController.navigate(Destination.Editor.buildRoute(Uri.encode(open.uri.toString())))
+    // The request acted on last, so a recomposition does not act on it again.
+    var actedOn by rememberSaveable { mutableStateOf<Long?>(null) }
+    // Held while any screen is exporting. The export runs only while its
+    // screen is in front: a new editor over it let the display sleep under
+    // the rest of the render, and dropped the result when it finished, so the
+    // file was in the gallery and nobody was told. It opens the moment the
+    // export is done, over the done screen.
+    val exporting by ExportsInFlight.any.collectAsState()
+    LaunchedEffect(open, exporting) {
+        if (open == null || exporting || actedOn == open.stamp) return@LaunchedEffect
+        actedOn = open.stamp
+        openVideo(navController, open.uri)
     }
 
     // Straight to the dashboard. The launch animation is the system splash, which
