@@ -1,6 +1,10 @@
 package com.squish.app.timeline
 
 import android.net.Uri
+import com.squish.app.editor.ClipCrop
+import com.squish.app.media.effects.Adjust
+import com.squish.app.media.effects.Grade
+import com.squish.app.media.effects.Looks
 import com.squish.app.media.video.MotionTrack
 import java.util.UUID
 import kotlin.math.abs
@@ -133,8 +137,35 @@ data class Clip(
      * the window of it the render covers. What Reverse a second time puts back
      * (see [unreversed]), and what a draft keeps so the original is never lost.
      */
-    val reversedFrom: ReversedSource? = null
+    val reversedFrom: ReversedSource? = null,
+
+    /**
+     * This clip's look and how far it is dialled in, and the manual colour
+     * sliders on top of it - each clip's own, as in every other editor. The edit
+     * used to carry one grade for every shot, so a two-camera edit could not
+     * warm one shot and cool the other. Read together as [grade].
+     */
+    val lookId: String? = null,
+    val lookIntensity: Float = 1f,
+    val adjust: Adjust = Adjust.NONE,
+
+    /** The window kept of this clip's own picture, turned and mirrored under it; see ClipCrop. Null: the whole picture. */
+    val crop: ClipCrop? = null,
+
+    /**
+     * Auto-reframe: where the subject is through this clip, in the file's own
+     * time, so the edit's frame-shape crop can follow it. Each clip has its own:
+     * one track for the edit, measured on the first file, chased where a
+     * subject had been in different footage (V11).
+     */
+    val reframe: MotionTrack? = null
 ) {
+    /** The look and the sliders folded together: what the GPU is asked for on this clip. */
+    val grade: Grade get() = Looks.grade(lookId, lookIntensity, adjust)
+
+    /** Whether anything about this clip's colour has been touched. */
+    val isGraded: Boolean get() = lookId != null || !adjust.isIdentity
+
     /** How much of the file this clip covers. Unaffected by how fast it plays. */
     val sourceSpanMs: Long get() = (sourceOutMs - sourceInMs).coerceAtLeast(0)
 
@@ -410,7 +441,11 @@ data class Clip(
             chromaKey = chromaKey,
             mask = mask?.withoutTrack(),
             mirrored = mirrored,
-            quarterTurns = quarterTurns
+            quarterTurns = quarterTurns,
+            lookId = lookId,
+            lookIntensity = lookIntensity,
+            adjust = adjust,
+            crop = crop
         )
 }
 
@@ -477,7 +512,12 @@ data class ClipAttributes(
     val chromaKey: ChromaKey?,
     val mask: Mask?,
     val mirrored: Boolean,
-    val quarterTurns: Int
+    val quarterTurns: Int,
+    /** The look, the sliders and the crop window (B12): a picture's, so a sound carries none. */
+    val lookId: String? = null,
+    val lookIntensity: Float = 1f,
+    val adjust: Adjust = Adjust.NONE,
+    val crop: ClipCrop? = null
 ) {
     /** The curve as a shape across [spanMs] of source. */
     fun rampFor(spanMs: Long): SpeedRamp {
@@ -1316,6 +1356,13 @@ fun TimelineState.withFrozenFrame(clipId: String, atMs: Long, still: Clip): Time
         mask = clip.mask?.settledAt(clip.sourceAt(minOf(atMs, clip.timelineEndMs - 1L))),
         mirrored = clip.mirrored,
         quarterTurns = clip.quarterTurns,
+        // The frame is grabbed from the file plain, so the shot's own look,
+        // sliders and crop come along, or the still would not be the frame
+        // that was on screen.
+        lookId = clip.lookId,
+        lookIntensity = clip.lookIntensity,
+        adjust = clip.adjust,
+        crop = clip.crop,
         transitionIn = Transition(),
         speedRamp = SpeedRamp()
     )
@@ -1434,7 +1481,11 @@ fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): T
             chromaKey = attrs.chromaKey,
             mask = attrs.mask,
             mirrored = attrs.mirrored,
-            quarterTurns = attrs.quarterTurns
+            quarterTurns = attrs.quarterTurns,
+            lookId = attrs.lookId,
+            lookIntensity = attrs.lookIntensity,
+            adjust = attrs.adjust,
+            crop = attrs.crop
         )
     }
     if (pasted == clip) return this

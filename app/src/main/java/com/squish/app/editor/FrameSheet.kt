@@ -1,6 +1,7 @@
 package com.squish.app.editor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -10,12 +11,17 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Colorize
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.automirrored.filled.RotateRight
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -103,19 +109,22 @@ fun MarkersPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
 /**
  * Auto-reframe: a crop that follows the subject instead of sitting in the middle.
- * Faces first, movement where there are none - analysed on the phone.
+ * Faces first, movement where there are none - analysed on the phone, shot by
+ * shot, each shot keeping its own track.
  */
 @Composable
 private fun AutoReframeRow(state: EditorUiState, viewModel: EditorViewModel) {
     val progress = state.reframeProgress
-    val following = state.reframe != null && state.cropAspect.ratio != null
+    val shots = state.videoClips.count { it.isMain }
+    val following = state.cropAspect.ratio != null && state.videoClips.any { it.isMain && it.reframe != null }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             when {
                 progress.running && progress.total > 0 ->
                     "Finding the subject — ${progress.done * 100 / progress.total}%"
                 progress.running -> "Finding the subject…"
-                progress.failed -> "Could not read this clip to reframe it."
+                progress.failed -> "Could not read the footage to reframe it."
+                following && shots > 1 -> "The crop follows the subject in each shot. Play to see it move."
                 following -> "The crop follows the subject. Play to see it move."
                 else -> "Auto-reframe keeps faces and movement in the crop, instead of the middle."
             },
@@ -143,17 +152,17 @@ private fun AutoReframeRow(state: EditorUiState, viewModel: EditorViewModel) {
     }
 }
 
-/** The Ratio chip of Frame: the shape the edit is cropped to. */
+/** The Ratio chip of Frame: the shape the edit is cropped to, or - with a background - the canvas it is put on. */
 @Composable
 fun RatioPanel(state: EditorUiState, viewModel: EditorViewModel) {
     PanelSurface(accent = SquishColors.Violet) {
         PanelHeading(
             "Ratio",
-            "Crop to the shape you are posting to",
+            if (state.paddedCanvas) "The canvas the picture is put on" else "Crop to the shape you are posting to",
             icon = Icons.Filled.AspectRatio,
             accent = SquishColors.Violet
         )
-        // Five now that Custom is one of them, which is one more than fits across
+        // Ten now, the ones every upload page asks for: far more than fit across
         // a phone at a readable size, so the row scrolls rather than squeezing
         // "Original" into an ellipsis.
         Row(
@@ -170,14 +179,123 @@ fun RatioPanel(state: EditorUiState, viewModel: EditorViewModel) {
             }
         }
 
-        if (state.cropAspect == CropAspect.Custom) {
-            Text(
+        when {
+            state.cropAspect == CropAspect.Custom -> Text(
                 "Drag any edge or corner on the picture, or the middle to move it. The dimmed part is what goes.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )
-        } else {
-            AutoReframeRow(state, viewModel)
+            state.paddedCanvas -> Text(
+                "The whole picture is kept, with the background round it. Turn the background off to crop to the shape instead.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.TextMuted
+            )
+            else -> AutoReframeRow(state, viewModel)
+        }
+    }
+}
+
+private val CANVAS_COLOURS = listOf(
+    0xFF000000.toInt(), 0xFF101828.toInt(), 0xFFFFFFFF.toInt(), 0xFF2563EB.toInt(),
+    0xFF00B140.toInt(), 0xFFF472B6.toInt(), 0xFFFBBF24.toInt(), 0xFF7C3AED.toInt(), 0xFFEF4444.toInt()
+)
+
+/**
+ * The Background chip of Frame: what fills a ratio's canvas round the
+ * picture. Fill cuts the picture to the ratio, as Ratio always did; Colour,
+ * Blur and Image fit the picture whole into the canvas and put that behind
+ * it - the way a reel is made from a landscape shot.
+ */
+@Composable
+fun CanvasPanel(
+    state: EditorUiState,
+    viewModel: EditorViewModel,
+    onPickImage: () -> Unit,
+    onEyedropper: ((Int) -> Unit) -> Unit
+) {
+    val background = state.canvasBackground
+    PanelSurface(accent = SquishColors.Violet) {
+        PanelHeading(
+            "Background",
+            "What shows round the picture on the canvas",
+            icon = Icons.Filled.Wallpaper,
+            accent = SquishColors.Violet
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
+            CanvasFill.entries.forEach { fill ->
+                SelectableChip(
+                    label = fill.label,
+                    selected = background.fill == fill,
+                    accentColor = SquishColors.Violet,
+                    onClick = {
+                        when (fill) {
+                            CanvasFill.Crop -> viewModel.clips.resetCanvasBackground()
+                            CanvasFill.Image ->
+                                if (background.imageUri != null) viewModel.clips.setCanvasBackground(background.copy(fill = fill))
+                                else onPickImage()
+                            else -> viewModel.clips.setCanvasBackground(background.copy(fill = fill))
+                        }
+                    }
+                )
+            }
+        }
+        // A background only shows round a picture fitted into a canvas of a
+        // chosen shape. With Original the picture already fills the frame and
+        // with Custom the drawn rectangle is the frame, so the chip says what
+        // it is waiting for rather than describing a canvas that is not there.
+        val waitingForRatio = background.fill != CanvasFill.Crop && !state.paddedCanvas
+        Text(
+            when {
+                waitingForRatio && state.cropAspect == CropAspect.Custom ->
+                    "The hand-drawn crop is the frame itself. Pick a shape on Ratio and the picture is put whole on a canvas of it, with this round it."
+                waitingForRatio ->
+                    "Pick a shape on Ratio to see it: with Original the picture already fills the frame."
+                background.fill == CanvasFill.Crop -> "The picture fills the frame and is cut to its shape."
+                background.fill == CanvasFill.Colour -> "The picture is kept whole, on a colour."
+                background.fill == CanvasFill.Blur -> "The picture is kept whole, over a blurred copy of the shot."
+                else -> "The picture is kept whole, over a picture of your own."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextMuted
+        )
+        if (background.fill == CanvasFill.Colour) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
+                CANVAS_COLOURS.forEach { argb ->
+                    val selected = background.colorArgb == argb
+                    Box(
+                        Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(Color(argb))
+                            .border(
+                                if (selected) 3.dp else 1.dp,
+                                if (selected) SquishColors.Primary else SquishColors.Border,
+                                CircleShape
+                            )
+                            .clickable { viewModel.clips.setCanvasColour(argb) }
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(SquishColors.SurfaceElevated)
+                        .border(1.dp, SquishColors.Border, CircleShape)
+                        .clickable { onEyedropper { viewModel.clips.setCanvasColour(it) } },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Colorize, contentDescription = "Pick a colour from the picture", tint = SquishColors.TextPrimary, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+        if (background.fill == CanvasFill.Image) {
+            SquishOutlinedButton(text = "Choose another picture", modifier = Modifier.fillMaxWidth(), onClick = onPickImage)
         }
     }
 }
@@ -220,6 +338,12 @@ object Readout {
 
     /** An angle, already in degrees. */
     val degrees: (Float) -> String = { v -> if (v == 0f) "0°" else "%+.0f°".format(v) }
+
+    /** The Hue slider: a fraction of half the wheel, read in degrees. */
+    val hueDegrees: (Float) -> String = { v -> degrees(v * com.squish.app.media.effects.Adjust.HUE_TURN_DEGREES) }
+
+    /** An HSL band's hue: a fraction of a band, read in degrees. */
+    val bandDegrees: (Float) -> String = { v -> degrees(v * com.squish.app.media.effects.HslBand.HUE_SWING_DEGREES) }
 
     /** A size relative to where it started: 1.5 reads "1.5×". */
     val times: (Float) -> String = { v -> "%.2f".format(v).trimEnd('0').trimEnd('.') + "×" }

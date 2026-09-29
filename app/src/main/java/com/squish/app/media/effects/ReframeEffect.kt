@@ -12,11 +12,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
-import com.squish.app.media.video.MotionTrack
 import java.io.IOException
 
 /**
- * A crop to [ratio] whose window follows [track] - auto-reframe, for the export.
+ * A crop to [ratio] whose window follows the subject - auto-reframe, for the
+ * export.
  *
  * The output is the same size the ordinary centred crop would give, so nothing
  * downstream can tell the two apart; only where the window sits changes, frame by
@@ -26,7 +26,11 @@ import java.io.IOException
  * One instance per clip, placed before the clip's speed change so its frames
  * carry source time: the first frame it sees is [sourceInMs] into the file, and
  * each later one is as far past that as its timestamp is past the first. The
- * track is in the file's own time, so that is the clock it is read on.
+ * subject's place is asked for by that file time through [focusAt], as
+ * top-down fractions of the frame this effect is applied to - the canvas the
+ * shot has been cropped, turned and placed on, not the frame the track was
+ * measured on (FrameRules.subjectOnCanvas carries it across). Null centres the
+ * window.
  *
  * It used to be one offset for the whole edit - the head clip's - added to
  * whatever timestamp arrived. Every clip after the first, every trimmed or
@@ -35,12 +39,12 @@ import java.io.IOException
  */
 class ReframeEffect(
     private val ratio: Float,
-    private val track: MotionTrack,
-    private val sourceInMs: Long = 0L
+    private val sourceInMs: Long = 0L,
+    private val focusAt: (sourceMs: Long) -> Pair<Float, Float>?
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        ReframeShaderProgram(context, useHdr, ratio, track, sourceInMs)
+        ReframeShaderProgram(context, useHdr, ratio, sourceInMs, focusAt)
 
     companion object {
         /** The kept window's size, as fractions of a frame [aspect] wide per unit tall. */
@@ -57,8 +61,8 @@ private class ReframeShaderProgram(
     context: Context,
     useHdr: Boolean,
     private val ratio: Float,
-    private val track: MotionTrack,
-    private val sourceInMs: Long
+    private val sourceInMs: Long,
+    private val focusAt: (Long) -> Pair<Float, Float>?
 ) : BaseGlShaderProgram(useHdr, /* texturePoolCapacity= */ 1) {
 
     /** Latched on the first frame, which is the clip's first. */
@@ -98,8 +102,8 @@ private class ReframeShaderProgram(
         try {
             if (originUs == Long.MIN_VALUE) originUs = presentationTimeUs
             val at = sourceInMs + (presentationTimeUs - originUs) / 1000L
-            val s = track.sampleAt(at)
-            val (left, top) = ReframeEffect.windowOrigin(s?.xFraction ?: 0.5f, s?.yFraction ?: 0.5f, ww, wh)
+            val focus = focusAt(at)
+            val (left, top) = ReframeEffect.windowOrigin(focus?.first ?: 0.5f, focus?.second ?: 0.5f, ww, wh)
             glProgram.use()
             glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
             // GL's texture origin is the bottom-left; the track's is the top-left.

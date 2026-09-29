@@ -5,6 +5,10 @@ import com.squish.app.media.ReverseRenderer
 import com.squish.app.media.SquishError
 import com.squish.app.media.StillClips
 import com.squish.app.media.ThumbnailExtractor
+import com.squish.app.media.effects.Adjust
+import com.squish.app.media.effects.AdjustField
+import com.squish.app.media.effects.HslBand
+import com.squish.app.media.effects.HueBand
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
@@ -41,9 +45,11 @@ import com.squish.app.timeline.withClipsMoved
 import com.squish.app.timeline.withClipsRemoved
 import com.squish.app.timeline.withClipsReordered
 import com.squish.app.timeline.withFrozenFrame
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 import kotlin.math.abs
@@ -85,7 +91,47 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
 
     /** Ratio's Reset: the whole picture, uncropped and not following anything - one step. */
     fun resetCrop() = record("Crop") {
-        _state.update { it.copy(cropAspect = CropAspect.Original, reframe = null) }
+        _state.update { s ->
+            s.copy(cropAspect = CropAspect.Original, videoClips = s.videoClips.map { if (it.reframe == null) it else it.copy(reframe = null) })
+        }
+    }
+
+    /**
+     * What fills the canvas round the picture; see CanvasBackground. The
+     * ratio is left as it is: a background shows once a shape is chosen on
+     * the Ratio chip, and the Background chip says so until then. It used
+     * to switch an Original or Custom ratio to 9:16 by itself, which threw a
+     * hand-drawn crop away without a word.
+     */
+    fun setCanvasBackground(background: CanvasBackground) = record("Background") {
+        _state.update { it.copy(canvasBackground = background) }
+    }
+
+    /** The background's colour dragged towards: one step for the drag. */
+    fun setCanvasColour(argb: Int, dragging: Boolean = false) =
+        record("Background colour", gesture = if (dragging) "Canvas colour" else null) {
+            _state.update { it.copy(canvasBackground = it.canvasBackground.copy(fill = CanvasFill.Colour, colorArgb = argb)) }
+        }
+
+    /** Background's Reset: the picture fills the frame again. */
+    fun resetCanvasBackground() = record("Background") {
+        _state.update { it.copy(canvasBackground = CanvasBackground.NONE) }
+    }
+
+    /**
+     * A picture picked for the canvas's background. Copied into the app's own
+     * files first (StillClips.overlayFromImage): a picker's grant does not
+     * outlive the process, and the draft names the copy.
+     */
+    fun setCanvasImage(image: Uri) {
+        viewModelScope.launch {
+            val kept = withContext(Dispatchers.IO) { StillClips.overlayFromImage(app, image) }
+            if (kept == null) {
+                _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+                return@launch
+            }
+            setCanvasBackground(_state.value.canvasBackground.copy(fill = CanvasFill.Image, imageUri = kept.toString()))
+        }
     }
 
     fun setCropAspect(aspect: CropAspect) = record("Crop") {
@@ -203,45 +249,134 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         retime(clipId, SpeedRamp())
     }
 
+    // ---- Colour, per clip ----------------------------------------------------------
+
     /**
-     * Picks a look. Choosing the same one again clears it, so the chip you just
-     * tapped is also the way back to the untouched picture.
+     * The shot a level-0 colour or crop tool works on: the selected picture, or
+     * the main-track shot under the playhead - the shot level 0's Edit would
+     * open. Null with no picture at all.
      */
-    fun setLook(lookId: String?) = record("Look") {
-        _state.update { current ->
-            val next = if (lookId == null || lookId == current.lookId) null else lookId
-            current.copy(
-                lookId = next,
-                lookIntensity = if (next == null) 1f else current.lookIntensity
-            )
+    fun gradeTarget(current: EditorUiState = _state.value): Clip? =
+        current.videoClips.firstOrNull { it.id == current.selectedClipId }
+            ?: current.baseClipAt(current.playheadMs)
+            ?: current.videoClips.filter { it.isMain }.let { shots ->
+                cutTarget(shots.map { ShotSpan(it.id, it.timelineStartMs, it.timelineEndMs) }, current.playheadMs)
+                    ?.let { id -> shots.firstOrNull { it.id == id } }
+            }
+
+    /**
+     * Picks a look for one clip. Choosing the same one again clears it, so
+     * the chip you just tapped is also the way back to the untouched picture.
+     */
+    fun setLook(clipId: String, lookId: String?) = record("Look") {
+        updateVideoClip(clipId) { clip ->
+            val next = if (lookId == null || lookId == clip.lookId) null else lookId
+            clip.copy(lookId = next, lookIntensity = if (next == null) 1f else clip.lookIntensity)
         }
     }
 
-    fun setLookIntensity(value: Float) = record("Look strength", gesture = "Look strength") {
-        _state.update { it.copy(lookIntensity = value.coerceIn(0f, 1f)) }
+    fun setLookIntensity(clipId: String, value: Float) = record("Look strength", gesture = "Look strength $clipId") {
+        updateVideoClip(clipId) { it.copy(lookIntensity = value.coerceIn(0f, 1f)) }
     }
 
-    fun setBrightness(value: Float) = record("Brightness", gesture = "Brightness") {
-        _state.update { it.copy(brightness = value) }
-    }
-    fun setContrast(value: Float) = record("Contrast", gesture = "Contrast") {
-        _state.update { it.copy(contrast = value) }
-    }
-    fun setSaturation(value: Float) = record("Saturation", gesture = "Saturation") {
-        _state.update { it.copy(saturation = value) }
+    /** One of the Adjust sliders, on one clip: each slider on each clip is its own gesture. */
+    fun setAdjust(clipId: String, field: AdjustField, value: Float) =
+        record(field.label, gesture = "Adjust ${field.name} $clipId") {
+            updateVideoClip(clipId) { it.copy(adjust = field.set(it.adjust, value)) }
+        }
+
+    /** A slider's own reset: back to nothing, one step. */
+    fun resetAdjustField(clipId: String, field: AdjustField) = record("Reset ${field.label.lowercase()}") {
+        updateVideoClip(clipId) { it.copy(adjust = field.set(it.adjust, 0f)) }
     }
 
-    /** Adjust's Reset: all three back to where they started, as one step. */
-    fun resetAdjust() = record("Adjust") {
-        _state.update { it.copy(brightness = 0f, contrast = 0f, saturation = 0f) }
+    /** One band of the HSL sliders, on one clip. */
+    fun setHsl(clipId: String, band: HueBand, value: HslBand) = record("HSL", gesture = "HSL ${band.name} $clipId") {
+        updateVideoClip(clipId) { it.copy(adjust = it.adjust.withBand(band, value)) }
+    }
+
+    /** Adjust's Reset: every slider back to where it started, as one step. */
+    fun resetAdjust(clipId: String) = record("Adjust") {
+        updateVideoClip(clipId) { it.copy(adjust = Adjust.NONE) }
+    }
+
+    /**
+     * Apply to all: this clip's look, or its sliders, onto every other picture
+     * of its kind - a shot's onto the shots, an overlay's onto the overlays,
+     * photos among them: a photo is graded on the CPU in the preview and
+     * through its image item in the file. One undo step.
+     */
+    fun applyLookToAll(clipId: String) = record("Apply look to all") {
+        val from = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return@record
+        _state.update { s ->
+            s.copy(videoClips = s.videoClips.map {
+                if (it.isOverlay != from.isOverlay) it
+                else it.copy(lookId = from.lookId, lookIntensity = from.lookIntensity)
+            })
+        }
+    }
+
+    fun applyAdjustToAll(clipId: String) = record("Apply adjust to all") {
+        val from = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return@record
+        _state.update { s ->
+            s.copy(videoClips = s.videoClips.map {
+                if (it.isOverlay != from.isOverlay) it else it.copy(adjust = from.adjust)
+            })
+        }
+    }
+
+    // ---- Crop, per clip --------------------------------------------------------------
+
+    /**
+     * The window kept of one clip's picture, dragged on the picture: one
+     * gesture is one step. See ClipCrop.
+     */
+    fun setClipCropRect(clipId: String, rect: CropRect) = record("Crop", gesture = "Clip crop $clipId") {
+        updateVideoClip(clipId) { it.copy(crop = (it.crop ?: ClipCrop()).copy(rect = rect).orNull()) }
+    }
+
+    /** A shape chip on the Crop sheet: the window held to it, keeping its middle. */
+    fun setClipCropRatio(clipId: String, ratio: CropRatio, aspect: Float) = record("Crop shape") {
+        updateVideoClip(clipId) { clip ->
+            val crop = clip.crop ?: ClipCrop()
+            clip.copy(crop = crop.copy(rect = CropRules.heldToRatio(crop.rect, ratio.value, aspect), ratio = ratio).orNull())
+        }
+    }
+
+    /** The straighten dial: one drag is one step. */
+    fun setClipStraighten(clipId: String, degrees: Float) = record("Straighten", gesture = "Straighten $clipId") {
+        updateVideoClip(clipId) {
+            val d = degrees.coerceIn(-CropRules.MAX_STRAIGHTEN_DEGREES, CropRules.MAX_STRAIGHTEN_DEGREES)
+            it.copy(crop = (it.crop ?: ClipCrop()).copy(straightenDegrees = d).orNull())
+        }
+    }
+
+    fun flipClip(clipId: String, horizontal: Boolean) = record(if (horizontal) "Flip" else "Flip vertical") {
+        updateVideoClip(clipId) {
+            val crop = it.crop ?: ClipCrop()
+            val flipped = if (horizontal) crop.copy(flipHorizontal = !crop.flipHorizontal) else crop.copy(flipVertical = !crop.flipVertical)
+            it.copy(crop = flipped.orNull())
+        }
+    }
+
+    /** Crop's Reset: the whole picture, upright, the right way round - one step. */
+    fun resetClipCrop(clipId: String) = record("Reset crop") {
+        updateVideoClip(clipId) { it.copy(crop = null) }
+    }
+
+    /** A crop that keeps everything is no crop: stored as none, so the clip reads as untouched. */
+    private fun ClipCrop.orNull(): ClipCrop? = takeIf { !it.isIdentity || it.ratio != CropRatio.Free }
+
+    private fun updateVideoClip(clipId: String, change: (Clip) -> Clip) = _state.update { s ->
+        s.copy(videoClips = s.videoClips.map { if (it.id == clipId) change(it) else it })
     }
 
     // ---- Templates ----------------------------------------------------------------
 
     /**
-     * Applies [template] as one undoable step. Replaces the look and the frame
-     * shape, and the effects and title an earlier template added; keeps every
-     * caption, sticker and effect added by hand.
+     * Applies [template] as one undoable step. Replaces the look on every
+     * shot and the frame shape, and the effects and title an earlier template
+     * added; keeps every caption, sticker and effect added by hand.
      */
     fun applyTemplate(template: Template) = record("Template ${template.label}") {
         _state.update { current ->
@@ -268,8 +403,9 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             }
             current.copy(
                 cropAspect = template.crop ?: CropAspect.Original,
-                lookId = template.lookId,
-                lookIntensity = 1f,
+                videoClips = current.videoClips.map {
+                    if (it.isOverlay) it else it.copy(lookId = template.lookId, lookIntensity = 1f)
+                },
                 effects = current.effects.filterNot { it.id.startsWith(TEMPLATE_PREFIX) } + placed,
                 textOverlays = current.textOverlays.filterNot { it.id.startsWith(TEMPLATE_PREFIX) } +
                     listOfNotNull(title)

@@ -1,5 +1,9 @@
 import android.net.Uri
+import com.squish.app.editor.ClipCrop
+import com.squish.app.editor.CropRatio
+import com.squish.app.editor.CropRect
 import com.squish.app.media.ExportPlan
+import com.squish.app.media.effects.Adjust
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
 import com.squish.app.timeline.BackgroundRemoval
@@ -91,6 +95,13 @@ fun main() {
         butted(state, "freeze")
         check(frozen.mirrored && frozen.quarterTurns == 1 && frozen.volume == 0.5f, "freeze: the still did not take the shot's mirror, turn and level")
         check(state.selectedClipId == still.id, "freeze: the still is not selected")
+        // The shot's look, sliders and crop come along too: the frame is grabbed
+        // from the file plain, so without them the still is not the frame seen.
+        val graded = video("g", 10_000).copy(
+            lookId = "cool", lookIntensity = 0.8f, adjust = Adjust(exposure = -0.2f), crop = ClipCrop(rect = CropRect(0.2f, 0f, 0.8f, 1f))
+        )
+        val g = TimelineState(clips = listOf(graded)).withFrozenFrame("g", 5_000, still).byId(still.id)
+        check(g.lookId == "cool" && g.lookIntensity == 0.8f && g.adjust.exposure == -0.2f && g.crop == graded.crop, "freeze: the still did not take the shot's look, sliders and crop")
         check(frozen.speedRamp == SpeedRamp() && frozen.keyframes.isEmpty(), "freeze: the still carries a curve or keys")
 
         // Within the margin of an end: no sliver, the still goes beside the whole shot.
@@ -228,9 +239,11 @@ fun main() {
     // --- Copy and paste attributes: settings travel, footage and place do not. --------
     run {
         val keys = listOf(Keyframe(0, Transform(scale = 1f)), Keyframe(10_000, Transform(scale = 1.2f)))
+        val window = ClipCrop(rect = CropRect(0.1f, 0.1f, 0.9f, 0.9f), ratio = CropRatio.Square)
         val src = video("src", 10_000, ramp = SpeedRamp(listOf(SpeedPoint(0, 1f), SpeedPoint(10_000, 0.5f))), keys = keys)
             .copy(volume = 0.4f, fadeInMs = 300, fadeOutMs = 600, voice = VoiceEffect.Robot, opacity = 0.7f,
-                mirrored = true, quarterTurns = 2, offsetXFraction = 0.2f)
+                mirrored = true, quarterTurns = 2, offsetXFraction = 0.2f,
+                lookId = "warm", lookIntensity = 0.6f, adjust = Adjust(exposure = 0.3f), crop = window)
         val attrs = src.attributes
         val dst = video("dst", 4_000, start = src.durationMs, srcIn = 1_000)
         val after = TimelineState(clips = listOf(src, dst)).withAttributesPasted("dst", attrs)
@@ -238,6 +251,8 @@ fun main() {
         check(d.uri == dst.uri && d.sourceInMs == 1_000L && d.sourceSpanMs == 4_000L, "paste changed the footage or window")
         check(d.volume == 0.4f && d.fadeInMs == 300L && d.voice == VoiceEffect.Robot && d.opacity == 0.7f, "paste: sound or opacity not carried")
         check(d.mirrored && d.quarterTurns == 2 && d.offsetXFraction == 0.2f, "paste: mirror, turn or placement not carried")
+        // The look, the sliders and the crop window (B12) are settings too.
+        check(d.lookId == "warm" && d.lookIntensity == 0.6f && d.adjust.exposure == 0.3f && d.crop == window, "paste: look, sliders or crop not carried")
         // Shapes, refitted: the curve's end point at the new span, the keys at the
         // same share of the new played length (the source's second key sat at
         // 10 s of its played 13.8 s).
@@ -254,6 +269,7 @@ fun main() {
         check(s.volume == 0.4f && s.voice == VoiceEffect.Robot && s.fadeOutMs == 600L, "paste onto a sound: level, voice or fade missing")
         check(s.timelineStartMs == 1_000L && s.uri == song.uri, "paste onto a sound moved or replaced it")
         check(s.speedRamp.ordered.last().atMs == 8_000L, "paste onto a sound: curve not refitted")
+        check(s.lookId == null && s.adjust == Adjust.NONE && s.crop == null, "paste onto a sound gave it a picture's look or crop")
         // Nothing to change: nothing changes.
         check(TimelineState(clips = listOf(src)).withAttributesPasted("src", attrs) == TimelineState(clips = listOf(src)), "pasting a clip's own attributes changed it")
     }

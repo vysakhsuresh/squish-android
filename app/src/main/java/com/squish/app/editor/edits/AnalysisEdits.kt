@@ -113,32 +113,57 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
     private var reframeJob: Job? = null
 
     /**
-     * Finds the subject through the head clip and makes the frame-shape crop
-     * follow it. Needs a fixed shape; if none is chosen yet, 9:16 is - the shape
-     * this is nearly always wanted for.
+     * Finds the subject through every shot on the main track and makes the
+     * frame-shape crop follow it, shot by shot. Needs a fixed shape; if none
+     * is chosen yet, 9:16 is - the shape this is nearly always wanted for.
+     *
+     * Each shot is analysed over its own window of its own file and keeps its
+     * own track (Clip.reframe), so a second clip follows its own subject and
+     * a trimmed or reordered shot still reads its track at the right moment.
+     * One track for the whole edit, read off the first file, had the window
+     * chasing where the subject had been in different footage (V11). Two
+     * shots of one stretch of one file share the measurement. The result is
+     * one undo step, filed when it lands, beneath anything edited meanwhile.
      */
     fun autoReframe() {
         val current = _state.value
         if (current.reframeProgress.running) return
-        val clip = current.videoClips.firstOrNull() ?: return
-        val uri = clip.uri ?: current.sourceUri ?: return
+        val shots = current.videoClips.filter { it.isMain && !it.isStillPicture && (it.uri ?: current.sourceUri) != null }
+        if (shots.isEmpty()) return
         if (current.cropAspect.ratio == null) clips.setCropAspect(CropAspect.Portrait)
 
         reframeJob?.cancel()
         _state.update { it.copy(reframeProgress = ReframeProgress(running = true)) }
         reframeJob = viewModelScope.launch {
-            val track = Reframer.analyze(
-                app, uri, clip.sourceInMs, clip.sourceOutMs
-            ) { done, total ->
-                _state.update { it.copy(reframeProgress = it.reframeProgress.copy(done = done, total = total)) }
+            // The same stretch of the same file analysed once, however many
+            // shots were cut from it.
+            val windows = shots.map { Triple(it.uri ?: current.sourceUri!!, it.sourceInMs, it.sourceOutMs) }.distinct()
+            val total = windows.size
+            val tracks = HashMap<Triple<Uri, Long, Long>, MotionTrack>()
+            windows.forEachIndexed { index, window ->
+                val (uri, fromMs, toMs) = window
+                val track = Reframer.analyze(app, uri, fromMs, toMs) { done, count ->
+                    _state.update {
+                        it.copy(reframeProgress = it.reframeProgress.copy(done = index * 100 + done * 100 / count.coerceAtLeast(1), total = total * 100))
+                    }
+                }
+                if (track != null) tracks[window] = track
             }
-            if (track == null) {
+            if (tracks.isEmpty()) {
                 _state.update { it.copy(reframeProgress = ReframeProgress(failed = true)) }
                 return@launch
             }
-            record("Auto-reframe") {
-                _state.update { it.copy(reframe = track, reframeProgress = ReframeProgress()) }
-            }
+            recordLate(
+                "Auto-reframe",
+                edit = { snapshot ->
+                    snapshot.copy(videoClips = snapshot.videoClips.map { clip ->
+                        val uri = clip.uri ?: current.sourceUri
+                        if (!clip.isMain || uri == null) clip
+                        else tracks[Triple(uri, clip.sourceInMs, clip.sourceOutMs)]?.let { clip.copy(reframe = it) } ?: clip
+                    })
+                },
+                alongside = { it.copy(reframeProgress = ReframeProgress()) }
+            )
         }
     }
 
@@ -148,9 +173,9 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
         _state.update { it.copy(reframeProgress = ReframeProgress()) }
     }
 
-    /** Back to a centred crop. */
+    /** Back to a centred crop, on every shot. */
     fun clearReframe() = record("Centre crop") {
-        _state.update { it.copy(reframe = null) }
+        _state.update { s -> s.copy(videoClips = s.videoClips.map { if (it.reframe == null) it else it.copy(reframe = null) }) }
     }
 
     /**
@@ -171,13 +196,14 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
     }
 
     /**
-     * The main-track picture at [timelineMs]: which file, and where in it. Null
-     * over a gap or past the end. What the look thumbnails are graded on, so they
-     * show the shot under the playhead rather than the first file at a time that
-     * may not even be in it.
+     * One clip's picture at [timelineMs]: which file, and where in it. What
+     * the look chips are graded on, so they show the clip being graded - an
+     * overlay's as much as a shot's - rather than the first file at a time
+     * that may not even be in it. A photo kept as a picture has no frames to
+     * take.
      */
-    fun pictureAt(current: EditorUiState, timelineMs: Long): Pair<Uri, Long>? {
-        val clip = current.baseClipAt(timelineMs) ?: return null
+    fun pictureOf(current: EditorUiState, clip: Clip, timelineMs: Long): Pair<Uri, Long>? {
+        if (clip.isStillPicture) return null
         val uri = clip.uri ?: current.sourceUri ?: return null
         return analysisSourceFor(uri, current).uri to clip.sourceAt(timelineMs).coerceIn(clip.sourceInMs, clip.sourceOutMs)
     }

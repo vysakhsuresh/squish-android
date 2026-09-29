@@ -171,13 +171,15 @@ fun main() {
         check(Tool.Clip.label != Tool.Split.label, "level 0's Edit and Split share a name")
     }
 
-    // --- A photo on an overlay row: only the tools that do something to a picture. ------
+    // --- A photo on an overlay row: only the tools that do something to a picture -
+    //     its look and sliders among them, graded on the CPU, since the plan puts a
+    //     grade on every clip and Apply to all overlays would otherwise skip it. ------
     run {
         val photo = toolsFor(SelectionKind.PhotoOverlay)
         for (footageOnly in listOf(Tool.Volume, Tool.Speed, Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track)) {
             check(footageOnly !in photo, "a photo overlay offers $footageOnly, which has nothing to act on")
         }
-        for (wanted in listOf(Tool.Opacity, Tool.Layer, Tool.Placement, Tool.Animation, Tool.ToMain)) {
+        for (wanted in listOf(Tool.Opacity, Tool.Layer, Tool.Placement, Tool.Animation, Tool.ToMain, Tool.Crop, Tool.Filters, Tool.Adjust)) {
             check(wanted in photo, "a photo overlay has no $wanted")
         }
         check(photo.all { it in toolsFor(SelectionKind.Overlay) }, "a photo overlay offers a tool footage does not")
@@ -236,6 +238,26 @@ fun main() {
         check(sheetSurvives(Tool.Speed, SelectionKind.MainVideo, true, footage = false), "Speed closed over a freeze")
         // One name per concept: a sticker's mirror and a clip's read the same.
         check(Tool.Flip.label == Tool.Mirror.label, "a sticker mirrors as '${Tool.Flip.label}' and a clip as '${Tool.Mirror.label}'")
+    }
+
+    // --- Colour and crop are each clip's own (B12): on every piece of footage, not on sounds or words. ---
+    run {
+        for (kind in listOf(SelectionKind.MainVideo, SelectionKind.Overlay)) {
+            val tools = toolsFor(kind, canTransition = true)
+            check(Tool.Filters in tools && Tool.Adjust in tools && Tool.Crop in tools, "$kind has no Filters, Adjust or Crop")
+            check(tools.indexOf(Tool.Adjust) == tools.indexOf(Tool.Filters) + 1, "$kind: Adjust is not beside Filters")
+            check(tools.indexOf(Tool.Crop) == tools.indexOf(Tool.Adjust) + 1, "$kind: Crop is not beside Adjust")
+        }
+        for (kind in listOf(SelectionKind.Audio, SelectionKind.Text, SelectionKind.Sticker, SelectionKind.Effect)) {
+            check(toolsFor(kind).none { it == Tool.Filters || it == Tool.Adjust || it == Tool.Crop }, "$kind offers a picture's colour or crop")
+        }
+        check(Tool.Filters.sheet && Tool.Adjust.sheet && Tool.Crop.sheet, "a colour or crop tool acts at once instead of opening a sheet")
+        // Filters from a shot to an overlay stays open; to a sound it does not.
+        check(sheetSurvives(Tool.Filters, SelectionKind.Overlay, false), "Filters closed moving from a shot to an overlay")
+        check(!sheetSurvives(Tool.Adjust, SelectionKind.Audio, false), "Adjust stayed open over a sound")
+        // Level 0's Looks and Frame stay: they work on the edit, or the shot under the playhead.
+        check(sheetSurvives(Tool.Looks, SelectionKind.MainVideo, false), "Looks closed when a shot was selected")
+        check(sheetSurvives(Tool.Frame, SelectionKind.None, false), "Frame closed on deselect")
     }
 
     println("tool rules: toolbar levels, sheets, back, cut target, project names")

@@ -1,0 +1,425 @@
+package com.squish.app.editor
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.FilterVintage
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.squish.app.media.effects.AdjustField
+import com.squish.app.media.effects.HslBand
+import com.squish.app.media.effects.HueBand
+import com.squish.app.media.effects.Look
+import com.squish.app.media.effects.LookFamily
+import com.squish.app.media.effects.Looks
+import com.squish.app.timeline.Clip
+import com.squish.app.ui.components.SelectableChip
+import com.squish.app.ui.components.SquishOutlinedButton
+import com.squish.app.ui.theme.SquishColors
+
+/**
+ * The filter library, for one clip: the Filters chip of Looks, and a clip's
+ * own Filters tool.
+ *
+ * Every chip paints what the look actually does, by running the grade over a
+ * reference ramp with the same maths the shaders use. That is the whole reason to
+ * build the swatch from the grade rather than hand-picking a color per filter: a
+ * hand-picked chip is a drawing of a promise, and it starts lying the moment a
+ * look is retuned.
+ *
+ * A look is each clip's own now (Clip.lookId); Apply to all puts this one on
+ * every picture of the clip's kind, the way CapCut's does.
+ */
+@Composable
+fun FiltersPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
+    var family by rememberSaveable { mutableStateOf(LookFamily.Essentials) }
+    val active = Looks.byId(clip.lookId)
+
+    // Every look previewed on the frame you are stopped on, which is how the
+    // choice is actually made - a swatch tells you a look is warm, the shot tells
+    // you whether warm is right for this face, in this light. This clip's own
+    // frame at the playhead, through its trim and its speed - or its first frame
+    // when the playhead is off it.
+    val at = state.playheadMs.coerceIn(clip.timelineStartMs, (clip.timelineEndMs - 1).coerceAtLeast(clip.timelineStartMs))
+    val picture = viewModel.analysis.pictureOf(state, clip, at)
+    val frame = rememberLookFrame(picture?.first, picture?.second ?: 0L)
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        PanelSurface(accent = SquishColors.Blue) {
+            PanelHeading(
+                "Filters",
+                "On ${clip.label} · tap to apply, again to clear",
+                icon = Icons.Filled.AutoAwesome,
+                accent = SquishColors.Blue
+            )
+
+            // Five families no longer divide evenly into a phone's width, so the
+            // row scrolls rather than squeezing "Essentials" down to an ellipsis.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
+                LookFamily.entries.forEach { entry ->
+                    SelectableChip(
+                        label = entry.label,
+                        selected = family == entry,
+                        accentColor = SquishColors.Blue,
+                        onClick = { family = entry }
+                    )
+                }
+            }
+
+            val shown = Looks.catalog.filter { it.family == family || it.id == Looks.None.id }
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                shown.forEach { look ->
+                    LookChip(
+                        frame = frame,
+                        look = look,
+                        // The chip previews at the strength you have dialled in, so
+                        // the row re-reads correctly instead of advertising full
+                        // strength for a look you have pulled back to a third.
+                        intensity = if (look.id == clip.lookId) clip.lookIntensity else 1f,
+                        selected = look.id == clip.lookId || (clip.lookId == null && look.id == Looks.None.id),
+                        onClick = { viewModel.clips.setLook(clip.id, look.id.takeIf { it != Looks.None.id }) }
+                    )
+                }
+            }
+        }
+
+        if (clip.lookId != null) {
+            PanelSurface(accent = SquishColors.Blue) {
+                PanelHeading(
+                    active.label,
+                    "How far the look is dialled in",
+                    icon = Icons.Filled.FilterVintage,
+                    accent = SquishColors.Blue
+                )
+                LabeledSlider(
+                    "Strength", clip.lookIntensity, 0f..1f,
+                    onFinished = viewModel::endGesture,
+                    onChange = { viewModel.clips.setLookIntensity(clip.id, it) }
+                )
+            }
+        }
+
+        ApplyToAllRow(clip, what = "look") { viewModel.clips.applyLookToAll(clip.id) }
+    }
+}
+
+/**
+ * The colour sliders of one clip: the Adjust chip of Looks, and a clip's own
+ * Adjust tool. Laid out as CapCut lays it: one row of chips - the thirteen
+ * sliders, then the eight colours of the HSL wheel - and under it the one
+ * control picked, with its own reset. Thirteen stacked sliders needed a
+ * screen of scrolling to reach Vignette or Apply to all, and each was a
+ * full-width drag inside a sheet that scrolled. A chip whose value has moved
+ * carries a mark, so what is on is seen from the row. Every value is folded
+ * with the look into one shader pass (Looks.grade), so however many are
+ * moved the picture costs the same.
+ */
+@Composable
+fun AdjustPanel(clip: Clip, viewModel: EditorViewModel) {
+    val done = viewModel::endGesture
+    // The chip chosen: a slider by its ordinal, or a colour of the wheel past them.
+    var chosen by rememberSaveable { mutableStateOf(0) }
+    val fields = AdjustField.entries
+    val field = fields.getOrNull(chosen)
+    val band = HueBand.entries.getOrNull(chosen - fields.size)
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        PanelSurface(accent = SquishColors.Blue) {
+            PanelHeading(
+                "Adjust",
+                "On ${clip.label} · refines whatever filter is on",
+                icon = Icons.Filled.Tune,
+                accent = SquishColors.Blue
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
+                fields.forEachIndexed { i, entry ->
+                    val touched = entry.of(clip.adjust) != 0f
+                    SelectableChip(
+                        label = if (touched) "${entry.label} •" else entry.label,
+                        selected = chosen == i,
+                        accentColor = SquishColors.Blue,
+                        onClick = { chosen = i }
+                    )
+                }
+                // The wheel's colours, as swatches: a colour says what it is
+                // better than its name does.
+                HueBand.entries.forEachIndexed { i, entry ->
+                    val index = fields.size + i
+                    val touched = !clip.adjust.band(entry).isIdentity
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color(entry.swatch))
+                            .border(
+                                if (chosen == index) 3.dp else if (touched) 2.dp else 1.dp,
+                                when {
+                                    chosen == index -> SquishColors.Primary
+                                    touched -> SquishColors.TextPrimary
+                                    else -> SquishColors.Border
+                                },
+                                CircleShape
+                            )
+                            .clickable(onClickLabel = entry.label) { chosen = index }
+                    )
+                }
+            }
+            when {
+                field != null -> AdjustSlider(
+                    label = field.label,
+                    value = field.of(clip.adjust),
+                    range = field.min..field.max,
+                    readout = if (field == AdjustField.Hue) Readout.hueDegrees else Readout.percent(field.min..field.max),
+                    onReset = { viewModel.clips.resetAdjustField(clip.id, field) },
+                    onFinished = done,
+                    onChange = { viewModel.clips.setAdjust(clip.id, field, it) }
+                )
+                band != null -> {
+                    val values = clip.adjust.band(band)
+                    Text(
+                        "${band.label} · turn it, deepen it, lift it",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = SquishColors.TextSecondary
+                    )
+                    AdjustSlider(
+                        label = "Hue", value = values.hue, range = -1f..1f,
+                        readout = Readout.bandDegrees,
+                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(hue = 0f)) },
+                        onFinished = done
+                    ) { viewModel.clips.setHsl(clip.id, band, values.copy(hue = it)) }
+                    AdjustSlider(
+                        label = "Saturation", value = values.saturation, range = -1f..1f,
+                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(saturation = 0f)) },
+                        onFinished = done
+                    ) { viewModel.clips.setHsl(clip.id, band, values.copy(saturation = it)) }
+                    AdjustSlider(
+                        label = "Luminance", value = values.luminance, range = -1f..1f,
+                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(luminance = 0f)) },
+                        onFinished = done
+                    ) { viewModel.clips.setHsl(clip.id, band, values.copy(luminance = it)) }
+                }
+            }
+        }
+
+        ApplyToAllRow(clip, what = "adjustments") { viewModel.clips.applyAdjustToAll(clip.id) }
+    }
+}
+
+/** A slider with a reset beside its value, shown once the value has moved off nothing. */
+@Composable
+private fun AdjustSlider(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    readout: (Float) -> String = Readout.percent(range),
+    onReset: () -> Unit,
+    onFinished: () -> Unit,
+    onChange: (Float) -> Unit
+) {
+    Column {
+        Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(label, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (value != 0f) {
+                    Text(
+                        "Reset",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.TextMuted,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(onClickLabel = "Reset $label", onClick = onReset)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+                Text(readout(value), style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
+            }
+        }
+        Slider(
+            value = value,
+            onValueChange = onChange,
+            onValueChangeFinished = onFinished,
+            valueRange = range,
+            colors = SliderDefaults.colors(
+                thumbColor = SquishColors.Teal,
+                activeTrackColor = SquishColors.Teal,
+                inactiveTrackColor = SquishColors.Border
+            )
+        )
+    }
+}
+
+/** Apply to all: this clip's colour onto every picture of its kind, said in those words. */
+@Composable
+private fun ApplyToAllRow(clip: Clip, what: String, onApply: () -> Unit) {
+    val kind = if (clip.isOverlay) "overlays" else "shots"
+    SquishOutlinedButton(text = "Apply $what to all $kind", modifier = Modifier.fillMaxWidth(), onClick = onApply)
+}
+
+/**
+ * A whole style in one tap: the Templates chip of Looks. It used to sit above
+ * the filters under a tab called Looks, with the person cut-out between them;
+ * the cut-out is the clip's Cutout tool now. The look goes on every shot.
+ */
+@Composable
+fun TemplatesPanel(viewModel: EditorViewModel) {
+    PanelSurface(accent = SquishColors.Blue) {
+        PanelHeading(
+            "Templates",
+            "Look, frame, effects and a title at once · undo to take it off",
+            icon = Icons.Filled.AutoAwesome,
+            accent = SquishColors.Blue
+        )
+        Template.entries.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                row.forEach { template ->
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(SquishColors.Background)
+                            .border(1.dp, SquishColors.Border, RoundedCornerShape(14.dp))
+                            .clickable { viewModel.clips.applyTemplate(template) }
+                            .padding(12.dp)
+                    ) {
+                        GlyphTile(template.glyph, size = 40.dp)
+                        Text(template.label, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
+                        Text(
+                            template.blurb,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SquishColors.TextMuted,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                repeat(2 - row.size) { Column(modifier = Modifier.weight(1f)) {} }
+            }
+        }
+    }
+}
+
+/** Level 0's Looks with no picture to work on: what it would need. */
+@Composable
+fun NoPicturePanel() {
+    PanelSurface(accent = SquishColors.Blue) {
+        PanelHeading(
+            "Looks",
+            "Add a video or a photo first",
+            icon = Icons.Filled.AutoAwesome,
+            accent = SquishColors.Blue
+        )
+        Text(
+            "A look and the colour sliders belong to a shot. With one on the strip, they work on the shot under the playhead.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextMuted
+        )
+    }
+}
+
+@Composable
+private fun LookChip(
+    frame: LookFrame?,
+    look: Look,
+    intensity: Float,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    // The swatch is the fallback, not the design. It is what shows for the second
+    // before the frame arrives, and for an audio-only or unreadable source.
+    val stops = remember(look.id, intensity) {
+        Looks.swatch(look, intensity).map { Color(it) }
+    }
+    val preview = remember(frame, look.id, intensity) {
+        frame?.graded(look.atIntensity(intensity))
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+        modifier = Modifier.width(IntrinsicChipWidth).clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(IntrinsicChipWidth, 52.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .border(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = if (selected) SquishColors.Blue else SquishColors.Border,
+                    shape = RoundedCornerShape(10.dp)
+                )
+        ) {
+            if (preview != null) {
+                Image(
+                    bitmap = preview.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().padding(2.dp).clip(RoundedCornerShape(8.dp))
+                )
+            } else {
+                Canvas(modifier = Modifier.fillMaxSize().padding(2.dp)) {
+                    drawRect(brush = Brush.verticalGradient(stops))
+                }
+            }
+        }
+        Text(
+            look.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) SquishColors.TextPrimary else SquishColors.TextSecondary,
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+private val IntrinsicChipWidth = 64.dp

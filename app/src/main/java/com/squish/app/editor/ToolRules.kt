@@ -40,6 +40,10 @@ enum class Tool(val label: String, val sheet: Boolean) {
     Animation("Animation", true),
     Placement("Placement", true),
     Transition("Transition", true),
+    /** The clip's own look, its own colour sliders, and the window kept of its picture (B12). */
+    Filters("Filters", true),
+    Adjust("Adjust", true),
+    Crop("Crop", true),
     Opacity("Opacity", true),
     Layer("Layer", true),
     Mask("Mask", true),
@@ -103,19 +107,27 @@ val LEVEL_ZERO: List<Tool> = listOf(
  * shot before it to transition from - the first one does not, and a Transition
  * button that could only say so is clutter.
  *
- * Only tools that act on the selected clip are listed. Looks, crop and rotation
- * are still one setting for the whole edit, so they stay on level 0 rather than
- * appear here as if they changed this clip alone. Volume is the clip's own
- * level; the camera sound for the whole edit stays on Sound (Mic & camera).
+ * Only tools that act on the selected clip are listed. The frame's ratio and
+ * the rotation are still one setting for the whole edit, so they stay on level
+ * 0 rather than appear here as if they changed this clip alone; a look, the
+ * colour sliders and a crop are each clip's own now (B12), and level 0's Looks
+ * works on the shot under the playhead with Apply to all. Volume is the clip's
+ * own level; the camera sound for the whole edit stays on Sound (Mic & camera).
  *
  * Section 2's lists are longer; the rest arrive with the batch that builds what
- * they act on (docs/ROADMAP.md, B6, "Deferred"): Filters, Adjust and Crop per
- * clip (B12). A button for a tool that does not exist yet would be one more
- * thing that does nothing. B9 brought Fade and Voice to sounds, Voice to every
- * clip with sound, and Extract audio to footage; B10 brought Opacity, Speak and
- * Flip to text; B11 Rotate, Mirror, Freeze, Reverse and Replace to footage,
- * Copy and Paste attributes to every clip with settings to carry, and Select
- * more to everything on the strip.
+ * they act on (docs/ROADMAP.md, B6, "Deferred"). A button for a tool that
+ * does not exist yet would be one more thing that does nothing. B9 brought
+ * Fade and Voice to sounds, Voice to every clip with sound, and Extract audio
+ * to footage; B10 brought Opacity, Speak and Flip to text; B11 Rotate, Mirror,
+ * Freeze, Reverse and Replace to footage, Copy and Paste attributes to every
+ * clip with settings to carry, and Select more to everything on the strip;
+ * B12 Filters, Adjust and Crop to every piece of footage.
+ *
+ * A photo kept as a picture is drawn by the preview itself, not a player: its
+ * Crop is done to the view and its Filters and Adjust are graded on the CPU
+ * (TimelinePreview's StillPictures), the file grading it through its image
+ * item. It has no sound, speed or footage for the player's shaders to work
+ * on, so the rest stay off it.
  *
  * Text: Edit first, since the keyboard is what a line is usually selected for;
  * a line has no Placement sheet - it is moved on the picture, and Style has
@@ -143,21 +155,22 @@ fun toolsFor(kind: SelectionKind, canTransition: Boolean = false, multi: Boolean
         kind == SelectionKind.MainVideo -> listOfNotNull(
             Tool.Split, Tool.Speed, Tool.Volume, Tool.Animation, Tool.Delete, Tool.Placement,
             Tool.Transition.takeIf { canTransition },
-            Tool.Rotate, Tool.Mirror,
+            Tool.Filters, Tool.Adjust, Tool.Crop, Tool.Rotate, Tool.Mirror,
             Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Voice, Tool.ExtractAudio,
             Tool.Freeze, Tool.Reverse, Tool.Replace, Tool.CopyAttributes, Tool.PasteAttributes,
             Tool.Duplicate, Tool.SelectMore, Tool.ToOverlay
         )
         kind == SelectionKind.Overlay -> listOf(
             Tool.Split, Tool.Speed, Tool.Volume, Tool.Opacity, Tool.Delete, Tool.Layer, Tool.Animation, Tool.Placement,
-            Tool.Rotate, Tool.Mirror,
+            Tool.Filters, Tool.Adjust, Tool.Crop, Tool.Rotate, Tool.Mirror,
             Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Voice, Tool.ExtractAudio,
             Tool.Freeze, Tool.Reverse, Tool.Replace, Tool.CopyAttributes, Tool.PasteAttributes,
             Tool.Duplicate, Tool.SelectMore, Tool.ToMain
         )
         // A photo has no footage to freeze, reverse or swap for other footage.
         kind == SelectionKind.PhotoOverlay -> listOf(
-            Tool.Split, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Delete, Tool.Placement, Tool.Rotate, Tool.Mirror,
+            Tool.Split, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Delete, Tool.Placement,
+            Tool.Filters, Tool.Adjust, Tool.Crop, Tool.Rotate, Tool.Mirror,
             Tool.CopyAttributes, Tool.PasteAttributes, Tool.Duplicate, Tool.SelectMore, Tool.ToMain
         )
         // CapCut's order: the level, then the fades, then everything about time.

@@ -87,12 +87,181 @@ data class Look(
 const val NEUTRAL_TINT: Int = 0xFF808080.toInt()
 
 /**
- * What actually reaches the GPU: one look and the manual color sliders folded into
+ * The eight bands of the colour wheel the HSL sliders work on, each centred on
+ * [degrees] of hue. A pixel belongs to the bands nearest its own hue, by how
+ * near ([HslBand.weight]), so a change to Orange shades off into Red and Yellow
+ * rather than stopping at a hard line through the skin tones.
+ */
+enum class HueBand(val label: String, val degrees: Float, val swatch: Int) {
+    Red("Red", 0f, 0xFFE0453A.toInt()),
+    Orange("Orange", 30f, 0xFFF0873A.toInt()),
+    Yellow("Yellow", 60f, 0xFFF0D23A.toInt()),
+    Green("Green", 120f, 0xFF4CC24C.toInt()),
+    Cyan("Cyan", 180f, 0xFF3ACFD6.toInt()),
+    Blue("Blue", 240f, 0xFF3A6BE0.toInt()),
+    Purple("Purple", 270f, 0xFF8A4CE0.toInt()),
+    Magenta("Magenta", 300f, 0xFFDA48C2.toInt())
+}
+
+/** One band's sliders: its hue nudged, its saturation and its brightness, each -1..1. */
+data class HslBand(val hue: Float = 0f, val saturation: Float = 0f, val luminance: Float = 0f) {
+    val isIdentity: Boolean get() = abs(hue) < EPS && abs(saturation) < EPS && abs(luminance) < EPS
+
+    companion object {
+        /** How far a band's hue slider turns the colour at full: a whole band either way. */
+        const val HUE_SWING_DEGREES = 30f
+
+        /**
+         * How much of a pixel at [pixelDegrees] of hue a band centred on
+         * [bandDegrees] owns: all of it on the band, nothing a band and a half
+         * away, and a straight ramp between - the same ramp the shader uses.
+         */
+        fun weight(pixelDegrees: Float, bandDegrees: Float): Float {
+            var d = abs(pixelDegrees - bandDegrees) % 360f
+            if (d > 180f) d = 360f - d
+            return (1f - d / REACH_DEGREES).coerceIn(0f, 1f)
+        }
+
+        private const val REACH_DEGREES = 45f
+    }
+}
+
+private const val EPS = 1e-4f
+
+/**
+ * The manual sliders on one clip. Every value is 0 for "leave it alone" and runs
+ * -1..1, or 0..1 where only one direction means anything (a negative grain is no
+ * grain). A clip's look grades first and these refine on top (see [Looks.grade]).
+ *
+ * Brightness is an offset, not a gain: as a gain, -100% was black and +100% was
+ * twice the picture, and neither is what the word means on any other slider.
+ */
+data class Adjust(
+    val brightness: Float = 0f,
+    val contrast: Float = 0f,
+    val saturation: Float = 0f,
+    /** In stops, scaled: 1 is [EXPOSURE_STOPS] stops up. */
+    val exposure: Float = 0f,
+    /** Warm (positive) to cool. */
+    val temperature: Float = 0f,
+    /** Magenta (positive) to green. */
+    val tint: Float = 0f,
+    val highlights: Float = 0f,
+    val shadows: Float = 0f,
+    val sharpen: Float = 0f,
+    val vignette: Float = 0f,
+    /** A turn of the whole colour wheel, [HUE_TURN_DEGREES] at full either way. */
+    val hue: Float = 0f,
+    val fade: Float = 0f,
+    val grain: Float = 0f,
+    /** One entry per [HueBand], in its order. */
+    val hsl: List<HslBand> = NO_HSL
+) {
+    val isIdentity: Boolean
+        get() = abs(brightness) < EPS && abs(contrast) < EPS && abs(saturation) < EPS && abs(exposure) < EPS &&
+            abs(temperature) < EPS && abs(tint) < EPS && abs(highlights) < EPS && abs(shadows) < EPS &&
+            abs(sharpen) < EPS && abs(vignette) < EPS && abs(hue) < EPS && abs(fade) < EPS && abs(grain) < EPS &&
+            hsl.all { it.isIdentity }
+
+    /** This with one band's sliders replaced. */
+    fun withBand(band: HueBand, value: HslBand): Adjust {
+        val bands = MutableList(HueBand.entries.size) { hsl.getOrElse(it) { HslBand() } }
+        bands[band.ordinal] = value
+        return copy(hsl = bands)
+    }
+
+    fun band(band: HueBand): HslBand = hsl.getOrElse(band.ordinal) { HslBand() }
+
+    companion object {
+        val NO_HSL: List<HslBand> = List(HueBand.entries.size) { HslBand() }
+        val NONE = Adjust()
+
+        /** Exposure at full: a stop and a half, which is as far as a slider on a phone is worth. */
+        const val EXPOSURE_STOPS = 1.5f
+
+        /** Hue at full: half the wheel, so the two ends of the slider meet. */
+        const val HUE_TURN_DEGREES = 180f
+
+        /**
+         * The Brightness slider of a draft saved when it was a gain - every
+         * channel times (1 + value) - as the offset it is now, chosen so a
+         * mid-grey lands where it did: the picture's midtones, which are what
+         * the slider was set by eye against, come back the same, and only
+         * the far ends of the range drift a little. Without this a draft
+         * opened after the change showed a different picture from the one
+         * that had been exported, with nothing touched.
+         */
+        fun brightnessFromLegacyGain(gain: Float): Float =
+            (gain * 0.5f / Looks.BRIGHTNESS_REACH).coerceIn(-1f, 1f)
+    }
+}
+
+/**
+ * The Adjust sheet's sliders, in the order CapCut lists them: the name, the
+ * range, and how to read one and write one on an [Adjust]. Each has its own
+ * reset - the slider back to nothing - which is why they are named here rather
+ * than laid out by hand thirteen times.
+ */
+enum class AdjustField(val label: String, val min: Float, val max: Float) {
+    Brightness("Brightness", -1f, 1f),
+    Contrast("Contrast", -1f, 1f),
+    Saturation("Saturation", -1f, 1f),
+    Exposure("Exposure", -1f, 1f),
+    Temperature("Temperature", -1f, 1f),
+    Tint("Tint", -1f, 1f),
+    Highlights("Highlights", -1f, 1f),
+    Shadows("Shadows", -1f, 1f),
+    Sharpen("Sharpen", 0f, 1f),
+    Vignette("Vignette", 0f, 1f),
+    Hue("Hue", -1f, 1f),
+    Fade("Fade", 0f, 1f),
+    Grain("Grain", 0f, 1f);
+
+    fun of(adjust: Adjust): Float = when (this) {
+        Brightness -> adjust.brightness
+        Contrast -> adjust.contrast
+        Saturation -> adjust.saturation
+        Exposure -> adjust.exposure
+        Temperature -> adjust.temperature
+        Tint -> adjust.tint
+        Highlights -> adjust.highlights
+        Shadows -> adjust.shadows
+        Sharpen -> adjust.sharpen
+        Vignette -> adjust.vignette
+        Hue -> adjust.hue
+        Fade -> adjust.fade
+        Grain -> adjust.grain
+    }
+
+    fun set(adjust: Adjust, value: Float): Adjust {
+        val v = value.coerceIn(min, max)
+        return when (this) {
+            Brightness -> adjust.copy(brightness = v)
+            Contrast -> adjust.copy(contrast = v)
+            Saturation -> adjust.copy(saturation = v)
+            Exposure -> adjust.copy(exposure = v)
+            Temperature -> adjust.copy(temperature = v)
+            Tint -> adjust.copy(tint = v)
+            Highlights -> adjust.copy(highlights = v)
+            Shadows -> adjust.copy(shadows = v)
+            Sharpen -> adjust.copy(sharpen = v)
+            Vignette -> adjust.copy(vignette = v)
+            Hue -> adjust.copy(hue = v)
+            Fade -> adjust.copy(fade = v)
+            Grain -> adjust.copy(grain = v)
+        }
+    }
+}
+
+/**
+ * What actually reaches the GPU: one look and the manual sliders folded into
  * a single set of moves.
  *
  * Folding matters. Applying a look and then three more adjustments would stack six
- * shader passes on every frame; combined, it is three passes no matter how much
- * grading is going on.
+ * shader passes on every frame; combined, it is one pass no matter how much
+ * grading is going on. The look's channel gains, the exposure, the temperature
+ * and the tint all end in the same three numbers; the look's contrast and the
+ * slider's are one contrast; and so on down the list.
  */
 data class Grade(
     val redScale: Float,
@@ -106,29 +275,41 @@ data class Grade(
     val split: Float = 0f,
     val bloom: Float = 0f,
     val vignette: Float = 0f,
-    val grain: Float = 0f
+    val grain: Float = 0f,
+    /** Added to every channel after the gain: the Brightness slider. */
+    val brightness: Float = 0f,
+    val highlights: Float = 0f,
+    val shadows: Float = 0f,
+    val sharpen: Float = 0f,
+    /** Degrees round the wheel. */
+    val hueDegrees: Float = 0f,
+    val hsl: List<HslBand> = Adjust.NO_HSL
 ) {
     val hasChannelGain: Boolean
         get() = abs(redScale - 1f) > 1e-4f || abs(greenScale - 1f) > 1e-4f || abs(blueScale - 1f) > 1e-4f
     val hasContrast: Boolean get() = abs(contrast) > 1e-4f
     val hasSaturation: Boolean get() = abs(saturation) > 1e-4f
+    val hasHsl: Boolean get() = hsl.any { !it.isIdentity }
+    val hasHue: Boolean get() = abs(hueDegrees) > 1e-3f
+    val hasTone: Boolean get() = abs(highlights) > 1e-4f || abs(shadows) > 1e-4f
+    val hasBrightness: Boolean get() = abs(brightness) > 1e-4f
 
     /**
-     * Whether this grade needs the shader.
-     *
-     * Grain and vignette are spatial and bloom reads neighbouring pixels, so none of
-     * the three can be expressed as a per-pixel colour transform - which is all the
-     * built-in effects do. A grade without them stays on the built-ins, because
-     * hardware-backed passes beat anything written by hand.
+     * Whether this grade needs more than a per-pixel colour transform: grain
+     * and a vignette are spatial, and bloom and sharpening read neighbouring
+     * pixels. Every grade goes through the one shader now (ColorGrade), so this
+     * only says which moves a swatch cannot show.
      */
     val needsShader: Boolean
         get() = abs(fade) > 1e-4f || abs(split) > 1e-4f || abs(bloom) > 1e-4f ||
-            abs(vignette) > 1e-4f || abs(grain) > 1e-4f
+            abs(vignette) > 1e-4f || abs(grain) > 1e-4f || abs(sharpen) > 1e-4f
 
-    val isIdentity: Boolean get() = !hasChannelGain && !hasContrast && !hasSaturation && !needsShader
+    val isIdentity: Boolean
+        get() = !hasChannelGain && !hasContrast && !hasSaturation && !needsShader &&
+            !hasBrightness && !hasTone && !hasHue && !hasHsl
 
     /**
-     * The same maths the shaders do, on one color.
+     * The same maths the shader does, on one color, in the same order.
      *
      * This exists so a filter chip can show what the look does to a real frame
      * without decoding one - and because both paths reading from a single
@@ -140,6 +321,7 @@ data class Grade(
         var b = (argb and 0xFF) / 255f
 
         r *= redScale; g *= greenScale; b *= blueScale
+        r += brightness; g += brightness; b += brightness
 
         if (hasContrast) {
             // Media3's Contrast: a factor either side of mid-gray, steepening as the
@@ -150,6 +332,16 @@ data class Grade(
             b = f * (b - 0.5f) + 0.5f
         }
 
+        if (hasTone) {
+            // Lifted or crushed by how bright the pixel already is, so the two
+            // sliders reach different parts of the picture rather than the whole
+            // of it: the sky for one, the shadow under the chin for the other.
+            val l = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 1f)
+            val lift = highlights * TONE_REACH * smoothstep(0.45f, 1f, l) +
+                shadows * TONE_REACH * (1f - smoothstep(0f, 0.55f, l))
+            r += lift; g += lift; b += lift
+        }
+
         if (hasSaturation) {
             val lum = 0.2126f * r + 0.7152f * g + 0.0722f * b
             val s = (1f + saturation).coerceAtLeast(0f)
@@ -158,9 +350,39 @@ data class Grade(
             b = lum + (b - lum) * s
         }
 
+        if (hasHue || hasHsl) {
+            val hsv = rgbToHsv(r, g, b)
+            var h = hsv[0]
+            var s = hsv[1]
+            var v = hsv[2]
+            h = (h + hueDegrees) % 360f
+            if (h < 0f) h += 360f
+            if (hasHsl) {
+                // Greys have no hue to speak of, so a band leaves them alone.
+                val owned = smoothstep(0.05f, 0.3f, s)
+                var turn = 0f
+                var moreSat = 0f
+                var brighter = 0f
+                HueBand.entries.forEachIndexed { i, band ->
+                    val w = HslBand.weight(h, band.degrees) * owned
+                    if (w <= 0f) return@forEachIndexed
+                    val e = hsl.getOrElse(i) { HslBand() }
+                    turn += w * e.hue * HslBand.HUE_SWING_DEGREES
+                    moreSat += w * e.saturation
+                    brighter += w * e.luminance
+                }
+                h = (h + turn) % 360f
+                if (h < 0f) h += 360f
+                s = (s * (1f + moreSat)).coerceIn(0f, 1f)
+                v = (v * (1f + brighter * HSL_LUMA_REACH)).coerceIn(0f, 1f)
+            }
+            val rgb = hsvToRgb(h, s, v)
+            r = rgb[0]; g = rgb[1]; b = rgb[2]
+        }
+
         // The same split-tone and fade the shader does, in the same order. Spatial
-        // moves - vignette, grain, bloom - have no meaning for one colour and are
-        // simply absent here; a swatch shows the grade, not the texture.
+        // moves - vignette, grain, bloom, sharpening - have no meaning for one
+        // colour and are simply absent here; a swatch shows the grade, not the texture.
         if (abs(split) > 1e-4f) {
             val l = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 1f)
             r += (channel(shadowTint, 16, highlightTint, l) - 0.5f) * split * 0.55f
@@ -178,6 +400,45 @@ data class Grade(
         return (0xFF shl 24) or (byte(r) shl 16) or (byte(g) shl 8) or byte(b)
     }
 
+    /**
+     * A whole picture graded in place - [applyTo] on every pixel, and the
+     * vignette, which needs a place in the frame: the shader's falloff from
+     * the middle to the corners, in the same numbers. For a photo on an
+     * overlay row, which the preview draws itself rather than through a
+     * player's shader. Grain, bloom and sharpening are left out, as the look
+     * chips leave them out (LookPreview): grain frozen on a still reads as
+     * dirt, and the other two are a texture the file has and the preview
+     * does without.
+     */
+    fun applyTo(pixels: IntArray, width: Int, height: Int, fromRow: Int = 0, toRow: Int = height) {
+        if (width <= 0 || height <= 0 || isIdentity) return
+        val aspect = width.toFloat() / height
+        val halfDiagonal = kotlin.math.sqrt((aspect * 0.5f) * (aspect * 0.5f) + 0.25f)
+        val vignetted = abs(vignette) > 1e-3f
+        val first = fromRow.coerceIn(0, height)
+        val last = toRow.coerceIn(first, height)
+        var i = first * width
+        for (y in first until last) {
+            for (x in 0 until width) {
+                val argb = pixels[i]
+                var graded = applyTo(argb)
+                if (vignetted) {
+                    val px = ((x + 0.5f) / width - 0.5f) * aspect
+                    val py = (y + 0.5f) / height - 0.5f
+                    val d = kotlin.math.sqrt(px * px + py * py) / halfDiagonal
+                    val falloff = 1f - vignette * smoothstep(0.42f, 1.06f, d)
+                    val r = (((graded shr 16) and 0xFF) * falloff + 0.5f).toInt().coerceIn(0, 255)
+                    val g = (((graded shr 8) and 0xFF) * falloff + 0.5f).toInt().coerceIn(0, 255)
+                    val b = ((graded and 0xFF) * falloff + 0.5f).toInt().coerceIn(0, 255)
+                    graded = (r shl 16) or (g shl 8) or b
+                }
+                // The picture's own alpha stays: a transparent logo is still transparent.
+                pixels[i] = (argb and 0xFF000000.toInt()) or (graded and 0xFFFFFF)
+                i++
+            }
+        }
+    }
+
     /** One channel of the split-tone colour at luminance [l], as 0..1. */
     private fun channel(shadow: Int, shift: Int, highlight: Int, l: Float): Float {
         val lo = ((shadow shr shift) and 0xFF) / 255f
@@ -191,6 +452,60 @@ data class Grade(
         ((argb shr 8) and 0xFF) / 255f,
         (argb and 0xFF) / 255f
     )
+
+    /** One band's three sliders as the shader wants them. */
+    fun bandToFloats(index: Int): FloatArray {
+        val band = hsl.getOrElse(index) { HslBand() }
+        return floatArrayOf(band.hue, band.saturation, band.luminance)
+    }
+
+    companion object {
+        /** How far Highlights or Shadows at full moves the pixels it reaches. */
+        const val TONE_REACH = 0.3f
+
+        /** How much a band's Luminance at full brightens or darkens its colours. */
+        const val HSL_LUMA_REACH = 0.5f
+
+        /** The shader's smoothstep, which is not Kotlin's and has no standard version. */
+        fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
+            if (edge1 <= edge0) return if (x < edge0) 0f else 1f
+            val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+            return t * t * (3f - 2f * t)
+        }
+
+        /** Hue in degrees (0..360), saturation and value (0..1). The shader's rgb2hsv, in the same terms. */
+        fun rgbToHsv(r: Float, g: Float, b: Float): FloatArray {
+            val max = maxOf(r, g, b)
+            val min = minOf(r, g, b)
+            val delta = max - min
+            val v = max
+            val s = if (max > 1e-6f) delta / max else 0f
+            var h = when {
+                delta < 1e-6f -> 0f
+                max == r -> 60f * (((g - b) / delta) % 6f)
+                max == g -> 60f * ((b - r) / delta + 2f)
+                else -> 60f * ((r - g) / delta + 4f)
+            }
+            if (h < 0f) h += 360f
+            return floatArrayOf(h, s, v)
+        }
+
+        fun hsvToRgb(h: Float, s: Float, v: Float): FloatArray {
+            val c = v * s
+            val hh = ((h % 360f) + 360f) % 360f / 60f
+            val x = c * (1f - abs(hh % 2f - 1f))
+            val (r1, g1, b1) = when {
+                hh < 1f -> Triple(c, x, 0f)
+                hh < 2f -> Triple(x, c, 0f)
+                hh < 3f -> Triple(0f, c, x)
+                hh < 4f -> Triple(0f, x, c)
+                hh < 5f -> Triple(x, 0f, c)
+                else -> Triple(c, 0f, x)
+            }
+            val m = v - c
+            return floatArrayOf(r1 + m, g1 + m, b1 + m)
+        }
+    }
 }
 
 object Looks {
@@ -341,32 +656,43 @@ object Looks {
      *
      * The look grades first and the sliders refine on top, which is the order a
      * colourist works in - so a warm look plus a saturation nudge behaves the way
-     * you would expect rather than fighting itself.
+     * you would expect rather than fighting itself. Exposure, temperature and
+     * tint are all channel gains, so they fold into the look's; the rest add to
+     * the look's own value of the same move and are held to the shader's range.
      */
-    fun grade(
-        lookId: String?,
-        intensity: Float,
-        brightness: Float,
-        contrast: Float,
-        saturation: Float
-    ): Grade {
+    fun grade(lookId: String?, intensity: Float, adjust: Adjust = Adjust.NONE): Grade {
         val look = byId(lookId).atIntensity(intensity)
-        val gain = (1f + brightness).coerceIn(0f, 2f)
+        val exposure = Math.pow(2.0, (adjust.exposure * Adjust.EXPOSURE_STOPS).toDouble()).toFloat()
+        val warm = adjust.temperature * TEMPERATURE_REACH
+        val tint = adjust.tint * TINT_REACH
         return Grade(
-            redScale = look.redScale * gain,
-            greenScale = look.greenScale * gain,
-            blueScale = look.blueScale * gain,
-            contrast = (look.contrast + contrast).coerceIn(-1f, 1f),
-            saturation = (look.saturation + saturation).coerceIn(-1f, 1f),
-            fade = look.fade,
+            redScale = look.redScale * exposure * (1f + warm) * (1f + tint / 2f),
+            greenScale = look.greenScale * exposure * (1f - tint),
+            blueScale = look.blueScale * exposure * (1f - warm) * (1f + tint / 2f),
+            contrast = (look.contrast + adjust.contrast).coerceIn(-1f, 1f),
+            saturation = (look.saturation + adjust.saturation).coerceIn(-1f, 1f),
+            fade = (look.fade + adjust.fade).coerceIn(0f, 1f),
             shadowTint = look.shadowTint,
             highlightTint = look.highlightTint,
             split = look.split,
             bloom = look.bloom,
-            vignette = look.vignette,
-            grain = look.grain
+            vignette = (look.vignette + adjust.vignette).coerceIn(0f, 1f),
+            grain = (look.grain + adjust.grain).coerceIn(0f, 1f),
+            brightness = adjust.brightness * BRIGHTNESS_REACH,
+            highlights = adjust.highlights,
+            shadows = adjust.shadows,
+            sharpen = adjust.sharpen,
+            hueDegrees = adjust.hue * Adjust.HUE_TURN_DEGREES,
+            hsl = adjust.hsl
         )
     }
+
+    /** How far Brightness at full lifts every channel: a third of the way to white. */
+    const val BRIGHTNESS_REACH = 0.35f
+
+    /** How much Temperature at full pushes red up and blue down, and Tint green against the other two. */
+    const val TEMPERATURE_REACH = 0.18f
+    const val TINT_REACH = 0.14f
 
     /**
      * Reference colors for the filter chips: a shadow, a skin midtone and a warm
@@ -387,7 +713,7 @@ object Looks {
 
     /** What this look does to the reference ramp, for drawing a chip. */
     fun swatch(look: Look, intensity: Float = 1f): IntArray {
-        val g = grade(look.id, intensity, 0f, 0f, 0f)
+        val g = grade(look.id, intensity)
         return IntArray(REFERENCE.size) { g.applyTo(REFERENCE[it]) }
     }
 }

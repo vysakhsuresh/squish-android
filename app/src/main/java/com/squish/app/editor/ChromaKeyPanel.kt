@@ -1,14 +1,11 @@
 package com.squish.app.editor
 
-import android.graphics.Bitmap
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -18,20 +15,12 @@ import androidx.compose.material.icons.filled.Colorize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.get
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.ui.components.SelectableChip
@@ -46,9 +35,16 @@ import com.squish.app.ui.theme.SquishColors
  * assumes - so keying against a canned color is guesswork. Tapping the actual
  * screen in your own frame is the difference between a key that works and an
  * afternoon of moving sliders.
+ *
+ * The screen is picked off the preview itself, with the loupe (EyedropperLayer):
+ * dragged over the picture, it reads a patch of pixels averaged, so a grain
+ * of compressed video noise is not the colour keyed. It used to be one pixel
+ * of a thumbnail in the panel, which was noisy and was not the picture.
+ * While the loupe is up the key is not drawn, so the loupe reads the screen's
+ * own green and not the hole a first guess has cut (PreviewEngine.setKeyPreview).
  */
 @Composable
-fun ChromaKeyPanel(clip: Clip, playheadMs: Long, viewModel: EditorViewModel) {
+fun ChromaKeyPanel(clip: Clip, viewModel: EditorViewModel, onEyedropper: ((Int) -> Unit) -> Unit) {
     val key = clip.chromaKey
 
     PanelSurface(accent = SquishColors.Magenta) {
@@ -88,10 +84,48 @@ fun ChromaKeyPanel(clip: Clip, playheadMs: Long, viewModel: EditorViewModel) {
                     viewModel.layers.setChromaKey(clip.id, ChromaKey(keyColorArgb = ChromaKey.STANDARD_BLUE))
                 }
             }
+            SquishOutlinedButton(text = "Pick the screen from the picture", modifier = Modifier.fillMaxWidth()) {
+                onEyedropper { colour -> viewModel.layers.setChromaKey(clip.id, ChromaKey(keyColorArgb = colour)) }
+            }
             return@PanelSurface
         }
 
-        FrameSampler(clip = clip, playheadMs = playheadMs, viewModel = viewModel, current = key)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(key.keyColorArgb))
+                    .border(1.dp, SquishColors.Border, RoundedCornerShape(8.dp))
+            )
+            Text(
+                "The colour being cut out",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.TextSecondary,
+                modifier = Modifier.weight(1f)
+            )
+            SquishOutlinedButton(text = "Pick") {
+                onEyedropper { colour -> viewModel.layers.updateChromaKey(clip.id, keyColorArgb = colour) }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            SelectableChip(
+                label = "Green",
+                selected = key.keyColorArgb == ChromaKey.STANDARD_GREEN,
+                modifier = Modifier.weight(1f),
+                onClick = { viewModel.layers.updateChromaKey(clip.id, keyColorArgb = ChromaKey.STANDARD_GREEN) }
+            )
+            SelectableChip(
+                label = "Blue",
+                selected = key.keyColorArgb == ChromaKey.STANDARD_BLUE,
+                modifier = Modifier.weight(1f),
+                onClick = { viewModel.layers.updateChromaKey(clip.id, keyColorArgb = ChromaKey.STANDARD_BLUE) }
+            )
+        }
 
         LabeledSlider("Similarity", key.similarity, ChromaKey.SIMILARITY_RANGE, onFinished = viewModel::endGesture) {
             viewModel.layers.updateChromaKey(clip.id, similarity = it)
@@ -117,88 +151,6 @@ fun ChromaKeyPanel(clip: Clip, playheadMs: Long, viewModel: EditorViewModel) {
                 "Spill pulls the screen's color back out of hair and shoulders.",
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextMuted
-        )
-    }
-}
-
-@Composable
-private fun FrameSampler(
-    clip: Clip,
-    playheadMs: Long,
-    viewModel: EditorViewModel,
-    current: ChromaKey
-) {
-    var frame by remember(clip.id) { mutableStateOf<Bitmap?>(null) }
-    var stale by remember(clip.id) { mutableStateOf(true) }
-
-    // Keyed on the clip, not the playhead: re-decoding a frame on every millisecond
-    // of playback would be absurd. The button below re-samples on demand.
-    LaunchedEffect(clip.id, stale) {
-        if (stale) {
-            frame = viewModel.analysis.sampleFrame(clip, playheadMs)
-            stale = false
-        }
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(current.keyColorArgb))
-                .border(1.dp, SquishColors.Border, RoundedCornerShape(8.dp))
-        )
-        Text(
-            "Tap the screen in the frame to sample it",
-            style = MaterialTheme.typography.bodySmall,
-            color = SquishColors.TextSecondary,
-            modifier = Modifier.weight(1f)
-        )
-        SquishOutlinedButton(text = "Refresh") { stale = true }
-    }
-
-    val bitmap = frame
-    if (bitmap != null && bitmap.width > 0 && bitmap.height > 0) {
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = "Tap to sample the screen color",
-            // FillBounds against the bitmap's own aspect ratio: no distortion, and
-            // the tap maps to a pixel by plain proportion rather than by unpicking
-            // whatever letterboxing a Fit would have introduced.
-            contentScale = ContentScale.FillBounds,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(bitmap.width.toFloat() / bitmap.height)
-                .clip(RoundedCornerShape(10.dp))
-                .border(1.dp, SquishColors.Border, RoundedCornerShape(10.dp))
-                .pointerInput(clip.id, bitmap) {
-                    detectTapGestures { offset ->
-                        val px = (offset.x / size.width * bitmap.width).toInt()
-                            .coerceIn(0, bitmap.width - 1)
-                        val py = (offset.y / size.height * bitmap.height).toInt()
-                            .coerceIn(0, bitmap.height - 1)
-                        viewModel.layers.updateChromaKey(clip.id, keyColorArgb = bitmap[px, py])
-                    }
-                }
-        )
-    }
-
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-        SelectableChip(
-            label = "Green",
-            selected = current.keyColorArgb == ChromaKey.STANDARD_GREEN,
-            modifier = Modifier.weight(1f),
-            onClick = { viewModel.layers.updateChromaKey(clip.id, keyColorArgb = ChromaKey.STANDARD_GREEN) }
-        )
-        SelectableChip(
-            label = "Blue",
-            selected = current.keyColorArgb == ChromaKey.STANDARD_BLUE,
-            modifier = Modifier.weight(1f),
-            onClick = { viewModel.layers.updateChromaKey(clip.id, keyColorArgb = ChromaKey.STANDARD_BLUE) }
         )
     }
 }

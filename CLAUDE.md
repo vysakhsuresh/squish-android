@@ -497,6 +497,100 @@ should work through it and then delete what holds up.
   before this build opens as it was (the new fields read as unset); one
   saved by this build writes version 13.
 
+- **Batch B12 (frame and colour), all of it.** Built on the desktop with no
+  phone attached. The decisions - the thirteen sliders folding with the look
+  into one grade (brightness an offset now, exposure and temperature into the
+  gains, the hue wheel meeting itself, an HSL band's reach), a clip's crop as
+  the preview's layers and the export's shader (`CropRules.windowPoint` and
+  `sourcePoint` are inverses), the zoom that keeps a straightened picture
+  covering its window, a shape chip's hold on the window, the padded canvas's
+  size and where the picture sits on it, which shot's reframe track is read at
+  a moment, and every mask shape's edge on the shader's own distance field -
+  are executed on the JVM (`tools/jvm/GradeChecks.kt`, `ClipCropChecks.kt`,
+  `FrameRulesChecks.kt`, `MaskOutlineChecks.kt`), and the toolbar's three new
+  clip tools in `ToolRulesChecks.kt`; nothing has been seen. Script in
+  `docs/ROADMAP.md` §4 under B12, plus what only a device answers: the look
+  shader with its new uniforms (eight `uHsl` vec3s, `uTexel` for sharpening)
+  compiles on the phone's ES2 driver - a shader that does not fails on the
+  player asynchronously and the surface then plays plain (PreviewEngine's
+  error listener) - and the mask shader's heart and star; a clip's crop on the
+  preview (two `graphicsLayer`s inside the turned view, `ClipCropped`) lines
+  up with the file (`ClipCropEffect`), on a shot, an overlay and a photo
+  overlay, with the edit rotated, with a straighten and a flip; the crop
+  window and the mask outline drawn inside the turned view take touches in
+  the picture's own coordinates; a padded canvas (Frame → Background) is
+  1080x1920 for a landscape 1080p shot on 9:16, the picture fitted whole over
+  the colour, the blurred still or the chosen picture, in the preview and in
+  the file - the backdrop is a *still* per shot, from its middle frame
+  (`CanvasBackdrop` says why not a live blur), so the preview and the file
+  agree by sharing one PNG; Media3's `Presentation` scale-to-fit pads the base
+  rolls with transparent pixels (the same fact B8's PiP fit leans on), or the
+  backdrop is hidden behind black bars; the loupe (`EyedropperLayer` dragged)
+  reads the green screen's own colour, since the key is held off while it is
+  up (`PreviewEngine.setKeyPreview`), and a 9-pixel patch averaged keys
+  cleaner than one pixel did; auto-reframe now analyses every shot and each
+  follows its own subject; "Filters" and "Adjust" on level 0's Looks work on
+  the shot under the playhead, named on the sheet, with Apply to all; person
+  masks no draft names are swept when the editor closes and when a bin entry
+  is purged (a binned draft keeps its masks, so Restore brings its cut-out
+  back - the roadmap's "delete the draft: files/segments is empty" holds
+  after a purge, not a discard); a draft from before this build opens with
+  its one look and sliders on every shot and its reframe track on the shots
+  of the first file (`brightness` was a gain then and is an offset now, so
+  the old number is converted to the offset that keeps mid-grey where it was,
+  `Adjust.brightnessFromLegacyGain`; the far ends of the range drift a
+  little).
+  From its review round (built, the arithmetic in `FrameRulesChecks.kt` and
+  `GradeChecks.kt`, nothing seen): a base shot's export chain is now the
+  preview's layer for layer - graded on its own frame, its crop window cut,
+  turned, fitted whole onto the compose canvas (`composeResolution`), *then*
+  placed and *then* the frame's ratio or rectangle cut from that canvas - so
+  a 1:1 crop plus Placement 1.6x grows past the fitted square in the file as
+  on screen, and Frame 16:9 over a 1:1 crop pillarboxes the square rather
+  than cutting a band from it; the pass count is unchanged, since Media3
+  folds consecutive matrix transformations into one program; auto-reframe's
+  window follows `FrameRules.subjectOnCanvas` in both (the subject carried
+  through the crop, the quarter turn and the placement - the export probes
+  each reframed file's shape for it) - check step 4's export against the
+  preview with a crop and a placement on the reframed shot, and with Rotate
+  90°; the Mask tool edits in place again (a PiP in the corner stays in the
+  corner with its outline on it, a 9:16 frame stays 9:16), the outline layer
+  walking the surface's own geometry (`ShotFrame`, `OverlayFrame`) so a drag
+  moves the shape under the finger through the placement's scale; base
+  surfaces are laid out at their decoded shape inside the picture's frame
+  (`SurfaceDraw.aspect`), so a portrait clip cut into a landscape edit is
+  pillarboxed as the file has it and its Crop window is measured on its own
+  picture (the sheet probes each clip's file for the chip hold); the blurred
+  backdrop is one still per shot from its middle on a one-second grid, made
+  one at a time under a lock (a trim drag no longer opens a decoder per
+  pointer event), pruned to 48 files, kept up across a cut and over a gap
+  (the shot before the gap, from the very start, and on to the end - the
+  file lays the same stretches), made from a photo's pixels for a main-track
+  photo and falling back to the colour when a frame cannot be read, in both;
+  a gap on a padded canvas shows the backdrop, not a black card; picking a
+  Background no longer switches the ratio to 9:16 - with Original or Custom
+  the chip says a shape on Ratio is needed and nothing is padded; level 0's
+  Looks holds its shot while playback runs and re-picks on a scrub or a
+  selection; Adjust is one chip row (thirteen sliders, then the eight wheel
+  colours) over one control, Apply to all under it; a photo overlay has
+  Filters and Adjust, graded on the CPU in the preview (`Grade.applyTo` on
+  the pixels, vignette included, grain and bloom not) and through its image
+  item in the file - check the two agree on a warm look and a vignette; a
+  crop whose only content is a shape chip survives a reload; a cancelled
+  crop drag closes its undo step.
+  From the merge of B11 and B12 (built, `ClipOpsChecks.kt` extended, nothing
+  seen): a clip's own turn comes *before* its crop in both the file
+  (`CompositionFactory.turn`, then `ClipCropEffect`, then the edit's
+  rotation) and the preview (`ShotFrame`/`OverlayFrame` fit the turned shape,
+  the view turns inside it with `turnedInside`, the crop window is cut from
+  that), so a crop is a window on the footage as seen - the Crop tool draws
+  its window upright over the turned picture, while the mask outline turns
+  with the picture, since the mask is cut before the turn in both. Check a
+  Rotate 90 plus a 1:1 crop on one shot lines up between the preview and the
+  file, and that the mask outline sits on the shape on a turned clip. Freeze
+  and Paste attributes carry the look, the sliders and the crop along with
+  the mirror and turn (the frame is grabbed from the file plain).
+
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The

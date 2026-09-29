@@ -28,8 +28,8 @@ import com.squish.app.media.audio.VoiceProcessor
 import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.FxEffect
-import com.squish.app.media.effects.Grade
 import com.squish.app.media.effects.LiveLookEffect
+import com.squish.app.media.effects.Looks
 import com.squish.app.media.effects.MaskEffect
 import com.squish.app.media.effects.PremultiplyEffect
 import com.squish.app.timeline.BackgroundRemoval
@@ -61,6 +61,16 @@ data class SurfaceDraw(
      */
     val mirrored: Boolean = false,
     val quarterTurns: Int = 0,
+    /** The clip's own crop, applied to the view by the preview (see ClipCrop). */
+    val crop: ClipCrop? = null,
+    /** Which clip is drawn, so the preview can show it plain while its picture is worked on. */
+    val clipId: String? = null,
+    /**
+     * The decoded picture's shape, width over height, once the player has
+     * said: the surface is laid out at it, fitted into the picture's frame,
+     * so a shot of another shape than the edit's sits where the file puts it
+     * and its crop window is measured on its own picture.
+     */
     val aspect: Float? = null
 )
 
@@ -83,7 +93,9 @@ data class OverlayPlacement(
     /** A clip covers this moment on this layer, whether or not it has drawn yet. */
     val covers: Boolean = false,
     /** Which clip that is, so the box on the picture can find the shape it is drawn at. */
-    val clipId: String? = null
+    val clipId: String? = null,
+    /** The clip's own crop, applied to the view by the preview (see ClipCrop). */
+    val crop: ClipCrop? = null
 )
 
 /** One reading of the transport, and everything the UI needs to draw the frame. */
@@ -146,10 +158,11 @@ class PreviewEngine(private val context: Context) {
     private var released = false
 
     /**
-     * The grade every base surface is drawing with, read by the shader on each
-     * frame. Changing it is a write here, never a pipeline rebuild - see [LiveLookEffect].
+     * Whether a clip's green screen is drawn. Held off while the key's colour
+     * is being picked off the picture, so the loupe reads the screen's own
+     * green rather than the hole a first guess at the key has already cut.
      */
-    private val liveGrade = AtomicReference(IDENTITY_GRADE)
+    private var keyPreview = true
 
     /**
      * Whether every level is held at nothing: while a voiceover is being taken,
@@ -195,6 +208,15 @@ class PreviewEngine(private val context: Context) {
         val chroma = AtomicReference<ChromaKey?>(null)
         val mask = AtomicReference<Pair<Mask?, Long>>(null to 0L)
         val background = AtomicReference<Pair<BackgroundRemoval?, Long>>(null to 0L)
+        /**
+         * The grade of the clip this surface is showing - its own look and
+         * sliders, an overlay's as much as a shot's - read by the look shader
+         * every frame. Changing it is a write here, never a pipeline rebuild;
+         * see [LiveLookEffect].
+         */
+        val grade = AtomicReference(IDENTITY_GRADE)
+        /** The clip [grade] was last worked out from, so a tick on the same clip costs a reference check. */
+        var gradedClip: Clip? = null
         val effects = AtomicReference<List<TimedEffect>>(emptyList())
         var effectsClip: Clip? = null
         var effectsFrom: List<TimedEffect>? = null
@@ -227,6 +249,7 @@ class PreviewEngine(private val context: Context) {
         /** The turn the last shot shown had, kept with its placement for the hold at a cut. */
         var lastMirrored = false
         var lastTurns = 0
+        var lastCrop: ClipCrop? = null
 
         var lastWanted = 0L
         var wantedIn = 0L
@@ -305,12 +328,12 @@ class PreviewEngine(private val context: Context) {
                 add(BackgroundEffect({ background.get().first }, { background.get().second }, timesAreSourceTime = true))
                 // The player holds the whole source file, so its clock is source time.
                 add(MaskEffect({ mask.get().first }, { mask.get().second }, timesAreSourceTime = true))
-                // Grade and the effects library belong to the base picture. The
-                // export gives an overlay neither, so the preview does not either -
-                // grading a picture-in-picture here promised a look the file would
-                // not have.
+                // Every picture has its own grade now, an overlay's as much as a
+                // shot's; the export grades each item the same way. The effects
+                // library still belongs to the whole picture, and only the base
+                // carries it.
+                add(LiveLookEffect(grade))
                 if (isBase) {
-                    add(LiveLookEffect(liveGrade))
                     // Writes alpha 1, so a base frame reaches its view opaque.
                     add(FxEffect { effects.get() })
                 } else {
@@ -420,6 +443,17 @@ class PreviewEngine(private val context: Context) {
      */
     fun setMuted(on: Boolean) {
         muted = on
+    }
+
+    /**
+     * Draws every clip's green screen (true), or none (false) while a key
+     * colour is being picked off the picture; see [keyPreview]. Applied on
+     * the next tick, with a fresh frame asked for.
+     */
+    fun setKeyPreview(on: Boolean) {
+        if (released || on == keyPreview) return
+        keyPreview = on
+        requestRedraw()
     }
 
     /**
@@ -537,13 +571,13 @@ class PreviewEngine(private val context: Context) {
         fallbackUri: Uri,
         proxies: Map<Uri, Uri>,
         muteOriginal: Boolean,
-        originalVolume: Float,
-        grade: Grade
+        originalVolume: Float
     ) {
         if (released) return
-        // A paused picture does not redraw by itself, so a new grade or effect
-        // would not show until play. The next tick asks for a fresh frame.
-        if (effects != this.effects || grade != liveGrade.get()) requestRedraw()
+        // A paused picture does not redraw by itself, so a new effect would not
+        // show until play. The next tick asks for a fresh frame. A clip's own
+        // grade, mask or key is noticed per surface, in applyLive.
+        if (effects != this.effects) requestRedraw()
         this.effects = effects
         val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
 
@@ -584,7 +618,6 @@ class PreviewEngine(private val context: Context) {
             proxyPending = false
         }
 
-        liveGrade.set(grade)
         // Each surface's level is set from the clip it is showing, every tick
         // (see syncSurface): a shot's own under these, an overlay's alone.
         this.muteOriginal = muteOriginal
@@ -647,10 +680,20 @@ class PreviewEngine(private val context: Context) {
      */
     private fun applyLive(s: Surface, clip: Clip) {
         var changed = false
-        val chroma = clip.chromaKey
+        val chroma = if (keyPreview) clip.chromaKey else null
         if (s.chroma.get() != chroma) {
             s.chroma.set(chroma)
             changed = true
+        }
+        // Worked out again only when the clip changed - an edit makes a new
+        // Clip - and written only when it came out different.
+        if (clip !== s.gradedClip) {
+            s.gradedClip = clip
+            val grade = clip.grade
+            if (grade != s.grade.get()) {
+                s.grade.set(grade)
+                changed = true
+            }
         }
         val mask = clip.mask to clip.sourceInMs
         if (s.mask.get() != mask) {
@@ -973,10 +1016,11 @@ class PreviewEngine(private val context: Context) {
             val other = if (!ready && (if (onA) holdB else holdA)) {
                 SurfaceDraw(
                     visible = true, transform = held.lastTransform,
-                    mirrored = held.lastMirrored, quarterTurns = held.lastTurns, aspect = held.videoAspect
+                    mirrored = held.lastMirrored, quarterTurns = held.lastTurns, crop = held.lastCrop,
+                    clipId = held.shownClipId, aspect = held.videoAspect
                 )
             } else {
-                SurfaceDraw(visible = false, transform = only.transformAt(at))
+                SurfaceDraw(visible = false, transform = only.transformAt(at), crop = only.crop, clipId = only.id)
             }
             return if (onA) remember(shown, other, 0f) else remember(other, shown, 0f)
         }
@@ -1043,7 +1087,11 @@ class PreviewEngine(private val context: Context) {
         return hold
     }
 
-    /** Notes what each base surface showed, for the hold at the next hard cut. */
+    /**
+     * Notes what each base surface showed, for the hold at the next hard cut,
+     * and stamps each draw with its surface's picture shape - whatever frame
+     * is on the surface, a held one included.
+     */
     private fun remember(a: SurfaceDraw, b: SurfaceDraw, veil: Float): Triple<SurfaceDraw, SurfaceDraw, Float> {
         surfaceA.wasVisible = a.visible
         surfaceB.wasVisible = b.visible
@@ -1056,11 +1104,12 @@ class PreviewEngine(private val context: Context) {
         lastTransform = draw.transform
         lastMirrored = draw.mirrored
         lastTurns = draw.quarterTurns
+        lastCrop = draw.crop
     }
 
-    /** The draw with [clip]'s own mirror and turn, and the shape [s] has decoded. */
+    /** The draw with [clip]'s own mirror, turn and crop, which clip it is, and the shape [s] has decoded. */
     private fun SurfaceDraw.turnedAs(clip: Clip, s: Surface): SurfaceDraw =
-        copy(mirrored = clip.mirrored, quarterTurns = clip.quarterTurns, aspect = s.videoAspect)
+        copy(mirrored = clip.mirrored, quarterTurns = clip.quarterTurns, crop = clip.crop, clipId = clip.id, aspect = s.videoAspect)
 
     /**
      * Gives one roll's player its work for this tick: the clip under the playhead
@@ -1155,7 +1204,8 @@ class PreviewEngine(private val context: Context) {
                 quarterTurns = clip.quarterTurns,
                 aspect = s.videoAspect,
                 covers = true,
-                clipId = clip.id
+                clipId = clip.id,
+                crop = clip.crop
             )
         }
     }
@@ -1514,5 +1564,5 @@ class PreviewEngine(private val context: Context) {
     }
 }
 
-/** A grade that changes nothing: unit gain, no contrast or saturation shift, no look. */
-private val IDENTITY_GRADE = Grade(redScale = 1f, greenScale = 1f, blueScale = 1f, contrast = 0f, saturation = 0f)
+/** A grade that changes nothing: unit gain, no contrast or saturation shift, no look, no slider. */
+private val IDENTITY_GRADE = Looks.grade(null, 1f)

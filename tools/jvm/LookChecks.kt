@@ -65,7 +65,7 @@ fun main() {
         if (filmMoves != look.needsShader) {
             problems += "${look.id}: film moves=$filmMoves but needsShader=${look.needsShader}"
         }
-        val grade = Looks.grade(look.id, 1f, 0f, 0f, 0f)
+        val grade = Looks.grade(look.id, 1f)
         if (grade.needsShader != filmMoves) {
             problems += "${look.id}: grade routing disagrees with the look"
         }

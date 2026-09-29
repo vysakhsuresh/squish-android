@@ -5,8 +5,6 @@ import com.squish.app.data.ProjectSnapshot
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
 import com.squish.app.media.SquishError
-import com.squish.app.media.effects.Grade
-import com.squish.app.media.effects.Looks
 import com.squish.app.media.audio.Waveform
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
@@ -61,11 +59,21 @@ object OutputSize {
     }
 }
 
+/**
+ * The shape of the edit's frame. A fixed ratio cuts the picture to that shape,
+ * or - with a background set (see CanvasBackground) - is a canvas the picture
+ * is fitted whole into. The list is the one every upload page asks for.
+ */
 enum class CropAspect(val label: String, val ratio: Float?) {
     Original("Original", null),
     Portrait("9:16", 9f / 16f),
     Square("1:1", 1f),
     Landscape("16:9", 16f / 9f),
+    ThreeFour("3:4", 3f / 4f),
+    FourThree("4:3", 4f / 3f),
+    FourFive("4:5", 4f / 5f),
+    TwoOne("2:1", 2f),
+    Cinema("2.35:1", 2.35f),
 
     /**
      * Drawn by hand on the picture.
@@ -440,7 +448,6 @@ data class EditSnapshot(
     val audioClips: List<Clip>,
     val textOverlays: List<TextOverlayItem>,
     val effects: List<TimedEffect>,
-    val reframe: MotionTrack?,
     val markers: List<Long>,
     val selectedClipId: String?,
     val muteOriginal: Boolean,
@@ -448,11 +455,7 @@ data class EditSnapshot(
     val rotationDegrees: Int,
     val cropAspect: CropAspect,
     val cropRect: CropRect,
-    val lookId: String?,
-    val lookIntensity: Float,
-    val brightness: Float,
-    val contrast: Float,
-    val saturation: Float,
+    val canvasBackground: CanvasBackground,
     /**
      * The beat grid, as [BeatProgress.settled]. Scaling it, shifting the bar and
      * clearing it are edits like any other, and were the only ones undo could
@@ -507,15 +510,12 @@ data class EditorUiState(
     val originalVolume: Float = 1f,
     val rotationDegrees: Int = 0,
     val cropAspect: CropAspect = CropAspect.Original,
-
-    val brightness: Float = 0f,
-    val contrast: Float = 0f,
-    val saturation: Float = 0f,
-
-    // The graded look, and how far it is dialled in. The sliders above refine on
-    // top of it rather than replacing it.
-    val lookId: String? = null,
-    val lookIntensity: Float = 1f,
+    /**
+     * What fills a ratio's canvas round the picture, when the picture is fitted
+     * into it rather than cut to it; see [CanvasBackground]. The look and the
+     * colour sliders are each clip's own now (Clip.grade), not the edit's.
+     */
+    val canvasBackground: CanvasBackground = CanvasBackground.NONE,
 
     val textOverlays: List<TextOverlayItem> = emptyList(),
     /** A line's style, copied and waiting to be pasted onto another. Not an edit until it is. */
@@ -532,12 +532,7 @@ data class EditorUiState(
     val speakingId: String? = null,
     /** Timed effects from the library - shake, glitch, flash and the rest. */
     val effects: List<TimedEffect> = emptyList(),
-    /**
-     * Auto-reframe: where the frame-shape crop is centred through the clip, in
-     * the main source's time. Null keeps the crop centred. Only used with a
-     * fixed shape (9:16, 1:1, 16:9).
-     */
-    val reframe: MotionTrack? = null,
+    /** Where auto-reframe has got to; the tracks themselves are on the shots (Clip.reframe). */
     val reframeProgress: ReframeProgress = ReframeProgress(),
     /** Finding the person in a clip, for background removal. */
     val backgroundProgress: ReframeProgress = ReframeProgress(),
@@ -685,6 +680,22 @@ data class EditorUiState(
         }
 
     /**
+     * Whether the picture is fitted whole into a canvas of the chosen ratio,
+     * with a background round it, rather than cut to the ratio. Only a fixed
+     * ratio makes a canvas; a hand-drawn rectangle is the frame itself.
+     */
+    val paddedCanvas: Boolean get() = canvasBackground.pads && cropAspect.ratio != null
+
+    /**
+     * The shape of the canvas the preview composes on and the export writes:
+     * the ratio when the frame is padded, else the picture's own shape. The
+     * crop is drawn over the picture in the second case, not applied to the
+     * canvas, so the whole frame stays on screen while it is chosen.
+     */
+    val canvasAspect: Float
+        get() = if (paddedCanvas) cropAspect.ratio ?: sourceFrameAspect else sourceFrameAspect
+
+    /**
      * The shape the preview should frame to, or null for the whole picture.
      *
      * The preview crops by aspect, which a hand-drawn rectangle can be reduced to
@@ -692,14 +703,16 @@ data class EditorUiState(
      */
     val previewCropRatio: Float?
         get() = when {
+            paddedCanvas -> null
             cropAspect == CropAspect.Custom ->
                 if (cropRect.isFull) null else cropRect.aspect(sourceFrameAspect)
             else -> cropAspect.ratio
         }
 
-    /** The rectangle actually kept, whichever way the crop was chosen. */
+    /** The rectangle actually kept, whichever way the crop was chosen. A padded canvas keeps all of it. */
     val effectiveCrop: CropRect
         get() = when {
+            paddedCanvas -> CropRect()
             cropAspect == CropAspect.Custom -> cropRect
             cropAspect.ratio != null -> CropRect.centred(cropAspect.ratio, sourceFrameAspect)
             else -> CropRect()
@@ -745,7 +758,6 @@ data class EditorUiState(
             audioClips = audioClips,
             textOverlays = textOverlays,
             effects = effects,
-            reframe = reframe,
             markers = markers,
             selectedClipId = selectedClipId,
             muteOriginal = muteOriginal,
@@ -753,11 +765,7 @@ data class EditorUiState(
             rotationDegrees = rotationDegrees,
             cropAspect = cropAspect,
             cropRect = cropRect,
-            lookId = lookId,
-            lookIntensity = lookIntensity,
-            brightness = brightness,
-            contrast = contrast,
-            saturation = saturation,
+            canvasBackground = canvasBackground,
             beats = beats.settled,
             stabilizeStrength = stabilizeStrength
         )
@@ -768,7 +776,6 @@ data class EditorUiState(
         audioClips = snapshot.audioClips,
         textOverlays = snapshot.textOverlays,
         effects = snapshot.effects,
-        reframe = snapshot.reframe,
         markers = snapshot.markers,
         selectedClipId = snapshot.selectedClipId,
         muteOriginal = snapshot.muteOriginal,
@@ -776,21 +783,13 @@ data class EditorUiState(
         rotationDegrees = snapshot.rotationDegrees,
         cropAspect = snapshot.cropAspect,
         cropRect = snapshot.cropRect,
-        lookId = snapshot.lookId,
-        lookIntensity = snapshot.lookIntensity,
-        brightness = snapshot.brightness,
-        contrast = snapshot.contrast,
-        saturation = snapshot.saturation,
+        canvasBackground = snapshot.canvasBackground,
         // An analysis still listening keeps listening; the grid under it is
         // what goes back.
         beats = if (beats.running) snapshot.beats.copy(running = true, listeningTo = beats.listeningTo)
         else snapshot.beats,
         stabilizeStrength = snapshot.stabilizeStrength
     )
-
-    /** The look and the manual sliders folded together - what the GPU is asked for. */
-    val grade: Grade
-        get() = Looks.grade(lookId, lookIntensity, brightness, contrast, saturation)
 
     val hasSeparateAudio: Boolean get() = audioClips.isNotEmpty()
 
@@ -906,12 +905,14 @@ data class EditorUiState(
             }
         }
 
-    /** The part of the rotated frame the crop keeps, in pixels, before any size is chosen. */
+    /** The part of the rotated frame the crop keeps, in pixels, before any size is chosen - or the padded canvas. */
     val croppedFrame: ExportPresets.Resolution
-        get() = effectiveCrop.let { ExportPresets.croppedFrame(framedWidth, framedHeight, it.width, it.height) }
+        get() = if (paddedCanvas) FrameRules.paddedCanvas(OutputSize.ORIGINAL, framedWidth, framedHeight, canvasAspect)
+        else effectiveCrop.let { ExportPresets.croppedFrame(framedWidth, framedHeight, it.width, it.height) }
 
     /**
-     * The frame the file is written at: what the crop keeps, at the chosen size.
+     * The frame the file is written at: what the crop keeps, at the chosen size
+     * - or, padded, the canvas of the chosen ratio (FrameRules.paddedCanvas).
      * Fit-to-size keeps the kept part's own size and spends its budget on bitrate.
      */
     val outputResolution: ExportPresets.Resolution
@@ -920,9 +921,24 @@ data class EditorUiState(
         // a turned frame to fit a box the wrong way round - which is the
         // letterboxed, wrong-shaped file that pressing Rotate produced. And the
         // cropped one: see ExportPresets.croppedFrame.
-        get() = effectiveCrop.let {
-            ExportPresets.canvasFor(if (fitToSize) OutputSize.ORIGINAL else outputP, framedWidth, framedHeight, it.width, it.height)
+        get() {
+            val p = if (fitToSize) OutputSize.ORIGINAL else outputP
+            if (paddedCanvas) return FrameRules.paddedCanvas(p, framedWidth, framedHeight, canvasAspect)
+            return effectiveCrop.let { ExportPresets.canvasFor(p, framedWidth, framedHeight, it.width, it.height) }
         }
+
+    /**
+     * The canvas a base shot is composed on before the frame's crop is cut
+     * from it, in the export's pixels: the padded canvas, or the picture's own
+     * turned frame - the canvas the preview composes on (TimelinePreview),
+     * whose fractions a shot's placement and the frame's crop are in. The
+     * export fits each shot's picture into this before placing and cropping
+     * it; done on the shot's own frame instead, a cropped shot's placement
+     * was cut to the window's bounds and the frame's ratio was cut out of the
+     * window rather than the canvas.
+     */
+    val composeResolution: ExportPresets.Resolution
+        get() = if (paddedCanvas) writtenResolution else ExportPresets.Resolution(framedWidth, framedHeight)
 
     /**
      * The frame the file actually comes out at: [outputResolution] unless the

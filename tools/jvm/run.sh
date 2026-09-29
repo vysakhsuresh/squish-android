@@ -20,10 +20,24 @@ run() {
   java -jar "$OUT/$name.jar" | grep -v '^Picked up'
 }
 
+# What a Clip pulls in: since B12 its own look (Look.kt) and crop (ClipCrop.kt,
+# CropRect.kt) as well as the timeline's own files.
+TIMELINE="$SRC/timeline/SpeedRamp.kt $SRC/timeline/TimelineModels.kt $SRC/timeline/VoiceEffect.kt
+  $SRC/timeline/TimelineLanes.kt $SRC/timeline/Keyframe.kt $SRC/timeline/Mask.kt $SRC/timeline/ChromaKey.kt
+  $SRC/timeline/Background.kt $SRC/editor/TimedEffect.kt
+  $SRC/media/effects/Look.kt $SRC/editor/ClipCrop.kt $SRC/editor/CropRect.kt
+  tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt
+  $SRC/media/video/ObjectTracker.kt $SRC/media/video/MotionEstimator.kt
+  tools/jvm/stub/Uri.kt"
+
 run looks      "$SRC/media/effects/Look.kt" tools/jvm/LookChecks.kt
+run grade      "$SRC/media/effects/Look.kt" tools/jvm/GradeChecks.kt
 run lookpreview "$SRC/media/effects/Look.kt" "$SRC/media/effects/LookPreview.kt" tools/jvm/LookPreviewChecks.kt
 run framing    "$SRC/media/ExportPresets.kt" "$SRC/editor/CropRect.kt" tools/jvm/stub/Quality.kt tools/jvm/FramingChecks.kt
 run crop       "$SRC/editor/CropRect.kt" tools/jvm/CropChecks.kt
+run clipcrop   "$SRC/editor/CropRect.kt" "$SRC/editor/ClipCrop.kt" tools/jvm/ClipCropChecks.kt
+run maskoutline "$SRC/timeline/Mask.kt" "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
+               "$SRC/editor/MaskOutline.kt" tools/jvm/MaskOutlineChecks.kt
 run frames     "$SRC/media/video/FrameBatch.kt" tools/jvm/stub/Bitmap.kt \
                tools/jvm/stub/MediaMetadataRetriever.kt tools/jvm/FrameBatchChecks.kt
 run beat       "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" tools/jvm/BeatChecks.kt
@@ -39,75 +53,18 @@ run housekeeping "$SRC/data/DraftHousekeeping.kt" "$SRC/data/DraftFiles.kt" tool
 run slowmo     "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/SlowMotion.kt" tools/jvm/SlowMotionChecks.kt
 run ramp       "$SRC/timeline/SpeedRamp.kt" tools/jvm/RampChecks.kt
 run slice      "$SRC/timeline/SpeedRamp.kt" tools/jvm/SliceChecks.kt
-run timeline   "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" "$SRC/timeline/VoiceEffect.kt" \
-               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
-               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
-               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
-               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
-               tools/jvm/stub/Uri.kt tools/jvm/TimelineChecks.kt
-run magnetic   "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" "$SRC/timeline/VoiceEffect.kt" \
-               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
-               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
-               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
-               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
-               tools/jvm/stub/Uri.kt tools/jvm/MagneticChecks.kt
-
-run editrules  "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" "$SRC/timeline/VoiceEffect.kt" \
-               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
-               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" "$SRC/editor/EditRules.kt" \
-               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
-               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
-               tools/jvm/stub/Uri.kt tools/jvm/EditRulesChecks.kt
-
-run audiorules "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" "$SRC/timeline/VoiceEffect.kt" \
-               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
-               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" "$SRC/editor/AudioRules.kt" \
-               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
-               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
-               tools/jvm/stub/Uri.kt tools/jvm/AudioRulesChecks.kt
-
-run exportplan "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" "$SRC/timeline/VoiceEffect.kt" \
-               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
-               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
-               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
-               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
-               tools/jvm/stub/Uri.kt "$SRC/media/ExportPlan.kt" tools/jvm/ExportPlanChecks.kt
-
-run lanes      "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" "$SRC/timeline/VoiceEffect.kt" \
-               "$SRC/timeline/TimelineWindow.kt" \
-               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
-               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
-               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
-               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
-               tools/jvm/stub/Uri.kt tools/jvm/LaneChecks.kt
-
-run overlay    "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" "$SRC/timeline/VoiceEffect.kt" \
-               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
-               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" "$SRC/editor/EditRules.kt" \
-               "$SRC/editor/OverlayRules.kt" tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
-               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
-               tools/jvm/stub/Uri.kt "$SRC/media/ExportPlan.kt" tools/jvm/OverlayChecks.kt
-
-run text       "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" "$SRC/timeline/VoiceEffect.kt" \
-               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
-               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" "$SRC/editor/EditRules.kt" \
-               "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" "$SRC/media/audio/SpeechSegmenter.kt" \
-               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt tools/jvm/stub/MonoPcm.kt \
-               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
-               tools/jvm/stub/Uri.kt "$SRC/media/ExportPlan.kt" tools/jvm/TextChecks.kt
-
-run clipops    "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" "$SRC/timeline/VoiceEffect.kt" \
-               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
-               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
-               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
-               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
-               tools/jvm/stub/Uri.kt "$SRC/media/ExportPlan.kt" tools/jvm/ClipOpsChecks.kt
-
-run timecode   "$SRC/editor/Timecode.kt" "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" "$SRC/timeline/VoiceEffect.kt" \
-               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
-               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
-               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
-               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
-               tools/jvm/stub/Uri.kt tools/jvm/TimecodeChecks.kt
+run timeline   $TIMELINE tools/jvm/TimelineChecks.kt
+run magnetic   $TIMELINE tools/jvm/MagneticChecks.kt
+run editrules  $TIMELINE "$SRC/editor/EditRules.kt" tools/jvm/EditRulesChecks.kt
+run audiorules $TIMELINE "$SRC/editor/AudioRules.kt" tools/jvm/AudioRulesChecks.kt
+run exportplan $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/ExportPlanChecks.kt
+run lanes      $TIMELINE "$SRC/timeline/TimelineWindow.kt" tools/jvm/LaneChecks.kt
+run overlay    $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/media/ExportPlan.kt" tools/jvm/OverlayChecks.kt
+run text       $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" \
+               "$SRC/media/audio/SpeechSegmenter.kt" tools/jvm/stub/MonoPcm.kt "$SRC/media/ExportPlan.kt" tools/jvm/TextChecks.kt
+run clipops    $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/ClipOpsChecks.kt
+run timecode   $TIMELINE "$SRC/editor/Timecode.kt" tools/jvm/TimecodeChecks.kt
+run framerules $TIMELINE "$SRC/editor/PreviewBox.kt" "$SRC/media/ExportPresets.kt" tools/jvm/stub/Quality.kt \
+               "$SRC/editor/FrameRules.kt" tools/jvm/FrameRulesChecks.kt
 
 rm -rf "$OUT"

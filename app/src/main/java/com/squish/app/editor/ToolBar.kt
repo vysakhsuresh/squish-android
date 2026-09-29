@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Animation
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bolt
@@ -126,8 +127,12 @@ val Tool.icon: ImageVector
         Tool.Overlay -> Concept.Overlay.icon
         Tool.Effects -> Concept.Effects.icon
         Tool.Looks -> Concept.Looks.icon
-        Tool.Frame -> Icons.Filled.Crop
+        Tool.Frame -> Icons.Filled.AspectRatio
         Tool.Split -> Icons.Filled.ContentCut
+        // The clip's own colour wears Looks' glyphs; its crop the crop marks.
+        Tool.Filters -> Concept.Looks.icon
+        Tool.Adjust -> Icons.Filled.Tune
+        Tool.Crop -> Icons.Filled.Crop
         Tool.Speed -> Icons.Filled.Speed
         Tool.Volume -> Icons.AutoMirrored.Filled.VolumeUp
         Tool.Animation -> Icons.Filled.Animation
