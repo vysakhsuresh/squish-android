@@ -1737,9 +1737,15 @@ fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): T
     }
     if (pasted == clip) return this
     val next = copy(clips = clips.map { if (it.id == clipId) pasted else it })
-    return if (clip.isMain && pasted.durationMs != clip.durationMs) {
-        next.relaidFrom(this) { if (it.id == clipId) listOf(pasted) else listOf(it) }
-    } else next
+    return when {
+        pasted.durationMs == clip.durationMs -> next
+        clip.isMain -> next.relaidFrom(this) { if (it.id == clipId) listOf(pasted) else listOf(it) }
+        // Off the main track a pasted curve is a retime, and ripples as the
+        // speed sheet's does: the butted followers carried, and an overlay
+        // row kept free of overlaps. Written back as it was, a pasted 0.5x
+        // ran an overlay into the next one on its layer.
+        else -> next.copy(clips = TimelineLanes.rippleAfterRetime(next.clips, clip, TimelineLanes.TOUCHING_MS))
+    }
 }
 
 // ---- Several at once -----------------------------------------------------------

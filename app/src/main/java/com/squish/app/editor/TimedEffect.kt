@@ -81,6 +81,17 @@ fun Clip.sourceAtExtended(timelineMs: Long): Long = when {
  * An empty picture ([endMs] of zero or less) changes nothing: that is a timeline
  * part-way through being rebuilt, not one that is short.
  */
+/**
+ * How far an effect may be placed, moved or stretched: the picture's end, the
+ * same end every edit fits the effects to ([fittedTo]). Placed by the edit's
+ * whole length instead, an effect over a song's tail past the last shot was
+ * allowed, then dropped by the next unrelated edit inside that edit's undo
+ * step. With no picture at all nothing is fitted, and the edit's length is
+ * the room.
+ */
+fun effectRoomMs(pictureEndMs: Long, editEndMs: Long): Long =
+    if (pictureEndMs > 0L) pictureEndMs else editEndMs
+
 fun List<TimedEffect>.fittedTo(endMs: Long): List<TimedEffect> {
     if (endMs <= 0L || none { it.endMs > endMs }) return this
     return mapNotNull { e ->

@@ -27,6 +27,9 @@ data class ReorderSlot(val index: Int, val atMs: Long)
  */
 object TimelineLanes {
 
+    /** Close enough to a butt cut that a retime carries the next clip along. */
+    const val TOUCHING_MS = 40L
+
     /**
      * A row for every item, so nothing on a row overlaps anything else on it.
      *
@@ -154,10 +157,37 @@ object TimelineLanes {
                 }
             }
         }
-        if (moving.isEmpty()) return clips
-        return clips.map {
+        val rippled = if (moving.isEmpty()) clips else clips.map {
             if (it.id in moving) it.copy(timelineStartMs = (it.timelineStartMs + shift).coerceAtLeast(0L)) else it
         }
+        return if (before.kind == ClipKind.Video && shift > 0L) overlaysClearedAfter(rippled, retimed) else rippled
+    }
+
+    /**
+     * An overlay layer made whole again after [grown] got longer: whatever on
+     * its layer, from its start on, now runs into what is before it is pushed
+     * along just far enough to clear it, in order - only as much as the room
+     * that was there did not absorb. Two overlays on one layer are the state
+     * every other path refuses (the preview has one player per layer and
+     * shows one of them, the file draws both); a slow-down rippled only the
+     * butted followers, straight over the next overlay a little way on, and a
+     * slow-down with nothing butted ran the clip itself into it.
+     */
+    fun overlaysClearedAfter(clips: List<Clip>, grown: Clip): List<Clip> {
+        val now = clips.firstOrNull { it.id == grown.id } ?: return clips
+        val row = clips.filter {
+            it.kind == ClipKind.Video && it.isOverlay && it.layer == now.layer &&
+                (it.id == now.id || it.timelineStartMs >= now.timelineStartMs)
+        }.sortedWith(compareBy<Clip>({ it.timelineStartMs }, { if (it.id == now.id) 0 else 1 }))
+        val pushed = HashMap<String, Long>()
+        var cursor = Long.MIN_VALUE
+        row.forEach { clip ->
+            val start = maxOf(clip.timelineStartMs, cursor)
+            if (start != clip.timelineStartMs) pushed[clip.id] = start
+            cursor = start + clip.durationMs
+        }
+        if (pushed.isEmpty()) return clips
+        return clips.map { c -> pushed[c.id]?.let { c.copy(timelineStartMs = it) } ?: c }
     }
 
     /** The nearest of [targets] no further than [withinMs] from [ms], or null. */

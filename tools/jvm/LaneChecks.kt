@@ -1,4 +1,5 @@
 import com.squish.app.timeline.Clip
+import com.squish.app.editor.fittedTo
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.EffectSpan
 import com.squish.app.timeline.LaneItem
@@ -449,6 +450,39 @@ private fun gaps() {
     // The main track is the model's (withClipRetimed): untouched here.
     val mainOnly = listOf(shot("a", 4_000), shot("b", 4_000, start = 4_000))
     check(TimelineLanes.rippleAfterRetime(retimed(mainOnly, "a", 2f), mainOnly[0], 40) == retimed(mainOnly, "a", 2f), "rippled the main track")
+
+    // A slow-down never leaves two overlays on one layer: the butted follower
+    // is carried, and what it would then run into is pushed just clear of it.
+    fun overlaps(clips: List<com.squish.app.timeline.Clip>): Boolean {
+        val row = clips.filter { it.kind == ClipKind.Video && it.isOverlay }.groupBy { it.layer }
+        return row.values.any { r -> r.sortedBy { it.timelineStartMs }.zipWithNext().any { (x, y) -> y.timelineStartMs < x.timelineEndMs } }
+    }
+    val o1 = shot("o1", 2_000, start = 0, layer = 1)
+    val o2 = shot("o2", 2_000, start = 2_000, layer = 1)
+    val o3 = shot("o3", 1_500, start = 4_500, layer = 1)
+    val o4 = shot("o4", 1_000, start = 9_000, layer = 1)
+    val row1 = listOf(shot("m", 30_000), o1, o2, o3, o4)
+    val slowO1 = TimelineLanes.rippleAfterRetime(retimed(row1, "o1", 0.5f), o1, 40)
+    check(!overlaps(slowO1), "a slowed overlay left two on one layer: ${slowO1.filter { it.layer == 1 }.map { it.id to it.timelineStartMs }}")
+    check(slowO1.at("o2") == 4_000L, "the butted follower: o2 at ${slowO1.at("o2")}")
+    check(slowO1.at("o3") == 6_000L, "o3 pushed just clear of o2: ${slowO1.at("o3")}")
+    check(slowO1.at("o4") == 9_000L, "o4 had room and moved: ${slowO1.at("o4")}")
+    // With nothing butted, the slowed clip itself would run into the next.
+    val lone = listOf(shot("m", 30_000), o1, o3)
+    val slowLone = TimelineLanes.rippleAfterRetime(retimed(lone, "o1", 0.25f), o1, 40)
+    check(!overlaps(slowLone) && slowLone.at("o3") == 8_000L, "a lone slowed overlay ran into the next: o3 at ${slowLone.at("o3")}")
+    // A speed-up moves nothing it was not carrying; sounds may overlap as they always could.
+    check(TimelineLanes.rippleAfterRetime(retimed(row1, "o1", 2f), o1, 40).at("o3") == 4_500L, "a speed-up pushed o3")
+    // An overlay before the retimed one is never touched.
+    val before = shot("o0", 1_000, start = 0, layer = 1)
+    val later1 = shot("o5", 2_000, start = 1_000, layer = 1)
+    check(TimelineLanes.rippleAfterRetime(retimed(listOf(before, later1, shot("o6", 1_000, start = 3_500, layer = 1)), "o5", 0.5f), later1, 40).at("o0") == 0L, "an earlier overlay moved")
+
+    // An effect is placed by the same end the edits fit it to.
+    check(com.squish.app.editor.effectRoomMs(8_000, 20_000) == 8_000L, "an effect may be placed over a song's tail past the picture")
+    check(com.squish.app.editor.effectRoomMs(0, 20_000) == 20_000L, "with no picture an effect has no room")
+    val tail = listOf(com.squish.app.editor.TimedEffect("e", com.squish.app.editor.EffectKind.Glitch, 6_000, 8_000))
+    check(tail.fittedTo(com.squish.app.editor.effectRoomMs(8_000, 20_000)) == tail, "an effect placed inside the room was dropped by the fit")
 }
 
 private fun window() {

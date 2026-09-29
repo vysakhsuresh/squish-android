@@ -57,6 +57,7 @@ import com.squish.app.timeline.withClipsMoved
 import com.squish.app.timeline.withClipsRemoved
 import com.squish.app.timeline.withClipsReordered
 import com.squish.app.timeline.withFrozenFrame
+import com.squish.app.timeline.withOverlayTransitionsFitted
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.update
@@ -406,7 +407,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      */
     fun applyTemplate(template: Template) = record("Template ${template.label}") {
         _state.update { current ->
-            val total = current.timelineDurationMs.coerceAtLeast(1L)
+            val total = current.let { effectRoomMs(it.pictureEndMs, it.timelineDurationMs) }.coerceAtLeast(1L)
             val placed = template.effects.map { (kind, at) ->
                 val start = (total * at).toLong().coerceIn(0L, (total - MIN_EFFECT_MS).coerceAtLeast(0L))
                 // A slow push fills the whole edit; the others are a moment each.
@@ -444,7 +445,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     /** An effect from the playhead for [DEFAULT_EFFECT_MS], or to the end if that is sooner. */
     fun addEffect(kind: EffectKind) = record("Add ${kind.label}") {
         val current = _state.value
-        val total = current.timelineDurationMs
+        val total = current.let { effectRoomMs(it.pictureEndMs, it.timelineDurationMs) }
         val start = current.playheadMs.coerceIn(0L, (total - MIN_EFFECT_MS).coerceAtLeast(0L))
         val end = (start + DEFAULT_EFFECT_MS).coerceAtMost(total.takeIf { it > start } ?: (start + DEFAULT_EFFECT_MS))
         val effect = TimedEffect(id = UUID.randomUUID().toString(), kind = kind, startMs = start, endMs = end)
@@ -466,7 +467,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     /** Slides an effect along the timeline, keeping its length and staying inside the edit. */
     fun moveEffect(id: String, deltaMs: Long) = record("Move effect", gesture = "Move $id") {
         _state.update { current ->
-            val total = current.timelineDurationMs
+            val total = current.let { effectRoomMs(it.pictureEndMs, it.timelineDurationMs) }
             current.copy(effects = current.effects.map { e ->
                 if (e.id != id) return@map e
                 val delta = deltaMs.coerceIn(-e.startMs, (total - e.endMs).coerceAtLeast(0L))
@@ -478,7 +479,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     /** Pulls an effect's start and end by the given amounts, never past each other or the edit's ends. */
     fun trimEffect(id: String, startDeltaMs: Long, endDeltaMs: Long) = record("Trim effect", gesture = "Trim $id") {
         _state.update { current ->
-            val total = current.timelineDurationMs
+            val total = current.let { effectRoomMs(it.pictureEndMs, it.timelineDurationMs) }
             current.copy(effects = current.effects.map { e ->
                 if (e.id != id) return@map e
                 val start = (e.startMs + startDeltaMs).coerceIn(0L, (e.endMs - MIN_EFFECT_MS).coerceAtLeast(0L))
@@ -1459,11 +1460,15 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     /**
      * A timeline operation applied to a recorded state rather than the screen,
      * for a result landing from the background (recordLate): the same fitting
-     * of fades and effects [mutateTimeline] does, on the snapshot's clips.
+     * of fades, overlay transitions and effects [mutateTimeline] does, on the
+     * snapshot's clips. Without the transitions' fit, a Reverse that made a
+     * ramped overlay a step shorter left the next overlay's transition on a
+     * join that was gone, to vanish inside some later edit's undo step.
      */
     private fun EditSnapshot.withTimeline(block: (TimelineState) -> TimelineState): EditSnapshot {
         val timeline = TimelineState(clips = videoClips + audioClips, selectedClipId = selectedClipId)
         val next = block(timeline).let { t -> t.copy(clips = t.clips.map(AudioRules::withFittedFades)) }
+            .withOverlayTransitionsFitted()
         val video = next.clips.filter { it.kind == ClipKind.Video }
         return copy(
             videoClips = video,
@@ -1581,7 +1586,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 }
             }
             effect != null -> {
-                val total = current.timelineDurationMs
+                val total = current.let { effectRoomMs(it.pictureEndMs, it.timelineDurationMs) }
                 val length = effect.endMs - effect.startMs
                 val start = effect.endMs.coerceAtMost((total - length).coerceAtLeast(0L))
                 val copy = effect.copy(id = UUID.randomUUID().toString(), startMs = start, endMs = start + length)
@@ -1603,8 +1608,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         }
     }
 
-    /** Close enough to a butt cut that a retime should carry the next clip along. */
-    private val TOUCHING_MS = 40L
+    private val TOUCHING_MS = TimelineLanes.TOUCHING_MS
 
     /**
      * A caption or sticker dragged along the strip: whole, and inside the

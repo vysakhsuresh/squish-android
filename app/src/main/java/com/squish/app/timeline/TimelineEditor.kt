@@ -84,6 +84,7 @@ import com.squish.app.editor.Concept
 import com.squish.app.editor.EditRules
 import com.squish.app.editor.Timecode
 import com.squish.app.editor.TransitionGlyph
+import com.squish.app.editor.effectRoomMs
 import com.squish.app.ui.theme.SquishColors
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
@@ -1245,8 +1246,9 @@ private class StripLayout(
         val drawn: Pair<Float, Float>
         when (lift.group) {
             Group.Effects -> {
-                // As moveEffect keeps it: whole, and inside the edit.
-                startMs = snap.startMs.coerceIn(0L, (state.durationMs - lift.lengthMs).coerceAtLeast(0L))
+                // As moveEffect keeps it: whole, and inside the picture (effectRoomMs).
+                val room = effectRoomMs(state.videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L, state.durationMs)
+                startMs = snap.startMs.coerceIn(0L, (room - lift.lengthMs).coerceAtLeast(0L))
                 row = lift.fromRow
                 drawn = fallbackTop to fallbackHeight
             }

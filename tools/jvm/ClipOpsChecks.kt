@@ -462,6 +462,20 @@ fun main() {
             "paste from a sound reset the picture: keys ${p.keyframes.size}, x ${p.offsetXFraction}, mask ${p.mask}, mirror ${p.mirrored}, turns ${p.quarterTurns}")
     }
 
+    // --- A pasted curve on an overlay ripples its row, as the speed sheet does. --------
+    run {
+        val slow = video("slow", 2_000, ramp = SpeedRamp.flat(0.5f))
+        val o1 = video("o1", 2_000, start = 0, layer = 1)
+        val o2 = video("o2", 2_000, start = 2_000, layer = 1)
+        val o3 = video("o3", 1_000, start = 4_500, layer = 1)
+        val after = TimelineState(clips = listOf(video("base", 20_000), slow, o1, o2, o3)).withAttributesPasted("o1", slow.attributes)
+        check(after.byId("o1").durationMs == 4_000L, "the pasted curve did not slow o1: ${after.byId("o1").durationMs}")
+        val row = after.clips.filter { it.layer == 1 }.sortedBy { it.timelineStartMs }
+        check(row.zipWithNext().none { (x, y) -> y.timelineStartMs < x.timelineEndMs },
+            "a pasted curve left overlays overlapping: ${row.map { it.id to (it.timelineStartMs to it.timelineEndMs) }}")
+        check(after.byId("o2").timelineStartMs == 4_000L, "the butted follower was not carried: ${after.byId("o2").timelineStartMs}")
+    }
+
     // --- A still rendered into a file is not footage. ------------------------------------
     run {
         check(isRenderedStill("file:///data/user/0/com.squish.app/files/stills/freeze_1_ab.mp4"), "a freeze file is not a rendered still")
