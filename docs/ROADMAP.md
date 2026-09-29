@@ -406,6 +406,12 @@ All on the moto g84 (`adb -s ZY32J8HF2S`), `adb logcat -G 16M` first, build with
 2. Speed curve Hero, drag a point, pitch toggle on: audio pitch changes; slow-mo 0.25× with frame blend: smoother than without.
 3. Transitions: apply to all cuts; overlay transition; readout in seconds; length clamp shown.
 4. Stabilize, change strength: updates instantly without re-analysis.
+5. Pitch toggle off (the default) on a 0.5× and a 2× shot with speech: the file's voice is at the preview's pitch, with no click at a Hero ramp's tread boundaries; toggle on: both drop and rise like a tape.
+6. Fade in on a main-track shot: black-to-picture in the preview, in a cuts-only file and in a file with a PiP over it, all alike; a keyed opacity on the Opacity sheet: the diamond lights under a key, the slider keys the playhead, Clear settles on the first frame's level.
+7. Every transition on the Basic / Camera / Glitch / Light tabs, on a three-shot chain so one join has the new shot on the lower roll: the file matches the preview at 0, 25, 50, 75 and 100 percent of each; the tiles animate; Dip to black still dips.
+8. Volume keys on a song under a voiceover (duck to 20% and back): the preview and the file follow the keys; Reset on Level clears them.
+9. 100× on a minute of footage: 0.6 s that plays and exports; Blend frames on 0.1×: the file is not a slideshow, frames in order, no encoder stall.
+10. Effect tiles animate; Shake's Speed and Punch's Beats per second knobs change the preview and the file the same way.
 
 **B14**
 1. Cancel from the progress card mid-render: confirm; no file left.

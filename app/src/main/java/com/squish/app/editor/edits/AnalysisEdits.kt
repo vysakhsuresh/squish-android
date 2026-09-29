@@ -9,6 +9,7 @@ import com.squish.app.timeline.BackgroundFill
 import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.Stabilizer
+import com.squish.app.media.video.StabilizerSolve
 import com.squish.app.media.video.TrackRunner
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Keyframe
@@ -355,8 +356,25 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
 
     // ---- Stabilization ------------------------------------------------------------
 
+    /**
+     * The strength, and every stabilized clip solved again at it from the
+     * measurement it kept (StabilizerSolve) - in the same step, so the slider
+     * is seen on the picture as it moves and undone with it. A clip from before
+     * measurements were kept has only its keys, and holds them until it is
+     * measured again.
+     */
     fun setStabilizeStrength(value: Float) = record("Stabilize strength", gesture = "Stabilize strength") {
-        _state.update { it.copy(stabilizeStrength = value.coerceIn(0f, 1f)) }
+        val strength = value.coerceIn(0f, 1f)
+        _state.update { state ->
+            state.copy(
+                stabilizeStrength = strength,
+                videoClips = state.videoClips.map { clip ->
+                    val measurement = clip.stabilizerMeasurement
+                    if (measurement == null || clip.stabilizer.isEmpty()) clip
+                    else StabilizerSolve.solve(measurement, strength)?.let { clip.copy(stabilizer = it.keyframes) } ?: clip
+                }
+            )
+        }
     }
 
     /**
@@ -406,7 +424,8 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
                 "Stabilize",
                 edit = { snapshot ->
                     snapshot.copy(videoClips = snapshot.videoClips.map {
-                        if (it.id == clipId) it.copy(stabilizer = result.keyframes) else it
+                        // The measurement with the keys, so Strength re-solves from it.
+                        if (it.id == clipId) it.copy(stabilizer = result.keyframes, stabilizerMeasurement = result.measurement) else it
                     })
                 },
                 alongside = {
@@ -434,7 +453,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
             _state.update { state ->
                 state.copy(
                     videoClips = state.videoClips.map {
-                        if (it.id == clipId) it.copy(stabilizer = emptyList()) else it
+                        if (it.id == clipId) it.copy(stabilizer = emptyList(), stabilizerMeasurement = null) else it
                     },
                     stabilize = if (state.stabilize.clipId == clipId) StabilizeProgress() else state.stabilize
                 )

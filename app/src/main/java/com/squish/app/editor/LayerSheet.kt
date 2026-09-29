@@ -24,6 +24,9 @@ import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
 import com.squish.app.editor.OverlayRules.canStep
 import com.squish.app.timeline.TimelineState
+import com.squish.app.timeline.ValueTrack
+import com.squish.app.timeline.hasValueKeyAt
+import com.squish.app.timeline.valueAt
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
 import com.squish.app.ui.theme.SquishColors
@@ -35,15 +38,26 @@ import com.squish.app.ui.theme.SquishColors
  * both through the one way placement is written (ClipEdits.setClipTransform).
  */
 @Composable
-fun OpacityPanel(clip: Clip, viewModel: EditorViewModel) {
+fun OpacityPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
+    val onClip = state.playheadMs in clip.timelineStartMs..clip.timelineEndMs
     PanelSurface(accent = SquishColors.Magenta) {
         PanelHeading(
-            "Opacity",
+            if (clip.opacityKeys.isNotEmpty() && onClip) "Opacity at ${Timecode.format(state.playheadMs)}" else "Opacity",
             "How much of the picture underneath shows through",
             icon = Icons.Filled.Opacity,
             accent = SquishColors.Magenta
         )
-        LabeledSlider("Opacity", clip.opacity, 0f..1f, onFinished = viewModel::endGesture) {
+        // Keyed over the clip: the slider then sets the opacity at the playhead
+        // (ValueTracks), and the preview and the file fade between the keys.
+        KeyframeButton(
+            keyed = clip.hasValueKeyAt(ValueTrack.Opacity, state.playheadMs, state.frameMs),
+            count = clip.opacityKeys.size,
+            onClip = onClip,
+            accent = SquishColors.Magenta,
+            onToggle = { viewModel.clips.toggleValueKey(clip.id, ValueTrack.Opacity) },
+            onClear = { viewModel.clips.clearValueKeys(clip.id, ValueTrack.Opacity) }
+        )
+        LabeledSlider("Opacity", clip.valueAt(ValueTrack.Opacity, state.playheadMs), 0f..1f, onFinished = viewModel::endGesture) {
             viewModel.layers.setOpacity(clip.id, it)
         }
     }
@@ -114,7 +128,8 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
     // Changes from elsewhere - Reset, undo - but not mid-drag.
     LaunchedEffect(clip.volume) { if (dragFrom == null && clip.volume > 0f) lastHeard = clip.volume }
     val accent = if (clip.isOverlay) SquishColors.Magenta else SquishColors.Violet
-    val muted = clip.volume <= 0f
+    val muted = clip.volume <= 0f && clip.volumeKeys.isEmpty()
+    val onClip = state.playheadMs in clip.timelineStartMs..clip.timelineEndMs
     PanelSurface(accent = accent) {
         PanelHeading(
             if (clip.isOverlay) "Overlay sound" else "Clip sound",
@@ -128,9 +143,18 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
                 )
             }
         )
+        // Keyed over the clip: a level ducked under a line, by hand.
+        KeyframeButton(
+            keyed = clip.hasValueKeyAt(ValueTrack.Volume, state.playheadMs, state.frameMs),
+            count = clip.volumeKeys.size,
+            onClip = onClip,
+            accent = accent,
+            onToggle = { viewModel.clips.toggleValueKey(clip.id, ValueTrack.Volume) },
+            onClear = { viewModel.clips.clearValueKeys(clip.id, ValueTrack.Volume) }
+        )
         LabeledSlider(
             "Level",
-            clip.volume,
+            clip.valueAt(ValueTrack.Volume, state.playheadMs),
             0f..1f,
             onFinished = {
                 // Where it ended, if that is a level; dragged down to nothing,

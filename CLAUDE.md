@@ -417,6 +417,46 @@ should work through it and then delete what holds up.
   looks read back through `TextStyleJson` (Outline as a stroke, Box as a
   bubble) and every animated line leaving by a fade, as it did.
 
+- **Batch B13 (animation, speed and transitions), all of it.** Built on the
+  desktop with no phone attached. The arithmetic - a number keyed over a clip
+  and the slider keying it, the arrival / leaving / loop over the placement
+  keys and through a cut and a trim, every transition compositing to the same
+  picture on either roll and to what the preview stacks, the stabilizer solved
+  again from its kept measurement, where the blended frames go - is executed
+  on the JVM (`tools/jvm/AnimationChecks.kt`, `ExportPlanChecks.kt`,
+  `StabilizerChecks.kt`, `FrameBlendChecks.kt`, `RampChecks.kt`); nothing has
+  been seen or heard. Script in `docs/ROADMAP.md` §4 under B13, plus what only
+  a device answers: the preview now draws every transition from
+  `ExportPlan.blend` (the dip to black is the outgoing shot's alpha over the
+  black canvas, no veil), so check Dissolve, Dip and Slide still look as they
+  did and the twelve new kinds (Dip to white, Slide right/up/down, Push, Wipe
+  left, Zoom, Jitter, Flicker, Flash, Glow) against a file, on both rolls of a
+  three-shot chain; a keyed opacity and a Fade in on a *main-track* shot
+  export through `TransitionEffect`'s `uOpaque` darkening on the cuts-only
+  path and as alpha over black on the composited path - the two must look the
+  same; an overlay's transition (offered when another overlay ends where it
+  starts on its row) plays over its head in the preview and the file; the
+  sound's pitch - Media3's speed change was found to pitch with the rate, so
+  the file used to disagree with the preview on every retimed clip -
+  `KeepPitchSpeedProcessor` must hold a voice at 0.5x and 2x and through a
+  Hero ramp with no gap or click at a tread boundary, and "Pitch follows
+  speed" must tape-pitch both the preview (`PlaybackParameters` pitch) and the
+  file; the speed slider to 100x plays and exports (ExoPlayer's sink and
+  Sonic at that rate are the question); dragging a point on the curve moves
+  it and a tap adds one; "Blend frames" on a 0.25x clip gives a file that
+  blurs through the steps rather than stepping, at the edit's frame rate,
+  with no dropped or reordered frames (`FrameBlendEffect` is the one shader
+  program here that emits more frames than it takes - watch for a stall in
+  the encoder or a `VideoFrameProcessingException`); a Strength drag on a
+  stabilized clip re-solves live with no "Measuring…"; the effect tiles and
+  the transition tiles animate without dropping the sheet's frame rate; the
+  keyframe button on Placement, Opacity and the two Volume sheets lights up
+  under a key and the slider then keys the playhead; an effect's own knob
+  (Speed on Shake, Beats on Punch…) reads in the preview and the file.
+  Not built: mask and filter keyframes - a mask already moves on its Track,
+  and per-clip filters arrive with B12, whose files they would key; the
+  `ValueKey` track built here is what they would use.
+
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The

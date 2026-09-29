@@ -191,11 +191,22 @@ val EditorUiState.selectionKind: SelectionKind
         return SelectionKind.None
     }
 
-/** Whether the selected main-track shot has a shot before it to transition from. */
+/**
+ * Whether the selected clip has one before it to transition from: a shot
+ * before it on the main track, or - for an overlay - another overlay on its
+ * row ending where it starts, within the slip a drag leaves (ExportPlan.MIN_GAP_MS).
+ */
 val EditorUiState.selectedCanTransition: Boolean
     get() {
-        val base = videoClips.filter { it.layer == 0 }.sortedBy { it.timelineStartMs }
-        return base.indexOfFirst { it.id == selectedClipId } > 0
+        val clip = videoClips.firstOrNull { it.id == selectedClipId } ?: return false
+        if (!clip.isOverlay) {
+            val base = videoClips.filter { it.layer == 0 }.sortedBy { it.timelineStartMs }
+            return base.indexOfFirst { it.id == clip.id } > 0
+        }
+        return videoClips.any {
+            it.id != clip.id && it.layer == clip.layer &&
+                kotlin.math.abs(it.timelineEndMs - clip.timelineStartMs) < com.squish.app.media.ExportPlan.MIN_GAP_MS
+        }
     }
 
 /**

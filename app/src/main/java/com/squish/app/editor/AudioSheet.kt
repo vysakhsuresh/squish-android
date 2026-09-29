@@ -57,7 +57,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
+import com.squish.app.timeline.ValueTrack
 import com.squish.app.timeline.VoiceEffect
+import com.squish.app.timeline.hasValueKeyAt
+import com.squish.app.timeline.valueAt
 import com.squish.app.ui.components.AccentBadge
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishPrimaryButton
@@ -458,14 +461,25 @@ fun SoundVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewMode
                 .padding(vertical = 4.dp)
         )
 
+        // Keyed over the sound: a bed ducked under a line, by hand. The slider
+        // then sets the level at the playhead (ValueTracks).
+        KeyframeButton(
+            keyed = clip.hasValueKeyAt(ValueTrack.Volume, state.playheadMs, state.frameMs),
+            count = clip.volumeKeys.size,
+            onClip = state.playheadMs in clip.timelineStartMs..clip.timelineEndMs,
+            accent = SquishColors.Cyan,
+            onToggle = { viewModel.clips.toggleValueKey(clip.id, ValueTrack.Volume) },
+            onClear = { viewModel.clips.clearValueKeys(clip.id, ValueTrack.Volume) }
+        )
+        val level = clip.valueAt(ValueTrack.Volume, state.playheadMs)
         LabeledSlider(
-            "Level", clip.volume, 0f..AudioRules.MAX_SOUND_GAIN,
+            "Level", level, 0f..AudioRules.MAX_SOUND_GAIN,
             readout = { "%.0f%%".format(it * 100) },
             onFinished = viewModel::endGesture
         ) {
             viewModel.audio.setAudioClipVolume(clip.id, it)
         }
-        if (clip.volume > 1f) {
+        if (level > 1f) {
             Text(
                 "Above 100% a loud passage may distort. The file is written at this level.",
                 style = MaterialTheme.typography.labelSmall,

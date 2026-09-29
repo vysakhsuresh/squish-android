@@ -57,25 +57,41 @@ data class Shot(val clip: Clip, val value: Float)
  * The pixel at [x] (0..1 across the frame) with [rolls] stacked top first, each
  * drawn with its ExportPlan draw, straight alpha over black.
  */
-fun composite(rolls: List<List<Clip>>, colours: Map<String, Float>, timeUs: Long, x: Float): Float {
+fun composite(rolls: List<List<Clip>>, colours: Map<String, Float>, timeUs: Long, x: Float, y: Float = 0.5f): Float {
     var dst = 0f
     for (r in rolls.indices.reversed()) {
         for (clip in rolls[r]) {
             val covers = timeUs >= clip.timelineStartMs * 1000 && timeUs < clip.timelineEndMs * 1000
             if (!covers) continue
             val d = ExportPlan.drawAt(rolls, clip, timeUs)
-            val sx = x - d.shiftX
-            val inside = sx >= 0f && sx <= 1f && x >= d.keepFrom && x <= d.keepTo
-            val a = if (inside) d.alpha.coerceIn(0f, 1f) else 0f
-            val src = colours.getValue(clip.id)
-            dst = src * a + dst * (1 - a)
+            dst = drawPixel(d, colours.getValue(clip.id), dst, x, y)
         }
     }
     return dst
 }
 
-/** What PreviewEngine.blend shows for outgoing [o] into incoming [i] at progress [p], pixel [x]. */
-fun preview(type: TransitionType, p: Float, x: Float, o: Float, i: Float): Float = when (type) {
+/**
+ * One draw's pixel at ([x], [y]) over [dst], the way the transition shader
+ * samples it: shifted, scaled about the centre, cut to the kept rectangle,
+ * whitened, then straight alpha over what is there.
+ */
+fun drawPixel(d: ExportPlan.Draw, src: Float, dst: Float, x: Float, y: Float): Float {
+    val sx = (x - d.shiftX - 0.5f) / d.scale + 0.5f
+    val sy = (y - d.shiftY - 0.5f) / d.scale + 0.5f
+    val inside = sx >= 0f && sx <= 1f && sy >= 0f && sy <= 1f &&
+        x >= d.keepFrom && x <= d.keepTo && y >= d.keepFromY && y <= d.keepToY
+    val a = if (inside) d.alpha.coerceIn(0f, 1f) else 0f
+    val lit = src + (1f - src) * d.white.coerceIn(0f, 1f)
+    return lit * a + dst * (1 - a)
+}
+
+/**
+ * What the four original transitions looked like on screen before the preview
+ * drew from ExportPlan.blend itself: outgoing [o] into incoming [i] at progress
+ * [p], pixel [x]. Kept as the record of what the phone was shown, so the shared
+ * function cannot drift from it.
+ */
+fun preview(type: TransitionType, p: Float, x: Float, o: Float, i: Float): Float? = when (type) {
     TransitionType.None -> i
     TransitionType.CrossFade -> o * (1 - p) + i * p
     // Outgoing visible under a veil rising to black, then incoming under a veil falling away.
@@ -84,6 +100,13 @@ fun preview(type: TransitionType, p: Float, x: Float, o: Float, i: Float): Float
     TransitionType.SlideLeft -> if (x >= 1 - p) i else o
     // Incoming revealed from the left edge to p.
     TransitionType.WipeRight -> if (x <= p) i else o
+    else -> null
+}
+
+/** The pixel the preview draws: the two shots stacked incoming over outgoing, from the shared blend. */
+fun previewPixel(type: TransitionType, p: Float, x: Float, y: Float, o: Float, i: Float): Float {
+    val (inDraw, outDraw) = ExportPlan.blend(type, p, incomingOnTop = true)
+    return drawPixel(inDraw, i, drawPixel(outDraw, o, 0f, x, y), x, y)
 }
 
 fun main() {
@@ -170,6 +193,7 @@ fun main() {
     run {
         val types = TransitionType.entries
         var compared = 0
+        var kept = 0
         for (type in types) for (incomingOnTop in listOf(true, false)) {
             val out = video("out", 0, 4000)
             val inc = video("in", 3000, 4000, transition = Transition(type, 1000))
@@ -178,22 +202,52 @@ fun main() {
             for (step in 0..20) {
                 val tUs = 3_000_000L + step * 50_000L - if (step == 20) 1 else 0
                 val p = ((tUs - 3_000_000L) / 1_000_000.0).toFloat()
-                for (xi in 0..40) {
+                for (xi in 0..40) for (yi in 0..8) {
                     val x = xi / 40f
-                    // Exactly on a slide or wipe edge the two sides are one pixel apart; skip it.
-                    if ((type == TransitionType.SlideLeft && abs(x - (1 - p)) < 0.02f) ||
-                        (type == TransitionType.WipeRight && abs(x - p) < 0.02f)) continue
-                    val got = composite(rolls, colours, tUs, x)
-                    val want = preview(type, p, x, 0.2f, 0.9f)
+                    val y = yi / 8f
+                    // Exactly on a moving edge the two sides are one pixel apart; skip it.
+                    val (inDraw, outDraw) = ExportPlan.blend(type, p, incomingOnTop = true)
+                    val edges = listOf(inDraw, outDraw).flatMap { d ->
+                        listOf(d.keepFrom to x, d.keepTo to x, d.shiftX to x, 1f + d.shiftX to x, d.keepFromY to y, d.keepToY to y, d.shiftY to y, 1f + d.shiftY to y)
+                    }
+                    if (edges.any { (edge, at) -> edge >= 0f && edge <= 1f && abs(at - edge) < 0.02f }) continue
+                    val got = composite(rolls, colours, tUs, x, y)
+                    // The four original kinds against the record of what the phone
+                    // showed; every kind against the preview's own stacking.
+                    preview(type, p, x, 0.2f, 0.9f)?.let { want ->
+                        kept++
+                        check(abs(got - want) < 0.01f, "$type incomingOnTop=$incomingOnTop p=$p x=$x: file $got, preview $want")
+                    }
+                    val shown = previewPixel(type, p, x, y, 0.2f, 0.9f)
                     compared++
-                    check(abs(got - want) < 0.01f, "$type incomingOnTop=$incomingOnTop p=$p x=$x: file $got, preview $want")
+                    check(abs(got - shown) < 0.01f, "$type incomingOnTop=$incomingOnTop p=$p x=$x y=$y: file $got, preview $shown")
                 }
             }
             // Outside the overlap each shot is simply itself.
             check(abs(composite(rolls, colours, 1_000_000L, 0.5f) - 0.2f) < 1e-4f, "$type: outgoing not plain before the overlap")
             check(abs(composite(rolls, colours, 6_000_000L, 0.5f) - 0.9f) < 1e-4f, "$type: incoming not plain after the overlap")
+            // At the overlap's start the old shot is whole (a plain cut over an
+            // overlap is the new shot from its first frame); by its end the new one is.
+            if (type != TransitionType.None) {
+                check(abs(composite(rolls, colours, 3_000_000L, 0.5f) - 0.2f) < 1e-4f, "$type incomingOnTop=$incomingOnTop: the overlap does not open on the old shot")
+            }
+            check(abs(composite(rolls, colours, 3_999_999L, 0.5f) - 0.9f) < 0.02f, "$type incomingOnTop=$incomingOnTop: the overlap does not close on the new shot")
         }
-        check(compared > 1000, "only $compared pixels compared")
+        check(compared > 5000 && kept > 1000, "only $compared pixels compared, $kept against the record")
+        // Every kind draws something a hard cut does not, somewhere in its run.
+        val samples = listOf(0.01f, 0.25f, 0.5f, 0.75f, 0.99f)
+        for (type in types.filter { it != TransitionType.None }) {
+            var differs = false
+            for (pi in 1..19) for (x in samples) for (y in samples) {
+                val p = pi / 20f
+                val cut = if (p >= 0.5f) 0.9f else 0.2f
+                if (abs(previewPixel(type, p, x, y, 0.2f, 0.9f) - cut) > 0.01f) differs = true
+            }
+            check(differs, "$type is a plain cut")
+        }
+        check(TransitionType.entries.map { it.category }.distinct().size == 4, "a tab has no transitions")
+        // A flicker ends on the new shot however it is sampled.
+        check(ExportPlan.flickerShowsIncoming(1f) && !ExportPlan.flickerShowsIncoming(0f), "flicker ends")
 
         // A third shot still running under a transition is hidden, as in the preview.
         val a = video("a", 0, 10_000)
@@ -232,6 +286,37 @@ fun main() {
         check(abs(s.offsetXFraction - want.offsetXFraction) < 1e-4f, "stabilizer not on source time: ${s.offsetXFraction}")
         check(ExportPlan.motionAt(stab, ExportPlan.MotionPart.User, 1000).isIdentity, "a clip with no keyframes moved")
         check(!ExportPlan.hasMotion(video("still", 0, 1000), ExportPlan.MotionPart.User), "a still clip has user motion")
+
+        // An arrival runs on played time too, laid over the keys.
+        val arriving = video("a", 0, 2000, ramp = SpeedRamp.flat(0.5f))
+            .copy(keyframes = push, arrival = com.squish.app.timeline.ClipArrival.SlideLeft, arrivalMs = 1000L)
+        check(ExportPlan.hasMotion(arriving, ExportPlan.MotionPart.User), "an arrival is not motion")
+        val opening = ExportPlan.motionAt(arriving, ExportPlan.MotionPart.User, 0L)
+        check(opening.offsetXFraction >= 2f && abs(opening.scale - 1f) < 1e-3f, "the arrival's first frame: $opening")
+        // 500 ms of source at half speed is 1000 ms played: the arrival has landed, the push is a quarter in.
+        val landed = ExportPlan.motionAt(arriving, ExportPlan.MotionPart.User, 500L)
+        check(landed.offsetXFraction == 0f && abs(landed.scale - 1.045f) < 0.01f, "the arrival on the source clock: $landed")
+    }
+
+    // --- A clip's own draw: its fade, and a transition on an overlay as its arrival.
+    run {
+        val plain = video("p", 0, 2000, layer = 1)
+        check(ExportPlan.ownDrawAt(plain, 500L).isPlain && !ExportPlan.drawsOwn(plain), "a plain overlay draws itself")
+        val dim = plain.copy(opacity = 0.4f)
+        check(ExportPlan.drawsOwn(dim) && abs(ExportPlan.ownDrawAt(dim, 500L).alpha - 0.4f) < 1e-4f, "a 40% overlay is not drawn at 40%")
+        val sliding = plain.copy(transitionIn = Transition(TransitionType.SlideLeft, 500))
+        check(ExportPlan.drawsOwn(sliding), "an overlay's transition is not drawn")
+        check(abs(ExportPlan.ownDrawAt(sliding, 0L).shiftX - 1f) < 1e-4f, "the overlay's slide does not start off screen")
+        check(abs(ExportPlan.ownDrawAt(sliding, 250L).shiftX - 0.5f) < 1e-4f, "the overlay's slide is not half way at half its length")
+        check(ExportPlan.ownDrawAt(sliding, 500L).isPlain, "the overlay's slide has not landed at its length")
+        val faded = sliding.copy(opacity = 0.5f, transitionIn = Transition(TransitionType.CrossFade, 500))
+        check(abs(ExportPlan.ownDrawAt(faded, 250L).alpha - 0.25f) < 1e-4f, "a dissolve onto an overlay ignores its opacity")
+        // A transition longer than the overlay runs its length and no more.
+        val long = plain.copy(transitionIn = Transition(TransitionType.CrossFade, 9000))
+        check(ExportPlan.overlayTransitionMs(long) == 2000L, "an overlay's transition outruns it")
+        // On the main track a transition is the rolls' business, not the clip's own draw.
+        val main = video("m", 0, 2000, transition = Transition(TransitionType.CrossFade, 500))
+        check(ExportPlan.ownDrawAt(main, 100L).isPlain && !ExportPlan.drawsOwn(main), "a main-track transition is drawn twice")
     }
 
     // --- Placement matrix: square pixels, clockwise degrees, screen-down Y. ------

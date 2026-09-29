@@ -12,8 +12,10 @@ import com.squish.app.media.audio.VoiceRecorder
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.ValueTrack
 import com.squish.app.timeline.VoiceEffect
 import com.squish.app.timeline.withSplitAllTracks
+import com.squish.app.timeline.withValueAt
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
@@ -151,9 +153,19 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         updateAudioClip(clipId) { it.copy(timelineStartMs = playhead) }
     }
 
-    /** A sound's level, up to four times its own (AudioRules.MAX_SOUND_GAIN). */
+    /**
+     * A sound's level, up to four times its own (AudioRules.MAX_SOUND_GAIN).
+     * Through the track's rule (ValueTracks): a key at the playhead once the
+     * sound has any, the one level until then.
+     */
     fun setAudioClipVolume(clipId: String, volume: Float) = record("Level", gesture = "Level $clipId") {
-        updateAudioClip(clipId) { it.copy(volume = volume.coerceIn(0f, AudioRules.MAX_SOUND_GAIN)) }
+        val playhead = _state.value.playheadMs
+        updateAudioClip(clipId) { it.withValueAt(ValueTrack.Volume, playhead, volume, 0f..AudioRules.MAX_SOUND_GAIN) }
+    }
+
+    /** Level's Reset: the sound at its own level, its keys gone, as one step. */
+    fun resetAudioClipVolume(clipId: String) = record("Level") {
+        updateAudioClip(clipId) { it.copy(volume = 1f, volumeKeys = emptyList()) }
     }
 
     /**

@@ -6,12 +6,43 @@ import kotlin.math.abs
 
 enum class ClipKind { Video, Audio, Text }
 
-enum class TransitionType(val label: String) {
-    None("Cut"),
-    CrossFade("Dissolve"),
-    DipToBlack("Dip to black"),
-    SlideLeft("Slide"),
-    WipeRight("Wipe")
+/** The transition sheet's tabs: the kind of move each transition makes. */
+enum class TransitionCategory(val label: String) {
+    Basic("Basic"),
+    Camera("Camera"),
+    Glitch("Glitch"),
+    Light("Light")
+}
+
+/**
+ * The transitions. Every one is drawn by ExportPlan.blend for the file and the
+ * preview alike, from a handful of per-shot draws - fade, shift, scale, cut
+ * away, whiten - so a kind is only ever added there. The names are what drafts
+ * carry, so they stay as they are; only the labels may change.
+ */
+enum class TransitionType(val label: String, val category: TransitionCategory) {
+    None("Cut", TransitionCategory.Basic),
+    CrossFade("Dissolve", TransitionCategory.Basic),
+    DipToBlack("Dip to black", TransitionCategory.Basic),
+    DipToWhite("Dip to white", TransitionCategory.Basic),
+    SlideLeft("Slide left", TransitionCategory.Camera),
+    SlideRight("Slide right", TransitionCategory.Camera),
+    SlideUp("Slide up", TransitionCategory.Camera),
+    SlideDown("Slide down", TransitionCategory.Camera),
+    /** The new shot pushes the old one off to the left. */
+    Push("Push", TransitionCategory.Camera),
+    WipeRight("Wipe right", TransitionCategory.Camera),
+    WipeLeft("Wipe left", TransitionCategory.Camera),
+    /** The new shot lands from larger, dissolving in. */
+    ZoomIn("Zoom", TransitionCategory.Camera),
+    /** A hard cut with the picture shaken on either side of it. */
+    Jitter("Jitter", TransitionCategory.Glitch),
+    /** The two shots alternate, faster, until the new one holds. */
+    Flicker("Flicker", TransitionCategory.Glitch),
+    /** A burst of white on the cut. */
+    Flash("Flash", TransitionCategory.Light),
+    /** A dissolve that brightens through its middle. */
+    Glow("Glow", TransitionCategory.Light)
 }
 
 /**
@@ -109,7 +140,51 @@ data class Clip(
      * from [keyframes] so an edit never destroys an analysis, and an analysis never
      * destroys an edit.
      */
-    val stabilizer: List<Keyframe> = emptyList()
+    val stabilizer: List<Keyframe> = emptyList(),
+
+    /**
+     * What the stabilizer measured, kept so a change of Strength is solved again
+     * from the numbers rather than by decoding the clip again: the analysis takes
+     * a minute on a long shot, the solve takes a moment.
+     */
+    val stabilizerMeasurement: com.squish.app.media.video.StabilizerMeasurement? = null,
+
+    /**
+     * Opacity over the clip, in played time from its head, over [opacity] when
+     * there are none; see [ValueKey]. A picture-in-picture fading up while a
+     * placement key moves it is two tracks, keyed on their own moments.
+     */
+    val opacityKeys: List<ValueKey> = emptyList(),
+
+    /** Level over the clip, over [volume] when there are none: a bed ducked under a line, by hand. */
+    val volumeKeys: List<ValueKey> = emptyList(),
+
+    /**
+     * How the picture arrives, leaves and behaves in between, each with its
+     * length in played milliseconds. Laid over the keyframes ([ClipAnimation]):
+     * a move drawn across the clip survives an arrival being switched on.
+     */
+    val arrival: ClipArrival = ClipArrival.None,
+    val arrivalMs: Long = ClipAnimation.DEFAULT_IN_MS,
+    val leaving: ClipLeaving = ClipLeaving.None,
+    val leavingMs: Long = ClipAnimation.DEFAULT_OUT_MS,
+    val loop: ClipLoop = ClipLoop.None,
+    val loopMs: Long = ClipAnimation.DEFAULT_LOOP_MS,
+
+    /**
+     * Whether the file blends neighbouring frames where slow motion has run out
+     * of them (FrameBlendEffect). Export only: the preview plays the frames the
+     * footage has.
+     */
+    val frameBlend: Boolean = false,
+
+    /**
+     * Whether the sound's pitch follows the speed, tape-style, or is held. Held
+     * is what a voice wants and what the preview always did; Media3's own speed
+     * change lets the pitch follow, so the file used to disagree with the
+     * preview on every retimed clip until this chose for both.
+     */
+    val pitchFollowsSpeed: Boolean = false
 ) {
     /** How much of the file this clip covers. Unaffected by how fast it plays. */
     val sourceSpanMs: Long get() = (sourceOutMs - sourceInMs).coerceAtLeast(0)
@@ -205,7 +280,15 @@ data class Clip(
     }
 
     private fun halvesAt(offset: Long): Pair<Clip, Clip> {
-        val head = copy(sourceOutMs = sourceInMs + offset, speedRamp = speedRamp.sliced(0L, offset), fadeOutMs = 0L)
+        // An arrival belongs to a head and a leaving to a tail, as the fades do:
+        // cutting a clip in two must not make its picture fade out and in again
+        // at the cut.
+        val head = copy(
+            sourceOutMs = sourceInMs + offset,
+            speedRamp = speedRamp.sliced(0L, offset),
+            fadeOutMs = 0L,
+            leaving = ClipLeaving.None
+        )
         val tail = copy(
             id = UUID.randomUUID().toString(),
             sourceInMs = sourceInMs + offset,
@@ -213,7 +296,10 @@ data class Clip(
             speedRamp = speedRamp.sliced(offset, sourceSpanMs),
             transitionIn = Transition(),
             keyframes = keyframes.shiftedBy(-head.durationMs),
-            fadeInMs = 0L
+            opacityKeys = opacityKeys.shiftedBy(-head.durationMs),
+            volumeKeys = volumeKeys.shiftedBy(-head.durationMs),
+            fadeInMs = 0L,
+            arrival = ClipArrival.None
         )
         return head to tail
     }
@@ -267,7 +353,48 @@ data class Clip(
     fun transformAt(timelineMs: Long): Transform {
         val local = timelineMs - timelineStartMs
         return composeTransform(keyframes, staticTransform, stabilizer, local, sourceAt(timelineMs))
+            .animated(animationFrame(local))
     }
+
+    /** Whether an arrival, a leaving or a loop is set. */
+    val hasAnimation: Boolean
+        get() = arrival != ClipArrival.None || leaving != ClipLeaving.None || loop != ClipLoop.None
+
+    /** The arrival, leaving and loop at [localMs] into the played clip; see [ClipAnimation]. */
+    fun animationFrame(localMs: Long): AnimFrame =
+        if (!hasAnimation) AnimFrame.STILL
+        else ClipAnimation.frameAt(arrival, leaving, loop, arrivalMs, leavingMs, loopMs, localMs, durationMs)
+
+    /**
+     * How much of the picture shows at [localMs] into the played clip: the
+     * opacity track, or the one level when there is none, through the
+     * animation's own fade. What the preview draws the layer at and what the
+     * file writes (TransitionEffect), per frame.
+     */
+    fun alphaAt(localMs: Long): Float =
+        (opacityKeys.valueAt(localMs, opacity) * animationFrame(localMs).alpha).coerceIn(0f, 1f)
+
+    /** [alphaAt] for a moment of the timeline. */
+    fun opacityAt(timelineMs: Long): Float = alphaAt(timelineMs - timelineStartMs)
+
+    /**
+     * Whether the picture's opacity ever changes over the clip, or is below
+     * full: what decides whether the export draws it through a per-frame pass.
+     */
+    val fadesPicture: Boolean
+        get() = opacity < 1f || opacityKeys.isNotEmpty() ||
+            arrival == ClipArrival.Fade || arrival == ClipArrival.Zoom || arrival == ClipArrival.Shrink || arrival == ClipArrival.Spin ||
+            leaving != ClipLeaving.None || loop == ClipLoop.Flicker
+
+    /**
+     * The level at [localMs] into the played clip: the volume track, or the one
+     * level when there is none. Not through the fades, which are the caller's
+     * (AudioRules.fadeGain), as they were.
+     */
+    fun volumeAt(localMs: Long): Float = volumeKeys.valueAt(localMs, volume)
+
+    /** [volumeAt] for a moment of the timeline. */
+    fun volumeAtTimeline(timelineMs: Long): Float = volumeAt(timelineMs - timelineStartMs)
 }
 
 data class TimelineState(
@@ -397,7 +524,15 @@ private const val SPLIT_DRIFT_MS = 16L
 // takes old spacing away.
 
 /** How far into the clip before it a transition into [clip] reaches. */
-private fun overlapInto(clip: Clip, previous: Clip): Long =
+private fun overlapInto(clip: Clip, previous: Clip): Long = transitionOverlapMs(clip, previous)
+
+/**
+ * How long the transition into [clip] from [previous] actually plays: what was
+ * asked for, capped at half the shorter of the two shots so a long dissolve
+ * between two short clips cannot swallow either. The sheet shows the cap when
+ * it bites, so a slider that stops doing anything says why.
+ */
+fun transitionOverlapMs(clip: Clip, previous: Clip): Long =
     if (!clip.transitionIn.isActive) 0L
     else clip.transitionIn.durationMs.coerceAtMost(minOf(clip.durationMs, previous.durationMs) / 2)
 
@@ -700,7 +835,9 @@ fun TimelineState.withOverlayGeometry(
 ): TimelineState = copy(
     clips = clips.map { clip ->
         if (clip.id != clipId) return@map clip
-        val faded = clip.copy(opacity = (opacity ?: clip.opacity).coerceIn(0f, 1f))
+        // The opacity through its own track's rule (ValueTracks): a key at the
+        // playhead once the clip has any, the one level until then.
+        val faded = if (opacity == null) clip else clip.withValueAt(ValueTrack.Opacity, playheadMs, opacity, 0f..1f)
         if (clip.keyframes.isEmpty()) {
             val placed = Transform(
                 scale ?: clip.scale,
@@ -973,7 +1110,9 @@ fun TimelineState.withClipTrimmed(clipId: String, startDeltaMs: Long, endDeltaMs
         // underneath it.
         speedRamp = ramp.sliced(newIn - clip.sourceInMs, newOut - clip.sourceInMs),
         timelineStartMs = (clip.timelineStartMs + playedShift).coerceAtLeast(0L),
-        keyframes = clip.keyframes.shiftedBy(-playedShift)
+        keyframes = clip.keyframes.shiftedBy(-playedShift),
+        opacityKeys = clip.opacityKeys.shiftedBy(-playedShift),
+        volumeKeys = clip.volumeKeys.shiftedBy(-playedShift)
     )
     val next = copy(clips = clips.map { if (it.id == clipId) trimmed else it })
     return if (clip.isMain) next.relaidFrom(this) { if (it.id == clipId) listOf(trimmed) else listOf(it) } else next

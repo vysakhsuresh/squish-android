@@ -50,7 +50,10 @@ fun main() {
     run {
         check(Tool.Transition !in toolsFor(SelectionKind.MainVideo, canTransition = false), "the first shot offers a transition")
         check(Tool.Transition in toolsFor(SelectionKind.MainVideo, canTransition = true), "a later shot offers no transition")
-        check(Tool.Transition !in toolsFor(SelectionKind.Overlay, canTransition = true), "an overlay offers a cut transition")
+        // B13: an overlay butted after another on its row transitions in over it.
+        check(Tool.Transition in toolsFor(SelectionKind.Overlay, canTransition = true), "an overlay after another offers no transition")
+        check(Tool.Transition !in toolsFor(SelectionKind.Overlay, canTransition = false), "a lone overlay offers a transition")
+        check(Tool.Transition in toolsFor(SelectionKind.PhotoOverlay, canTransition = true), "a photo after another offers no transition")
         check(Tool.ToOverlay in toolsFor(SelectionKind.MainVideo) && Tool.ToMain !in toolsFor(SelectionKind.MainVideo),
             "a shot does not offer to float")
         check(Tool.ToMain in toolsFor(SelectionKind.Overlay) && Tool.ToOverlay !in toolsFor(SelectionKind.Overlay),

@@ -73,6 +73,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import com.squish.app.media.CaptionRenderer
+import com.squish.app.media.ExportPlan
 import com.squish.app.media.StillClips
 import com.squish.app.media.effects.Grade
 import com.squish.app.media.video.MotionTrack
@@ -347,15 +348,6 @@ fun TimelinePreview(
                 VideoSurface(engine, engine.baseA, frame.surfaceA, rotationDegrees)
                 VideoSurface(engine, engine.baseB, frame.surfaceB, rotationDegrees)
 
-                if (frame.blackVeil > 0f) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(5f)
-                            .background(Color.Black.copy(alpha = frame.blackVeil.coerceIn(0f, 1f)))
-                    )
-                }
-
                 // Empty space on the base track is a real part of the edit, and
                 // the exported file goes black here. Showing the last frame frozen
                 // instead would be a quiet lie about what you are about to render.
@@ -395,6 +387,7 @@ fun TimelinePreview(
                             StillOverlay(
                                 clip = clip,
                                 transform = clip.transformAt(layerTime),
+                                layerTime = layerTime,
                                 onAspect = { aspect -> clip.uri?.let { stillAspects[it.toString()] = aspect } }
                             )
                         }
@@ -522,23 +515,32 @@ private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: Surface
             .graphicsLayer {
                 alpha = if (draw.visible) draw.alpha.coerceIn(0f, 1f) else 0f
                 // The clip's own animated placement, plus whatever the transition
-                // is doing to the whole surface.
+                // is doing to the whole surface: a slide either way, a zoom.
                 rotationZ = draw.transform.rotationDegrees
-                scaleX = draw.transform.scale
-                scaleY = draw.transform.scale
+                scaleX = draw.transform.scale * draw.scale
+                scaleY = draw.transform.scale * draw.scale
                 translationX = draw.translateXFraction * size.width +
                     draw.transform.offsetXFraction * size.width / 2f
-                translationY = draw.transform.offsetYFraction * size.height / 2f
+                translationY = draw.translateYFraction * size.height +
+                    draw.transform.offsetYFraction * size.height / 2f
             }
             .drawWithContent {
-                if (draw.revealFraction >= 1f) {
+                // A wipe, or the old shot cut away under a slide: only the
+                // kept rectangle is drawn, as the export's shader keeps it.
+                if (draw.revealFrom <= 0f && draw.revealFraction >= 1f && draw.revealFromY <= 0f && draw.revealToY >= 1f) {
                     drawContent()
                 } else {
-                    // A wipe: the incoming shot is revealed from the left edge.
-                    clipRect(right = size.width * draw.revealFraction.coerceIn(0f, 1f)) {
+                    clipRect(
+                        left = size.width * draw.revealFrom.coerceIn(0f, 1f),
+                        top = size.height * draw.revealFromY.coerceIn(0f, 1f),
+                        right = size.width * draw.revealFraction.coerceIn(0f, 1f),
+                        bottom = size.height * draw.revealToY.coerceIn(0f, 1f)
+                    ) {
                         this@drawWithContent.drawContent()
                     }
                 }
+                // Flash, glow, dip to white: the picture mixed towards white.
+                if (draw.white > 0f) drawRect(Color.White, alpha = draw.white.coerceIn(0f, 1f))
             }
     ) {
         AndroidView(
@@ -573,6 +575,7 @@ private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: 
         modifier = Modifier
             .fillMaxSize()
             .zIndex(10f + placement.layer)
+            .drawnAs(placement.draw)
             .graphicsLayer {
                 alpha = if (placement.visible) placement.opacity.coerceIn(0f, 1f) else 0f
                 rotationZ = placement.transform.rotationDegrees
@@ -607,7 +610,7 @@ private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: 
  * then scaled, turned and moved in the canvas's units - with its transparency.
  */
 @Composable
-private fun StillOverlay(clip: Clip, transform: Transform, onAspect: (Float) -> Unit) {
+private fun StillOverlay(clip: Clip, transform: Transform, layerTime: Long, onAspect: (Float) -> Unit) {
     val uri = clip.uri ?: return
     val context = LocalContext.current
     var picture by remember(uri) { mutableStateOf(StillPictures.cached(uri)) }
@@ -617,12 +620,15 @@ private fun StillOverlay(clip: Clip, transform: Transform, onAspect: (Float) -> 
         if (loaded != null && loaded.height > 0) onAspect(loaded.width.toFloat() / loaded.height)
     }
     val image = remember(picture) { picture?.asImageBitmap() } ?: return
+    // Its fade and its transition over its head, as the export draws them.
+    val own = ExportPlan.ownDrawAt(clip, layerTime - clip.timelineStartMs)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(10f + clip.layer)
+            .drawnAs(own)
             .graphicsLayer {
-                alpha = clip.opacity.coerceIn(0f, 1f)
+                alpha = own.alpha.coerceIn(0f, 1f)
                 rotationZ = transform.rotationDegrees
                 scaleX = transform.scale
                 scaleY = transform.scale
@@ -711,6 +717,36 @@ private fun Modifier.turned(rotationDegrees: Int): Modifier = layout { measurabl
             rotationZ = PreviewBox.screenRotation(rotationDegrees)
         }
     }
+}
+
+/**
+ * A layer drawn as the export draws its own draw (ExportPlan.ownDrawAt): an
+ * overlay's transition over its head - slid, zoomed, cut to a rectangle,
+ * whitened - on the canvas, outside the layer's own placement. Its alpha is
+ * the caller's, folded into the layer's opacity.
+ */
+private fun Modifier.drawnAs(draw: ExportPlan.Draw): Modifier {
+    val still = draw.shiftX == 0f && draw.shiftY == 0f && draw.scale == 1f && draw.white == 0f &&
+        draw.keepFrom <= 0f && draw.keepTo >= 1f && draw.keepFromY <= 0f && draw.keepToY >= 1f
+    if (still) return this
+    return this
+        .graphicsLayer {
+            scaleX = draw.scale
+            scaleY = draw.scale
+            translationX = draw.shiftX * size.width
+            translationY = draw.shiftY * size.height
+        }
+        .drawWithContent {
+            clipRect(
+                left = size.width * draw.keepFrom.coerceIn(0f, 1f),
+                top = size.height * draw.keepFromY.coerceIn(0f, 1f),
+                right = size.width * draw.keepTo.coerceIn(0f, 1f),
+                bottom = size.height * draw.keepToY.coerceIn(0f, 1f)
+            ) {
+                this@drawWithContent.drawContent()
+            }
+            if (draw.white > 0f) drawRect(Color.White, alpha = draw.white.coerceIn(0f, 1f))
+        }
 }
 
 /** The largest rectangle of [aspect] that fits, centred; all of it when the shape is not known yet. */

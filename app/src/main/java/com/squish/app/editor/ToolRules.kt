@@ -77,9 +77,11 @@ val LEVEL_ZERO: List<Tool> = listOf(
 )
 
 /**
- * The selected clip's tools. [canTransition] is whether a main-track clip has a
- * shot before it to transition from - the first one does not, and a Transition
- * button that could only say so is clutter.
+ * The selected clip's tools. [canTransition] is whether the clip has a clip
+ * before it to transition from - a shot before it on the main track, an
+ * overlay ending where it starts on its row (EditorUiState.selectedCanTransition);
+ * the first one does not, and a Transition button that could only say so is
+ * clutter.
  *
  * Only tools that act on the selected clip are listed. Looks, crop and rotation
  * are still one setting for the whole edit, so they stay on level 0 rather than
@@ -105,13 +107,19 @@ fun toolsFor(kind: SelectionKind, canTransition: Boolean = false): List<Tool> = 
         Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Voice, Tool.ExtractAudio,
         Tool.Duplicate, Tool.ToOverlay, Tool.Delete
     )
-    SelectionKind.Overlay -> listOf(
+    // An overlay's transition is its arrival over the tail of the one butted
+    // before it on its row (ExportPlan.ownDrawAt), so it is offered under the
+    // same condition a shot's is: something ends where this begins.
+    SelectionKind.Overlay -> listOfNotNull(
         Tool.Split, Tool.Speed, Tool.Volume, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement,
+        Tool.Transition.takeIf { canTransition },
         Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Voice, Tool.ExtractAudio,
         Tool.Duplicate, Tool.ToMain, Tool.Delete
     )
-    SelectionKind.PhotoOverlay -> listOf(
-        Tool.Split, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement, Tool.Duplicate, Tool.ToMain, Tool.Delete
+    SelectionKind.PhotoOverlay -> listOfNotNull(
+        Tool.Split, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement,
+        Tool.Transition.takeIf { canTransition },
+        Tool.Duplicate, Tool.ToMain, Tool.Delete
     )
     // CapCut's order: the level, then the fades, then everything about time.
     SelectionKind.Audio -> listOf(
