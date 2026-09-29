@@ -105,6 +105,24 @@ never a rebuilt sink; a Media3 that stops calling `queueInput` on an
 inactive-looking processor would take the boost with it (`GainProcessor` is
 always active; `FadeProcessor` is only built when a fade is set).
 
+The export sheet's policy (B14) leans on four more, each read in the 1.11.1
+bytecode rather than seen. `Composition.Builder.setHdrMode` set to
+`HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL` is the default now, and
+`HDR_MODE_KEEP_HDR` only for "Keep HDR" and for a plain cut (where the stream
+is copied); with KEEP_HDR and no encoder that takes HDR for the codec asked
+for, `VideoEncoderWrapper.getRequestedOutputMimeTypeAndHdrModeAfterFallback`
+falls back to converting rather than throwing, which is what lets the toggle
+be offered without a failure path. `FrameDropEffect.createDefaultFrameDropEffect`
+only drops frames; a rate above the footage's passes every frame through, and
+a layered export gets its rate from the clock still instead
+(`CompositionFactory.filler`'s frame rate, which is now the sheet's choice).
+`EncoderUtil.getSupportedResolution` for the 4K frame of the edit's shape is
+read as the encoder's ceiling (`EncoderCeiling.ceilingShortEdge`), asked per
+codec since an HEVC encoder can stop elsewhere. And a main-track photo is
+handed over as a JPEG image item (`StillClips.originalImage`) in a sequence
+declared with sound - the same silence-filling the base rolls lean on, now on
+the cuts-only sequence too, where the image may be the first item.
+
 The sections below were written against 1.4/1.5 and are kept for the history;
 where they name a call that no longer exists (`ChannelMixingMatrix.create`,
 `HslAdjustment` for saturation), that call is no longer used.

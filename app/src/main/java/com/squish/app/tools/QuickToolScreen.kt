@@ -251,7 +251,11 @@ fun QuickToolScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     if (state.isExporting) {
-                        ExportProgressCard(progress = state.exportProgress, accent = tool.accent)
+                        ExportProgressCard(
+                            progress = state.exportProgress,
+                            accent = tool.accent,
+                            onCancel = { confirmStopExport = true }
+                        )
                     } else {
                         SquishPrimaryButton(
                             text = tool.actionLabel,

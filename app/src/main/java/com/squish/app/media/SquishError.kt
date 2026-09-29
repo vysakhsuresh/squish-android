@@ -386,6 +386,19 @@ sealed class SquishError(
         }
 
         /**
+         * The sound [exportable] would leave out of a video export, named by its
+         * format, or null when nothing is. The only word of it used to be the
+         * failure card shown when the file was opened, which is dismissed and
+         * gone by the time the sheet says "Render and save" - so the file came
+         * out silent with nothing on the sheet having said it would.
+         */
+        fun soundLeftOut(state: EditorUiState): String? {
+            if (state.audioOnly || state.muteOriginal) return null
+            val sources = (state.videoClips.filter { !it.isOverlay }.mapNotNull { it.uri } + listOfNotNull(state.sourceUri)).distinct()
+            return sources.firstNotNullOfOrNull { MediaCompat.cached(it)?.audioProblem }
+        }
+
+        /**
          * Media3 reports failures as numeric codes grouped by stage. The exact
          * constants are matched where the distinction changes the advice, and the
          * thousands band carries the rest - a band never gets renumbered, so this

@@ -62,9 +62,70 @@ object StillClips {
      * A clip made from the picture at [image], or null if it could not be read or
      * rendered. At least [minMs] long - a photo overlay dropped onto the main
      * track may already have been dragged out past [RENDER_MS].
+     *
+     * The picture itself is kept beside the clip (see [originalImage]): the
+     * clip is what the strip and the preview play, the picture is what the
+     * export writes.
      */
-    suspend fun fromImage(context: Context, image: Uri, minMs: Long = RENDER_MS): Uri? =
-        render(context, image, uniqueName("photo"), maxOf(RENDER_MS, minMs))
+    suspend fun fromImage(context: Context, image: Uri, minMs: Long = RENDER_MS): Uri? {
+        val name = uniqueName("photo")
+        val clip = render(context, image, name, maxOf(RENDER_MS, minMs)) ?: return null
+        withContext(Dispatchers.IO) { keepOriginal(context, image, name) }
+        return clip
+    }
+
+    /**
+     * The picture a main-track still was made from, if it was kept: the export
+     * hands it to Media3 as an image (VideoProcessor.editedClip), at up to
+     * [MAX_EXPORT_SIDE] across and for however long the clip runs, rather than
+     * re-encoding the 1080p, 30 fps clip the strip plays. A still from before
+     * the picture was kept, or whose copy failed, has none and exports as the
+     * clip, as it always did.
+     */
+    fun originalImage(still: Uri?): Uri? {
+        val path = still?.takeIf { it.scheme == "file" }?.path ?: return null
+        if (!path.endsWith(".mp4") || "/$DIR/" !in path) return null
+        val file = File(path.removeSuffix(".mp4") + ORIGINAL_SUFFIX)
+        return if (file.exists() && file.length() > 0L) Uri.fromFile(file) else null
+    }
+
+    /**
+     * Writes the picture as the export will read it: upright, no bigger than
+     * the biggest export, as a JPEG at a quality nothing shows.
+     *
+     * Decoded through the same decoder the overlay path uses rather than copied
+     * byte for byte: the decoder applies the camera's orientation tag, so what
+     * is written needs none, and it is sized on the way in, so a 50-megapixel
+     * photo is never held whole. Best effort: a failure leaves no file, and
+     * the still exports as the clip.
+     */
+    private fun keepOriginal(context: Context, image: Uri, name: String) {
+        runCatching {
+            val source = ImageDecoder.createSource(context.contentResolver, image)
+            val decoded = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val long = maxOf(info.size.width, info.size.height).coerceAtLeast(1)
+                if (long > MAX_EXPORT_SIDE) {
+                    val scale = MAX_EXPORT_SIDE.toFloat() / long
+                    decoder.setTargetSize(
+                        (info.size.width * scale).toInt().coerceAtLeast(1),
+                        (info.size.height * scale).toInt().coerceAtLeast(1)
+                    )
+                }
+            }
+            val target = File(dir(context), name + ORIGINAL_SUFFIX)
+            val partial = File(target.absolutePath + ".part")
+            try {
+                FileOutputStream(partial).use { decoded.compress(Bitmap.CompressFormat.JPEG, ORIGINAL_JPEG_QUALITY, it) }
+            } finally {
+                decoded.recycle()
+            }
+            if (partial.length() <= 0L || !partial.renameTo(target)) {
+                partial.delete()
+                error("could not keep $target")
+            }
+        }.onFailure { android.util.Log.w("SquishStill", "could not keep the picture of $image", it) }
+    }
 
     /**
      * A picture for an overlay row, kept a picture: upright, no larger than an
@@ -319,6 +380,15 @@ object StillClips {
 
     /** An overlay picture's longest side; see [overlayFit]. */
     private const val MAX_LONG_SIDE = 3840
+
+    /** A kept picture's longest side: 4K, the biggest frame any export is written at. */
+    private const val MAX_EXPORT_SIDE = 3840
+
+    /** Beside the clip, named for it: photo_<stamp>.mp4 and photo_<stamp>.jpg. */
+    private const val ORIGINAL_SUFFIX = ".jpg"
+
+    /** High enough that a second encode of a camera JPEG shows nothing. */
+    private const val ORIGINAL_JPEG_QUALITY = 95
 
     /** Small, because it is drawn at nothing; even, because some decoders insist. */
     private const val CLEAR_SIDE = 16

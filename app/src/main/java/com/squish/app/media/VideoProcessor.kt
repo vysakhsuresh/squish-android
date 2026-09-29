@@ -13,6 +13,7 @@ import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.audio.SpeedChangingAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Crop
+import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.ScaleAndRotateTransformation
@@ -181,6 +182,11 @@ class VideoProcessor(private val context: Context) {
                 }
                 .build()
 
+            // HEVC only where the sheet found an encoder for it (EditorUiState
+            // .exportCodecHevc); asked of a phone without one, Media3 stops at
+            // the start of the render.
+            val videoMime = EncoderCeiling.mimeFor(state.exportCodecHevc)
+
             val transformer = Transformer.Builder(context)
                 .apply {
                     if (trimOnly) {
@@ -190,7 +196,7 @@ class VideoProcessor(private val context: Context) {
                         experimentalSetTrimOptimizationEnabled(true)
                     } else {
                         setAudioMimeType(MimeTypes.AUDIO_AAC)
-                        if (!state.audioOnly) setVideoMimeType(MimeTypes.VIDEO_H264)
+                        if (!state.audioOnly) setVideoMimeType(videoMime)
                     }
                 }
                 .setEncoderFactory(encoderFactory)
@@ -199,7 +205,9 @@ class VideoProcessor(private val context: Context) {
                         android.util.Log.i(
                             "SquishExport",
                             "done trimOnly=$trimOnly optimization=${exportResult.optimizationResult} " +
-                                "video=${exportResult.videoEncoderName} bitrate=${exportResult.averageVideoBitrate}"
+                                "video=${exportResult.videoEncoderName} mime=${exportResult.videoMimeType} " +
+                                "bitrate=${exportResult.averageVideoBitrate} frames=${exportResult.videoFrameCount} " +
+                                "colour=${exportResult.colorInfo} size=${exportResult.fileSizeBytes}"
                         )
                         if (continuation.isActive) continuation.resume(Result.success(outputFile))
                     }
@@ -296,8 +304,35 @@ class VideoProcessor(private val context: Context) {
         return Composition.Builder(ImmutableList.copyOf(sequences))
             .setEffects(compositionEffects(state))
             .apply { settings?.let { setVideoCompositorSettings(it) } }
+            .setHdrMode(hdrMode(state))
             .build()
     }
+
+    /**
+     * What becomes of an HDR shot: converted to ordinary colour on the way in,
+     * unless "Keep HDR" was chosen.
+     *
+     * Converting is the default because every effect in the app - the looks,
+     * the key, the masks, the captions - is written for ordinary colour, and
+     * run on HDR textures their maths drifts; and because a file that plays
+     * the same on every screen is what most people mean by "export". Media3
+     * used to be left at its own default, which kept HDR wherever an HDR
+     * encoder existed, so the phones that record HLG by default wrote HLG
+     * files with SDR captions blended into them.
+     *
+     * Kept, Media3 needs an encoder that takes HDR for the codec asked for -
+     * HEVC on most phones, which is why choosing it turns HEVC on (see
+     * EditorUiState.exportCodecHevc) - and falls back to converting by itself
+     * when there is none (VideoEncoderWrapper, read in the 1.11.1 bytecode),
+     * so the choice can never fail a render. A layered export is converted
+     * whatever is chosen: its first input is the clock still, which sets the
+     * file's colour (CompositionFactory). A plain cut is left alone: the
+     * stream is copied, colour and all, and converting it would mean
+     * re-encoding a file that was only ever meant to be cut.
+     */
+    private fun hdrMode(state: EditorUiState): Int =
+        if (state.keepHdr || isPlainTrim(state)) Composition.HDR_MODE_KEEP_HDR
+        else Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL
 
     /**
      * The tracks the one-sequence export carries. The sound track is declared
@@ -353,10 +388,27 @@ class VideoProcessor(private val context: Context) {
             state.audioClips.isEmpty() &&
             !state.fitToSize &&
             state.outputP == OutputSize.ORIGINAL &&
+            // A rate, a quality step or a codec asked for is a re-encode asked for.
+            state.outputFps == ExportSettings.SOURCE_FPS &&
+            state.quality == ExportQuality.Recommended &&
+            !state.exportCodecHevc &&
             state.originalVolume >= 0.999f &&
             singleFileEffects(state).isEmpty() &&
             state.effects.isEmpty() &&
             state.textOverlays.isEmpty()
+
+    /**
+     * The frame rate chosen on the sheet, as an effect that drops frames to
+     * reach it, or null when the footage's own rate is kept. Frames are only
+     * ever dropped: 60 asked of 30 fps footage passes every frame through.
+     *
+     * Only the one-sequence exports carry it on their items; a layered export
+     * takes its rate from the clock, which is drawn at [frameRateOf] and gives
+     * the file one frame per frame of it (CompositionFactory).
+     */
+    private fun frameDrop(state: EditorUiState): Effect? =
+        if (state.outputFps == ExportSettings.SOURCE_FPS) null
+        else FrameDropEffect.createDefaultFrameDropEffect(frameRateOf(state).toFloat())
 
     /**
      * The sample rates of every sound that reaches the file, as far as the
@@ -373,9 +425,9 @@ class VideoProcessor(private val context: Context) {
         return sources.distinct().mapNotNull { MediaCompat.cached(it)?.sampleRateHz }
     }
 
-    /** The rate the layers are drawn at: the source's, as a whole number, within what encoders take. */
+    /** The rate the file is written at - the sheet's choice, or the source's - as a whole number, within what encoders take. */
     private fun frameRateOf(state: EditorUiState): Int {
-        val fps = state.fps
+        val fps = state.exportFps
         return if (fps.isFinite() && fps >= 1f) Math.round(fps).coerceIn(MIN_FPS, MAX_FPS) else DEFAULT_FPS
     }
 
@@ -404,16 +456,6 @@ class VideoProcessor(private val context: Context) {
         canvas: ExportPresets.Resolution?,
         rolls: List<List<Clip>>?
     ): EditedMediaItem {
-        val item = MediaItem.Builder()
-            .setUri(clip.uri ?: state.sourceUri)
-            .setClippingConfiguration(
-                MediaItem.ClippingConfiguration.Builder()
-                    .setStartPositionMs(clip.sourceInMs)
-                    .setEndPositionMs(clip.sourceOutMs.coerceAtLeast(clip.sourceInMs))
-                    .build()
-            )
-            .build()
-
         val effects: List<Effect> = if (state.audioOnly) emptyList() else buildList {
             clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
             clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
@@ -433,7 +475,38 @@ class VideoProcessor(private val context: Context) {
             if (rolls != null && ExportPlan.takesPartInBlend(rolls, clip)) {
                 add(TransitionEffect(clip, ExportPlan.neighbourhood(rolls, clip)))
             }
+            // Last, after the retime, so the frames dropped are the played ones.
+            if (rolls == null) frameDrop(state)?.let { add(it) }
         }
+
+        // A photo goes in as the picture it was made from, where it was kept
+        // (StillClips.originalImage): at up to 4K rather than the 1080p the
+        // strip's clip was rendered at, and for however long the clip runs. The
+        // clip's own frames are used only where a picture cannot stand in for
+        // them - a sound-only export wants its silent track, and a retimed
+        // still's keys were set on the clip's clock.
+        val picture = if (!state.audioOnly && clip.speedRamp.isIdentity) StillClips.originalImage(clip.uri) else null
+        if (picture != null) {
+            val still = MediaItem.Builder()
+                .setUri(picture)
+                .setMimeType(MimeTypes.IMAGE_JPEG)
+                .setImageDurationMs(clip.durationMs.coerceAtLeast(1L))
+                .build()
+            return EditedMediaItem.Builder(still)
+                .setFrameRate(frameRateOf(state))
+                .setEffects(Effects(ImmutableList.of(), ImmutableList.copyOf(effects)))
+                .build()
+        }
+
+        val item = MediaItem.Builder()
+            .setUri(clip.uri ?: state.sourceUri)
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(clip.sourceInMs)
+                    .setEndPositionMs(clip.sourceOutMs.coerceAtLeast(clip.sourceInMs))
+                    .build()
+            )
+            .build()
 
         // The shot's own level under the camera sound for the whole edit - the
         // number the preview plays it at (OverlayRules.effectiveVolume). A
@@ -545,12 +618,16 @@ class VideoProcessor(private val context: Context) {
         rotation(state)?.let { add(it) }
         addAll(ColorGrade.effects(state.grade))
         crop(state, clip = null)?.let { add(it) }
-        if (state.outputP != OutputSize.ORIGINAL && !state.fitToSize) {
+        // A size chosen, or a size solved for a fit (EditorUiState.fittedOutputP),
+        // is a resize; a fit that kept the frame is not.
+        val resized = if (state.fitToSize) state.fittedOutputP != OutputSize.ORIGINAL else state.outputP != OutputSize.ORIGINAL
+        if (resized) {
             val canvas = state.writtenResolution
             if (canvas.width > 0 && canvas.height > 0) {
                 add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT))
             }
         }
+        frameDrop(state)?.let { add(it) }
     }
 
     private fun rotation(state: EditorUiState): Effect? =

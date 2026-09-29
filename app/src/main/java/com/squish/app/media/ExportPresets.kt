@@ -161,8 +161,49 @@ object ExportPresets {
         return (videoBits / durationSec).toInt().coerceIn(300_000, 20_000_000)
     }
 
+    /**
+     * The size a fitted export is written at: the largest named size, no bigger
+     * than the frame itself, that the target's bitrate can still cover at
+     * [FIT_MIN_BITS_PER_PIXEL] a frame.
+     *
+     * Fitting used to keep the source's own size and spend the whole budget on
+     * bitrate: 16 MB over a minute of 4K is two megabits a second across eight
+     * million pixels, which is a wall of blocks, while the same bits over 720p
+     * are a clean picture. The size is solved from the budget instead - the
+     * short edge steps down until each pixel has enough - and [OutputSize.ORIGINAL]
+     * comes back when the frame as it is already qualifies, so a small clip is
+     * not resized for nothing.
+     */
+    fun fitOutputP(
+        targetSizeBytes: Long,
+        durationMs: Long,
+        fps: Float,
+        frameWidth: Int,
+        frameHeight: Int,
+        includeAudio: Boolean
+    ): Int {
+        if (frameWidth <= 0 || frameHeight <= 0) return OutputSize.ORIGINAL
+        val bitrate = bitrateForTargetSize(targetSizeBytes, durationMs, includeAudio)
+        val frames = fps.takeIf { it.isFinite() && it > 1f }?.coerceAtMost(60f) ?: 30f
+        val shortEdge = minOf(frameWidth, frameHeight)
+        // Original first, then every named size below the frame, largest first.
+        val candidates = listOf(OutputSize.ORIGINAL) + OutputSize.PRESETS.filter { it < shortEdge }.sortedDescending()
+        for (p in candidates) {
+            val pixels = resolutionFor(p, frameWidth, frameHeight).pixels
+            if (pixels <= 0L) continue
+            if (bitrate / (pixels * frames) >= FIT_MIN_BITS_PER_PIXEL) return p
+        }
+        return candidates.last()
+    }
+
+    /**
+     * Half the clean rate ([BITS_PER_PIXEL]): the point below which a fitted
+     * export is better off with fewer pixels than with starved ones.
+     */
+    private const val FIT_MIN_BITS_PER_PIXEL = 0.05
+
     private const val BITS_PER_PIXEL = 0.1
-    private const val MIN_VIDEO_BPS = 300_000
-    private const val MAX_VIDEO_BPS = 80_000_000
+    const val MIN_VIDEO_BPS = 300_000
+    const val MAX_VIDEO_BPS = 80_000_000
     private const val DEFAULT_VIDEO_BPS = 8_000_000
 }

@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- The progress notification an export shows, asked for when Render is
+         first pressed; refused, the export runs without one. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- An export runs in a foreground service (ExportService) so the process
+         is not killed under a locked screen. The type each release wants is
+         declared: media processing on Android 15, data sync before it. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- A voiceover is taken over the timeline from the editor. Asked for when
          Record is first pressed, never before. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -59,6 +67,11 @@
                 <data android:mimeType="video/*" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".media.ExportService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProcessing|dataSync" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

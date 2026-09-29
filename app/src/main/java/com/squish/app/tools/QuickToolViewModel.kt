@@ -16,6 +16,7 @@ import com.squish.app.editor.ProbeGate
 import com.squish.app.media.EncoderCeiling
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
+import com.squish.app.media.ExportService
 import com.squish.app.media.ExportStage
 import com.squish.app.media.ExportsInFlight
 import com.squish.app.media.MediaCompat
@@ -614,6 +615,9 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         _state.update { it.copy(isExporting = true, exportProgress = ExportProgress()) }
+        // Carried by a foreground service until it is handed over, so a
+        // locked screen does not get the process killed mid-encode.
+        ExportService.begin(getApplication(), current.name ?: tool.title)
         val rendered = draftOf(tool, current)
 
         exportJob = viewModelScope.launch {
@@ -635,6 +639,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
 
             val result = processor.export(SquishError.exportable(rendering), outputFile) { progress ->
                 _state.update { it.copy(exportProgress = progress) }
+                ExportService.update(progress)
             }
             // From here the file exists and is being handed over; there is
             // nothing left to stop. See cancelExport.
@@ -643,7 +648,9 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             result.onSuccess { file ->
                 // Still exporting until the copy is in the gallery, so the button
                 // cannot start a second export over this one's hand-over.
-                _state.update { it.copy(exportProgress = it.exportProgress.copy(stage = ExportStage.Saving)) }
+                val saving = _state.value.exportProgress.copy(stage = ExportStage.Saving)
+                _state.update { it.copy(exportProgress = saving) }
+                ExportService.update(saving)
                 // All or nothing: the file into the gallery, into history and the
                 // session stamped. Cancelled half-way - the screen leaving in the
                 // instant after the encode - it was in the gallery and never
@@ -676,9 +683,11 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                     withContext(Dispatchers.IO) { markExported(rendered) }
                 }
+                ExportService.end(getApplication())
                 _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
+                ExportService.end(getApplication())
                 _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
                 // Same typed vocabulary as the editor, so a failure reads the same
                 // way whichever door the user came in through.
@@ -709,6 +718,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val job = exportJob ?: return false
         exportJob = null
         job.cancel()
+        ExportService.end(getApplication())
         _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
         return true
     }
@@ -720,6 +730,8 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     override fun onCleared() {
         super.onCleared()
         saveNow()
+        // The encode died with the scope; the notification must not outlive it.
+        if (_state.value.isExporting) ExportService.end(getApplication())
         ExportsInFlight.set(this, false)
     }
 

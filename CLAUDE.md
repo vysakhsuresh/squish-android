@@ -417,6 +417,49 @@ should work through it and then delete what holds up.
   looks read back through `TextStyleJson` (Outline as a stroke, Box as a
   bubble) and every animated line leaving by a fade, as it did.
 
+- **Batch B14 (export UX and policy), all of it.** Built on the desktop with
+  no phone attached. The arithmetic - the rate a choice gives, what a quality
+  step and HEVC do to the bitrate, which sizes the encoder ceiling greys, where
+  a remembered default lands, the size a fitted export is solved to, and how a
+  missed limit is chased - is executed on the JVM
+  (`tools/jvm/ExportSettingsChecks.kt`); nothing has been rendered. Script in
+  `docs/ROADMAP.md` §4 under B14, plus what only a device answers: Stop on the
+  progress card asks and leaves no file in `exports/`; the export runs under a
+  foreground service (`ExportService`, type media processing on Android 15,
+  data sync before) - lock the screen during a long 4K export and the
+  notification must show the percentage and the file must complete; the
+  first Render asks for notifications on Android 13+ and a refusal still
+  renders; the fps row writes the file at 24/25/30/50/60 (cuts-only and
+  single-file exports carry a `FrameDropEffect` per item, a layered export
+  takes its rate from the clock still, so check both kinds with `ffprobe`) and
+  60 asked of 30 fps footage passes every frame; the HEVC toggle appears only
+  where `EncoderUtil` finds an encoder, the file is HEVC (`SquishExport: done
+  … mime=video/hevc` in logcat) and about a third smaller; sizes above the
+  encoder's ceiling are greyed on the sheet (the S23 for the 4K test);
+  an HLG source exports SDR by default with sane colours (`HDR_MODE_TONE_MAP_
+  HDR_TO_SDR_USING_OPEN_GL`) and "Keep HDR" writes HDR HEVC on a cuts-only
+  edit - the toggle is disabled with a note on a layered one, and Media3 falls
+  back to converting where no HDR encoder exists rather than failing (read in
+  the 1.11.1 bytecode, `VideoEncoderWrapper`); a plain Snip keeps its stream,
+  HDR included; Fit to 16 MB on a minute of 4K comes out 720p or below and under
+  16 MB, and one that overshoots by more than 2% shows the "Keep this one /
+  Try again, tighter" card with the first file already in the gallery; the
+  done screen plays the file (a `VideoPreviewSheet` on the private copy) and
+  states frame, length, rate and size measured off the file itself, with the
+  before/after pill only on Squeeze's; Sound only writes an .m4a to Music and
+  its done screen plays it as a wave; a main-track photo exports as the picture
+  it was made from (`StillClips.originalImage`, a JPEG beside the still under
+  `files/stills/`, at up to 3840 px) - check a 4K export of a 12 MP photo is
+  sharp where it used to be 1080p upscaled, that a photo first in a cuts-only
+  edit still starts (an image item with no sound track in a sequence declared
+  with sound), and that a photo with a mask or a transition still exports as
+  it did; the last export's settings are the next new project's defaults
+  (SharedPreferences "export_defaults", size capped at the footage's) while a
+  reopened draft keeps its own; the codec-mute line reads on the sheet for a
+  DTS source. Not built, by choice: a Stop action on the notification (it
+  cannot ask first), and the strip's own limit on a photo's length, which is
+  still the rendered still's ten seconds.
+
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The

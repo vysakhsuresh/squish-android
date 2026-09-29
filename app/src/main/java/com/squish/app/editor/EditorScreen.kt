@@ -586,9 +586,7 @@ fun EditorScreen(
                         state = state,
                         viewModel = viewModel,
                         onDismiss = { exportSheetOpen = false },
-                        onRender = {
-                            viewModel.export(onResult = onExported)
-                        }
+                        onExported = onExported
                     )
                 }
             }
