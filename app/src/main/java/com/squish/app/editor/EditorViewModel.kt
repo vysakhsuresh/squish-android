@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.squish.app.data.ProjectRules
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.ProjectSnapshot
 import com.squish.app.data.ProjectStart
@@ -917,7 +918,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         // handed over: with the screen locked, or the app behind a call, a
         // process with nothing in front is one Android may kill mid-encode,
         // and the notification is the one place the progress can be seen then.
-        val title = current.projectName ?: current.sourceName ?: "your video"
+        // The name on the project's card, not the first file's ("1001319240.jpg").
+        val title = current.projectName ?: ProjectRules.displayTitle(current.videoClips.firstOrNull()?.label, current.startedAtMillis)
         ExportService.begin(getApplication(), title)
 
         exportJob = viewModelScope.launch {
@@ -990,7 +992,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     historyRepository.add(
                         ExportRecord(
                             id = UUID.randomUUID().toString(),
-                            title = current.projectName ?: current.sourceName ?: "Squished video",
+                            title = title,
                             outputPath = file.absolutePath,
                             originalSizeBytes = current.originalSizeBytes,
                             outputSizeBytes = size,

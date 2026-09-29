@@ -29,14 +29,16 @@ fun main() {
     // --- An unnamed project is called what its file says, or the day. --------
     run {
         val utc = java.util.TimeZone.getTimeZone("UTC")
-        val day = 1_790_690_000_000L // 29 Sep 2026, 13:13 UTC
+        val day = 1_790_690_000_000L // 29 Sep 2026, 13:53 UTC
         fun t(label: String?) = ProjectRules.displayTitle(label, day, utc)
         check(t("Beach day.mp4") == "Beach day", "a named file lost its name: ${t("Beach day.mp4")}")
         check(t("Holi 2026 final.mov") == "Holi 2026 final", "a name with digits was taken for a made-up one")
-        for (made in listOf("1001319240.jpg", "VID-20260926-WA0104.mp4", "IMG_1234.JPG", "PXL_20260901_101112.mp4", "Screen_Recording_20260929.mp4", "5ee44925-efb7-4c1a-9d3e-2b6f0a1c9e77.mp4", "", null)) {
+        for (made in listOf("squish_1790712584952.mp4", "photo_1790638835660.mp4", "1001319240.jpg", "VID-20260926-WA0104.mp4", "IMG_1234.JPG", "PXL_20260901_101112.mp4", "Screen_Recording_20260929.mp4", "5ee44925-efb7-4c1a-9d3e-2b6f0a1c9e77.mp4", "", null)) {
             check(t(made) == "Edit · 29 Sep", "a made-up name was shown: $made -> ${t(made)}")
         }
         check(ProjectRules.displayTitle("1001.jpg", 0L, utc) == "Untitled edit", "no date and no name was not Untitled")
+        val moment = ProjectRules.displayTitle("squish_1790712584952.mp4", day, utc, prefix = null)
+        check(moment.startsWith("29 Sep, 1:53"), "an export's made-up name was not its moment: $moment")
     }
 
     // --- The cover is a little way into the shot, never past its end. ----------

@@ -79,22 +79,24 @@ object ProjectRules {
      * "Beach day.mp4" - keeps its name, less the extension. A name a camera or
      * the gallery made up - "1001319240.jpg", "VID-20260926-WA0104.mp4",
      * "PXL_20260901_101112" - says nothing, so the project is called after
-     * the day it was started instead: "Edit · 29 Sep".
+     * the day it was started instead: "Edit · 29 Sep". With no [prefix] - a
+     * list of exports, several a day - the moment itself: "29 Sep, 11:47 PM".
      */
-    fun displayTitle(label: String?, createdAtMillis: Long, zone: TimeZone = TimeZone.getDefault()): String {
+    fun displayTitle(label: String?, createdAtMillis: Long, zone: TimeZone = TimeZone.getDefault(), prefix: String? = "Edit"): String {
         val stem = label?.trim()?.substringBeforeLast('.')?.trim().orEmpty()
         val letters = stem.count { it.isLetter() }
         if (letters >= 3 && !MADE_UP_NAME.matches(stem) && !COPY_NAME.matches(stem)) return stem
         if (createdAtMillis <= 0L) return "Untitled edit"
-        val format = SimpleDateFormat("d MMM", Locale.getDefault()).apply { timeZone = zone }
-        return "Edit · " + format.format(Date(createdAtMillis))
+        val format = SimpleDateFormat(if (prefix == null) "d MMM, h:mm a" else "d MMM", Locale.getDefault()).apply { timeZone = zone }
+        val day = format.format(Date(createdAtMillis))
+        return if (prefix == null) day else "$prefix · $day"
     }
 
     // The name a shared file's copy is kept under (MediaAccess.importCopy): a UUID.
     private val COPY_NAME = Regex("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
     private val MADE_UP_NAME = Regex(
-        "(?i)^(vid|img|pxl|mvimg|dsc|dscn|dcim|mov|video|photo|image|picture|screenshot|screen[ _-]?record\\w*|record\\w*|wa|signal|snapchat|inshot|capcut)[ _-]*[0-9].*"
+        "(?i)^(vid|img|pxl|mvimg|dsc|dscn|dcim|mov|video|photo|image|picture|screenshot|screen[ _-]?record\\w*|record\\w*|wa|signal|snapchat|inshot|capcut|squish|squish_trim|overlay|voice|still)[ _-]*[0-9].*"
     )
 
     private val COPY_SUFFIX = Regex(" copy \\d+$")

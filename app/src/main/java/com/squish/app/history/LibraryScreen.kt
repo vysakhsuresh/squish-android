@@ -97,7 +97,7 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 
     val shown = remember(records, query) {
         if (query.isBlank()) records
-        else records.filter { it.title.contains(query.trim(), ignoreCase = true) }
+        else records.filter { it.shownTitle.contains(query.trim(), ignoreCase = true) }
     }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
@@ -161,7 +161,7 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 
     previewing?.let { record ->
         VideoPreviewSheet(
-            title = record.title,
+            title = record.shownTitle,
             subtitle = "${Timecode.format(record.durationMs).removeSuffix(".000")}  ·  " +
                 formatSize(record.outputSizeBytes),
             uri = record.mediaUri,
@@ -203,7 +203,7 @@ internal fun DeleteExportDialog(record: ExportRecord, onConfirm: () -> Unit, onD
     var stillHere by remember(record.id) { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(record.id) { stillHere = withContext(Dispatchers.IO) { context.canReadMedia(record.mediaUri) } }
     ConfirmDialog(
-        title = "Delete \"${record.title}\"?",
+        title = "Delete \"${record.shownTitle}\"?",
         body = when {
             stillHere == false ->
                 "The file behind this one is already gone from this phone. " +
@@ -214,7 +214,7 @@ internal fun DeleteExportDialog(record: ExportRecord, onConfirm: () -> Unit, onD
                 "This removes it from your library and deletes the video from your " +
                     "${if (record.isAudio) "Music" else "gallery"} - it is the only copy Squish keeps."
         },
-        caution = "There is no undo and no bin to fetch it back from. " +
+        caution = if (stillHere == false) "" else "There is no undo and no bin to fetch it back from. " +
             "A copy you saved to Files yourself, or sent somewhere, stays where it is.",
         confirmLabel = "Delete",
         onConfirm = onConfirm,
@@ -329,7 +329,10 @@ private fun LibraryRow(
                 .width(78.dp)
                 .height(58.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(SquishColors.Background),
+                .background(SquishColors.Background)
+                // The picture with a play mark on it plays: a separate Play button
+                // beside it cost the name its room ("30 Sep, 12:09...").
+                .clickable(enabled = !gone, role = Role.Button, onClickLabel = "Preview", onClick = onPreview),
             contentAlignment = Alignment.Center
         ) {
             val bitmap = thumb
@@ -366,7 +369,7 @@ private fun LibraryRow(
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
-                record.title,
+                record.shownTitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (gone) SquishColors.TextMuted else SquishColors.TextPrimary,
                 maxLines = 1,
@@ -388,10 +391,9 @@ private fun LibraryRow(
         }
 
         if (!gone) {
-            RowAction(Icons.Filled.PlayArrow, "Preview ${record.title}", SquishColors.Violet, onPreview)
-            RowAction(Icons.Filled.Share, "Share ${record.title}", SquishColors.Cyan, onShare)
+            RowAction(Icons.Filled.Share, "Share ${record.shownTitle}", SquishColors.Cyan, onShare)
         }
-        RowAction(Icons.Filled.DeleteOutline, "Remove ${record.title}", SquishColors.Pink, onRemove)
+        RowAction(Icons.Filled.DeleteOutline, "Remove ${record.shownTitle}", SquishColors.Pink, onRemove)
     }
 }
 

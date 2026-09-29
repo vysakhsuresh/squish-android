@@ -33,6 +33,14 @@ data class ExportRecord(
     val mimeType: String get() = if (isAudio) "audio/mp4" else "video/mp4"
 
     /**
+     * What the library calls it: its title, or - where that is a name a camera
+     * or the app made up ("1001319240.jpg", "photo_1790...", a copy's UUID) -
+     * the moment it was made, "29 Sep, 11:47 PM" (ProjectRules.displayTitle).
+     */
+    val shownTitle: String
+        get() = ProjectRules.displayTitle(title, createdAtMillis, prefix = null)
+
+    /**
      * The one copy to open, play and share: the gallery's when it was made,
      * the private file otherwise. Exports are stored once now - the private
      * copy goes after the gallery copy is verified - so a record from before

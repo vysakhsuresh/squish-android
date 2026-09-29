@@ -64,7 +64,7 @@ fun LibraryDetailScreen(recordId: String, onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(12.dp))
                 if (record != null) {
                     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(record.title, style = MaterialTheme.typography.displayLarge, color = SquishColors.TextPrimary)
+                        Text(record.shownTitle, style = MaterialTheme.typography.displayLarge, color = SquishColors.TextPrimary)
                         Text(
                             "Exported ${agoOf(record.createdAtMillis)}",
                             style = MaterialTheme.typography.bodyMedium,
@@ -75,7 +75,7 @@ fun LibraryDetailScreen(recordId: String, onBack: () -> Unit) {
                         uri = record.mediaUri,
                         isAudio = record.isAudio,
                         fileName = File(record.outputPath).name,
-                        title = record.title,
+                        title = record.shownTitle,
                         fallbackDurationMs = record.durationMs,
                         originalBytes = 0L,
                         inGallery = record.savedToGallery != false,

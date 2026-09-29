@@ -87,7 +87,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val first = uris.firstOrNull() ?: return null
         return DraftSummary(
             id = slot,
-            title = title,
+            // A made-up file name ("1001317917.mp4") shows as the day, as a project's does.
+            title = ProjectRules.displayTitle(title, savedAtMillis, prefix = "Video"),
             sourceUri = first,
             durationMs = durationMs,
             clipCount = uris.size,

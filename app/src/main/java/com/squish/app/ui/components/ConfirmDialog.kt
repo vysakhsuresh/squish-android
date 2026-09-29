@@ -95,7 +95,8 @@ fun ConfirmDialog(
                 )
             }
 
-            Box(
+            // Left out when there is nothing to lose - an entry whose file has gone.
+            if (caution.isNotBlank()) Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
