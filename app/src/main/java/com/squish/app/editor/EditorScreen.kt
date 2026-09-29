@@ -85,6 +85,7 @@ import com.squish.app.media.ExportStage
 import com.squish.app.media.keepReadAccess
 import com.squish.app.timeline.TimelineActionBar
 import com.squish.app.timeline.TimelineEditor
+import com.squish.app.timeline.stripRowsHeight
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.ConfirmDialog
 import com.squish.app.ui.components.SquishOutlinedButton
@@ -224,10 +225,11 @@ fun EditorScreen(
         }
     }
     // Several at once, added in the order picked - one video at a time made
-    // building an edit from a handful of shots a chore.
+    // building an edit from a handful of shots a chore. In at the playhead, where
+    // the strip is looking - see insertSourcesAtPlayhead.
     val pickExtraClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
         uris.forEach { context.keepReadAccess(it) }
-        viewModel.clips.addVideoClips(uris)
+        viewModel.clips.insertSourcesAtPlayhead(uris)
     }
     val addVideos = {
         pickExtraClips.launch(
@@ -333,7 +335,7 @@ fun EditorScreen(
                 val cards = @Composable {
                     StatusCards(state, viewModel, onStartNew = { confirmStartNew = true })
                 }
-                val controls = @Composable { compactStrip: Boolean ->
+                val controls = @Composable { compactStrip: Boolean, rowsHeight: Dp ->
                     val timeline = state.toTimeline()
                     TimelineEditor(
                         state = timeline,
@@ -341,6 +343,10 @@ fun EditorScreen(
                         onTrimEdge = viewModel.clips::trimEdgeTo,
                         onTrimHeadIn = viewModel.clips::trimHeadInTo,
                         onScrub = viewModel::scrubTo,
+                        // The strip snaps a drag itself, and draws where it snapped to.
+                        onSeek = viewModel::seekTo,
+                        snapScrub = state.snapToMarkers,
+                        rowsHeight = rowsHeight,
                         onTransitionTap = { clipId ->
                             viewModel.selectClip(clipId)
                             openToolName = Tool.Transition.name
@@ -354,7 +360,7 @@ fun EditorScreen(
                         onEffectMove = viewModel.clips::moveEffect,
                         onEffectTrimEdge = viewModel.clips::trimEffectTo,
                         onAddVideo = addVideos,
-                        onAddBlank = viewModel.clips::addBlankClip,
+                        onAddBlank = viewModel.clips::insertBlankAtPlayhead,
                         onAddOverlay = addOverlay,
                         onCloseGap = viewModel.clips::closeGap,
                         onOpenSound = { openToolName = Tool.Sound.name },
@@ -442,11 +448,16 @@ fun EditorScreen(
                             // It takes what the sheet leaves: the sheet's height is fixed
                             // first, so a notice or a long strip can never squeeze it -
                             // and its Done - down to nothing.
-                            Column(
-                                modifier = (if (typing) Modifier.heightIn(max = 0.dp) else Modifier.weight(1f))
-                                    .verticalScroll(stripScroll)
+                            // Measured, since here it is whatever the notices and the
+                            // toolbar leave, and the rows sized to it so the action bar
+                            // under them fits.
+                            BoxWithConstraints(
+                                modifier = if (typing) Modifier.heightIn(max = 0.dp) else Modifier.weight(1f)
                             ) {
-                                controls(sheetOpen)
+                                val room = maxHeight
+                                Column(modifier = Modifier.verticalScroll(stripScroll)) {
+                                    controls(sheetOpen, stripRowsHeight(room))
+                                }
                             }
                             if (sheetOpen) {
                                 sheet(if (typing) Modifier.weight(1f) else Modifier.height(available * LANDSCAPE_SHEET_SHARE))
@@ -478,7 +489,8 @@ fun EditorScreen(
                                 )
                                 .verticalScroll(stripScroll)
                         ) {
-                            controls(sheetOpen)
+                            // Rows sized to the share, so the action bar under them always fits.
+                            controls(sheetOpen, stripRowsHeight(available * STRIP_SHARE))
                         }
                         if (sheetOpen) {
                             sheet(Modifier.height(if (typing) typingSheetHeightFor(available) else sheetHeight))

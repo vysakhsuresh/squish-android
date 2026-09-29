@@ -240,6 +240,26 @@ should work through it and then delete what holds up.
   in an old draft is drawn, and "Close gap" on it closes that one only; a tail
   trim snaps to a beat with a tick, not to the shots that follow it; playback
   pauses when the strip is dragged, and also when a clip is picked up.
+  From its review round (built, the arithmetic in `LaneChecks.kt`, nothing
+  seen): pressing a trim handle while playing pauses and the strip holds still
+  under it; a sound trimmed over its neighbour keeps following the finger (the
+  rows are held until the finger lifts, then it moves row) and leaves no grey
+  stretch or snap line behind; the head handle of a main-track shot follows the
+  finger with the shots after it, snaps to a beat with a tick, and the track
+  closes up on release; dragging the strip near a cut holds the line on the cut
+  with a tick, the picture shows that same frame, and nothing jumps on release;
+  a keyframe tap lands exactly on the key; the picture does not change size when
+  something is selected or let go (the rows are a fixed height, fewer than four
+  on a short phone so Split and its hint stay on screen); an empty edit shows
+  the overlay row with its add button; Blank, and Video or photo from the video
+  track's button or "Add media", go in at the playhead and are selected; a
+  sound dropped onto a taken row is drawn, while carried, on the row it will
+  land on, and the one already there stays; a line carried past the end of the
+  picture is drawn where it will stop; long-pressing a sound with a sheet open
+  keeps the strip at one row until it is dropped; carried to the top or bottom
+  of the rows, they scroll; slowing a song carries the sound effect butted after
+  it on another row; deleting the last shot with the playhead at the end brings
+  the playhead back to the new end.
 
 ## Conventions worth not rediscovering
 

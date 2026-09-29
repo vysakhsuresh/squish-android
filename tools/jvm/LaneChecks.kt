@@ -119,9 +119,50 @@ private fun rows() {
     // Moving one item: nothing else changes row.
     val three = listOf(LaneItem("a", 0, 4_000), LaneItem("b", 2_000, 6_000), LaneItem("c", 8_000, 9_000))
     val before = TimelineLanes.rows(three)
-    val prefs = TimelineLanes.preferencesAfterMove(three, "c", 1)
+    val prefs = TimelineLanes.preferencesAfterMove(three, "c", 1, 8_000)
     val after = TimelineLanes.rows(three.map { it.copy(preferredRow = prefs.getValue(it.id)) })
     check(after["a"] == before["a"] && after["b"] == before["b"] && after["c"] == 1, "move to row 1: $before -> $after")
+
+    // Dropped onto a taken row, just before the one already there: it goes to the
+    // nearest free row, and the one there stays - the finger moves one thing.
+    val bed = listOf(LaneItem("song", 2_000, 10_000), LaneItem("fx", 12_000, 13_000))
+    val bedPrefs = TimelineLanes.preferencesAfterMove(bed, "fx", 0, 1_500)
+    check(bedPrefs["song"] == 0 && bedPrefs["fx"] == 1, "a drop onto a taken row displaced what was there: $bedPrefs")
+    check(TimelineLanes.placedRow(bed, "fx", 0, 1_500) == 1, "placed row onto a taken row")
+    val bedAfter = TimelineLanes.rows(
+        bed.map { if (it.id == "fx") it.copy(startMs = 1_500, endMs = 2_500) else it }
+            .map { it.copy(preferredRow = bedPrefs.getValue(it.id)) }
+    )
+    check(bedAfter == mapOf("song" to 0, "fx" to 1), "rows after a drop onto a taken row: $bedAfter")
+    // Free where it is dropped: it stays on the row asked for.
+    check(TimelineLanes.placedRow(bed, "fx", 0, 10_000) == 0, "a free spot on the row asked for was refused")
+    // Far below: one new row, not many.
+    check(TimelineLanes.placedRow(bed, "fx", 9, 12_000) == 1, "a drop far below: ${TimelineLanes.placedRow(bed, "fx", 9, 12_000)}")
+    // Three rows, the middle one taken at the time: below it before above it.
+    val stack = listOf(LaneItem("x", 0, 10_000), LaneItem("y", 0, 10_000, 1), LaneItem("z", 0, 10_000, 2), LaneItem("m", 20_000, 21_000))
+    check(TimelineLanes.placedRow(stack, "m", 1, 5_000) == 3, "nearest free below a full stack: ${TimelineLanes.placedRow(stack, "m", 1, 5_000)}")
+    // Random drops: whatever is asked, the moved item never lands on anything,
+    // and nothing else changes row.
+    repeat(300) { round ->
+        val n = random.nextInt(2, 10)
+        val items = (0 until n).map {
+            val start = random.nextLong(0, 20_000)
+            LaneItem("i$it", start, start + random.nextLong(1, 6_000), preferredRow = random.nextInt(0, 3))
+        }
+        val shown = TimelineLanes.rows(items)
+        val movedId = "i${random.nextInt(n)}"
+        val to = random.nextLong(0, 20_000)
+        val p = TimelineLanes.preferencesAfterMove(items, movedId, random.nextInt(0, 5), to)
+        val placed = items.map { if (it.id == movedId) it.copy(startMs = to, endMs = to + (it.endMs - it.startMs)) else it }
+            .map { it.copy(preferredRow = p.getValue(it.id)) }
+        val raw = placed.associate { it.id to p.getValue(it.id) }
+        noOverlapOnARow(placed, raw, "random drop $round")
+        check(items.all { it.id == movedId || p[it.id] == shown[it.id] }, "random drop $round: another item changed row")
+        // The rows the strip then draws put everything where the drop said, closed up.
+        val drawn = TimelineLanes.rows(placed)
+        val order = raw.values.distinct().sorted()
+        check(drawn.all { (id, row) -> order.indexOf(raw.getValue(id)) == row }, "random drop $round: drawn $drawn, placed $raw")
+    }
 
     // Through the model: a sound dropped on the row below lands there and stays; the other stays too.
     val state = TimelineState(clips = listOf(shot("m", 20_000), sound("s1", 8_000, 0), sound("s2", 3_000, 10_000)))
@@ -181,6 +222,17 @@ private fun snapping() {
     check(t.containsAll(listOf(0L, 1_234L, 2_500L, 3_000L, 7_777L, 8_777L, 8_100L, 8_900L)), "targets missing: ${t.sorted()}")
     check(9_000L !in t && 5_000L !in t, "c is a target while it moves with b")
     check(TimelineLanes.movingWithTail(state, "s") == setOf("s"), "a sound's tail moves other things")
+
+    // Scrubbing the strip: the cuts, the ends, markers, sounds and effects - never
+    // the playhead itself, which is what moves.
+    val scrub = TimelineLanes.scrubTargets(state, listOf(2_500L))
+    check(scrub.containsAll(listOf(0L, 2_500L, 3_000L, 5_000L, 9_000L, 7_777L, 8_777L, 8_100L, 8_900L)), "scrub targets missing: ${scrub.sorted()}")
+    check(1_234L !in scrub, "the playhead is a scrub target")
+    check(state.durationMs in scrub, "the end of the edit is not a scrub target")
+    // A drag 100 ms short of a cut, at a snap distance of 150, is held on it; the
+    // strip is drawn there and the playhead sent there - the same moment.
+    check(TimelineLanes.nearest(4_900, scrub, 150) == 5_000L, "scrub near a cut")
+    check(TimelineLanes.nearest(4_700, scrub, 150) == null, "scrub away from everything snapped")
 }
 
 /**
@@ -255,6 +307,15 @@ private fun trimsFollowTheFinger() {
     check(abs(s.byId("a").durationMs - (a.durationMs - 1_000)) <= 2, "main head trim: ${s.byId("a").durationMs} vs ${a.durationMs - 1_000}")
     check(s.byId("a").sourceInMs == a.sourceInMs + 2_000, "main head trim at 2x: in ${s.byId("a").sourceInMs}")
     check(s.byId("b").timelineStartMs == s.byId("a").timelineEndMs, "main head trim left a gap")
+    // While it is dragged the strip draws the shot and every one after it moved
+    // on by what it has lost (mainShown): the head lands under the finger, and
+    // the tail and the next shot stay where they were until the finger lifts.
+    val shift = a.durationMs - s.byId("a").durationMs
+    val drawnMoving = TimelineLanes.movingWithTail(s, "a")
+    check(drawnMoving == setOf("a", "b"), "moving with a's head: $drawnMoving")
+    check(abs(s.byId("a").timelineStartMs + shift - (a.timelineStartMs + travel)) <= 2, "drawn head ${s.byId("a").timelineStartMs + shift} vs finger ${a.timelineStartMs + travel}")
+    check(abs(s.byId("a").timelineEndMs + shift - a.timelineEndMs) <= 2, "drawn tail moved: ${s.byId("a").timelineEndMs + shift} vs ${a.timelineEndMs}")
+    check(abs(s.byId("b").timelineStartMs + shift - main.byId("b").timelineStartMs) <= 2, "drawn next shot moved")
     // Held against the minimum, it does not run away when the finger comes back.
     var held = main
     travel = 0L
@@ -342,6 +403,36 @@ private fun gaps() {
     val song = TimelineState(clips = listOf(shot("m", 10_000), sound("s", 4_000, 1_000), sound("t", 2_000, 5_000)))
     val songFaster = song.withClipRetimed("s", SpeedRamp.flat(2f))
     check(songFaster.byId("s").durationMs == 2_000L && songFaster.byId("t").timelineStartMs == 5_000L, "a sound retime moved another sound")
+
+    // Off the main track, the editor carries what is butted after a retimed
+    // sound (rippleAfterRetime) - whichever row it was moved to.
+    fun retimed(clips: List<com.squish.app.timeline.Clip>, id: String, speed: Float) =
+        clips.map { if (it.id == id) it.copy(speedRamp = SpeedRamp.flat(speed)) else it }
+    val songA = sound("A", 10_000, 0)
+    val sfxB = sound("B", 2_000, 10_000, row = 1)
+    val fxC = sound("C", 1_000, 12_020, row = 0)
+    val overMiddle = sound("D", 1_000, 3_000, row = 2)
+    val later = sound("E", 1_000, 16_000)
+    val beds = listOf(shot("m", 30_000), songA, sfxB, fxC, overMiddle, later)
+    val slowA = TimelineLanes.rippleAfterRetime(retimed(beds, "A", 0.5f), songA, 40)
+    fun List<com.squish.app.timeline.Clip>.at(id: String) = first { it.id == id }.timelineStartMs
+    check(slowA.first { it.id == "A" }.timelineEndMs == 20_000L, "A at half speed: ${slowA.first { it.id == "A" }.timelineEndMs}")
+    check(slowA.at("B") == 20_000L, "a follower on another row was left behind: B at ${slowA.at("B")}")
+    check(slowA.at("C") == 22_020L, "the follower's follower: C at ${slowA.at("C")}")
+    check(slowA.at("D") == 3_000L, "a sound over the middle of the retimed one moved: D at ${slowA.at("D")}")
+    check(slowA.at("E") == 16_000L, "a sound after a gap moved: E at ${slowA.at("E")}")
+    check(slowA.at("m") == 0L, "the picture moved")
+    val fastA = TimelineLanes.rippleAfterRetime(retimed(beds, "A", 2f), songA, 40)
+    check(fastA.at("B") == 5_000L && fastA.at("C") == 7_020L, "speed-up: B ${fastA.at("B")}, C ${fastA.at("C")}")
+    // Overlays by their layer: one butted on another layer stays.
+    val pipA = shot("p", 4_000, start = 1_000, layer = 1)
+    val pipB = shot("q", 2_000, start = 5_000, layer = 1)
+    val pipOther = shot("r", 2_000, start = 5_000, layer = 2)
+    val pipsSlowed = TimelineLanes.rippleAfterRetime(retimed(listOf(shot("m", 30_000), pipA, pipB, pipOther), "p", 0.5f), pipA, 40)
+    check(pipsSlowed.at("q") == 9_000L && pipsSlowed.at("r") == 5_000L, "overlay ripple: q ${pipsSlowed.at("q")}, r ${pipsSlowed.at("r")}")
+    // The main track is the model's (withClipRetimed): untouched here.
+    val mainOnly = listOf(shot("a", 4_000), shot("b", 4_000, start = 4_000))
+    check(TimelineLanes.rippleAfterRetime(retimed(mainOnly, "a", 2f), mainOnly[0], 40) == retimed(mainOnly, "a", 2f), "rippled the main track")
 }
 
 private fun window() {

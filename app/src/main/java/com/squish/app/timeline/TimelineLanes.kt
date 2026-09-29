@@ -68,13 +68,97 @@ object TimelineLanes {
     fun rowCount(rows: Map<String, Int>): Int = (rows.values.maxOrNull() ?: -1) + 1
 
     /**
-     * The preferences to store after [movedId] is dropped on [targetRow]: every
-     * other item's preference set to the row it is shown on now, so nothing the
-     * finger did not touch changes row because a stored preference from long ago
-     * suddenly came free.
+     * The preferences to store after [movedId] is dropped at [startMs] on
+     * [targetRow]: every other item's preference set to the row it is shown on
+     * now, so nothing the finger did not touch changes row because a stored
+     * preference from long ago suddenly came free.
+     *
+     * The moved item's is a row that is free for it there - [targetRow] if it is,
+     * else the nearest one below it, else above - rather than the row asked for.
+     * Asked for a taken row, [rows] used to settle it by start time, so a sound
+     * dropped just before one already on that row took the row and pushed the
+     * other one off it: the finger moved two things. And what the strip drew
+     * under the finger was the row asked for, not the row it went to.
+     *
+     * The rows are numbered as they are shown now, and one past the last is a
+     * new row; so the moved item's entry is also where the strip draws it while
+     * it is carried (see [placedRow]).
      */
-    fun preferencesAfterMove(items: List<LaneItem>, movedId: String, targetRow: Int): Map<String, Int> =
-        rows(items) + (movedId to targetRow.coerceIn(0, items.size))
+    fun preferencesAfterMove(items: List<LaneItem>, movedId: String, targetRow: Int, startMs: Long): Map<String, Int> {
+        val shown = rows(items)
+        val moved = items.firstOrNull { it.id == movedId } ?: return shown
+        val start = startMs.coerceAtLeast(0L)
+        val end = start + maxOf(moved.endMs - moved.startMs, 1L)
+        val others = items.filter { it.id != movedId }
+        fun free(row: Int) = others.none {
+            shown[it.id] == row && it.startMs < end && start < maxOf(it.endMs, it.startMs + 1)
+        }
+        // One new row below the rest at most: a drop far below is a drop below.
+        val last = rowCount(shown)
+        val wanted = targetRow.coerceIn(0, last)
+        val row = if (free(wanted)) wanted
+        else (1..last + 1).asSequence()
+            .flatMap { d -> sequenceOf(wanted + d, wanted - d) }
+            .first { it in 0..last && free(it) }
+        return shown + (movedId to row)
+    }
+
+    /** The row, numbered as the rows are shown now, that [movedId] lands on; see [preferencesAfterMove]. */
+    fun placedRow(items: List<LaneItem>, movedId: String, targetRow: Int, startMs: Long): Int =
+        preferencesAfterMove(items, movedId, targetRow, startMs)[movedId] ?: targetRow
+
+    /**
+     * What the playhead may snap to while the strip is dragged: the start and end
+     * of the edit, every marker and beat, and both ends of every clip and effect.
+     * Not the playhead itself, which is the thing being moved.
+     */
+    fun scrubTargets(state: TimelineState, markers: List<Long>): List<Long> {
+        val out = HashSet<Long>()
+        out.add(0L)
+        out.add(state.durationMs)
+        out.addAll(markers)
+        state.clips.forEach { out.add(it.timelineStartMs); out.add(it.timelineEndMs) }
+        state.effects.forEach { out.add(it.startMs); out.add(it.endMs) }
+        return out.toList()
+    }
+
+    /**
+     * Off the main track, the clips carried along when [before] is retimed: the
+     * ones butted after it, within [touchingMs], and the ones butted after those,
+     * each moved by as much as its end moved - so butt cuts stay butt cuts and a
+     * gap placed by hand stays where it was.
+     *
+     * Sounds by kind alone, whichever rows they are drawn on: a sound's row is
+     * only where the strip draws it (see [TimelineState.withClipPlaced]), and a
+     * follower moved to another row to get it out of the way is still what plays
+     * next. Overlays by their layer as well, which is what they are stacked by.
+     * Only what starts at an end in the chain, never what starts inside the
+     * retimed clip: a sound effect laid over the middle of a song was carried to
+     * the song's new end.
+     */
+    fun rippleAfterRetime(clips: List<Clip>, before: Clip, touchingMs: Long): List<Clip> {
+        val retimed = clips.firstOrNull { it.id == before.id } ?: return clips
+        val shift = retimed.timelineEndMs - before.timelineEndMs
+        if (shift == 0L || before.isMain) return clips
+        val lane = clips.filter {
+            it.id != before.id && it.kind == before.kind && (it.kind != ClipKind.Video || it.layer == before.layer)
+        }
+        val moving = LinkedHashSet<String>()
+        val ends = ArrayDeque<Long>().apply { add(before.timelineEndMs) }
+        while (ends.isNotEmpty()) {
+            val end = ends.removeFirst()
+            lane.forEach {
+                if (it.id !in moving && abs(it.timelineStartMs - end) <= touchingMs) {
+                    moving += it.id
+                    ends += it.timelineEndMs
+                }
+            }
+        }
+        if (moving.isEmpty()) return clips
+        return clips.map {
+            if (it.id in moving) it.copy(timelineStartMs = (it.timelineStartMs + shift).coerceAtLeast(0L)) else it
+        }
+    }
 
     /** The nearest of [targets] no further than [withinMs] from [ms], or null. */
     fun nearest(ms: Long, targets: Collection<Long>, withinMs: Long): Long? {

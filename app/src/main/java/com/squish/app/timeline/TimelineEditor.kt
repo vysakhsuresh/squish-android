@@ -79,6 +79,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squish.app.editor.Concept
+import com.squish.app.editor.EditRules
 import com.squish.app.editor.Timecode
 import com.squish.app.editor.TransitionGlyph
 import com.squish.app.ui.theme.SquishColors
@@ -117,6 +118,14 @@ private val SNAP_DP = 10.dp
 private val EDGE_ZONE = 48.dp
 
 /**
+ * How close to the top or bottom of the rows a carried clip scrolls them, and
+ * how fast at most, a frame. Narrower than the sides: a row is only 54 dp, and
+ * a clip carried along the bottom row must not scroll the rows by being there.
+ */
+private val ROW_EDGE_ZONE = 16.dp
+private val ROW_EDGE_STEP = 6.dp
+
+/**
  * Zoom limits.
  *
  * The ceiling was four hundred, and before the strip was windowed it could not
@@ -137,6 +146,18 @@ private const val MAX_PPS = ZOOM_MAX
 
 /** One square for every button on the strip's action bar. */
 private val MINI_ACTION_SIZE = 38.dp
+
+/** The action bar under the strip, as the editor lays it out: a row of buttons and 6 dp above and below. */
+private val ACTION_BAR_HEIGHT = MINI_ACTION_SIZE + 12.dp
+
+/**
+ * How tall to make the rows when the strip and its action bar have [room]
+ * between them: whatever is left under the ruler and over the bar, from one
+ * full row up to four. Four rows and a bar did not fit a short phone's share
+ * of the screen, and the bar - Split, and the line saying what it acts on -
+ * scrolled out of sight under the rows.
+ */
+fun stripRowsHeight(room: Dp): Dp = (room - RULER_HEIGHT - ACTION_BAR_HEIGHT).coerceIn(LANE_HEIGHT, ROWS_MAX)
 
 /** How far apart ruler labels must land to not run into each other - room for "10:00". */
 private const val MIN_LABEL_GAP_DP = 52f
@@ -230,7 +251,22 @@ fun TimelineEditor(
      */
     compact: Boolean = false,
     /** A double tap on the ruler: the whole edit on screen. Pinch zooms; the zoom buttons are gone. */
-    onFit: () -> Unit = {}
+    onFit: () -> Unit = {},
+    /**
+     * The playhead to exactly this moment, not snapped. Dragging the strip snaps
+     * here, where the strip can draw the moment it snapped to (see [snapScrub]);
+     * snapped again by the receiver, the picture showed a cut the line down the
+     * middle was not on, and the strip jumped when the finger lifted.
+     */
+    onSeek: (Long) -> Unit = onScrub,
+    /** Whether dragging the strip pulls the playhead onto nearby cuts, markers and beats. */
+    snapScrub: Boolean = true,
+    /**
+     * How tall the rows are, whatever is in them - the editor's to say, from the
+     * room it has. A fixed height, so selecting, which folds the rows of other
+     * tracks, never resizes the picture above; the rows scroll inside it.
+     */
+    rowsHeight: Dp = ROWS_MAX
 ) {
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
@@ -274,32 +310,65 @@ fun TimelineEditor(
     val latestWindow by rememberUpdatedState(window)
     val latestState by rememberUpdatedState(state)
     val latestMarkers by rememberUpdatedState(markers)
+    val latestSeek by rememberUpdatedState(onSeek)
+    val latestSnapScrub by rememberUpdatedState(snapScrub)
+
+    /**
+     * Where the finger has taken the strip, before any snap: what the next step
+     * of the drag is measured from. [heldMs] is where it is drawn, which a snap
+     * holds on a cut while the finger goes on a little past it; measured from
+     * that instead, a slow drag would never get off the cut again.
+     */
+    var scrubRawMs by remember { mutableStateOf<Double?>(null) }
+    /** The cut, marker or beat a drag of the strip is being held on, for the tick. */
+    var scrubSnapMs by remember { mutableStateOf<Long?>(null) }
 
     /**
      * Dragging the strip is scrubbing. Its own scroll rather than
      * `horizontalScroll`, because that needs content as wide as the timeline,
      * which is what could not be laid out; this turns the drag into time and
      * moves the playhead, stopping at either end of the edit.
+     *
+     * Snapped here, and the playhead sent exactly where the strip is drawn, so
+     * the line down the middle and the picture always agree and the view has
+     * nothing to catch up with when the finger lifts.
      */
     val scrollable = rememberScrollableState { deltaPx ->
         val w = latestWindow
-        val from = heldMs ?: latestState.playheadMs.toDouble()
-        val to = (from - w.msForPx(deltaPx)).coerceIn(0.0, latestState.durationMs.coerceAtLeast(0L).toDouble())
-        heldMs = to
-        if (to.toLong() != from.toLong()) rawScrub(to.toLong())
+        val s = latestState
+        val end = s.durationMs.coerceAtLeast(0L).toDouble()
+        // From the edit as it is: a playhead left past the end of a shortened
+        // edit would otherwise report a step the opposite way to the finger.
+        val from = (scrubRawMs ?: heldMs ?: s.playheadMs.toDouble()).coerceIn(0.0, end)
+        val to = (from - w.msForPx(deltaPx)).coerceIn(0.0, end)
+        scrubRawMs = to
+        val snapped = if (!latestSnapScrub) null
+        else TimelineLanes.nearest(
+            to.roundToLong(), TimelineLanes.scrubTargets(s, latestMarkers), w.msForDp(SNAP_DP.value).roundToLong()
+        )
+        scrubSnapMs = snapped
+        val shown = snapped?.toDouble() ?: to
+        val before = heldMs
+        heldMs = shown
+        if (before == null || shown.toLong() != before.toLong()) latestSeek(shown.toLong())
         w.pxForMs(from - to)
     }
     val scrolling = scrollable.isScrollInProgress
+    LaunchedEffect(scrubSnapMs) {
+        if (scrubSnapMs != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
 
     // What is being carried, and what is being trimmed; see [Lift].
     var lift by remember { mutableStateOf<Lift?>(null) }
     var trimming by remember { mutableStateOf<TrimMark?>(null) }
     var trimSnapMs by remember { mutableStateOf<Long?>(null) }
 
-    // A finger on the strip, as far as the preview is concerned: scrolling it
-    // or carrying a clip. Playback pauses for either - playing on under a
-    // finger that is choosing a frame fought the finger for the playhead.
-    val fingerOnStrip = scrolling || lift != null
+    // A finger on the strip, as far as the preview is concerned: scrolling it,
+    // carrying a clip or trimming one. Playback pauses for each - playing on
+    // under a finger that is choosing a frame fought the finger for the
+    // playhead, and under a trim handle it scrolled the strip away from the
+    // edge being dragged, so the trim landed where nobody pointed.
+    val fingerOnStrip = scrolling || lift != null || trimming != null
     val latestScrubbingChange by rememberUpdatedState(onScrubbingChange)
     var reportedScrubbing by remember { mutableStateOf(false) }
     LaunchedEffect(fingerOnStrip) {
@@ -322,7 +391,12 @@ fun TimelineEditor(
     // keyed on the playhead, playing straight after letting go restarted the wait
     // on every tick and the strip never let go of the view to follow playback.
     LaunchedEffect(fingerOnStrip) {
-        if (fingerOnStrip || heldMs == null) return@LaunchedEffect
+        if (fingerOnStrip) return@LaunchedEffect
+        scrubSnapMs = null
+        if (heldMs == null) {
+            scrubRawMs = null
+            return@LaunchedEffect
+        }
         withTimeoutOrNull(SETTLE_MS) {
             snapshotFlow { latestState.playheadMs }.first { at ->
                 val held = heldMs
@@ -330,6 +404,7 @@ fun TimelineEditor(
             }
         }
         heldMs = null
+        scrubRawMs = null
     }
 
     /**
@@ -349,15 +424,32 @@ fun TimelineEditor(
 
     // ---- Rows ------------------------------------------------------------------
 
-    val soundRows = remember(state.audioClips) {
-        TimelineLanes.rows(state.audioClips.map { LaneItem(it.id, it.timelineStartMs, it.timelineEndMs, it.layer) })
-    }
-    val wordRows = remember(state.textClips) {
-        TimelineLanes.rows(state.textClips.map { LaneItem(it.id, it.timelineStartMs, it.timelineEndMs, it.layer) })
-    }
-    val effectRows = remember(state.effects) {
-        TimelineLanes.rows(state.effects.map { LaneItem(it.id, it.startMs, it.endMs) })
-    }
+    val liveRows = RowMaps(
+        sound = remember(state.audioClips) {
+            TimelineLanes.rows(state.audioClips.map { LaneItem(it.id, it.timelineStartMs, it.timelineEndMs, it.layer) })
+        },
+        words = remember(state.textClips) {
+            TimelineLanes.rows(state.textClips.map { LaneItem(it.id, it.timelineStartMs, it.timelineEndMs, it.layer) })
+        },
+        effects = remember(state.effects) {
+            TimelineLanes.rows(state.effects.map { LaneItem(it.id, it.startMs, it.endMs) })
+        }
+    )
+    val latestLiveRows by rememberUpdatedState(liveRows)
+    /**
+     * The rows as they were when a trim began, kept until it ends. Worked out
+     * afresh, a trim that took a clip over its neighbour moved it to another row
+     * under the finger - a new composable, and the old one's drag died with it,
+     * leaving the handle behind and its grey stretch and snap line on screen.
+     * Overlapping on one row for the length of a drag, and sorted out when it ends.
+     */
+    var frozenRows by remember { mutableStateOf<RowMaps?>(null) }
+    val shownRows = frozenRows?.let { f ->
+        RowMaps(liveRows.sound + f.sound, liveRows.words + f.words, liveRows.effects + f.effects)
+    } ?: liveRows
+    val soundRows = shownRows.sound
+    val wordRows = shownRows.words
+    val effectRows = shownRows.effects
     val selected = state.selectedClip
     val selectedEffect = state.effects.firstOrNull { it.id == state.selectedClipId }
     val selectedGroup: Group? = when {
@@ -376,7 +468,9 @@ fun TimelineEditor(
     val foldFor = if (carried != null) carried.foldFor else selectedGroup
     val latestSelectedGroup by rememberUpdatedState(selectedGroup)
     fun folded(group: Group) = foldFor != null && foldFor != group && group != Group.Main
-    val layerCount = state.layerCount
+    // One overlay row even with no overlay on it, like sound and words: its head
+    // is the way to add the first one, beside the track it will go on.
+    val layerCount = maxOf(1, state.layerCount)
     val soundCount = maxOf(1, TimelineLanes.rowCount(soundRows))
     val wordCount = maxOf(1, TimelineLanes.rowCount(wordRows))
     val effectCount = TimelineLanes.rowCount(effectRows)
@@ -391,7 +485,12 @@ fun TimelineEditor(
     // Compact, while a tool's sheet is open: the ruler and the row the selection
     // is on (the main track when nothing is), so the strip stays in view above
     // the sheet - the playhead, a cut, the thing being worked on.
-    val rows: List<StripRow> = if (!compact) allRows else {
+    // As it was when a clip was picked up, until it is let go: picking one up
+    // selects it, which can close the sheet, and the strip opening out to every
+    // row under the finger put the drop on a row nobody pointed at.
+    val compactShown = carried?.compact ?: compact
+    val latestCompactShown by rememberUpdatedState(compactShown)
+    val rows: List<StripRow> = if (!compactShown) allRows else {
         val home = when (selectedGroup) {
             Group.Overlay -> allRows.firstOrNull { it.group == Group.Overlay && it.index == selected?.layer }
             Group.Sound -> allRows.firstOrNull { it.group == Group.Sound && it.index == soundRows[selected?.id] }
@@ -403,9 +502,10 @@ fun TimelineEditor(
     }
 
     val rowScroll = rememberScrollState()
-    val rowsHeight = rows.fold(0.dp) { sum, row -> sum + row.height }
-    val shownRowsHeight = minOf(rowsHeight, ROWS_MAX)
-    val stripHeight = RULER_HEIGHT + shownRowsHeight
+    // Fixed, not the rows' own height: that changed with every selection, as
+    // rows folded and unfolded, and the picture above resized each time.
+    val rowsBox = if (compactShown) LANE_HEIGHT else rowsHeight.coerceAtLeast(LANE_HEIGHT)
+    val stripHeight = RULER_HEIGHT + rowsBox
 
     val layout = StripLayout(
         state = state,
@@ -418,9 +518,10 @@ fun TimelineEditor(
         wordRows = wordRows,
         effectRows = effectRows,
         handlePx = with(density) { HANDLE_WIDTH.toPx() },
+        effectGripPx = with(density) { STACKED_GRIP.toPx() },
         markers = markers,
         snapMs = window.msForDp(SNAP_DP.value).roundToLong(),
-        vertical = !compact
+        vertical = !compactShown
     )
     val latestLayout by rememberUpdatedState(layout)
 
@@ -433,16 +534,28 @@ fun TimelineEditor(
     // While a clip is held at either side of the strip, the strip scrolls - which
     // moves the playhead, the one thing the middle of the strip always is - so a
     // clip can be carried further than one screen.
+    // Held at the top or bottom of the rows, the rows scroll the same way, so a
+    // row scrolled out of sight can still be carried to.
     val carrying = lift != null
+    val latestRowsBoxPx by rememberUpdatedState(with(density) { rowsBox.toPx() })
     LaunchedEffect(carrying) {
         if (!carrying) return@LaunchedEffect
         val zonePx = with(density) { EDGE_ZONE.toPx() }
+        val rowZonePx = with(density) { ROW_EDGE_ZONE.toPx() }
+        val rowStepPx = with(density) { ROW_EDGE_STEP.toPx() }
         while (true) {
             withFrameNanos { }
             val held = lift ?: break
             // Not before the finger has moved: a clip picked up near the side of
             // the strip must not set it scrolling by being picked up.
             if (!held.moved) continue
+            val layoutNow = latestLayout
+            if (layoutNow.vertical) {
+                val dy = TimelineLanes.edgeScrollMs(
+                    held.finger.y - layoutNow.rulerPx, latestRowsBoxPx.toInt(), rowZonePx, rowStepPx.toDouble()
+                )
+                if (dy != 0.0) rowScroll.dispatchRawDelta(dy.toFloat())
+            }
             val w = latestWindow
             val step = TimelineLanes.edgeScrollMs(held.finger.x, viewportPx, zonePx, w.viewportMs / 60.0)
             if (step == 0.0) continue
@@ -450,7 +563,8 @@ fun TimelineEditor(
             val to = (from + step).coerceIn(0.0, latestState.durationMs.coerceAtLeast(0L).toDouble())
             if (to == from) continue
             heldMs = to
-            rawScrub(to.toLong())
+            scrubRawMs = to
+            latestSeek(to.toLong())
         }
     }
 
@@ -477,22 +591,29 @@ fun TimelineEditor(
     val latestEffectTrimEdge by rememberUpdatedState(onEffectTrimEdge)
     val trims = remember {
         Trims(
-            begin = { id, head -> trimming = TrimMark(id, head) },
+            begin = { id, head, anchor ->
+                trimming = TrimMark(id, head, anchor?.takeIf { head && it.isMain })
+                frozenRows = latestLiveRows
+                // The view holds still under the handle - see fingerOnStrip.
+                heldMs = heldMs ?: latestState.playheadMs.toDouble()
+            },
             clip = { anchor, head, travelMs ->
                 if (!guard.active) {
-                    val travel = travelMs.roundToLong()
+                    val s = latestState
+                    val raw = (if (head) anchor.timelineStartMs else anchor.timelineEndMs) + travelMs.roundToLong()
+                    // The head of a main-track shot moves every shot from there on
+                    // (see mainShown), the tail every shot after it: none of them
+                    // can be a target, being always under the edge.
+                    val exclude = if (head && !anchor.isMain) setOf(anchor.id) else TimelineLanes.movingWithTail(s, anchor.id)
+                    val snapped = TimelineLanes.nearest(
+                        raw, TimelineLanes.snapTargets(s, latestMarkers, exclude), latestLayout.snapMs
+                    )
+                    trimSnapMs = snapped
+                    val edge = snapped ?: raw
                     if (anchor.isMain && head) {
-                        trimSnapMs = null
-                        latestTrimHeadIn(anchor.id, TimelineLanes.anchoredHeadIn(anchor, travel))
+                        latestTrimHeadIn(anchor.id, TimelineLanes.anchoredHeadIn(anchor, edge - anchor.timelineStartMs))
                     } else {
-                        val s = latestState
-                        val raw = (if (head) anchor.timelineStartMs else anchor.timelineEndMs) + travel
-                        val exclude = if (head) setOf(anchor.id) else TimelineLanes.movingWithTail(s, anchor.id)
-                        val snapped = TimelineLanes.nearest(
-                            raw, TimelineLanes.snapTargets(s, latestMarkers, exclude), latestLayout.snapMs
-                        )
-                        trimSnapMs = snapped
-                        latestTrimEdge(anchor.id, head, snapped ?: raw)
+                        latestTrimEdge(anchor.id, head, edge)
                     }
                 }
             },
@@ -509,8 +630,28 @@ fun TimelineEditor(
             end = {
                 trimming = null
                 trimSnapMs = null
+                frozenRows = null
             }
         )
+    }
+
+    /**
+     * The main track as drawn. While the head of a shot is being trimmed, that
+     * shot and every one after it are drawn moved on by as much as it has lost,
+     * so the handle stays under the finger and a beat can be aimed at - and the
+     * track closes up when the finger lifts. In the edit the head never moves:
+     * the track is magnetic, so the footage moves under it and the tail and the
+     * shots after it come back instead, which left the handle standing still
+     * while the finger went on without it.
+     */
+    val headTrim = trimming?.mainHead
+    val mainShown = if (headTrim == null) state.baseVideoClips else {
+        val now = state.baseVideoClips.firstOrNull { it.id == headTrim.id }
+        val shift = if (now == null) 0L else headTrim.durationMs - now.durationMs
+        if (shift == 0L) state.baseVideoClips else {
+            val moving = TimelineLanes.movingWithTail(state, headTrim.id)
+            state.baseVideoClips.map { if (it.id in moving) it.copy(timelineStartMs = it.timelineStartMs + shift) else it }
+        }
     }
 
     val bareTap: () -> Unit = remember { { guardedSelect(null) } }
@@ -518,7 +659,7 @@ fun TimelineEditor(
         { id, atMs ->
             if (!guard.blocking) {
                 rawSelect(id)
-                rawScrub(atMs)
+                latestSeek(atMs)
             }
         }
     }
@@ -533,7 +674,7 @@ fun TimelineEditor(
             // opens the picker, sound and words open their tools.
             Column(
                 modifier = Modifier
-                    .heightIn(max = ROWS_MAX)
+                    .height(rowsBox)
                     .verticalScroll(rowScroll)
             ) {
                 rows.forEach { row ->
@@ -578,7 +719,7 @@ fun TimelineEditor(
                         onLift = { at ->
                             latestLayout.liftableAt(at)?.let { picked ->
                                 heldMs = heldMs ?: latestState.playheadMs.toDouble()
-                                lift = picked.copy(foldFor = latestSelectedGroup)
+                                lift = picked.copy(foldFor = latestSelectedGroup, compact = latestCompactShown)
                                 rawSelect(picked.id)
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
@@ -628,7 +769,7 @@ fun TimelineEditor(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = ROWS_MAX)
+                        .height(rowsBox)
                         .verticalScroll(rowScroll)
                 ) {
                     rows.forEach { row ->
@@ -649,7 +790,7 @@ fun TimelineEditor(
                                     onKeyTap = keyTap
                                 )
                                 Group.Main -> Lane(
-                                    clips = state.baseVideoClips,
+                                    clips = mainShown,
                                     row = row,
                                     selectedId = state.selectedClipId,
                                     window = window,
@@ -798,8 +939,12 @@ private data class StripRow(val group: Group, val index: Int, val folded: Boolea
         }
 }
 
-/** A handle being dragged, for the grey stretch of unused footage beside it. */
-private data class TrimMark(val id: String, val head: Boolean)
+/**
+ * A handle being dragged, for the grey stretch of unused footage beside it -
+ * and, on the head of a main-track shot, the shot as it was when the finger
+ * went down, to draw the track from (see mainShown in [TimelineEditor]).
+ */
+private data class TrimMark(val id: String, val head: Boolean, val mainHead: Clip? = null)
 
 /**
  * What the handles report. The clip or effect as it was when the finger went
@@ -807,7 +952,7 @@ private data class TrimMark(val id: String, val head: Boolean)
  * the zoom of the moment - the strip works out the edge, the snap and the trim.
  */
 private class Trims(
-    val begin: (String, Boolean) -> Unit,
+    val begin: (String, Boolean, Clip?) -> Unit,
     val clip: (Clip, Boolean, Double) -> Unit,
     val effect: (EffectSpan, Boolean, Double) -> Unit,
     val end: () -> Unit
@@ -832,6 +977,8 @@ private data class Lift(
     val finger: Offset,
     /** Which track the rows were folded for when it was picked up; kept until it is let go. */
     val foldFor: Group? = null,
+    /** Whether the strip was showing only one row when it was picked up; kept until it is let go. */
+    val compact: Boolean = false,
     /** Where the finger picked it up. */
     val origin: Offset = finger,
     /**
@@ -852,6 +999,9 @@ private data class Landing(
     val heightPx: Float
 )
 
+/** Each item's row on the sound, words and effects tracks, by id. */
+private data class RowMaps(val sound: Map<String, Int>, val words: Map<String, Int>, val effects: Map<String, Int>)
+
 /**
  * The strip as laid out this frame, for the gestures that run between frames:
  * which row is at a height, what is under a finger, where a carried thing would
@@ -869,6 +1019,8 @@ private class StripLayout(
     val wordRows: Map<String, Int>,
     val effectRows: Map<String, Int>,
     val handlePx: Float,
+    /** An effect's grip, which is narrower than a clip's (see [EffectBar]). */
+    val effectGripPx: Float,
     val markers: List<Long>,
     val snapMs: Long,
     /** Whether a carried thing may change row; not while only one row is shown. */
@@ -896,18 +1048,21 @@ private class StripLayout(
         val row = rows[index]
         val ms = window.exactMsAt(at.x)
         fun inside(start: Long, end: Long) = ms >= start && ms < end
-        fun onHandle(id: String, start: Long, end: Long): Boolean {
+        // The grip as each bar draws it, so the rest of a selected bar lifts: a
+        // clip's handle is wider than an effect's, and measured with a clip's the
+        // strip beside an effect's grip neither trimmed nor lifted.
+        fun onHandle(id: String, start: Long, end: Long, gripPx: Float): Boolean {
             if (id != state.selectedClipId) return false
             val startPx = window.xPx(start)
             val endPx = window.xPx(end)
-            val grip = minOf(handlePx, (endPx - startPx) / 3f)
+            val grip = minOf(gripPx, (endPx - startPx) / 3f)
             return at.x < startPx + grip || at.x > endPx - grip
         }
 
         if (row.group == Group.Effects) {
             val effect = state.effects.firstOrNull { effectRows[it.id] == row.index && inside(it.startMs, it.endMs) }
                 ?: return null
-            if (onHandle(effect.id, effect.startMs, effect.endMs)) return null
+            if (onHandle(effect.id, effect.startMs, effect.endMs, effectGripPx)) return null
             return Lift(
                 effect.id, Group.Effects, effect.label, effect.color, effect.startMs,
                 effect.endMs - effect.startMs, row.index, ms - effect.startMs, at
@@ -920,7 +1075,7 @@ private class StripLayout(
             Group.Words -> state.textClips.firstOrNull { wordRows[it.id] == row.index && inside(it.timelineStartMs, it.timelineEndMs) }
             Group.Effects -> null
         } ?: return null
-        if (onHandle(clip.id, clip.timelineStartMs, clip.timelineEndMs)) return null
+        if (onHandle(clip.id, clip.timelineStartMs, clip.timelineEndMs, handlePx)) return null
         val (accent, from) = when (row.group) {
             Group.Overlay -> Concept.Overlay.accent to clip.layer
             Group.Main -> Concept.Video.accent to TimelineLanes.mainIndexOf(state.baseVideoClips, clip.id)
@@ -934,11 +1089,16 @@ private class StripLayout(
     }
 
     /**
-     * Where [lift] would land. The main track by the finger's place among the
-     * shots; everything else at the time the finger says, snapped, on the row
-     * the finger is over - within its own track: carried above the track's
-     * first row it goes to the top one (a new top layer, for an overlay), below
-     * the last onto a new row (the lowest layer, for an overlay).
+     * Where [lift] would land, worked out the way the edit will work it out on
+     * the drop, so what is drawn under the finger is where it goes. The main
+     * track by the finger's place among the shots; everything else at the time
+     * the finger says, snapped, on the row the finger is over - within its own
+     * track: carried above the track's first row it goes to the top one (a new
+     * top layer, for an overlay), below the last onto a new row (the lowest
+     * layer, for an overlay) - and then as the edit has it: an overlay onto a
+     * layer only where it is free, else along its own and stopped by what is in
+     * the way; a sound or a line onto the nearest row free for it; words kept
+     * inside the picture and an effect inside the edit.
      */
     fun resolve(lift: Lift): Landing {
         val fingerMs = window.exactMsAt(lift.finger.x)
@@ -955,80 +1115,91 @@ private class StripLayout(
                 heightPx = rowHeightsPx.getOrElse(mainIndex) { 0f }
             )
         }
-        val snap = if (!lift.moved) Snap(lift.startMs, null)
-        else TimelineLanes.snapSpan(wanted, lift.lengthMs, TimelineLanes.snapTargets(state, markers, setOf(lift.id)), snapMs)
 
         val own = rows.indices.filter { rows[it].group == lift.group }
         val current = own.firstOrNull { rows[it].index == lift.fromRow } ?: own.firstOrNull() ?: 0
         val fallbackTop = rowTopOnScreenPx(current) ?: rulerPx
         val fallbackHeight = rowHeightsPx.getOrElse(current) { 0f }
-        if (!vertical || !lift.moved || lift.group == Group.Effects || own.isEmpty()) {
-            return Landing(snap.startMs, lift.fromRow, snap.lineMs, null, fallbackTop, fallbackHeight)
+        // Not moved yet: exactly where it was - a snap target a few pixels off its
+        // own edge would otherwise move a clip that was only pressed.
+        if (!lift.moved) return Landing(lift.startMs, lift.fromRow, null, null, fallbackTop, fallbackHeight)
+
+        val snap = TimelineLanes.snapSpan(
+            wanted, lift.lengthMs, TimelineLanes.snapTargets(state, markers, setOf(lift.id)), snapMs
+        )
+        val asked = askedRow(lift, own)
+
+        // Where to draw the track's row [index] (in its own terms); a new one
+        // straddles the edge of the track it will open at.
+        fun drawnAt(index: Int, above: Boolean): Pair<Float, Float> {
+            val shown = own.firstOrNull { rows[it].index == index }
+            if (shown != null) return (rowTopOnScreenPx(shown) ?: fallbackTop) to rowHeightsPx[shown]
+            if (own.isEmpty()) return fallbackTop to fallbackHeight
+            val edge = if (above) own.first() else own.last()
+            val height = maxOf(rowHeightsPx[edge], fallbackHeight)
+            val boundary = tops[if (above) edge else edge + 1] + rulerPx - rowScroll()
+            return (boundary - height / 2f) to height
         }
 
-        val y = contentY(lift.finger.y)
-        val over = rowIndexAtContent(y)
-        val firstTop = tops[own.first()]
-        val lastBottom = tops[own.last() + 1]
-        var target: Int
-        var topPx: Float
-        var heightPx: Float
-        when {
-            over != null && over in own -> {
-                target = rows[over].index
-                topPx = rowTopOnScreenPx(over) ?: fallbackTop
-                heightPx = rowHeightsPx[over]
+        val startMs: Long
+        val row: Int
+        val drawn: Pair<Float, Float>
+        when (lift.group) {
+            Group.Effects -> {
+                // As moveEffect keeps it: whole, and inside the edit.
+                startMs = snap.startMs.coerceIn(0L, (state.durationMs - lift.lengthMs).coerceAtLeast(0L))
+                row = lift.fromRow
+                drawn = fallbackTop to fallbackHeight
             }
-            y < firstTop -> {
-                // Above the track.
-                if (lift.group == Group.Overlay) {
-                    target = minOf(rows[own.first()].index + 1, MAX_LAYER)
-                    if (target == rows[own.first()].index) {
-                        topPx = rowTopOnScreenPx(own.first()) ?: fallbackTop
-                        heightPx = rowHeightsPx[own.first()]
-                    } else {
-                        heightPx = rowHeightsPx[own.first()]
-                        topPx = firstTop + rulerPx - rowScroll() - heightPx / 2f
-                    }
-                } else {
-                    target = rows[own.first()].index
-                    topPx = rowTopOnScreenPx(own.first()) ?: fallbackTop
-                    heightPx = rowHeightsPx[own.first()]
-                }
+            Group.Overlay -> {
+                val placed = state.withClipPlaced(lift.id, snap.startMs, asked).clips.firstOrNull { it.id == lift.id }
+                startMs = placed?.timelineStartMs ?: lift.startMs
+                row = placed?.layer ?: lift.fromRow
+                // Overlay rows are drawn top layer first, so a new layer opens above them.
+                drawn = if (!vertical) fallbackTop to fallbackHeight
+                else drawnAt(row, above = own.isNotEmpty() && row > rows[own.first()].index)
             }
             else -> {
-                // Below the track.
-                if (lift.group == Group.Overlay) {
-                    target = rows[own.last()].index
-                    topPx = rowTopOnScreenPx(own.last()) ?: fallbackTop
-                    heightPx = rowHeightsPx[own.last()]
-                } else {
-                    // A row of its own below the rest - unless it already has one:
-                    // alone on the last row, a new row is the row it is on.
-                    val rowsOf = if (lift.group == Group.Sound) soundRows else wordRows
-                    val alone = lift.fromRow == rows[own.last()].index && rowsOf.count { it.value == lift.fromRow } <= 1
-                    if (alone) {
-                        target = lift.fromRow
-                        topPx = fallbackTop
-                        heightPx = fallbackHeight
-                    } else {
-                        target = rows[own.last()].index + 1
-                        heightPx = maxOf(rowHeightsPx[own.last()], fallbackHeight)
-                        topPx = lastBottom + rulerPx - rowScroll() - heightPx / 2f
-                    }
+                val words = lift.group == Group.Words
+                startMs = if (!words) snap.startMs.coerceAtLeast(0L) else {
+                    // As placeClip keeps a line: whole, and inside the picture.
+                    val picture = state.pictureEndMs ?: state.videoClips.maxOfOrNull { it.timelineEndMs } ?: Long.MAX_VALUE
+                    lift.startMs + EditRules.clampedShift(
+                        lift.startMs, lift.startMs + lift.lengthMs, snap.startMs - lift.startMs, picture
+                    )
                 }
+                val items = (if (words) state.textClips else state.audioClips)
+                    .map { LaneItem(it.id, it.timelineStartMs, it.timelineEndMs, it.layer) }
+                row = TimelineLanes.placedRow(items, lift.id, asked, startMs)
+                drawn = if (!vertical) fallbackTop to fallbackHeight else drawnAt(row, above = false)
             }
         }
-        // An overlay only changes layer onto one that is free for it there; the
-        // model moves it along its own row otherwise, so that is where it is drawn.
-        if (lift.group == Group.Overlay && target != lift.fromRow &&
-            !state.layerIsFree(target, snap.startMs, snap.startMs + lift.lengthMs, lift.id)
-        ) {
-            target = lift.fromRow
-            topPx = fallbackTop
-            heightPx = fallbackHeight
+        // The line only where the edge really went: a snap that the picture's end
+        // or a neighbouring overlay then moved it off is not where it lands.
+        return Landing(startMs, row, snap.lineMs.takeIf { startMs == snap.startMs }, null, drawn.first, drawn.second)
+    }
+
+    /** The row the finger asks for, in the track's own terms: see [resolve]. */
+    private fun askedRow(lift: Lift, own: List<Int>): Int {
+        if (!vertical || lift.group == Group.Effects || own.isEmpty()) return lift.fromRow
+        val y = contentY(lift.finger.y)
+        val over = rowIndexAtContent(y)
+        return when {
+            over != null && over in own -> rows[over].index
+            y < tops[own.first()] ->
+                // Above the track: a new top layer for an overlay, the top row otherwise.
+                if (lift.group == Group.Overlay) minOf(rows[own.first()].index + 1, MAX_LAYER)
+                else rows[own.first()].index
+            // Below it: the lowest layer - never the main track (see withClipPlaced).
+            lift.group == Group.Overlay -> rows[own.last()].index
+            else -> {
+                // A row of its own below the rest - unless it already has one:
+                // alone on the last row, a new row is the row it is on.
+                val rowsOf = if (lift.group == Group.Sound) soundRows else wordRows
+                val alone = lift.fromRow == rows[own.last()].index && rowsOf.count { it.value == lift.fromRow } <= 1
+                if (alone) lift.fromRow else rows[own.last()].index + 1
+            }
         }
-        return Landing(snap.startMs, target, snap.lineMs, null, topPx, heightPx)
     }
 }
 
@@ -1336,7 +1507,9 @@ private fun Lane(
             }
 
             if (clips.isEmpty() && onAddMedia != null) {
-                AddMedia(x = window.xDp(0L).dp, onClick = onAddMedia)
+                // Beside the playhead, where the eye is: at zero it was off screen whenever
+                // sound or words ran on past where the picture had been.
+                AddMedia(x = window.xDp(window.centreMs.roundToLong()).dp, onClick = onAddMedia)
             }
         }
     }
@@ -1384,7 +1557,7 @@ private fun BoxScope.GapMark(gap: MainGap, window: TimelineWindow, onClose: ((St
     }
 }
 
-/** The main track with nothing on it: the one thing to do next, where the edit begins. */
+/** The main track with nothing on it: the one thing to do next, where the playhead is. */
 @Composable
 private fun BoxScope.AddMedia(x: Dp, onClick: () -> Unit) {
     Row(
@@ -1651,7 +1824,7 @@ private fun ClipView(
         // chose - it is the edge of the view, not the edge of the shot.
         if (selected && headVisible) {
             TrimHandle(accent, handleWidth, Alignment.CenterStart, window,
-                onStart = { trims.begin(clip.id, true) },
+                onStart = { trims.begin(clip.id, true, latestClip) },
                 onTravel = { anchor, travel -> trims.clip(anchor, true, travel) },
                 anchor = { latestClip },
                 onEnd = trims.end
@@ -1659,7 +1832,7 @@ private fun ClipView(
         }
         if (selected && tailVisible) {
             TrimHandle(accent, handleWidth, Alignment.CenterEnd, window,
-                onStart = { trims.begin(clip.id, false) },
+                onStart = { trims.begin(clip.id, false, latestClip) },
                 onTravel = { anchor, travel -> trims.clip(anchor, false, travel) },
                 anchor = { latestClip },
                 onEnd = trims.end
@@ -1805,7 +1978,7 @@ private fun EffectBar(
         }
         if (selected && headVisible) {
             TrimHandle(effect.color, grip, Alignment.CenterStart, window,
-                onStart = { trims.begin(effect.id, true) },
+                onStart = { trims.begin(effect.id, true, null) },
                 onTravel = { anchor, travel -> trims.effect(anchor, true, travel) },
                 anchor = { latestEffect },
                 onEnd = trims.end
@@ -1813,7 +1986,7 @@ private fun EffectBar(
         }
         if (selected && tailVisible) {
             TrimHandle(effect.color, grip, Alignment.CenterEnd, window,
-                onStart = { trims.begin(effect.id, false) },
+                onStart = { trims.begin(effect.id, false, null) },
                 onTravel = { anchor, travel -> trims.effect(anchor, false, travel) },
                 anchor = { latestEffect },
                 onEnd = trims.end
@@ -1872,6 +2045,19 @@ private fun <T> BoxScope.TrimHandle(
     val latestTravel by rememberUpdatedState(onTravel)
     val latestAnchor by rememberUpdatedState(anchor)
     val latestEnd by rememberUpdatedState(onEnd)
+    // A handle taken off the screen mid-drag - its clip scrolled out of the drawn
+    // window, or its row folded away - has its gesture cancelled without
+    // onDragCancel running, and the strip went on believing a trim was under way:
+    // playback held, the grey stretch and the snap line left drawn.
+    val dragging = remember { booleanArrayOf(false) }
+    DisposableEffect(Unit) {
+        onDispose {
+            if (dragging[0]) {
+                dragging[0] = false
+                latestEnd()
+            }
+        }
+    }
     Box(
         modifier = Modifier
             .align(alignment)
@@ -1885,10 +2071,11 @@ private fun <T> BoxScope.TrimHandle(
                     onDragStart = {
                         travelMs = 0.0
                         from = latestAnchor()
+                        dragging[0] = true
                         latestStart()
                     },
-                    onDragEnd = { from = null; latestEnd() },
-                    onDragCancel = { from = null; latestEnd() }
+                    onDragEnd = { from = null; dragging[0] = false; latestEnd() },
+                    onDragCancel = { from = null; dragging[0] = false; latestEnd() }
                 ) { change, dragAmount ->
                     change.consume()
                     travelMs += latestWindow.msForPx(dragAmount)

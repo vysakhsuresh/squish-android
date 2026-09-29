@@ -242,7 +242,14 @@ data class TimelineState(
     /** Each sound file's waveform, by URI, drawn on its clips. */
     val waveforms: Map<String, com.squish.app.media.audio.Waveform> = emptyMap(),
     /** The effects library's placements, on a lane of their own. */
-    val effects: List<EffectSpan> = emptyList()
+    val effects: List<EffectSpan> = emptyList(),
+    /**
+     * Where the picture ends, which words are kept inside (see
+     * `EditRules.clampedShift`). The editor's own figure, because with no video
+     * clips it is not something the clips here can say; null for "the end of
+     * the last video clip".
+     */
+    val pictureEndMs: Long? = null
 ) {
     val videoClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Video }.sortedBy { it.timelineStartMs }
     /** The base picture - the cuts-only spine of the edit. */
@@ -445,7 +452,9 @@ fun TimelineState.withGapClosed(clipId: String): TimelineState {
  *
  * For a sound the row is only where it is drawn, kept in its [Clip.layer] as a
  * preference (see [TimelineLanes.rows]); every other sound's preference is set to
- * the row it is shown on now, so nothing else changes row by itself.
+ * the row it is shown on now, so nothing else changes row by itself, and the
+ * moved one goes to the nearest row free for it there (see
+ * [TimelineLanes.preferencesAfterMove]).
  *
  * The main track reorders instead ([withClipReordered]); words live in the
  * editor's own list and are placed there.
@@ -468,7 +477,8 @@ fun TimelineState.withClipPlaced(clipId: String, startMs: Long, row: Int): Timel
             val prefs = TimelineLanes.preferencesAfterMove(
                 sounds.map { LaneItem(it.id, it.timelineStartMs, it.timelineEndMs, it.layer) },
                 clipId,
-                row
+                row,
+                start
             )
             val next = copy(
                 clips = clips.map { c ->

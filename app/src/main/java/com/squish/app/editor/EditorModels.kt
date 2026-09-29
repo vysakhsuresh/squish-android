@@ -725,7 +725,8 @@ fun EditorUiState.toTimeline(): TimelineState {
         waveforms = audioWaveforms,
         effects = effects.map { e ->
             EffectSpan(e.id, e.kind.label, e.startMs, e.endMs, e.kind.icon, e.kind.color)
-        }
+        },
+        pictureEndMs = trimmedDurationMs
     )
 }
 
