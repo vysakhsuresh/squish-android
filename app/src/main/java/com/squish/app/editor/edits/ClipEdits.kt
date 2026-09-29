@@ -22,6 +22,12 @@ import com.squish.app.timeline.withClipTrimmed
 import com.squish.app.timeline.withOverlayGeometry
 import com.squish.app.timeline.withPlacementReset
 import com.squish.app.timeline.withSplitAtPlayhead
+import com.squish.app.timeline.LaneItem
+import com.squish.app.timeline.TimelineLanes
+import com.squish.app.timeline.withClipPlaced
+import com.squish.app.timeline.withClipReordered
+import com.squish.app.timeline.withGapClosed
+import com.squish.app.timeline.withClipRetimed
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -118,44 +124,11 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     private fun retime(clipId: String, ramp: SpeedRamp) {
         mutateTimeline { timeline ->
             val target = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+            // The main track ripples in the model, joins and all (see withClipRetimed).
+            if (target.isMain) return@mutateTimeline timeline.withClipRetimed(clipId, ramp)
             val updated = timeline.clips.map { if (it.id == clipId) it.copy(speedRamp = ramp) else it }
-            timeline.copy(clips = resequenceAfterRetime(updated, target))
+            timeline.copy(clips = TimelineLanes.rippleAfterRetime(updated, target, TOUCHING_MS))
         }
-    }
-
-    /**
-     * Re-lays the clips that shared a lane with the retimed one.
-     *
-     * Only the ones after it, only on its own layer and kind, and only when they
-     * were butted up against what came before - a clip the editor deliberately
-     * placed in a gap stays where it was put. Anything else would make a speed
-     * change silently rearrange an edit someone had already timed by hand.
-     */
-    private fun resequenceAfterRetime(clips: List<Clip>, target: Clip): List<Clip> {
-        val lane = clips
-            .filter { it.kind == target.kind && it.layer == target.layer }
-            .sortedBy { it.timelineStartMs }
-        val startIndex = lane.indexOfFirst { it.id == target.id }
-        if (startIndex < 0) return clips
-
-        val moved = HashMap<String, Long>()
-        // Where the retimed clip now ends, and where it used to. The first is what
-        // the followers are moved to; the second is what decides which of them
-        // were following in the first place.
-        var cursor = lane[startIndex].timelineEndMs
-        var previousEnd = target.timelineEndMs
-
-        for (i in startIndex + 1 until lane.size) {
-            val next = lane[i]
-            // A gap the editor put there is part of the edit. Only a butt cut,
-            // within a frame or so, is treated as "follows on from".
-            if (next.timelineStartMs - previousEnd > TOUCHING_MS) break
-            moved[next.id] = cursor
-            previousEnd = next.timelineEndMs
-            cursor += next.durationMs
-        }
-
-        return clips.map { clip -> moved[clip.id]?.let { clip.copy(timelineStartMs = it) } ?: clip }
     }
 
     /**
@@ -364,8 +337,9 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     /**
      * Adds videos and photos to the main track at the playhead - on the nearer cut
      * of the shot under it, never inside one - and moves everything after along
-     * to make room. The way a picked clip lands in CapCut; the append above is
-     * what the strip's "+" at the end of the track means.
+     * to make room. The way a picked clip lands in CapCut, and what the video
+     * track's button and "Add media" do: with the playhead fixed in the middle of
+     * the strip, an append landed off screen with nothing to say where it went.
      */
     fun insertSourcesAtPlayhead(uris: List<Uri>) = addVideoSources(uris, atPlayhead = true)
 
@@ -401,8 +375,17 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         }
     }
 
-    /** A blank - plain black, the edit's own shape - at the end of the video track. */
-    fun addBlankClip() {
+    /**
+     * A blank - plain black, the edit's own shape - put into the main track at
+     * the playhead, the way a picked clip goes in (see [insertSourcesAtPlayhead]),
+     * and selected. It used to go on the end of the track: with the playhead
+     * fixed in the middle of the strip, that was usually off screen, and nothing
+     * showed that anything had happened.
+     */
+    fun insertBlankAtPlayhead() {
+        // Where the playhead was when it was asked for, not where it has got to
+        // by the time the black frame has been rendered.
+        val at = _state.value.playheadMs
         viewModelScope.launch {
             _state.update { it.copy(preparingStills = it.preparingStills + 1) }
             try {
@@ -412,7 +395,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     _state.update { it.copy(failure = SquishError.Unknown(null)) }
                     return@launch
                 }
-                addSources(listOf(StillSource(made, "Blank")), failedAny = false)
+                addSources(listOf(StillSource(made, "Blank")), failedAny = false, at = at)
             } finally {
                 // After it is placed, for the reason given in addVideoClips.
                 _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
@@ -507,16 +490,89 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         if (base.none { it.id == clipId }) return
         val order = EditRules.reordered(base.map { it.id }, clipId, index)
         if (order == base.map { it.id }) return
-        record("Reorder") {
-            mutateTimeline { timeline ->
-                // Placeholder starts in the new order; rippleVideo lays them out for real.
-                val rank = order.withIndex().associate { (i, id) -> id to i.toLong() }
-                timeline.copy(
-                    clips = timeline.clips.map { c -> rank[c.id]?.let { c.copy(timelineStartMs = it) } ?: c }
-                ).rippleVideo()
-            }
+        // The model's own reorder, which keeps any spacing an old draft's shots
+        // had from each other. Laying the track out from scratch closed every gap
+        // in the edit on a reorder, and slid the shots after them out from under
+        // the sound placed against them.
+        record("Reorder") { mutateTimeline { it.withClipReordered(clipId, index) } }
+    }
+
+    /**
+     * A clip carried on the strip and let go: to start at [startMs] on [row] -
+     * an overlay's layer, or which of the sound or text rows it is drawn on (see
+     * [withClipPlaced]). A line of words keeps inside the picture, as a drag
+     * always kept it; the other lines keep the rows they are shown on, so only
+     * the one carried changes row.
+     */
+    fun placeClip(clipId: String, startMs: Long, row: Int) = record("Move clip") {
+        val text = _state.value.textOverlays.firstOrNull { it.id == clipId }
+        if (text == null) {
+            mutateTimeline { it.withClipPlaced(clipId, startMs, row) }
+            return@record
+        }
+        _state.update { s ->
+            val delta = EditRules.clampedShift(text.startMs, text.endMs, startMs - text.startMs, s.trimmedDurationMs)
+            val prefs = TimelineLanes.preferencesAfterMove(
+                // As the strip draws them (see toTimeline): never shorter than a clip can be.
+                s.textOverlays.map {
+                    LaneItem(it.id, it.startMs, it.startMs + (it.endMs - it.startMs).coerceAtLeast(MIN_CLIP_MS), it.stripRow)
+                },
+                clipId,
+                row,
+                text.startMs + delta
+            )
+            s.copy(
+                textOverlays = s.textOverlays.map { item ->
+                    val lane = prefs[item.id] ?: item.stripRow
+                    if (item.id != clipId) item.copy(stripRow = lane)
+                    else item.copy(startMs = item.startMs + delta, endMs = item.endMs + delta, stripRow = lane)
+                }
+            )
         }
     }
+
+    /**
+     * A trim handle dragged: [clipId]'s head or tail to [edgeMs] on the timeline,
+     * as near as the clip allows. Worked out here, from the clip as it is now,
+     * rather than sent as a step by the strip: a second touch event can arrive
+     * before the first one's trim is on screen, and a step worked out from what
+     * the strip last drew would be applied twice. One drag is one undo step.
+     */
+    fun trimEdgeTo(clipId: String, head: Boolean, edgeMs: Long) {
+        val current = _state.value
+        val text = current.textOverlays.firstOrNull { it.id == clipId }
+        if (text != null) {
+            val delta = edgeMs - if (head) text.startMs else text.endMs
+            if (delta != 0L) trimClip(clipId, if (head) delta else 0L, if (head) 0L else delta)
+            return
+        }
+        val clip = (current.videoClips + current.audioClips).firstOrNull { it.id == clipId } ?: return
+        val (startDelta, endDelta) = TimelineLanes.edgeTrim(clip, head, edgeMs)
+        if (startDelta != 0L || endDelta != 0L) trimClip(clipId, startDelta, endDelta)
+    }
+
+    /**
+     * The head handle of a main-track shot, whose edge stays butted to the shot
+     * before it: the file to start at [sourceInMs] (see TimelineLanes.anchoredHeadIn).
+     */
+    fun trimHeadInTo(clipId: String, sourceInMs: Long) {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return
+        if (sourceInMs != clip.sourceInMs) trimClip(clipId, sourceInMs - clip.sourceInMs, 0L)
+    }
+
+    /** An effect's handle dragged: its head or tail to [edgeMs], worked out from the effect as it is now. */
+    fun trimEffectTo(id: String, head: Boolean, edgeMs: Long) {
+        val effect = _state.value.effects.firstOrNull { it.id == id } ?: return
+        val delta = edgeMs - if (head) effect.startMs else effect.endMs
+        if (delta != 0L) trimEffect(id, if (head) delta else 0L, if (head) 0L else delta)
+    }
+
+    /**
+     * The one gap on the main track before [clipId] closed - an old draft's; the
+     * track has been magnetic since. The shots after it move up; every other gap,
+     * and whatever was placed against the picture, stays where it was.
+     */
+    fun closeGap(clipId: String) = record("Close gap") { mutateTimeline { it.withGapClosed(clipId) } }
 
     // ---- Motion and keyframes ---------------------------------------------------
 

@@ -675,12 +675,20 @@ class EditorViewModel(
             fitLabel = recordingGesture
             fitBase = base
             fitResult = fitted
-            current.copy(
+            val edited = current.copy(
                 videoClips = video,
                 audioClips = next.clips.filter { it.kind == ClipKind.Audio },
                 selectedClipId = next.selectedClipId,
                 effects = fitted
             )
+            // An edit that leaves the edit shorter than where the playhead was -
+            // the last shot deleted with the playhead at the end - brings the
+            // playhead back to the new end, as a jump the preview follows. Left
+            // past it, the strip, which is centred on the playhead, showed empty
+            // track, and the first drag of it leapt to the end.
+            val end = edited.timelineDurationMs
+            if (edited.playheadMs <= end) edited
+            else edited.copy(playheadMs = end, scrubNonce = edited.scrubNonce + 1)
         }
         recomputeEstimate()
     }

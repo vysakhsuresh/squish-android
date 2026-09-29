@@ -39,34 +39,42 @@ run slowmo     "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/SlowMotion.kt" tools/
 run ramp       "$SRC/timeline/SpeedRamp.kt" tools/jvm/RampChecks.kt
 run slice      "$SRC/timeline/SpeedRamp.kt" tools/jvm/SliceChecks.kt
 run timeline   "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
-               "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
+               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
                "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
                tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
                "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
                tools/jvm/stub/Uri.kt tools/jvm/TimelineChecks.kt
 run magnetic   "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
-               "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
+               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
                "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
                tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
                "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
                tools/jvm/stub/Uri.kt tools/jvm/MagneticChecks.kt
 
 run editrules  "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
-               "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
+               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
                "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" "$SRC/editor/EditRules.kt" \
                tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
                "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
                tools/jvm/stub/Uri.kt tools/jvm/EditRulesChecks.kt
 
 run exportplan "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
-               "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
+               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
                "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
                tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
                "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
                tools/jvm/stub/Uri.kt "$SRC/media/ExportPlan.kt" tools/jvm/ExportPlanChecks.kt
 
+run lanes      "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
+               "$SRC/timeline/TimelineWindow.kt" \
+               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
+               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
+               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
+               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
+               tools/jvm/stub/Uri.kt tools/jvm/LaneChecks.kt
+
 run timecode   "$SRC/editor/Timecode.kt" "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
-               "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
+               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
                "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \
                tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt \
                "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \

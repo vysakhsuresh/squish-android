@@ -148,4 +148,31 @@ data class TimelineWindow(
         if (zoomed.pxPerMs <= 0.0) return zoomed
         return zoomed.scrolledTo(anchorMs - anchorPx / zoomed.pxPerMs, durationMs, tailDp)
     }
+
+    /**
+     * Which moment is under a point on screen, unrounded and without the floor at
+     * zero - for following a finger that may be left of the start of the edit.
+     */
+    fun exactMsAt(xPx: Float): Double = scrollMs + msForPx(xPx)
+
+    /** Where the middle of the strip is, as a moment - the fixed playhead's place. */
+    val centreMs: Double get() = scrollMs + msForPx(viewportPx / 2f)
+
+    companion object {
+        /**
+         * The window with [atMs] under the middle of the strip.
+         *
+         * The playhead is fixed there, as it is in every phone editor: the strip
+         * moves under it, so dragging the strip is scrubbing and playing scrolls
+         * it. It used to be a line that travelled across a strip the finger
+         * scrolled separately, which made finding a frame two jobs - scroll to it,
+         * then catch the line and drag it there - and left the playhead off the
+         * screen after any scroll. The scroll can be negative: at the start of the
+         * edit, the half of the strip left of the playhead shows nothing.
+         */
+        fun centredOn(atMs: Double, pixelsPerSecond: Float, density: Float, viewportPx: Int): TimelineWindow {
+            val at = TimelineWindow(pixelsPerSecond, 0.0, density, viewportPx)
+            return at.copy(scrollMs = atMs - at.msForPx(viewportPx / 2f))
+        }
+    }
 }

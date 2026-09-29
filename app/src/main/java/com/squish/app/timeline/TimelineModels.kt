@@ -242,7 +242,14 @@ data class TimelineState(
     /** Each sound file's waveform, by URI, drawn on its clips. */
     val waveforms: Map<String, com.squish.app.media.audio.Waveform> = emptyMap(),
     /** The effects library's placements, on a lane of their own. */
-    val effects: List<EffectSpan> = emptyList()
+    val effects: List<EffectSpan> = emptyList(),
+    /**
+     * Where the picture ends, which words are kept inside (see
+     * `EditRules.clampedShift`). The editor's own figure, because with no video
+     * clips it is not something the clips here can say; null for "the end of
+     * the last video clip".
+     */
+    val pictureEndMs: Long? = null
 ) {
     val videoClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Video }.sortedBy { it.timelineStartMs }
     /** The base picture - the cuts-only spine of the edit. */
@@ -401,6 +408,91 @@ fun TimelineState.withTransition(clipId: String, transition: Transition): Timeli
     if (!clip.isMain) return tagged
     val order = baseVideoClips.map { if (it.id == clipId) it.copy(transitionIn = transition) else it }
     return tagged.layOutMain(order, mainSpacing())
+}
+
+/**
+ * A stretch of the main track with no picture on it: before [clipId], from
+ * [fromMs] to [toMs]. Only a draft from before the track was magnetic has any
+ * (see above), and the strip draws each one so it can be closed by itself.
+ */
+data class MainGap(val clipId: String, val fromMs: Long, val toMs: Long)
+
+/** Every gap on the main track, in order. Empty on any track laid out since it became magnetic. */
+fun TimelineState.mainGaps(): List<MainGap> {
+    val base = baseVideoClips
+    return base.mapIndexedNotNull { i, clip ->
+        val butted = if (i == 0) 0L else base[i - 1].timelineEndMs - overlapInto(clip, base[i - 1])
+        if (clip.timelineStartMs > butted) MainGap(clip.id, butted, clip.timelineStartMs) else null
+    }
+}
+
+/**
+ * The one gap before [clipId] closed, and every other left as it is: the shots
+ * from there on move up by its length, and the spacing kept elsewhere stays.
+ * "Close gaps" closed them all at once, which also slid every later shot out
+ * from under the sound placed against it.
+ */
+fun TimelineState.withGapClosed(clipId: String): TimelineState {
+    val spacing = mainSpacing()
+    if ((spacing[clipId] ?: 0L) <= 0L) return this
+    return layOutMain(baseVideoClips, spacing - clipId)
+}
+
+// ---- Rows on the strip ------------------------------------------------------------
+
+/**
+ * A long-press drop: [clipId] to start at [startMs] on [row].
+ *
+ * For an overlay the row is its layer, which is also which picture is drawn over
+ * which, so it only changes to a layer that is free for the whole clip at its new
+ * time; otherwise the clip moves along its own row as a drag would (see
+ * [withClipMoved]). Never onto the main track - joining it re-lays every shot
+ * after it, which is "Switch to main", not something a drop should do by being
+ * a few pixels low.
+ *
+ * For a sound the row is only where it is drawn, kept in its [Clip.layer] as a
+ * preference (see [TimelineLanes.rows]); every other sound's preference is set to
+ * the row it is shown on now, so nothing else changes row by itself, and the
+ * moved one goes to the nearest row free for it there (see
+ * [TimelineLanes.preferencesAfterMove]).
+ *
+ * The main track reorders instead ([withClipReordered]); words live in the
+ * editor's own list and are placed there.
+ */
+fun TimelineState.withClipPlaced(clipId: String, startMs: Long, row: Int): TimelineState {
+    val clip = clips.firstOrNull { it.id == clipId } ?: return this
+    val start = startMs.coerceAtLeast(0L)
+    return when {
+        clip.isMain -> withClipMoved(clipId, start - clip.timelineStartMs)
+        clip.kind == ClipKind.Video -> {
+            val target = row.coerceIn(1, MAX_LAYER)
+            if (target != clip.layer && layerIsFree(target, start, start + clip.durationMs, clipId)) {
+                copy(clips = clips.map { if (it.id == clipId) it.copy(layer = target, timelineStartMs = start) else it })
+            } else {
+                withClipMoved(clipId, start - clip.timelineStartMs)
+            }
+        }
+        clip.kind == ClipKind.Audio -> {
+            val sounds = audioClips
+            val prefs = TimelineLanes.preferencesAfterMove(
+                sounds.map { LaneItem(it.id, it.timelineStartMs, it.timelineEndMs, it.layer) },
+                clipId,
+                row,
+                start
+            )
+            val next = copy(
+                clips = clips.map { c ->
+                    if (c.kind != ClipKind.Audio) c
+                    else c.copy(
+                        layer = prefs[c.id] ?: c.layer,
+                        timelineStartMs = if (c.id == clipId) start else c.timelineStartMs
+                    )
+                }
+            )
+            if (next.clips == clips) this else next
+        }
+        else -> this
+    }
 }
 
 // ---- Overlay rows ---------------------------------------------------------------
@@ -609,6 +701,21 @@ fun TimelineState.zoomedBy(factor: Float): TimelineState =
  */
 private fun TimelineState.relaidFrom(before: TimelineState, replace: (Clip) -> List<Clip>): TimelineState =
     layOutMain(before.baseVideoClips.flatMap(replace), before.mainSpacing())
+
+/**
+ * A clip at a new speed. On the main track the shots after it ripple with its new
+ * length and keep their joins - a dissolve stays a dissolve. The editor used to
+ * move the followers up to the retimed clip's end itself, which put the next shot
+ * exactly on that end: a transition's overlap was lost from the strip while the
+ * transition stayed set, so the export and the strip disagreed about the join.
+ * Elsewhere the length changes and nothing else moves.
+ */
+fun TimelineState.withClipRetimed(clipId: String, ramp: SpeedRamp): TimelineState {
+    val clip = clips.firstOrNull { it.id == clipId } ?: return this
+    val retimed = clip.copy(speedRamp = ramp)
+    val next = copy(clips = clips.map { if (it.id == clipId) retimed else it })
+    return if (clip.isMain) next.relaidFrom(this) { if (it.id == clipId) listOf(retimed) else listOf(it) } else next
+}
 
 /** Removing a main-track clip closes the hole; anywhere else the hole is the edit's. */
 fun TimelineState.withClipRemoved(clipId: String): TimelineState {

@@ -685,6 +685,7 @@ class ProjectAutosave(context: Context) {
         put("look", item.look.name)
         put("motion", item.motion.name)
         put("sticker", item.sticker)
+        put("stripRow", item.stripRow)
         item.track?.let { t ->
             put("track", JSONArray().apply {
                 t.samples.forEach { sample ->
@@ -931,6 +932,7 @@ class ProjectAutosave(context: Context) {
             look = enumOrNull<TextLook>(json.optString("look")) ?: TextLook.Plain,
             motion = enumOrNull<TextMotion>(json.optString("motion")) ?: TextMotion.None,
             sticker = json.optBoolean("sticker", false),
+            stripRow = json.optInt("stripRow", 0).coerceAtLeast(0),
             track = json.optJSONArray("track")?.let { array ->
                 MotionTrack(
                     (0 until array.length()).mapNotNull { i ->

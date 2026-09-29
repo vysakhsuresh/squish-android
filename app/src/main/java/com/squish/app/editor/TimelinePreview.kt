@@ -187,7 +187,13 @@ fun TimelinePreview(
     LaunchedEffect(voiceEffect) { engine.setVoice(voiceEffect) }
     // The full-screen scrub bar is a finger on the timeline too.
     var barScrubbing by remember { mutableStateOf(false) }
-    LaunchedEffect(scrubbing, barScrubbing) { engine.setScrubbing(scrubbing || barScrubbing) }
+    LaunchedEffect(scrubbing, barScrubbing) {
+        // A finger on the strip stops playback: the strip's middle is the
+        // playhead, and playing on would pull the moment being looked for out
+        // from under the finger. Paused first, so the scrub is served as one.
+        if (scrubbing) engine.pause()
+        engine.setScrubbing(scrubbing || barScrubbing)
+    }
 
     // A deliberate jump - scrubbing the ruler, a nudge - as opposed to the playhead
     // simply advancing. Only the former should move the players.
