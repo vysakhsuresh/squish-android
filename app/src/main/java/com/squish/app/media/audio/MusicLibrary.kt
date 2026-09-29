@@ -6,14 +6,30 @@ import android.net.Uri
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 
 /** A song on the phone, as the music browser lists it. */
 data class PhoneTrack(val uri: Uri, val title: String, val artist: String?, val durationMs: Long)
 
 /**
- * Where music comes from: the tracks Squish composes itself, and the music
- * already on the phone. Nothing here touches the network.
+ * One entry of the music browser as it is remembered - starred, or used
+ * lately - whatever list it came from. [key] says which: `orig:<id>` for a
+ * Squish original, `sfx:<id>` for a sound effect, otherwise a song on the
+ * phone by its address. Title and subtitle are kept with it so the list can
+ * be drawn without asking the media store again.
+ */
+data class MusicPick(val key: String, val title: String, val subtitle: String) {
+    val isOriginal: Boolean get() = key.startsWith("orig:")
+    val isEffect: Boolean get() = key.startsWith("sfx:")
+    val id: String get() = key.substringAfter(':')
+}
+
+/**
+ * Where music comes from: the tracks Squish composes itself, its sound
+ * effects, and the music already on the phone - and which of them were
+ * starred or used lately. Nothing here touches the network.
  */
 object MusicLibrary {
 
@@ -31,6 +47,74 @@ object MusicLibrary {
         val file = File(dir(context), "${style.id}.wav")
         if (!file.exists()) MusicSynth.render(style, file)
         Uri.fromFile(file)
+    }
+
+    /** A sound effect's file, made the first time it is asked for, like a track. */
+    suspend fun effect(context: Context, effect: MusicSynth.Effect): Uri = withContext(Dispatchers.Default) {
+        val file = File(dir(context), "${effect.id}.wav")
+        if (!file.exists()) MusicSynth.renderEffect(effect, file)
+        Uri.fromFile(file)
+    }
+
+    /**
+     * A remembered pick's file: an original or effect rendered as needed, a
+     * phone song by its address. Null for an original or effect that no
+     * longer exists in this build.
+     */
+    suspend fun resolve(context: Context, pick: MusicPick): Uri? = when {
+        pick.isOriginal -> MusicSynth.byId(pick.id)?.let { original(context, it) }
+        pick.isEffect -> MusicSynth.effectById(pick.id)?.let { effect(context, it) }
+        else -> Uri.parse(pick.key)
+    }
+
+    // ---- Starred and recent ----------------------------------------------------
+
+    private const val PREFS = "music"
+    private const val KEY_FAVOURITES = "favourites"
+    private const val KEY_RECENTS = "recents"
+    private const val MAX_RECENTS = 20
+
+    fun favourites(context: Context): List<MusicPick> = readPicks(context, KEY_FAVOURITES)
+    fun recents(context: Context): List<MusicPick> = readPicks(context, KEY_RECENTS)
+
+    fun isFavourite(context: Context, key: String): Boolean = favourites(context).any { it.key == key }
+
+    /** Stars [pick], or unstars it if it was. Returns whether it is starred now. */
+    fun toggleFavourite(context: Context, pick: MusicPick): Boolean {
+        val current = favourites(context)
+        val now = if (current.any { it.key == pick.key }) current.filterNot { it.key == pick.key } else current + pick
+        writePicks(context, KEY_FAVOURITES, now)
+        return now.any { it.key == pick.key }
+    }
+
+    /** Notes that [pick] was added to an edit: it goes to the top of the recent list. */
+    fun noteUsed(context: Context, pick: MusicPick) {
+        val now = listOf(pick) + recents(context).filterNot { it.key == pick.key }
+        writePicks(context, KEY_RECENTS, now.take(MAX_RECENTS))
+    }
+
+    private fun readPicks(context: Context, key: String): List<MusicPick> {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, null) ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { i ->
+                val o = array.optJSONObject(i) ?: return@mapNotNull null
+                val k = o.optString("key").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                MusicPick(k, o.optString("title", "Untitled"), o.optString("subtitle"))
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun writePicks(context: Context, key: String, picks: List<MusicPick>) {
+        val array = JSONArray()
+        picks.forEach { p ->
+            array.put(JSONObject().apply {
+                put("key", p.key)
+                put("title", p.title)
+                put("subtitle", p.subtitle)
+            })
+        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(key, array.toString()).apply()
     }
 
     /**

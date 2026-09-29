@@ -42,9 +42,11 @@ object AudioMixing {
     }
 
     /**
-     * No louder than the source. The preview's players cannot turn a sound up
-     * past its own level, and a file that is louder than what was heard while
-     * editing is not what was mixed.
+     * As loud as the preview can go: an added sound may be turned up to four
+     * times its own level, and the preview boosts the part above the players'
+     * ceiling with a processor of its own (GainProcessor), so a file at this
+     * level is what was heard while editing. The mixer clips to the sample
+     * range, as the preview's processor does.
      */
-    private const val MAX_GAIN = 1f
+    private const val MAX_GAIN = com.squish.app.editor.AudioRules.MAX_SOUND_GAIN
 }

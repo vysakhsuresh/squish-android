@@ -210,6 +210,8 @@ fun EditorToolSheet(
         }
         Tool.Beats -> viewModel.audio::clearBeats
         Tool.Sync -> clip?.let { c -> { viewModel.audio.resetAudioAlignment(c.id) } }
+        Tool.Fade -> clip?.let { c -> { viewModel.audio.clearFades(c.id) } }
+        Tool.Voice -> clip?.let { c -> { viewModel.audio.setClipVoice(c.id, com.squish.app.timeline.VoiceEffect.None) } }
         Tool.Style -> item?.let { i -> { viewModel.text.restyleCaption(i.id, { it.withDefaultStyle() }) } }
         Tool.Strength -> effect?.let { e -> { viewModel.clips.changeEffect(e.id) { it.copy(intensity = DEFAULT_STRENGTH) } } }
         else -> null
@@ -270,6 +272,8 @@ fun EditorToolSheet(
             }
             Tool.Beats -> BeatPanel(state, viewModel)
             Tool.Sync -> clip?.let { AlignPanel(state, it, viewModel) }
+            Tool.Fade -> clip?.let { FadePanel(it, viewModel) }
+            Tool.Voice -> clip?.let { VoicePanel(it, viewModel) }
             Tool.Edit -> item?.let { TextEditPanel(it, viewModel, selectAll = it.id == newLineId) }
             Tool.Style -> item?.let { TextStylePanel(it, viewModel) }
             Tool.Strength -> effect?.let { EffectStrengthPanel(it, viewModel) }

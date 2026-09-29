@@ -37,23 +37,32 @@ import com.squish.app.ui.theme.SquishColors
  * and placing forty of them by ear is an afternoon. Once the grid exists, two
  * things use it: markers, which every snap in the editor already respects, and a
  * razor that cuts the whole track on the bar in one go.
+ *
+ * The beats live on the sound (Clip.beats) as dots that travel with it, the
+ * way CapCut draws them; "Add beat" drops one at the playhead by ear while
+ * listening, which is how most people mark a drop. The density - every beat,
+ * every second, every bar - is a toggle the dots, the markers and the cuts all
+ * read, so what is drawn is what a cut lands on.
  */
 @Composable
 fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
     val beats = state.beats
+    val hasGrid = state.hasBeatGrid
+    val onClip = state.beatClip
 
     PanelSurface(accent = SquishColors.Cyan) {
         PanelHeading(
-            "Beat",
+            "Beats",
             when {
                 beats.running -> "Listening to ${beats.listeningTo}"
-                beats.hasBeats -> "${beats.beatsMs.size} beats in ${beats.clipLabel}"
-                else -> "Find the pulse and cut to it"
+                hasGrid && onClip != null -> "${state.allBeats.size} beats on ${onClip.label} - they move with it"
+                hasGrid -> "${state.allBeats.size} beats on ${beats.clipLabel.ifBlank { "the timeline" }}"
+                else -> "Find the pulse, or tap it in, and cut to it"
             },
             icon = Icons.Filled.GraphicEq,
             accent = SquishColors.Cyan,
             trailing = {
-                if (beats.hasBeats) {
+                if (hasGrid) {
                     Text(
                         "Clear",
                         style = MaterialTheme.typography.labelSmall,
@@ -81,21 +90,28 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 )
             }
 
-            beats.failed && !beats.hasBeats -> {
+            beats.failed && !hasGrid -> {
                 Text(
                     "No pulse found in ${beats.listeningTo}. Speech and ambient sound " +
-                        "often have none — try a track with drums on it.",
+                        "often have none — try a track with drums on it, or tap the beats in by ear.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.Yellow
                 )
-                SquishOutlinedButton(
-                    text = "Try again",
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { viewModel.audio.detectBeats() }
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    SquishOutlinedButton(
+                        text = "Try again",
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.audio.detectBeats() }
+                    )
+                    SquishOutlinedButton(
+                        text = "Add beat",
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.audio.addBeatAtPlayhead() }
+                    )
+                }
             }
 
-            beats.hasBeats -> {
+            hasGrid -> {
                 // A second listen that found nothing leaves the grid it had; it
                 // used to throw that away along with the failed answer.
                 if (beats.failed) {
@@ -105,65 +121,117 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         color = SquishColors.Yellow
                     )
                 }
-                TempoReadout(beats)
+                TempoReadout(state)
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                    SquishOutlinedButton(
-                        text = "÷2",
-                        modifier = Modifier.weight(1f),
-                        onClick = { viewModel.audio.scaleBeats(faster = false) }
-                    )
-                    SquishOutlinedButton(
-                        text = "×2",
-                        modifier = Modifier.weight(1f),
-                        onClick = { viewModel.audio.scaleBeats(faster = true) }
-                    )
-                    SquishOutlinedButton(
-                        text = "Shift bar",
-                        modifier = Modifier.weight(1.4f),
-                        onClick = { viewModel.audio.nudgeDownbeat() }
+                DensityToggle(beats.every) { viewModel.audio.setBeatDensity(it) }
+
+                if (beats.bpm > 0f) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        SquishOutlinedButton(
+                            text = "÷2",
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.audio.scaleBeats(faster = false) }
+                        )
+                        SquishOutlinedButton(
+                            text = "×2",
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.audio.scaleBeats(faster = true) }
+                        )
+                        SquishOutlinedButton(
+                            text = "Shift bar",
+                            modifier = Modifier.weight(1.4f),
+                            onClick = { viewModel.audio.nudgeDownbeat() }
+                        )
+                    }
+                    Text(
+                        "A slow track with busy hi-hats has two defensible tempos, and " +
+                            "two people tapping along will disagree. If it counted at the " +
+                            "wrong level, move it an octave.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SquishColors.TextMuted
                     )
                 }
-                Text(
-                    "A slow track with busy hi-hats has two defensible tempos, and " +
-                        "two people tapping along will disagree. If it counted at the " +
-                        "wrong level, move it an octave.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = SquishColors.TextMuted
-                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    SquishOutlinedButton(
+                        text = "Add beat",
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.audio.addBeatAtPlayhead() }
+                    )
+                    SquishOutlinedButton(
+                        text = "Find again",
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.audio.detectBeats() }
+                    )
+                }
 
                 BeatAction(
                     icon = Icons.Filled.Flag,
                     title = "Snap to the beat",
-                    body = "Drops a marker on every beat. Dragging a clip, setting an " +
+                    body = "Drops a marker on every dot. Dragging a clip, setting an " +
                         "in point and moving a caption all snap to markers already. " +
                         "Markers you placed yourself stay.",
-                    accent = SquishColors.Amber
-                ) { n -> viewModel.audio.markBeats(n) }
+                    accent = SquishColors.Amber,
+                    action = "Mark ${densityName(beats.every)}"
+                ) { viewModel.audio.markBeats() }
 
                 BeatAction(
                     icon = Icons.Filled.ContentCut,
                     title = "Cut on the beat",
                     body = "Razors the main video track at once, cutting every shot " +
-                        "where the beat lands. The music and any overlays stay whole.",
-                    accent = SquishColors.Violet
-                ) { n -> viewModel.audio.cutOnBeats(n) }
+                        "where a dot lands. The music and any overlays stay whole.",
+                    accent = SquishColors.Violet,
+                    action = "Cut ${densityName(beats.every)}"
+                ) { viewModel.audio.cutOnBeats() }
             }
 
             else -> {
                 Text(
                     "Squish listens to the music on the timeline, works out the tempo, " +
-                        "and marks every beat. Then you can snap your cuts to it, or " +
-                        "have it cut the picture on the bar.",
+                        "and puts a dot on every beat. Or play it and tap the beats in " +
+                        "yourself. Then snap your cuts to them, or have it cut the picture on the bar.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.TextSecondary
                 )
-                SquishOutlinedButton(
-                    text = "Find the beat",
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { viewModel.audio.detectBeats() }
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    SquishOutlinedButton(
+                        text = "Find the beat",
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.audio.detectBeats() }
+                    )
+                    SquishOutlinedButton(
+                        text = "Add beat",
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.audio.addBeatAtPlayhead() }
+                    )
+                }
             }
+        }
+    }
+}
+
+private fun densityName(every: Int): String = when (every) {
+    1 -> "every beat"
+    2 -> "every 2nd beat"
+    else -> "every bar"
+}
+
+/**
+ * The density, as the toggle it is: the chip that is on says what the dots
+ * are drawn at and what the two actions below act on. The chips used to be
+ * one-shot buttons dressed as a segmented control, firing on the tap.
+ */
+@Composable
+private fun DensityToggle(every: Int, onChange: (Int) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+        listOf(1 to "Every beat", 2 to "Every 2", 4 to "Every bar").forEach { (n, label) ->
+            SelectableChip(
+                label = label,
+                selected = every == n,
+                accentColor = SquishColors.Cyan,
+                modifier = Modifier.weight(1f),
+                onClick = { onChange(n) }
+            )
         }
     }
 }
@@ -174,11 +242,14 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
  * Confidence is shown because it means something specific: how periodic the audio
  * actually was, not how neatly the beats came out. A spoken-word track will
  * always produce a tidy grid and should not be trusted, and this is the only
- * thing on screen that says so before someone cuts forty clips to it.
+ * thing on screen that says so before someone cuts forty clips to it. A grid
+ * tapped in by hand has no tempo to show, and says so.
  */
 @Composable
-private fun TempoReadout(beats: BeatProgress) {
+private fun TempoReadout(state: EditorUiState) {
+    val beats = state.beats
     val verdict = when {
+        beats.bpm <= 0f -> "Tapped by ear" to SquishColors.TextSecondary
         beats.confidence >= 0.65f -> "Strong pulse" to SquishColors.Cyan
         beats.confidence >= 0.35f -> "Some pulse" to SquishColors.Amber
         else -> "Weak — check it by ear" to SquishColors.Pink
@@ -195,7 +266,7 @@ private fun TempoReadout(beats: BeatProgress) {
     ) {
         Column {
             Text(
-                "${"%.1f".format(beats.bpm)} BPM",
+                if (beats.bpm > 0f) "${"%.1f".format(beats.bpm)} BPM" else "${state.allBeats.size} beats",
                 style = MaterialTheme.typography.headlineSmall,
                 color = SquishColors.TextPrimary
             )
@@ -206,13 +277,15 @@ private fun TempoReadout(beats: BeatProgress) {
             )
         }
         Column(horizontalAlignment = Alignment.End) {
+            if (beats.bpm > 0f) {
+                Text(
+                    "Bar starts on beat ${beats.downbeatOffset + 1}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.TextMuted
+                )
+            }
             Text(
-                "Bar starts on beat ${beats.downbeatOffset + 1}",
-                style = MaterialTheme.typography.labelSmall,
-                color = SquishColors.TextMuted
-            )
-            Text(
-                "${beats.every(4).size} bars",
+                "${AudioRules.chosenBeats(state.allBeats, 4, beats.downbeatOffset).size} bars",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextSecondary
             )
@@ -220,14 +293,15 @@ private fun TempoReadout(beats: BeatProgress) {
     }
 }
 
-/** One thing to do with the grid, at one of three resolutions. */
+/** One thing to do with the grid, at the density chosen above. */
 @Composable
 private fun BeatAction(
     icon: ImageVector,
     title: String,
     body: String,
     accent: Color,
-    onEvery: (Int) -> Unit
+    action: String,
+    onAct: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -258,16 +332,6 @@ private fun BeatAction(
             Text(title, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
         }
         Text(body, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-            listOf(1 to "Every beat", 2 to "Every 2", 4 to "Every bar").forEach { (n, label) ->
-                SelectableChip(
-                    label = label,
-                    selected = false,
-                    accentColor = accent,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onEvery(n) }
-                )
-            }
-        }
+        SquishOutlinedButton(text = action, modifier = Modifier.fillMaxWidth(), onClick = onAct)
     }
 }

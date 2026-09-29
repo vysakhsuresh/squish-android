@@ -295,6 +295,45 @@ should work through it and then delete what holds up.
   empty lane; a PiP moved To main under a camera mute says it is silent there;
   a photo overlay longer than a minute asks before To main renders it.
 
+- **Batch B9 (the audio suite), all of it.** Built on the desktop with no phone
+  attached. The arithmetic - a fade's level at a moment and the two fades
+  sharing a clip, the gain split between a player and its processor, beats on
+  the clip carried through its position and speed curve, loop-to-fit's copies,
+  and what Extract audio detaches - is executed on the JVM
+  (`tools/jvm/AudioRulesChecks.kt`), and the toolbar's new tools in
+  `ToolRulesChecks.kt`; nothing has been heard. Script in `docs/ROADMAP.md` §4
+  under B9, plus what only a device answers: Record asks for the mic on the
+  first press, counts 3-2-1, plays the picture *silently* (every level is
+  held at nothing so the speaker stays out of the take), meters the mic, and
+  Stop - or the end of the edit, or Home - lands a "Voiceover" clip with a mic
+  glyph at the moment it started, selected, with the playhead back on its
+  first word; a take made with a take selected replaces it; the WAV under
+  `files/voice/` plays in the preview and is in the file; a take under way
+  when the editor is left is on the strip afterwards. A fade's wedges are
+  drawn on the clip and heard in the preview (`AudioRules.fadeGain` per tick)
+  and in the file (`FadeProcessor`, after the speed change in the processor
+  chain so it runs on played time - the one placement this leans on); a
+  sound at 300% is louder in the preview (`GainProcessor` in front of its
+  sink) and the same in the file (`AudioMixing` up to 4x), clipping the same
+  way; Robot on a take alone leaves the song alone in both (the voice is the
+  clip's own, in every surface's and every sound player's sink - the global
+  voice is gone, and an old draft's one setting lands on its main-track
+  shots); Extract audio on a shot gives a sound clip under it at the shot's
+  level, voice, speed and fades, mutes the shot, and refuses a photo or a
+  silent file with a message; "Find the beat" puts dots on the song that move
+  when it is dragged and spread when it is slowed, "Add beat" while listening
+  drops one at the playhead, the density chips are a toggle the dots, Mark
+  and Cut all read, and a drag snaps to the dots; auditioning a song pauses
+  the editor (`TransportRequest`, answered once by the preview) and takes
+  audio focus, the editor playing stops the audition, so does a chip switch
+  and Home; Loop to the end of the picture on the Sync sheet butts copies to
+  the picture's end with the fade out on the last; the starred and recent
+  lists survive a restart (SharedPreferences "music"); a refused permission
+  offers Settings; the camera switch is gone on a silent clip; a long song's
+  waveform is drawn to its end (`PcmDecoder.decodePeaks`, one float per 50 ms
+  rather than a ten-minute decode held in memory). Not built, by the plan's
+  own "if budget remains": volume keyframes and ducking under speech.
+
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The

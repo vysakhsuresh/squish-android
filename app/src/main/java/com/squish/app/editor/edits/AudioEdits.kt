@@ -1,26 +1,34 @@
 package com.squish.app.editor.edits
 
 import android.net.Uri
+import com.squish.app.media.MediaCompat
 import com.squish.app.media.SquishError
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.audio.AudioSyncAnalyzer
 import com.squish.app.media.audio.BeatDetector
 import com.squish.app.media.audio.BeatMap
 import com.squish.app.media.audio.PcmDecoder
-import com.squish.app.media.audio.WaveformBuilder
+import com.squish.app.media.audio.VoiceRecorder
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.VoiceEffect
 import com.squish.app.timeline.withSplitAllTracks
-import kotlin.time.Duration.Companion.milliseconds
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.squish.app.editor.*
 
-/** Sound: added tracks, the camera's own audio, the voice, auto-sync, and the beat grid. */
+/**
+ * Sound: added tracks and takes, the camera's own audio, each clip's level,
+ * fades and voice, auto-sync, and the beats.
+ */
 internal class AudioEdits(host: EditHost) : EditArea(host) {
 
     private var syncJob: Job? = null
@@ -71,16 +79,21 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             // A readable file can still carry a codec this phone cannot decode; say
             // so now rather than when the export fails on it.
             checkDecodable(uri)
+            ensureWaveform(uri)
+        }
+    }
 
-            // Cached against the file, not the clip, so splitting a track in two
-            // costs nothing and both halves draw immediately.
-            if (_state.value.audioWaveforms[uri.toString()] == null) {
-                val pcm = PcmDecoder.decodeMono(app, uri, maxDurationMs = 10 * 60_000L)
-                if (pcm != null) {
-                    val wave = WaveformBuilder.build(pcm)
-                    _state.update { it.copy(audioWaveforms = it.audioWaveforms + (uri.toString() to wave)) }
-                }
-            }
+    /**
+     * The waveform of a file, decoded once and cached against the file, not the
+     * clip, so splitting a track in two costs nothing and both halves draw
+     * immediately. The whole file, as peaks: a long song used to stop drawing
+     * at its tenth minute.
+     */
+    fun ensureWaveform(uri: Uri) {
+        if (_state.value.audioWaveforms[uri.toString()] != null) return
+        viewModelScope.launch {
+            val wave = PcmDecoder.decodePeaks(app, uri) ?: return@launch
+            _state.update { it.copy(audioWaveforms = it.audioWaveforms + (uri.toString() to wave)) }
         }
     }
 
@@ -100,6 +113,17 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     private fun updateAudioClip(clipId: String, block: (Clip) -> Clip) {
         _state.update { current ->
             current.copy(audioClips = current.audioClips.map { if (it.id == clipId) block(it) else it })
+        }
+        recomputeEstimate()
+    }
+
+    /** Changes one clip of either kind. Not recorded itself, like [updateAudioClip]. */
+    private fun updateAnyClip(clipId: String, block: (Clip) -> Clip) {
+        _state.update { current ->
+            current.copy(
+                videoClips = current.videoClips.map { if (it.id == clipId) block(it) else it },
+                audioClips = current.audioClips.map { if (it.id == clipId) block(it) else it }
+            )
         }
         recomputeEstimate()
     }
@@ -125,8 +149,90 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         updateAudioClip(clipId) { it.copy(timelineStartMs = playhead) }
     }
 
+    /** A sound's level, up to four times its own (AudioRules.MAX_SOUND_GAIN). */
     fun setAudioClipVolume(clipId: String, volume: Float) = record("Level", gesture = "Level $clipId") {
-        updateAudioClip(clipId) { it.copy(volume = volume.coerceIn(0f, 1f)) }
+        updateAudioClip(clipId) { it.copy(volume = volume.coerceIn(0f, AudioRules.MAX_SOUND_GAIN)) }
+    }
+
+    /**
+     * A sound's fade in, in played milliseconds. The two fades share the clip
+     * (AudioRules.fades): the one being set keeps its value and the other
+     * gives way.
+     */
+    fun setFadeIn(clipId: String, ms: Long) = record("Fade in", gesture = "Fade in $clipId") {
+        updateAnyClip(clipId) { clip ->
+            val (fadeIn, fadeOut) = AudioRules.fades(clip.durationMs, ms, clip.fadeOutMs, changedIn = true)
+            clip.copy(fadeInMs = fadeIn, fadeOutMs = fadeOut)
+        }
+    }
+
+    fun setFadeOut(clipId: String, ms: Long) = record("Fade out", gesture = "Fade out $clipId") {
+        updateAnyClip(clipId) { clip ->
+            val (fadeIn, fadeOut) = AudioRules.fades(clip.durationMs, clip.fadeInMs, ms, changedIn = false)
+            clip.copy(fadeInMs = fadeIn, fadeOutMs = fadeOut)
+        }
+    }
+
+    /** Fade's Reset: both fades off, as one step. */
+    fun clearFades(clipId: String) = record("Fade") {
+        updateAnyClip(clipId) { it.copy(fadeInMs = 0L, fadeOutMs = 0L) }
+    }
+
+    /**
+     * A voice effect on one clip's own sound - a shot's, an overlay's or an
+     * added sound's. It was one setting for the whole edit, on the camera
+     * sound only.
+     */
+    fun setClipVoice(clipId: String, effect: VoiceEffect) = record("Voice") {
+        updateAnyClip(clipId) { it.copy(voice = effect) }
+    }
+
+    /**
+     * A shot's sound as a clip of its own on the sound rows, and the shot
+     * silenced (AudioRules.extracted). Refused, with a reason, for a picture
+     * with no sound to take: a photo, or footage the background check has
+     * found silent.
+     */
+    fun extractAudio(clipId: String) {
+        val current = _state.value
+        val clip = current.videoClips.firstOrNull { it.id == clipId } ?: return
+        val uri = clip.uri ?: current.sourceUri ?: return
+        val silent = clip.isStillPicture ||
+            MediaCompat.cached(uri)?.hasAudio == false ||
+            (uri == current.sourceUri && !current.sourceHasAudio)
+        if (silent) {
+            _state.update { it.copy(failure = SquishError.NoSoundToExtract(clip.label)) }
+            return
+        }
+        val extraction = AudioRules.extracted(clip.copy(uri = uri), UUID.randomUUID().toString())
+        record("Extract audio") {
+            _state.update { s ->
+                s.copy(
+                    videoClips = s.videoClips.map { if (it.id == clipId) extraction.muted else it },
+                    audioClips = s.audioClips + extraction.sound,
+                    selectedClipId = extraction.sound.id
+                )
+            }
+        }
+        recomputeEstimate()
+        ensureWaveform(uri)
+    }
+
+    /**
+     * A sound repeated to the end of the picture (AudioRules.loopToFit), as one
+     * step. Nothing happens - and nothing is recorded - when there is no room.
+     */
+    fun loopToEnd(clipId: String) {
+        val current = _state.value
+        val clip = current.audioClips.firstOrNull { it.id == clipId } ?: return
+        val loop = AudioRules.loopToFit(clip, current.pictureEndMs, MIN_CLIP_MS) { UUID.randomUUID().toString() }
+        if (loop.copies.isEmpty()) return
+        record("Loop to the end") {
+            _state.update { s ->
+                s.copy(audioClips = s.audioClips.map { if (it.id == clipId) loop.first else it } + loop.copies)
+            }
+        }
+        recomputeEstimate()
     }
 
     /**
@@ -239,13 +345,158 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         }
     }
 
-    fun setVoiceEffect(effect: VoiceEffect) = record("Voice") {
-        _state.update { it.copy(voiceEffect = effect) }
-    }
-
     fun setMuteOriginal(muted: Boolean) = record("Camera audio") {
         _state.update { it.copy(muteOriginal = muted) }
         recomputeEstimate()
+    }
+
+    // ---- The transport ----------------------------------------------------------
+
+    /**
+     * Asks the preview to pause - a song about to be auditioned must not play
+     * over the edit - or to play. The preview answers each request once; see
+     * TransportRequest.
+     */
+    fun requestPause() = requestTransport(play = false)
+    fun requestPlay() = requestTransport(play = true)
+
+    private fun requestTransport(play: Boolean) = _state.update {
+        it.copy(transportRequest = TransportRequest(play, (it.transportRequest?.nonce ?: 0L) + 1))
+    }
+
+    // ---- Voiceover ----------------------------------------------------------------
+
+    private val recorder = VoiceRecorder()
+    private var recordJob: Job? = null
+    private val stopRequested = AtomicBoolean(false)
+
+    /**
+     * Records a take over the timeline: a three-second count-in, then the
+     * picture plays - silently, so the speaker is not in the take - while the
+     * mic listens, until [stopVoiceover], the end of the edit, or the app being
+     * put away. The take lands as a sound clip at the moment it started, as
+     * CapCut's does. With a take selected, the new one replaces it.
+     *
+     * Started at the playhead; from the last second of the edit there is
+     * nothing to record over, so it starts from the top, which is what
+     * pressing play there does too.
+     */
+    fun startVoiceover() {
+        val current = _state.value
+        if (current.recording.active) return
+        val replaces = current.audioClips.firstOrNull { it.id == current.selectedClipId && it.isVoiceover }
+        var startMs = (replaces?.timelineStartMs ?: current.playheadMs).coerceAtLeast(0L)
+        if (startMs >= current.trimmedDurationMs - MIN_CLIP_MS) startMs = 0L
+        requestPause()
+        stopRequested.set(false)
+        _state.update {
+            it.copy(
+                playheadMs = startMs,
+                scrubNonce = it.scrubNonce + 1,
+                selectedClipId = null,
+                recording = RecordingState(RecordingState.Phase.Countdown, COUNT_IN, startMs, replacesId = replaces?.id)
+            )
+        }
+        recordJob = viewModelScope.launch {
+            for (n in COUNT_IN downTo 1) {
+                if (stopRequested.get()) {
+                    _state.update { it.copy(recording = RecordingState()) }
+                    return@launch
+                }
+                _state.update { it.copy(recording = it.recording.copy(countdown = n)) }
+                delay(1_000)
+            }
+            val opened = withContext(Dispatchers.IO) { recorder.start(VoiceRecorder.dir(app)) }
+            if (!opened) {
+                _state.update { it.copy(recording = RecordingState(failed = true)) }
+                return@launch
+            }
+            _state.update { it.copy(recording = it.recording.copy(phase = RecordingState.Phase.Recording, countdown = 0)) }
+            requestPlay()
+
+            // Until the picture stops - the end of the edit, Home, a tap on it -
+            // or Stop. A transport that never started is given a few seconds
+            // and then the take is kept as it is.
+            var started = false
+            var waited = 0L
+            while (isActive && !stopRequested.get()) {
+                delay(METER_MS)
+                waited += METER_MS
+                val playing = _state.value.isPlaying
+                if (playing) started = true
+                else if (started || waited > START_TIMEOUT_MS) break
+                val level = recorder.level
+                _state.update { it.copy(recording = it.recording.copy(level = level)) }
+            }
+            finishTake()
+        }
+    }
+
+    /** Ends the take; it lands on the strip once the file is closed. */
+    fun stopVoiceover() {
+        stopRequested.set(true)
+    }
+
+    private suspend fun finishTake() {
+        requestPause()
+        val rec = _state.value.recording
+        _state.update { it.copy(recording = it.recording.copy(phase = RecordingState.Phase.Saving, level = 0f)) }
+        val take = withContext(Dispatchers.IO) { recorder.stop() }
+        recordJob = null
+        if (take == null) {
+            _state.update { it.copy(recording = RecordingState(failed = true)) }
+            return
+        }
+        landTake(take, rec)
+    }
+
+    /** The take onto the sound rows, at the moment it started, as one step. */
+    private fun landTake(take: VoiceRecorder.Take, rec: RecordingState) {
+        val uri = Uri.fromFile(take.file)
+        val clip = Clip(
+            kind = ClipKind.Audio,
+            uri = uri,
+            label = "Voiceover",
+            sourceInMs = 0L,
+            sourceOutMs = take.durationMs,
+            timelineStartMs = rec.startMs,
+            sourceDurationMs = take.durationMs
+        )
+        record("Record voiceover") {
+            _state.update { s ->
+                s.copy(
+                    audioClips = s.audioClips.filterNot { it.id == rec.replacesId } + clip,
+                    selectedClipId = clip.id,
+                    // Back on the take's first word, ready to hear it.
+                    playheadMs = rec.startMs,
+                    scrubNonce = s.scrubNonce + 1,
+                    recording = RecordingState()
+                )
+            }
+        }
+        _state.update { it.copy(recording = RecordingState()) }
+        recomputeEstimate()
+        ensureWaveform(uri)
+    }
+
+    /**
+     * The editor is being cleared under a take: the mic is closed and what it
+     * heard so far is put on the strip, on this thread, so the save that
+     * follows keeps it. Nothing recorded means nothing added.
+     */
+    fun finishRecordingNow() {
+        val rec = _state.value.recording
+        if (rec.phase != RecordingState.Phase.Recording) {
+            if (rec.active) _state.update { it.copy(recording = RecordingState()) }
+            return
+        }
+        stopRequested.set(true)
+        val take = recorder.stop()
+        if (take == null) {
+            _state.update { it.copy(recording = RecordingState()) }
+            return
+        }
+        landTake(take, rec)
     }
 
     // ---- Beat detection ---------------------------------------------------------
@@ -264,6 +515,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         if (current.beats.running) return
 
         val target = current.audioClips.firstOrNull { it.id == current.selectedClipId }
+            ?: current.beatClip
             ?: current.audioClips.firstOrNull()
         val uri = target?.uri ?: current.sourceUri ?: return
         val label = target?.label ?: "the camera audio"
@@ -295,55 +547,88 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             }
 
             // A step of its own: the grid is what "Snap to the beat" and "Cut on
-            // the beat" act on, and undo puts the previous one back.
-            val found = map.toProgress(target, label)
+            // the beat" act on, and undo puts the previous one back. The beats
+            // go onto the sound in its file's time - onto every clip of that
+            // file, so a song already cut in two carries them on both halves -
+            // and off every other sound: one grid at a time, as the card says.
+            val every = _state.value.beats.every
+            val found = BeatProgress(
+                finished = true,
+                bpm = map.bpm,
+                confidence = map.confidence,
+                beatsMs = if (target == null) map.beatsMs else emptyList(),
+                downbeatOffset = map.downbeatOffset,
+                clipLabel = label,
+                clipId = target?.id,
+                every = every
+            )
             recordLate(
                 "Find the beat",
-                edit = { it.copy(beats = found) },
+                edit = { snapshot ->
+                    snapshot.copy(
+                        beats = found,
+                        audioClips = snapshot.audioClips.map { clip ->
+                            if (target != null && clip.uri == target.uri) clip.copy(beats = map.beatsMs)
+                            else clip.copy(beats = emptyList())
+                        }
+                    )
+                },
                 alongside = { it.copy(beats = found) }
             )
         }
     }
 
     /**
-     * Beat times moved out of the analysed clip's source clock and onto the
-     * timeline.
-     *
-     * The decoder always starts at the top of the file, so a beat's time is a
-     * source time; a music cue dragged to start ten seconds in has its beats ten
-     * seconds later than the analysis says. Mapping through the clip also puts
-     * them through its speed curve, which is the only way a ramped music bed's
-     * beats land where they are heard.
+     * A beat dropped by ear at the playhead, while listening: onto the sound
+     * under the playhead, in its file's time, so it travels with the sound;
+     * onto the camera-audio grid when no sound is there. Not doubled onto a
+     * beat already within a few frames (AudioRules.withBeat).
      */
-    private fun BeatMap.toProgress(clip: Clip?, label: String): BeatProgress {
-        val onTimeline = if (clip == null) beatsMs else beatsMs.mapNotNull { at ->
-            val source = clip.sourceInMs + at
-            if (source < clip.sourceInMs || source > clip.sourceOutMs) null
-            else clip.timelineAtSource(source)
+    fun addBeatAtPlayhead() {
+        val current = _state.value
+        val at = current.playheadMs
+        val covering = current.audioClips.filter { at >= it.timelineStartMs && at < it.timelineEndMs }
+        val target = covering.firstOrNull { it.id == current.beats.clipId }
+            ?: covering.firstOrNull { it.id == current.selectedClipId }
+            ?: covering.firstOrNull { it.beats.isNotEmpty() }
+            ?: covering.firstOrNull()
+        record("Add beat") {
+            if (target != null) {
+                val source = target.sourceAt(at)
+                updateAudioClip(target.id) { it.copy(beats = AudioRules.withBeat(it.beats, source)) }
+                _state.update { s ->
+                    if (s.beats.clipId != null) s
+                    else s.copy(beats = s.beats.copy(finished = true, clipId = target.id, clipLabel = target.label, beatsMs = emptyList()))
+                }
+            } else {
+                _state.update { s ->
+                    s.copy(beats = s.beats.copy(finished = true, beatsMs = AudioRules.withBeat(s.beats.beatsMs, at)))
+                }
+            }
         }
-        return BeatProgress(
-            finished = true,
-            bpm = bpm,
-            confidence = confidence,
-            beatsMs = onTimeline,
-            downbeatOffset = downbeatOffset,
-            clipLabel = label
-        )
     }
 
-    /** The same pulse counted twice as fast, or half as fast. */
+    /** The density the dots are drawn at and the cuts land on: every beat, every second, or every bar. */
+    fun setBeatDensity(every: Int) = record("Beat density") {
+        _state.update { it.copy(beats = it.beats.copy(every = every.coerceIn(1, 4))) }
+    }
+
+    /** The same pulse counted twice as fast, or half as fast - on the clip, or on the camera grid. */
     fun scaleBeats(faster: Boolean) = record("Beat tempo") {
         _state.update { current ->
             val beats = current.beats
-            if (!beats.hasBeats) return@update current
-            val map = BeatMap(beats.beatsMs, beats.bpm, beats.confidence, beats.downbeatOffset)
-            val scaled = if (faster) map.doubled() else map.halved()
+            if (!current.hasBeatGrid) return@update current
+            val scaledGrid = BeatMap(beats.beatsMs, beats.bpm, beats.confidence, beats.downbeatOffset).let { if (faster) it.doubled() else it.halved() }
             current.copy(
                 beats = beats.copy(
-                    beatsMs = scaled.beatsMs,
-                    bpm = scaled.bpm,
-                    downbeatOffset = scaled.downbeatOffset
-                )
+                    beatsMs = scaledGrid.beatsMs,
+                    bpm = scaledGrid.bpm,
+                    downbeatOffset = scaledGrid.downbeatOffset
+                ),
+                audioClips = current.audioClips.map { clip ->
+                    if (clip.beats.isEmpty()) clip
+                    else clip.copy(beats = BeatMap(clip.beats, beats.bpm, beats.confidence, beats.downbeatOffset).let { if (faster) it.doubled() else it.halved() }.beatsMs)
+                }
             )
         }
     }
@@ -357,31 +642,31 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
 
     fun clearBeats() = record("Clear beat") {
         beatJob?.cancel()
-        _state.update { it.copy(beats = BeatProgress()) }
+        _state.update { it.copy(beats = BeatProgress(), audioClips = it.audioClips.map { c -> c.copy(beats = emptyList()) }) }
     }
 
     /**
-     * Drops a marker on every nth beat, so every edit that already snaps now snaps
-     * to the music: dragging a clip, setting an in point, moving a caption.
+     * Drops a marker on every chosen beat, so every edit that already snaps now
+     * snaps to the music: dragging a clip, setting an in point, moving a caption.
      *
      * Merged with the markers already there. It used to replace them, so a marker
      * put by hand on the one frame that mattered went the moment the grid was
      * snapped to. Markers sitting on the grid are the ones an earlier snap made,
      * and those are replaced - so "every bar" after "every beat" thins them out.
      */
-    fun markBeats(everyN: Int) = record("Mark beats") {
+    fun markBeats() = record("Mark beats") {
         _state.update { current ->
-            val chosen = current.beats.every(everyN)
+            val chosen = current.beatGrid
             if (chosen.isEmpty()) current
             else current.copy(
-                markers = EditRules.mergedBeatMarkers(current.markers, current.beats.beatsMs, chosen, current.frameMs),
+                markers = EditRules.mergedBeatMarkers(current.markers, current.allBeats, chosen, current.frameMs),
                 snapToMarkers = true
             )
         }
     }
 
     /**
-     * Cuts the main video track on every nth beat.
+     * Cuts the main video track on every chosen beat.
      *
      * The picture only. It used to razor every track under each beat - the song
      * included, into one piece per bar, after which finding the beat again heard
@@ -392,9 +677,9 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      * forwards would have every subsequent position measured against a timeline
      * that had already changed underneath it.
      */
-    fun cutOnBeats(everyN: Int) {
+    fun cutOnBeats() {
         val current = _state.value
-        val cuts = current.beats.every(everyN)
+        val cuts = current.beatGrid
             .filter { it > 0 }
             .sortedDescending()
         if (cuts.isEmpty()) return
@@ -433,5 +718,14 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
 
         /** With less room than this left, a sound that does not fit it is backed up to end with the edit; see EditRules.soundLanding. */
         const val LAST_MOMENT_MS = 1_000L
+
+        /** The count-in before a take, in seconds: CapCut's three. */
+        const val COUNT_IN = 3
+
+        /** How often the mic's level reaches the meter, and the transport is checked. */
+        const val METER_MS = 100L
+
+        /** How long a take waits for the picture to start before it is kept as it is. */
+        const val START_TIMEOUT_MS = 5_000L
     }
 }

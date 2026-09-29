@@ -47,13 +47,15 @@ enum class QuickTool(
         actionLabel = "Snip it",
         doneLabel = "Snipped"
     ),
+    // "Extract audio" is what CapCut and every gallery app call this; nobody
+    // looking for it found "Rip". The id stays, as every id does.
     Rip(
         id = "audio",
-        title = "Rip",
+        title = "Extract audio",
         blurb = "Pull the sound out as its own file",
         accent = SquishColors.Amber,
-        actionLabel = "Rip the sound",
-        doneLabel = "Ripped"
+        actionLabel = "Extract the sound",
+        doneLabel = "Extracted"
     ),
     Stitch(
         id = "merge",

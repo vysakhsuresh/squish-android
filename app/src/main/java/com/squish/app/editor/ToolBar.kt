@@ -20,9 +20,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ContentCopy
@@ -41,6 +43,7 @@ import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Sync
@@ -129,6 +132,9 @@ val Tool.icon: ImageVector
         Tool.Track -> Icons.Filled.MyLocation
         Tool.Beats -> Icons.Filled.GraphicEq
         Tool.Sync -> Icons.Filled.Sync
+        Tool.Fade -> Icons.AutoMirrored.Filled.TrendingUp
+        Tool.Voice -> Icons.Filled.RecordVoiceOver
+        Tool.ExtractAudio -> Icons.Filled.Audiotrack
         Tool.Edit -> Icons.Filled.Edit
         Tool.Style -> Icons.Filled.Palette
         Tool.Strength -> Icons.Filled.Tune

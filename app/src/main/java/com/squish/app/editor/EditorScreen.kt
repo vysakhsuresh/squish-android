@@ -277,6 +277,7 @@ fun EditorScreen(
             Tool.Duplicate -> viewModel.clips.duplicateSelected()
             Tool.Delete -> viewModel.clips.deleteSelectedClip()
             Tool.ToOverlay -> state.selectedClipId?.let(viewModel.layers::switchToOverlay)
+            Tool.ExtractAudio -> state.selectedClipId?.let(viewModel.audio::extractAudio)
             Tool.ToMain -> state.videoClips.firstOrNull { it.id == state.selectedClipId }?.let { clip ->
                 // A photo dragged out long is minutes of rendering on the main
                 // track; asked about rather than started with a spinner.
@@ -371,7 +372,13 @@ fun EditorScreen(
                             openToolName = Tool.Transition.name
                         },
                         markers = state.markers,
-                        barMarkers = state.beats.every(4),
+                        barMarkers = AudioRules.chosenBeats(state.allBeats, 4, state.beats.downbeatOffset),
+                        // The dots on the sounds, at the chosen density, and the
+                        // grid the strip snaps to.
+                        beats = state.beatGrid,
+                        soundBeats = { clip ->
+                            AudioRules.chosenBeats(AudioRules.beatsInWindow(clip), state.beats.every, state.beats.downbeatOffset)
+                        },
                         fitNonce = state.fitNonce,
                         onZoomTo = viewModel::setPixelsPerSecond,
                         onReorder = viewModel.clips::reorderClip,
@@ -713,7 +720,9 @@ private fun EditorPreview(
             fallbackUri = sourceUri,
             proxies = state.proxyUris,
             muteOriginal = state.muteOriginal,
-            voiceEffect = state.voiceEffect,
+            // Silent while a take is recorded, so the speaker stays out of the mic.
+            muted = state.recording.active,
+            transportRequest = state.transportRequest,
             originalVolume = state.originalVolume,
             grade = state.grade,
             rotationDegrees = state.rotationDegrees,

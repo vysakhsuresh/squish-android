@@ -33,7 +33,8 @@ import com.squish.app.editor.CropAspect
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
 import com.squish.app.editor.OverlayRules
-import com.squish.app.editor.VoiceEffect
+import com.squish.app.timeline.VoiceEffect
+import com.squish.app.media.audio.FadeProcessor
 import com.squish.app.media.audio.VoiceProcessor
 import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.ChromaKeyEffect
@@ -353,7 +354,6 @@ class VideoProcessor(private val context: Context) {
             !state.fitToSize &&
             state.outputP == OutputSize.ORIGINAL &&
             state.originalVolume >= 0.999f &&
-            state.voiceEffect == VoiceEffect.None &&
             singleFileEffects(state).isEmpty() &&
             state.effects.isEmpty() &&
             state.textOverlays.isEmpty()
@@ -446,12 +446,17 @@ class VideoProcessor(private val context: Context) {
             .setRemoveVideo(state.audioOnly)
             .setEffects(
                 Effects(
-                    buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, level, state.voiceEffect),
+                    buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, level, clip.voice, fadeOf(clip)),
                     ImmutableList.copyOf(effects)
                 )
             )
             .build()
     }
+
+    /** A clip's fades as the processor takes them, or null when it has none. */
+    private fun fadeOf(clip: Clip, startMs: Long = 0L): FadeProcessor? =
+        if (clip.fadeInMs <= 0L && clip.fadeOutMs <= 0L) null
+        else FadeProcessor(clip.fadeInMs, clip.fadeOutMs, clip.durationMs, startMs)
 
     /** Whether an overlay is heard: footage, at a level above nothing. A photo has no sound. */
     private fun overlayHeard(clip: Clip): Boolean = !StillClips.isStill(clip.uri) && clip.volume > 0f
@@ -460,8 +465,8 @@ class VideoProcessor(private val context: Context) {
      * A floating clip: placed on the canvas and retimed (see
      * CompositionFactory.overlayEffects), with its own sound at its own level -
      * which used to be thrown away, so a reaction clip was silent in the file
-     * and the preview alike. No voice effect: that belongs to the camera sound
-     * of the main track, and the preview leaves an overlay's alone too.
+     * and the preview alike - and its own voice and fades, as the preview
+     * plays them.
      *
      * A photo kept as a picture goes in as the image it is.
      */
@@ -489,7 +494,7 @@ class VideoProcessor(private val context: Context) {
             .setRemoveVideo(state.audioOnly)
             .setEffects(
                 Effects(
-                    if (heard) buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, clip.volume.coerceIn(0f, 1f))
+                    if (heard) buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, clip.volume.coerceIn(0f, 1f), clip.voice, fadeOf(clip))
                     else ImmutableList.of(),
                     ImmutableList.copyOf(effects)
                 )
@@ -524,7 +529,7 @@ class VideoProcessor(private val context: Context) {
                     // even one that would change nothing, makes Media3 decode the
                     // sound and cancels the copy.
                     if (plainTrim) ImmutableList.of()
-                    else buildAudioProcessors(SpeedRamp(), 0L, state.originalVolume, state.voiceEffect),
+                    else buildAudioProcessors(SpeedRamp(), 0L, state.originalVolume),
                     if (state.audioOnly) ImmutableList.of() else ImmutableList.copyOf(singleFileEffects(state))
                 )
             )
@@ -633,6 +638,10 @@ class VideoProcessor(private val context: Context) {
         val ramp = if (slice.skippedSourceMs > 0L) clip.speedRamp.sliced(slice.skippedSourceMs, clip.sourceSpanMs)
         else clip.speedRamp
 
+        // The fade runs on the clip's played clock, which the stream joins
+        // part-way when the clip is heard from inside itself.
+        val skippedPlayedMs = if (slice.skippedSourceMs > 0L) clip.speedRamp.outputOffsetAt(slice.skippedSourceMs, clip.sourceSpanMs) else 0L
+
         val sequence = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO))
         if (slice.leadMs > 0L) sequence.addGap(slice.leadMs * 1_000L)
         sequence.addItem(
@@ -641,7 +650,7 @@ class VideoProcessor(private val context: Context) {
                 // A sound's own ramp, which is almost always none. Speed is a
                 // property of a clip now, so a slowed shot no longer drags the
                 // music with it - which was never what anyone wanted.
-                .setEffects(Effects(buildAudioProcessors(ramp, span, clip.volume), ImmutableList.of()))
+                .setEffects(Effects(buildAudioProcessors(ramp, span, clip.volume, clip.voice, fadeOf(clip, skippedPlayedMs)), ImmutableList.of()))
                 .build()
         )
         return sequence.build()
@@ -649,20 +658,22 @@ class VideoProcessor(private val context: Context) {
 
     /**
      * A clip's sound: folded to stereo at its level, retimed by its own ramp,
-     * then given its voice.
+     * faded, then given its voice.
      *
      * The fold-down comes first and is always there, so every input reaches
      * Media3's mixer as mono or stereo whatever it was recorded as (see
      * AudioMixing). SpeedChangingAudioProcessor takes the same provider the
      * picture does, from the same segments, so the two cannot end up different
      * lengths. It preserves pitch, which is the only reason a ramp is usable on
-     * anything with a voice in it.
+     * anything with a voice in it. The fade sits after it, where the stream
+     * runs in played time - the clock the fades are set in (see FadeProcessor).
      */
     private fun buildAudioProcessors(
         ramp: SpeedRamp,
         spanMs: Long,
         volume: Float,
-        voice: VoiceEffect = VoiceEffect.None
+        voice: VoiceEffect = VoiceEffect.None,
+        fade: FadeProcessor? = null
     ): ImmutableList<AudioProcessor> {
         val processors = mutableListOf<AudioProcessor>(AudioMixing.processor(volume))
         if (!ramp.isIdentity && spanMs > 0L) {
@@ -671,6 +682,7 @@ class VideoProcessor(private val context: Context) {
                 processors.add(SpeedChangingAudioProcessor(RampSpeedProvider(segments)))
             }
         }
+        fade?.let { processors.add(it) }
         processors.addAll(voiceProcessors(voice))
         return ImmutableList.copyOf(processors)
     }

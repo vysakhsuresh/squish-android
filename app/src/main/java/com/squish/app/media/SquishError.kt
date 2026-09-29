@@ -227,6 +227,12 @@ sealed class SquishError(
         fix = "Turn off audio-only, or add a separate audio track first."
     )
 
+    class NoSoundToExtract(val name: String) : SquishError(
+        title = "Nothing to extract from $name",
+        detail = "This clip carries no sound to take out: it is a photo, or its file has no audio track.",
+        fix = "Pick a clip with sound, or add music from Sound."
+    )
+
     class CaptionsUnreadable : SquishError(
         title = "No captions in that file",
         detail = "The file opened, but nothing in it looked like subtitle timings.",

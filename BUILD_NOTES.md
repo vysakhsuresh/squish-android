@@ -88,6 +88,23 @@ rather than quietly changing.
 Photos and blanks are rendered with a silent AAC track; if that render fails,
 they are rendered again picture-only, as before 1.11 (`StillClips.render`).
 
+The sound tools (B9) lean on the order of a clip's audio processors and on
+one fact about each side. `buildAudioProcessors` is fold-down and gain, then
+the speed change, then `FadeProcessor`, then the voice: the fade counts the
+frames it writes and turns them into played milliseconds, so it has to sit
+after `SpeedChangingAudioProcessor`, where the stream runs at the strip's
+clock - before it, a song at half speed would fade over half the seconds the
+wedge shows. Both `FadeProcessor` and the preview's `GainProcessor` take
+16-bit PCM only, as `VoiceProcessor` always has: Transformer decodes to
+16-bit and `DefaultAudioSink` hands its processors 16-bit while float output
+is off (the default). A gain past 1 clips to the sample range in both places
+- `ChannelMixingAudioProcessor` constrains its sums - so a level that
+distorts in the file distorts the same in the preview. The preview's boost
+and voice are read from an `AtomicReference` per player on every buffer,
+never a rebuilt sink; a Media3 that stops calling `queueInput` on an
+inactive-looking processor would take the boost with it (`GainProcessor` is
+always active; `FadeProcessor` is only built when a fade is set).
+
 The sections below were written against 1.4/1.5 and are kept for the history;
 where they name a call that no longer exists (`ChannelMixingMatrix.create`,
 `HslAdjustment` for saturation), that call is no longer used.
