@@ -327,3 +327,22 @@ encoding is one builder call away.
 - Unfinished screen: "Exported" badge, "Earlier version · 19 min ago", and a
   "Recently discarded" section (kept 30 days) with restore and delete, all render.
   Small gap: discarded entries show an empty thumbnail box.
+
+## Verified on device, 29 September night (build 66567bd and after)
+
+- New project: multi-select picker (photo + two videos), clips land in picking
+  order, a coach mark on first open. Export 720p of the three: 940x718, 16.5 s,
+  size matches the sheet's promise; progress card with Stop and "carries on
+  with the screen locked"; notification permission asked at first render.
+- Overlay: one-tap Overlay button opens a photo/video picker; the overlay lands
+  on its own row with a bounding box; drag to move and the corner handle to
+  scale both work on the picture. Export with a photo overlay: 16.5 s, 30 fps,
+  overlay in the file where and how it sat in the preview (after 7b51427, which
+  fixed every composited export with sound failing before it started).
+- Text: Add text opens the keyboard at once; fast typing keeps every letter
+  (after 66567bd); closing the keyboard gives the room back.
+- Sound: Add from Squish originals lands at the playhead, selected, visible on
+  its row. Long-press drag moves it and snaps to 0:00. Dragging its end
+  extends it past the picture; export runs to the sound's tail (22.5 s) with
+  audio and video tracks.
+- Timeline rows keep full height on select (after 66567bd).
