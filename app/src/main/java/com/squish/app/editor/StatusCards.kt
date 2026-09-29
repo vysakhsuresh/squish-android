@@ -2,6 +2,7 @@ package com.squish.app.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.squish.app.media.SquishError
 import com.squish.app.ui.components.SquishOutlinedButton
@@ -78,6 +80,10 @@ fun FailureCard(error: SquishError, onDismiss: () -> Unit, modifier: Modifier = 
  * bring it back. The card used to say "Unsaved edit found" about an edit that
  * was saved, and offer "Start fresh" in the same weight as "Restore it", one tap
  * from deleting the only copy.
+ *
+ * Three lines tall, the two answers side by side: the card has a capped share
+ * of the screen above the strip, and stacked buttons put the second one under
+ * the strip, where it could be neither seen nor tapped.
  */
 @Composable
 fun RecoveryBanner(
@@ -92,8 +98,8 @@ fun RecoveryBanner(
             .clip(RoundedCornerShape(12.dp))
             .background(SquishColors.SurfaceElevated)
             .border(1.dp, SquishColors.Amber, RoundedCornerShape(12.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -120,19 +126,34 @@ fun RecoveryBanner(
                 append(".")
             },
             style = MaterialTheme.typography.bodySmall,
-            color = SquishColors.TextSecondary
+            color = SquishColors.TextSecondary,
+            maxLines = 2
         )
 
-        SquishPrimaryButton(
-            text = "Continue",
-            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-            onClick = onContinue
-        )
-        SquishOutlinedButton(
-            text = "Start a new project",
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onStartNew
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SquishPrimaryButton(
+                text = "Continue",
+                modifier = Modifier.weight(1f),
+                onClick = onContinue
+            )
+            // A plain action rather than a second bordered button: the words
+            // are long, and beside the filled one a border made two equals of
+            // an answer and its alternative.
+            Text(
+                "Start a new project",
+                style = MaterialTheme.typography.labelLarge,
+                color = SquishColors.TextSecondary,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onStartNew)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            )
+        }
     }
 }
 

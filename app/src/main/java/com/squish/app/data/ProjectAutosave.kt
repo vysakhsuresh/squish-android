@@ -1015,7 +1015,14 @@ data class ProjectSnapshot(
     /** What the project was named, if it was; see [EditorUiState.projectName]. */
     val name: String? = null
 ) {
-    val totalDurationMs: Long get() = clips.sumOf { it.durationMs }
+    /**
+     * How long the edit runs: where its last picture ends, overlays included -
+     * the same number as EditorUiState.trimmedDurationMs. It used to be the
+     * clips' lengths added up, which counted an overlay on top of the shots it
+     * sits over: the card offered 0:16 of edit for an 8 s video with an 8 s
+     * overlay, a length the timeline could never show.
+     */
+    val totalDurationMs: Long get() = clips.maxOfOrNull { it.timelineEndMs } ?: 0L
 
     /**
      * A single untrimmed clip with nothing else on it - the state a freshly opened
