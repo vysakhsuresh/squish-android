@@ -308,6 +308,52 @@ fun main() {
         }
     }
 
+    // --- What each sequence declares: the clock is primary for every track. -----
+    run {
+        val dissolve = Transition(TransitionType.CrossFade, 500)
+        val heard: (Clip) -> Boolean = { it.id.startsWith("h") }
+        // The device's failing edit: a shot, a photo dissolved onto it, and a
+        // heard overlay over both - so the second roll opens on a still.
+        val edit = listOf(video("a", 0, 5200), video("b", 4700, 3000, transition = dissolve), video("h1", 0, 8363, layer = 1))
+        val layers = ExportPlan.layers(edit)
+        val roles = layers.layers.map { it.role }
+        check(roles == listOf(ExportPlan.Role.Clock, ExportPlan.Role.Overlay, ExportPlan.Role.Base, ExportPlan.Role.Base), "layers $roles")
+        val tracks = ExportPlan.sequenceTracks(layers, videoOut = true, baseAudio = true, heard = heard)
+        check(tracks.size == layers.layers.size, "one answer per layer: ${tracks.size} for ${layers.layers.size}")
+        check(tracks[0] == ExportPlan.Tracks(video = true, sound = true), "the clock does not carry sound while a layer does: ${tracks[0]}")
+        check(tracks.drop(1).all { it == ExportPlan.Tracks(video = true, sound = true) }, "a heard row or a base roll without sound: $tracks")
+        // The invariant the export leans on: any track a layer declares, the
+        // clock declares too, so the clock is the sequence that makes its exporter.
+        fun primaryForAll(answer: List<ExportPlan.Tracks?>) {
+            val clock = answer[0] ?: return
+            answer.drop(1).filterNotNull().forEach { t ->
+                check(!t.sound || clock.sound, "a layer declares sound the clock does not: $answer")
+                check(!t.video || clock.video, "a layer declares picture the clock does not: $answer")
+            }
+        }
+        primaryForAll(tracks)
+        // Camera muted and nothing heard: picture only everywhere, and no silent
+        // track written for nothing.
+        val quiet = ExportPlan.sequenceTracks(layers, videoOut = true, baseAudio = false, heard = { false })
+        check(quiet.all { it == ExportPlan.Tracks(video = true, sound = false) }, "a muted edit declares sound: $quiet")
+        // A photo row over a camera that is on: the row is picture only, the
+        // clock still carries sound for the rolls.
+        val photoRow = ExportPlan.sequenceTracks(layers, videoOut = true, baseAudio = true, heard = { false })
+        check(photoRow[1] == ExportPlan.Tracks(video = true, sound = false), "an unheard row declares sound: ${photoRow[1]}")
+        check(photoRow[0]?.sound == true, "the clock dropped sound with the rolls still carrying it")
+        primaryForAll(photoRow)
+        // A heard row over a muted camera: the clock follows the row.
+        val rowOnly = ExportPlan.sequenceTracks(layers, videoOut = true, baseAudio = false, heard = heard)
+        check(rowOnly[0]?.sound == true && rowOnly[2]?.sound == false, "clock/roll sound with only the row heard: $rowOnly")
+        primaryForAll(rowOnly)
+        // Sound only: no clock, the rolls and the heard row as sound, a silent row left out.
+        val soundOnly = ExportPlan.sequenceTracks(layers, videoOut = false, baseAudio = true, heard = heard)
+        check(soundOnly[0] == null, "a sound-only export built the clock")
+        check(soundOnly.drop(1).all { it == ExportPlan.Tracks(video = false, sound = true) }, "sound-only layers: $soundOnly")
+        val silentRow = ExportPlan.sequenceTracks(layers, videoOut = false, baseAudio = true, heard = { false })
+        check(silentRow[1] == null && silentRow.count { it != null } == layers.baseLayers.size, "sound-only with a silent row: $silentRow")
+    }
+
     // --- When the compositor is needed. -----------------------------------------
     run {
         check(!ExportPlan.needsCompositing(listOf(video("a", 0, 1000), video("b", 1000, 1000))), "butted clips composited")

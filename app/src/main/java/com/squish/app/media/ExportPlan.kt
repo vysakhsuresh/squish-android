@@ -22,7 +22,7 @@ object ExportPlan {
 
     enum class Role {
         /**
-         * The compositor's primary input: one transparent still the length of the
+         * The compositor's primary input: one empty stretch the length of the
          * edit, never visible. Media3 draws the primary on top and takes the
          * output's timestamps from it, and neither is something a real layer should
          * be doing - an overlay as primary would end the export when it ended, and
@@ -190,6 +190,54 @@ object ExportPlan {
      * a blank still for it would be one frame of nothing or none at all.
      */
     const val MIN_GAP_MS = 20L
+
+    // ---- What each sequence declares ---------------------------------------------
+
+    /** The tracks a sequence is declared with. */
+    data class Tracks(val video: Boolean, val sound: Boolean)
+
+    /**
+     * The tracks each of [layers] declares, in the same order; null for a layer
+     * that is not built at all.
+     *
+     * A sound-only export builds the base rolls and the overlay rows that are
+     * [heard], each as sound alone. Otherwise a base roll carries the clips' own
+     * sound when [baseAudio], an overlay row when any clip on it is heard, and
+     * the rest are picture only.
+     *
+     * The clock declares sound whenever any other sequence does. That is not for
+     * anything it plays - it is silent - but for the order Media3 1.11.1 starts
+     * the layers in. The lowest sequence that declares a track is the one that
+     * creates that track's exporter, and a sequence declared with sound whose
+     * first item has none (a photo, a blank, the transparent still that fills an
+     * empty stretch) asks for a sound track to be forced with
+     * checkNotNull(listener.onOutputFormat(...)) - a call that answers null for
+     * as long as the sound exporter does not exist yet. An image decodes in a
+     * moment and a video decoder takes a while, so whichever roll opened on a
+     * still lost that race to whichever row opened on footage as soon as the
+     * edit had enough layers: "Asset loader error" on every export with an
+     * overlay. With the clock declaring sound it is the primary for both tracks;
+     * as Media3's own gap it creates the sound exporter first and the picture's
+     * second, in one go, and no other sequence can get past its own picture
+     * before that - so by the time any of them asks for sound to be forced, the
+     * exporter is there. It is the one order that cannot be lost.
+     */
+    fun sequenceTracks(layers: Layers, videoOut: Boolean, baseAudio: Boolean, heard: (Clip) -> Boolean): List<Tracks?> {
+        val own = layers.layers.map { layer ->
+            val rowHeard = layer.role == Role.Overlay && layer.clips.any(heard)
+            when {
+                !videoOut && layer.role != Role.Base && !rowHeard -> null
+                !videoOut -> Tracks(video = false, sound = true)
+                layer.role == Role.Base && baseAudio -> Tracks(video = true, sound = true)
+                rowHeard -> Tracks(video = true, sound = true)
+                else -> Tracks(video = true, sound = false)
+            }
+        }
+        val anySound = own.any { it?.sound == true }
+        return layers.layers.zip(own) { layer, tracks ->
+            if (layer.role == Role.Clock && tracks != null) tracks.copy(sound = anySound) else tracks
+        }
+    }
 
     // ---- Transitions ---------------------------------------------------------
 

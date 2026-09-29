@@ -89,6 +89,21 @@ sealed class SquishError(
         cause = cause
     )
 
+    /**
+     * A layer could not be opened: Media3's loader for one of the sequences
+     * failed before a frame was read. The one way this happened on the device
+     * was a roll that opened on a still asking for its sound track before the
+     * sound exporter existed (see ExportPlan.sequenceTracks, which now makes
+     * that order impossible); the words say what to change if it ever recurs.
+     */
+    class LayerStartFailed(cause: Throwable? = null) : SquishError(
+        title = "A layer couldn't get started",
+        detail = "One row of the edit - an overlay, or a run of shots with a transition - opens on a photo, a " +
+            "blank or an empty stretch, and the export could not line its sound up with the other rows in time.",
+        fix = "Export again. If it stops the same way, put a video first on that row or take the overlay off.",
+        cause = cause
+    )
+
     /** The compositor refused the layers: transitions, picture-in-picture, or a gap between shots. */
     class LayersFailed(cause: Throwable? = null) : SquishError(
         title = "The layers couldn't be put together",
@@ -388,6 +403,12 @@ sealed class SquishError(
             while (t != null && depth < 8) {
                 val message = t.message.orEmpty()
                 when {
+                    // "Asset loader error" wraps whatever a sequence's loader threw
+                    // before it read a frame; carrying a null check, it is the
+                    // sound-track race, which used to read "Export stopped
+                    // unexpectedly" with the raw message under it.
+                    message == "Asset loader error" ->
+                        return if (t.cause is NullPointerException) LayerStartFailed(throwable) else LayersFailed(throwable)
                     message.contains("does not contain any", ignoreCase = true) ||
                         message.contains("ForceAudioTrack", ignoreCase = true) ||
                         message.contains("ForceVideoTrack", ignoreCase = true) -> return SilentClipInMix(throwable)

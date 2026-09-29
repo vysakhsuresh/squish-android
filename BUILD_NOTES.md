@@ -53,6 +53,21 @@ as a PNG image item (`CompositionFactory.stillItem`), relying on Media3's image
 input keeping the picture's alpha through to the compositor. If a transparent
 logo comes out on black, that is the fact that did not hold.
 
+One more, found on the phone: a sequence declared with sound whose first item
+has none makes `SequenceAssetLoader` force a sound track with
+`checkNotNull(listener.onOutputFormat(...))`, and the listener answers null
+until the lowest sequence declaring sound has made the sound exporter. An image
+loader loses that race to a video decoder ("Asset loader error", a
+NullPointerException in `SequenceAssetLoader.onOutputFormat`). So the clock is
+Media3's own gap, declared with sound whenever any layer is
+(`ExportPlan.sequenceTracks`): a gap loader announces both tracks before it
+starts, and as sequence 0 it makes the sound exporter first and the picture's
+second, so no layer can get past its own picture - and ask for sound - before
+the exporter exists. What that leans on: `GapSignalingAssetLoader` outputs
+audio before video, the primary for a track is the lowest sequence that
+registered one, and the mixer takes its format from the first input registered
+(the gap's 44.1 kHz stereo; every other input is resampled to it).
+
 Photos and blanks are rendered with a silent AAC track; if that render fails,
 they are rendered again picture-only, as before 1.11 (`StillClips.render`).
 

@@ -48,6 +48,14 @@ import java.io.File
  * rather than Media3's gap, so per-input compositor settings are used only to
  * hide the clock and to name the output size.
  *
+ * The clock itself is Media3's own gap, declared with sound whenever any layer
+ * is (ExportPlan.sequenceTracks says why): a gap's loader announces both of its
+ * tracks before it starts and, being the first sequence, makes the sound
+ * exporter and then the picture's, so a layer that opens on a still can never
+ * ask for its sound track before the exporter exists. The gap's frames are
+ * opaque black, and it is hidden the way the still was: LayerSettings draws
+ * input 0 at nothing.
+ *
  * One consequence to know about: the file's colour is set from the primary's
  * first format (VideoSampleExporter), and the primary is the clock, an sRGB
  * still, which Media3 maps to SDR BT.709. A composited export is therefore
@@ -82,7 +90,8 @@ object CompositionFactory {
      *   a roll that opens on a photo, a blank or an empty stretch is filled with
      *   silence rather than refused - which is how a Dissolve between a video and
      *   a photo failed every export on the device.
-     * @param filler a transparent still [durationMs] long, for the empty stretches.
+     * @param filler a transparent still [durationMs] long, for a layer's empty
+     *   stretches. Not the clock's: that is Media3's own gap, see the class note.
      * @param overlaySound whether an overlay clip is heard: footage at a level
      *   above nothing. An overlay row with one such clip carries a sound track
      *   from its first moment, as a base roll does, and every other stretch of
@@ -105,15 +114,13 @@ object CompositionFactory {
             check(layers.layers.firstOrNull()?.role == ExportPlan.Role.Clock) { "the first layer is not the clock" }
         }
         val sequences = mutableListOf<EditedMediaItemSequence>()
-        for (layer in layers.layers) {
-            val heard = layer.role == ExportPlan.Role.Overlay && layer.clips.any(overlaySound)
+        val tracks = ExportPlan.sequenceTracks(layers, videoOut, baseAudio, overlaySound)
+        for ((layer, declared) in layers.layers.zip(tracks)) {
             // Sound only: the base rolls, and the overlay rows that have any.
-            if (!videoOut && layer.role != ExportPlan.Role.Base && !heard) continue
-            val types = when {
-                !videoOut -> setOf(C.TRACK_TYPE_AUDIO)
-                layer.role == ExportPlan.Role.Base && baseAudio -> setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO)
-                heard -> setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO)
-                else -> setOf(C.TRACK_TYPE_VIDEO)
+            if (declared == null) continue
+            val types = buildSet {
+                if (declared.video) add(C.TRACK_TYPE_VIDEO)
+                if (declared.sound) add(C.TRACK_TYPE_AUDIO)
             }
             // A layer with nothing at all in it has no pieces; the clock always
             // has one, the edit's length, however short (ExportPlan.pieces).
@@ -125,8 +132,12 @@ object CompositionFactory {
                     // Sound only, an overlay that makes none is a stretch of silence.
                     piece is ExportPlan.Piece.Item && (videoOut || layer.role == ExportPlan.Role.Base || overlaySound(piece.clip)) ->
                         builder.addItem(editedFor(piece.clip, layer))
-                    videoOut -> builder.addItem(filler(piece.durationMs))
-                    else -> builder.addGap(piece.durationMs * 1_000L)
+                    // The clock, and every stretch of a sound-only export, are
+                    // Media3's own gap. A layer's empty stretch is not: the gap's
+                    // frames are opaque black, and the still is the path the
+                    // device has rendered.
+                    !videoOut || layer.role == ExportPlan.Role.Clock -> builder.addGap(piece.durationMs * 1_000L)
+                    else -> builder.addItem(filler(piece.durationMs))
                 }
             }
             sequences.add(builder.build())
@@ -212,7 +223,7 @@ object CompositionFactory {
      * Every layer arrives at the canvas's size already - fitted in its own chain
      * - so each is drawn one to one. The size is stated rather than left to
      * Media3, whose default is "whatever the first input is", and the first input
-     * is the clock: a 16 pixel still.
+     * is the clock: the 16 pixel black frame Media3 fills a gap with.
      */
     private class LayerSettings(private val canvas: ExportPresets.Resolution?) : VideoCompositorSettings {
 
