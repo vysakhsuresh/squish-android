@@ -1903,7 +1903,28 @@ private fun ClipView(
         }
 
         val labelInset = handleWidth + 3.dp
-        if (width > labelInset * 2 + 16.dp) Column(
+        // A shot shows its frames, which say what it is better than a file
+        // name like "1001319240.jpg" - so, as in CapCut, it wears only its
+        // length, and only where that fits whole. Other clips keep their name,
+        // but not squeezed to a lone "…" chip over the picture.
+        val framesOnly = strip != null
+        if (framesOnly) {
+            if (width > labelInset * 2 + 40.dp) {
+                Text(
+                    text = Timecode.format(clip.durationMs).removeSuffix(".000"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.TextPrimary,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = labelInset, bottom = 3.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(SquishColors.Background.copy(alpha = 0.6f))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                )
+            }
+        } else if (width > labelInset * 2 + 44.dp) Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .widthIn(max = width)

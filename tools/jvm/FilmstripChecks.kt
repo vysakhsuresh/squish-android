@@ -11,8 +11,9 @@ fun main() {
     // A clip narrower than a thumbnail gets no thumbnails. This is the whole
     // defence against a hundred one-tile clips each opening a decoder.
     check("a hairline clip asks for nothing", FilmstripPlan.tileCount(4f) == 0)
-    check("a clip just under the floor asks for nothing", FilmstripPlan.tileCount(55f) == 0)
-    check("a clip at the floor asks for one", FilmstripPlan.tileCount(56f) == 1)
+    check("a clip just under the floor asks for nothing", FilmstripPlan.tileCount(11f) == 0)
+    check("a clip at the floor asks for one", FilmstripPlan.tileCount(12f) == 1)
+    check("a 3 s photo at a fitted zoom (about 30dp) shows its picture", FilmstripPlan.tileCount(30f) == 1)
     check("a 340dp clip asks for ten", FilmstripPlan.tileCount(340f) == 10)
 
     // The cap is what keeps a zoomed-in clip from asking without limit.

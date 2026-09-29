@@ -22,8 +22,13 @@ object FilmstripPlan {
      */
     const val MAX_TILES = 20
 
-    /** Below this a clip is all label and handles; a thumbnail would be a smear. */
-    const val MIN_WIDTH_DP = 56f
+    /**
+     * Below this a clip shows no picture at all. It was 56dp, which at an edit's
+     * fitted zoom left every short shot - a 3 s photo is about 30dp - as a bare
+     * colour block beside neighbours with frames: the strip looked broken. One
+     * frame, cropped to fit, reads at any width a finger can hit.
+     */
+    const val MIN_WIDTH_DP = 12f
 
     /**
      * Cache buckets, in milliseconds.
