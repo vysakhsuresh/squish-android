@@ -810,6 +810,38 @@ should work through it and then delete what holds up.
   once each (SharedPreferences "settings"); the row buttons on the drafts,
   library and merge lists are 48 dp with names, and the tool tiles grow with
   the font rather than clipping.
+  From its review round (built, the drag arithmetic in `TrimRulesChecks.kt`,
+  nothing seen): a fitted export is measured *before* `GallerySaver.retire`
+  deletes the private copy - measured after, an overshoot read as nothing and
+  B14's "Keep this one / Try again, tighter" card could never show; the trim
+  handles read their callbacks through `rememberUpdatedState` and measure a
+  drag from where the handle stood when the finger landed plus the whole
+  travel (`TrimRules.draggedTo`) - each event alone was under half a frame
+  and rounded back, so a slow drag never moved and a fast one snapped back
+  to its start; the bars sit inside the kept stretch with 48 dp targets
+  reaching inward, so both are whole at the full range; a missing file's
+  clips are hatched with a "Missing" badge on the strip and named on the
+  Relink card, a missing sound's Relink opens the file browser on audio, a
+  picked photo is rendered to a still first, relinking the source re-probes
+  the edit's shape (opened on an unreadable source it was measured against
+  0x0 - `applyDraft` now takes the shape from the first main shot that
+  reads), and Undo of a Relink brings the card back (`refreshMissingMedia`
+  over the files found unreadable this session; the source URI itself is not
+  in the snapshot, so it stays on the replacement, which changes nothing the
+  eye can see); the dashboard is a `LazyColumn` with the selection bar pinned
+  above it, a multi-select Delete's Undo restores every project it binned,
+  the card menu offers Preview and "Earlier version" (the ten-minute
+  snapshot, which had become unreachable when projects left the drafts
+  list), one word - Delete - is used for the bin everywhere, the rename
+  dialog is the editor's (`ui/components/RenameDialog.kt`; the sidecar
+  carries `name` apart from `title`, so Save with the field blank leaves an
+  unnamed project unnamed), a Record's file path is saved state so a take
+  survives the camera killing the process, a project staged but not yet
+  saved is listed ("not opened yet") rather than lost, and the loading
+  screen counts the photos still rendering; clearing exports from Settings
+  forgets the library rows that had no gallery copy; a staged project's
+  files count for `referencedUris`, so a purge cannot release a grant it is
+  about to open; Freeze is 3 s again (Settings' photo length is for photos).
 
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry

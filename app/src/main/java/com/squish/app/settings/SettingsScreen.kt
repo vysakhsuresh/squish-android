@@ -120,7 +120,7 @@ private fun DefaultsCard() {
             onPick = { Preferences.setDefaultRatio(context, RATIO_CHOICES[it]); reload() }
         )
 
-        SettingLabel("Photos run for", "How long a photo plays when it is dropped in. Drag its end for more.")
+        SettingLabel("Photos run for", "How long a photo plays when it is dropped in or a project is made from it. Drag its end for more.")
         ChipRow(
             options = Preferences.STILL_CHOICES_MS.map { "${it / 1000} s" },
             selected = Preferences.STILL_CHOICES_MS.indexOf(defaults.stillMs).coerceAtLeast(0),

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -26,12 +27,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
@@ -39,6 +38,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
@@ -49,7 +49,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -62,11 +61,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -74,17 +72,14 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squish.app.data.DraftSummary
 import com.squish.app.data.ProjectRules
 import com.squish.app.editor.GlyphTile
-import com.squish.app.editor.ProjectName
 import com.squish.app.editor.Timecode
 import com.squish.app.editor.glyph
 import com.squish.app.media.IMPORTS_DIR
@@ -94,9 +89,9 @@ import com.squish.app.settings.Preferences
 import com.squish.app.tools.QuickTool
 import com.squish.app.ui.components.CoachMark
 import com.squish.app.ui.components.ConfirmDialog
+import com.squish.app.ui.components.RenameDialog
 import com.squish.app.ui.components.SquishLogoMark
-import com.squish.app.ui.components.SquishOutlinedButton
-import com.squish.app.ui.components.SquishPrimaryButton
+import com.squish.app.ui.components.VideoPreviewSheet
 import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
 import java.io.File
@@ -119,6 +114,10 @@ fun countOf(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${nou
  * a length and when it was last touched, with New project above it taking
  * photos and videos together, and the one-job tools below it for people who
  * just need a smaller file.
+ *
+ * A lazy column, not a scrolling column: every card on it decodes a cover,
+ * one at a time behind ThumbnailCache's lock, so forty cards composed at once
+ * queued forty decodes and the bottom rows waited for the top ones.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -153,119 +152,137 @@ fun HomeScreen(
     }
     // The camera, straight into a project: the take is written under the
     // app's own storage (files/imports), so it is the project's from the start.
-    var recording by remember { mutableStateOf<File?>(null) }
+    // The path is saved state, not remembered: the camera is the one app most
+    // likely to have this process killed behind it, and the result then came
+    // back to a recreated screen that had forgotten which file it asked for -
+    // no project, no message, and the take orphaned under files/imports.
+    var recording by rememberSaveable { mutableStateOf<String?>(null) }
     val record = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { taken ->
-        val file = recording
+        val file = recording?.let(::File)
         recording = null
         if (taken && file != null && file.length() > 0L) viewModel.startProject(listOf(Uri.fromFile(file)), onOpenProject)
         else file?.delete()
     }
 
     var renaming by remember { mutableStateOf<DraftSummary?>(null) }
+    var previewing by remember { mutableStateOf<DraftSummary?>(null) }
+    var reverting by remember { mutableStateOf<DraftSummary?>(null) }
     var deleting by remember { mutableStateOf<List<DraftSummary>>(emptyList()) }
-    // Long-press a card to select; the header then counts and the bin takes
+    // Long-press a card to select; a bar above the grid then counts and takes
     // the set. Back leaves the mode before it leaves the app.
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     val selecting = selected.isNotEmpty()
     BackHandler(enabled = selecting) { selected = emptySet() }
+    // Once, on the first visit: what the one button does with several files.
+    var coach by remember { mutableStateOf(!Preferences.coachSeen(context, Preferences.COACH_HOME)) }
 
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(undoOffer) {
         val offer = undoOffer ?: return@LaunchedEffect
         val result = snackbar.showSnackbar(message = offer.message, actionLabel = "Undo", withDismissAction = true)
-        if (result == SnackbarResult.ActionPerformed) viewModel.restoreDraft(offer.entry)
+        if (result == SnackbarResult.ActionPerformed) viewModel.restoreAll(offer.entries)
         viewModel.dismissUndoOffer()
     }
     DisposableEffect(Unit) { onDispose { viewModel.dismissUndoOffer() } }
 
     Scaffold(containerColor = SquishColors.Background, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(22.dp)
-        ) {
-            Spacer(modifier = Modifier.height(10.dp))
-
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            // Above the scrolling grid, not at the top of it: a selection
+            // started on row four used to put the count and Delete wherever
+            // the header had been scrolled to, which was off screen.
             if (selecting) {
                 SelectionBar(
                     count = selected.size,
                     onDelete = { deleting = projects.filter { it.id in selected } },
-                    onCancel = { selected = emptySet() }
+                    onCancel = { selected = emptySet() },
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
                 )
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        SquishLogoMark(modifier = Modifier.size(34.dp))
-                        Text("Squish", style = MaterialTheme.typography.displayLarge, color = SquishColors.TextPrimary)
-                    }
-                    IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(SquishColors.Surface)
-                                .border(1.dp, SquishColors.Border, RoundedCornerShape(12.dp)),
-                            contentAlignment = Alignment.Center
+            }
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (!selecting) {
+                    item(key = "header") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Filled.Settings,
-                                contentDescription = "Settings",
-                                tint = SquishColors.TextSecondary,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                SquishLogoMark(modifier = Modifier.size(34.dp))
+                                Text("Squish", style = MaterialTheme.typography.displayLarge, color = SquishColors.TextPrimary)
+                            }
+                            IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(SquishColors.Surface)
+                                        .border(1.dp, SquishColors.Border, RoundedCornerShape(12.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Settings,
+                                        contentDescription = "Settings",
+                                        tint = SquishColors.TextSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-            }
 
-            NewProjectCard(
-                onPick = {
-                    pickMedia.launch(
-                        PickVisualMediaRequest.Builder()
-                            .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                            .build()
+                item(key = "new-project") {
+                    NewProjectCard(
+                        onPick = {
+                            pickMedia.launch(
+                                PickVisualMediaRequest.Builder()
+                                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                    .build()
+                            )
+                        },
+                        onBrowse = { browseFiles.launch(arrayOf("video/*", "image/*")) },
+                        onRecord = {
+                            val dir = File(context.filesDir, IMPORTS_DIR).apply { mkdirs() }
+                            val file = File(dir, "rec_${System.currentTimeMillis()}.mp4")
+                            val target = runCatching {
+                                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                            }.getOrNull()
+                            if (target != null) {
+                                recording = file.absolutePath
+                                runCatching { record.launch(target) }.onFailure { recording = null }
+                            }
+                        }
                     )
-                },
-                onBrowse = { browseFiles.launch(arrayOf("video/*", "image/*")) },
-                onRecord = {
-                    val dir = File(context.filesDir, IMPORTS_DIR).apply { mkdirs() }
-                    val file = File(dir, "rec_${System.currentTimeMillis()}.mp4")
-                    val target = runCatching {
-                        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                    }.getOrNull()
-                    if (target != null) {
-                        recording = file
-                        runCatching { record.launch(target) }.onFailure { recording = null }
+                }
+
+                if (coach) {
+                    item(key = "coach") {
+                        CoachMark(
+                            text = "Pick several photos and videos at once - they land end to end, ready to cut.",
+                            onDismiss = {
+                                Preferences.markCoachSeen(context, Preferences.COACH_HOME)
+                                coach = false
+                            }
+                        )
                     }
                 }
-            )
 
-            // Once, on the first visit: what the one button does with several files.
-            var coach by remember { mutableStateOf(!Preferences.coachSeen(context, Preferences.COACH_HOME)) }
-            if (coach) {
-                CoachMark(
-                    text = "Pick several photos and videos at once - they land end to end, ready to cut.",
-                    onDismiss = {
-                        Preferences.markCoachSeen(context, Preferences.COACH_HOME)
-                        coach = false
+                if (projects.isNotEmpty()) {
+                    item(key = "projects-heading") {
+                        Header(
+                            "Projects",
+                            if (projects.size == 1) "1 project" else "${projects.size} projects",
+                            modifier = Modifier.padding(top = SECTION_GAP)
+                        )
                     }
-                )
-            }
-
-            if (projects.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Header("Projects", if (projects.size == 1) "1 project" else "${projects.size} projects")
-                    projects.chunked(2).forEach { pair ->
+                    items(projects.chunked(2), key = { pair -> pair.joinToString("|") { it.id } }) { pair ->
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)
@@ -282,6 +299,8 @@ fun HomeScreen(
                                     onSelect = { selected = selected.toggled(project.id) },
                                     onRename = { renaming = project },
                                     onDuplicate = { viewModel.duplicateProject(project) },
+                                    onPreview = { previewing = project },
+                                    onEarlier = { reverting = project },
                                     onDelete = { deleting = listOf(project) },
                                     modifier = Modifier.weight(1f).fillMaxHeight()
                                 )
@@ -290,43 +309,58 @@ fun HomeScreen(
                         }
                     }
                 }
-            }
 
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Header("Fast lane", "One job, one tap")
-                QuickTool.entries.chunked(2).forEach { pair ->
-                    // As tall as the taller of the two, never fixed: at a large
-                    // font the blurb used to be cut off at a hard-coded height.
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)
-                    ) {
-                        pair.forEach { tool ->
-                            ToolTile(
-                                tool = tool,
-                                modifier = Modifier.weight(1f).fillMaxHeight()
-                            ) { onOpenTool(tool) }
+                item(key = "tools") {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = SECTION_GAP)) {
+                        Header("Fast lane", "One job, one tap")
+                        QuickTool.entries.chunked(2).forEach { pair ->
+                            // As tall as the taller of the two, never fixed: at a large
+                            // font the blurb used to be cut off at a hard-coded height.
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)
+                            ) {
+                                pair.forEach { tool ->
+                                    ToolTile(
+                                        tool = tool,
+                                        modifier = Modifier.weight(1f).fillMaxHeight()
+                                    ) { onOpenTool(tool) }
+                                }
+                                if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
+                            }
                         }
-                        if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
                     }
                 }
+
+                // The quick tools' unfinished sessions and what was deleted have
+                // a screen of their own; the door shows only when there is
+                // something behind it.
+                if (toolDrafts.isNotEmpty() || trashed.isNotEmpty()) {
+                    item(key = "drafts-door") {
+                        DraftsDoor(
+                            tools = toolDrafts.size,
+                            binned = trashed.size,
+                            onClick = onOpenDrafts,
+                            modifier = Modifier.padding(top = SECTION_GAP)
+                        )
+                    }
+                }
+
+                item(key = "library-door") {
+                    LibraryDoor(
+                        count = recent.size,
+                        onClick = onOpenLibrary,
+                        modifier = Modifier.padding(top = SECTION_GAP)
+                    )
+                }
             }
-
-            // The quick tools' unfinished sessions and the bin have a screen of
-            // their own; the door shows only when there is something behind it.
-            if (toolDrafts.isNotEmpty() || trashed.isNotEmpty()) {
-                DraftsDoor(tools = toolDrafts.size, binned = trashed.size, onClick = onOpenDrafts)
-            }
-
-            LibraryDoor(count = recent.size, onClick = onOpenLibrary)
-
-            Spacer(modifier = Modifier.height(28.dp))
         }
     }
 
     renaming?.let { project ->
-        RenameProjectDialog(
-            current = project.title,
+        RenameDialog(
+            current = project.name.orEmpty(),
+            placeholder = if (project.name == null) project.title else "Untitled edit",
             onSave = { name ->
                 viewModel.renameProject(project, name)
                 renaming = null
@@ -335,15 +369,59 @@ fun HomeScreen(
         )
     }
 
+    previewing?.let { project ->
+        VideoPreviewSheet(
+            title = project.title,
+            subtitle = "${countOf(project.clipCount, "clip")} · ${agoOf(project.savedAtMillis)}",
+            uri = project.coverUri ?: project.sourceUri,
+            durationMs = project.durationMs,
+            accent = SquishColors.Cyan,
+            actionLabel = "Open",
+            onAction = {
+                previewing = null
+                onOpenProject(project.id)
+            },
+            onDismiss = { previewing = null }
+        )
+    }
+
+    // The ten-minute snapshot, offered by name from the card's menu as the
+    // drafts list offered it before projects moved to the grid: a run of bad
+    // edits is only recoverable if someone can ask for the version before it.
+    reverting?.let { project ->
+        val earlier = project.earlierSavedAtMillis
+        ConfirmDialog(
+            title = "Go back to the earlier version?",
+            body = "The version of \"${project.title}\" saved " +
+                "${earlier?.let(::agoOf) ?: "earlier"} takes the place of the one saved ${agoOf(project.savedAtMillis)}.",
+            caution = "The version you have now moves to Recently deleted for 30 days, so this can be undone.",
+            confirmLabel = "Go back",
+            dismissLabel = "Cancel",
+            icon = Icons.Filled.History,
+            accent = SquishColors.Cyan,
+            onConfirm = {
+                viewModel.revertDraft(project)
+                reverting = null
+            },
+            onDismiss = { reverting = null }
+        )
+    }
+
     if (deleting.isNotEmpty()) {
         val many = deleting.size > 1
+        // A staged project has no edit to keep, so it is not offered a way back.
+        val onlyStaged = deleting.all { it.staged }
         ConfirmDialog(
-            title = if (many) "Discard ${deleting.size} projects?" else "Discard \"${deleting.first().title}\"?",
-            body = if (many) "This sets aside every project selected, with every cut, look and caption on each."
-            else "This sets aside the project - ${countOf(deleting.first().clipCount, "clip")}, with every cut, look and caption on it.",
-            caution = "They move to Recently discarded for 30 days, where they can be brought back. " +
+            title = if (many) "Delete ${deleting.size} projects?" else "Delete \"${deleting.first().title}\"?",
+            body = when {
+                onlyStaged -> "Nothing has been edited yet, so there is nothing to keep."
+                many -> "This sets aside every project selected, with every cut, look and caption on each."
+                else -> "This sets aside the project - ${countOf(deleting.first().clipCount, "clip")}, with every cut, look and caption on it."
+            },
+            caution = if (onlyStaged) "Your original photos and videos are untouched."
+            else "They move to Recently deleted for 30 days, where they can be brought back. " +
                 "Your original videos are untouched either way.",
-            confirmLabel = "Discard",
+            confirmLabel = "Delete",
             onConfirm = {
                 viewModel.discardDrafts(deleting)
                 selected = emptySet()
@@ -357,8 +435,8 @@ fun HomeScreen(
 private fun Set<String>.toggled(id: String): Set<String> = if (id in this) this - id else this + id
 
 @Composable
-private fun Header(title: String, subtitle: String) {
-    Column {
+private fun Header(title: String, subtitle: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
         Text(title, style = MaterialTheme.typography.titleLarge, color = SquishColors.TextPrimary)
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
     }
@@ -465,9 +543,10 @@ internal fun agoOf(millis: Long): String {
 
 /**
  * One project: its cover, its name, its length and when it was last touched,
- * and a menu with the three things done to a project from a list. A long
- * press starts selecting, as it does in every gallery app; in that mode a
- * tap adds to the set rather than opening.
+ * and a menu with the things done to a project from a list - including its
+ * earlier version, when the ten-minute snapshot differs from what is saved.
+ * A long press starts selecting, as it does in every gallery app; in that
+ * mode a tap adds to the set rather than opening.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -479,6 +558,8 @@ private fun ProjectCard(
     onSelect: () -> Unit,
     onRename: () -> Unit,
     onDuplicate: () -> Unit,
+    onPreview: () -> Unit,
+    onEarlier: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -539,7 +620,7 @@ private fun ProjectCard(
             }
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -570,9 +651,9 @@ private fun ProjectCard(
                 }
                 Text(
                     buildString {
-                        append(countOf(project.clipCount, "clip"))
+                        append(countOf(project.clipCount, if (project.staged) "file" else "clip"))
                         append(" · ")
-                        append(agoOf(project.savedAtMillis))
+                        append(if (project.staged) "not opened yet" else agoOf(project.savedAtMillis))
                         if (project.sizeBytes > 0L) {
                             append(" · ")
                             append(ProjectRules.sizeLabel(project.sizeBytes))
@@ -585,12 +666,23 @@ private fun ProjectCard(
                 )
             }
             Box {
-                IconButton(onClick = { menu = true }, modifier = Modifier.size(44.dp)) {
+                IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "More for ${project.title}", tint = SquishColors.TextSecondary)
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; onRename() })
-                    DropdownMenuItem(text = { Text("Duplicate") }, onClick = { menu = false; onDuplicate() })
+                    // A staged project has no draft to rename or copy yet.
+                    if (!project.staged) {
+                        DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; onRename() })
+                        DropdownMenuItem(text = { Text("Duplicate") }, onClick = { menu = false; onDuplicate() })
+                    }
+                    DropdownMenuItem(text = { Text("Preview") }, onClick = { menu = false; onPreview() })
+                    project.earlierSavedAtMillis?.let { earlier ->
+                        DropdownMenuItem(
+                            text = { Text("Earlier version · ${agoOf(earlier)}", color = SquishColors.Cyan) },
+                            leadingIcon = { Icon(Icons.Filled.History, contentDescription = null, tint = SquishColors.Cyan) },
+                            onClick = { menu = false; onEarlier() }
+                        )
+                    }
                     DropdownMenuItem(text = { Text("Select") }, onClick = { menu = false; onSelect() })
                     DropdownMenuItem(text = { Text("Delete", color = SquishColors.Pink) }, onClick = { menu = false; onDelete() })
                 }
@@ -599,11 +691,11 @@ private fun ProjectCard(
     }
 }
 
-/** The header while projects are being selected: how many, and the two things to do with them. */
+/** The bar over the grid while projects are being selected: how many, and the two things to do with them. */
 @Composable
-private fun SelectionBar(count: Int, onDelete: () -> Unit, onCancel: () -> Unit) {
+private fun SelectionBar(count: Int, onDelete: () -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(SquishColors.Surface)
@@ -625,48 +717,12 @@ private fun SelectionBar(count: Int, onDelete: () -> Unit, onCancel: () -> Unit)
             modifier = Modifier
                 .clip(RoundedCornerShape(10.dp))
                 .clickable(role = Role.Button, onClick = onDelete)
-                .heightIn(min = 44.dp)
-                .padding(horizontal = 12.dp, vertical = 12.dp)
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 12.dp, vertical = 14.dp)
         )
-        IconButton(onClick = onCancel, modifier = Modifier.size(44.dp)) {
+        IconButton(onClick = onCancel, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Filled.Close, contentDescription = "Stop selecting", tint = SquishColors.TextSecondary)
         }
-    }
-}
-
-/**
- * Naming a project from its card. Blank means no name, and the first clip's
- * name shows again.
- */
-@Composable
-private fun RenameProjectDialog(current: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf(current) }
-    val focus = remember { FocusRequester() }
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
-                .background(SquishColors.SurfaceElevated)
-                .border(1.dp, SquishColors.Cyan.copy(alpha = 0.35f), RoundedCornerShape(24.dp))
-                .padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Text("Name this project", style = MaterialTheme.typography.titleLarge, color = SquishColors.TextPrimary)
-            OutlinedTextField(
-                value = text,
-                onValueChange = { if (it.length <= ProjectName.FIELD_LENGTH) text = it },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { onSave(text) }),
-                modifier = Modifier.fillMaxWidth().focusRequester(focus)
-            )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SquishOutlinedButton(text = "Cancel", modifier = Modifier.weight(1f), onClick = onDismiss)
-                SquishPrimaryButton(text = "Save", modifier = Modifier.weight(1f), onClick = { onSave(text) })
-            }
-        }
-        LaunchedEffect(Unit) { focus.requestFocus() }
     }
 }
 
@@ -700,7 +756,7 @@ private fun ToolTile(tool: QuickTool, modifier: Modifier = Modifier, onClick: ()
  * tell you about work you have already finished.
  */
 @Composable
-private fun LibraryDoor(count: Int, onClick: () -> Unit) {
+private fun LibraryDoor(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Door(
         icon = Icons.Filled.VideoLibrary,
         accent = SquishColors.Violet,
@@ -710,22 +766,24 @@ private fun LibraryDoor(count: Int, onClick: () -> Unit) {
             1 -> "1 export · search and share"
             else -> "$count exports · search and share"
         },
-        onClick = onClick
+        onClick = onClick,
+        modifier = modifier
     )
 }
 
-/** The way in to the quick tools' half-done sessions and the bin. */
+/** The way in to the quick tools' half-done sessions and what was deleted. */
 @Composable
-private fun DraftsDoor(tools: Int, binned: Int, onClick: () -> Unit) {
+private fun DraftsDoor(tools: Int, binned: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Door(
         icon = Icons.Filled.Edit,
         accent = SquishColors.Cyan,
-        title = "Unfinished tools and the bin",
+        title = "Unfinished tools and recently deleted",
         subtitle = buildList {
             if (tools > 0) add(if (tools == 1) "1 tool session" else "$tools tool sessions")
-            if (binned > 0) add(if (binned == 1) "1 in the bin" else "$binned in the bin")
+            if (binned > 0) add(if (binned == 1) "1 recently deleted" else "$binned recently deleted")
         }.joinToString(" · "),
-        onClick = onClick
+        onClick = onClick,
+        modifier = modifier
     )
 }
 
@@ -735,10 +793,11 @@ private fun Door(
     accent: androidx.compose.ui.graphics.Color,
     title: String,
     subtitle: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(accent.copy(alpha = 0.1f))
@@ -772,6 +831,9 @@ private fun Door(
 
 /** A tile's floor; it grows past this with the words in it. */
 private val TILE_MIN_HEIGHT = 156.dp
+
+/** The room between one section of the dashboard and the next, over the list's own 12 dp. */
+private val SECTION_GAP = 10.dp
 
 /** As many as the editor's own picker takes. */
 private const val MAX_PICK = 30

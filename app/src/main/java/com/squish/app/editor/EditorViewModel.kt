@@ -237,13 +237,23 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val defaults = Preferences.editorDefaults(app)
         val stillMs = defaults.stillMs
         val resolver = app.contentResolver
-        val sources = start.uris.mapNotNull { picked ->
-            val uri = if (start.copyIn) withContext(Dispatchers.IO) { app.importCopy(picked) } else picked
-            if (resolver.getType(uri)?.startsWith("image/") == true) {
-                StillClips.fromImage(app, uri)?.let { still -> Triple(still, displayNameOf(uri) ?: "Photo", true) }
-            } else {
-                Triple(uri, displayNameOf(uri) ?: "Clip", false)
+        // The photos are counted first so the loading screen can say how many
+        // are still to render, and the count falls as each lands.
+        val images = start.uris.count { resolver.getType(it)?.startsWith("image/") == true }
+        _state.update { it.copy(preparingStills = images) }
+        val sources = try {
+            start.uris.mapNotNull { picked ->
+                val uri = if (start.copyIn) withContext(Dispatchers.IO) { app.importCopy(picked) } else picked
+                if (resolver.getType(uri)?.startsWith("image/") == true) {
+                    val still = StillClips.fromImage(app, uri)
+                    _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
+                    still?.let { Triple(it, displayNameOf(uri) ?: "Photo", true) }
+                } else {
+                    Triple(uri, displayNameOf(uri) ?: "Clip", false)
+                }
             }
+        } finally {
+            _state.update { it.copy(preparingStills = 0) }
         }
         val probed = sources.map { (uri, label, still) -> Pair(Triple(uri, label, still), ThumbnailExtractor.probe(app, uri)) }
             .filter { (_, meta) -> meta.durationMs > 0L }
@@ -749,6 +759,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         text.stopIfUndoingRun()
         val restored = history.undo(_state.value.editSnapshot) ?: return
         _state.update { it.restoring(restored) }
+        refreshMissingMedia()
         publishHistory()
         recomputeEstimate()
     }
@@ -756,6 +767,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun redo() {
         val restored = history.redo(_state.value.editSnapshot) ?: return
         _state.update { it.restoring(restored) }
+        refreshMissingMedia()
         publishHistory()
         recomputeEstimate()
     }
@@ -944,6 +956,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 val saving = _state.value.exportProgress.copy(stage = ExportStage.Saving)
                 _state.update { it.copy(exportProgress = saving) }
                 ExportService.update(saving)
+                // Measured now, before retire below deletes the private copy:
+                // read after it, a fitted export that overshot measured as
+                // nothing and was handed over as if it had fitted.
+                val size = file.length()
                 // All or nothing: into the gallery, into history, and the draft
                 // stamped. Cancelled half-way - the screen leaving in the instant
                 // after the encode - the file was in the gallery and the draft
@@ -958,7 +974,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                             title = current.projectName ?: current.sourceName ?: "Squished video",
                             outputPath = file.absolutePath,
                             originalSizeBytes = current.originalSizeBytes,
-                            outputSizeBytes = file.length(),
+                            outputSizeBytes = size,
                             durationMs = current.trimmedDurationMs,
                             // The shape of the file that was written, which after a
                             // rotation is not the shape it was shot at, and after a
@@ -993,7 +1009,6 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 // already - but one that missed is not handed over as if it had
                 // fitted: the sheet says by how much and offers a tighter run.
                 val target = current.targetSizeMb * 1_000_000L
-                val size = file.length()
                 if (current.fitToSize && !current.audioOnly && ExportSettings.overshoots(size, target)) {
                     _state.update {
                         it.copy(
@@ -1064,7 +1079,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun applyDraft(snapshot: ProjectSnapshot) {
         // Metadata is re-probed rather than trusted from the file: the same clip
         // can come back through a different provider with a different rotation.
-        val meta = ThumbnailExtractor.probe(getApplication(), snapshot.sourceUri)
+        // A source that cannot be read any more probes as nothing, and every
+        // frame and crop is measured against nothing (framedWidth 0): the first
+        // main-track shot that still reads stands in for its shape, so the
+        // edit is laid out right while the missing file waits for Relink.
+        val app = getApplication<Application>()
+        val meta = ThumbnailExtractor.probe(app, snapshot.sourceUri).takeIf { it.durationMs > 0L }
+            ?: snapshot.clips.filter { it.isMain }.sortedBy { it.timelineStartMs }.mapNotNull { it.uri }.distinct()
+                .filter { it != snapshot.sourceUri }
+                .firstNotNullOfOrNull { uri -> ThumbnailExtractor.probe(app, uri).takeIf { it.durationMs > 0L } }
+            ?: ThumbnailExtractor.probe(app, snapshot.sourceUri)
         _state.update {
             it.applying(snapshot, meta.durationMs, meta.displayWidth, meta.displayHeight, meta.fps)
                 // Drafts saved before effects were fitted can carry some
@@ -1092,18 +1116,41 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      */
     private suspend fun reportMissingMedia(clips: List<Clip>) {
         val missing = withContext(Dispatchers.IO) {
-            clips.distinctBy { it.uri }
-                .firstOrNull { clip -> clip.uri?.let { !canRead(it) } == true }
-        } ?: return
-        _state.update {
-            it.copy(
-                missingMedia = missing.uri,
-                failure = when {
-                    missing.kind == ClipKind.Audio -> SquishError.SoundUnreadable(missing.label.ifBlank { "sound" })
-                    missing.isOverlay -> SquishError.LayerUnreadable(missing.label, missing.layer)
-                    else -> SquishError.FileUnreadable(name = missing.label.takeIf { l -> l.isNotBlank() })
-                }
-            )
+            clips.distinctBy { it.uri }.filter { clip -> clip.uri?.let { !canRead(it) } == true }
+        }
+        missing.mapNotNullTo(unreadable) { it.uri }
+        val first = missing.firstOrNull() ?: return
+        _state.update { it.copy(missingMedia = first.uri, failure = unreadableFailure(first)) }
+    }
+
+    /**
+     * The files found unreadable since the project was opened. Undo and redo
+     * decide from this whether the Relink card should stand (refreshMissingMedia)
+     * without opening every file again; a file relinked and then undone is
+     * missing again, and the card must come back with it.
+     */
+    private val unreadable = HashSet<Uri>()
+
+    private fun unreadableFailure(missing: Clip): SquishError = when {
+        missing.kind == ClipKind.Audio -> SquishError.SoundUnreadable(missing.label.ifBlank { "sound" }, relinkable = true)
+        missing.isOverlay -> SquishError.LayerUnreadable(missing.label.ifBlank { "Overlay" }, missing.layer, relinkable = true)
+        else -> SquishError.FileUnreadable(name = missing.label.takeIf { l -> l.isNotBlank() }, relinkable = true)
+    }
+
+    /**
+     * The Relink card and its failure follow the clips through undo and redo.
+     * Neither is part of the edit snapshot, so an undone Relink used to put the
+     * unreadable file back under every clip with the card gone: the only way
+     * to it again was to leave and reopen the project.
+     */
+    private fun refreshMissingMedia() = _state.update { current ->
+        val missing = (current.videoClips + current.audioClips).firstOrNull { it.uri in unreadable }
+        when {
+            missing != null && current.missingMedia != missing.uri ->
+                current.copy(missingMedia = missing.uri, failure = unreadableFailure(missing))
+            missing == null && current.missingMedia != null ->
+                current.copy(missingMedia = null, failure = current.failure?.takeUnless { it.isUnreadable })
+            else -> current
         }
     }
 
@@ -1112,19 +1159,30 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * source of the edit included - keeping each clip's window and everything
      * on it, as Replace does for one clip. One undo step. A file shorter than
      * a clip's window is cut to fit rather than refused: the point is to get
-     * the edit playing again. Then the next missing file, if there is one, is
-     * named in turn.
+     * the edit playing again. A photo is rendered into a still first, as Add
+     * media does, so a picture swept from files/stills can be put back from
+     * its original. Then the next missing file, if there is one, is named in
+     * turn.
      */
-    fun relink(replacement: Uri) {
+    fun relink(picked: Uri) {
         val missing = _state.value.missingMedia ?: return
         viewModelScope.launch {
             val app = getApplication<Application>()
-            val meta = ThumbnailExtractor.probe(app, replacement)
-            if (meta.durationMs <= 0L) {
-                _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+            val image = app.contentResolver.getType(picked)?.startsWith("image/") == true
+            val replacement = if (image) {
+                _state.update { it.copy(preparingStills = it.preparingStills + 1) }
+                try {
+                    StillClips.fromImage(app, picked)
+                } finally {
+                    _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
+                }
+            } else picked
+            val meta = replacement?.let { ThumbnailExtractor.probe(app, it) }
+            if (replacement == null || meta == null || meta.durationMs <= 0L) {
+                _state.update { it.copy(failure = SquishError.FileUnreadable(name = displayNameOf(picked))) }
                 return@launch
             }
-            val label = displayNameOf(replacement) ?: "Clip"
+            val label = displayNameOf(picked) ?: if (image) "Photo" else "Clip"
             fun Clip.relinked(): Clip {
                 if (uri != missing) return this
                 val out = minOf(sourceOutMs, meta.durationMs)
@@ -1133,17 +1191,33 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             }
             record("Relink") {
                 _state.update { current ->
+                    val source = current.sourceUri == missing
                     current.copy(
                         videoClips = current.videoClips.map { it.relinked() },
                         audioClips = current.audioClips.map { it.relinked() },
-                        sourceUri = if (current.sourceUri == missing) replacement else current.sourceUri,
-                        sourceName = if (current.sourceUri == missing) label else current.sourceName,
+                        sourceUri = if (source) replacement else current.sourceUri,
+                        sourceName = if (source) label else current.sourceName,
                         missingMedia = null,
                         failure = null
-                    )
+                    ).let { next ->
+                        // The source was probed as nothing when the project
+                        // opened, so every frame and crop was measured against
+                        // 0x0; the replacement's shape is the edit's shape now.
+                        if (!source) next
+                        else next.copy(
+                            durationMs = meta.durationMs,
+                            sourceWidth = meta.displayWidth,
+                            sourceHeight = meta.displayHeight,
+                            sourceHasAudio = meta.hasAudio,
+                            fps = meta.fps,
+                            trimStartMs = 0L,
+                            trimEndMs = meta.durationMs
+                        )
+                    }
                 }
             }
             recomputeEstimate()
+            probeEncoder()
             checkDecodable(replacement)
             ensureProxies(listOf(replacement))
             withContext(Dispatchers.IO) { persist() }

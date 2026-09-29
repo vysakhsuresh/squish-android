@@ -73,7 +73,7 @@ import com.squish.app.ui.theme.SquishColors
  * The editor's projects live on the dashboard now, as a grid of their own;
  * what is left here is the other kind of half-done work - a merge set up and
  * not run, a cut half-made in Snip - and the bin both kinds go into.
- * Discarding moves a draft there rather than deleting it, with an Undo the
+ * Deleting moves a draft there rather than removing it, with an Undo the
  * moment it happens and a Restore for the month after; a project purged from
  * the bin is gone for good, and the app's right to read its files goes with
  * it unless another project names them.
@@ -104,7 +104,7 @@ fun DraftsScreen(
         if (draft.toolId != null) onOpenTool(draft) else onOpenEdit(draft)
     }
 
-    // The undo, right where the thumb is. A discard used to be final the moment
+    // The undo, right where the thumb is. A delete used to be final the moment
     // the dialog closed; now it is a snackbar's length from being nothing.
     LaunchedEffect(undoOffer) {
         val offer = undoOffer ?: return@LaunchedEffect
@@ -113,7 +113,7 @@ fun DraftsScreen(
             actionLabel = "Undo",
             withDismissAction = true
         )
-        if (result == SnackbarResult.ActionPerformed) onRestore(offer.entry)
+        if (result == SnackbarResult.ActionPerformed) offer.entries.forEach(onRestore)
         onDismissUndoOffer()
     }
     // Leaving mid-snackbar cancels the effect above before it can clear the
@@ -159,7 +159,7 @@ fun DraftsScreen(
                             )
                             Text(
                                 "A quick tool you walk away from lands here and picks up where " +
-                                    "it stopped; anything discarded waits here for 30 days.",
+                                    "it stopped; anything deleted waits here for 30 days.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = SquishColors.TextMuted,
                                 textAlign = TextAlign.Center
@@ -190,7 +190,7 @@ fun DraftsScreen(
                                     verticalArrangement = Arrangement.spacedBy(2.dp)
                                 ) {
                                     Text(
-                                        "Recently discarded",
+                                        "Recently deleted",
                                         style = MaterialTheme.typography.titleMedium,
                                         color = SquishColors.TextPrimary
                                     )
@@ -243,7 +243,7 @@ fun DraftsScreen(
             title = "Go back to the earlier version?",
             body = "The version of \"${draft.title}\" saved " +
                 "${earlier?.let(::agoOf) ?: "earlier"} takes the place of the one saved ${agoOf(draft.savedAtMillis)}.",
-            caution = "The version you have now moves to Recently discarded, below, for 30 days, " +
+            caution = "The version you have now moves to Recently deleted, below, for 30 days, " +
                 "so this can be undone.",
             confirmLabel = "Go back",
             dismissLabel = "Cancel",
@@ -259,7 +259,7 @@ fun DraftsScreen(
 
     pendingDiscard?.let { draft ->
         ConfirmDialog(
-            title = "Discard \"${draft.title}\"?",
+            title = "Delete \"${draft.title}\"?",
             body = draft.toolId?.let { id ->
                 "This sets aside the ${QuickTool.fromId(id).title.lowercase()} you had " +
                     "set up — ${draft.clipCount} " +
@@ -269,9 +269,9 @@ fun DraftsScreen(
                     "${draft.clipCount} ${if (draft.clipCount == 1) "clip" else "clips"}, " +
                     "with every cut, look and caption on it."
                 ),
-            caution = "It moves to Recently discarded, below, for 30 days. " +
+            caution = "It moves to Recently deleted, below, for 30 days. " +
                 "Your original video is untouched either way.",
-            confirmLabel = "Discard",
+            confirmLabel = "Delete",
             onConfirm = {
                 onDiscard(draft)
                 pendingDiscard = null
@@ -282,11 +282,11 @@ fun DraftsScreen(
 
     pendingPurge?.let { entry ->
         ConfirmDialog(
-            title = "Delete \"${entry.draft.title}\" now?",
-            body = "This takes it out of the bin before its 30 days are up.",
-            caution = "There is no undo and no bin to fetch it back from. " +
+            title = "Delete \"${entry.draft.title}\" for good?",
+            body = "This takes it out of Recently deleted before its 30 days are up.",
+            caution = "There is no undo and nowhere to fetch it back from. " +
                 "Your original video is untouched; the work built on it is not.",
-            confirmLabel = "Delete",
+            confirmLabel = "Delete for good",
             onConfirm = {
                 onPurge(entry)
                 pendingPurge = null
@@ -411,7 +411,7 @@ private fun DraftCard(
         if (readable != false) {
             CardAction(Icons.Filled.PlayArrow, "Preview ${draft.title}", SquishColors.Cyan, onPreview)
         }
-        CardAction(Icons.Filled.Close, "Discard ${draft.title}", SquishColors.Pink, onDiscard)
+        CardAction(Icons.Filled.Close, "Delete ${draft.title}", SquishColors.Pink, onDiscard)
     }
 }
 
@@ -444,7 +444,7 @@ private fun TrashedCard(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                "${draft.describe()} · discarded ${agoOf(entry.discardedAtMillis)}",
+                "${draft.describe()} · deleted ${agoOf(entry.discardedAtMillis)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted,
                 maxLines = 1,

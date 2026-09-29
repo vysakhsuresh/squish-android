@@ -43,7 +43,7 @@ object StorageCleaner {
     /** Clears one kind and returns what every kind measures afterwards. */
     suspend fun clear(context: Context, kind: StorageKind): List<StorageEntry> = withContext(Dispatchers.IO) {
         when (kind) {
-            StorageKind.Exports -> SquishError.exportsDir(context).listFiles()?.forEach { runCatching { it.delete() } }
+            StorageKind.Exports -> clearExports(context)
             StorageKind.Stills -> sweep(context, listOf(File(context.filesDir, "stills")), recurse = false)
             StorageKind.Renders -> sweep(context, listOf(File(context.filesDir, "reversed"), File(context.filesDir, IMPORTS_DIR)), recurse = false)
             StorageKind.Takes -> sweep(context, listOf(File(context.filesDir, "voice"), File(context.filesDir, "speech")), recurse = false)
@@ -62,6 +62,23 @@ object StorageCleaner {
         StorageKind.Masks -> sizeOf(File(context.filesDir, "segments"))
         StorageKind.Proxies -> ProxyEngine.cacheSizeBytes(context)
         StorageKind.Thumbnails -> ThumbnailCache.diskBytes(context)
+    }
+
+    /**
+     * The private exports go, and with them the library rows that had no
+     * other copy to open - a publish that failed, or a record from before
+     * exports were stored once. The card's blurb promises as much; the files
+     * alone used to go, leaving rows greyed "File no longer on this phone"
+     * with a dead detail screen behind each.
+     */
+    private fun clearExports(context: Context) {
+        val dir = SquishError.exportsDir(context)
+        val history = SquishRepositories.history(context)
+        val stranded = history.records.value
+            .filter { it.onPrivateCopy && File(it.outputPath).parentFile?.absolutePath == dir.absolutePath }
+            .map { it.id }
+        dir.listFiles()?.forEach { runCatching { it.delete() } }
+        history.forget(stranded)
     }
 
     private fun sizeOf(dir: File): Long =

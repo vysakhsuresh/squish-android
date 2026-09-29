@@ -92,6 +92,7 @@ import java.io.FileOutputStream
 /** One saved edit, as a list needs to know about it — without reading the edit. */
 data class DraftSummary(
     val id: String,
+    /** What the list shows: [name], or the first clip's name when there is none. */
     val title: String,
     val sourceUri: Uri,
     val durationMs: Long,
@@ -127,6 +128,19 @@ data class DraftSummary(
      */
     val coverUri: Uri? = null,
     val coverAtMs: Long = 0L,
+    /**
+     * The name the project was given, or null when it follows its first clip.
+     * The rename dialog needs the two apart: the fallback prefilled as text
+     * became the name on Save, and the project stopped following its file.
+     */
+    val name: String? = null,
+    /**
+     * Staged on disk (ProjectAutosave.stageStart) but never saved: the editor
+     * was left, or killed, before its first save. Listed so the project is
+     * not lost from the grid; it opens on its files and has no name, cover
+     * frame or length yet.
+     */
+    val staged: Boolean = false,
     /** What the project keeps under the app's own storage; see [ProjectRules.ownedFile]. */
     val sizeBytes: Long = 0L
 ) {
@@ -290,6 +304,7 @@ class ProjectAutosave(context: Context) {
         if (name == null) json.remove("name") else json.put("name", name)
         val meta = readMetaJson(metaFile(slot)) ?: return false
         meta.put("title", name ?: json.optJSONArray("clips")?.optJSONObject(0)?.optString("label")?.takeIf { it.isNotBlank() } ?: "Untitled edit")
+        if (name == null) meta.remove("name") else meta.put("name", name)
         meta.put("editFingerprint", DraftHousekeeping.fingerprint(editKeyOf(JSONObject(json.toString()))))
         runCatching {
             DraftFiles.writeAtomically(scratchFile(slot), live, json.toString().toByteArray())
@@ -314,6 +329,7 @@ class ProjectAutosave(context: Context) {
         json.put("savedAtMillis", now)
         meta.put("id", copy)
         meta.put("title", name)
+        meta.put("name", name)
         meta.put("savedAtMillis", now)
         meta.put("editFingerprint", DraftHousekeeping.fingerprint(editKeyOf(JSONObject(json.toString()))))
         listOf("exportedAtMillis", "exportedFingerprint", "snapshotSavedAtMillis", "snapshotFingerprint", "pendingSavedAtMillis", "pendingFingerprint")
@@ -349,6 +365,13 @@ class ProjectAutosave(context: Context) {
                 val value = match.groupValues[1].replace("\\/", "/").replace("\\\\", "\\")
                 if (value.isNotBlank() && value != "null") found += value
             }
+        }
+        // A project staged but not yet saved (stageStart) names its files too:
+        // a purge that let go of a grant a staged project was about to open
+        // opened it on an unreadable file.
+        root.walkTopDown().filter { it.isFile && it.name.endsWith(".start") }.forEach { file ->
+            val array = runCatching { JSONObject(file.readText()).optJSONArray("uris") }.getOrNull() ?: return@forEach
+            (0 until array.length()).mapNotNullTo(found) { array.optString(it).takeIf { s -> s.isNotBlank() } }
         }
         return found
     }
@@ -437,7 +460,7 @@ class ProjectAutosave(context: Context) {
             // listFiles(lambda) is ambiguous between FileFilter and FilenameFilter,
             // so the filtering happens after, on a plainly typed array.
             val files: Array<File> = dir.listFiles() ?: return@runCatching emptyList()
-            files.filter { it.isFile && it.name.endsWith(".json") && !it.name.contains(".tmp.") }
+            val saved = files.filter { it.isFile && it.name.endsWith(".json") && !it.name.contains(".tmp.") }
                 .filter { !it.name.endsWith(".bak.json") && !it.name.endsWith(".snap.json") && !it.name.endsWith(".meta.json") }
                 .mapNotNull { live ->
                     val slot = live.name.removeSuffix(".json")
@@ -445,7 +468,26 @@ class ProjectAutosave(context: Context) {
                         summary.copy(earlierSavedAtMillis = earlierOf(slot, summary)?.second?.savedAtMillis)
                     }
                 }
-                .sortedByDescending { it.savedAtMillis }
+            // A project staged and not yet saved is a project too: ten photos
+            // take a while to render, and Back before the first save used to
+            // leave nothing on the grid and a start file nothing listed.
+            val staged = files.filter { it.isFile && it.name.endsWith(".start") }.mapNotNull { file ->
+                val slot = file.name.removeSuffix(".start")
+                if (liveFile(slot).exists()) return@mapNotNull null
+                val start = peekStart(slot) ?: return@mapNotNull null
+                val first = start.uris.firstOrNull() ?: return@mapNotNull null
+                DraftSummary(
+                    id = slot,
+                    title = "New project",
+                    sourceUri = first,
+                    durationMs = 0L,
+                    clipCount = start.uris.size,
+                    savedAtMillis = file.lastModified(),
+                    coverUri = first,
+                    staged = true
+                )
+            }
+            (saved + staged).sortedByDescending { it.savedAtMillis }
         }.getOrDefault(emptyList())
     }
 
@@ -460,7 +502,8 @@ class ProjectAutosave(context: Context) {
             durationMs = snapshot.totalDurationMs,
             clipCount = snapshot.clipCount,
             savedAtMillis = snapshot.savedAtMillis,
-            editFingerprint = DraftHousekeeping.fingerprint(editKeyOf(json))
+            editFingerprint = DraftHousekeeping.fingerprint(editKeyOf(json)),
+            name = snapshot.name
         )
     }
 
@@ -502,6 +545,7 @@ class ProjectAutosave(context: Context) {
             val meta = JSONObject().apply {
                 put("id", slot)
                 put("title", earlier.name ?: earlier.clips.firstOrNull()?.label ?: "Untitled edit")
+                earlier.name?.let { put("name", it) }
                 put("uri", earlier.sourceUri.toString())
                 put("durationMs", earlier.totalDurationMs)
                 put("clipCount", earlier.clipCount)
@@ -568,7 +612,7 @@ class ProjectAutosave(context: Context) {
                 val live = File(entry, liveFile(slot).name)
                 val summary = summaryOf(slot, live, File(entry, metaFile(slot).name))
                     ?: read(File(entry, backupFile(slot).name))?.let { s ->
-                        DraftSummary(slot, s.name ?: s.clips.firstOrNull()?.label ?: "Untitled edit", s.sourceUri, s.totalDurationMs, s.clipCount, s.savedAtMillis)
+                        DraftSummary(slot, s.name ?: s.clips.firstOrNull()?.label ?: "Untitled edit", s.sourceUri, s.totalDurationMs, s.clipCount, s.savedAtMillis, name = s.name)
                     }
                     ?: return@mapNotNull null
                 TrashedDraft(trashId = entry.name, draft = summary, discardedAtMillis = at)
@@ -646,6 +690,7 @@ class ProjectAutosave(context: Context) {
         val json = JSONObject().apply {
             put("id", slot)
             put("title", state.projectName ?: state.videoClips.firstOrNull()?.label ?: "Untitled edit")
+            state.projectName?.let { put("name", it) }
             put("uri", uri.toString())
             put("durationMs", state.trimmedDurationMs)
             put("clipCount", state.videoClips.size)
@@ -690,6 +735,7 @@ class ProjectAutosave(context: Context) {
             // A sidecar from before covers were named falls back to the source.
             coverUri = json.optString("coverUri").takeIf { it.isNotBlank() }?.let(Uri::parse) ?: Uri.parse(uri),
             coverAtMs = json.optLong("coverAtMs", 0L),
+            name = json.optString("name").takeIf { it.isNotBlank() },
             sizeBytes = json.optLong("sizeBytes", 0L)
         )
     }.getOrNull()

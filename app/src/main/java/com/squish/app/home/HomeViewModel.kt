@@ -21,10 +21,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Something just set aside that can be put straight back: a discard, or the
+ * Something just set aside that can be put straight back: a delete, or the
  * version an "earlier version" replaced. [message] is what the snackbar says.
+ * [entries] is everything the one action binned - a multi-select delete is
+ * several - so its Undo is the whole action, not the last part of it.
  */
-data class UndoOffer(val message: String, val entry: TrashedDraft)
+data class UndoOffer(val message: String, val entries: List<TrashedDraft>) {
+    constructor(message: String, entry: TrashedDraft) : this(message, listOf(entry))
+}
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val historyRepository = SquishRepositories.history(application)
@@ -133,7 +137,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val trashId = withContext(Dispatchers.IO) { binOne(draft) }
             if (trashId != null) {
                 _undoOffer.value = UndoOffer(
-                    message = "Discarded \"${draft.title}\"",
+                    message = "Deleted \"${draft.title}\"",
                     entry = TrashedDraft(trashId, draft, System.currentTimeMillis())
                 )
             }
@@ -142,20 +146,37 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Several at once, from the grid's selection, as one snackbar: the Undo
-     * puts back the last one binned, and the rest wait in the bin as any
-     * discard does.
+     * Several at once, from the grid's selection, as one snackbar whose Undo
+     * puts every one of them back. It used to restore the last one binned
+     * and leave the rest in the bin, under a label that promised otherwise.
      */
     fun discardDrafts(drafts: List<DraftSummary>) {
         if (drafts.isEmpty()) return
         viewModelScope.launch {
-            val binned = withContext(Dispatchers.IO) { drafts.mapNotNull { draft -> binOne(draft)?.let { draft to it } } }
-            binned.lastOrNull()?.let { (draft, trashId) ->
+            val now = System.currentTimeMillis()
+            val binned = withContext(Dispatchers.IO) {
+                drafts.mapNotNull { draft -> binOne(draft)?.let { TrashedDraft(it, draft, now) } }
+            }
+            if (binned.isNotEmpty()) {
                 _undoOffer.value = UndoOffer(
-                    message = if (binned.size == 1) "Discarded \"${draft.title}\"" else "Discarded ${binned.size} projects",
-                    entry = TrashedDraft(trashId, draft, System.currentTimeMillis())
+                    message = if (binned.size == 1) "Deleted \"${binned.first().draft.title}\"" else "Deleted ${binned.size} projects",
+                    entries = binned
                 )
             }
+            refreshDrafts()
+        }
+    }
+
+    /** The snackbar's Undo: everything the offer binned comes back, then one refresh. */
+    fun restoreAll(entries: List<TrashedDraft>) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                entries.forEach { entry ->
+                    if (entry.draft.toolId != null) toolAutosave.restore(entry.trashId) else autosave.restore(entry.trashId)
+                }
+            }
+            val ids = entries.map { it.trashId }.toSet()
+            if (_undoOffer.value?.entries?.any { it.trashId in ids } == true) _undoOffer.value = null
             refreshDrafts()
         }
     }
@@ -189,7 +210,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.IO) {
                 if (entry.draft.toolId != null) toolAutosave.restore(entry.trashId) else autosave.restore(entry.trashId)
             }
-            if (_undoOffer.value?.entry?.trashId == entry.trashId) _undoOffer.value = null
+            if (_undoOffer.value?.entries?.any { it.trashId == entry.trashId } == true) _undoOffer.value = null
             refreshDrafts()
         }
     }
@@ -214,7 +235,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         .forEach { getApplication<Application>().releaseReadAccess(Uri.parse(it)) }
                 }
             }
-            if (_undoOffer.value?.entry?.trashId == entry.trashId) _undoOffer.value = null
+            if (_undoOffer.value?.entries?.any { it.trashId == entry.trashId } == true) _undoOffer.value = null
             refreshDrafts()
         }
     }

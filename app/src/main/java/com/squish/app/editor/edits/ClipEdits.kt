@@ -1332,7 +1332,10 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     uri = made,
                     label = "Freeze",
                     sourceInMs = 0L,
-                    sourceOutMs = minOf(Preferences.stillMs(app), fileMs),
+                    // Three seconds, as CapCut's freeze is - not Settings' photo
+                    // length, which is for pictures dropped in: a slideshow
+                    // set to 8 s made every freeze in every project 8 s long.
+                    sourceOutMs = minOf(StillClips.DEFAULT_MS, fileMs),
                     timelineStartMs = at,
                     sourceDurationMs = fileMs
                 )

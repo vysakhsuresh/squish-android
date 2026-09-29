@@ -62,6 +62,40 @@ fun main() {
         check(TrimRules.steppedEnd(9_000L, 1, 0L, duration, 0L) == 9_001L, "with no frame grid a step was not one millisecond")
     }
 
+    // --- A slow drag accumulates; each event alone would round back. ----------
+    run {
+        // A 10 s clip on a 980 px strip: 1 px is about 10 ms, half a frame is
+        // 16 ms, so a 1.2 px event is under the grid's rounding on its own.
+        val width = 980f
+        // On the frame grid, as a handle always is after its first snap.
+        val anchor = 4_950L
+        var travelled = 0f
+        var handle = anchor
+        var moves = 0
+        repeat(20) {
+            travelled += 1.2f
+            val proposed = TrimRules.draggedTo(anchor, travelled, width, duration)
+            val moved = TrimRules.movedEnd(proposed, 0L, duration, frame)
+            if (moved != handle) { handle = moved; moves++ }
+        }
+        check(handle > anchor, "twenty sub-frame events left the handle where it was")
+        check(handle == TrimRules.snapToFrame(TrimRules.msAtX(TrimRules.xAtMs(anchor, width, duration) + 24f, width, duration), frame),
+            "the handle did not land where the whole travel put it: $handle")
+        check(moves in 5..9, "the handle did not step a frame at a time: $moves moves for ${24f / width * duration} ms")
+        // The same events applied one at a time to the snapped handle, the old
+        // way, never move it - which is the bug this check was written for.
+        var stuck = anchor
+        repeat(20) {
+            val proposed = TrimRules.draggedTo(stuck, 1.2f, width, duration)
+            stuck = TrimRules.movedEnd(proposed, 0L, duration, frame)
+        }
+        check(stuck == anchor, "per-event deltas were expected to stick, so the accumulation is not being tested")
+        // Dragging back past the anchor goes the other way, from the same anchor.
+        check(TrimRules.draggedTo(anchor, -49f, width, duration) == 4_450L, "a drag back did not go back: ${TrimRules.draggedTo(anchor, -49f, width, duration)}")
+        check(TrimRules.draggedTo(anchor, -9_999f, width, duration) == 0L, "a drag off the left was not clamped")
+        check(TrimRules.draggedTo(anchor, 9_999f, width, duration) == duration, "a drag off the right was not clamped")
+    }
+
     // --- The strip shows as many frames as fit, within reason. ----------------
     run {
         check(TrimRules.tileCount(100f) == TrimRules.MIN_TILES, "a narrow strip showed fewer than the minimum")

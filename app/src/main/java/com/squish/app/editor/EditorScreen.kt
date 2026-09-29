@@ -87,11 +87,13 @@ import com.squish.app.editor.edits.TextEdits
 import com.squish.app.home.countOf
 import com.squish.app.media.ExportStage
 import com.squish.app.media.keepReadAccess
+import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TimelineActionBar
 import com.squish.app.timeline.TimelineEditor
 import com.squish.app.timeline.stripRowsHeight
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.ConfirmDialog
+import com.squish.app.ui.components.RenameDialog
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishPrimaryButton
 import com.squish.app.ui.components.CoachMark
@@ -472,7 +474,7 @@ fun EditorScreen(
                                     .build()
                             )
                         },
-                        onBrowseRelink = { browseRelink.launch(arrayOf("video/*", "image/*", "audio/*")) }
+                        onBrowseRelink = { types -> browseRelink.launch(types) }
                     )
                 }
                 val controls = @Composable { compactStrip: Boolean, rowsHeight: Dp ->
@@ -606,7 +608,20 @@ fun EditorScreen(
                     state.isLoadingSource -> Column(modifier = Modifier.fillMaxSize()) {
                         header()
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = SquishColors.Primary)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                CircularProgressIndicator(color = SquishColors.Primary)
+                                // A new project's photos are rendered into clips
+                                // before the editor opens, one after another; ten
+                                // of them used to be a bare spinner for as long
+                                // as that took, with no count.
+                                if (state.preparingStills > 0) {
+                                    Text(
+                                        if (state.preparingStills == 1) "Preparing 1 photo…" else "Preparing ${state.preparingStills} photos…",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SquishColors.Violet
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -1102,7 +1117,8 @@ private fun StatusCards(
     state: EditorUiState,
     viewModel: EditorViewModel,
     onRelink: () -> Unit,
-    onBrowseRelink: () -> Unit
+    /** The file browser, on the kinds the missing file could be replaced by. */
+    onBrowseRelink: (Array<String>) -> Unit
 ) {
     val context = LocalContext.current
     // Once, on the first edit ever opened: the three gestures the strip is
@@ -1145,8 +1161,11 @@ private fun StatusCards(
     // the strip as placeholders, and another file can be put under all of
     // them at once. Under the failure that names it, and standing after the
     // failure is dismissed, until the file is relinked or the clips deleted.
-    if (state.missingMedia != null) {
+    state.missingMedia?.let { uri ->
+        val clip = (state.videoClips + state.audioClips).firstOrNull { it.uri == uri }
         RelinkCard(
+            name = clip?.label?.takeIf { it.isNotBlank() },
+            sound = clip?.kind == ClipKind.Audio,
             onRelink = onRelink,
             onBrowse = onBrowseRelink,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -1154,8 +1173,15 @@ private fun StatusCards(
     }
 }
 
+/**
+ * The missing file by name, and the ways to put another under its clips. A
+ * sound has no place in the photo picker, so its one way in is the file
+ * browser, held to audio; a picture or a video takes the picker (a photo
+ * picked for a video lands as a still) with the browser beside it for what the
+ * picker never shows.
+ */
 @Composable
-private fun RelinkCard(onRelink: () -> Unit, onBrowse: () -> Unit, modifier: Modifier = Modifier) {
+private fun RelinkCard(name: String?, sound: Boolean, onRelink: () -> Unit, onBrowse: (Array<String>) -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1165,70 +1191,28 @@ private fun RelinkCard(onRelink: () -> Unit, onBrowse: () -> Unit, modifier: Mod
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("A file in this edit is missing", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
+        Text(
+            when {
+                name != null -> "“$name” is missing"
+                sound -> "A sound in this edit is missing"
+                else -> "A file in this edit is missing"
+            },
+            style = MaterialTheme.typography.titleSmall,
+            color = SquishColors.TextPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
         Text(
             "Its clips are kept where they were. Pick the file again, or another one, and every clip that played it plays that instead.",
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextSecondary
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SquishPrimaryButton(text = "Relink", onClick = onRelink)
-            SquishOutlinedButton(text = "Browse files", onClick = onBrowse)
-        }
-    }
-}
-
-/**
- * Naming the project. Blank means no name, and the first clip's name shows
- * again - the placeholder says which.
- */
-@Composable
-private fun RenameDialog(current: String, placeholder: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf(TextFieldValue(current, TextRange(0, current.length))) }
-    val focus = remember { FocusRequester() }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)) {
-        // In here, with the field: the dialog is its own window, composed after
-        // the screen that asks for it, and focus asked for before the field is
-        // there throws.
-        LaunchedEffect(Unit) {
-            withFrameNanos { }
-            runCatching { focus.requestFocus() }
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
-                .background(SquishColors.SurfaceElevated)
-                .border(1.dp, SquishColors.Violet.copy(alpha = 0.35f), RoundedCornerShape(24.dp))
-                .padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Text("Name this project", style = MaterialTheme.typography.titleMedium, color = SquishColors.TextPrimary)
-            OutlinedTextField(
-                value = text,
-                // A paste of a whole paragraph is cut back here rather than held
-                // in the field - cut, not refused: a paste over the limit used to
-                // do nothing at all. ProjectName decides the final length.
-                onValueChange = { typed ->
-                    val kept = ProjectName.cut(typed.text, ProjectName.FIELD_LENGTH)
-                    text = if (kept.length == typed.text.length) typed
-                    else TextFieldValue(kept, TextRange(kept.length))
-                },
-                singleLine = true,
-                placeholder = { Text(placeholder, color = SquishColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { onSave(text.text) }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = SquishColors.Violet,
-                    unfocusedBorderColor = SquishColors.Border,
-                    focusedTextColor = SquishColors.TextPrimary,
-                    unfocusedTextColor = SquishColors.TextPrimary
-                ),
-                modifier = Modifier.fillMaxWidth().focusRequester(focus)
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SquishOutlinedButton(text = "Cancel", modifier = Modifier.weight(1f), onClick = onDismiss)
-                SquishPrimaryButton(text = "Save", modifier = Modifier.weight(1f), onClick = { onSave(text.text) })
+            if (sound) {
+                SquishPrimaryButton(text = "Relink", onClick = { onBrowse(arrayOf("audio/*")) })
+            } else {
+                SquishPrimaryButton(text = "Relink", onClick = onRelink)
+                SquishOutlinedButton(text = "Browse files", onClick = { onBrowse(arrayOf("video/*", "image/*")) })
             }
         }
     }

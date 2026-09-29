@@ -30,8 +30,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,7 +82,7 @@ fun TrimStrip(
         BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(STRIP_HEIGHT)) {
             val density = LocalDensity.current
             val widthPx = with(density) { maxWidth.toPx() }
-            val handlePx = with(density) { HANDLE_WIDTH.toPx() }
+            val targetPx = with(density) { TARGET_WIDTH.toPx() }
             val tiles = TrimRules.tileCount(maxWidth.value)
             var frames by remember(uri, tiles) { mutableStateOf<List<Bitmap>>(emptyList()) }
             LaunchedEffect(uri, tiles, durationMs) {
@@ -133,26 +135,44 @@ fun TrimStrip(
                     .border(2.dp, accent, RoundedCornerShape(6.dp))
             )
 
+            // Where each handle stood when the finger landed on it. A drag is
+            // measured from here and the whole distance travelled, never from
+            // the handle's last snapped place and the last event alone
+            // (TrimRules.draggedTo says why).
+            var startAnchor by remember { mutableLongStateOf(0L) }
+            var endAnchor by remember { mutableLongStateOf(0L) }
+            // The bars sit inside the kept stretch, so both are whole and
+            // reachable at the full range, and each touch target reaches on
+            // inward from its bar - kept inside the strip, since past its edge
+            // the card clips it and the finger scrolls the page instead.
             TrimHandle(
-                x = startX - handlePx,
+                x = startX.coerceIn(0f, (widthPx - targetPx).coerceAtLeast(0f)),
+                barAtStart = true,
                 accent = accent,
                 active = active == Handle.Start,
                 description = "Start handle, ${Timecode.format(startMs)}",
-                onDrag = { dx ->
+                onDragStart = {
                     active = Handle.Start
-                    val proposed = TrimRules.msAtX(TrimRules.xAtMs(startMs, widthPx, durationMs) + dx, widthPx, durationMs)
+                    startAnchor = startMs
+                },
+                onDrag = { travelled ->
+                    val proposed = TrimRules.draggedTo(startAnchor, travelled, widthPx, durationMs)
                     val moved = TrimRules.movedStart(proposed, endMs, durationMs, frameMs)
                     if (moved != startMs) onRange(moved, endMs, moved)
                 }
             )
             TrimHandle(
-                x = endX,
+                x = (endX - targetPx).coerceIn(0f, (widthPx - targetPx).coerceAtLeast(0f)),
+                barAtStart = false,
                 accent = accent,
                 active = active == Handle.End,
                 description = "End handle, ${Timecode.format(endMs)}",
-                onDrag = { dx ->
+                onDragStart = {
                     active = Handle.End
-                    val proposed = TrimRules.msAtX(TrimRules.xAtMs(endMs, widthPx, durationMs) + dx, widthPx, durationMs)
+                    endAnchor = endMs
+                },
+                onDrag = { travelled ->
+                    val proposed = TrimRules.draggedTo(endAnchor, travelled, widthPx, durationMs)
                     val moved = TrimRules.movedEnd(proposed, startMs, durationMs, frameMs)
                     if (moved != endMs) onRange(startMs, moved, moved)
                 }
@@ -197,27 +217,59 @@ fun TrimStrip(
 
 private enum class Handle { Start, End }
 
+/**
+ * One handle: a [HANDLE_WIDTH] bar at one end of a [TARGET_WIDTH] touch
+ * target. [onDrag] is handed the whole distance travelled since [onDragStart].
+ * Both lambdas are read through rememberUpdatedState: the gesture block is
+ * keyed on nothing and lives as long as the handle does, and the lambda it
+ * captured on first composition closed over the range as it was then - every
+ * later drag was added to the handle's original place, so it snapped back
+ * under the finger and jittered there.
+ */
 @Composable
-private fun TrimHandle(x: Float, accent: Color, active: Boolean, description: String, onDrag: (Float) -> Unit) {
+private fun TrimHandle(
+    x: Float,
+    barAtStart: Boolean,
+    accent: Color,
+    active: Boolean,
+    description: String,
+    onDragStart: () -> Unit,
+    onDrag: (travelledPx: Float) -> Unit
+) {
+    val latestStart by rememberUpdatedState(onDragStart)
+    val latestDrag by rememberUpdatedState(onDrag)
     Box(
         modifier = Modifier
             .offset { IntOffset(x.roundToInt(), 0) }
-            .width(HANDLE_WIDTH)
+            .width(TARGET_WIDTH)
             .fillMaxHeight()
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (active) accent else accent.copy(alpha = 0.7f))
             .pointerInput(Unit) {
-                // Each event is a delta from where the handle now is, so a drag
-                // that snapped to a frame does not drift off the finger.
-                detectHorizontalDragGestures { change, dragAmount ->
-                    change.consume()
-                    onDrag(dragAmount)
-                }
+                var travelled = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        travelled = 0f
+                        latestStart()
+                    },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        travelled += dragAmount
+                        latestDrag(travelled)
+                    }
+                )
             }
             .clickable(role = Role.Button, onClickLabel = description) {},
-        contentAlignment = Alignment.Center
+        contentAlignment = if (barAtStart) Alignment.CenterStart else Alignment.CenterEnd
     ) {
-        Box(modifier = Modifier.width(2.dp).height(18.dp).background(SquishColors.Background.copy(alpha = 0.7f)))
+        Box(
+            modifier = Modifier
+                .width(HANDLE_WIDTH)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (active) accent else accent.copy(alpha = 0.7f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(modifier = Modifier.width(2.dp).height(18.dp).background(SquishColors.Background.copy(alpha = 0.7f)))
+        }
     }
 }
 
@@ -243,7 +295,7 @@ private fun Readout(label: String, active: Boolean, accent: Color, onPick: () ->
 private fun FrameButton(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .clip(RoundedCornerShape(12.dp))
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center
@@ -253,4 +305,7 @@ private fun FrameButton(icon: androidx.compose.ui.graphics.vector.ImageVector, d
 }
 
 private val STRIP_HEIGHT = 64.dp
-private val HANDLE_WIDTH = 22.dp
+/** The bar that is seen. */
+private val HANDLE_WIDTH = 24.dp
+/** The width a finger has to land in; the bar is at one end of it. */
+private val TARGET_WIDTH = 48.dp

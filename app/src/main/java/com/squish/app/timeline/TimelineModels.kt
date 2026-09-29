@@ -763,7 +763,12 @@ data class TimelineState(
      * clips it is not something the clips here can say; null for "the end of
      * the last video clip".
      */
-    val pictureEndMs: Long? = null
+    val pictureEndMs: Long? = null,
+    /**
+     * The files the editor found unreadable, as strings: the clips that play
+     * them are drawn as placeholders until they are relinked.
+     */
+    val missingUris: Set<String> = emptySet()
 ) {
     val videoClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Video }.sortedBy { it.timelineStartMs }
     /** The base picture - the cuts-only spine of the edit. */

@@ -86,6 +86,22 @@ class HistoryRepository(context: Context) {
         }
     }
 
+    /**
+     * Drops the records for files that are already gone - Settings' storage
+     * card clearing the private exports - without touching any file: the
+     * record's own delete would also remove a gallery copy, and these have
+     * none. A row that opens nothing is what this prevents.
+     */
+    fun forget(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val gone = ids.toSet()
+        writer.execute {
+            val updated = _records.value.filterNot { it.id in gone }
+            _records.value = updated
+            write(updated)
+        }
+    }
+
     /** The record for an export's file, if it is one of these. */
     fun forPath(outputPath: String): ExportRecord? = _records.value.firstOrNull { it.outputPath == outputPath }
 

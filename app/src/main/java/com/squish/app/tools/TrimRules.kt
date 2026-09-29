@@ -59,6 +59,18 @@ object TrimRules {
         return snapped.coerceIn(floor, durationMs)
     }
 
+    /**
+     * Where a drag has taken a handle: the moment [travelledPx] along the strip
+     * from where the handle stood when the finger landed ([anchorMs]), before
+     * the frame grid. Measured from the anchor and the whole travel, never from
+     * the handle's last snapped place and the last event's delta: each event of
+     * a slow drag is under half a frame wide, so applied one at a time to a
+     * handle already on the grid every one of them rounded back to the same
+     * frame, and the handle never moved.
+     */
+    fun draggedTo(anchorMs: Long, travelledPx: Float, widthPx: Float, durationMs: Long): Long =
+        msAtX(xAtMs(anchorMs, widthPx, durationMs) + travelledPx, widthPx, durationMs)
+
     /** A handle nudged by whole frames; the other handle's rule applies to where it lands. */
     fun steppedStart(startMs: Long, frames: Int, endMs: Long, durationMs: Long, frameMs: Long): Long =
         movedStart(startMs + frames * frameMs.coerceAtLeast(1L), endMs, durationMs, frameMs)
