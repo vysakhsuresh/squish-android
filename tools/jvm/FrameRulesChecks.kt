@@ -79,6 +79,16 @@ fun main() {
         check(FrameRules.reframeFocus(listOf(a, b, overlay), 5_000L)!!.first > 0.8f, "the end of the picture did not read the last shot")
         check(FrameRules.reframeFocus(listOf(overlay), 5_500L) == null, "an overlay's track was read as the picture's")
         check(FrameRules.reframeFocus(emptyList(), 0L) == null, "no shots gave a focus")
+
+        // A shot sliding in follows its subject in, as the file's window does
+        // (ExportPlan.motionAt User carries the arrival): not the resting spot.
+        val sliding = a.copy(arrival = com.squish.app.timeline.ClipArrival.SlideLeft, arrivalMs = 1_000L)
+        val early = FrameRules.reframeFocus(listOf(sliding), 100L)!!.first
+        val rest = FrameRules.reframeFocus(listOf(sliding), 2_500L)!!.first
+        check(near(rest, 0.2f), "at rest the sliding shot's focus is $rest")
+        check(!near(early, 0.2f), "mid-arrival the focus stayed on the resting subject: $early")
+        val expected = FrameRules.subjectOnCanvas(0.2f, 0.5f, null, null, 0, sliding.placedAt(100L), 0f)
+        check(expected != null && near(early, expected.first), "mid-arrival the focus $early is not the animated subject's ${expected?.first}")
     }
 
     // --- A shot's subject carried to the canvas: through its crop, the edit's

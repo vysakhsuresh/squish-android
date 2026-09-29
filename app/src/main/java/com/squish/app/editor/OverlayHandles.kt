@@ -61,7 +61,7 @@ import kotlin.math.roundToInt
 data class OverlayOnPicture(
     val clipId: String,
     val layer: Int,
-    /** Where it is drawn, the stabilizer's correction included: what the box outlines. */
+    /** Where its frame is drawn (Clip.placedAt): what the box outlines. The stabilizer moves the picture inside that frame, as the file does. */
     val drawn: Transform,
     /** Where the editor put it, without that correction: what a gesture moves from. */
     val placed: Transform,

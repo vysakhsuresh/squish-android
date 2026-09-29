@@ -172,6 +172,16 @@ object PreviewRules {
      */
     fun clockOnA(clipAId: String?, clockClipId: String?): Boolean =
         clipAId != null && clipAId == clockClipId
+
+    /**
+     * Whether the effects library is drawn over the whole composed canvas
+     * (CanvasFx), as the file draws it, rather than in each base player's
+     * chain: from Android 13, which has runtime shaders. Below it the chain
+     * is the only place it can go.
+     */
+    fun fxOnCanvas(sdkInt: Int): Boolean = sdkInt >= FX_ON_CANVAS_SDK
+
+    const val FX_ON_CANVAS_SDK = 33
 }
 
 /**

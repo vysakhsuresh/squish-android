@@ -249,6 +249,12 @@ fun main() {
     check("with nothing on A the clock is on B", !PreviewRules.clockOnA(null, "c"))
     check("no clock shot is not A", !PreviewRules.clockOnA("c", null))
 
+    // The library over the canvas where runtime shaders exist, in the chain below.
+    check("Android 13 draws the effects over the canvas", PreviewRules.fxOnCanvas(33))
+    check("Android 14 too", PreviewRules.fxOnCanvas(34))
+    check("Android 12 keeps them in the chain", !PreviewRules.fxOnCanvas(32))
+    check("minSdk keeps them in the chain", !PreviewRules.fxOnCanvas(29))
+
     if (failures.isEmpty()) {
         println("PASS - the preview parks inside the trim, redraws without drifting, rattles no ramp, and never reloads a slow seek forever")
     } else {

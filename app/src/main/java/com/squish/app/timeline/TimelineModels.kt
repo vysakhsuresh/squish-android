@@ -471,6 +471,24 @@ data class Clip(
             .animated(animationFrame(local))
     }
 
+    /**
+     * The two parts of [transformAt] as the file applies them, apart: the
+     * placement on the canvas (the keys and the animation, after the turn,
+     * the crop and the fit) and the stabilizer's correction, on the source
+     * frame before any of those (VideoProcessor.editedClip). The preview
+     * summed them onto the canvas, so a stabilized clip that was turned,
+     * cropped or of another shape than the canvas was corrected along other
+     * axes, or by other amounts, than the file.
+     */
+    fun placedAt(timelineMs: Long): Transform {
+        val local = timelineMs - timelineStartMs
+        return keyframes.transformAt(local, staticTransform).animated(animationFrame(local))
+    }
+
+    /** The stabilizer's correction at a moment, in the source frame's units; identity when there is none. */
+    fun stabilizerAt(timelineMs: Long): Transform =
+        if (stabilizer.isEmpty()) Transform.Identity else stabilizer.transformAt(sourceAt(timelineMs), Transform.Identity)
+
     /** Whether the picture stands on its side: an odd number of quarter turns. */
     val isQuarterTurned: Boolean get() = quarterTurns % 2 != 0
 
@@ -1730,8 +1748,12 @@ fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): T
             offsetYFraction = placed.offsetYFraction,
             rotation = placed.rotationDegrees,
             keyframes = attrs.keyframesFor(sounding.durationMs),
-            chromaKey = attrs.chromaKey,
-            mask = attrs.mask,
+            // A photo on an overlay row is offered neither a key nor a mask
+            // (ToolRules, PhotoOverlay) and its preview draws neither, while the
+            // file applied a pasted one: the logo was whole on screen and keyed
+            // or cut in the file. It keeps its own, as it keeps its sound.
+            chromaKey = if (clip.isStillPicture) clip.chromaKey else attrs.chromaKey,
+            mask = if (clip.isStillPicture) clip.mask else attrs.mask,
             mirrored = attrs.mirrored,
             quarterTurns = attrs.quarterTurns,
             lookId = attrs.lookId,

@@ -59,6 +59,12 @@ data class SurfaceDraw(
     /** The clip's own placement, animated if it carries keyframes. */
     val transform: Transform = Transform.Identity,
     /**
+     * The stabilizer's correction (Clip.stabilizerAt), applied to the decoded
+     * picture itself - before its turn, crop and fit, as the file applies it -
+     * not with the placement on the canvas.
+     */
+    val stabilizer: Transform = Transform.Identity,
+    /**
      * The clip's own mirror and quarter turns, applied to the view inside the
      * canvas (see Clip.quarterTurns); and the decoded picture's shape, which a
      * turned view is fitted by - an unturned base view fills the canvas as it
@@ -113,6 +119,8 @@ data class OverlayPlacement(
     val visible: Boolean = false,
     val opacity: Float = 1f,
     val transform: Transform = Transform.Identity,
+    /** The stabilizer's correction, on the decoded picture before its turn and crop (see SurfaceDraw.stabilizer). */
+    val stabilizer: Transform = Transform.Identity,
     /** The clip's own mirror and quarter turns, applied to the view inside its fitted box. */
     val mirrored: Boolean = false,
     val quarterTurns: Int = 0,
@@ -281,6 +289,7 @@ class PreviewEngine(private val context: Context) {
         var covering = false
         var wasVisible = false
         var lastTransform: Transform = Transform.Identity
+        var lastStabilizer: Transform = Transform.Identity
         /** The turn the last shot shown had, kept with its placement for the hold at a cut. */
         var lastMirrored = false
         var lastTurns = 0
@@ -763,7 +772,10 @@ class PreviewEngine(private val context: Context) {
         if (s.isBase && (clip !== s.effectsClip || effects !== s.effectsFrom)) {
             s.effectsClip = clip
             s.effectsFrom = effects
-            val here = effects
+            // Drawn over the whole canvas instead where the phone can
+            // (CanvasFx): the chain's pass is then left at rest, a copy that
+            // still writes the frame opaque, so the chain is never rebuilt.
+            val here = if (CanvasFx.enabled) emptyList() else effects
                 .filter { it.endMs > clip.timelineStartMs && it.startMs < clip.timelineEndMs }
                 .map { it.shiftedInto(clip) }
             if (here != s.effects.get()) {
@@ -1071,16 +1083,16 @@ class PreviewEngine(private val context: Context) {
             val ready = if (onA) readyA else readyB
             // Its own fade - a keyed opacity, an arrival - as the file draws it.
             val own = if (onA) surfaceA else surfaceB
-            val shown = SurfaceDraw(visible = ready, alpha = only.opacityAt(at), transform = only.transformAt(at)).turnedAs(only, own)
+            val shown = SurfaceDraw(visible = ready, alpha = only.opacityAt(at), transform = only.placedAt(at), stabilizer = only.stabilizerAt(at)).turnedAs(only, own)
             val held = if (onA) surfaceB else surfaceA
             val other = if (!ready && (if (onA) holdB else holdA)) {
                 SurfaceDraw(
-                    visible = true, transform = held.lastTransform,
+                    visible = true, transform = held.lastTransform, stabilizer = held.lastStabilizer,
                     mirrored = held.lastMirrored, quarterTurns = held.lastTurns, crop = held.lastCrop,
                     clipId = held.shownClipId, aspect = held.videoAspect
                 )
             } else {
-                SurfaceDraw(visible = false, transform = only.transformAt(at), crop = only.crop, clipId = only.id)
+                SurfaceDraw(visible = false, transform = only.placedAt(at), stabilizer = only.stabilizerAt(at), crop = only.crop, clipId = only.id)
             }
             return if (onA) remember(shown, other) else remember(other, shown)
         }
@@ -1103,12 +1115,12 @@ class PreviewEngine(private val context: Context) {
         val outMoved = outDraw.copy(
             visible = outDraw.visible && outReady,
             alpha = outDraw.alpha * outgoing.opacityAt(at),
-            transform = outgoing.transformAt(at)
+            transform = outgoing.placedAt(at), stabilizer = outgoing.stabilizerAt(at)
         ).turnedAs(outgoing, if (aIsIncoming) surfaceB else surfaceA)
         val inMoved = inDraw.copy(
             visible = inDraw.visible && inReady,
             alpha = inDraw.alpha * incoming.opacityAt(at),
-            transform = incoming.transformAt(at)
+            transform = incoming.placedAt(at), stabilizer = incoming.stabilizerAt(at)
         ).turnedAs(incoming, if (aIsIncoming) surfaceA else surfaceB)
         return remember(
             if (aIsIncoming) inMoved else outMoved,
@@ -1168,6 +1180,7 @@ class PreviewEngine(private val context: Context) {
 
     private fun Surface.noteShown(draw: SurfaceDraw) {
         lastTransform = draw.transform
+        lastStabilizer = draw.stabilizer
         lastMirrored = draw.mirrored
         lastTurns = draw.quarterTurns
         lastCrop = draw.crop
@@ -1249,7 +1262,8 @@ class PreviewEngine(private val context: Context) {
                 layer = layer,
                 visible = s.shownClipId == clip.id,
                 opacity = own.alpha,
-                transform = clip.transformAt(t),
+                transform = clip.placedAt(t),
+                stabilizer = clip.stabilizerAt(t),
                 mirrored = clip.mirrored,
                 quarterTurns = clip.quarterTurns,
                 draw = own,

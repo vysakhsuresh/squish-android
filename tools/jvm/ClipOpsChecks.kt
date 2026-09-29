@@ -462,6 +462,25 @@ fun main() {
             "paste from a sound reset the picture: keys ${p.keyframes.size}, x ${p.offsetXFraction}, mask ${p.mask}, mirror ${p.mirrored}, turns ${p.quarterTurns}")
     }
 
+    // --- The stabilizer apart from the placement, as the file applies them. -----------
+    run {
+        val shake = listOf(Keyframe(2_000, Transform(scale = 1.1f, offsetXFraction = 0.02f), KeyframeEasing.Linear),
+            Keyframe(8_000, Transform(scale = 1.1f, offsetXFraction = -0.04f), KeyframeEasing.Linear))
+        val a = video("a", 6_000, srcIn = 2_000).copy(stabilizer = shake, scale = 0.5f, offsetXFraction = 0.3f)
+        for (at in listOf(0L, 1_500L, 3_000L, 5_999L)) {
+            val whole = a.transformAt(at)
+            val placed = a.placedAt(at)
+            val fix = a.stabilizerAt(at)
+            // The split adds back up to what the rest of the editor reads.
+            check(abs(whole.scale - placed.scale * fix.scale) < 1e-5f && abs(whole.offsetXFraction - (placed.offsetXFraction + fix.offsetXFraction)) < 1e-5f,
+                "at $at: $whole is not $placed with $fix")
+            check(placed == a.placementAt(at), "at $at the placement carries the correction: $placed")
+            // And the correction is the export's, on the source clock.
+            check(fix == ExportPlan.motionAt(a, ExportPlan.MotionPart.Stabilizer, a.sourceAt(at) - a.sourceInMs), "at $at the correction is not the file's")
+        }
+        check(video("b", 1_000).stabilizerAt(500).isIdentity, "an unstabilized clip is corrected")
+    }
+
     // --- A frozen frame lands where each state shows it. ------------------------------
     run {
         val shot = video("a", 6_000, srcIn = 2_000)
@@ -475,6 +494,18 @@ fun main() {
         check(shot.timelineOfFrame(file, 1_000) == null, "a frame before the window is shown")
         check(shot.timelineOfFrame(file, 8_000) == null, "the out-point itself is shown")
         check(shot.timelineOfFrame(Uri.parse("content://other"), 5_000) == null, "another file's frame is shown")
+    }
+
+    // --- A photo overlay takes no key and no mask from a paste. ------------------------
+    run {
+        val keyed = video("pip", 3_000, layer = 1).copy(chromaKey = com.squish.app.timeline.ChromaKey(), mask = Mask())
+        val logo = video("logo", 3_000, start = 4_000, layer = 1, uri = "file:///data/user/0/com.squish.app/files/stills/overlay_1.png")
+        check(logo.isStillPicture, "the logo is not a photo overlay")
+        val after = TimelineState(clips = listOf(video("base", 10_000), keyed, logo)).withAttributesPasted("logo", keyed.attributes).byId("logo")
+        check(after.chromaKey == null && after.mask == null, "a photo overlay took a key or mask its preview never draws: ${after.chromaKey}, ${after.mask}")
+        val pip2 = video("pip2", 3_000, start = 4_000, layer = 2)
+        val onFootage = TimelineState(clips = listOf(video("base", 10_000), keyed, pip2)).withAttributesPasted("pip2", keyed.attributes).byId("pip2")
+        check(onFootage.chromaKey != null && onFootage.mask != null, "footage no longer takes a pasted key and mask")
     }
 
     // --- A pasted curve on an overlay ripples its row, as the speed sheet does. --------

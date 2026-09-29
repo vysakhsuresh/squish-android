@@ -182,8 +182,11 @@ object FrameRules {
         val track = shot.reframe ?: return null
         val sample = track.sampleAt(shot.sourceAt(timelineMs)) ?: return null
         // The user's placement alone: the stabilizer's correction is a frame's
-        // shake, not where the shot was put.
-        val placement = shot.keyframes.transformAt(timelineMs - shot.timelineStartMs, shot.staticTransform)
+        // shake, not where the shot was put. With its arrival, leaving and loop,
+        // as the export's ReframeEffect reads it (ExportPlan.motionAt User):
+        // left out, the window stayed on the resting subject while the file's
+        // chased it sliding in.
+        val placement = shot.placedAt(timelineMs)
         return subjectOnCanvas(
             sample.xFraction, sample.yFraction, shot.crop, sourceAspectOf(shot), rotationDegrees, placement, canvasAspect
         )
