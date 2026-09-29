@@ -20,3 +20,6 @@ local.properties
 *.aab
 # Kotlin 2.x Gradle plugin session and error logs.
 /.kotlin
+
+# Local agent state and the worktrees parallel sessions build in.
+/.claude/
