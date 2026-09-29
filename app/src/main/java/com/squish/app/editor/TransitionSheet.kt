@@ -24,6 +24,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import com.squish.app.media.ThumbnailExtractor
+import kotlin.math.roundToInt
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -75,13 +83,29 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
     val previous = if (clip.isOverlay) null else state.videoClips.filter { !it.isOverlay }
         .sortedBy { it.timelineStartMs }.let { base -> base.getOrNull(base.indexOfFirst { it.id == clip.id } - 1) }
     val plays = if (clip.isOverlay) ExportPlan.overlayTransitionMs(clip) else previous?.let { transitionOverlapMs(clip, it) } ?: current.durationMs
+    // The tiles play each transition between the two real shots - the end of
+    // the one before, the start of this one - instead of two grey boxes. Read
+    // once per join; until they arrive the drawn shots stand in.
+    val context = LocalContext.current
+    val incomingFrame by produceState<ImageBitmap?>(null, clip.uri, clip.sourceInMs) {
+        value = clip.uri?.let { ThumbnailExtractor.frameAt(context, it, clip.sourceInMs + FRAME_INSET_MS)?.asImageBitmap() }
+    }
+    val outgoingFrame by produceState<ImageBitmap?>(null, previous?.uri, previous?.sourceOutMs) {
+        value = previous?.let { p -> p.uri?.let { ThumbnailExtractor.frameAt(context, it, (p.sourceOutMs - FRAME_INSET_MS).coerceAtLeast(p.sourceInMs))?.asImageBitmap() } }
+    }
+    // Which shot, by its place in the edit: "shot 3" is how a person thinks of
+    // it, and the file name - "1001317917.mp4" - is not.
+    val shotName = if (clip.isOverlay) "this overlay" else {
+        val base = state.videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
+        "shot ${base.indexOfFirst { it.id == clip.id } + 1}"
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = accent) {
             // Back to a cut is the sheet's Reset; a second "None" here did the same thing.
             PanelHeading(
                 if (clip.isOverlay) "Transition" else "Transition in",
-                if (current.isActive) "${current.type.label} · how ${clip.label} arrives" else "How ${clip.label} arrives",
+                if (current.isActive) "${current.type.label} · how $shotName arrives" else "How $shotName arrives",
                 icon = Icons.Filled.Transform,
                 accent = accent
             )
@@ -104,6 +128,8 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
                             selected = current.type == type,
                             accent = accent,
                             arrival = clip.isOverlay,
+                            outgoingFrame = outgoingFrame,
+                            incomingFrame = incomingFrame,
                             modifier = Modifier.weight(1f),
                             onClick = { viewModel.layers.setTransition(clip.id, type, current.durationMs) }
                         )
@@ -165,6 +191,8 @@ private fun TransitionTile(
     selected: Boolean,
     accent: Color,
     arrival: Boolean,
+    outgoingFrame: ImageBitmap?,
+    incomingFrame: ImageBitmap?,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -195,11 +223,11 @@ private fun TransitionTile(
                 .background(Color.Black)
         ) {
             if (arrival) {
-                drawShot(ExportPlan.arrival(type, p.coerceIn(0f, 1f)), INCOMING)
+                drawShot(ExportPlan.arrival(type, p.coerceIn(0f, 1f)), INCOMING, incomingFrame)
             } else {
                 val (incoming, outgoing) = ExportPlan.blend(type, p.coerceIn(0f, 1f), incomingOnTop = true)
-                drawShot(outgoing, OUTGOING)
-                drawShot(incoming, INCOMING)
+                drawShot(outgoing, OUTGOING, outgoingFrame)
+                drawShot(incoming, INCOMING, incomingFrame)
             }
         }
         // Two lines' room, every tile the same height: four across on a narrow
@@ -217,7 +245,7 @@ private fun TransitionTile(
 }
 
 /** One shot as the transition shader draws it: shifted, scaled, cut to its rectangle, whitened, faded. */
-private fun DrawScope.drawShot(draw: ExportPlan.Draw, colour: Color) {
+private fun DrawScope.drawShot(draw: ExportPlan.Draw, colour: Color, frame: ImageBitmap?) {
     if (draw.alpha <= 0f) return
     val w = size.width
     val h = size.height
@@ -231,12 +259,30 @@ private fun DrawScope.drawShot(draw: ExportPlan.Draw, colour: Color) {
         val sh = h * draw.scale
         val left = w * draw.shiftX + (w - sw) / 2f
         val top = h * draw.shiftY + (h - sh) / 2f
+        val a = draw.alpha.coerceIn(0f, 1f)
+        if (frame != null) {
+            // The shot's own frame, covering its rectangle; whitened as the
+            // shader whitens it, by white laid over at that strength.
+            val cover = maxOf(sw / frame.width, sh / frame.height)
+            val dw = frame.width * cover
+            val dh = frame.height * cover
+            drawImage(
+                frame,
+                srcOffset = IntOffset.Zero,
+                srcSize = IntSize(frame.width, frame.height),
+                dstOffset = IntOffset((left + (sw - dw) / 2f).roundToInt(), (top + (sh - dh) / 2f).roundToInt()),
+                dstSize = IntSize(dw.roundToInt(), dh.roundToInt()),
+                alpha = a
+            )
+            if (draw.white > 0f) drawRect(Color.White, topLeft = Offset(left, top), size = Size(sw, sh), alpha = a * draw.white.coerceIn(0f, 1f))
+            return@clipRect
+        }
         val lit = Color(
             red = colour.red + (1f - colour.red) * draw.white,
             green = colour.green + (1f - colour.green) * draw.white,
             blue = colour.blue + (1f - colour.blue) * draw.white
         )
-        drawRect(color = lit, topLeft = Offset(left, top), size = Size(sw, sh), alpha = draw.alpha.coerceIn(0f, 1f))
+        drawRect(color = lit, topLeft = Offset(left, top), size = Size(sw, sh), alpha = a)
         // A mark on each shot, so a slide reads as movement and not a change of colour.
         drawCircle(
             color = Color.Black.copy(alpha = 0.35f * draw.alpha.coerceIn(0f, 1f)),
@@ -245,6 +291,9 @@ private fun DrawScope.drawShot(draw: ExportPlan.Draw, colour: Color) {
         )
     }
 }
+
+/** How far inside a shot its tile frame is taken: not the very first or last frame, which is often a fade or a blur. */
+private const val FRAME_INSET_MS = 300L
 
 private val OUTGOING = Color(0xFF5B6478)
 private val INCOMING = Color(0xFFB8C4DC)

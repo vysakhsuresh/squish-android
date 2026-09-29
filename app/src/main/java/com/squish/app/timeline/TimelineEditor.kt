@@ -1311,6 +1311,16 @@ private val Clip.shownName: String
 private const val EMPTY_TEXT = "Empty text"
 
 /**
+ * A picture clip named by its place, as the transition sheet names it - "Shot 2",
+ * "Overlay" - rather than its file, which on a phone is "1001317917.mp4".
+ */
+private fun hintName(clip: Clip, state: TimelineState): String = when {
+    clip.kind != ClipKind.Video -> clip.shownName
+    clip.layer > 0 -> "Overlay"
+    else -> "Shot ${state.baseVideoClips.indexOfFirst { it.id == clip.id } + 1}"
+}
+
+/**
  * The playhead: a line down the middle of the strip with a head on the ruler.
  * Fixed - the strip moves under it - and never a touch target, so nothing it
  * crosses is ever hidden from a finger.
@@ -1780,7 +1790,7 @@ private fun ClipView(
             .background(accent.copy(alpha = if (selected) 0.42f else if (folded) 0.5f else 0.26f))
             .border(
                 width = if (selected) 2.dp else 1.dp,
-                color = if (selected) accent else accent.copy(alpha = 0.5f),
+                color = if (selected) SELECTED_FRAME else accent.copy(alpha = 0.5f),
                 shape = shape
             )
             // A tap selects, and does nothing else. It used to move the playhead
@@ -1898,7 +1908,9 @@ private fun ClipView(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(accent.copy(alpha = if (selected) 0.36f else 0.24f))
+                    // A light tint says which track this is; none once selected, when the
+                    // white frame says it and the frames should be seen clearly.
+                    .background(accent.copy(alpha = if (selected) 0f else 0.16f))
             )
         }
 
@@ -2031,7 +2043,7 @@ private fun ClipView(
         // that carries on past the screen would trim from a point the user never
         // chose - it is the edge of the view, not the edge of the shot.
         if (selected && headVisible) {
-            TrimHandle(accent, handleWidth, Alignment.CenterStart, window,
+            TrimHandle(SELECTED_FRAME, handleWidth, Alignment.CenterStart, window,
                 onStart = { trims.begin(clip.id, true, latestClip) },
                 onTravel = { anchor, travel -> trims.clip(anchor, true, travel) },
                 anchor = { latestClip },
@@ -2039,7 +2051,7 @@ private fun ClipView(
             )
         }
         if (selected && tailVisible) {
-            TrimHandle(accent, handleWidth, Alignment.CenterEnd, window,
+            TrimHandle(SELECTED_FRAME, handleWidth, Alignment.CenterEnd, window,
                 onStart = { trims.begin(clip.id, false, latestClip) },
                 onTravel = { anchor, travel -> trims.clip(anchor, false, travel) },
                 anchor = { latestClip },
@@ -2303,12 +2315,14 @@ private fun <T> BoxScope.TrimHandle(
             }
         }
     }
+    // The whole width answers the finger; only a slim grip at the very edge is
+    // drawn. Drawn full width, the two grips on a short clip covered two thirds
+    // of it in solid colour and its frames disappeared the moment it was tapped.
     Box(
         modifier = Modifier
             .align(alignment)
             .width(width)
             .fillMaxHeight()
-            .background(accent)
             .pointerInput(alignment) {
                 var travelMs = 0.0
                 var from: T? = null
@@ -2327,17 +2341,31 @@ private fun <T> BoxScope.TrimHandle(
                     from?.let { latestTravel(it, travelMs) }
                 }
             },
-        contentAlignment = Alignment.Center
+        contentAlignment = if (alignment == Alignment.CenterStart) Alignment.CenterStart else Alignment.CenterEnd
     ) {
         Box(
             modifier = Modifier
-                .width(2.dp)
-                .height(16.dp)
-                .clip(RoundedCornerShape(1.dp))
-                .background(SquishColors.Background.copy(alpha = 0.7f))
-        )
+                .width(minOf(width, GRIP_DRAWN))
+                .fillMaxHeight()
+                .background(accent),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(2.dp)
+                    .height(16.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(SquishColors.Background.copy(alpha = 0.7f))
+            )
+        }
     }
 }
+
+/** How wide a trim grip is drawn; the touch area around it stays [HANDLE_WIDTH]. */
+private val GRIP_DRAWN = 10.dp
+
+/** The selected clip's frame and grips: white, as CapCut marks a selection, over any track colour. */
+private val SELECTED_FRAME = Color.White
 
 /**
  * The carried clip: a copy of the bar, lifted - a touch larger, with a shadow -
@@ -2457,7 +2485,7 @@ fun TimelineActionBar(
             // selection first: what undo would reverse is on the header's button.
             Text(
                 when {
-                    selected != null -> "${selected.shownName} · hold to move, drag its ends to trim"
+                    selected != null -> "${hintName(selected, state)} · hold to move, drag its ends to trim"
                     effectSelected -> "Effect selected · hold to move, drag its ends to retime"
                     splittable -> "Split cuts the clip under the playhead"
                     nearEdge -> "Too close to the end of the clip to split here"
