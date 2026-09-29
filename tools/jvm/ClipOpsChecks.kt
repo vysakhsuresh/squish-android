@@ -462,6 +462,21 @@ fun main() {
             "paste from a sound reset the picture: keys ${p.keyframes.size}, x ${p.offsetXFraction}, mask ${p.mask}, mirror ${p.mirrored}, turns ${p.quarterTurns}")
     }
 
+    // --- A frozen frame lands where each state shows it. ------------------------------
+    run {
+        val shot = video("a", 6_000, srcIn = 2_000)
+        val file = shot.uri
+        // The frame 5 s into the file is 3 s into the shot.
+        check(shot.timelineOfFrame(file, 5_000) == 3_000L, "frame at ${shot.timelineOfFrame(file, 5_000)}")
+        // A main-track head trim keeps the start and moves the source: the same
+        // frame is a second earlier on the strip - not the same moment.
+        val trimmed = shot.copy(sourceInMs = 3_000)
+        check(trimmed.timelineOfFrame(file, 5_000) == 2_000L, "after a head trim the frame is at ${trimmed.timelineOfFrame(file, 5_000)}")
+        check(shot.timelineOfFrame(file, 1_000) == null, "a frame before the window is shown")
+        check(shot.timelineOfFrame(file, 8_000) == null, "the out-point itself is shown")
+        check(shot.timelineOfFrame(Uri.parse("content://other"), 5_000) == null, "another file's frame is shown")
+    }
+
     // --- A pasted curve on an overlay ripples its row, as the speed sheet does. --------
     run {
         val slow = video("slow", 2_000, ramp = SpeedRamp.flat(0.5f))

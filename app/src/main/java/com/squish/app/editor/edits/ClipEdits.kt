@@ -452,7 +452,14 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         _state.update { it.copy(effects = it.effects + effect) }
     }
 
-    fun changeEffect(id: String, change: (TimedEffect) -> TimedEffect) = record("Effect change", gesture = "Effect $id") {
+    /**
+     * A change to an effect. A slider sends a stream of them, one step under
+     * the gesture; [discrete] is a tap (Reset), filed as a step of its own - it
+     * went under the slider's gesture id, so a drag begun within the hold
+     * window folded into it and one Undo skipped the reset.
+     */
+    fun changeEffect(id: String, discrete: Boolean = false, change: (TimedEffect) -> TimedEffect) =
+        record("Effect change", gesture = if (discrete) null else "Effect $id") {
         _state.update { current ->
             current.copy(effects = current.effects.map { e ->
                 if (e.id != id) e else change(e).let { c ->
@@ -1344,8 +1351,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 )
                 // Where the frozen frame is now, on the clip as it is now.
                 val now = _state.value.videoClips.firstOrNull { it.id == clipId }
-                val landAt = now?.takeIf { it.uri == clip.uri && sourceMs >= it.sourceInMs && sourceMs < it.sourceOutMs }
-                    ?.let { it.timelineAtSource(sourceMs).coerceIn(it.timelineStartMs, it.timelineEndMs) }
+                val landAt = now?.timelineOfFrame(clip.uri, sourceMs)
                 if (landAt == null) {
                     runCatching { File(made.path ?: "").delete() }
                     _state.update { it.copy(failure = SquishError.FrozenFrameGone(clip.label)) }
@@ -1353,7 +1359,11 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 }
                 recordLate("Freeze frame", edit = { snapshot ->
                     snapshot.withTimeline { t ->
-                        val landed = t.withFrozenFrame(clipId, landAt, still.copy(timelineStartMs = landAt))
+                        // Where the frame is in *this* state: beneath a trim
+                        // still moving, it is the state before the trim.
+                        val here = t.clips.firstOrNull { it.id == clipId }?.timelineOfFrame(clip.uri, sourceMs)
+                            ?: return@withTimeline t
+                        val landed = t.withFrozenFrame(clipId, here, still.copy(timelineStartMs = here))
                         if (landed.selectedClipId == still.id && t.selectedClipId != clipId) landed.copy(selectedClipId = t.selectedClipId)
                         else landed
                     }

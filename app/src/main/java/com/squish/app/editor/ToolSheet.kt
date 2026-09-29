@@ -285,7 +285,7 @@ fun EditorToolSheet(
         Tool.Fade -> clip?.let { c -> { viewModel.audio.clearFades(c.id) } }
         Tool.Voice -> clip?.let { c -> { viewModel.audio.setClipVoice(c.id, com.squish.app.timeline.VoiceEffect.None) } }
         Tool.Style -> item?.let { i -> { viewModel.text.restyleCaption(i.id, { it.withDefaultStyle() }) } }
-        Tool.Strength -> effect?.let { e -> { viewModel.clips.changeEffect(e.id) { it.copy(intensity = DEFAULT_STRENGTH) } } }
+        Tool.Strength -> effect?.let { e -> { viewModel.clips.changeEffect(e.id, discrete = true) { it.copy(intensity = DEFAULT_STRENGTH) } } }
         // Where the sheet opened - the old clip's own in-point - as every sheet's
         // Reset is the value it opened with. It went to the start of the file.
         Tool.Replace -> state.replacing?.let { r -> { viewModel.clips.setReplaceInPoint(r.defaultInMs) } }

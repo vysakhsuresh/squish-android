@@ -82,7 +82,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 PlacedEffect(
                     effect = effect,
                     onJump = { viewModel.scrubTo(effect.startMs) },
-                    onChange = { change -> viewModel.clips.changeEffect(effect.id, change) },
+                    onChange = { change -> viewModel.clips.changeEffect(effect.id, change = change) },
                     onRemove = { viewModel.clips.removeEffect(effect.id) },
                     onGestureEnd = viewModel::endGesture
                 )
@@ -291,7 +291,7 @@ fun EffectStrengthPanel(effect: TimedEffect, viewModel: EditorViewModel) {
         )
         EffectSliders(
             effect,
-            onChange = { change -> viewModel.clips.changeEffect(effect.id, change) },
+            onChange = { change -> viewModel.clips.changeEffect(effect.id, change = change) },
             onGestureEnd = viewModel::endGesture
         )
     }

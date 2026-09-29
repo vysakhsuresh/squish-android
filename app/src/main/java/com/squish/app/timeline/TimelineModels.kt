@@ -436,6 +436,18 @@ data class Clip(
             sourceSpanMs
         )
 
+    /**
+     * Where this clip shows the frame at [sourceMs] of [file] on the timeline,
+     * or null when it does not show it. Asked of each state a frozen frame is
+     * landed in (the screen's, and the one under a trim still moving): the
+     * same moment in both put the still at a different frame of a main-track
+     * shot whose head was being trimmed, since that trim moves the source
+     * under a start that stays.
+     */
+    fun timelineOfFrame(file: Uri?, sourceMs: Long): Long? =
+        if (uri != file || sourceMs < sourceInMs || sourceMs >= sourceOutMs) null
+        else timelineAtSource(sourceMs).coerceIn(timelineStartMs, timelineEndMs)
+
     /** Where the picture sits when nothing is animating it. */
     val staticTransform: Transform
         get() = Transform(scale, offsetXFraction, offsetYFraction, rotation)

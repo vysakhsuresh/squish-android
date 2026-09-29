@@ -84,10 +84,19 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
                 _state.update { it.copy(backgroundProgress = ReframeProgress(failed = true)) }
                 return@launch
             }
-            _state.update { it.copy(backgroundProgress = ReframeProgress()) }
             val fill = clip.background?.fill ?: BackgroundFill.Blur
             val colour = clip.background?.colorArgb ?: BackgroundRemoval(file).colorArgb
-            setBackground(clip.id, BackgroundRemoval(file, fill, colour))
+            val found = BackgroundRemoval(file, fill, colour)
+            // Beneath any gesture still moving, as Stabilize and Auto-reframe
+            // land: through record() it closed a slider being dragged while
+            // the person was being found, and cut the drag into two steps.
+            recordLate(
+                "Background",
+                edit = { snapshot ->
+                    snapshot.copy(videoClips = snapshot.videoClips.map { if (it.id == clip.id) it.copy(background = found) else it })
+                },
+                alongside = { it.copy(backgroundProgress = ReframeProgress()) }
+            )
         }
     }
 
