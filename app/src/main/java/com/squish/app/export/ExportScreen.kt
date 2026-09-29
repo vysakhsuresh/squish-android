@@ -17,6 +17,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -199,14 +200,10 @@ fun ExportScreen(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onDone
                 )
-                Spacer(modifier = Modifier.height(96.dp))
+                // No floating back orb: it sat on the share row, and the way back
+                // is the button just above.
+                Spacer(modifier = Modifier.height(24.dp))
             }
-
-            BackOrb(
-                accent = SquishColors.Cyan,
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 24.dp)
-            )
         }
     }
 }
@@ -351,11 +348,14 @@ private fun Cover(cover: Bitmap?, meta: VideoMeta?, isAudio: Boolean, onPlay: ()
         cover != null -> (cover.width.toFloat() / cover.height.coerceAtLeast(1)).coerceIn(0.5f, 2.2f)
         else -> 16f / 9f
     }
+    // Sized outright: aspectRatio under a height cap took the width first, so a
+    // portrait file's cover was laid out 300 dp tall but drawn twice that,
+    // over the title above it and the cards below.
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    val width = minOf(maxWidth, COVER_MAX_HEIGHT * shape)
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 300.dp)
-            .aspectRatio(shape)
+            .size(width, width / shape)
             .clip(RoundedCornerShape(18.dp))
             .background(SquishColors.Surface)
             .border(1.dp, SquishColors.Border, RoundedCornerShape(18.dp))
@@ -393,7 +393,11 @@ private fun Cover(cover: Bitmap?, meta: VideoMeta?, isAudio: Boolean, onPlay: ()
             )
         }
     }
+    }
 }
+
+/** The tallest a cover is drawn: a portrait file's stays clear of the cards under it. */
+private val COVER_MAX_HEIGHT = 300.dp
 
 /**
  * What the file is: its frame, length, rate and weight, each measured off the
