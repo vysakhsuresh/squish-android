@@ -454,8 +454,12 @@ fun EditorScreen(
                 // sheet's own height with the strip unfolding above it, so the
                 // tabs jumped on every tab tapped and fast taps landed on the strip.
                 var keyboardPx by rememberSaveable { mutableIntStateOf(0) }
+                var editChip by rememberSaveable { mutableIntStateOf(0) }
                 LaunchedEffect(imePx) { if (imePx > keyboardPx) keyboardPx = imePx }
-                val holding = openTool == Tool.Edit && !typing && keyboardPx > 0
+                // Only on a tab that is not for typing. Dismissing the keyboard on the
+                // Keyboard tab itself used to hold its room too: an empty block where
+                // the keys had been, the strip gone, and Done moving under the thumb.
+                val holding = openTool == Tool.Edit && editChip != 0 && !typing && keyboardPx > 0
                 val keyboardDp = with(density) { keyboardPx.toDp() }
                 val cardsScroll = rememberScrollState()
                 val stripScroll = rememberScrollState()
@@ -493,9 +497,11 @@ fun EditorScreen(
                         state = timeline,
                         onSelect = selectFromStrip,
                         onLift = liftFromStrip,
-                        // Every row stays readable while clips are being added to
-                        // the set: the caption to add is on a row the lead is not.
-                        foldRows = !state.selectingMore,
+                        // Rows never fold to thin bars. Folding the tracks the selection
+                        // is not on made the strip look squeezed and jumpy every time a
+                        // clip was tapped (seen on the phone); CapCut keeps every row as
+                        // it is, and the strip scrolls when there are more than fit.
+                        foldRows = false,
                         onTrimEdge = viewModel.clips::trimEdgeTo,
                         onTrimHeadIn = viewModel.clips::trimHeadInTo,
                         onTrimEnd = viewModel.clips::trimEnded,
@@ -598,6 +604,7 @@ fun EditorScreen(
                             },
                             onEyedropper = { pick -> eyedropper = pick },
                             onEyedropperCancel = { eyedropper = null },
+                            onChipChanged = { editChip = it },
                             onEditLine = { id ->
                                 viewModel.selectClip(id)
                                 openToolName = Tool.Edit.name

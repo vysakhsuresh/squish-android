@@ -550,6 +550,9 @@ private fun TextSlider(
 /** How long "Saved the subtitle file" stays up. */
 private const val NOTICE_MS = 4_000L
 
+/** How long a typed value is recognised as the field's own when the state echoes it back. */
+private const val ECHO_MS = 1_500L
+
 /** The lines list's height before it scrolls inside the sheet. */
 private val LINES_MAX_HEIGHT = 320.dp
 
@@ -608,9 +611,24 @@ fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel, selectAl
             TextFieldValue(caption.text, if (selectAll) TextRange(0, caption.text.length) else TextRange(caption.text.length))
         )
     }
-    // Changed from elsewhere - undo, a restyle - the field follows the line.
+    // What this field last handed the view model. The line's text comes back a
+    // recomposition behind the keystrokes, so during quick typing it is an older
+    // value than the field's - and following that wrote the field back over the
+    // letters just typed. On the phone "Handmade with love" came out "Handde
+    // wthlov". The field follows the line only when the line changed from
+    // elsewhere (undo, a restyle), which is when it differs from what was sent.
+    // Every value typed in the last moment, not just the last one: the state
+    // comes back a frame late, so during a quick run of keys it is one of the
+    // earlier letters' values - and following that is what dropped them. An
+    // echo of a recent keystroke is ignored; anything else (an undo, a restyle)
+    // is followed.
+    val sent = remember(caption.id) { LinkedHashMap<String, Long>() }
     LaunchedEffect(caption.text) {
-        if (field.text != caption.text) field = field.copy(text = caption.text, selection = TextRange(caption.text.length))
+        val now = android.os.SystemClock.uptimeMillis()
+        sent.entries.removeAll { now - it.value > ECHO_MS }
+        if (caption.text != field.text && caption.text !in sent) {
+            field = field.copy(text = caption.text, selection = TextRange(caption.text.length))
+        }
     }
     // Edit is for typing, so it opens with the keyboard up - after Add text and
     // from a line's own toolbar alike. Only Add text used to, and editing an
@@ -636,7 +654,10 @@ fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel, selectAl
             value = field,
             onValueChange = { typed ->
                 field = typed
-                if (typed.text != caption.text) viewModel.text.updateCaptionText(caption.id, typed.text)
+                if (typed.text != caption.text) {
+                    sent[typed.text] = android.os.SystemClock.uptimeMillis()
+                    viewModel.text.updateCaptionText(caption.id, typed.text)
+                }
             },
             modifier = Modifier
                 .fillMaxWidth()

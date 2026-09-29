@@ -156,6 +156,8 @@ fun EditorToolSheet(
     onEyedropper: ((Int) -> Unit) -> Unit = {},
     /** Gives the eyedropper up: the tab that asked for it has gone. */
     onEyedropperCancel: () -> Unit = {},
+    /** Which tab of a tabbed sheet is showing, for the layout around it. */
+    onChipChanged: (Int) -> Unit = {},
     /** A line picked from Text's list: selected, with its keyboard up in place of the sheet. */
     onEditLine: (String) -> Unit = {},
     /** A picture wanted for the canvas's background: the picker, whose pick lands through ClipEdits.setCanvasImage. */
@@ -206,6 +208,7 @@ fun EditorToolSheet(
     // has the room; the field is a tap away on the Keyboard tab.
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(tool, chip) {
+        onChipChanged(chip)
         if (tool == Tool.Edit && chip != 0) keyboard?.hide()
         // A pick asked for by the Style tab must not land on the Bubble tab's colour.
         onEyedropperCancel()
