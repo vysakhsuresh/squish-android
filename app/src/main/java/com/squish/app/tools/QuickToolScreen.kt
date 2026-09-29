@@ -442,10 +442,10 @@ private fun PreviewCard(
                     color = SquishColors.TextMuted
                 )
             }
-            // Named for what it does: a Stitch's picker appends, so "Change" on
-            // it added clips rather than replacing them.
-            Text(
-                if (tool == QuickTool.Stitch) "Add clips" else "Change",
+            // Stitch adds from "Add more clips" under its list; the same button
+            // here as well was one too many.
+            if (tool != QuickTool.Stitch) Text(
+                "Change",
                 style = MaterialTheme.typography.labelLarge,
                 color = tool.accent,
                 modifier = Modifier
@@ -636,7 +636,11 @@ private fun MergeRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                "${Timecode.format(clip.durationMs)}  ·  starts at ${Timecode.format(clip.timelineStartMs)}",
+                // Whole seconds and one line: to the millisecond it broke over two.
+                "${Timecode.format(clip.durationMs).substringBefore('.')} long  ·  from ${Timecode.format(clip.timelineStartMs).substringBefore('.')}",
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted
             )

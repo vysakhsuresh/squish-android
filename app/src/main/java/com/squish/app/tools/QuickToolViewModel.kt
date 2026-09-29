@@ -439,8 +439,10 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     /** [addMergeClips], for a caller that needs to know when the clips are in. */
     private suspend fun appendMergeClips(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        // The first pick fills an empty list, and is the starting point rather
-        // than an edit. Anything added after that is.
+        // The first pick fills an empty list. One clip is the starting point
+        // rather than an edit; several, chosen and ordered, are the work itself -
+        // taken as untouched, two clips picked and the app killed kept nothing.
+        // Anything added after that is an edit too.
         val firstPick = _state.value.mergeClips.isEmpty()
         val added = uris.map { uri ->
             val meta = ThumbnailExtractor.probe(getApplication(), uri)
@@ -462,7 +464,12 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         }
         _state.update { current -> current.withMerge(current.mergeClips + added) }
         recomputeEstimate()
-        if (firstPick) markBaseline()
+        if (firstPick) {
+            if (added.size < 2) markBaseline()
+            // The empty list is the starting point instead: no baseline at all
+            // reads as untouched too.
+            else if (!resumed) baseline = EMPTY_BASELINE
+        }
     }
 
     fun moveMergeClip(clipId: String, delta: Int) {
@@ -787,6 +794,8 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private companion object {
+        /** A baseline no session matches: a Stitch whose first pick was already several clips. */
+        const val EMPTY_BASELINE = ""
         /** The editor's interval. A tool session changes far less often than a timeline. */
         val AUTOSAVE_INTERVAL = 1_500.milliseconds
     }

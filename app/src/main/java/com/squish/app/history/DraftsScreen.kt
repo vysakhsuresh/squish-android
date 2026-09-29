@@ -286,7 +286,8 @@ fun DraftsScreen(
             body = "This takes it out of Recently deleted before its 30 days are up.",
             caution = "There is no undo and nowhere to fetch it back from. " +
                 "Your original video is untouched; the work built on it is not.",
-            confirmLabel = "Delete for good",
+            // "for good" is in the title; on a half-width button it was cut to "Delete for".
+            confirmLabel = "Delete",
             onConfirm = {
                 onPurge(entry)
                 pendingPurge = null
@@ -345,22 +346,13 @@ private fun DraftCard(
         Thumb(thumb = thumb, toolDraft = draft.toolId != null)
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    draft.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = SquishColors.TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                // An exported edit stays in the list: it is the one most likely
-                // to be opened again for one more change. The badge says which
-                // kind of "unfinished" this is.
-                if (draft.exportedAtMillis != null) {
-                    ExportedBadge(editedSince = draft.editedSinceExport)
-                }
-            }
+            Text(
+                draft.title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = SquishColors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             Text(
                 draft.describe(),
                 style = MaterialTheme.typography.labelSmall,
@@ -376,12 +368,18 @@ private fun DraftCard(
                     color = SquishColors.Pink,
                     maxLines = 2
                 )
-            } else if (draft.durationMs > 0) {
-                Text(
-                    Timecode.format(draft.durationMs).removeSuffix(".000"),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.TextMuted.copy(alpha = 0.7f)
-                )
+            } else if (draft.durationMs > 0 || draft.exportedAtMillis != null) {
+                // The badge on this line, not beside the name: there it cut the
+                // name to "Video · 30...". An exported edit stays in the list - it is
+                // the one most likely to be opened for one more change.
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (draft.durationMs > 0) Text(
+                        Timecode.format(draft.durationMs).removeSuffix(".000"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SquishColors.TextMuted.copy(alpha = 0.7f)
+                    )
+                    if (draft.exportedAtMillis != null) ExportedBadge(editedSince = draft.editedSinceExport)
+                }
             }
             // The snapshot that falls behind on purpose, offered by name. Kept on
             // disk and never reachable, it protected nothing: a run of bad saves
