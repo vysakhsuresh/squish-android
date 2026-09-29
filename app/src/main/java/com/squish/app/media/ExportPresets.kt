@@ -122,27 +122,55 @@ object ExportPresets {
      *
      * With no source bitrate to go on, a nominal rate for the frame size is used.
      */
-    fun bitrateFor(outputP: Int, sourceWidth: Int, sourceHeight: Int, fps: Float, sourceVideoBps: Long): Int =
-        bitrateForFrame(resolutionFor(outputP, sourceWidth, sourceHeight), sourceWidth, sourceHeight, fps, sourceVideoBps)
+    fun bitrateFor(
+        outputP: Int,
+        sourceWidth: Int,
+        sourceHeight: Int,
+        fps: Float,
+        sourceVideoBps: Long,
+        sourceFps: Float = fps
+    ): Int =
+        bitrateForFrame(resolutionFor(outputP, sourceWidth, sourceHeight), sourceWidth, sourceHeight, fps, sourceVideoBps, sourceFps)
 
     /**
      * The same, for an output frame already worked out - a cropped one, whose
      * pixels are fewer than the source's at the same size. Budgeting a 9:16 cut
      * of a landscape clip as if it were the whole frame spent three times the bits
      * the picture needed.
+     *
+     * [fps] is the rate the file is written at and [sourceFps] the footage's
+     * own: fewer frames a second are fewer frames to pay for, so the source's
+     * rate is scaled down with them. Without that, 30 chosen on 60 fps footage
+     * at Original size kept the source's whole bitrate - the same weight of
+     * file with half the frames, under a hint that promised a smaller one. A
+     * rate above the footage's changes nothing: no frames are made.
      */
-    fun bitrateForFrame(out: Resolution, sourceWidth: Int, sourceHeight: Int, fps: Float, sourceVideoBps: Long): Int {
+    fun bitrateForFrame(
+        out: Resolution,
+        sourceWidth: Int,
+        sourceHeight: Int,
+        fps: Float,
+        sourceVideoBps: Long,
+        sourceFps: Float = fps
+    ): Int {
         val nominal = nominalBitrate(out, fps)
         if (sourceVideoBps <= 0L || sourceWidth <= 0 || sourceHeight <= 0) return nominal
 
         val ratio = out.pixels.toDouble() / (sourceWidth.toLong() * sourceHeight)
-        val scaled = sourceVideoBps * ratio
+        val frames = frameShare(fps, sourceFps)
+        val scaled = sourceVideoBps * ratio * frames
         val chosen = when {
             ratio > 1.001 -> maxOf(scaled, nominal.toDouble())
             ratio < 0.999 -> minOf(scaled, nominal.toDouble())
-            else -> sourceVideoBps.toDouble()
+            else -> sourceVideoBps * frames
         }
         return chosen.toLong().coerceIn(MIN_VIDEO_BPS.toLong(), MAX_VIDEO_BPS.toLong()).toInt()
+    }
+
+    /** The share of the footage's frames the file keeps: one when either rate is unknown or the file's is higher. */
+    private fun frameShare(fps: Float, sourceFps: Float): Double {
+        if (!fps.isFinite() || !sourceFps.isFinite() || fps <= 1f || sourceFps <= 1f) return 1.0
+        return (fps / sourceFps).toDouble().coerceIn(0.0, 1.0)
     }
 
     /** About a tenth of a bit per pixel per frame: clean H.264 at phone sizes. */
@@ -161,8 +189,56 @@ object ExportPresets {
         return (videoBits / durationSec).toInt().coerceIn(300_000, 20_000_000)
     }
 
+    /**
+     * The size a fitted export is written at: the largest named size, no bigger
+     * than the frame itself, that the target's bitrate can still cover at
+     * [FIT_MIN_BITS_PER_PIXEL] a frame.
+     *
+     * Fitting used to keep the source's own size and spend the whole budget on
+     * bitrate: 16 MB over a minute of 4K is two megabits a second across eight
+     * million pixels, which is a wall of blocks, while the same bits over 720p
+     * are a clean picture. The size is solved from the budget instead - the
+     * short edge steps down until each pixel has enough - and [OutputSize.ORIGINAL]
+     * comes back when the frame as it is already qualifies, so a small clip is
+     * not resized for nothing.
+     */
+    fun fitOutputP(
+        targetSizeBytes: Long,
+        durationMs: Long,
+        fps: Float,
+        frameWidth: Int,
+        frameHeight: Int,
+        includeAudio: Boolean
+    ): Int = fitOutputPForBitrate(bitrateForTargetSize(targetSizeBytes, durationMs, includeAudio), fps, frameWidth, frameHeight)
+
+    /**
+     * The same, from the video bitrate the fit will actually spend - the
+     * budget after a missed run has pulled it down (EditorUiState.fitScale).
+     * Solved from the plain budget, a second run aimed a fifth lower kept the
+     * frame the first run had and starved it instead of stepping down.
+     */
+    fun fitOutputPForBitrate(bitrate: Int, fps: Float, frameWidth: Int, frameHeight: Int): Int {
+        if (frameWidth <= 0 || frameHeight <= 0) return OutputSize.ORIGINAL
+        val frames = fps.takeIf { it.isFinite() && it > 1f }?.coerceAtMost(60f) ?: 30f
+        val shortEdge = minOf(frameWidth, frameHeight)
+        // Original first, then every named size below the frame, largest first.
+        val candidates = listOf(OutputSize.ORIGINAL) + OutputSize.PRESETS.filter { it < shortEdge }.sortedDescending()
+        for (p in candidates) {
+            val pixels = resolutionFor(p, frameWidth, frameHeight).pixels
+            if (pixels <= 0L) continue
+            if (bitrate / (pixels * frames) >= FIT_MIN_BITS_PER_PIXEL) return p
+        }
+        return candidates.last()
+    }
+
+    /**
+     * Half the clean rate ([BITS_PER_PIXEL]): the point below which a fitted
+     * export is better off with fewer pixels than with starved ones.
+     */
+    private const val FIT_MIN_BITS_PER_PIXEL = 0.05
+
     private const val BITS_PER_PIXEL = 0.1
-    private const val MIN_VIDEO_BPS = 300_000
-    private const val MAX_VIDEO_BPS = 80_000_000
+    const val MIN_VIDEO_BPS = 300_000
+    const val MAX_VIDEO_BPS = 80_000_000
     private const val DEFAULT_VIDEO_BPS = 8_000_000
 }

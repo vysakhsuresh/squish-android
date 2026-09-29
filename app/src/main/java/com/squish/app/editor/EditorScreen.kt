@@ -209,6 +209,15 @@ fun EditorScreen(
     BackHandler {
         when {
             state.isExporting -> confirmStopExport = true
+            // A fitted file that missed its limit is already in the gallery;
+            // back keeps it, as the card's first button does, and lands on
+            // the done screen. It used to close the sheet over the question,
+            // which came back the next time Export was opened - and "Try
+            // again, tighter" then ran whatever the sheet had been set to.
+            state.fitOvershoot != null -> viewModel.keepOversize { path ->
+                exportSheetOpen = false
+                onExported(path)
+            }
             exportSheetOpen -> exportSheetOpen = false
             // The eyedropper is the innermost thing of all: back gives up the pick, not the sheet.
             eyedropper != null -> eyedropper = null
@@ -447,6 +456,7 @@ fun EditorScreen(
                         foldRows = !state.selectingMore,
                         onTrimEdge = viewModel.clips::trimEdgeTo,
                         onTrimHeadIn = viewModel.clips::trimHeadInTo,
+                        onTrimEnd = viewModel.clips::trimEnded,
                         onScrub = viewModel::scrubTo,
                         // The strip snaps a drag itself, and draws where it snapped to.
                         onSeek = viewModel::seekTo,
@@ -658,8 +668,12 @@ fun EditorScreen(
                         state = state,
                         viewModel = viewModel,
                         onDismiss = { exportSheetOpen = false },
-                        onRender = {
-                            viewModel.export(onResult = onExported)
+                        // Closed before the done screen, so "Back to editor"
+                        // lands on the bare editor: it used to land under the
+                        // sheet, which had to be dismissed before editing on.
+                        onExported = { path ->
+                            exportSheetOpen = false
+                            onExported(path)
                         }
                     )
                 }

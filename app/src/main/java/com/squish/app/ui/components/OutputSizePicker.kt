@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.squish.app.editor.OutputSize
 import com.squish.app.home.formatSize
 import com.squish.app.media.ExportPresets
+import com.squish.app.media.ExportSettings
 import com.squish.app.ui.theme.SquishColors
 
 /**
@@ -51,14 +53,18 @@ import com.squish.app.ui.theme.SquishColors
  *
  * Eight options in two rows of four: Original, six sizes by name, and Custom for
  * anything else. A size bigger than the source is allowed and says so - it makes
- * a bigger file, but it cannot add detail the camera never recorded.
+ * a bigger file, but it cannot add detail the camera never recorded. A size
+ * beyond what this phone's encoder writes ([ceilingP], see EncoderCeiling) is
+ * greyed rather than offered: it used to fail at the start of the render, or be
+ * written at half the size promised.
  *
  * [sourceWidth] and [sourceHeight] are the frame the size is applied to, which
  * for an edit is the picture after its rotation and crop (EditorUiState
  * .croppedFrame). [asked] is the frame that gives, and [written] what the
  * phone's encoder will write for it - the same numbers the encoder is given, so
  * the summary is the file's size and not the camera's, nor a size the encoder
- * will quietly halve.
+ * will quietly halve. [detail] goes under the frame - the rate and codec, on
+ * the editor's sheet.
  */
 @Composable
 fun OutputSizePicker(
@@ -72,11 +78,14 @@ fun OutputSizePicker(
     originalBytes: Long,
     accent: Color,
     onPick: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    ceilingP: Int = 0,
+    detail: String? = null
 ) {
     val sourceP = if (sourceWidth > 0 && sourceHeight > 0) minOf(sourceWidth, sourceHeight) else 0
     val isCustom = !fitToSize && outputP != OutputSize.ORIGINAL && outputP !in OutputSize.PRESETS
     var editingCustom by remember { mutableStateOf(false) }
+    val customMax = ExportSettings.customCeiling(ceilingP)
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutputSummary(
@@ -84,7 +93,8 @@ fun OutputSizePicker(
             outputP = outputP,
             written = written,
             estimatedBytes = estimatedBytes,
-            originalBytes = originalBytes
+            originalBytes = originalBytes,
+            detail = detail
         )
 
         if (written != asked && asked.width > 0 && asked.height > 0) {
@@ -103,10 +113,18 @@ fun OutputSizePicker(
                 color = SquishColors.Amber
             )
         }
+        if (OutputSize.PRESETS.any { ExportSettings.aboveCeiling(it, ceilingP) }) {
+            Text(
+                "Sizes above ${OutputSize.label(ceilingP)} are beyond this phone's encoder.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.TextMuted
+            )
+        }
 
         if (editingCustom) {
             CustomSizeField(
                 initial = if (isCustom) outputP else sourceP.takeIf { it > 0 } ?: 720,
+                maxP = customMax,
                 accent = accent,
                 onSet = { p ->
                     editingCustom = false
@@ -127,17 +145,22 @@ fun OutputSizePicker(
                         null -> isCustom || editingCustom
                         else -> outputP == p && !editingCustom
                     }
+                    val beyond = p != null && ExportSettings.aboveCeiling(p, ceilingP)
                     SelectableChip(
                         label = label,
                         selected = selected,
                         accentColor = accent,
-                        modifier = Modifier.weight(1f),
+                        // Dimmed and inert, rather than gone: the row keeps its
+                        // shape, so a tap aimed from memory lands where it did.
+                        modifier = Modifier.weight(1f).alpha(if (beyond) 0.35f else 1f),
                         onClick = {
-                            if (p == null) {
-                                editingCustom = true
-                            } else {
-                                editingCustom = false
-                                onPick(p)
+                            when {
+                                beyond -> Unit
+                                p == null -> editingCustom = true
+                                else -> {
+                                    editingCustom = false
+                                    onPick(p)
+                                }
                             }
                         }
                     )
@@ -159,9 +182,12 @@ private fun OutputSummary(
     outputP: Int,
     written: ExportPresets.Resolution,
     estimatedBytes: Long,
-    originalBytes: Long
+    originalBytes: Long,
+    detail: String?
 ) {
     val frame = when {
+        // The size the fit solved for, once it is known (EditorUiState.fittedOutputP).
+        fitToSize && written.width > 0 && written.height > 0 -> "${written.width} × ${written.height} · sized to fit"
         fitToSize -> "Sized to fit"
         written.width > 0 && written.height > 0 -> "${written.width} × ${written.height}"
         outputP == OutputSize.ORIGINAL -> "Original size"
@@ -189,7 +215,7 @@ private fun OutputSummary(
         Column(modifier = Modifier.weight(1f)) {
             Text(frame, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
             Text(
-                change ?: "Original ${formatSize(originalBytes)}",
+                listOfNotNull(detail, change ?: "Original ${formatSize(originalBytes)}").joinToString("  ·  "),
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted
             )
@@ -207,13 +233,13 @@ private fun OutputSummary(
     }
 }
 
-/** A size by hand, for when none of the named ones is the one needed. */
+/** A size by hand, for when none of the named ones is the one needed; capped at what the encoder writes. */
 @Composable
-private fun CustomSizeField(initial: Int, accent: Color, onSet: (Int) -> Unit) {
-    var text by remember { mutableStateOf(initial.toString()) }
+private fun CustomSizeField(initial: Int, maxP: Int, accent: Color, onSet: (Int) -> Unit) {
+    var text by remember { mutableStateOf(initial.coerceAtMost(maxP).toString()) }
     val focus = LocalFocusManager.current
     val parsed = text.toIntOrNull()
-    val valid = parsed != null && parsed in OutputSize.MIN_P..OutputSize.MAX_P
+    val valid = parsed != null && parsed in OutputSize.MIN_P..maxP
 
     fun commit() {
         val p = parsed ?: return
@@ -247,7 +273,7 @@ private fun CustomSizeField(initial: Int, accent: Color, onSet: (Int) -> Unit) {
         Text("p", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextMuted)
         Spacer(modifier = Modifier.width(12.dp))
         Text(
-            if (valid) "Set" else "${OutputSize.MIN_P}–${OutputSize.MAX_P}",
+            if (valid) "Set" else "${OutputSize.MIN_P}–$maxP",
             style = MaterialTheme.typography.labelLarge,
             color = if (valid) accent else SquishColors.Pink,
             modifier = Modifier

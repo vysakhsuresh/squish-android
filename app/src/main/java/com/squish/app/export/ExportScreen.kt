@@ -2,10 +2,13 @@ package com.squish.app.export
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.graphics.Bitmap
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -16,9 +19,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -28,7 +33,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -44,8 +51,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,10 +62,13 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.squish.app.data.SquishRepositories
 import com.squish.app.home.formatSize
+import com.squish.app.media.ThumbnailExtractor
+import com.squish.app.media.VideoMeta
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.SquishCard
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishPrimaryButton
+import com.squish.app.ui.components.VideoPreviewSheet
 import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
 import java.io.File
@@ -69,6 +81,14 @@ import java.io.File
  * It never said where the file had gone, although it had already been published to
  * the gallery - so the commonest question after an export had no answer anywhere
  * in the app. And its share row was four coloured circles with no marks on them.
+ *
+ * And a fourth: it could not play the file it had just written. The moment a
+ * wrong transition or a missing overlay is noticed is here, and it meant leaving
+ * for the gallery. The file plays over the screen now, and the screen says what
+ * the file *is* - frame, length, rate, weight, measured off the file itself -
+ * where it used to compare "before" and "after" sizes, a leftover from the
+ * compress tool that made no sense of an edit with added clips and music. That
+ * comparison stays where it belongs: on Squeeze's done screen.
  */
 @Composable
 fun ExportScreen(
@@ -89,15 +109,21 @@ fun ExportScreen(
     val record = remember(resultPath) {
         SquishRepositories.history(context).records.value.firstOrNull { it.outputPath == resultPath }
     }
-    val savedPercent = record?.let {
-        if (it.originalSizeBytes > 0) {
-            (100 - (it.outputSizeBytes * 100 / it.originalSizeBytes)).coerceIn(0, 99)
-        } else {
-            null
-        }
-    }
     val isAudio = resultPath.endsWith(".m4a", ignoreCase = true)
+    val fileUri = remember(resultPath) { Uri.fromFile(File(resultPath)) }
     var notice by remember { mutableStateOf<String?>(null) }
+
+    // Measured off the file, not read off the record: the record says what was
+    // asked for, the file says what was written.
+    var meta by remember(resultPath) { mutableStateOf<VideoMeta?>(null) }
+    var sizeBytes by remember(resultPath) { mutableStateOf(0L) }
+    var cover by remember(resultPath) { mutableStateOf<Bitmap?>(null) }
+    var previewing by remember { mutableStateOf(false) }
+    LaunchedEffect(resultPath) {
+        sizeBytes = File(resultPath).length()
+        meta = ThumbnailExtractor.probe(context, fileUri)
+        if (!isAudio) cover = ThumbnailExtractor.frameAt(context, fileUri, 0L)
+    }
 
     // A second copy, wherever they want it. The automatic publish puts it in the
     // gallery, which is right for most people and useless for anyone who wants it
@@ -162,42 +188,21 @@ fun ExportScreen(
                     textAlign = TextAlign.Center
                 )
 
-                if (record != null) {
-                    SquishCard(accent = SquishColors.Cyan) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Column {
-                                Text("Before", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
-                                Text(
-                                    formatSize(record.originalSizeBytes),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = SquishColors.TextMuted
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("After", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
-                                Text(
-                                    formatSize(record.outputSizeBytes),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = SquishColors.Cyan
-                                )
-                            }
-                        }
-                        if (savedPercent != null && savedPercent > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(SquishColors.Cyan.copy(alpha = 0.15f))
-                                    .padding(horizontal = 14.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    "$savedPercent% smaller",
-                                    color = SquishColors.Cyan,
-                                    style = MaterialTheme.typography.labelLarge
-                                )
-                            }
-                        }
-                    }
-                }
+                Cover(
+                    cover = cover,
+                    meta = meta,
+                    isAudio = isAudio,
+                    onPlay = { previewing = true }
+                )
+
+                FactsCard(
+                    meta = meta,
+                    sizeBytes = sizeBytes,
+                    isAudio = isAudio,
+                    // The comparison is the compress tool's own question. An edit
+                    // has added clips, stills and music; "before" means nothing there.
+                    originalBytes = record?.originalSizeBytes?.takeIf { jobLabel == "Squeezed" } ?: 0L
+                )
 
                 SavedToCard(
                     isAudio = isAudio,
@@ -269,7 +274,145 @@ fun ExportScreen(
             )
         }
     }
+
+    if (previewing) {
+        VideoPreviewSheet(
+            title = record?.title ?: File(resultPath).name,
+            subtitle = factsLine(meta, sizeBytes, isAudio),
+            uri = fileUri,
+            durationMs = meta?.durationMs ?: record?.durationMs ?: 0L,
+            accent = SquishColors.Cyan,
+            aspect = meta?.let { if (it.displayWidth > 0 && it.displayHeight > 0) it.displayWidth.toFloat() / it.displayHeight else 0f } ?: 0f,
+            audioOnly = isAudio,
+            onDismiss = { previewing = false }
+        )
+    }
 }
+
+/**
+ * The file's first frame with a play button over it, in the file's own shape;
+ * a sound file gets a note in place of a picture. Tapping it plays the file
+ * over this screen (VideoPreviewSheet), so a wrong transition is seen here
+ * and not after a trip to the gallery.
+ */
+@Composable
+private fun Cover(cover: Bitmap?, meta: VideoMeta?, isAudio: Boolean, onPlay: () -> Unit) {
+    val shape = when {
+        isAudio -> 3.2f
+        meta != null && meta.displayWidth > 0 && meta.displayHeight > 0 -> (meta.displayWidth.toFloat() / meta.displayHeight).coerceIn(0.5f, 2.2f)
+        cover != null -> (cover.width.toFloat() / cover.height.coerceAtLeast(1)).coerceIn(0.5f, 2.2f)
+        else -> 16f / 9f
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 300.dp)
+            .aspectRatio(shape)
+            .clip(RoundedCornerShape(18.dp))
+            .background(SquishColors.Surface)
+            .border(1.dp, SquishColors.Border, RoundedCornerShape(18.dp))
+            .clickable(onClick = onPlay),
+        contentAlignment = Alignment.Center
+    ) {
+        if (cover != null) {
+            Image(
+                bitmap = cover.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (isAudio) {
+            Icon(
+                Icons.Filled.MusicNote,
+                contentDescription = null,
+                tint = SquishColors.Cyan.copy(alpha = 0.5f),
+                modifier = Modifier.size(44.dp).align(Alignment.CenterStart).padding(start = 16.dp)
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(62.dp)
+                .clip(CircleShape)
+                .background(SquishColors.Background.copy(alpha = 0.72f))
+                .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Filled.PlayArrow,
+                contentDescription = "Play the file",
+                tint = SquishColors.TextPrimary,
+                modifier = Modifier.size(34.dp)
+            )
+        }
+    }
+}
+
+/**
+ * What the file is: its frame, length, rate and weight, each measured off the
+ * file. For a squeeze, how much lighter it came out than what went in.
+ */
+@Composable
+private fun FactsCard(meta: VideoMeta?, sizeBytes: Long, isAudio: Boolean, originalBytes: Long) {
+    SquishCard(accent = SquishColors.Cyan) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            if (!isAudio) {
+                Fact("Frame", meta?.takeIf { it.displayWidth > 0 }?.let { "${it.displayWidth} × ${it.displayHeight}" } ?: "…")
+            }
+            Fact("Length", meta?.let { lengthOf(it.durationMs) } ?: "…")
+            if (!isAudio) {
+                Fact("Rate", meta?.let { fpsOf(it.fps) } ?: "…")
+            }
+            Fact("Size", if (sizeBytes > 0) formatSize(sizeBytes) else "…", accent = true)
+        }
+        val savedPercent = if (originalBytes > 0 && sizeBytes > 0) (100 - (sizeBytes * 100 / originalBytes)).coerceIn(0, 99) else 0
+        if (savedPercent > 0) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(SquishColors.Cyan.copy(alpha = 0.15f))
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    "$savedPercent% smaller · was ${formatSize(originalBytes)}",
+                    color = SquishColors.Cyan,
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Fact(label: String, value: String, accent: Boolean = false) {
+    Column {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
+        Text(
+            value,
+            style = MaterialTheme.typography.titleSmall,
+            color = if (accent) SquishColors.Cyan else SquishColors.TextPrimary,
+            maxLines = 1
+        )
+    }
+}
+
+/** The facts on one line, for the player's subtitle. */
+private fun factsLine(meta: VideoMeta?, sizeBytes: Long, isAudio: Boolean): String = buildList {
+    if (meta != null) {
+        if (!isAudio && meta.displayWidth > 0) add("${meta.displayWidth} × ${meta.displayHeight}")
+        add(lengthOf(meta.durationMs))
+        if (!isAudio) add(fpsOf(meta.fps))
+    }
+    if (sizeBytes > 0) add(formatSize(sizeBytes))
+}.joinToString("  ·  ")
+
+/** "12.4 s" under a minute, "1:02" over it: the resolution anyone reads a length at. */
+private fun lengthOf(ms: Long): String {
+    val seconds = ms / 1000.0
+    return if (seconds < 60) "%.1f s".format(seconds) else "%d:%02d".format((seconds / 60).toInt(), (seconds % 60).toInt())
+}
+
+/** "30 fps", or "29.97 fps" where the rate is not whole. */
+private fun fpsOf(fps: Float): String = if (fps % 1f > 0.05f) "%.2f fps".format(fps) else "%.0f fps".format(fps)
 
 /**
  * Where the file went. Stated, because it already went there.
@@ -410,4 +553,3 @@ private fun sendByEmail(
         if (!ShareUtils.share(context, path, null)) onProblem("No email app set up on this phone.")
     }
 }
-

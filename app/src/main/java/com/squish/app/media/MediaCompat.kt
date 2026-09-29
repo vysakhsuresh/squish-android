@@ -4,6 +4,7 @@ package com.squish.app.media
 
 import android.content.Context
 import android.net.Uri
+import androidx.media3.common.ColorInfo
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -38,9 +39,16 @@ object MediaCompat {
      * room for (EditorUiState.hasAnyAudio). [sampleRateHz] is the highest rate
      * of a sound track this phone decodes, or zero when there is none or the
      * file does not say - for the rate a layered export mixes at
-     * (ExportPlan.mixerSampleRate).
+     * (ExportPlan.mixerSampleRate). [hdr] says whether the picture is HDR -
+     * HLG or PQ - which decides whether the export sheet offers to keep it.
      */
-    data class Report(val videoProblem: String?, val audioProblem: String?, val hasAudio: Boolean = true, val sampleRateHz: Int = 0)
+    data class Report(
+        val videoProblem: String?,
+        val audioProblem: String?,
+        val hasAudio: Boolean = true,
+        val sampleRateHz: Int = 0,
+        val hdr: Boolean = false
+    )
 
     private val reports = ConcurrentHashMap<String, Report>()
 
@@ -84,7 +92,8 @@ object MediaCompat {
             videoProblem = if (video.isNotEmpty() && video.none { decodable(context, it) }) describe(video.first()) else null,
             audioProblem = if (audio.isNotEmpty() && audio.none { decodable(context, it) }) describe(audio.first()) else null,
             hasAudio = audio.isNotEmpty(),
-            sampleRateHz = audio.filter { decodable(context, it) }.maxOfOrNull { it.sampleRate }?.coerceAtLeast(0) ?: 0
+            sampleRateHz = audio.filter { decodable(context, it) }.maxOfOrNull { it.sampleRate }?.coerceAtLeast(0) ?: 0,
+            hdr = video.any { ColorInfo.isTransferHdr(it.colorInfo) }
         )
         reports[uri.toString()] = report
         return report

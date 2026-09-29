@@ -133,6 +133,37 @@ no compositor reads an alpha, it darkens towards black instead (`uOpaque`).
 And `Effect.getDurationAfterEffectApplied` is left at its default on the blend,
 since it changes no frame's time.
 
+The export sheet's policy (B14) leans on four more, each read in the 1.11.1
+bytecode rather than seen. `Composition.Builder.setHdrMode` set to
+`HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL` is the default now, and
+`HDR_MODE_KEEP_HDR` only for "Keep HDR" and for a plain cut (where the stream
+is copied); with KEEP_HDR and no encoder that takes HDR for the codec asked
+for, `VideoEncoderWrapper.getRequestedOutputMimeTypeAndHdrModeAfterFallback`
+falls back to converting rather than throwing, which is what lets the toggle
+be offered without a failure path. `FrameDropEffect.createDefaultFrameDropEffect`
+only drops frames; a rate above the footage's passes every frame through, and
+a layered export gets its rate from the clock still instead
+(`CompositionFactory.filler`'s frame rate, which is now the sheet's choice).
+`EncoderUtil.getSupportedResolution` for the 4K frame of the edit's shape is
+read as the encoder's ceiling (`EncoderCeiling.ceilingShortEdge`), asked per
+codec since an HEVC encoder can stop elsewhere. And a main-track photo is
+handed over as a JPEG image item (`StillClips.originalImage`) in a sequence
+declared with sound - the same silence-filling the base rolls lean on, now on
+the cuts-only sequence too, where the image may be the first item. With
+"Keep HDR" on such a sequence that opens on an HLG clip, that JPEG is an SDR
+bitmap fed into an HLG graph; whether Media3's bitmap input takes that is not
+read anywhere, and it is the one B14 combination with no fallback path
+written for it (Keep HDR off converts everything and is known to work).
+
+Two things about the service that carries the export. `ServiceCompat
+.startForeground` in androidx.core 1.13.1 masks the type against the set it
+knows, which ends at Android 14's, so Android 15's media-processing type
+reached the framework as NONE and was refused; `ExportService` calls
+`Service.startForeground` itself from SDK 35. Raising androidx.core past a
+release that knows `FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING` would let the
+compat call back, but nothing depends on it. And the type is declared in the
+manifest as `mediaProcessing|dataSync`, one for each side of 35.
+
 The sections below were written against 1.4/1.5 and are kept for the history;
 where they name a call that no longer exists (`ChannelMixingMatrix.create`,
 `HslAdjustment` for saturation), that call is no longer used.

@@ -12,7 +12,12 @@ import com.squish.app.data.SquishRepositories
 import com.squish.app.media.EncoderCeiling
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
+import com.squish.app.media.ExportQuality
+import com.squish.app.media.ExportService
+import com.squish.app.media.ExportSettings
 import com.squish.app.media.ExportStage
+import com.squish.app.settings.Preferences
+import com.squish.app.settings.withExportDefaults
 import com.squish.app.media.ExportsInFlight
 import com.squish.app.media.MediaCompat
 import com.squish.app.media.ProxyEngine
@@ -332,6 +337,7 @@ class EditorViewModel(
                     fps = meta.fps,
                     trimStartMs = 0L,
                     trimEndMs = meta.durationMs,
+                    sourceName = name,
                     isLoadingSource = false,
                     // Fitted the moment the clip is known. At the default zoom a
                     // ten-minute video is twenty-five thousand dp of strip, so it
@@ -349,9 +355,16 @@ class EditorViewModel(
                             sourceDurationMs = meta.durationMs
                         )
                     )
-                )
+                    // What the last export was set to, as this project's starting
+                    // point - before the baseline is taken, so the defaults are
+                    // not read as an edit. A draft applied later brings its own.
+                ).let { fresh -> Preferences.exportDefaults(getApplication())?.let { fresh.withExportDefaults(it) } ?: fresh }
             }
             recomputeEstimate()
+            // Whether this phone writes HEVC is asked now, not when the sheet
+            // first opens: a remembered "Smaller file" rendered before the codec
+            // list had come back was written in H.264 without a word said.
+            probeCodecs()
             baseline = autosave.editKey(_state.value)
             // Every real video has a length. None means the file could not be read
             // - gone, or handed over without permission - and an empty editor with
@@ -484,29 +497,96 @@ class EditorViewModel(
     }
 
     fun setTargetSizeMb(mb: Int) {
-        _state.update { it.copy(targetSizeMb = mb) }
+        // A fresh limit starts from the plain budget; the tightening was for the last one.
+        _state.update { it.copy(targetSizeMb = mb, fitScale = 1f) }
+        recomputeEstimate()
+    }
+
+    fun setOutputFps(fps: Int) {
+        _state.update { it.copy(outputFps = fps) }
+        recomputeEstimate()
+    }
+
+    fun setQuality(quality: ExportQuality) {
+        _state.update { it.copy(quality = quality) }
+        recomputeEstimate()
+    }
+
+    fun setHevc(enabled: Boolean) {
+        _state.update { it.copy(hevc = enabled) }
+        recomputeEstimate()
+        // The HEVC encoder may stop at a different size from the H.264 one.
+        probeEncoder()
+    }
+
+    fun setKeepHdr(enabled: Boolean) {
+        _state.update { it.copy(keepHdr = enabled) }
+        recomputeEstimate()
+        probeEncoder()
+    }
+
+    fun setAudioOnly(enabled: Boolean) {
+        _state.update { it.copy(audioOnly = enabled) }
         recomputeEstimate()
     }
 
     /** Which size is being asked about, and which answer to keep; see [ProbeGate]. */
-    private val probes = ProbeGate<ExportPresets.Resolution> { _state.value.encoderAnswer?.asked == it }
+    private val probes = ProbeGate<Pair<ExportPresets.Resolution, String>> { (asked, mime) ->
+        _state.value.encoderAnswer?.asked == asked && probedMime == mime
+    }
+
+    /** The codec the kept encoder answer was asked about, since an HEVC encoder can stop at a different size. */
+    private var probedMime: String? = null
+
+    /** The frame shape the ceiling was measured for, so it is measured once per shape and codec. */
+    private var ceilingFor: Pair<ExportPresets.Resolution, String>? = null
 
     /**
      * Asks the phone's encoder what it will write for the size now chosen, so
      * the sheet can say so. Off the main thread: it opens the codec list. An
      * answer for a size no longer chosen is dropped - the size chosen since was
      * asked about when it was chosen, and its own answer is on its way.
+     *
+     * The same call measures the encoder's ceiling for the edit's shape once,
+     * so the sheet can grey the sizes above it, and asks once whether the
+     * phone has an HEVC encoder at all, so the sheet knows whether to offer it.
      */
     fun probeEncoder() {
-        val asked = _state.value.outputResolution
-        if (!probes.ask(asked)) return
+        val current = _state.value
+        if (current.hevcAvailable == null) probeCodecs()
+        val mime = EncoderCeiling.mimeFor(current.exportCodecHevc)
+        val shape = current.croppedFrame
+        if (shape.width > 0 && shape.height > 0 && ceilingFor != shape to mime) {
+            ceilingFor = shape to mime
+            viewModelScope.launch {
+                val ceiling = withContext(Dispatchers.IO) { EncoderCeiling.ceilingShortEdge(shape, mime) }
+                if (ceilingFor == shape to mime) _state.update { it.copy(encoderCeilingP = ceiling) }
+            }
+        }
+        val asked = current.outputResolution
+        if (!probes.ask(asked to mime)) return
         viewModelScope.launch {
-            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked) }
-            if (!probes.keep(asked, _state.value.outputResolution)) return@launch
+            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked, mime) }
+            val now = _state.value
+            if (!probes.keep(asked to mime, now.outputResolution to EncoderCeiling.mimeFor(now.exportCodecHevc))) return@launch
+            probedMime = mime
             _state.update { it.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written)) }
             recomputeEstimate()
         }
     }
+
+    /** Whether this phone can write HEVC at all, asked once; the sheet offers the toggle only then. */
+    private fun probeCodecs() {
+        if (codecsProbed) return
+        codecsProbed = true
+        viewModelScope.launch {
+            val hevc = withContext(Dispatchers.IO) { EncoderCeiling.hasEncoder(EncoderCeiling.mimeFor(hevc = true)) }
+            _state.update { it.copy(hevcAvailable = hevc) }
+            recomputeEstimate()
+        }
+    }
+
+    private var codecsProbed = false
 
     /**
      * Asks whether this phone can decode [uri], and says so straight away if not -
@@ -835,8 +915,21 @@ class EditorViewModel(
 
     fun clearFailure() = _state.update { it.copy(failure = null) }
 
-    fun export(onResult: (String) -> Unit) {
-        val current = _state.value
+    fun export(onResult: (String) -> Unit) = export(onResult, tightened = false)
+
+    /**
+     * [tightened] is the second run after a fitted export missed its limit
+     * (see [retryFit]): the one run that keeps the pulled-down fit scale.
+     * Every other render starts from the plain budget - the scale used to
+     * outlive the run it was measured on, so an edit cut down to a quarter of
+     * its length was still rendered a fifth under what it was allowed.
+     */
+    private fun export(onResult: (String) -> Unit, tightened: Boolean) {
+        if (!tightened && _state.value.fitScale != 1f) {
+            _state.update { it.copy(fitScale = 1f) }
+            recomputeEstimate()
+        }
+        var current = _state.value
         val sourceUri = current.sourceUri ?: run {
             _state.update { it.copy(failure = SquishError.FileUnreadable()) }
             return
@@ -851,8 +944,14 @@ class EditorViewModel(
         }
 
         _state.update {
-            it.copy(isExporting = true, failure = null, exportProgress = ExportProgress(stage = ExportStage.Preparing))
+            it.copy(isExporting = true, failure = null, fitOvershoot = null, exportProgress = ExportProgress(stage = ExportStage.Preparing))
         }
+        // The render is carried by a foreground service from here until it is
+        // handed over: with the screen locked, or the app behind a call, a
+        // process with nothing in front is one Android may kill mid-encode,
+        // and the notification is the one place the progress can be seen then.
+        val title = current.projectName ?: current.sourceName ?: "your video"
+        ExportService.begin(getApplication(), title)
 
         exportJob = viewModelScope.launch {
             // The edit as it is goes to disk before the encode starts, not a tick
@@ -861,26 +960,41 @@ class EditorViewModel(
             // Render is the edit the file was made from.
             withContext(Dispatchers.IO) { persist() }
 
+            // The codec is settled before anything is built on it. The probe
+            // starts on opening the clip, but Render tapped before it answers
+            // - a slow first enumeration of the codec list - used to write a
+            // draft's "Smaller file" or "Keep HDR" as H.264 at H.264's rate.
+            if (current.hevcAvailable == null) {
+                val hevc = withContext(Dispatchers.IO) { EncoderCeiling.hasEncoder(EncoderCeiling.mimeFor(hevc = true)) }
+                _state.update { it.copy(hevcAvailable = hevc) }
+                current = current.copy(hevcAvailable = hevc)
+                recomputeEstimate()
+            }
+
             // Every sound opened and asked about before a frame is encoded: one no
             // decoder takes used to fail minutes in, as a generic sound error.
             SquishError.checkSounds(getApplication(), current)?.let { problem ->
                 if (exportJob === coroutineContext[Job]) exportJob = null
+                ExportService.end(getApplication())
                 _state.update { it.copy(isExporting = false, exportProgress = ExportProgress(), failure = problem) }
                 return@launch
             }
 
             val outputDir = SquishError.exportsDir(getApplication()).apply { mkdirs() }
-            val outputFile = File(outputDir, "squish_${System.currentTimeMillis()}.mp4")
+            // A sound-only export is an .m4a, and lands in Music rather than the gallery.
+            val extension = if (current.audioOnly) "m4a" else "mp4"
+            val outputFile = File(outputDir, "squish_${System.currentTimeMillis()}.$extension")
 
             // Built at the size the encoder will write, asked now rather than
             // trusted from the sheet: the answer there may be to a size chosen
             // since. The record below says the same size.
             val asked = current.outputResolution
-            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked) }
+            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked, EncoderCeiling.mimeFor(current.exportCodecHevc)) }
             val rendering = current.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written))
 
             val result = processor.export(SquishError.exportable(rendering), outputFile) { progress ->
                 _state.update { it.copy(exportProgress = progress) }
+                ExportService.update(progress)
             }
             // From here the file exists and is being handed over; there is
             // nothing left to stop. See cancelExport.
@@ -891,18 +1005,21 @@ class EditorViewModel(
                 // to flip back to "Render and save" the moment the encode ended,
                 // while a multi-gigabyte copy ran behind it - and a second tap
                 // started a second export over the first one's hand-over.
-                _state.update { it.copy(exportProgress = it.exportProgress.copy(stage = ExportStage.Saving)) }
+                val saving = _state.value.exportProgress.copy(stage = ExportStage.Saving)
+                _state.update { it.copy(exportProgress = saving) }
+                ExportService.update(saving)
                 // All or nothing: into the gallery, into history, and the draft
                 // stamped. Cancelled half-way - the screen leaving in the instant
                 // after the encode - the file was in the gallery and the draft
                 // never knew it had been exported.
                 withContext(NonCancellable) {
-                    val published = GallerySaver.publish(getApplication(), file)
+                    val published = if (current.audioOnly) GallerySaver.publishAudio(getApplication(), file)
+                    else GallerySaver.publish(getApplication(), file)
                     val written = rendering.writtenResolution
                     historyRepository.add(
                         ExportRecord(
                             id = UUID.randomUUID().toString(),
-                            title = current.projectName ?: displayNameOf(sourceUri) ?: "Squished video",
+                            title = current.projectName ?: current.sourceName ?: "Squished video",
                             outputPath = file.absolutePath,
                             originalSizeBytes = current.originalSizeBytes,
                             outputSizeBytes = file.length(),
@@ -934,16 +1051,51 @@ class EditorViewModel(
                         if (current.recovery == null && _state.value.recovery == null) {
                             autosave.markCompleted(current)
                         }
+                        // What was chosen here is the next project's starting point.
+                        Preferences.rememberExport(getApplication(), current)
                     }
+                }
+                ExportService.end(getApplication())
+                // A fitted export is measured against its limit. The file is
+                // kept whatever the answer - it is in the gallery and the library
+                // already - but one that missed is not handed over as if it had
+                // fitted: the sheet says by how much and offers a tighter run.
+                val target = current.targetSizeMb * 1_000_000L
+                val size = file.length()
+                if (current.fitToSize && !current.audioOnly && ExportSettings.overshoots(size, target)) {
+                    _state.update {
+                        it.copy(
+                            isExporting = false,
+                            exportProgress = ExportProgress(),
+                            fitOvershoot = FitOvershoot(file.absolutePath, size, target),
+                            fitScale = ExportSettings.retryScale(it.fitScale, size, target)
+                        )
+                    }
+                    recomputeEstimate()
+                    return@onSuccess
                 }
                 _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
+                ExportService.end(getApplication())
                 _state.update {
                     it.copy(isExporting = false, exportProgress = ExportProgress(), failure = SquishError.from(throwable))
                 }
             }
         }
+    }
+
+    /** The oversize file is the one wanted after all: it is handed over as any export is. */
+    fun keepOversize(onResult: (String) -> Unit) {
+        val kept = _state.value.fitOvershoot ?: return
+        _state.update { it.copy(fitOvershoot = null) }
+        onResult(kept.path)
+    }
+
+    /** Runs the fitted export again at the tightened budget (see [FitOvershoot]); the oversize file stays in the library. */
+    fun retryFit(onResult: (String) -> Unit) {
+        _state.update { it.copy(fitOvershoot = null) }
+        export(onResult, tightened = true)
     }
 
     /**
@@ -969,6 +1121,7 @@ class EditorViewModel(
         val job = exportJob ?: return false
         exportJob = null
         job.cancel()
+        ExportService.end(getApplication())
         _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
         return true
     }
@@ -1109,6 +1262,10 @@ class EditorViewModel(
         fitToSize = snapshot.fitToSize,
         targetSizeMb = snapshot.targetSizeMb,
         audioOnly = snapshot.audioOnly,
+        outputFps = snapshot.outputFps,
+        quality = snapshot.quality,
+        hevc = snapshot.hevc,
+        keepHdr = snapshot.keepHdr,
         muteOriginal = snapshot.muteOriginal,
 
         originalVolume = snapshot.originalVolume,
@@ -1201,6 +1358,8 @@ class EditorViewModel(
         // process that asked for it is killed.
         saveNow()
         loadedUri?.let(OpenEditors::closed)
+        // The encode died with the scope; the notification must not outlive it.
+        if (_state.value.isExporting) ExportService.end(getApplication())
         // The collector above is cancelled with the scope, so a screen cleared
         // mid-export says so itself.
         ExportsInFlight.set(this, false)

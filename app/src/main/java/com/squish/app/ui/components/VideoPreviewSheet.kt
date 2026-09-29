@@ -62,14 +62,16 @@ fun VideoPreviewSheet(
      * 16:9 stretches every portrait clip sideways.
      */
     aspect: Float = 0f,
+    /** A sound file: the player shows its wave rather than a black picture. */
+    audioOnly: Boolean = false,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var measured by remember(uri) { mutableStateOf(aspect) }
 
-    LaunchedEffect(uri, aspect) {
-        if (aspect > 0f) return@LaunchedEffect
+    LaunchedEffect(uri, aspect, audioOnly) {
+        if (aspect > 0f || audioOnly) return@LaunchedEffect
         val meta = ThumbnailExtractor.probe(context, uri)
         if (meta.displayWidth > 0 && meta.displayHeight > 0) {
             measured = meta.displayWidth.toFloat() / meta.displayHeight
@@ -134,6 +136,7 @@ fun VideoPreviewSheet(
                 // Held at 16:9 only until the file has been measured. Committing to
                 // a shape before then would show one wrong frame and then jump.
                 aspect = if (measured > 0f) measured else 16f / 9f,
+                audioOnly = audioOnly,
                 modifier = Modifier.fillMaxWidth()
             )
 

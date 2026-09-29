@@ -8,6 +8,8 @@ import com.squish.app.editor.CanvasFill
 import com.squish.app.editor.ClipCrop
 import com.squish.app.editor.CropAspect
 import com.squish.app.editor.CropRatio
+import com.squish.app.media.ExportQuality
+import com.squish.app.media.ExportSettings
 import com.squish.app.editor.CropRect
 import com.squish.app.editor.CropRules
 import com.squish.app.editor.EditorUiState
@@ -576,6 +578,13 @@ class ProjectAutosave(context: Context) {
         put("fitToSize", state.fitToSize)
         put("targetSizeMb", state.targetSizeMb)
         put("audioOnly", state.audioOnly)
+        // The sheet's other choices. Written under their own names: "quality"
+        // is the old Small / Medium / High field, still read for drafts from
+        // before sizes existed.
+        put("outputFps", state.outputFps)
+        put("exportQuality", state.quality.name)
+        put("hevc", state.hevc)
+        put("keepHdr", state.keepHdr)
         put("muteOriginal", state.muteOriginal)
         put("originalVolume", state.originalVolume.toDouble())
         put("rotationDegrees", state.rotationDegrees)
@@ -1040,6 +1049,10 @@ class ProjectAutosave(context: Context) {
             fitToSize = json.optBoolean("fitToSize"),
             targetSizeMb = json.optInt("targetSizeMb", 16),
             audioOnly = json.optBoolean("audioOnly"),
+            outputFps = json.optInt("outputFps", ExportSettings.SOURCE_FPS),
+            quality = ExportQuality.fromName(json.optString("exportQuality")),
+            hevc = json.optBoolean("hevc"),
+            keepHdr = json.optBoolean("keepHdr"),
             muteOriginal = json.optBoolean("muteOriginal"),
             originalVolume = if (perClip) 1f else savedLevel,
             rotationDegrees = json.optInt("rotationDegrees"),
@@ -1357,7 +1370,12 @@ data class ProjectSnapshot(
     val canvasBackground: CanvasBackground,
     val pixelsPerSecond: Float,
     /** What the project was named, if it was; see [EditorUiState.projectName]. */
-    val name: String? = null
+    val name: String? = null,
+    // The export sheet's other choices; defaults for every draft written before the rows existed.
+    val outputFps: Int = ExportSettings.SOURCE_FPS,
+    val quality: ExportQuality = ExportQuality.Recommended,
+    val hevc: Boolean = false,
+    val keepHdr: Boolean = false
 ) {
     /**
      * How long the edit runs: where its last picture or sound ends, overlays

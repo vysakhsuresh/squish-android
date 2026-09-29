@@ -5,10 +5,11 @@ package com.squish.app.media
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.EncoderUtil
+import com.squish.app.editor.OutputSize
 import kotlin.math.abs
 
 /**
- * What this phone's H.264 encoder will actually write for a frame it is asked
+ * What this phone's encoder will actually write for a frame it is asked
  * for.
  *
  * Media3's DefaultEncoderFactory falls back by itself when an encoder cannot
@@ -18,11 +19,21 @@ import kotlin.math.abs
  * 1440 x 1080, half the size and a third of the weight the sheet had quoted.
  * This asks the same question the factory asks, the same way, so the sheet can
  * show the size that will be written and the export can be built at it.
+ *
+ * Every question names the codec: an HEVC encoder and an H.264 one on the
+ * same phone can stop at different sizes.
  */
 object EncoderCeiling {
 
+    /** The codec an export is written in, as Media3 names it. */
+    fun mimeFor(hevc: Boolean): String = if (hevc) MimeTypes.VIDEO_H265 else MimeTypes.VIDEO_H264
+
+    /** Whether this phone has any encoder for [mime]. Blocking: opens the codec list. */
+    fun hasEncoder(mime: String): Boolean =
+        runCatching { EncoderUtil.getSupportedEncoders(mime).isNotEmpty() }.getOrDefault(false)
+
     /** The frame the encoder writes for [asked]; [asked] itself when nothing can be said. Blocking: opens the codec list. */
-    fun written(asked: ExportPresets.Resolution): ExportPresets.Resolution {
+    fun written(asked: ExportPresets.Resolution, mime: String = MimeTypes.VIDEO_H264): ExportPresets.Resolution {
         if (asked.width <= 0 || asked.height <= 0) return asked
         // The encoder is handed landscape frames: a portrait output is turned a
         // quarter turn for it and the turn written into the file (Transformer's
@@ -31,13 +42,26 @@ object EncoderCeiling {
         val w = if (portrait) asked.height else asked.width
         val h = if (portrait) asked.width else asked.height
         val fitted = runCatching {
-            EncoderUtil.getSupportedEncoders(MimeTypes.VIDEO_H264)
-                .mapNotNull { info -> runCatching { EncoderUtil.getSupportedResolution(info, MimeTypes.VIDEO_H264, w, h) }.getOrNull() }
+            EncoderUtil.getSupportedEncoders(mime)
+                .mapNotNull { info -> runCatching { EncoderUtil.getSupportedResolution(info, mime, w, h) }.getOrNull() }
                 // The factory keeps the encoders nearest by area and takes the
                 // first's size; the first of the nearest is the same encoder.
                 .minByOrNull { abs(it.width.toLong() * it.height - w.toLong() * h) }
         }.getOrNull() ?: return asked
         return if (portrait) ExportPresets.Resolution(fitted.height, fitted.width)
         else ExportPresets.Resolution(fitted.width, fitted.height)
+    }
+
+    /**
+     * The largest short edge the encoder writes for a frame of [frame]'s shape:
+     * what it gives for the 4K size of that shape. The sheet greys every named
+     * size above it (ExportSettings.aboveCeiling) rather than offering a size
+     * that fails at the start of a render, or quietly halves. Blocking.
+     */
+    fun ceilingShortEdge(frame: ExportPresets.Resolution, mime: String): Int {
+        if (frame.width <= 0 || frame.height <= 0) return 0
+        val asked = ExportPresets.resolutionFor(OutputSize.MAX_P, frame.width, frame.height)
+        val got = written(asked, mime)
+        return minOf(got.width, got.height).coerceAtLeast(0)
     }
 }

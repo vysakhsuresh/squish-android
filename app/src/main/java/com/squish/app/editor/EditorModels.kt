@@ -2,8 +2,12 @@ package com.squish.app.editor
 
 import android.net.Uri
 import com.squish.app.data.ProjectSnapshot
+import com.squish.app.media.ExportPlan
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
+import com.squish.app.media.ExportQuality
+import com.squish.app.media.ExportSettings
+import com.squish.app.media.MediaCompat
 import com.squish.app.media.SquishError
 import com.squish.app.media.audio.Waveform
 import com.squish.app.media.video.MotionTrack
@@ -465,6 +469,18 @@ data class EditSnapshot(
     val stabilizeStrength: Float
 )
 
+/**
+ * A fitted export that came out over its limit. The file is whole, in the
+ * gallery and in the library - a render is never thrown away for missing by
+ * a few per cent - and the sheet asks whether to keep it or run once more,
+ * tighter (ExportSettings.retryScale).
+ */
+data class FitOvershoot(
+    val path: String,
+    val actualBytes: Long,
+    val targetBytes: Long
+)
+
 data class EditorUiState(
     val sourceUri: Uri? = null,
     /**
@@ -474,6 +490,12 @@ data class EditorUiState(
      * saved with the draft, so a rename alone is enough to keep one.
      */
     val projectName: String? = null,
+    /**
+     * The file's own name, read once when it is opened. Read again on Render,
+     * a document provider's round trip stalled the one button that has to
+     * feel immediate; the export's title and its record take this instead.
+     */
+    val sourceName: String? = null,
     val isLoadingSource: Boolean = true,
     val durationMs: Long = 0,
     val sourceWidth: Int = 0,
@@ -505,6 +527,21 @@ data class EditorUiState(
     val fitToSize: Boolean = false,
     val targetSizeMb: Int = 16,
     val audioOnly: Boolean = false,
+    /** The file's frame rate, or [ExportSettings.SOURCE_FPS] for the footage's own. */
+    val outputFps: Int = ExportSettings.SOURCE_FPS,
+    val quality: ExportQuality = ExportQuality.Recommended,
+    /** "Smaller file": written in HEVC when this phone has an encoder for it; see [exportCodecHevc]. */
+    val hevc: Boolean = false,
+    /** Keep an HDR source's HDR rather than converting it to ordinary colour, the default. */
+    val keepHdr: Boolean = false,
+    /** Whether this phone has an HEVC encoder: null until asked (EditorViewModel.probeCodecs). */
+    val hevcAvailable: Boolean? = null,
+    /** The largest short edge this phone's encoder writes for the edit's frame shape; 0 until asked. */
+    val encoderCeilingP: Int = 0,
+    /** Bitrate scale for the next fit-to-size run, pulled down after one that missed; see [FitOvershoot]. */
+    val fitScale: Float = 1f,
+    /** A fitted export that came out over its limit, kept, and waiting to be accepted or run again. */
+    val fitOvershoot: FitOvershoot? = null,
 
     val muteOriginal: Boolean = false,
     val originalVolume: Float = 1f,
@@ -922,7 +959,7 @@ data class EditorUiState(
         // letterboxed, wrong-shaped file that pressing Rotate produced. And the
         // cropped one: see ExportPresets.croppedFrame.
         get() {
-            val p = if (fitToSize) OutputSize.ORIGINAL else outputP
+            val p = if (fitToSize) fittedOutputP else outputP
             if (paddedCanvas) return FrameRules.paddedCanvas(p, framedWidth, framedHeight, canvasAspect)
             return effectiveCrop.let { ExportPresets.canvasFor(p, framedWidth, framedHeight, it.width, it.height) }
         }
@@ -941,6 +978,70 @@ data class EditorUiState(
         get() = if (paddedCanvas) writtenResolution else ExportPresets.Resolution(framedWidth, framedHeight)
 
     /**
+     * The size a fitted export is written at, solved from the budget rather
+     * than left at the frame's own; see ExportPresets.fitOutputP.
+     */
+    val fittedOutputP: Int
+        get() {
+            // Solved on the frame the file is written at: the padded canvas
+            // (FrameRules.paddedCanvas) when there is one, else the crop.
+            val frame = if (paddedCanvas) FrameRules.paddedCanvas(OutputSize.ORIGINAL, framedWidth, framedHeight, canvasAspect) else croppedFrame
+            return ExportPresets.fitOutputPForBitrate(fitVideoBitrate, exportFps, frame.width, frame.height)
+        }
+
+    /**
+     * The video bitrate of a fitted export: the target's budget, pulled down
+     * after a run that missed its limit (see [FitOvershoot]; 1 until one
+     * does). The size is solved from this same number, so a run aimed lower
+     * steps down to a smaller frame rather than starving the one it had.
+     */
+    private val fitVideoBitrate: Int
+        get() {
+            val budget = ExportPresets.bitrateForTargetSize(targetSizeMb * 1_000_000L, trimmedDurationMs, hasAnyAudio)
+            return (budget * fitScale).toInt().coerceAtLeast(ExportPresets.MIN_VIDEO_BPS)
+        }
+
+    /** The rate the file is written at: the choice on the sheet, or the footage's own. */
+    val exportFps: Float get() = ExportSettings.effectiveFps(outputFps, fps)
+
+    /**
+     * Whether any shot on the picture is HDR, as far as the background check
+     * has read them (MediaCompat). Decides whether the sheet offers to keep it.
+     */
+    val hasHdrSource: Boolean
+        get() = (videoClips.filter { !it.isOverlay }.mapNotNull { it.uri } + listOfNotNull(sourceUri))
+            .any { MediaCompat.cached(it)?.hdr == true }
+
+    /**
+     * Whether the picture goes through the compositor: transitions, overlays
+     * or gaps. Such a file is written in ordinary colour whatever is chosen -
+     * its first input is the clock still, which sets the file's colour
+     * (CompositionFactory) - so the HDR switch and the codec it drags in read
+     * this rather than promising.
+     */
+    val isLayered: Boolean
+        get() = ExportPlan.needsCompositing(videoClips, trimmedDurationMs)
+
+    /**
+     * Whether the file keeps its HDR: asked for, on an HDR source, and not
+     * layered. One answer for the switch, the codec and the render: the switch
+     * used to show itself off on a layered edit while the codec row above it
+     * stayed locked to HEVC "to keep HDR" and the render asked Media3 to keep
+     * it anyway.
+     */
+    val effectiveKeepHdr: Boolean
+        get() = keepHdr && hasHdrSource && !isLayered
+
+    /**
+     * Whether the file is written in HEVC: asked for as the smaller file, or
+     * needed to keep HDR, and only where this phone has the encoder. Media3
+     * would refuse a codec the phone has no encoder for at the start of the
+     * render, so the choice is made here, where the sheet can read it too.
+     */
+    val exportCodecHevc: Boolean
+        get() = hevcAvailable == true && (hevc || effectiveKeepHdr)
+
+    /**
      * The frame the file actually comes out at: [outputResolution] unless the
      * phone's encoder has said it will write something else for it. The canvas
      * every layer is fitted to, the sheet's number and the bitrate's pixels all
@@ -956,11 +1057,14 @@ data class EditorUiState(
      */
     val exportVideoBitrate: Int
         get() = if (fitToSize) {
-            ExportPresets.bitrateForTargetSize(targetSizeMb * 1_000_000L, trimmedDurationMs, hasAnyAudio)
+            fitVideoBitrate
         } else {
             val sourceBps = sourceVideoBps.takeIf { it > 0 }
                 ?: ExportPresets.sourceVideoBitrate(originalSizeBytes, durationMs, sourceHasAudio)
-            ExportPresets.bitrateForFrame(writtenResolution, sourceWidth, sourceHeight, fps, sourceBps)
+            val recommended = ExportPresets.bitrateForFrame(
+                writtenResolution, sourceWidth, sourceHeight, exportFps, sourceBps, sourceFps = fps
+            )
+            ExportSettings.scaledBitrate(recommended, quality, exportCodecHevc)
         }
 
     /** What the finished file should weigh. */

@@ -671,6 +671,95 @@ should work through it and then delete what holds up.
   lengths, the frame blend and the pitch switch (the keyed opacity and
   level tracks stay with their clip, as a mask's track does).
 
+- **Batch B14 (export UX and policy), all of it.** Built on the desktop with
+  no phone attached. The arithmetic - the rate a choice gives, what a quality
+  step and HEVC do to the bitrate, which sizes the encoder ceiling greys, where
+  a remembered default lands, the size a fitted export is solved to, and how a
+  missed limit is chased - is executed on the JVM
+  (`tools/jvm/ExportSettingsChecks.kt`); nothing has been rendered. Script in
+  `docs/ROADMAP.md` §4 under B14, plus what only a device answers: Stop on the
+  progress card asks and leaves no file in `exports/`; the export runs under a
+  foreground service (`ExportService`, type media processing on Android 15,
+  data sync before) - lock the screen during a long 4K export and the
+  notification must show the percentage and the file must complete; the
+  first Render asks for notifications on Android 13+ and a refusal still
+  renders; the fps row writes the file at 24/25/30/50/60 (cuts-only and
+  single-file exports carry a `FrameDropEffect` per item, a layered export
+  takes its rate from the clock still, so check both kinds with `ffprobe`) and
+  60 asked of 30 fps footage passes every frame; the HEVC toggle appears only
+  where `EncoderUtil` finds an encoder, the file is HEVC (`SquishExport: done
+  … mime=video/hevc` in logcat) and about a third smaller; sizes above the
+  encoder's ceiling are greyed on the sheet (the S23 for the 4K test);
+  an HLG source exports SDR by default with sane colours (`HDR_MODE_TONE_MAP_
+  HDR_TO_SDR_USING_OPEN_GL`) and "Keep HDR" writes HDR HEVC on a cuts-only
+  edit - the toggle is disabled with a note on a layered one, and Media3 falls
+  back to converting where no HDR encoder exists rather than failing (read in
+  the 1.11.1 bytecode, `VideoEncoderWrapper`); a plain Snip keeps its stream,
+  HDR included; Fit to 16 MB on a minute of 4K comes out 720p or below and under
+  16 MB, and one that overshoots by more than 2% shows the "Keep this one /
+  Try again, tighter" card with the first file already in the gallery; the
+  done screen plays the file (a `VideoPreviewSheet` on the private copy) and
+  states frame, length, rate and size measured off the file itself, with the
+  before/after pill only on Squeeze's; Sound only writes an .m4a to Music and
+  its done screen plays it as a wave; a main-track photo exports as the picture
+  it was made from (`StillClips.originalImage`, a JPEG beside the still under
+  `files/stills/`, at up to 3840 px) - check a 4K export of a 12 MP photo is
+  sharp where it used to be 1080p upscaled, that a photo first in a cuts-only
+  edit still starts (an image item with no sound track in a sequence declared
+  with sound), and that a photo with a mask or a transition still exports as
+  it did; the last export's settings are the next new project's defaults
+  (SharedPreferences "export_defaults", size capped at the footage's) while a
+  reopened draft keeps its own; the codec-mute line reads on the sheet for a
+  DTS source. Not built, by choice: a Stop action on the notification (it
+  cannot ask first).
+  From its review round (built, the arithmetic in `ExportSettingsChecks.kt`
+  and `StillRulesChecks.kt`, nothing seen): on Android 15 the service asks
+  the framework for the media-processing type directly - androidx.core
+  1.13.1's `ServiceCompat` masks that type to NONE, which a targetSdk 35 app
+  is refused, so through it the export ran with no notification at all -
+  check `SquishExport: could not go foreground` never logs on the S23 and the
+  notification stands with the screen locked; the codec probe starts on
+  opening the clip and Render waits for it, so a draft's HEVC or Keep HDR is
+  written as HEVC even when tapped at once; HEVC and Keep HDR read one
+  answer (`effectiveKeepHdr`): on a layered HLG edit both say converted and
+  HEVC can be turned off, and the render tone-maps; a photo on the main track
+  drags out to ten minutes (`StillRules.MAX_MS`) - lifting the finger past
+  the rendering's end renders the still again in half-minute steps
+  (`StillClips.extended`, the picture copied beside it) and swaps the file in;
+  until it lands, and this is the thing to watch, the preview plays the
+  ten-second file to its end and holds its last frame while the clock runs
+  on at wall time (`PreviewEngine.tick` drives the clock from a READY,
+  playing player only, and `watchStalls` counts BUFFERING and a frozen READY,
+  not ENDED) - play across a photo dragged to 40 s straight after the drag,
+  and scrub into its second half, and neither may stick; the export writes
+  the picture for the clip's whole run either way; with Keep HDR on a
+  cuts-only HLG edit that has a photo on the main track, the JPEG goes into
+  an HLG graph as an SDR bitmap - a combination Media3's bitmap input may
+  refuse (`VideoFrameProcessingException` at the first photo frame) where
+  the old SDR clip did not, so check it, with Keep HDR off as the fallback
+  that must work; a fitted run that misses is chased at a bitrate the size is
+  solved from too, so a second run can step down a size rather than starve
+  (`fitOutputPForBitrate`), and the tightened scale lives for that one run;
+  back on the "Keep this one / Try again, tighter" card keeps the file and
+  lands on the done screen; "Back to editor" from the done screen lands on
+  the bare editor; 30 chosen on 60 fps footage at Original size halves the
+  estimate and the file (`bitrateForFrame` takes the source rate); Fit to a
+  size is not remembered as a default (its MB is); the sheet holds one height
+  while its rows show, so a chip tapped stays under the finger when its hint
+  grows; a Squeeze asks for notifications too, and the card promises one only
+  when it may post; the Quality chips read Lower · Standard · Higher.
+  From the merge over B11, B12 and B13 (built, the fit arithmetic in
+  `ExportSettingsChecks.kt`, nothing seen): a fitted export on a padded
+  canvas (B12) solves its size on the canvas's own frame
+  (`EditorUiState.fittedOutputP`), not on the crop the canvas replaces; a
+  main-track photo written as an image item carries B12's grade and crop
+  and B11's mirror and turn on that item - check a warm, turned photo on
+  the main track comes out graded and turned at full size; a freeze (B11)
+  is a rendered clip with no picture beside it, so it takes the video path
+  as before; the rate chosen on the sheet drops frames after B13's frame
+  blend (`speedEffects`, then `frameDrop`), so the blended frames are the
+  ones kept.
+
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The
