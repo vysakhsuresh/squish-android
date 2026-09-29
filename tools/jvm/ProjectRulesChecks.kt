@@ -26,6 +26,19 @@ fun main() {
         check(ProjectRules.copyName("Holiday copy 2", emptyList()) == "Holiday copy", "a numbered copy with nothing taken did not go back to the plain copy")
     }
 
+    // --- An unnamed project is called what its file says, or the day. --------
+    run {
+        val utc = java.util.TimeZone.getTimeZone("UTC")
+        val day = 1_790_690_000_000L // 29 Sep 2026, 13:13 UTC
+        fun t(label: String?) = ProjectRules.displayTitle(label, day, utc)
+        check(t("Beach day.mp4") == "Beach day", "a named file lost its name: ${t("Beach day.mp4")}")
+        check(t("Holi 2026 final.mov") == "Holi 2026 final", "a name with digits was taken for a made-up one")
+        for (made in listOf("1001319240.jpg", "VID-20260926-WA0104.mp4", "IMG_1234.JPG", "PXL_20260901_101112.mp4", "Screen_Recording_20260929.mp4", "", null)) {
+            check(t(made) == "Edit · 29 Sep", "a made-up name was shown: $made -> ${t(made)}")
+        }
+        check(ProjectRules.displayTitle("1001.jpg", 0L, utc) == "Untitled edit", "no date and no name was not Untitled")
+    }
+
     // --- The cover is a little way into the shot, never past its end. ----------
     run {
         check(ProjectRules.coverTimeMs(0L, 30_000L) == 1_000L, "a long shot's cover was not one second in")

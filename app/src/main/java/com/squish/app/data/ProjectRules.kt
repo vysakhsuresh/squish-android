@@ -1,5 +1,9 @@
 package com.squish.app.data
 
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 
 /**
@@ -69,6 +73,26 @@ object ProjectRules {
 
     /** How far into a shot a cover is taken, at most. */
     const val COVER_LEAD_MS = 1_000L
+
+    /**
+     * What an unnamed project is called on its card. A file someone named -
+     * "Beach day.mp4" - keeps its name, less the extension. A name a camera or
+     * the gallery made up - "1001319240.jpg", "VID-20260926-WA0104.mp4",
+     * "PXL_20260901_101112" - says nothing, so the project is called after
+     * the day it was started instead: "Edit · 29 Sep".
+     */
+    fun displayTitle(label: String?, createdAtMillis: Long, zone: TimeZone = TimeZone.getDefault()): String {
+        val stem = label?.trim()?.substringBeforeLast('.')?.trim().orEmpty()
+        val letters = stem.count { it.isLetter() }
+        if (letters >= 3 && !MADE_UP_NAME.matches(stem)) return stem
+        if (createdAtMillis <= 0L) return "Untitled edit"
+        val format = SimpleDateFormat("d MMM", Locale.getDefault()).apply { timeZone = zone }
+        return "Edit · " + format.format(Date(createdAtMillis))
+    }
+
+    private val MADE_UP_NAME = Regex(
+        "(?i)^(vid|img|pxl|mvimg|dsc|dscn|dcim|mov|video|photo|image|picture|screenshot|screen[ _-]?record\\w*|record\\w*|wa|signal|snapchat|inshot|capcut)[ _-]*[0-9].*"
+    )
 
     private val COPY_SUFFIX = Regex(" copy \\d+$")
 }

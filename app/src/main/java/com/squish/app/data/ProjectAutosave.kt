@@ -709,6 +709,8 @@ class ProjectAutosave(context: Context) {
             put("durationMs", state.trimmedDurationMs)
             put("clipCount", state.videoClips.size)
             put("savedAtMillis", savedAtMillis)
+            // When the project was started, for the name an unnamed one is shown by.
+            put("createdAtMillis", previous?.optLong("createdAtMillis", 0L)?.takeIf { it > 0L } ?: savedAtMillis)
             put("editFingerprint", fingerprint)
             putCover(coverUri, coverAt, owned + scratchFile(slot).length())
             // The export stamp is the one thing in the sidecar the edit does not
@@ -736,7 +738,10 @@ class ProjectAutosave(context: Context) {
         val uri = json.optString("uri").takeIf { it.isNotBlank() } ?: return null
         DraftSummary(
             id = json.optString("id").takeIf { it.isNotBlank() } ?: return null,
-            title = json.optString("title", "Untitled edit"),
+            // Named projects show their name; the rest a title made from the
+            // first clip, or the day they were started (ProjectRules.displayTitle).
+            title = json.optString("name").takeIf { it.isNotBlank() }
+                ?: ProjectRules.displayTitle(json.optString("title"), json.optLong("createdAtMillis").takeIf { it > 0L } ?: json.optLong("savedAtMillis")),
             sourceUri = Uri.parse(uri),
             durationMs = json.optLong("durationMs"),
             clipCount = json.optInt("clipCount", 1),

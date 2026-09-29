@@ -610,6 +610,23 @@ private fun ProjectCard(
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
             }
+            // On the cover, not beside the name: beside it, "Exported · edited"
+            // took the whole line and the name came out as "...".
+            if (project.exportedAtMillis != null) {
+                Text(
+                    if (project.editedSinceExport) "Exported · edited" else "Exported",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Background,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(SquishColors.Cyan)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
             if (selecting) {
                 Icon(
                     Icons.Filled.CheckCircle,
@@ -624,40 +641,18 @@ private fun ProjectCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        project.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = SquishColors.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    // An exported project stays: it is the one most likely to be
-                    // opened again for one more change. The badge says so.
-                    if (project.exportedAtMillis != null) {
-                        Text(
-                            if (project.editedSinceExport) "Exported · edited" else "Exported",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = SquishColors.Cyan,
-                            maxLines = 1,
-                            softWrap = false,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(SquishColors.Cyan.copy(alpha = 0.14f))
-                                .padding(horizontal = 5.dp, vertical = 1.dp)
-                        )
-                    }
-                }
+                Text(
+                    project.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SquishColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Text(
                     buildString {
                         append(countOf(project.clipCount, if (project.staged) "file" else "clip"))
                         append(" · ")
                         append(if (project.staged) "not opened yet" else agoOf(project.savedAtMillis))
-                        if (project.sizeBytes > 0L) {
-                            append(" · ")
-                            append(ProjectRules.sizeLabel(project.sizeBytes))
-                        }
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextMuted,
@@ -685,6 +680,15 @@ private fun ProjectCard(
                     }
                     DropdownMenuItem(text = { Text("Select") }, onClick = { menu = false; onSelect() })
                     DropdownMenuItem(text = { Text("Delete", color = SquishColors.Pink) }, onClick = { menu = false; onDelete() })
+                    // In the menu, not on the card: on a half-width card the size
+                    // pushed the line to "4 clips · 5 min ago · ...".
+                    if (project.sizeBytes > 0L) {
+                        DropdownMenuItem(
+                            text = { Text("Uses ${ProjectRules.sizeLabel(project.sizeBytes)} on this phone", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted) },
+                            onClick = {},
+                            enabled = false
+                        )
+                    }
                 }
             }
         }
