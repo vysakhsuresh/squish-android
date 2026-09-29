@@ -141,6 +141,10 @@ fun EditorToolSheet(
     onDone: () -> Unit,
     onPickAudio: () -> Unit,
     onAddText: () -> Unit,
+    /** A title from a preset, opened for typing at once. */
+    onAddTitle: (TitlePreset) -> Unit,
+    /** The line Add text or a title just made, opened with its words selected; see TextEditPanel. */
+    newLineId: String?,
     /** A sound picked from Sound's list: selected, with its own tools in place of the sheet. */
     onSelectSound: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -228,7 +232,7 @@ fun EditorToolSheet(
                 1 -> SoundVoicePanel(state, viewModel)
                 else -> SoundSyncPanel(state, viewModel)
             }
-            Tool.Text -> TextPanel(state, viewModel, onAddText)
+            Tool.Text -> TextPanel(state, viewModel, onAddText, onAddTitle)
             Tool.Stickers -> StickersPanel(viewModel)
             Tool.Effects -> EffectsPanel(state, viewModel)
             Tool.Looks -> when (chip) {
@@ -266,7 +270,7 @@ fun EditorToolSheet(
             }
             Tool.Beats -> BeatPanel(state, viewModel)
             Tool.Sync -> clip?.let { AlignPanel(state, it, viewModel) }
-            Tool.Edit -> item?.let { TextEditPanel(it, viewModel) }
+            Tool.Edit -> item?.let { TextEditPanel(it, viewModel, selectAll = it.id == newLineId) }
             Tool.Style -> item?.let { TextStylePanel(it, viewModel) }
             Tool.Strength -> effect?.let { EffectStrengthPanel(it, viewModel) }
             else -> Unit

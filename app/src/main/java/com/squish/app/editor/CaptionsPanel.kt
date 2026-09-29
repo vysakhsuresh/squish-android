@@ -16,7 +16,9 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
 import com.squish.app.ui.components.SelectableChip
@@ -70,7 +72,13 @@ import com.squish.app.ui.theme.SquishColors
  * difference between a useful result and a user wondering why the cards are empty.
  */
 @Composable
-fun TextPanel(state: EditorUiState, viewModel: EditorViewModel, onAddText: () -> Unit) {
+fun TextPanel(
+    state: EditorUiState,
+    viewModel: EditorViewModel,
+    onAddText: () -> Unit,
+    /** A title from a preset: dropped at the playhead and opened for typing, its sample words selected. */
+    onAddTitle: (TitlePreset) -> Unit
+) {
     // Words only - stickers share the caption track but have their own panel.
     val lines = state.textOverlays.filterNot { it.sticker }
     val autoLines = lines.count { it.isAutoCaption }
@@ -120,7 +128,7 @@ fun TextPanel(state: EditorUiState, viewModel: EditorViewModel, onAddText: () ->
         PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
                 "Titles",
-                "Tap one to drop it at the playhead",
+                "Tap one to drop it at the playhead and type your words",
                 icon = Icons.Filled.Title,
                 accent = SquishColors.Amber
             )
@@ -129,7 +137,7 @@ fun TextPanel(state: EditorUiState, viewModel: EditorViewModel, onAddText: () ->
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
             ) {
                 TitlePreset.entries.forEach { preset ->
-                    TitleTile(preset = preset, onClick = { viewModel.text.addTitle(preset) })
+                    TitleTile(preset = preset, onClick = { onAddTitle(preset) })
                 }
             }
         }
@@ -544,14 +552,29 @@ private fun CaptionRow(
  * One line's words: the line's Edit, with the cursor in the field and the
  * keyboard up at once - Text then Add text is two taps to typing, where it
  * used to be finding the new blank line in a list and tapping its field.
+ *
+ * [selectAll] opens with the whole line selected: a title from a preset comes
+ * with sample words, and typing replaces them the way it does in any other
+ * editor. A tapped title used to sit on the picture saying BIG NEWS with no
+ * keyboard and no obvious way to make it say anything else.
  */
 @Composable
-fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel) {
+fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel, selectAll: Boolean = false) {
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     // Same rule as the rows in the list: the report that the field is attached
     // unfocused is not the cursor leaving, and must not end a step.
     var hadFocus by remember(caption.id) { mutableStateOf(false) }
+    // The words as a field value, which is what carries a selection.
+    var field by remember(caption.id) {
+        mutableStateOf(
+            TextFieldValue(caption.text, if (selectAll) TextRange(0, caption.text.length) else TextRange(caption.text.length))
+        )
+    }
+    // Changed from elsewhere - undo, a restyle - the field follows the line.
+    LaunchedEffect(caption.text) {
+        if (field.text != caption.text) field = field.copy(text = caption.text, selection = TextRange(caption.text.length))
+    }
     // Edit is for typing, so it opens with the keyboard up - after Add text and
     // from a line's own toolbar alike. Only Add text used to, and editing an
     // existing line took a third tap on the field.
@@ -572,8 +595,11 @@ fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel) {
             accent = SquishColors.Amber
         )
         OutlinedTextField(
-            value = caption.text,
-            onValueChange = { viewModel.text.updateCaptionText(caption.id, it) },
+            value = field,
+            onValueChange = { typed ->
+                field = typed
+                if (typed.text != caption.text) viewModel.text.updateCaptionText(caption.id, typed.text)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focusRequester)

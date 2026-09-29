@@ -76,6 +76,33 @@ object EditRules {
         return Span(backed, pictureEndMs)
     }
 
+    /** Where a sound added at the playhead goes, and how much of its file plays. */
+    data class SoundLanding(val timelineStartMs: Long, val sourceOutMs: Long)
+
+    /**
+     * Where a sound of [trackMs] added at [playheadMs] lands on a picture that
+     * ends at [pictureEndMs].
+     *
+     * At the playhead, ending with the picture: a song is usually longer than
+     * the clip it goes under, and left whole it stretched the edit to the song's
+     * length - a minute of black after an eight-second video. The rest of the
+     * song is still there; drag the end out to use it. A file shorter than the
+     * room left, or one with less than [minMs] of room to fit into, plays whole.
+     *
+     * Within [lastMomentMs] of the end - where the playhead parks after
+     * watching the edit through - it goes in at the start instead. On the phone
+     * a song added with the playhead half a second from the end got half a
+     * second of itself under the last frames, out of sight under the sheet,
+     * and looked as if nothing had been added at all.
+     */
+    fun soundLanding(playheadMs: Long, pictureEndMs: Long, trackMs: Long, minMs: Long, lastMomentMs: Long): SoundLanding {
+        val playhead = playheadMs.coerceAtLeast(0L)
+        val start = if (pictureEndMs > 0L && pictureEndMs - playhead < lastMomentMs) 0L else playhead
+        val room = pictureEndMs - start
+        val out = if (room >= minMs && room < trackMs) room else trackMs
+        return SoundLanding(start, out)
+    }
+
     /**
      * An item cut in two at [atMs], or null when either half would be shorter than
      * [minMs] - a cut there would leave a sliver nobody could grab.

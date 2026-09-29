@@ -254,7 +254,29 @@ fun main() {
         }
     }
 
-    println("edit rules: shift, resize, place, split, beat markers, smooth, sync, reorder, captions, retime")
+    // --- A sound added at the playhead lands where it can be seen. --------------
+    run {
+        val minMs = 100L
+        val lastMoment = 1_000L
+        // Mid-edit: at the playhead, ending with the picture.
+        val mid = EditRules.soundLanding(2_000, 8_200, 60_000, minMs, lastMoment)
+        check(mid == EditRules.SoundLanding(2_000, 6_200), "a song added mid-edit landed at $mid")
+        // The device's case: the playhead parked half a second from the end.
+        val late = EditRules.soundLanding(7_670, 8_200, 60_000, minMs, lastMoment)
+        check(late == EditRules.SoundLanding(0, 8_200), "a song added near the end landed at $late, not at the start")
+        val atEnd = EditRules.soundLanding(8_200, 8_200, 60_000, minMs, lastMoment)
+        check(atEnd == EditRules.SoundLanding(0, 8_200), "a song added at the very end landed at $atEnd")
+        // A second from the end is still the playhead; a hair inside it is not.
+        check(EditRules.soundLanding(7_200, 8_200, 60_000, minMs, lastMoment).timelineStartMs == 7_200L, "a second of room went to the start")
+        check(EditRules.soundLanding(7_201, 8_200, 60_000, minMs, lastMoment).timelineStartMs == 0L, "under a second of room stayed at the playhead")
+        // A short file plays whole; so does one added where there is no picture.
+        check(EditRules.soundLanding(1_000, 8_200, 3_000, minMs, lastMoment) == EditRules.SoundLanding(1_000, 3_000), "a short file was cut")
+        check(EditRules.soundLanding(0, 0, 3_000, minMs, lastMoment) == EditRules.SoundLanding(0, 3_000), "no picture: the file was cut")
+        // An edit shorter than the last moment: from the start, ending with it.
+        check(EditRules.soundLanding(300, 500, 3_000, minMs, lastMoment) == EditRules.SoundLanding(0, 500), "a tiny edit's song landed elsewhere")
+    }
+
+    println("edit rules: shift, resize, place, split, beat markers, smooth, sync, reorder, captions, retime, sound landing")
     if (problems.isEmpty()) println("PASS - edits keep items whole, inside the picture, and on the frames they belong to")
     else { println("FAIL (${problems.size})"); problems.take(30).forEach { println("  - $it") }; exitProcess(1) }
 }

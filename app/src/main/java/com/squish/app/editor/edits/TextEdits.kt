@@ -82,12 +82,19 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
     /**
      * A title at the playhead, styled by [preset]: its text, face, look, colour,
      * place on the frame and motion, all at once. It is an ordinary caption from
-     * then on - every part of it can be changed afterwards.
+     * then on - every part of it can be changed afterwards. Returns its id, so
+     * the editor can open it for typing with the sample words selected.
      */
-    fun addTitle(preset: TitlePreset) = record("Add title") {
+    fun addTitle(preset: TitlePreset): String {
+        val id = UUID.randomUUID().toString()
+        record("Add title") { addTitle(id, preset) }
+        return id
+    }
+
+    private fun addTitle(id: String, preset: TitlePreset) {
         val span = placeNewText(_state.value, DEFAULT_TITLE_MS)
         val item = TextOverlayItem(
-            id = UUID.randomUUID().toString(),
+            id = id,
             text = preset.sample,
             startMs = span.startMs,
             endMs = span.endMs,

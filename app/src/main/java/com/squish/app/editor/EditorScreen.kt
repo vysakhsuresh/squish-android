@@ -258,6 +258,12 @@ fun EditorScreen(
         newLineId = viewModel.text.addCaptionAtPlayhead()
         openToolName = Tool.Edit.name
     }
+    // A title the same way: dropped, and opened for typing with its sample
+    // words selected, so the next thing typed is what it says.
+    val addTitle: (TitlePreset) -> Unit = { preset ->
+        newLineId = viewModel.text.addTitle(preset)
+        openToolName = Tool.Edit.name
+    }
 
     val onTool: (Tool) -> Unit = { tool ->
         when (tool) {
@@ -420,6 +426,8 @@ fun EditorScreen(
                             onDone = { openToolName = null },
                             onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) },
                             onAddText = addText,
+                            onAddTitle = addTitle,
+                            newLineId = newLineId,
                             onSelectSound = { id ->
                                 viewModel.selectClip(id)
                                 openToolName = null
