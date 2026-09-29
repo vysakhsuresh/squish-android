@@ -13,11 +13,14 @@ import android.view.PixelCopy
 import android.view.View
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -41,6 +44,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -146,34 +150,84 @@ private const val MAX_GLYPHS = 48
 
 /**
  * The eyedropper: laid over the picture while a colour is being picked, it
- * reads the pixels under a tap - from the window itself, since the picture is
- * a stack of video surfaces no Compose canvas can read - and hands the colour
- * back. A patch of a few pixels is averaged, so a single grain of noise is not
- * the colour picked.
+ * reads the pixels under the finger - from the window itself, since the
+ * picture is a stack of video surfaces no Compose canvas can read - and hands
+ * the colour back when the finger lifts. A patch of pixels is averaged, so a
+ * single grain of noise is not the colour picked; the green screen asks for a
+ * wider patch than a title's colour does.
+ *
+ * A loupe follows the finger: a disc of the colour read so far, held above
+ * the fingertip where it can be seen, the way CapCut's picker is dragged over
+ * the picture. A tap without a drag picks where it landed.
  */
 @Composable
 fun EyedropperLayer(
     /** The colour picked, or null when the pick was given up or could not be read. */
     onPick: (Int?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** The side of the patch of pixels averaged, in pixels of the screen. */
+    patch: Int = 5,
+    hint: String = "Touch the picture to pick its colour"
 ) {
     val view = LocalView.current
     val latestPick by rememberUpdatedState(onPick)
     var origin by remember { mutableStateOf(Offset.Zero) }
     var sample by remember { mutableStateOf<Int?>(null) }
+    var finger by remember { mutableStateOf<Offset?>(null) }
     Box(
         modifier = modifier
             .onGloballyPositioned { origin = it.positionInWindow() }
-            .pointerInput(Unit) {
-                detectTapGestures { at ->
-                    val here = origin + at
-                    samplePixels(view, here.x.roundToInt(), here.y.roundToInt()) { colour ->
-                        sample = colour
-                        latestPick(colour)
+            .pointerInput(patch) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    down.consume()
+                    // One read at a time: a read is asynchronous, and asking for
+                    // a new one on every move would queue dozens behind the first.
+                    var reading = false
+                    var latest: Int? = null
+                    fun read(at: Offset) {
+                        if (reading) return
+                        reading = true
+                        val here = origin + at
+                        samplePixels(view, here.x.roundToInt(), here.y.roundToInt(), patch) { colour ->
+                            reading = false
+                            if (colour != null) {
+                                latest = colour
+                                sample = colour
+                            }
+                        }
                     }
+                    finger = down.position
+                    read(down.position)
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        change.consume()
+                        if (!change.pressed) break
+                        finger = change.position
+                        read(change.position)
+                    }
+                    finger = null
+                    // A read is asked for on every move, so the last one landed
+                    // is at most a fingertip behind the finger.
+                    latestPick(latest ?: sample)
                 }
             }
     ) {
+        finger?.let { at ->
+            val loupe = with(LocalDensity.current) { LOUPE_SIZE.roundToPx() }
+            val lift = with(LocalDensity.current) { LOUPE_LIFT.roundToPx() }
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(at.x.roundToInt() - loupe / 2, at.y.roundToInt() - loupe / 2 - lift) }
+                    .size(LOUPE_SIZE)
+                    .clip(CircleShape)
+                    .background(sample?.let { Color(it) } ?: Color.Black.copy(alpha = 0.4f))
+                    .border(3.dp, Color.White, CircleShape)
+            ) {
+                Box(modifier = Modifier.align(Alignment.Center).size(6.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.6f)))
+            }
+        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
@@ -187,7 +241,7 @@ fun EyedropperLayer(
                 Box(modifier = Modifier.size(14.dp).clip(CircleShape).background(Color(it)))
                 Box(modifier = Modifier.size(6.dp))
             }
-            Text("Tap the picture to pick its colour", style = MaterialTheme.typography.labelMedium, color = Color.White)
+            Text(hint, style = MaterialTheme.typography.labelMedium, color = Color.White)
         }
         Text(
             "Cancel",
@@ -204,19 +258,20 @@ fun EyedropperLayer(
     }
 }
 
-/** The average colour of the few pixels round ([x], [y]) of the window, or null when they cannot be read. */
-private fun samplePixels(view: View, x: Int, y: Int, onDone: (Int?) -> Unit) {
+/** The average colour of the [patch] pixels square round ([x], [y]) of the window, or null when they cannot be read. */
+private fun samplePixels(view: View, x: Int, y: Int, patch: Int, onDone: (Int?) -> Unit) {
     val window = view.context.findActivity()?.window
     if (window == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
         onDone(null)
         return
     }
+    val side = patch.coerceAtLeast(1)
     val decor = window.decorView
-    val left = (x - PATCH / 2).coerceIn(0, (decor.width - PATCH).coerceAtLeast(0))
-    val top = (y - PATCH / 2).coerceIn(0, (decor.height - PATCH).coerceAtLeast(0))
-    val bitmap = Bitmap.createBitmap(PATCH, PATCH, Bitmap.Config.ARGB_8888)
+    val left = (x - side / 2).coerceIn(0, (decor.width - side).coerceAtLeast(0))
+    val top = (y - side / 2).coerceIn(0, (decor.height - side).coerceAtLeast(0))
+    val bitmap = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
     runCatching {
-        PixelCopy.request(window, Rect(left, top, left + PATCH, top + PATCH), bitmap, { result ->
+        PixelCopy.request(window, Rect(left, top, left + side, top + side), bitmap, { result ->
             onDone(if (result == PixelCopy.SUCCESS) average(bitmap) else null)
         }, Handler(Looper.getMainLooper()))
     }.onFailure { onDone(null) }
@@ -238,5 +293,6 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-/** The side of the patch of pixels the eyedropper averages. */
-private const val PATCH = 5
+/** The loupe's size, and how far above the fingertip it is held so the finger does not cover it. */
+private val LOUPE_SIZE = 56.dp
+private val LOUPE_LIFT = 64.dp

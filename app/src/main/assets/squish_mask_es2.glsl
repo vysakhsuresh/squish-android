@@ -94,8 +94,39 @@ void main() {
     sd = (length(n) - 1.0) * min(r.x, r.y);
   } else if (uShape < 2.5) {
     sd = q.y;
-  } else {
+  } else if (uShape < 3.5) {
     sd = abs(q.y) - r.y;
+  } else if (uShape < 4.5) {
+    // A heart filling the box: the classic field is about 1.2 wide and 1.1
+    // tall with its tip at the origin, so the box is stretched onto it and
+    // the distance scaled back by the smaller side. The picture's y is up
+    // here, so the tip goes at the bottom of the box.
+    vec2 rr = max(r, vec2(0.0001));
+    vec2 h = vec2(abs(q.x) / rr.x * 0.6, (q.y + rr.y) / (2.0 * rr.y) * 1.1);
+    float d;
+    if (h.y + h.x > 1.0) {
+      vec2 e = h - vec2(0.25, 0.75);
+      d = sqrt(dot(e, e)) - 0.35355;
+    } else {
+      vec2 a = h - vec2(0.0, 1.0);
+      vec2 b = h - 0.5 * max(h.x + h.y, 0.0);
+      d = sqrt(min(dot(a, a), dot(b, b))) * sign(h.x - h.y);
+    }
+    sd = d * min(rr.x / 0.6, rr.y / 0.55);
+  } else {
+    // A five-pointed star filling the box, its top point up.
+    vec2 rr = max(r, vec2(0.0001));
+    vec2 p = vec2(q.x / rr.x, q.y / rr.y);
+    vec2 k1 = vec2(0.809016994, -0.587785252);
+    vec2 k2 = vec2(-k1.x, k1.y);
+    p.x = abs(p.x);
+    p -= 2.0 * max(dot(k1, p), 0.0) * k1;
+    p -= 2.0 * max(dot(k2, p), 0.0) * k2;
+    p.x = abs(p.x);
+    p.y -= 1.0;
+    vec2 ba = 0.45 * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
+    float hh = clamp(dot(p, ba) / dot(ba, ba), 0.0, 1.0);
+    sd = length(p - ba * hh) * sign(p.y * ba.x - p.x * ba.y) * min(rr.x, rr.y);
   }
 
   float mask = 1.0 - smoothstep(-uFeather, uFeather, sd);

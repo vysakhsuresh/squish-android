@@ -38,6 +38,7 @@ import com.squish.app.media.audio.FadeProcessor
 import com.squish.app.media.audio.VoiceProcessor
 import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.ChromaKeyEffect
+import com.squish.app.media.effects.ClipCropEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.FxEffect
 import com.squish.app.media.effects.MaskEffect
@@ -130,10 +131,14 @@ class VideoProcessor(private val context: Context) {
             // once and kept. Only a composited export needs it.
             val needsClear = !state.audioOnly && CompositionFactory.needsCompositing(state)
             val clear = if (needsClear) withContext(Dispatchers.IO) { StillClips.clearFrame(context) } else null
+            // The pictures a padded canvas is filled with, made before the encode
+            // starts: they are read off the footage, which is not something to do
+            // on the thread that builds the Transformer.
+            val backdrop = if (!state.audioOnly && state.paddedCanvas) withContext(Dispatchers.IO) { backdropClips(state) } else emptyList()
             val outcome = if (needsClear && clear == null) {
                 Result.failure(IOException("Could not write the blank frame the layers are padded with"))
             } else {
-                runExport(state, outputFile, clear) { active.set(it) }
+                runExport(state, outputFile, clear, backdrop) { active.set(it) }
             }
             result = outcome
             outcome
@@ -151,10 +156,11 @@ class VideoProcessor(private val context: Context) {
         state: EditorUiState,
         outputFile: File,
         clear: File?,
+        backdrop: List<Clip>,
         onTransformer: (Transformer) -> Unit
     ): Result<File> =
         suspendCancellableCoroutine { continuation ->
-            val built = runCatching { buildComposition(state, clear) }
+            val built = runCatching { buildComposition(state, clear, backdrop) }
             val composition = built.getOrElse {
                 continuation.resume(Result.failure(it))
                 return@suspendCancellableCoroutine
@@ -229,7 +235,7 @@ class VideoProcessor(private val context: Context) {
      * The edit as Media3 objects: the picture's sequences, one sequence per added
      * sound, and what is drawn over the whole frame.
      */
-    private fun buildComposition(state: EditorUiState, clear: File?): Composition {
+    private fun buildComposition(state: EditorUiState, clear: File?, backdrop: List<Clip>): Composition {
         val track = state.videoClips
         val videoOut = !state.audioOnly
         // A sound-only export keeps the camera's sound even when the picture's
@@ -257,7 +263,8 @@ class VideoProcessor(private val context: Context) {
             CompositionFactory.needsCompositing(state) -> {
                 // To the edit's end, sounds included: a song dragged out past
                 // the last shot runs on over black, as the preview plays it.
-                val layers = ExportPlan.layers(track, state.trimmedDurationMs)
+                // A padded canvas's background goes under every roll.
+                val layers = ExportPlan.layers(track, state.trimmedDurationMs, backdrop)
                 val rate = frameRateOf(state)
                 val composited = CompositionFactory.buildComposited(
                     layers = layers,
@@ -269,8 +276,12 @@ class VideoProcessor(private val context: Context) {
                     mixerSampleRateHz = ExportPlan.mixerSampleRate(soundSampleRates(state, baseAudio)),
                     overlaySound = ::overlayHeard,
                     editedFor = { clip, layer ->
-                        if (layer.role == ExportPlan.Role.Overlay) editedOverlay(state, clip, canvas, rate)
-                        else editedClip(state, clip, canvas, layers.baseRolls)
+                        when (layer.role) {
+                            ExportPlan.Role.Overlay -> editedOverlay(state, clip, canvas, rate)
+                            ExportPlan.Role.Backdrop ->
+                                CompositionFactory.backdropItem(checkNotNull(clip.uri), clip.durationMs, rate, canvas)
+                            else -> editedClip(state, clip, canvas, layers.baseRolls)
+                        }
                     }
                 )
                 settings = composited.settings
@@ -382,14 +393,15 @@ class VideoProcessor(private val context: Context) {
     // ---- Picture -------------------------------------------------------------------
 
     /**
-     * One base clip: its own look and placement, the edit's rotation, grade and
-     * crop, fitted to the canvas, retimed, and - where it shares the screen with
-     * another shot - its part in the transition.
+     * One base clip: its own crop, grade and placement, the edit's rotation and
+     * frame, fitted to the canvas, retimed, and - where it shares the screen
+     * with another shot - its part in the transition.
      *
      * The order is the preview's. The stabilizer's correction is measured on the
-     * frame the camera recorded, so it goes on before the rotation; what the
-     * editor asked for is applied to the picture as it is seen, after it. The
-     * grade comes before the crop, so a vignette falls off towards the corners of
+     * frame the camera recorded, so it goes on before the rotation, and the
+     * clip's own crop cuts that corrected picture; what the editor asked for is
+     * applied to the picture as it is seen, after the rotation. The grade comes
+     * before the frame's crop, so a vignette falls off towards the corners of
      * the whole picture as it does on screen, not towards the corners of a 9:16
      * slice of it. Everything that reads a clock and wants source time - the
      * stabilizer, a tracked mask, the reframe - sits before the speed change;
@@ -419,8 +431,9 @@ class VideoProcessor(private val context: Context) {
             clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
             clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
+            clip.crop?.takeIf { !it.isIdentity }?.let { add(ClipCropEffect(it)) }
             rotation(state)?.let { add(it) }
-            addAll(ColorGrade.effects(state.grade))
+            addAll(ColorGrade.effects(clip.grade))
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.User)?.let { add(it) }
             crop(state, clip)?.let { add(it) }
             if (canvas != null) {
@@ -537,13 +550,13 @@ class VideoProcessor(private val context: Context) {
     }
 
     /**
-     * The one-file path's picture: the edit's rotation, grade and crop, and a
-     * resize only when one was asked for - a file exported at its own size is
-     * not given a pass over every frame that changes nothing.
+     * The one-file path's picture: the edit's rotation and crop, and a resize
+     * only when one was asked for - a file exported at its own size is not
+     * given a pass over every frame that changes nothing. No grade: a look is a
+     * clip's own, and the quick tools have no clips.
      */
     private fun singleFileEffects(state: EditorUiState): List<Effect> = buildList {
         rotation(state)?.let { add(it) }
-        addAll(ColorGrade.effects(state.grade))
         crop(state, clip = null)?.let { add(it) }
         if (state.outputP != OutputSize.ORIGINAL && !state.fitToSize) {
             val canvas = state.writtenResolution
@@ -564,12 +577,16 @@ class VideoProcessor(private val context: Context) {
      * Presentation can only take the middle of the frame at a given shape, which
      * is exactly the limitation the custom crop exists to remove.
      *
-     * Auto-reframe follows a track measured on one file - the clip it was run on
-     * - so only clips of that file follow it; any other clip is cropped to the
-     * same shape about its centre. Handed a track from another file, a clip's
-     * window chased where a subject had been in different footage.
+     * A padded canvas keeps the whole picture: the ratio is the canvas's, and
+     * the Presentation after this fits the picture into it over the backdrop.
+     *
+     * Auto-reframe follows each clip's own track, in that clip's own file time;
+     * a clip without one is cropped to the shape about its centre. One track
+     * for the edit, measured on the first file, had every other clip's window
+     * chasing where a subject had been in different footage (V11).
      */
     private fun crop(state: EditorUiState, clip: Clip?): Effect? {
+        if (state.paddedCanvas) return null
         val rect = state.effectiveCrop
         if (state.cropAspect == CropAspect.Custom) {
             if (rect.isFull) return null
@@ -577,16 +594,50 @@ class VideoProcessor(private val context: Context) {
             return Crop(ndc[0], ndc[1], ndc[2], ndc[3])
         }
         val ratio = state.cropAspect.ratio ?: return null
-        val follow = state.reframe
-        if (follow != null && !follow.isEmpty) {
-            val analysed = state.videoClips.firstOrNull()
-            when {
-                clip == null -> return ReframeEffect(ratio, follow, state.trimStartMs)
-                analysed != null && (clip.uri ?: state.sourceUri) == (analysed.uri ?: state.sourceUri) ->
-                    return ReframeEffect(ratio, follow, clip.sourceInMs)
+        val follow = clip?.reframe
+        if (follow != null && !follow.isEmpty) return ReframeEffect(ratio, follow, clip.sourceInMs)
+        return Presentation.createForAspectRatio(ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP)
+    }
+
+    /**
+     * The stills a padded canvas is filled with, as clips on the backdrop layer
+     * (ExportPlan.Role.Backdrop): one for the whole edit in a colour or a
+     * picture; under a blur, one per shot, each from that shot's middle frame
+     * and running to the next shot's start (CanvasBackdrop says why a still).
+     * A file that cannot be made is left out, and the canvas is black there.
+     */
+    private suspend fun backdropClips(state: EditorUiState): List<Clip> {
+        val aspect = state.canvasAspect
+        val end = state.trimmedDurationMs
+        val background = state.canvasBackground
+        fun backdrop(file: File, startMs: Long, durationMs: Long) = Clip(
+            kind = com.squish.app.timeline.ClipKind.Video,
+            uri = android.net.Uri.fromFile(file),
+            label = "Backdrop",
+            sourceInMs = 0L,
+            sourceOutMs = durationMs,
+            timelineStartMs = startMs
+        )
+        return when (background.fill) {
+            com.squish.app.editor.CanvasFill.Crop -> emptyList()
+            com.squish.app.editor.CanvasFill.Colour ->
+                listOfNotNull(CanvasBackdrop.solid(context, background.colorArgb, aspect)?.let { backdrop(it, 0L, end) })
+            com.squish.app.editor.CanvasFill.Image -> listOfNotNull(
+                background.imageUri?.let { CanvasBackdrop.fromImage(context, android.net.Uri.parse(it), aspect) }
+                    ?.let { backdrop(it, 0L, end) }
+            )
+            com.squish.app.editor.CanvasFill.Blur -> {
+                val shots = state.videoClips.filter { it.isMain && it.durationMs > 0 }.sortedBy { it.timelineStartMs }
+                shots.mapIndexedNotNull { i, shot ->
+                    val uri = shot.uri ?: state.sourceUri ?: return@mapIndexedNotNull null
+                    val from = shot.timelineStartMs
+                    val to = shots.getOrNull(i + 1)?.timelineStartMs ?: shot.timelineEndMs
+                    if (to - from < ExportPlan.MIN_GAP_MS) return@mapIndexedNotNull null
+                    CanvasBackdrop.blurred(context, uri, CanvasBackdrop.stillMomentOf(shot), aspect)
+                        ?.let { backdrop(it, from, to - from) }
+                }
             }
         }
-        return Presentation.createForAspectRatio(ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP)
     }
 
     /**

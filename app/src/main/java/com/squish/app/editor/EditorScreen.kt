@@ -267,6 +267,11 @@ fun EditorScreen(
                 .build()
         )
     }
+    // A picture for the canvas's background, behind footage that does not
+    // fill the frame's shape.
+    val pickBackgroundImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { viewModel.clips.setCanvasImage(it) }
+    }
     val addText = {
         newLineId = viewModel.text.addCaptionAtPlayhead()
         openToolName = Tool.Edit.name
@@ -484,6 +489,13 @@ fun EditorScreen(
                             onEditLine = { id ->
                                 viewModel.selectClip(id)
                                 openToolName = Tool.Edit.name
+                            },
+                            onPickBackgroundImage = {
+                                pickBackgroundImage.launch(
+                                    PickVisualMediaRequest.Builder()
+                                        .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                        .build()
+                                )
                             },
                             modifier = modifier
                         )
@@ -726,11 +738,9 @@ private fun EditorPreview(
             .background(SquishColors.Surface),
         contentAlignment = Alignment.Center
     ) {
-        // Auto-reframe, in the head clip's source time, and where it has the
-        // crop centred at the playhead - for the outline drawn over the picture.
-        val reframeOffset = state.videoClips.firstOrNull()?.let { it.sourceInMs - it.timelineStartMs } ?: 0L
-        val reframeFocus = state.reframe?.takeIf { state.cropAspect.ratio != null }
-            ?.sampleAt(state.playheadMs + reframeOffset)?.let { it.xFraction to it.yFraction }
+        // Where auto-reframe has the crop centred at the playhead, from the
+        // shot under it - for the outline drawn over the picture.
+        val reframeFocus = if (state.cropAspect.ratio != null) FrameRules.reframeFocus(state.videoClips, state.playheadMs) else null
         // The overlay box on the picture. Its moves go through the one way
         // placement is written, so a drag is one undo step and an animated
         // overlay is keyed at the playhead; each gesture ends its step.
@@ -786,8 +796,30 @@ private fun EditorPreview(
         // touch on the picture whenever no overlay was selected, so an overlay
         // could not be tapped on the picture to select it.
         val editingCrop = state.cropAspect == CropAspect.Custom && openTool == Tool.Frame
+        // A clip's picture being worked on - its crop window, its mask - is
+        // shown plain with the tool over it; see TimelinePreview's pictureTool.
+        val selectedPicture = state.videoClips.firstOrNull { it.id == state.selectedClipId }
+        val pictureTool = when {
+            selectedPicture == null -> null
+            openTool == Tool.Crop -> PictureTool(
+                selectedPicture.id, PictureTool.Kind.Crop,
+                // Live while dragging, recorded once at the end: the view model
+                // coalesces, so a gesture is one undo step.
+                onCropChange = { viewModel.clips.setClipCropRect(selectedPicture.id, it) },
+                onCropCommit = viewModel::endGesture
+            )
+            openTool == Tool.Mask && selectedPicture.mask != null -> PictureTool(
+                selectedPicture.id, PictureTool.Kind.Mask,
+                onMaskMove = move@{ dx, dy ->
+                    val mask = viewModel.state.value.videoClips.firstOrNull { it.id == selectedPicture.id }?.mask ?: return@move
+                    viewModel.layers.updateMask(selectedPicture.id, centerX = mask.centerXFraction + dx, centerY = mask.centerYFraction + dy)
+                },
+                onMaskMoveEnd = viewModel::endGesture
+            )
+            else -> null
+        }
         // Nor while a colour is being picked: that one tap is the eyedropper's.
-        val overlayActions = boxActions.takeIf { !editingCrop && eyedropper == null }
+        val overlayActions = boxActions.takeIf { !editingCrop && eyedropper == null && pictureTool == null }
         TimelinePreview(
             videoClips = state.videoClips,
             audioClips = state.audioClips,
@@ -798,9 +830,11 @@ private fun EditorPreview(
             muteOriginal = state.muteOriginal,
             // Silent while a take is recorded, so the speaker stays out of the mic.
             muted = state.recording.active,
+            // The green screen is not drawn while its colour is being picked
+            // off the picture, so the loupe reads the screen and not the hole.
+            keyPreview = !(eyedropper != null && openTool == Tool.Cutout),
             transportRequest = state.transportRequest,
             originalVolume = state.originalVolume,
-            grade = state.grade,
             rotationDegrees = state.rotationDegrees,
             // The shape actually being kept, not the chosen ratio. A
             // hand-drawn crop has no ratio of its own, so passing the
@@ -809,11 +843,11 @@ private fun EditorPreview(
             cropRatio = state.previewCropRatio,
             // The rectangle itself, so captions sit where the export puts them.
             customCrop = state.cropRect.takeIf { state.cropAspect == CropAspect.Custom && !it.isFull },
-            // Auto-reframe follows a fixed ratio's frame; a hand-drawn
-            // rectangle is the frame, so the two do not combine.
-            reframe = state.reframe.takeIf { state.cropAspect.ratio != null },
-            reframeOffsetMs = reframeOffset,
+            cropEditing = editingCrop,
+            pictureTool = pictureTool,
             sourceAspect = state.sourceFrameAspect,
+            canvasAspect = state.canvasAspect,
+            canvasBackground = state.canvasBackground,
             playheadMs = state.playheadMs,
             scrubNonce = state.scrubNonce,
             onPositionChange = viewModel::setPlayhead,
@@ -843,6 +877,11 @@ private fun EditorPreview(
                 // still on screen, dimmed, which is the only way to see
                 // what a crop is actually costing. Not in full screen,
                 // which is for watching.
+                // The crop's dim and its guides only on the Frame sheet, where
+                // the crop is the thing being chosen; everywhere else the
+                // preview is clipped to what the file keeps, and nothing is
+                // drawn over it. They used to stay up in every tool once a
+                // ratio was chosen.
                 when {
                     fullscreen -> Unit
                     eyedropper != null -> EyedropperLayer(
@@ -850,11 +889,14 @@ private fun EditorPreview(
                             colour?.let { eyedropper.invoke(it) }
                             onEyedropperDone()
                         },
+                        // A screen's green is read over a wider patch than a
+                        // title's colour: compressed cloth is noisy.
+                        patch = if (openTool == Tool.Cutout) 9 else 5,
+                        hint = if (openTool == Tool.Cutout) "Drag the loupe over the screen to key" else "Touch the picture to pick its colour",
                         modifier = Modifier.fillMaxSize()
                     )
-                    state.cropAspect == CropAspect.Custom -> CustomCropOverlay(
+                    editingCrop -> CustomCropOverlay(
                         rect = state.cropRect,
-                        editable = editingCrop,
                         // Live while dragging, recorded once at the end:
                         // the view model coalesces, so a gesture is one
                         // undo step rather than one per frame of movement.
@@ -862,7 +904,7 @@ private fun EditorPreview(
                         onCommit = { viewModel.clips.setCropRect(state.cropRect) },
                         modifier = Modifier.fillMaxSize()
                     )
-                    openTool == Tool.Frame || state.cropAspect != CropAspect.Original ->
+                    openTool == Tool.Frame && !state.paddedCanvas ->
                         CropOverlay(
                             aspect = state.cropAspect,
                             focus = reframeFocus,

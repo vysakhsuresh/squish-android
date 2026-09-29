@@ -23,6 +23,7 @@ import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.VideoProcessor
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.video.FilmstripLoader
+import com.squish.app.media.video.Segmenter
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TimelineState
@@ -1029,7 +1030,6 @@ class EditorViewModel(
         videoClips = snapshot.clips,
         textOverlays = snapshot.textOverlays,
         effects = snapshot.effects,
-        reframe = snapshot.reframe,
         markers = snapshot.markers,
         // Saved at the very end, it would reopen on "no clip here"; the start is more useful.
         playheadMs = snapshot.playheadMs.takeIf { it < snapshot.totalDurationMs } ?: 0L,
@@ -1046,11 +1046,7 @@ class EditorViewModel(
         snapToMarkers = snapshot.snapToMarkers,
         stabilizeStrength = snapshot.stabilizeStrength,
         beats = snapshot.beats,
-        brightness = snapshot.brightness,
-        contrast = snapshot.contrast,
-        saturation = snapshot.saturation,
-        lookId = snapshot.lookId,
-        lookIntensity = snapshot.lookIntensity,
+        canvasBackground = snapshot.canvasBackground,
         pixelsPerSecond = snapshot.pixelsPerSecond,
         audioClips = snapshot.audioClips,
         selectedClipId = null,
@@ -1137,6 +1133,15 @@ class EditorViewModel(
         // mid-export says so itself.
         ExportsInFlight.set(this, false)
         FilmstripLoader.evictAll()
+        // The person masks no draft names any more go too (V19). After the
+        // save, so this edit's own are on disk and counted; on a thread of
+        // its own, since the scope is gone and the folder is a listing plus
+        // a few deletes.
+        val app = getApplication<Application>()
+        val open = _state.value.videoClips.mapNotNull { it.background?.maskFile }.toSet()
+        Thread {
+            runCatching { Segmenter.sweep(app, autosave.referencedMaskFiles() + open) }
+        }.start()
     }
 
     private companion object {

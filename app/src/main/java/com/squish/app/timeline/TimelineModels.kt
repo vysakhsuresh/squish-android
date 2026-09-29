@@ -1,6 +1,11 @@
 package com.squish.app.timeline
 
 import android.net.Uri
+import com.squish.app.editor.ClipCrop
+import com.squish.app.media.effects.Adjust
+import com.squish.app.media.effects.Grade
+import com.squish.app.media.effects.Looks
+import com.squish.app.media.video.MotionTrack
 import java.util.UUID
 import kotlin.math.abs
 
@@ -109,8 +114,35 @@ data class Clip(
      * from [keyframes] so an edit never destroys an analysis, and an analysis never
      * destroys an edit.
      */
-    val stabilizer: List<Keyframe> = emptyList()
+    val stabilizer: List<Keyframe> = emptyList(),
+
+    /**
+     * This clip's look and how far it is dialled in, and the manual colour
+     * sliders on top of it - each clip's own, as in every other editor. The edit
+     * used to carry one grade for every shot, so a two-camera edit could not
+     * warm one shot and cool the other. Read together as [grade].
+     */
+    val lookId: String? = null,
+    val lookIntensity: Float = 1f,
+    val adjust: Adjust = Adjust.NONE,
+
+    /** The window kept of this clip's own picture, turned and mirrored under it; see ClipCrop. Null: the whole picture. */
+    val crop: ClipCrop? = null,
+
+    /**
+     * Auto-reframe: where the subject is through this clip, in the file's own
+     * time, so the edit's frame-shape crop can follow it. Each clip has its own:
+     * one track for the edit, measured on the first file, chased where a
+     * subject had been in different footage (V11).
+     */
+    val reframe: MotionTrack? = null
 ) {
+    /** The look and the sliders folded together: what the GPU is asked for on this clip. */
+    val grade: Grade get() = Looks.grade(lookId, lookIntensity, adjust)
+
+    /** Whether anything about this clip's colour has been touched. */
+    val isGraded: Boolean get() = lookId != null || !adjust.isIdentity
+
     /** How much of the file this clip covers. Unaffected by how fast it plays. */
     val sourceSpanMs: Long get() = (sourceOutMs - sourceInMs).coerceAtLeast(0)
 

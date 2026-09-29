@@ -75,6 +75,12 @@ class PersonMasks(val width: Int, val height: Int, val timesMs: LongArray, val m
             while (cache.size > 3) cache.remove(cache.keys.first())
             return loaded
         }
+
+        /** Drops cached masks whose files are not in [keep]: they have been swept. */
+        @Synchronized
+        fun forget(keep: Set<String>) {
+            cache.keys.retainAll { it in keep }
+        }
     }
 }
 
@@ -173,6 +179,30 @@ object Segmenter {
             runCatching { segmenter.close() }
         }
     }
+
+    /**
+     * Deletes every mask file no draft names any more (V19). Each analysis
+     * wrote a file under files/segments and nothing ever removed one: turning
+     * background removal off, or deleting the draft, left tens of megabytes
+     * behind per clip. [keep] is every path still referenced - by the drafts
+     * on disk (ProjectAutosave.referencedMaskFiles) and the edit open now.
+     * A file younger than a minute is an analysis about to be referenced and
+     * is left alone. Blocking; call it off the main thread.
+     */
+    fun sweep(context: Context, keep: Set<String>) {
+        val dir = File(context.filesDir, "segments")
+        val files = dir.listFiles() ?: return
+        val now = System.currentTimeMillis()
+        files.forEach { file ->
+            if (!file.isFile) return@forEach
+            if (file.absolutePath in keep) return@forEach
+            if (now - file.lastModified() < SWEEP_GRACE_MS) return@forEach
+            runCatching { file.delete() }
+        }
+        PersonMasks.forget(keep)
+    }
+
+    private const val SWEEP_GRACE_MS = 60_000L
 
     /** One frame's person confidence, resampled into [out] as 0..255. */
     private fun segment(segmenter: ImageSegmenter, frame: Bitmap, out: ByteArray) {

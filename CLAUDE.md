@@ -417,6 +417,48 @@ should work through it and then delete what holds up.
   looks read back through `TextStyleJson` (Outline as a stroke, Box as a
   bubble) and every animated line leaving by a fade, as it did.
 
+- **Batch B12 (frame and colour), all of it.** Built on the desktop with no
+  phone attached. The decisions - the thirteen sliders folding with the look
+  into one grade (brightness an offset now, exposure and temperature into the
+  gains, the hue wheel meeting itself, an HSL band's reach), a clip's crop as
+  the preview's layers and the export's shader (`CropRules.windowPoint` and
+  `sourcePoint` are inverses), the zoom that keeps a straightened picture
+  covering its window, a shape chip's hold on the window, the padded canvas's
+  size and where the picture sits on it, which shot's reframe track is read at
+  a moment, and every mask shape's edge on the shader's own distance field -
+  are executed on the JVM (`tools/jvm/GradeChecks.kt`, `ClipCropChecks.kt`,
+  `FrameRulesChecks.kt`, `MaskOutlineChecks.kt`), and the toolbar's three new
+  clip tools in `ToolRulesChecks.kt`; nothing has been seen. Script in
+  `docs/ROADMAP.md` §4 under B12, plus what only a device answers: the look
+  shader with its new uniforms (eight `uHsl` vec3s, `uTexel` for sharpening)
+  compiles on the phone's ES2 driver - a shader that does not fails on the
+  player asynchronously and the surface then plays plain (PreviewEngine's
+  error listener) - and the mask shader's heart and star; a clip's crop on the
+  preview (two `graphicsLayer`s inside the turned view, `ClipCropped`) lines
+  up with the file (`ClipCropEffect`), on a shot, an overlay and a photo
+  overlay, with the edit rotated, with a straighten and a flip; the crop
+  window and the mask outline drawn inside the turned view take touches in
+  the picture's own coordinates; a padded canvas (Frame → Background) is
+  1080x1920 for a landscape 1080p shot on 9:16, the picture fitted whole over
+  the colour, the blurred still or the chosen picture, in the preview and in
+  the file - the backdrop is a *still* per shot, from its middle frame
+  (`CanvasBackdrop` says why not a live blur), so the preview and the file
+  agree by sharing one PNG; Media3's `Presentation` scale-to-fit pads the base
+  rolls with transparent pixels (the same fact B8's PiP fit leans on), or the
+  backdrop is hidden behind black bars; the loupe (`EyedropperLayer` dragged)
+  reads the green screen's own colour, since the key is held off while it is
+  up (`PreviewEngine.setKeyPreview`), and a 9-pixel patch averaged keys
+  cleaner than one pixel did; auto-reframe now analyses every shot and each
+  follows its own subject; "Filters" and "Adjust" on level 0's Looks work on
+  the shot under the playhead, named on the sheet, with Apply to all; person
+  masks no draft names are swept when the editor closes and when a bin entry
+  is purged (a binned draft keeps its masks, so Restore brings its cut-out
+  back - the roadmap's "delete the draft: files/segments is empty" holds
+  after a purge, not a discard); a draft from before this build opens with
+  its one look and sliders on every shot and its reframe track on the shots
+  of the first file (`brightness` was a gain then and is an offset now, so
+  the same number is a little different a picture).
+
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The

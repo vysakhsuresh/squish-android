@@ -157,6 +157,8 @@ fun EditorToolSheet(
     onEyedropperCancel: () -> Unit = {},
     /** A line picked from Text's list: selected, with its keyboard up in place of the sheet. */
     onEditLine: (String) -> Unit = {},
+    /** A picture wanted for the canvas's background: the picker, whose pick lands through ClipEdits.setCanvasImage. */
+    onPickBackgroundImage: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val kind = state.selectionKind
@@ -164,6 +166,9 @@ fun EditorToolSheet(
     val clip = (state.videoClips + state.audioClips).firstOrNull { it.id == state.selectedClipId }
     val item = state.textOverlays.firstOrNull { it.id == state.selectedClipId }
     val effect = state.effects.firstOrNull { it.id == state.selectedClipId }
+    // Level 0's Looks works on the shot under the playhead (or the picture
+    // selected); a clip's own Filters and Adjust on the selection.
+    val graded = if (tool == Tool.Looks) viewModel.clips.gradeTarget(state) else clip?.takeIf { it.kind == ClipKind.Video }
     // A line's Edit opens on its keyboard, whichever tab the last line was left on.
     var chip by rememberSaveable(tool, if (tool == Tool.Edit) state.selectedClipId else null) { mutableIntStateOf(0) }
     // The new line's sample words are selected the first time its field opens,
@@ -179,7 +184,7 @@ fun EditorToolSheet(
         // button to look for Robot.
         Tool.Sound -> listOf("Music", "Mic & camera", "Sync")
         Tool.Looks -> listOf("Filters", "Adjust", "Templates")
-        Tool.Frame -> listOf("Ratio", "Rotate")
+        Tool.Frame -> listOf("Ratio", "Background", "Rotate")
         Tool.Cutout -> listOf("Background", "Chroma key")
         // As CapCut lays a line out: the keyboard first, then how it looks,
         // what is behind it and how it moves, all in the one sheet over the
@@ -196,12 +201,21 @@ fun EditorToolSheet(
         onEyedropperCancel()
     }
     val reset: (() -> Unit)? = when (tool) {
-        Tool.Looks -> when (chip) {
-            0 -> { { viewModel.clips.setLook(null) } }
-            1 -> viewModel.clips::resetAdjust
-            else -> null
+        Tool.Looks -> graded?.let { g ->
+            when (chip) {
+                0 -> { { viewModel.clips.setLook(g.id, null) } }
+                1 -> { { viewModel.clips.resetAdjust(g.id) } }
+                else -> null
+            }
         }
-        Tool.Frame -> if (chip == 0) viewModel.clips::resetCrop else viewModel.clips::resetRotation
+        Tool.Filters -> graded?.let { g -> { viewModel.clips.setLook(g.id, null) } }
+        Tool.Adjust -> graded?.let { g -> { viewModel.clips.resetAdjust(g.id) } }
+        Tool.Crop -> clip?.let { c -> { viewModel.clips.resetClipCrop(c.id) } }
+        Tool.Frame -> when (chip) {
+            0 -> viewModel.clips::resetCrop
+            1 -> viewModel.clips::resetCanvasBackground
+            else -> viewModel.clips::resetRotation
+        }
         Tool.Speed -> clip?.let { c -> { viewModel.clips.clearSpeed(c.id) } }
         // The clip's own level, a sound's or a picture's; the camera's sound for
         // the whole edit is on Sound.
@@ -286,11 +300,18 @@ fun EditorToolSheet(
             Tool.Stickers -> StickersPanel(viewModel)
             Tool.Effects -> EffectsPanel(state, viewModel)
             Tool.Looks -> when (chip) {
-                0 -> FiltersPanel(state, viewModel)
-                1 -> AdjustPanel(state, viewModel)
+                0 -> if (graded != null) FiltersPanel(state, graded, viewModel) else NoPicturePanel()
+                1 -> if (graded != null) AdjustPanel(graded, viewModel) else NoPicturePanel()
                 else -> TemplatesPanel(viewModel)
             }
-            Tool.Frame -> if (chip == 0) RatioPanel(state, viewModel) else RotatePanel(state, viewModel)
+            Tool.Frame -> when (chip) {
+                0 -> RatioPanel(state, viewModel)
+                1 -> CanvasPanel(state, viewModel, onPickBackgroundImage, onEyedropper)
+                else -> RotatePanel(state, viewModel)
+            }
+            Tool.Filters -> graded?.let { FiltersPanel(state, it, viewModel) }
+            Tool.Adjust -> graded?.let { AdjustPanel(it, viewModel) }
+            Tool.Crop -> clip?.let { CropPanel(it, rememberClipAspect(state, it), viewModel, accent) }
 
             Tool.Speed -> if (clip != null) SpeedPanel(state, viewModel, accent)
             Tool.Volume -> clip?.let {
@@ -313,7 +334,7 @@ fun EditorToolSheet(
             Tool.Mask -> clip?.let { MaskPanel(it, viewModel) }
             Tool.Cutout -> clip?.let {
                 if (chip == 0) BackgroundPanel(state, viewModel)
-                else ChromaKeyPanel(clip = it, playheadMs = state.playheadMs, viewModel = viewModel)
+                else ChromaKeyPanel(clip = it, viewModel = viewModel, onEyedropper = onEyedropper)
             }
             Tool.Stabilize -> clip?.let { StabilizePanel(state, it, viewModel, accent) }
             Tool.Track -> {
@@ -342,3 +363,28 @@ fun EditorToolSheet(
 
 /** An effect's strength when it is added; Strength's Reset goes back to it. */
 private const val DEFAULT_STRENGTH = 0.7f
+
+/**
+ * A clip's own picture, width over height, unrotated: what its crop window
+ * is drawn on. A main-track shot's is the source's; an overlay's is read off
+ * its file once, and until then the source's stands in.
+ */
+@Composable
+private fun rememberClipAspect(state: EditorUiState, clip: com.squish.app.timeline.Clip): Float {
+    val fallback = if (state.sourceWidth > 0 && state.sourceHeight > 0) state.sourceWidth.toFloat() / state.sourceHeight else 16f / 9f
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var aspect by androidx.compose.runtime.remember(clip.uri) { androidx.compose.runtime.mutableStateOf<Float?>(null) }
+    LaunchedEffect(clip.uri) {
+        val uri = clip.uri ?: return@LaunchedEffect
+        if (!clip.isOverlay) return@LaunchedEffect
+        aspect = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            if (clip.isStillPicture) com.squish.app.media.StillClips.aspectOf(context, uri)
+            else com.squish.app.media.ThumbnailExtractor.probe(context, uri).let { m ->
+                // The shape the picture is seen in, rotation tag applied, which is
+                // what the player draws and the crop window sits on.
+                if (m.displayWidth > 0 && m.displayHeight > 0) m.displayWidth.toFloat() / m.displayHeight else null
+            }
+        }
+    }
+    return aspect ?: fallback
+}

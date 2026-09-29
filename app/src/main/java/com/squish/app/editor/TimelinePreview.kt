@@ -72,10 +72,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import com.squish.app.media.CanvasBackdrop
 import com.squish.app.media.CaptionRenderer
 import com.squish.app.media.StillClips
-import com.squish.app.media.effects.Grade
-import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Transform
 import kotlinx.coroutines.Dispatchers
@@ -114,18 +113,24 @@ fun TimelinePreview(
     proxies: Map<Uri, Uri>,
     muteOriginal: Boolean,
     originalVolume: Float,
-    grade: Grade,
     rotationDegrees: Int,
     cropRatio: Float?,
-    /** Auto-reframe: where the crop sits through the head clip, in its source time. */
-    reframe: MotionTrack? = null,
-    reframeOffsetMs: Long = 0L,
     /** Every level held at nothing: a voiceover is being taken over the picture. */
     muted: Boolean = false,
+    /** Green screens drawn, or held off while a key colour is picked off the picture. */
+    keyPreview: Boolean = true,
     /** The editor asking the transport to play or pause; see [TransportRequest]. */
     transportRequest: TransportRequest? = null,
-    /** The shape of the picture after the rotation: the canvas everything is composed on. */
+    /** The shape of the picture after the rotation. */
     sourceAspect: Float,
+    /**
+     * The shape of the canvas everything is composed on: the picture's own, or
+     * - with a background - the chosen ratio, the picture fitted whole inside
+     * it over [canvasBackground] (see CanvasBackground). Overlay offsets are
+     * fractions of this canvas.
+     */
+    canvasAspect: Float = sourceAspect,
+    canvasBackground: CanvasBackground = CanvasBackground.NONE,
     playheadMs: Long,
     scrubNonce: Long,
     onPositionChange: (Long) -> Unit,
@@ -156,6 +161,19 @@ fun TimelinePreview(
      * was in a corner.
      */
     customCrop: CropRect? = null,
+    /**
+     * The hand-drawn crop is being worked on: the whole picture is shown under
+     * it, dimmed by the crop tool. Otherwise the picture is clipped to the
+     * rectangle, as it is to a ratio - what the file keeps, and nothing else.
+     */
+    cropEditing: Boolean = false,
+    /**
+     * A clip whose picture is being worked on - its crop window, its mask.
+     * That clip is shown plain: unplaced, its crop window lifted, the frame's
+     * crop lifted, so the whole of its picture is under the tool drawn over
+     * it, the way CapCut's crop screen shows a clip.
+     */
+    pictureTool: PictureTool? = null,
     /** A finger is on the timeline. Optional: the engine recognises a scrub from its seeks anyway. */
     scrubbing: Boolean = false,
     /** What is selected, for the box on the picture around a selected overlay. */
@@ -202,12 +220,13 @@ fun TimelinePreview(
     // cheap - the engine itself decides what, if anything, needs a seek.
     // Captions are not the engine's any more (see CaptionLayer), and neither are
     // rotation and crop.
-    LaunchedEffect(videoClips, audioClips, effects, fallbackUri, proxies, muteOriginal, originalVolume, grade) {
+    LaunchedEffect(videoClips, audioClips, effects, fallbackUri, proxies, muteOriginal, originalVolume) {
         engine.setTimeline(
             videoClips, audioClips, effects, fallbackUri, proxies,
-            muteOriginal, originalVolume, grade
+            muteOriginal, originalVolume
         )
     }
+    LaunchedEffect(keyPreview) { engine.setKeyPreview(keyPreview) }
 
     // Photos on overlay rows, drawn here rather than by a player: a picture needs
     // no decoder, and keeps its transparency. Their shapes, once read, for the box.
@@ -279,7 +298,9 @@ fun TimelinePreview(
         }
     }
 
-    val canvasAspect = if (sourceAspect > 0f) sourceAspect else 16f / 9f
+    val pictureAspect = if (sourceAspect > 0f) sourceAspect else 16f / 9f
+    val canvas = if (canvasAspect > 0f) canvasAspect else pictureAspect
+    val padded = canvas != pictureAspect
 
     // The transport sits under the picture rather than over it. Laid over the
     // bottom of the frame it hid whatever was there - a caption, a subtitle, the
@@ -307,19 +328,27 @@ fun TimelinePreview(
             ),
         contentAlignment = Alignment.Center
     ) {
-        val focus = reframe?.sampleAt(frame.positionMs + reframeOffsetMs)?.let { it.xFraction to it.yFraction }
-        // The part of the canvas the export keeps. A fixed ratio is clipped
-        // here, which is pixel-for-pixel what the export writes; a hand-drawn
-        // rectangle is left visible and dimmed by the crop tool instead.
-        val kept = if (customCrop != null) {
-            PreviewBox.Frame(customCrop.left, customCrop.top, customCrop.right, customCrop.bottom)
-        } else {
-            PreviewBox.cropFrame(canvasAspect, cropRatio, focus)
-        }
-        val clipped = if (customCrop != null) PreviewBox.Frame() else kept
         // The moment the layers are drawn for - parked on the very end, the
         // last frame, as the engine does.
         val layerTime = PreviewRules.lastFrameTime(frame.positionMs, frame.durationMs)
+        // Where auto-reframe has the crop centred: the subject in the shot under
+        // the playhead, from that shot's own track.
+        val focus = FrameRules.reframeFocus(videoClips, layerTime)
+        // The part of the canvas the export keeps. A fixed ratio is clipped
+        // here, which is pixel-for-pixel what the export writes; so is a
+        // hand-drawn rectangle, except while it is being drawn, when the whole
+        // picture stays visible under it and the crop tool dims the rest.
+        val kept = if (customCrop != null) {
+            PreviewBox.Frame(customCrop.left, customCrop.top, customCrop.right, customCrop.bottom)
+        } else {
+            PreviewBox.cropFrame(canvas, cropRatio, focus)
+        }
+        val clipped = if ((customCrop != null && cropEditing) || pictureTool != null) PreviewBox.Frame() else kept
+        // Where the picture sits on a padded canvas: fitted whole, centred, over
+        // the background - the place the export's Presentation puts it.
+        val pictureFrame = if (padded) FrameRules.fittedFrame(canvas, pictureAspect) else PreviewBox.Frame()
+        val shotUnder = videoClips.firstOrNull { it.isMain && layerTime >= it.timelineStartMs && layerTime < it.timelineEndMs }
+            ?: videoClips.filter { it.isMain }.maxByOrNull { it.timelineEndMs }?.takeIf { it.timelineEndMs == layerTime }
         val stills = videoClips.filter {
             it.isOverlay && StillClips.isStill(it.uri) && layerTime >= it.timelineStartMs && layerTime < it.timelineEndMs
         }
@@ -336,7 +365,7 @@ fun TimelinePreview(
         // the footage's own shape that fits, and nothing of the frame is lost.
         Box(
             modifier = Modifier
-                .aspectRatio(ratio = canvasAspect, matchHeightConstraintsFirst = true)
+                .aspectRatio(ratio = canvas, matchHeightConstraintsFirst = true)
                 .onSizeChanged { pictureSize = it }
         ) {
             // Everything the export composites, clipped to the frame it keeps -
@@ -344,34 +373,43 @@ fun TimelinePreview(
             // crop, so showing it whole over cropped-away footage was a promise the
             // file did not keep.
             Box(modifier = Modifier.fillMaxSize().clip(FrameShape(clipped))) {
-                VideoSurface(engine, engine.baseA, frame.surfaceA, rotationDegrees)
-                VideoSurface(engine, engine.baseB, frame.surfaceB, rotationDegrees)
-
-                if (frame.blackVeil > 0f) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(5f)
-                            .background(Color.Black.copy(alpha = frame.blackVeil.coerceIn(0f, 1f)))
+                // Behind everything on a padded canvas: the colour, the picture,
+                // or the blurred still of the shot under the playhead - the same
+                // file the export lays under it.
+                if (padded) {
+                    Backdrop(
+                        background = canvasBackground,
+                        shot = shotUnder,
+                        canvasAspect = canvas,
+                        modifier = Modifier.fillMaxSize().zIndex(0f)
                     )
                 }
 
-                // Empty space on the base track is a real part of the edit, and
-                // the exported file goes black here. Showing the last frame frozen
-                // instead would be a quiet lie about what you are about to render.
-                // Beneath the layers: a picture-in-picture running on past the base
-                // is still in the file, so it is still on screen.
-                if (frame.inGap) {
-                    Box(modifier = Modifier.fillMaxSize().zIndex(6f).background(Color.Black)) {
-                        if (!overlayCovers) {
-                            Text(
-                                // After the last clip, with a song still going, the
-                                // picture has simply ended; between clips it is a hole.
-                                if (frame.pictureEnded) "End of picture" else "Gap — no clip here",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = SquishColors.TextMuted,
-                                modifier = Modifier.align(Alignment.Center)
-                            )
+                // The picture, fitted into the canvas when the canvas is padded
+                // and the whole of it otherwise. A dip to black fades the shots
+                // themselves, as the file does, so a padded canvas shows its
+                // background through the dip rather than a black card over it.
+                Box(modifier = Modifier.fillMaxSize().zIndex(1f).inFrame(pictureFrame)) {
+                    VideoSurface(engine, engine.baseA, frame.surfaceA.plainFor(pictureTool), rotationDegrees, frame.blackVeil, pictureSize)
+                    VideoSurface(engine, engine.baseB, frame.surfaceB.plainFor(pictureTool), rotationDegrees, frame.blackVeil, pictureSize)
+
+                    // Empty space on the base track is a real part of the edit, and
+                    // the exported file goes black here. Showing the last frame frozen
+                    // instead would be a quiet lie about what you are about to render.
+                    // Beneath the layers: a picture-in-picture running on past the base
+                    // is still in the file, so it is still on screen.
+                    if (frame.inGap) {
+                        Box(modifier = Modifier.fillMaxSize().zIndex(6f).background(Color.Black)) {
+                            if (!overlayCovers) {
+                                Text(
+                                    // After the last clip, with a song still going, the
+                                    // picture has simply ended; between clips it is a hole.
+                                    if (frame.pictureEnded) "End of picture" else "Gap — no clip here",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = SquishColors.TextMuted,
+                                    modifier = Modifier.align(Alignment.Center)
+                                )
+                            }
                         }
                     }
                 }
@@ -387,16 +425,40 @@ fun TimelinePreview(
                         // its slot, and the TextureView already bound to layer 1's player
                         // gets reused for layer 2 - two layers driving one surface.
                         key(placement.layer) {
-                            OverlaySurface(engine, engine.overlayPlayer(placement.layer), placement)
+                            OverlaySurface(engine, engine.overlayPlayer(placement.layer), placement.plainFor(pictureTool))
                         }
                     }
                     stills.forEach { clip ->
                         key(clip.id) {
+                            val plain = pictureTool?.clipId == clip.id
                             StillOverlay(
-                                clip = clip,
-                                transform = clip.transformAt(layerTime),
+                                clip = if (plain) clip.copy(crop = clip.crop?.copy(rect = CropRect())) else clip,
+                                transform = if (plain) Transform.Identity else clip.transformAt(layerTime),
                                 onAspect = { aspect -> clip.uri?.let { stillAspects[it.toString()] = aspect } }
                             )
+                        }
+                    }
+                }
+
+                // The tool over the plain picture: the crop window, or the mask's
+                // edge, laid over exactly the picture it works on - a shot's whole
+                // frame inside the turn, an overlay's fitted picture.
+                if (pictureTool != null) {
+                    val clip = videoClips.firstOrNull { it.id == pictureTool.clipId }
+                    if (clip != null && !clip.isOverlay) {
+                        Box(modifier = Modifier.fillMaxSize().zIndex(31f).inFrame(pictureFrame)) {
+                            Box(modifier = Modifier.turned(rotationDegrees)) {
+                                val unrotated = if (PreviewBox.isQuarterTurn(rotationDegrees)) 1f / pictureAspect else pictureAspect
+                                PictureToolLayer(pictureTool, clip, unrotated, clip.sourceAt(layerTime))
+                            }
+                        }
+                    } else if (clip != null) {
+                        val aspect = frame.overlays.firstOrNull { it.clipId == clip.id }?.aspect
+                            ?: clip.uri?.let { stillAspects[it.toString()] }
+                        Box(modifier = Modifier.fillMaxSize().zIndex(31f).inFrame(kept)) {
+                            Box(modifier = Modifier.fitted(aspect)) {
+                                PictureToolLayer(pictureTool, clip, aspect ?: 1f, clip.sourceAt(layerTime))
+                            }
                         }
                     }
                 }
@@ -429,13 +491,18 @@ fun TimelinePreview(
         if (overlayActions != null && !fullscreen && pictureSize != IntSize.Zero && areaSize != IntSize.Zero) {
             // The box follows the edit, not the engine's last tick, so it stays
             // under the finger; the picture catches up a tick later.
+            // The box is the cropped picture's shape: a clip's own crop changes
+            // what is on screen, and the file fits the cropped picture.
             val onPicture = frame.overlays.mapNotNull { placement ->
                 val clip = videoClips.firstOrNull { it.id == placement.clipId } ?: return@mapNotNull null
-                OverlayOnPicture(clip.id, clip.layer, clip.transformAt(layerTime), clip.placementAt(layerTime), placement.aspect)
+                OverlayOnPicture(
+                    clip.id, clip.layer, clip.transformAt(layerTime), clip.placementAt(layerTime),
+                    placement.aspect?.let { CropRules.croppedAspect(it, clip.crop) }
+                )
             } + stills.map { clip ->
                 OverlayOnPicture(
                     clip.id, clip.layer, clip.transformAt(layerTime), clip.placementAt(layerTime),
-                    clip.uri?.let { stillAspects[it.toString()] }
+                    clip.uri?.let { stillAspects[it.toString()] }?.let { CropRules.croppedAspect(it, clip.crop) }
                 )
             }
             val keptFrame = keptOnArea(kept, pictureSize, areaSize)
@@ -509,9 +576,22 @@ fun TimelinePreview(
     }
 }
 
-/** One base surface, drawn the way the engine asked for. */
+/**
+ * One base surface, drawn the way the engine asked for.
+ *
+ * @param veil how far a dip to black has taken the picture down: the shot's
+ *   own alpha, as the file fades it, so what is behind shows through.
+ * @param canvasSize the whole canvas, which a clip's own crop is fitted to.
+ */
 @Composable
-private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: SurfaceDraw, rotationDegrees: Int) {
+private fun VideoSurface(
+    engine: PreviewEngine,
+    player: ExoPlayer,
+    draw: SurfaceDraw,
+    rotationDegrees: Int,
+    veil: Float,
+    canvasSize: IntSize
+) {
     // The outer box is the canvas: the clip's placement and the transition act on
     // it, in the canvas's own units, after the rotation - which is the order the
     // export applies them in. The view inside is laid out unrotated and turned.
@@ -520,7 +600,7 @@ private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: Surface
             .fillMaxSize()
             .zIndex(draw.zIndex.toFloat())
             .graphicsLayer {
-                alpha = if (draw.visible) draw.alpha.coerceIn(0f, 1f) else 0f
+                alpha = if (draw.visible) (draw.alpha * (1f - veil)).coerceIn(0f, 1f) else 0f
                 // The clip's own animated placement, plus whatever the transition
                 // is doing to the whole surface.
                 rotationZ = draw.transform.rotationDegrees
@@ -541,19 +621,168 @@ private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: Surface
                 }
             }
     ) {
-        AndroidView(
-            factory = { context ->
-                TextureView(context).also {
-                    // Left opaque: the base chain ends in the effects pass, which
-                    // writes alpha 1, so there is no transparency here to show,
-                    // and a non-opaque view read that straight-alpha output as
-                    // premultiplied. Dissolves are view alpha, which an opaque
-                    // TextureView honours.
-                    engine.attachSurface(player, it)
+        // The clip's own crop sits on the unrotated picture, inside the turn,
+        // and its window is fitted to the canvas as the export fits it - the
+        // canvas measured in the picture's own orientation.
+        Box(modifier = Modifier.turned(rotationDegrees)) {
+            ClipCropped(
+                crop = draw.crop,
+                fit = { regionW, regionH ->
+                    val (cw, ch) = PreviewBox.unrotatedSize(canvasSize.width.toFloat(), canvasSize.height.toFloat(), rotationDegrees)
+                    CropRules.fitScale(regionW, regionH, cw, ch)
                 }
-            },
-            modifier = Modifier.turned(rotationDegrees)
-        )
+            ) {
+                AndroidView(
+                    factory = { context ->
+                        TextureView(context).also {
+                            // Left opaque: the base chain ends in the effects pass, which
+                            // writes alpha 1, so there is no transparency here to show,
+                            // and a non-opaque view read that straight-alpha output as
+                            // premultiplied. Dissolves are view alpha, which an opaque
+                            // TextureView honours.
+                            engine.attachSurface(player, it)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A clip whose picture is being worked on, and what the tool over it does.
+ * See TimelinePreview's pictureTool.
+ */
+class PictureTool(
+    val clipId: String,
+    val kind: Kind,
+    /** The crop window dragged: live, then committed when the finger lifts. */
+    val onCropChange: (CropRect) -> Unit = {},
+    val onCropCommit: () -> Unit = {},
+    /** The mask's centre moved by the shader's fractions, then let go. */
+    val onMaskMove: (dx: Float, dy: Float) -> Unit = { _, _ -> },
+    val onMaskMoveEnd: () -> Unit = {}
+) {
+    enum class Kind { Crop, Mask }
+}
+
+/** A shot drawn plain - unplaced, its crop window lifted - while its picture is worked on. */
+private fun SurfaceDraw.plainFor(tool: PictureTool?): SurfaceDraw =
+    if (tool == null || clipId != tool.clipId) this
+    else copy(transform = Transform.Identity, crop = crop?.copy(rect = CropRect()))
+
+private fun OverlayPlacement.plainFor(tool: PictureTool?): OverlayPlacement =
+    if (tool == null || clipId != tool.clipId) this
+    else copy(transform = Transform.Identity, crop = crop?.copy(rect = CropRect()))
+
+/** The crop window or the mask's edge, over a clip's plain picture of [pictureAspect], at [sourceMs] of its file. */
+@Composable
+private fun PictureToolLayer(tool: PictureTool, clip: Clip, pictureAspect: Float, sourceMs: Long) {
+    when (tool.kind) {
+        PictureTool.Kind.Crop -> {
+            val crop = clip.crop ?: ClipCrop()
+            CustomCropOverlay(
+                rect = crop.rect,
+                onChange = tool.onCropChange,
+                onCommit = tool.onCropCommit,
+                ratio = crop.ratio.value,
+                frameAspect = pictureAspect,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        PictureTool.Kind.Mask -> {
+            val mask = clip.mask ?: return
+            // A tracked mask is drawn where the track has it at the frame showing.
+            MaskOutlineLayer(
+                mask = mask,
+                centre = mask.centerAt(sourceMs),
+                onMove = tool.onMaskMove,
+                onMoveEnd = tool.onMaskMoveEnd,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+/**
+ * A clip's own crop, on the view that shows it: the picture mirrored, turned
+ * and zoomed under the window (the inner layer), the window cut out and
+ * fitted to the canvas (the outer layer). Two layers because a layer clips in
+ * its own space before it moves: the inner moves the picture under a fixed
+ * window, the outer moves the window. The maths is CropRules' - the same the
+ * export's shader inverts - so the two agree about what is kept.
+ *
+ * [fit] gives the scale that fits a region of the view, in the view's pixels,
+ * to the canvas: the base's and an overlay's canvases are measured differently.
+ */
+@Composable
+private fun ClipCropped(crop: ClipCrop?, fit: (regionW: Float, regionH: Float) -> Float, content: @Composable () -> Unit) {
+    if (crop == null || crop.isIdentity) {
+        Box(modifier = Modifier.fillMaxSize()) { content() }
+        return
+    }
+    val rect = crop.rect
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                clip = true
+                shape = FrameShape(PreviewBox.Frame(rect.left, rect.top, rect.right, rect.bottom))
+                val s = fit(size.width * rect.width, size.height * rect.height)
+                scaleX = s
+                scaleY = s
+                translationX = -((rect.left + rect.right) / 2f - 0.5f) * size.width * s
+                translationY = -((rect.top + rect.bottom) / 2f - 0.5f) * size.height * s
+            }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    if (crop.turnsPicture) {
+                        rotationZ = crop.straightenDegrees
+                        val z = CropRules.zoomToCover(crop.straightenDegrees, size.width / size.height.coerceAtLeast(1f))
+                        scaleX = z * (if (crop.flipHorizontal) -1f else 1f)
+                        scaleY = z * (if (crop.flipVertical) -1f else 1f)
+                    }
+                }
+        ) {
+            content()
+        }
+    }
+}
+
+/**
+ * What a padded canvas shows round the picture: the colour, the picture
+ * chosen, or a blurred still of the shot under the playhead - the very file
+ * the export lays under it (CanvasBackdrop), so the two cannot differ.
+ */
+@Composable
+private fun Backdrop(background: CanvasBackground, shot: Clip?, canvasAspect: Float, modifier: Modifier) {
+    val context = LocalContext.current
+    when (background.fill) {
+        CanvasFill.Crop -> Unit
+        CanvasFill.Colour -> Box(modifier = modifier.background(Color(background.colorArgb)))
+        CanvasFill.Image, CanvasFill.Blur -> {
+            val uri = if (background.fill == CanvasFill.Image) background.imageUri?.let(Uri::parse) else shot?.uri
+            val atMs = shot?.let { CanvasBackdrop.stillMomentOf(it) } ?: 0L
+            var still by remember(uri, atMs, canvasAspect, background.fill) { mutableStateOf<android.graphics.Bitmap?>(null) }
+            LaunchedEffect(uri, atMs, canvasAspect, background.fill) {
+                if (uri == null) return@LaunchedEffect
+                val file = withContext(Dispatchers.IO) {
+                    if (background.fill == CanvasFill.Image) CanvasBackdrop.fromImage(context, uri, canvasAspect)
+                    else CanvasBackdrop.blurred(context, uri, atMs, canvasAspect)
+                }
+                still = file?.let { StillPictures.load(context, Uri.fromFile(it)) }
+            }
+            val image = remember(still) { still?.asImageBitmap() }
+            Box(modifier = modifier.background(Color(background.colorArgb))) {
+                if (image != null) {
+                    Image(bitmap = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                }
+            }
+        }
     }
 }
 
@@ -569,10 +798,12 @@ private fun VideoSurface(engine: PreviewEngine, player: ExoPlayer, draw: Surface
  */
 @Composable
 private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: OverlayPlacement) {
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(10f + placement.layer)
+            .onSizeChanged { canvasSize = it }
             .graphicsLayer {
                 alpha = if (placement.visible) placement.opacity.coerceIn(0f, 1f) else 0f
                 rotationZ = placement.transform.rotationDegrees
@@ -584,20 +815,29 @@ private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: 
                 translationY = placement.transform.offsetYFraction * size.height / 2f
             }
     ) {
-        AndroidView(
-            factory = { context ->
-                TextureView(context).also {
-                    // A keyed or masked layer has real transparency, and an opaque
-                    // view would paint it black; so would any sliver the fit
-                    // leaves before the decoder has reported its size. Its chain
-                    // hands over premultiplied alpha, which is what a non-opaque
-                    // view composites.
-                    it.isOpaque = false
-                    engine.attachSurface(player, it)
-                }
-            },
-            modifier = Modifier.fitted(placement.aspect)
-        )
+        // The clip's crop on the fitted picture, its window fitted to the canvas
+        // in turn, as the export fits the cropped picture.
+        Box(modifier = Modifier.fitted(placement.aspect)) {
+            ClipCropped(
+                crop = placement.crop,
+                fit = { regionW, regionH -> CropRules.fitScale(regionW, regionH, canvasSize.width.toFloat(), canvasSize.height.toFloat()) }
+            ) {
+                AndroidView(
+                    factory = { context ->
+                        TextureView(context).also {
+                            // A keyed or masked layer has real transparency, and an opaque
+                            // view would paint it black; so would any sliver the fit
+                            // leaves before the decoder has reported its size. Its chain
+                            // hands over premultiplied alpha, which is what a non-opaque
+                            // view composites.
+                            it.isOpaque = false
+                            engine.attachSurface(player, it)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
     }
 }
 
@@ -617,10 +857,13 @@ private fun StillOverlay(clip: Clip, transform: Transform, onAspect: (Float) -> 
         if (loaded != null && loaded.height > 0) onAspect(loaded.width.toFloat() / loaded.height)
     }
     val image = remember(picture) { picture?.asImageBitmap() } ?: return
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    val aspect = if (image.height > 0) image.width.toFloat() / image.height else null
     Box(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(10f + clip.layer)
+            .onSizeChanged { canvasSize = it }
             .graphicsLayer {
                 alpha = clip.opacity.coerceIn(0f, 1f)
                 rotationZ = transform.rotationDegrees
@@ -630,12 +873,20 @@ private fun StillOverlay(clip: Clip, transform: Transform, onAspect: (Float) -> 
                 translationY = transform.offsetYFraction * size.height / 2f
             }
     ) {
-        Image(
-            bitmap = image,
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize()
-        )
+        // Cropped as a layer's surface is: the picture fitted, then its window fitted.
+        Box(modifier = Modifier.fitted(aspect)) {
+            ClipCropped(
+                crop = clip.crop,
+                fit = { regionW, regionH -> CropRules.fitScale(regionW, regionH, canvasSize.width.toFloat(), canvasSize.height.toFloat()) }
+            ) {
+                Image(
+                    bitmap = image,
+                    contentDescription = null,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
     }
 }
 

@@ -38,16 +38,29 @@ fun CustomCropOverlay(
     onCommit: () -> Unit,
     /** Off, it is only drawn - the part cropped away dimmed, and the edge - and every touch goes past it. */
     editable: Boolean = true,
+    /**
+     * A shape the window is held to - the kept picture's width over height -
+     * with [frameAspect] the picture's own, so the hold knows what a square is
+     * in fractions of this frame. Null lets every edge go (CropRules.draggedHeld).
+     */
+    ratio: Float? = null,
+    frameAspect: Float = 1f,
     modifier: Modifier = Modifier
 ) {
     val latestChange by rememberUpdatedState(onChange)
     val latestCommit by rememberUpdatedState(onCommit)
     val latestRect by rememberUpdatedState(rect)
+    val latestRatio by rememberUpdatedState(ratio)
+    val latestAspect by rememberUpdatedState(frameAspect)
 
     // Which handle the current gesture grabbed, decided once when the finger lands
     // rather than per event: re-deciding as the rectangle moves under the finger
     // would let a drag hop from one handle to another mid-gesture.
     var grip by remember { mutableStateOf(Grip.None) }
+    // Where the rectangle was when the finger landed: a held shape is worked
+    // out from the finger's whole drag, so a fast drag and a slow one agree.
+    var start by remember { mutableStateOf(rect) }
+    var dragged by remember { mutableStateOf(Offset.Zero) }
 
     Canvas(
         modifier = modifier
@@ -56,6 +69,8 @@ fun CustomCropOverlay(
                 if (!editable) return@pointerInput
                 detectDragGestures(
                     onDragStart = { at ->
+                        start = latestRect
+                        dragged = Offset.Zero
                         grip = gripAt(
                             x = at.x,
                             y = at.y,
@@ -72,9 +87,24 @@ fun CustomCropOverlay(
                     onDragCancel = { grip = Grip.None }
                 ) { change, drag ->
                     change.consume()
-                    val dx = drag.x / size.width.coerceAtLeast(1)
-                    val dy = drag.y / size.height.coerceAtLeast(1)
-                    latestChange(grip.applied(latestRect, dx, dy))
+                    val held = latestRatio
+                    if (held == null) {
+                        val dx = drag.x / size.width.coerceAtLeast(1)
+                        val dy = drag.y / size.height.coerceAtLeast(1)
+                        latestChange(grip.applied(latestRect, dx, dy))
+                    } else {
+                        dragged += drag
+                        val dx = dragged.x / size.width.coerceAtLeast(1)
+                        val dy = dragged.y / size.height.coerceAtLeast(1)
+                        val free = grip.applied(start, dx, dy)
+                        latestChange(
+                            if (grip == Grip.Move || grip == Grip.None) free
+                            else CropRules.draggedHeld(
+                                free, start, held, latestAspect,
+                                grip.movesLeft, grip.movesRight, grip.movesTop, grip.movesBottom
+                            )
+                        )
+                    }
                 }
             }
     ) {
@@ -154,6 +184,11 @@ private enum class Grip {
     None, Move,
     Left, Right, Top, Bottom,
     TopLeft, TopRight, BottomLeft, BottomRight;
+
+    val movesLeft: Boolean get() = this == Left || this == TopLeft || this == BottomLeft
+    val movesRight: Boolean get() = this == Right || this == TopRight || this == BottomRight
+    val movesTop: Boolean get() = this == Top || this == TopLeft || this == TopRight
+    val movesBottom: Boolean get() = this == Bottom || this == BottomLeft || this == BottomRight
 
     /** The rectangle after this grip has been dragged by a fraction of the frame. */
     fun applied(rect: CropRect, dx: Float, dy: Float): CropRect = when (this) {

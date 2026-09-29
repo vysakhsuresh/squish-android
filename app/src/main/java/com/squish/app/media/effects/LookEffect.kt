@@ -67,8 +67,17 @@ private class LookShaderProgram(
             "uGain",
             floatArrayOf(grade.redScale, grade.greenScale, grade.blueScale)
         )
+        glProgram.setFloatsUniform("uBrightness", floatArrayOf(grade.brightness))
         glProgram.setFloatsUniform("uContrast", floatArrayOf(grade.contrast))
         glProgram.setFloatsUniform("uSaturation", floatArrayOf(grade.saturation))
+        glProgram.setFloatsUniform("uHighlights", floatArrayOf(grade.highlights))
+        glProgram.setFloatsUniform("uShadows", floatArrayOf(grade.shadows))
+        glProgram.setFloatsUniform("uHue", floatArrayOf(Math.toRadians(grade.hueDegrees.toDouble()).toFloat()))
+        // The bands are eight uniforms rather than one array: GlProgram binds an
+        // array uniform as its first element only, so the other seven would
+        // never reach the shader.
+        glProgram.setFloatsUniform("uHslOn", floatArrayOf(if (grade.hasHsl) 1f else 0f))
+        for (i in 0 until HUE_BANDS) glProgram.setFloatsUniform("uHsl$i", grade.bandToFloats(i))
         glProgram.setFloatsUniform("uFade", floatArrayOf(grade.fade))
         glProgram.setFloatsUniform("uShadowTint", grade.tintToFloats(grade.shadowTint))
         glProgram.setFloatsUniform("uHighlightTint", grade.tintToFloats(grade.highlightTint))
@@ -76,6 +85,7 @@ private class LookShaderProgram(
         glProgram.setFloatsUniform("uBloom", floatArrayOf(grade.bloom))
         glProgram.setFloatsUniform("uVignette", floatArrayOf(grade.vignette))
         glProgram.setFloatsUniform("uGrain", floatArrayOf(grade.grain))
+        glProgram.setFloatsUniform("uSharpen", floatArrayOf(grade.sharpen))
     }
 
     init {
@@ -89,6 +99,7 @@ private class LookShaderProgram(
 
         load(gradeNow())
         glProgram.setFloatsUniform("uTime", floatArrayOf(0f))
+        glProgram.setFloatsUniform("uTexel", floatArrayOf(0f, 0f))
 
         glProgram.setBufferAttribute(
             "aFramePosition",
@@ -105,6 +116,14 @@ private class LookShaderProgram(
     override fun configure(inputWidth: Int, inputHeight: Int): Size {
         val aspect = if (inputHeight > 0) inputWidth.toFloat() / inputHeight else 1f
         glProgram.setFloatsUniform("uAspect", floatArrayOf(aspect))
+        // The sharpening taps a fixed share of the frame apart, so the look does
+        // not depend on the size the frame happens to be rendered at - the
+        // proxy in the preview, the chosen size in the file.
+        val step = maxOf(inputWidth, inputHeight) / SHARPEN_TAPS_ACROSS
+        glProgram.setFloatsUniform(
+            "uTexel",
+            floatArrayOf(step / inputWidth.coerceAtLeast(1), step / inputHeight.coerceAtLeast(1))
+        )
         return Size(inputWidth, inputHeight)
     }
 
@@ -143,5 +162,11 @@ private class LookShaderProgram(
     private companion object {
         const val VERTEX_SHADER_PATH = "squish_vertex_copy_es2.glsl"
         const val FRAGMENT_SHADER_PATH = "squish_look_es2.glsl"
+
+        /** The uHsl0..7 uniforms: one per [HueBand]. */
+        val HUE_BANDS = HueBand.entries.size
+
+        /** About two pixels at 1080p: fine enough to read as sharpness, coarse enough not to read as noise. */
+        const val SHARPEN_TAPS_ACROSS = 1_000f
     }
 }

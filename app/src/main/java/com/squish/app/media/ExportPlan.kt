@@ -30,7 +30,13 @@ object ExportPlan {
          */
         Clock,
         Overlay,
-        Base
+        Base,
+        /**
+         * The canvas's background, under every roll: the stills a padded frame
+         * is filled with round the picture (CanvasBackdrop). Picture only, and
+         * never sound.
+         */
+        Backdrop
     }
 
     /** One sequence of a composited export. [clips] are in time order and never overlap. */
@@ -50,8 +56,11 @@ object ExportPlan {
      * @param endMs where the edit ends: the last picture's end, or further when a
      *   sound has been dragged out past it - the file runs to the sound's end,
      *   black under it, as the preview plays it. Left out, the picture's end.
+     * @param backdrop the stills of a padded canvas's background, in time order
+     *   and never overlapping, laid under every roll; none for a frame the
+     *   picture fills.
      */
-    fun layers(videoClips: List<Clip>, endMs: Long = pictureEnd(videoClips)): Layers {
+    fun layers(videoClips: List<Clip>, endMs: Long = pictureEnd(videoClips), backdrop: List<Clip> = emptyList()): Layers {
         val base = videoClips.filter { !it.isOverlay && it.durationMs > 0 }.sortedBy { it.timelineStartMs }
         val overlays = videoClips.filter { it.isOverlay && it.durationMs > 0 }
         val end = maxOf(endMs, pictureEnd(videoClips))
@@ -65,6 +74,7 @@ object ExportPlan {
             tracks.asReversed().forEach { out.add(Layer(Role.Overlay, it)) }
         }
         dealRolls(base).forEach { out.add(Layer(Role.Base, it)) }
+        if (backdrop.isNotEmpty()) out.add(Layer(Role.Backdrop, backdrop.sortedBy { it.timelineStartMs }))
         return Layers(out, end)
     }
 
@@ -83,7 +93,9 @@ object ExportPlan {
      * the whole of it stays under [MIN_GAP_MS]: no clip, sound or caption is
      * then further out than [pieces] would have left it.
      */
-    fun needsCompositing(videoClips: List<Clip>, endMs: Long = pictureEnd(videoClips)): Boolean {
+    fun needsCompositing(videoClips: List<Clip>, endMs: Long = pictureEnd(videoClips), padded: Boolean = false): Boolean {
+        // A background under the picture is a second layer by definition.
+        if (padded) return true
         if (videoClips.any { it.isOverlay && it.durationMs > 0 }) return true
         if (videoClips.any { !it.isOverlay && it.transitionIn.isActive }) return true
         val base = videoClips.filter { !it.isOverlay && it.durationMs > 0 }.sortedBy { it.timelineStartMs }
@@ -280,6 +292,8 @@ object ExportPlan {
             when {
                 !videoOut && layer.role != Role.Base && !rowHeard -> null
                 !videoOut -> Tracks(video = false, sound = true)
+                // The background is pictures alone, whatever the rest declare.
+                layer.role == Role.Backdrop -> Tracks(video = true, sound = false)
                 layer.role == Role.Base && baseAudio -> Tracks(video = true, sound = true)
                 rowHeard -> Tracks(video = true, sound = true)
                 else -> Tracks(video = true, sound = false)

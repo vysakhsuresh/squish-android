@@ -23,6 +23,8 @@ import androidx.media3.transformer.Effects
 import com.google.common.collect.ImmutableList
 import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.ChromaKeyEffect
+import com.squish.app.media.effects.ClipCropEffect
+import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.MaskEffect
 import com.squish.app.timeline.Clip
 import java.io.File
@@ -73,7 +75,7 @@ import java.io.File
 object CompositionFactory {
 
     fun needsCompositing(state: com.squish.app.editor.EditorUiState): Boolean =
-        ExportPlan.needsCompositing(state.videoClips, state.trimmedDurationMs)
+        ExportPlan.needsCompositing(state.videoClips, state.trimmedDurationMs, state.paddedCanvas)
 
     /** The one-sequence export: every clip end to end, with the tracks [trackTypes] names. */
     fun buildCutsOnly(items: List<EditedMediaItem>, trackTypes: Set<Int>): List<EditedMediaItemSequence> =
@@ -207,6 +209,18 @@ object CompositionFactory {
     }
 
     /**
+     * A picture of a padded canvas's background, shown for [durationMs] at
+     * [frameRate], filling the canvas: the blurred still, the colour or the
+     * chosen picture that CanvasBackdrop wrote, already at the canvas's shape.
+     */
+    fun backdropItem(uri: Uri, durationMs: Long, frameRate: Int, canvas: ExportPresets.Resolution?): EditedMediaItem {
+        val fill: List<Effect> = if (canvas != null && canvas.width > 0 && canvas.height > 0) {
+            listOf(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+        } else emptyList()
+        return stillItem(uri, durationMs, frameRate, fill)
+    }
+
+    /**
      * A transparent still of [durationMs] at [frameRate], from [clearFrame] (see
      * StillClips.clearFrame). The alpha is also scaled to nothing, so the still
      * stays invisible even if some step between the file and the compositor
@@ -228,7 +242,8 @@ object CompositionFactory {
 
     /**
      * An overlay's picture effects: keyed and masked on the frame the camera saw,
-     * fitted to the canvas the file is written at, and only then placed.
+     * cropped and graded as its own, fitted to the canvas the file is written
+     * at, and only then placed.
      *
      * Placement after the fit is what makes it canvas-relative. Done before, the
      * offsets were fractions of the overlay's own frame: a portrait PiP 45% right
@@ -237,8 +252,9 @@ object CompositionFactory {
      * scaled to the chosen output, so a 4K source exported at 1080p drew every
      * PiP twice the size it was placed at.
      *
-     * No rotation and no grade: the preview draws neither on an overlay, and the
-     * two have to agree. Captions and the effects library are drawn once for the
+     * No rotation: the preview draws none on an overlay, and the two have to
+     * agree. The grade is the clip's own, as it is on every surface of the
+     * preview now. Captions and the effects library are drawn once for the
      * whole frame, above every layer (VideoProcessor.compositionEffects).
      */
     fun overlayEffects(clip: Clip, canvas: ExportPresets.Resolution?, speed: List<Effect>): List<Effect> =
@@ -252,6 +268,10 @@ object CompositionFactory {
             clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
             clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
+            // The clip's own crop and grade on its own picture, before the fit -
+            // where the preview's shader and layers apply them.
+            clip.crop?.takeIf { !it.isIdentity }?.let { add(ClipCropEffect(it)) }
+            addAll(ColorGrade.effects(clip.grade))
             if (canvas != null && canvas.width > 0 && canvas.height > 0) {
                 add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT))
             }

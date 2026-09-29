@@ -12,7 +12,13 @@ enum class MaskShape(val label: String) {
     /** A half-plane: everything on one side of a line. The classic reveal. */
     Linear("Linear"),
     /** A band between two parallel lines - a letterbox slot you can turn. */
-    Mirror("Mirror")
+    Mirror("Mirror"),
+    /** The two CapCut has that the four above do not: filled to the same box as the ellipse. */
+    Heart("Heart"),
+    Star("Star");
+
+    /** Whether the shape has a width and a height of its own to set, rather than an edge or a band. */
+    val hasBox: Boolean get() = this == Rectangle || this == Ellipse || this == Heart || this == Star
 }
 
 /**

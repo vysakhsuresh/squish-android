@@ -3,9 +3,18 @@ package com.squish.app.data
 import android.content.Context
 import android.net.Uri
 import com.squish.app.editor.BeatProgress
+import com.squish.app.editor.CanvasBackground
+import com.squish.app.editor.CanvasFill
+import com.squish.app.editor.ClipCrop
 import com.squish.app.editor.CropAspect
+import com.squish.app.editor.CropRatio
 import com.squish.app.editor.CropRect
+import com.squish.app.editor.CropRules
 import com.squish.app.editor.EditorUiState
+import com.squish.app.media.effects.Adjust
+import com.squish.app.media.effects.AdjustField
+import com.squish.app.media.effects.HslBand
+import com.squish.app.media.effects.HueBand
 import com.squish.app.editor.OutputSize
 import com.squish.app.editor.OverlayRules
 import com.squish.app.editor.ProjectName
@@ -26,6 +35,7 @@ import com.squish.app.editor.EffectKind
 import com.squish.app.editor.TimedEffect
 import com.squish.app.timeline.VoiceEffect
 import com.squish.app.media.video.MotionTrack
+import com.squish.app.media.video.Segmenter
 import com.squish.app.media.video.TrackSample
 import com.squish.app.timeline.BackgroundFill
 import com.squish.app.timeline.BackgroundRemoval
@@ -114,6 +124,8 @@ data class TrashedDraft(
 )
 
 class ProjectAutosave(context: Context) {
+
+    private val appContext: Context = context.applicationContext
 
     private val dir = File(context.filesDir, "projects").apply { mkdirs() }
 
@@ -451,12 +463,37 @@ class ProjectAutosave(context: Context) {
         DraftFiles.moveOutOfBin(entry, slotFiles(slot))
     }
 
-    /** Removes a bin entry for good. Only ever from a confirmed tap on the list. */
+    /**
+     * Every person-mask file a draft on disk still names - live, backup,
+     * snapshot or in the bin - so the segmenter's folder can be swept of the
+     * rest (Segmenter.sweep, V19). Read off the documents as text rather than
+     * decoded: a draft too old or too broken to decode still holds its
+     * references, and sweeping what it names would break it further.
+     */
+    fun referencedMaskFiles(): Set<String> = synchronized(lock) {
+        val found = HashSet<String>()
+        dir.walkTopDown().filter { it.isFile && it.name.endsWith(".json") }.forEach { file ->
+            val text = runCatching { file.readText() }.getOrNull() ?: return@forEach
+            MASK_FILE.findAll(text).forEach { match ->
+                // org.json writes a path's slashes escaped.
+                found += match.groupValues[1].replace("\\/", "/").replace("\\\\", "\\")
+            }
+        }
+        found
+    }
+
+    /**
+     * Removes a bin entry for good. Only ever from a confirmed tap on the list.
+     * The person masks it alone named go with it: a binned draft keeps its
+     * masks, so putting it back brings its cut-out back too; purged, nothing
+     * can want them.
+     */
     fun purge(trashId: String) {
         synchronized(lock) {
             val entry = File(trashDir, trashId)
             if (DraftHousekeeping.parseTrashName(trashId) != null && entry.isDirectory) entry.deleteRecursively()
         }
+        runCatching { Segmenter.sweep(appContext, referencedMaskFiles()) }
     }
 
     private fun writeMeta(
@@ -548,11 +585,13 @@ class ProjectAutosave(context: Context) {
         }
         put("snapToMarkers", state.snapToMarkers)
         put("stabilizeStrength", state.stabilizeStrength.toDouble())
-        put("brightness", state.brightness.toDouble())
-        put("contrast", state.contrast.toDouble())
-        put("saturation", state.saturation.toDouble())
-        put("lookId", state.lookId ?: JSONObject.NULL)
-        put("lookIntensity", state.lookIntensity.toDouble())
+        // Only when there is one, so every draft saved before the canvas had a
+        // background keeps the edit key it had.
+        if (state.canvasBackground != CanvasBackground.NONE) {
+            put("canvasFill", state.canvasBackground.fill.name)
+            put("canvasColour", state.canvasBackground.colorArgb)
+            state.canvasBackground.imageUri?.let { put("canvasImage", it) }
+        }
         put("pixelsPerSecond", state.pixelsPerSecond.toDouble())
         put("markers", JSONArray().apply { state.markers.forEach { put(it) } })
         // The grid on screen, whatever the last listen did. A second listen still
@@ -575,17 +614,6 @@ class ProjectAutosave(context: Context) {
         }
         put("clips", JSONArray().apply { state.videoClips.forEach { put(encodeClip(it)) } })
         put("textOverlays", JSONArray().apply { state.textOverlays.forEach { put(encodeText(it)) } })
-        state.reframe?.let { track ->
-            put("reframe", JSONArray().apply {
-                track.samples.forEach { s ->
-                    put(JSONObject().apply {
-                        put("atMs", s.atMs)
-                        put("x", s.xFraction.toDouble())
-                        put("y", s.yFraction.toDouble())
-                    })
-                }
-            })
-        }
         put("effects", JSONArray().apply {
             state.effects.forEach { e ->
                 put(JSONObject().apply {
@@ -678,6 +706,91 @@ class ProjectAutosave(context: Context) {
                 put("spill", key.spill.toDouble())
             })
         }
+        // Each only when it means something, so a clip with none keeps the
+        // document it had, and its edit key with it.
+        clip.lookId?.let { put("lookId", it) }
+        if (clip.lookIntensity != 1f) put("lookIntensity", clip.lookIntensity.toDouble())
+        if (!clip.adjust.isIdentity) put("adjust", encodeAdjust(clip.adjust))
+        clip.crop?.takeIf { !it.isIdentity }?.let { crop ->
+            put("crop", JSONObject().apply {
+                put("left", crop.rect.left.toDouble())
+                put("top", crop.rect.top.toDouble())
+                put("right", crop.rect.right.toDouble())
+                put("bottom", crop.rect.bottom.toDouble())
+                put("straighten", crop.straightenDegrees.toDouble())
+                put("flipH", crop.flipHorizontal)
+                put("flipV", crop.flipVertical)
+                put("ratio", crop.ratio.name)
+            })
+        }
+        clip.reframe?.let { put("reframe", encodeTrack(it)) }
+    }
+
+    private fun encodeAdjust(adjust: Adjust): JSONObject = JSONObject().apply {
+        AdjustField.entries.forEach { field ->
+            val v = field.of(adjust)
+            if (v != 0f) put(field.name, v.toDouble())
+        }
+        if (adjust.hsl.any { !it.isIdentity }) {
+            put("hsl", JSONArray().apply {
+                adjust.hsl.forEach { band ->
+                    put(JSONObject().apply {
+                        put("h", band.hue.toDouble())
+                        put("s", band.saturation.toDouble())
+                        put("l", band.luminance.toDouble())
+                    })
+                }
+            })
+        }
+    }
+
+    private fun decodeAdjust(json: JSONObject?): Adjust {
+        if (json == null) return Adjust.NONE
+        var adjust = Adjust()
+        AdjustField.entries.forEach { field ->
+            if (json.has(field.name)) adjust = field.set(adjust, json.optDouble(field.name, 0.0).toFloat())
+        }
+        val bands = json.optJSONArray("hsl")?.let { array ->
+            List(HueBand.entries.size) { i ->
+                array.optJSONObject(i)?.let { o ->
+                    HslBand(
+                        hue = o.optDouble("h", 0.0).toFloat().coerceIn(-1f, 1f),
+                        saturation = o.optDouble("s", 0.0).toFloat().coerceIn(-1f, 1f),
+                        luminance = o.optDouble("l", 0.0).toFloat().coerceIn(-1f, 1f)
+                    )
+                } ?: HslBand()
+            }
+        }
+        return if (bands != null) adjust.copy(hsl = bands) else adjust
+    }
+
+    private fun encodeTrack(track: MotionTrack): JSONArray = JSONArray().apply {
+        track.samples.forEach { s ->
+            put(JSONObject().apply {
+                put("atMs", s.atMs)
+                put("x", s.xFraction.toDouble())
+                put("y", s.yFraction.toDouble())
+                put("scale", s.scale.toDouble())
+                put("confidence", s.confidence.toDouble())
+            })
+        }
+    }
+
+    private fun decodeTrack(array: JSONArray?): MotionTrack? {
+        if (array == null) return null
+        return MotionTrack(
+            (0 until array.length()).mapNotNull { i ->
+                array.optJSONObject(i)?.let { o ->
+                    TrackSample(
+                        atMs = o.optLong("atMs"),
+                        xFraction = o.optDouble("x", 0.5).toFloat(),
+                        yFraction = o.optDouble("y", 0.5).toFloat(),
+                        scale = o.optDouble("scale", 1.0).toFloat(),
+                        confidence = o.optDouble("confidence", 1.0).toFloat()
+                    )
+                }
+            }
+        ).takeIf { !it.isEmpty }
     }
 
     private fun encodeKeyframe(key: Keyframe): JSONObject = JSONObject().apply {
@@ -749,9 +862,34 @@ class ProjectAutosave(context: Context) {
         // clips, but a build from the text branch wrote it under the same
         // version number (see FORMAT_VERSION), and its drafts keep their voice.
         val legacyVoice = enumOrNull<VoiceEffect>(json.optString("voiceEffect")) ?: VoiceEffect.None
-        val clips = if (legacyVoice != VoiceEffect.None) {
+        val voiced = if (legacyVoice != VoiceEffect.None) {
             levelled.map { if (it.isOverlay) it else it.copy(voice = legacyVoice) }
         } else levelled
+        // Saved when the look and the colour sliders were one setting for the
+        // edit: they go onto every main-track shot, which is what they graded.
+        // Told by the fields, like the voice: a draft is only ever read once
+        // this way, since the next save writes them on the clips.
+        val legacyLook = json.optString("lookId").takeIf { it.isNotBlank() && it != "null" }
+        val legacyAdjust = Adjust(
+            brightness = json.optDouble("brightness", 0.0).toFloat().coerceIn(-1f, 1f),
+            contrast = json.optDouble("contrast", 0.0).toFloat().coerceIn(-1f, 1f),
+            saturation = json.optDouble("saturation", 0.0).toFloat().coerceIn(-1f, 1f)
+        )
+        val graded = if (legacyLook == null && legacyAdjust.isIdentity) voiced else voiced.map { clip ->
+            if (clip.isOverlay) clip
+            else clip.copy(
+                lookId = legacyLook,
+                lookIntensity = json.optDouble("lookIntensity", 1.0).toFloat().coerceIn(0f, 1f),
+                adjust = legacyAdjust
+            )
+        }
+        // And the one reframe track the edit carried, measured on its first file:
+        // onto the shots of that file, whose source clock it is in.
+        val legacyReframe = decodeTrack(json.optJSONArray("reframe"))
+        val clips = if (legacyReframe == null) graded else {
+            val firstUri = graded.firstOrNull { !it.isOverlay }?.uri
+            graded.map { if (!it.isOverlay && it.uri == firstUri && it.reframe == null) it.copy(reframe = legacyReframe) else it }
+        }
 
         val audio = json.optJSONArray("audioClips")?.let { array ->
             (0 until array.length()).mapNotNull { i -> decodeClip(array.optJSONObject(i), ClipKind.Audio) }
@@ -773,17 +911,13 @@ class ProjectAutosave(context: Context) {
             clips = clips,
             audioClips = audio,
             textOverlays = overlays,
-            reframe = json.optJSONArray("reframe")?.let { array ->
-                MotionTrack((0 until array.length()).mapNotNull { i ->
-                    array.optJSONObject(i)?.let { o ->
-                        TrackSample(
-                            atMs = o.optLong("atMs"),
-                            xFraction = o.optDouble("x", 0.5).toFloat(),
-                            yFraction = o.optDouble("y", 0.5).toFloat()
-                        )
-                    }
-                })
-            }?.takeIf { !it.isEmpty },
+            canvasBackground = enumOrNull<CanvasFill>(json.optString("canvasFill"))?.let { fill ->
+                CanvasBackground(
+                    fill = fill,
+                    colorArgb = json.optInt("canvasColour", CanvasBackground.DEFAULT_COLOUR),
+                    imageUri = json.optString("canvasImage").takeIf { it.isNotBlank() }
+                )
+            } ?: CanvasBackground.NONE,
             effects = json.optJSONArray("effects")?.let { array ->
                 (0 until array.length()).mapNotNull { i ->
                     val o = array.optJSONObject(i) ?: return@mapNotNull null
@@ -834,11 +968,6 @@ class ProjectAutosave(context: Context) {
                     every = b.optInt("every", 1).coerceIn(1, 4)
                 ).takeIf { it.hasBeats }
             } ?: BeatProgress(),
-            brightness = json.optDouble("brightness").toFloat(),
-            contrast = json.optDouble("contrast").toFloat(),
-            saturation = json.optDouble("saturation").toFloat(),
-            lookId = json.optString("lookId").takeIf { it.isNotBlank() && it != "null" },
-            lookIntensity = json.optDouble("lookIntensity", 1.0).toFloat(),
             pixelsPerSecond = json.optDouble("pixelsPerSecond", 42.0).toFloat()
         )
     }
@@ -917,6 +1046,25 @@ class ProjectAutosave(context: Context) {
                     spill = k.optDouble("spill", 0.12).toFloat()
                 )
             },
+            lookId = json.optString("lookId").takeIf { it.isNotBlank() && it != "null" },
+            lookIntensity = json.optDouble("lookIntensity", 1.0).toFloat().coerceIn(0f, 1f),
+            adjust = decodeAdjust(json.optJSONObject("adjust")),
+            crop = json.optJSONObject("crop")?.let { c ->
+                ClipCrop(
+                    rect = CropRect.of(
+                        left = c.optDouble("left", 0.0).toFloat(),
+                        top = c.optDouble("top", 0.0).toFloat(),
+                        right = c.optDouble("right", 1.0).toFloat(),
+                        bottom = c.optDouble("bottom", 1.0).toFloat()
+                    ),
+                    straightenDegrees = c.optDouble("straighten", 0.0).toFloat()
+                        .coerceIn(-CropRules.MAX_STRAIGHTEN_DEGREES, CropRules.MAX_STRAIGHTEN_DEGREES),
+                    flipHorizontal = c.optBoolean("flipH", false),
+                    flipVertical = c.optBoolean("flipV", false),
+                    ratio = enumOrNull<CropRatio>(c.optString("ratio")) ?: CropRatio.Free
+                ).takeIf { !it.isIdentity }
+            },
+            reframe = decodeTrack(json.optJSONArray("reframe")),
             mask = json.optJSONObject("mask")?.let { m ->
                 Mask(
                     shape = enumOrNull<MaskShape>(m.optString("shape")) ?: MaskShape.Ellipse,
@@ -1032,9 +1180,17 @@ class ProjectAutosave(context: Context) {
          * look. The two arrived on separate branches (B9 and B10) that each
          * wrote 12 before they met, so a 12 may hold either half without the
          * other: both are told apart by their fields, not by this number.
+         *
+         * 13: a clip's own look, colour sliders, crop and reframe track (the
+         * edit-wide "lookId", "brightness", "contrast", "saturation" and
+         * "reframe" move onto the main-track shots), and the canvas background.
+         * Told by the fields, like the voice was.
          */
-        const val FORMAT_VERSION = 12
+        const val FORMAT_VERSION = 13
         const val OLDEST_READABLE_VERSION = 9
+
+        /** A clip's "maskFile" entry, as encodeClip writes it. */
+        private val MASK_FILE = Regex("\"maskFile\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
 
         /** The first version whose pictures' levels are their own; older ones are moved over on reading. */
         const val PER_CLIP_VOLUME_VERSION = 11
@@ -1050,7 +1206,6 @@ data class ProjectSnapshot(
     val audioClips: List<Clip>,
     val textOverlays: List<TextOverlayItem>,
     val effects: List<TimedEffect>,
-    val reframe: MotionTrack?,
     val markers: List<Long>,
     val playheadMs: Long,
     val outputP: Int,
@@ -1065,11 +1220,7 @@ data class ProjectSnapshot(
     val snapToMarkers: Boolean,
     val stabilizeStrength: Float,
     val beats: BeatProgress,
-    val brightness: Float,
-    val contrast: Float,
-    val saturation: Float,
-    val lookId: String?,
-    val lookIntensity: Float,
+    val canvasBackground: CanvasBackground,
     val pixelsPerSecond: Float,
     /** What the project was named, if it was; see [EditorUiState.projectName]. */
     val name: String? = null
@@ -1094,17 +1245,17 @@ data class ProjectSnapshot(
             effects.isEmpty() &&
             audioClips.isEmpty() &&
             markers.isEmpty() &&
-            reframe == null &&
             // A look, a crop, a found beat or a changed voice is work too, as
             // much as a trim is.
             !beats.hasBeats &&
-            lookId == null && brightness == 0f && contrast == 0f && saturation == 0f &&
             cropAspect == CropAspect.Original && cropRect.isFull && rotationDegrees == 0 &&
+            canvasBackground == CanvasBackground.NONE &&
             !muteOriginal && originalVolume == 1f &&
             clips.first().let {
                 it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs &&
                     it.volume == 1f && it.voice == VoiceEffect.None && it.fadeInMs == 0L && it.fadeOutMs == 0L &&
                     it.chromaKey == null && it.mask == null && it.background == null &&
+                    !it.isGraded && it.crop == null && it.reframe == null &&
                     it.keyframes.isEmpty() && it.stabilizer.isEmpty() && it.speedRamp == com.squish.app.timeline.SpeedRamp()
             }
 }

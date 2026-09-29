@@ -3,10 +3,12 @@ package com.squish.app.editor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
@@ -30,10 +32,10 @@ import com.squish.app.ui.theme.SquishColors
 /**
  * Shape masks for the selected clip.
  *
- * There are no drag handles on the preview, and that is a deliberate omission
- * rather than a gap: the mask is applied by the preview's own shader, so what the
- * sliders move is the finished result, live. Handles would be a second, worse
- * representation of something already on screen.
+ * The mask is applied by the preview's own shader, so what the sliders move is
+ * the finished result, live; its edge is drawn over the picture as well
+ * (MaskOutlineLayer), since with a wide feather there was no telling where
+ * the edge was, and the shape is moved there with a finger.
  */
 @Composable
 fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
@@ -123,16 +125,24 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+        // Six shapes now, which is more than fit across a phone: the row scrolls.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
             MaskShape.entries.forEach { shape ->
                 SelectableChip(
                     label = shape.label,
                     selected = mask.shape == shape,
-                    modifier = Modifier.weight(1f),
                     onClick = { viewModel.layers.updateMask(clip.id, shape = shape) }
                 )
             }
         }
+        Text(
+            if (mask.track == null) "Drag the shape on the picture to move it." else "The shape follows its track on the picture.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextMuted
+        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -164,7 +174,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
         // Linear takes its edge from the center and the angle alone, and Mirror is a
         // band with no width - offering sliders that do nothing would just invite
         // someone to drag them and conclude the mask is broken.
-        if (mask.shape == MaskShape.Rectangle || mask.shape == MaskShape.Ellipse) {
+        if (mask.shape.hasBox) {
             LabeledSlider("Width", mask.widthFraction, 0.02f..1.5f, onFinished = viewModel::endGesture) {
                 viewModel.layers.updateMask(clip.id, width = it)
             }
