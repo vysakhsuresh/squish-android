@@ -9,8 +9,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.OverlaySettings
 import androidx.media3.common.VideoCompositorSettings
-import androidx.media3.common.audio.AudioProcessor
-import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.AlphaScale
@@ -61,9 +59,9 @@ import java.io.File
  * sound exporter and then the picture's, so a layer that opens on a still can
  * never ask for its sound track before the exporter exists. The gap's one frame
  * is opaque black and the still is clear; both are hidden the same way,
- * LayerSettings drawing input 0 at nothing. The gap is built here rather than
- * by the sequence builder's addGap, so it can carry the resampler that sets the
- * mixer's rate (clockGap).
+ * LayerSettings drawing input 0 at nothing. The gap is the sequence builder's
+ * own addGap: Media3 refuses an audio processor on a gap, so it cannot carry a
+ * resampler to set the mixer's rate.
  *
  * One consequence to know about: the file's colour is set from the primary's
  * first format (VideoSampleExporter), and the primary is the clock, whose gap
@@ -149,10 +147,14 @@ object CompositionFactory {
                         } else {
                             builder.addGap(piece.durationMs * 1_000L)
                         }
-                    // The clock's gap sets the mixer's rate; any other is plain.
-                    is ExportPlan.Piece.Gap ->
-                        if (layer.role == ExportPlan.Role.Clock && declared.sound) builder.addItem(clockGap(piece.durationMs, mixerSampleRateHz))
-                        else builder.addGap(piece.durationMs * 1_000L)
+                    // A plain gap. The clock's gap was once built by hand with a
+                    // resampler on it, to lift the mixer from 44.1 kHz to the
+                    // camera's rate - but Media3 refuses any audio processor on a
+                    // gap (EditedMediaItem's constructor checks it), so every
+                    // composited export with sound failed before it began. Seen on
+                    // the device. The mixer runs at 44.1 kHz until another way in
+                    // is found; that is a resample, not a failure.
+                    is ExportPlan.Piece.Gap -> builder.addGap(piece.durationMs * 1_000L)
                     // A layer's empty stretch is the still, not a gap: the gap's
                     // frames are opaque black, and the still is the path the
                     // device has rendered. Sound only, it is silence.
@@ -164,33 +166,6 @@ object CompositionFactory {
         }
         return Composited(sequences, if (videoOut) LayerSettings(canvas) else null)
     }
-
-    /**
-     * The clock's opening gap, [durationMs] long, with the resampler that makes
-     * the mixer run at [mixerSampleRateHz].
-     *
-     * Media3's mixer takes its format from the first sound it is handed, which
-     * in a composited export is this gap's: a fixed 44.1 kHz stereo, so every
-     * 48 kHz camera track was stepped down to it. A sequence's first item is
-     * what the sound input is built from, its own audio processors included,
-     * so a resampler here is the one place the mixer's rate can be set. The
-     * builder's addGap makes an item just like this one, but takes no effects;
-     * Media3 knows a gap by its media id (EditedMediaItem.isGap), which is not
-     * public, so the id is spelt out - a rename would not be a quiet
-     * regression: the first item would be a media item with no file, and the
-     * export would fail on it at once.
-     */
-    private fun clockGap(durationMs: Long, mixerSampleRateHz: Int): EditedMediaItem {
-        val resampler = SonicAudioProcessor().apply { setOutputSampleRateHz(mixerSampleRateHz) }
-        val processors: List<AudioProcessor> = listOf(resampler)
-        return EditedMediaItem.Builder(MediaItem.Builder().setMediaId(GAP_MEDIA_ID).build())
-            .setDurationUs(durationMs * 1_000L)
-            .setEffects(Effects(ImmutableList.copyOf(processors), ImmutableList.of()))
-            .build()
-    }
-
-    /** What EditedMediaItemSequence.Builder.addGap names its item, in Media3 1.11.1. */
-    private const val GAP_MEDIA_ID = "androidx-media3-GapMediaItem"
 
     /**
      * A photo kept as a picture on an overlay row, shown for [durationMs] at

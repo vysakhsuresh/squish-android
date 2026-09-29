@@ -172,6 +172,10 @@ class VideoProcessor(private val context: Context) {
         suspendCancellableCoroutine { continuation ->
             val built = runCatching { buildComposition(state, clear, backdrop, aspects) }
             val composition = built.getOrElse {
+                // Before Media3 is involved at all, so nothing else logs it: a
+                // failure here reached the user as "stopped without explaining
+                // why" and left no trace to find the cause by.
+                android.util.Log.w("SquishExport", "could not build the composition", it)
                 continuation.resume(Result.failure(it))
                 return@suspendCancellableCoroutine
             }
