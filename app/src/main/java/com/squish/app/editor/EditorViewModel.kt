@@ -883,6 +883,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        // An edit with every shot deleted has no picture of its own. The render
+        // reads an empty track as the quick tools' one file, and would have
+        // written the project's first source whole - a file nobody had on the
+        // strip. (Such a draft now reopens as itself rather than refusing.)
+        if (current.videoClips.isEmpty()) {
+            _state.update { it.copy(failure = SquishError.NothingToExport()) }
+            return
+        }
+
         // Checked before a single frame is encoded. A two-minute export that dies
         // on the last chunk for want of disk space is the worst possible way to
         // learn about it.
@@ -891,6 +900,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        // The preview stops for the render: it played on audibly under the
+        // progress card, its players decoding beside the encoder's own.
+        audio.requestPause()
         _state.update {
             it.copy(isExporting = true, failure = null, fitOvershoot = null, exportProgress = ExportProgress(stage = ExportStage.Preparing))
         }

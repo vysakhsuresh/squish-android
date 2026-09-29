@@ -1053,8 +1053,14 @@ class PreviewEngine(private val context: Context) {
         if (!stillClocking) {
             val next = listOfNotNull(clipA, clipB).minByOrNull { it.timelineStartMs }
             clockClipId = next?.id
-            clockKey = if (next != null && clipA?.id == next.id) KEY_A else KEY_B
         }
+        // Which surface that shot is on, asked every pass rather than only when
+        // the clock changes hands: an edit made while playing (an earlier shot
+        // deleted, floated, or the step undone) re-deals the rolls by parity,
+        // and the shot still covering moved to the other surface while the
+        // clock went on reading the one it had left - a stall, a drift chased
+        // by resync seeks, or a time off another shot's position.
+        clockKey = if (PreviewRules.clockOnA(clipA?.id, clockClipId)) KEY_A else KEY_B
 
         val readyA = clipA != null && surfaceA.shownClipId == clipA.id
         val readyB = clipB != null && surfaceB.shownClipId == clipB.id

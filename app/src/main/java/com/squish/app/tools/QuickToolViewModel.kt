@@ -626,8 +626,10 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             // to be sent to the back and killed.
             withContext(Dispatchers.IO) { persist() }
 
-            val outputDir = File(getApplication<Application>().getExternalFilesDir(null), "exports")
-                .apply { mkdirs() }
+            // The folder the space check measured and Storage clears, with its
+            // fallback: with no external volume, File(null, "exports") was a
+            // relative path under "/", and the file could not be written.
+            val outputDir = SquishError.exportsDir(getApplication()).apply { mkdirs() }
             val extension = if (audioOnly) "m4a" else "mp4"
             val outputFile = File(outputDir, "squish_${tool.id}_${System.currentTimeMillis()}.$extension")
 

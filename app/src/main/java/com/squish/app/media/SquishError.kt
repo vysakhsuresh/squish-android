@@ -510,8 +510,16 @@ sealed class SquishError(
                     // before it read a frame; carrying a null check, it is the
                     // sound-track race, which used to read "Export stopped
                     // unexpectedly" with the raw message under it.
-                    message == "Asset loader error" ->
-                        return if (t.cause is NullPointerException) LayerStartFailed(throwable) else LayersFailed(throwable)
+                    // Media3 gives every loader failure that message, whatever
+                    // it was, and carries what it was in the code: a file that
+                    // could not be read or a stream that could not be decoded
+                    // is said as that, not as layers that would not combine -
+                    // advice that read oddly on a cuts-only edit.
+                    message == "Asset loader error" -> return when {
+                        t.cause is NullPointerException -> LayerStartFailed(throwable)
+                        t is ExportException && (t.errorCode in BAND_IO || t.errorCode in BAND_DECODING) -> fromExport(t)
+                        else -> LayersFailed(throwable)
+                    }
                     message.contains("does not contain any", ignoreCase = true) ||
                         message.contains("ForceAudioTrack", ignoreCase = true) ||
                         message.contains("ForceVideoTrack", ignoreCase = true) -> return SilentClipInMix(throwable)

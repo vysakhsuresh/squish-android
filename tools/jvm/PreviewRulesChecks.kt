@@ -243,6 +243,12 @@ fun main() {
     check("and not before a cold open's two seconds", since > 1_900L)
     check("and not much after", since <= PreviewRules.HOLD_MAX_MS + 33L)
 
+    // The clock follows its shot to whichever roll it is dealt onto.
+    check("the clock reads roll A while its shot is there", PreviewRules.clockOnA("c", "c"))
+    check("after a re-deal the shot is on B, and so is the clock", !PreviewRules.clockOnA("d", "c"))
+    check("with nothing on A the clock is on B", !PreviewRules.clockOnA(null, "c"))
+    check("no clock shot is not A", !PreviewRules.clockOnA("c", null))
+
     if (failures.isEmpty()) {
         println("PASS - the preview parks inside the trim, redraws without drifting, rattles no ramp, and never reloads a slow seek forever")
     } else {

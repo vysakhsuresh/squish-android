@@ -109,8 +109,16 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * shows while the picture is still. Added while playing, a title with a
      * Pop arrival was invisible on the frame it landed on and the playhead
      * left it behind before its words were typed.
+     *
+     * Asked of the engine, as every pause from the edit is (transportRequest):
+     * flipping the flag alone left the picture playing under the keyboard and
+     * the flag false while the transport showed Pause, so a sound audition
+     * would not stop and a voiceover take read the edit as stopped and ended.
      */
-    private fun EditorUiState.stilled(): EditorUiState = if (isPlaying) copy(isPlaying = false) else this
+    private fun EditorUiState.stilled(): EditorUiState = if (!isPlaying) this else copy(
+        isPlaying = false,
+        transportRequest = TransportRequest(play = false, nonce = (transportRequest?.nonce ?: 0L) + 1)
+    )
 
     /**
      * A title at the playhead, styled by [preset]: its text, face, look, colour,

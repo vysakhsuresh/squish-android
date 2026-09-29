@@ -50,6 +50,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -128,6 +130,12 @@ fun ClipPreview(
     }
 
     DisposableEffect(player) { onDispose { player.release() } }
+
+    // Nothing plays behind the user's back, as in the editor's preview: Home
+    // or the lock button stops it where it is. Stopping the activity leaves
+    // the composition alive, so the release above never ran and the sound of
+    // an export's done screen carried on in the background.
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { player.pause() }
 
     // Read through state that is kept current, never captured directly.
     //

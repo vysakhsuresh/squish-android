@@ -163,6 +163,15 @@ object PreviewRules {
      */
     fun holdAtCut(heldShowsOutgoing: Boolean, arrivedByPlaying: Boolean, heldForMs: Long, incomingFailed: Boolean): Boolean =
         heldShowsOutgoing && arrivedByPlaying && !incomingFailed && heldForMs <= HOLD_MAX_MS
+
+    /**
+     * Whether the clock is read off the first surface (roll A): whenever the
+     * shot driving it is the one on that roll now. Asked every pass, not only
+     * when the clock changes hands - an edit made while playing re-deals the
+     * rolls by parity, and the shot still covering can move to the other one.
+     */
+    fun clockOnA(clipAId: String?, clockClipId: String?): Boolean =
+        clipAId != null && clipAId == clockClipId
 }
 
 /**
