@@ -168,11 +168,14 @@ fun EditorScreen(
     // Select more on, or several already selected: the toolbar is the set's.
     // From the press itself, so the mode is seen to be on before a second tap.
     val multi = state.multiSelected || (state.selectingMore && state.selectedClipId != null)
+    // A photo, blank or freeze on a video track is a file with nothing moving
+    // in it: the tools that need footage are not offered (ToolRules.toolsFor).
+    val footage = state.videoClips.firstOrNull { it.id == state.selectedClipId }?.let { it.isFootage || it.isStillPicture } ?: true
     // A clip's own tool closes when the selection no longer has it - Speed with
     // a caption selected, anything once the selection is deleted or let go.
-    LaunchedEffect(openTool, kind, canTransition, multi) {
+    LaunchedEffect(openTool, kind, canTransition, multi, footage) {
         val tool = openTool ?: return@LaunchedEffect
-        if (!sheetSurvives(tool, kind, canTransition, multi)) openToolName = null
+        if (!sheetSurvives(tool, kind, canTransition, multi, footage)) openToolName = null
     }
     // Replace: the file is picked first, and the sheet asking where in it to
     // start comes up when the pick has been read - or not at all for a photo,
@@ -321,7 +324,8 @@ fun EditorScreen(
             )
             Tool.CopyAttributes -> state.selectedClipId?.let(viewModel.clips::copyAttributes)
             Tool.PasteAttributes -> state.selectedClipId?.let(viewModel.clips::pasteAttributes)
-            // On with something selected; pressed again, back to that one alone.
+            // On with something selected; pressed again ("Done selecting"), the
+            // adding stops and the set stays for Delete or a carry.
             Tool.SelectMore -> viewModel.setSelectingMore(!state.selectingMore)
             Tool.ToMain -> state.videoClips.firstOrNull { it.id == state.selectedClipId }?.let { clip ->
                 // A photo dragged out long is minutes of rendering on the main
@@ -343,6 +347,15 @@ fun EditorScreen(
             // With Select more on, a tap adds to the set or takes from it.
             if (state.selectingMore) viewModel.toggleSelected(id) else viewModel.selectClip(id)
             if (id != null && id != before && openTool?.levelZero == true) openToolName = null
+        }
+    }
+    // A clip taken hold of to be carried: selected without ever leaving the
+    // set (ClipEdits.liftClip), so a selected clip carries the selection.
+    val liftFromStrip: (String) -> Unit = { id ->
+        if (id != RECORDING_CLIP_ID) {
+            val before = state.selectedClipId
+            viewModel.clips.liftClip(id)
+            if (id != before && openTool?.levelZero == true) openToolName = null
         }
     }
 
@@ -423,6 +436,10 @@ fun EditorScreen(
                     TimelineEditor(
                         state = timeline,
                         onSelect = selectFromStrip,
+                        onLift = liftFromStrip,
+                        // Every row stays readable while clips are being added to
+                        // the set: the caption to add is on a row the lead is not.
+                        foldRows = !state.selectingMore,
                         onTrimEdge = viewModel.clips::trimEdgeTo,
                         onTrimHeadIn = viewModel.clips::trimHeadInTo,
                         onScrub = viewModel::scrubTo,
@@ -477,13 +494,15 @@ fun EditorScreen(
                 val toolbar = @Composable {
                     val accent = kind.concept?.accent
                     ToolBar(
-                        tools = toolsFor(kind, canTransition, multi),
-                        // Select more wears the primary colour while it is on: the
-                        // one tool on the row that is a state, not an action.
+                        tools = toolsFor(kind, canTransition, multi, footage),
+                        // Select more wears the primary colour while it is on, and
+                        // says what the next press does: the one tool on the row
+                        // that is a state, not an action.
                         accentOf = { tool ->
                             if (tool == Tool.SelectMore && state.selectingMore) SquishColors.Primary
                             else accent ?: tool.levelZeroAccent
                         },
+                        labelOf = { tool -> if (tool == Tool.SelectMore && state.selectingMore) "Done selecting" else tool.label },
                         onTool = onTool,
                         enabled = { tool ->
                             when (tool) {
@@ -787,8 +806,12 @@ private fun EditorPreview(
                 // As a tap on the strip: a layer picked while an add-things sheet
                 // is up is a new job, and the sheet makes way for its tools.
                 onSelect = { id ->
-                    val before = viewModel.state.value.selectedClipId
-                    viewModel.selectClip(id)
+                    val current = viewModel.state.value
+                    val before = current.selectedClipId
+                    // With Select more on, a tap on a layer's box joins it to the
+                    // set (never leaves it - that is the strip), as a tap on the
+                    // strip would add it; it used to wipe the set to that one.
+                    if (current.selectingMore) viewModel.joinSelection(id) else viewModel.selectClip(id)
                     if (id != before && latestOpenTool?.levelZero == true) latestCloseSheet()
                 },
                 onPlace = { id, t ->
@@ -1033,6 +1056,7 @@ private fun StatusCards(state: EditorUiState, viewModel: EditorViewModel, onStar
     ReversingIndicator(
         reversing = state.reversing,
         nameOf = { id -> state.videoClips.firstOrNull { it.id == id }?.label ?: "clip" },
+        onCancel = viewModel.clips::cancelReverse,
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
     )
 

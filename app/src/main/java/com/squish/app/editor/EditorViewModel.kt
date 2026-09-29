@@ -28,6 +28,7 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.ZOOM_MAX
 import com.squish.app.timeline.ZOOM_MIN
+import com.squish.app.timeline.withSelectionJoined
 import com.squish.app.timeline.withSelectionToggled
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
@@ -98,6 +99,8 @@ class EditorViewModel(
         override fun displayNameOf(uri: Uri): String? = this@EditorViewModel.displayNameOf(uri)
         override fun checkDecodable(uri: Uri) = this@EditorViewModel.checkDecodable(uri)
         override fun ensureProxies(uris: Collection<Uri>) = this@EditorViewModel.ensureProxies(uris)
+        override fun selectClip(clipId: String?) = this@EditorViewModel.selectClip(clipId)
+        override fun joinSelection(clipId: String) = this@EditorViewModel.joinSelection(clipId)
     }
 
     /** Clips and the timeline: add, cut, move, trim, speed, placement, look, effects. */
@@ -530,6 +533,7 @@ class EditorViewModel(
         // A plain selection is one thing: whatever was selected alongside goes,
         // and Select more is off until it is asked for again.
         current.copy(selectedClipId = clipId, selectedClipIds = emptySet(), selectingMore = false)
+            .replacingOnlyIfSelected()
     }
 
     /**
@@ -549,15 +553,40 @@ class EditorViewModel(
                 selectedClipIds = toggled.selectedIds,
                 // Everything let go of one by one turns the mode off with the last.
                 selectingMore = toggled.selectedClipId != null
-            )
+            ).replacingOnlyIfSelected()
         }
     }
 
-    /** Select more on: from here taps add to the selection. Off again lets go of all but the lead. */
-    fun setSelectingMore(on: Boolean) = _state.update { current ->
-        if (on) current.copy(selectingMore = current.selectedClipId != null)
-        else current.copy(selectingMore = false, selectedClipIds = emptySet())
+    /**
+     * A clip taken hold of, or an overlay tapped on the picture, while Select
+     * more is on: it joins the selection if it was not in it, and leads it
+     * either way (TimelineState.withSelectionJoined). Never leaves it - that
+     * is a tap on the strip. A tap on a PiP to see which of three selected it
+     * was went through the plain selection and let the other two go.
+     */
+    fun joinSelection(clipId: String) = _state.update { current ->
+        val joined = current.toTimeline().withSelectionJoined(clipId)
+        current.copy(selectedClipId = joined.selectedClipId, selectedClipIds = joined.selectedIds).replacingOnlyIfSelected()
     }
+
+    /**
+     * Select more on: from here taps add to the selection. Off again - the
+     * button reads "Done selecting" while it is on - ends the adding and keeps
+     * what was selected: the set is what Delete and a carry then act on. It
+     * used to let go of all but the lead, so pressing the orange button to
+     * finish threw away the taps that had just been made.
+     */
+    fun setSelectingMore(on: Boolean) = _state.update { current ->
+        current.copy(selectingMore = on && current.selectedClipId != null)
+    }
+
+    /**
+     * The Replace sheet is a question about one clip; it goes when that clip is
+     * no longer the selection. It stayed up over the next shot tapped, and Done
+     * then replaced the shot the sheet had been opened on, out of sight.
+     */
+    private fun EditorUiState.replacingOnlyIfSelected(): EditorUiState =
+        if (replacing == null || replacing.clipId == selectedClipId) this else copy(replacing = null)
 
     /** Sets the zoom directly, which is how the strip answers a fit request. */
     // One pair of limits for the zoom, shared with the strip. They were written

@@ -8,6 +8,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -42,14 +43,34 @@ import kotlin.coroutines.coroutineContext
  * known before the muxer starts. The file keeps the source's rotation tag
  * rather than turning pixels: the frames are written as they were stored, and
  * the tag says which way up, as the camera wrote it.
+ *
+ * Only 8-bit footage: the frames are packed as bytes, and a 10-bit picture
+ * (HLG or HDR10 from a recent phone) has two per sample. Such a file is
+ * refused before anything is decoded, from its transfer and profile tags,
+ * and again from the decoder's first picture where the tags are missing -
+ * read as bytes, its planes came out as green stripes.
  */
 object ReverseRenderer {
 
     /** The longest window reversed: its sound is held whole, and three minutes of 48 kHz stereo is 35 MB. */
     const val MAX_MS = 3 * 60_000L
 
-    /** How much decoded picture is kept in memory before a run spills to disk. */
-    private const val SPOOL_BUDGET_BYTES = 96L * 1024 * 1024
+    /**
+     * How much decoded picture is kept in memory before a run spills to disk:
+     * a quarter of the heap the app is allowed, at most 96 MB. A fixed 96 MB
+     * on a 256 MB heap that already holds the editor's filmstrip, waveforms
+     * and preview state - plus the sound held whole - was an OutOfMemoryError
+     * minutes into a long clip, or the process gone.
+     */
+    private val spoolBudgetBytes: Long
+        get() = (Runtime.getRuntime().maxMemory() / 4).coerceIn(16L * 1024 * 1024, 96L * 1024 * 1024)
+
+    /** A 10-bit transfer or profile, by MediaFormat's numbers: HLG and PQ transfers; HEVC Main 10, HDR10 and HDR10+; VP9 and AV1 profile 2. */
+    private const val COLOR_TRANSFER_ST2084 = 6
+    private const val COLOR_TRANSFER_HLG = 7
+    private val TEN_BIT_HEVC_PROFILES = setOf(2, 4096, 8192)
+    private const val VP9_AV1_PROFILE_2 = 4
+    private const val TEN_BIT = "10-bit or HDR footage cannot be reversed here"
 
     private const val TIMEOUT_US = 10_000L
     /** Dequeue attempts, at [TIMEOUT_US] each, before a draining encoder is given up on: five seconds. */
@@ -63,7 +84,9 @@ object ReverseRenderer {
     /**
      * Reverses [inMs]..[outMs] of [source] into [output]. [onProgress] is called
      * from the render's thread with 0..1. A cancelled or failed render leaves no
-     * file behind.
+     * file behind; cancellation is thrown, as a coroutine's is, rather than
+     * returned as a failure - a Cancel reported as "Couldn't reverse" would be
+     * the phone contradicting the finger.
      */
     suspend fun render(
         context: Context,
@@ -101,6 +124,7 @@ object ReverseRenderer {
             runCatching { partial.delete() }
         }
         runCatching { spill.delete() }
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         result
     }
 
@@ -119,20 +143,30 @@ object ReverseRenderer {
         onProgress: (Float) -> Unit
     ): EncodedSound? {
         val pcm = decodeSound(context, source, inUs, outUs, onProgress) ?: return null
-        val (samples, rate, channels) = pcm
+        val (samples, count, rate, channels) = pcm
         // Frame by frame - a frame being one sample per channel - so the
-        // channels stay with each other.
-        val frames = samples.size / channels
-        val reversed = ShortArray(frames * channels)
-        for (f in 0 until frames) {
-            val src = (frames - 1 - f) * channels
-            val dst = f * channels
-            for (c in 0 until channels) reversed[dst + c] = samples[src + c]
+        // channels stay with each other. In place: the window is the one
+        // large thing the sound stage holds, and a reversed copy beside it
+        // doubled the 35 MB that MAX_MS budgets for.
+        val frames = count / channels
+        var lo = 0
+        var hi = frames - 1
+        while (lo < hi) {
+            val a = lo * channels
+            val b = hi * channels
+            for (c in 0 until channels) {
+                val t = samples[a + c]
+                samples[a + c] = samples[b + c]
+                samples[b + c] = t
+            }
+            lo++
+            hi--
         }
-        return encodeSound(reversed, rate, channels)
+        return encodeSound(samples, frames * channels, rate, channels)
     }
 
-    private data class Pcm(val samples: ShortArray, val sampleRate: Int, val channels: Int)
+    /** [count] samples of [samples] are the sound; the array is allotted ahead and may run longer. */
+    private data class Pcm(val samples: ShortArray, val count: Int, val sampleRate: Int, val channels: Int)
 
     /** The sound between [inUs] and [outUs] as 16-bit PCM, interleaved. Null without a sound track. */
     private suspend fun decodeSound(context: Context, source: Uri, inUs: Long, outUs: Long, onProgress: (Float) -> Unit): Pcm? {
@@ -224,7 +258,9 @@ object ReverseRenderer {
                 }
             }
             if (written == 0) return null
-            return Pcm(out.copyOf(written), rate, channels)
+            // Not trimmed to size: a copy of a three-minute window is a
+            // third of it again in memory for nothing.
+            return Pcm(out, written, rate, channels)
         } finally {
             runCatching { codec?.stop() }
             runCatching { codec?.release() }
@@ -232,7 +268,7 @@ object ReverseRenderer {
         }
     }
 
-    private suspend fun encodeSound(samples: ShortArray, rate: Int, channels: Int): EncodedSound? {
+    private suspend fun encodeSound(samples: ShortArray, count: Int, rate: Int, channels: Int): EncodedSound? {
         val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, rate, channels).apply {
             setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
             setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BITRATE)
@@ -256,7 +292,7 @@ object ReverseRenderer {
                         buf.clear()
                         buf.order(ByteOrder.nativeOrder())
                         val room = (buf.capacity() / 2 / channels) * channels
-                        val n = minOf(room, samples.size - fed)
+                        val n = minOf(room, count - fed)
                         val ptsUs = (fed / channels) * 1_000_000L / rate
                         if (n <= 0) {
                             codec.queueInputBuffer(i, 0, 0, ptsUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
@@ -312,7 +348,7 @@ object ReverseRenderer {
         val extractor = MediaExtractor()
         var decoder: MediaCodec? = null
         var encoder: MediaCodec? = null
-        val spool = FrameSpool(SPOOL_BUDGET_BYTES, spill)
+        val spool = FrameSpool(spoolBudgetBytes, spill)
         try {
             extractor.setDataSource(context, source, null)
             val track = (0 until extractor.trackCount).firstOrNull {
@@ -320,6 +356,7 @@ object ReverseRenderer {
             } ?: error("no video track")
             val format = extractor.getTrackFormat(track)
             val mime = format.getString(MediaFormat.KEY_MIME) ?: error("no video mime")
+            if (isTenBit(format, mime)) error(TEN_BIT)
             extractor.selectTrack(track)
 
             val rotation = if (format.containsKey(KEY_ROTATION)) runCatching { format.getInteger(KEY_ROTATION) }.getOrDefault(0) else 0
@@ -392,6 +429,9 @@ object ReverseRenderer {
                 spool.clear()
                 decodeRun(extractor, decoder, gopStartUs, gopEndUs, inUs, outUs) { image, ptsUs ->
                     if (frameW == 0) {
+                        // Two bytes a sample on the luma plane is a 10-bit picture
+                        // the tags did not announce.
+                        if (image.planes[0].pixelStride != 1) error(TEN_BIT)
                         // Even sides, as encoders require: an odd crop loses its last line.
                         frameW = image.cropRect.width() / 2 * 2
                         frameH = image.cropRect.height() / 2 * 2
@@ -443,6 +483,18 @@ object ReverseRenderer {
             runCatching { encoder?.release() }
             runCatching { extractor.release() }
             spool.close()
+        }
+    }
+
+    /** Whether the track's tags say its samples are more than a byte each. */
+    private fun isTenBit(format: MediaFormat, mime: String): Boolean {
+        val transfer = if (format.containsKey(MediaFormat.KEY_COLOR_TRANSFER)) runCatching { format.getInteger(MediaFormat.KEY_COLOR_TRANSFER) }.getOrDefault(0) else 0
+        if (transfer == COLOR_TRANSFER_ST2084 || transfer == COLOR_TRANSFER_HLG) return true
+        val profile = if (format.containsKey(MediaFormat.KEY_PROFILE)) runCatching { format.getInteger(MediaFormat.KEY_PROFILE) }.getOrDefault(0) else 0
+        return when (mime) {
+            MediaFormat.MIMETYPE_VIDEO_HEVC -> profile in TEN_BIT_HEVC_PROFILES
+            MediaFormat.MIMETYPE_VIDEO_VP9, MediaFormat.MIMETYPE_VIDEO_AV1 -> profile == VP9_AV1_PROFILE_2
+            else -> false
         }
     }
 

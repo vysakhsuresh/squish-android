@@ -689,6 +689,15 @@ class ProjectAutosave(context: Context) {
                 put("sourceInMs", from.sourceInMs)
                 put("sourceOutMs", from.sourceOutMs)
                 put("durationMs", from.durationMs)
+                // The person masks measured on the original, kept for Reverse
+                // again (see Clip.reversed). Written as the clip's own are.
+                from.background?.let { bg ->
+                    put("background", JSONObject().apply {
+                        put("maskFile", bg.maskFile)
+                        put("fill", bg.fill.name)
+                        put("colorArgb", bg.colorArgb)
+                    })
+                }
             })
         }
     }
@@ -913,15 +922,7 @@ class ProjectAutosave(context: Context) {
             stabilizer = json.optJSONArray("stabilizer")?.let { array ->
                 (0 until array.length()).mapNotNull { i -> decodeKeyframe(array.optJSONObject(i)) }
             }.orEmpty().sortedBy { it.atMs },
-            background = json.optJSONObject("background")?.let { b ->
-                b.optString("maskFile").takeIf { it.isNotBlank() }?.let { path ->
-                    BackgroundRemoval(
-                        maskFile = path,
-                        fill = enumOrNull<BackgroundFill>(b.optString("fill")) ?: BackgroundFill.Blur,
-                        colorArgb = b.optInt("colorArgb", 0xFF101828.toInt())
-                    )
-                }
-            },
+            background = json.optJSONObject("background")?.let(::decodeBackground),
             chromaKey = json.optJSONObject("chromaKey")?.let { k ->
                 ChromaKey(
                     keyColorArgb = k.optInt("keyColorArgb", ChromaKey.STANDARD_GREEN),
@@ -967,11 +968,21 @@ class ProjectAutosave(context: Context) {
                     uri = r.optString("uri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse),
                     sourceInMs = r.optLong("sourceInMs"),
                     sourceOutMs = r.optLong("sourceOutMs"),
-                    durationMs = r.optLong("durationMs")
+                    durationMs = r.optLong("durationMs"),
+                    background = r.optJSONObject("background")?.let(::decodeBackground)
                 )
             }
         )
     }
+
+    private fun decodeBackground(b: JSONObject): BackgroundRemoval? =
+        b.optString("maskFile").takeIf { it.isNotBlank() }?.let { path ->
+            BackgroundRemoval(
+                maskFile = path,
+                fill = enumOrNull<BackgroundFill>(b.optString("fill")) ?: BackgroundFill.Blur,
+                colorArgb = b.optInt("colorArgb", 0xFF101828.toInt())
+            )
+        }
 
     private fun decodeKeyframe(json: JSONObject?): Keyframe? {
         if (json == null) return null

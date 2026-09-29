@@ -252,6 +252,20 @@ sealed class SquishError(
         fix = "Move or shorten the overlay after it, or freeze a moment nearer this clip's end."
     )
 
+    /** The frame under the playhead could not be read or made into a still. Not an export: it used to say one had stopped. */
+    class FreezeFailed(val name: String) : SquishError(
+        title = "Couldn't freeze a frame of “$name”",
+        detail = "The frame could not be read from the file, or the still could not be rendered.",
+        fix = "Try another moment of the clip. If no frame of it can be frozen, the phone's decoder cannot read this file."
+    )
+
+    /** The still was made, but the frame it holds was trimmed out of the clip while it was being made. */
+    class FrozenFrameGone(val name: String) : SquishError(
+        title = "That frame is no longer in “$name”",
+        detail = "The clip was trimmed or cut while the freeze was being made, and the frame frozen is not in it any more.",
+        fix = "Put the playhead on the frame to hold and press Freeze again."
+    )
+
     /** A clip too long for a reversed render, whose sound is held whole while it is made. */
     class TooLongToReverse(val name: String, val maxMs: Long) : SquishError(
         title = "“$name” is too long to reverse",
@@ -260,13 +274,17 @@ sealed class SquishError(
         fix = "Cut the clip and reverse the part that needs it."
     )
 
-    /** The reversed render did not finish. */
+    /** The reversed render did not finish. Running out of memory is the one cause worth its own words. */
     class ReverseFailed(val name: String, cause: Throwable? = null) : SquishError(
         title = "Couldn't reverse “$name”",
-        detail = cause?.message?.takeIf { it.isNotBlank() }
-            ?.let { "The render stopped: $it." }
-            ?: "The phone's decoder or encoder stopped part-way through the render.",
-        fix = "Try again, or cut the clip shorter first. The clip is as it was.",
+        detail = when {
+            cause is OutOfMemoryError -> "The phone ran out of memory holding the clip's frames and sound while they were written backwards."
+            else -> cause?.message?.takeIf { it.isNotBlank() }
+                ?.let { "The render stopped: $it." }
+                ?: "The phone's decoder or encoder stopped part-way through the render."
+        },
+        fix = if (cause is OutOfMemoryError) "Cut the clip and reverse the part that needs it, with other apps closed. The clip is as it was."
+        else "Try again, or cut the clip shorter first. The clip is as it was.",
         cause = cause
     )
 

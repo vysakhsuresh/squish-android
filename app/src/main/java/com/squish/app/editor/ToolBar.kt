@@ -228,6 +228,8 @@ fun ToolBar(
     onTool: (Tool) -> Unit,
     modifier: Modifier = Modifier,
     enabled: (Tool) -> Boolean = { true },
+    /** What a tool's button says: its label, unless it is a state whose words change with it (Select more while on). */
+    labelOf: (Tool) -> String = { it.label },
     /** Given, a back chevron leads the row: the way from a clip's tools to level 0. */
     onBack: (() -> Unit)? = null,
     backAccent: Color = SquishColors.TextSecondary
@@ -262,15 +264,16 @@ fun ToolBar(
         }
         tools.forEach { tool ->
             val on = enabled(tool)
+            val label = labelOf(tool)
             ToolItem(
                 icon = tool.icon,
-                label = tool.label,
+                label = label,
                 tint = if (!on) SquishColors.TextMuted.copy(alpha = 0.5f)
                 // Its own colour on every toolbar, overlay's magenta included.
                 else if (tool == Tool.Delete) SquishColors.Danger
                 else accentOf(tool),
                 enabled = on,
-                description = if (tool == Tool.Clip) "Edit the shot under the playhead" else tool.label,
+                description = if (tool == Tool.Clip) "Edit the shot under the playhead" else label,
                 onClick = { onTool(tool) }
             )
         }

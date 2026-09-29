@@ -30,6 +30,9 @@ import com.squish.app.timeline.withClipReordered
 import com.squish.app.timeline.withGapClosed
 import com.squish.app.timeline.withClipRetimed
 import com.squish.app.timeline.replacementNeedsMs
+import com.squish.app.timeline.TimelineState
+import com.squish.app.timeline.carriesSelection
+import com.squish.app.timeline.groupMoveDelta
 import com.squish.app.timeline.withAttributesPasted
 import com.squish.app.timeline.withClipReplaced
 import com.squish.app.timeline.withClipReversed
@@ -38,6 +41,7 @@ import com.squish.app.timeline.withClipsMoved
 import com.squish.app.timeline.withClipsRemoved
 import com.squish.app.timeline.withClipsReordered
 import com.squish.app.timeline.withFrozenFrame
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
@@ -520,9 +524,10 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         val current = _state.value
         val base = current.videoClips.filter { it.layer == 0 }.sortedBy { it.timelineStartMs }
         if (base.none { it.id == clipId }) return
-        // Carried with others selected alongside it, the whole group goes where
-        // it is dropped, in the order it had (withClipsReordered).
-        val group = current.allSelectedIds.takeIf { clipId in it && base.count { c -> c.id in it } > 1 }
+        // Carried as one of the selected (see liftClip), the whole group goes
+        // where it is dropped, in the order it had (withClipsReordered).
+        val group = current.allSelectedIds.takeIf { carriedGroup == clipId && base.count { c -> c.id in it } > 1 }
+        carriedGroup = null
         if (group != null) {
             record("Reorder") { mutateTimeline { it.withClipsReordered(group, clipId, index) } }
             return
@@ -546,16 +551,29 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     fun placeClip(clipId: String, startMs: Long, row: Int) = record("Move clip") {
         val current = _state.value
         val text = current.textOverlays.firstOrNull { it.id == clipId }
-        // One of several selected: they all slide by the same amount and keep
-        // their rows, as a group (withClipsMoved); the lines among them the same.
-        val group = current.allSelectedIds.takeIf { clipId in it && it.size > 1 }
+        // Carried as one of the selected (see liftClip): they all slide by the
+        // same amount and keep their rows, as a group (withClipsMoved); the
+        // lines among them the same.
+        val group = current.allSelectedIds.takeIf { carriedGroup == clipId && it.size > 1 }
+        carriedGroup = null
         if (group != null) {
             val from = text?.startMs ?: (current.videoClips + current.audioClips).firstOrNull { it.id == clipId }?.timelineStartMs
                 ?: return@record
-            val delta = startMs - from
+            val asked = startMs - from
+            if (asked == 0L) return@record
+            // As far as the whole group can go, so it keeps its shape: the
+            // sounds and overlays stop at zero or against a wall on a row
+            // (groupMoveDelta), and a line of words stays inside the picture;
+            // the nearest of those stops is everyone's. The lines used to be
+            // shifted by the full drag while the overlays stopped short, and a
+            // caption aligned under a PiP came away from it.
+            val lines = current.textOverlays.filter { it.id in group }
+            val stops = listOf(current.toTimeline().groupMoveDelta(group, asked)) +
+                lines.map { EditRules.clampedShift(it.startMs, it.endMs, asked, current.trimmedDurationMs) }
+            val delta = stops.minByOrNull { abs(it) } ?: asked
             if (delta == 0L) return@record
             mutateTimeline { it.withClipsMoved(group, delta) }
-            group.filter { id -> _state.value.textOverlays.any { it.id == id } }.forEach { shiftOverlay(it, delta) }
+            lines.forEach { shiftOverlay(it.id, delta) }
             return@record
         }
         if (text == null) {
@@ -583,6 +601,30 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             )
         }
     }
+
+    /**
+     * A clip taken hold of on the strip, before it is carried. Selected, as a
+     * tap would select it - joining the set while Select more is on, never
+     * leaving it (withSelectionJoined) - and, when it was one of several
+     * already selected, the carry that follows takes them all
+     * ([reorderClip], [placeClip]). It went through the strip's tap, which
+     * with Select more on *toggled* the lifted clip out of the set, so the
+     * group could only ever be carried by a clip that was not in it.
+     */
+    fun liftClip(clipId: String) {
+        val current = _state.value
+        carriedGroup = clipId.takeIf { current.toTimeline().carriesSelection(it) }
+        if (current.selectingMore) host.joinSelection(clipId) else host.selectClip(clipId)
+    }
+
+    /**
+     * The clip lifted last, when the carry it began takes the selection with
+     * it; null once the carry lands or when the clip was lifted alone. Decided
+     * at the lift, before the lift changes the selection: a clip lifted from
+     * outside the set joins it on the way and would otherwise have looked like
+     * one of the group at the drop.
+     */
+    private var carriedGroup: String? = null
 
     /**
      * A trim handle dragged: [clipId]'s head or tail to [edgeMs] on the timeline,
@@ -902,10 +944,10 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         mutateTimeline { t -> t.copy(clips = t.clips.map { if (it.id == clipId && it.kind == ClipKind.Video) it.withMirrorToggled() else it }) }
     }
 
-    /** Whether Freeze would do anything: the playhead is on this footage. */
+    /** Whether Freeze would do anything: the playhead is on footage, not on a still of either kind. */
     fun canFreeze(state: EditorUiState, clipId: String): Boolean {
         val clip = state.videoClips.firstOrNull { it.id == clipId } ?: return false
-        return !clip.isStillPicture && state.playheadMs >= clip.timelineStartMs && state.playheadMs <= clip.timelineEndMs
+        return clip.isFootage && state.playheadMs >= clip.timelineStartMs && state.playheadMs <= clip.timelineEndMs
     }
 
     /**
@@ -914,6 +956,20 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * (withFrozenFrame), selected, as one step. A still takes a moment to
      * render; the "Preparing" line says so meanwhile. On an overlay row with no
      * room for the rest of the shot to move along, it says so instead.
+     *
+     * The freeze is of a *frame*, and it lands where that frame is when the
+     * still is ready: a trim or a move made while it rendered puts the frame
+     * at another moment of the strip, and the still goes in there. Trimmed
+     * out altogether, the still is thrown away and it says so - it used to be
+     * put in at the moment Freeze was pressed, which by then could be off the
+     * clip, so nothing landed and an overlay was told there was no room.
+     *
+     * Landed beneath whatever gesture is under way (recordLate), like every
+     * result that arrives from the background; through the ordinary path a
+     * slider being dragged as it landed became two steps either side of it.
+     * The still is selected only while the frozen shot still is: the freeze
+     * was the last thing pressed on it, and the next tap should work on the
+     * result - but a selection made meanwhile is someone else's.
      */
     fun freezeFrame(clipId: String) {
         val current = _state.value
@@ -929,7 +985,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 val made = StillClips.freezeFrame(app, uri, sourceMs)
                 val fileMs = made?.let { ThumbnailExtractor.probe(app, it).durationMs } ?: 0L
                 if (made == null || fileMs <= 0L) {
-                    _state.update { it.copy(failure = SquishError.Unknown(null)) }
+                    _state.update { it.copy(failure = SquishError.FreezeFailed(clip.label)) }
                     return@launch
                 }
                 val still = Clip(
@@ -941,31 +997,55 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     timelineStartMs = at,
                     sourceDurationMs = fileMs
                 )
-                record("Freeze frame") { mutateTimeline { it.withFrozenFrame(clipId, at, still) } }
-                val after = _state.value
-                if (after.videoClips.none { it.id == still.id } && after.videoClips.any { it.id == clipId && it.isOverlay }) {
-                    _state.update { it.copy(failure = SquishError.NoRoomOnRow()) }
+                // Where the frozen frame is now, on the clip as it is now.
+                val now = _state.value.videoClips.firstOrNull { it.id == clipId }
+                val landAt = now?.takeIf { it.uri == clip.uri && sourceMs >= it.sourceInMs && sourceMs < it.sourceOutMs }
+                    ?.let { it.timelineAtSource(sourceMs).coerceIn(it.timelineStartMs, it.timelineEndMs) }
+                if (landAt == null) {
+                    runCatching { File(made.path ?: "").delete() }
+                    _state.update { it.copy(failure = SquishError.FrozenFrameGone(clip.label)) }
+                    return@launch
                 }
-                recomputeEstimate()
+                recordLate("Freeze frame", edit = { snapshot ->
+                    snapshot.withTimeline { t ->
+                        val landed = t.withFrozenFrame(clipId, landAt, still.copy(timelineStartMs = landAt))
+                        if (landed.selectedClipId == still.id && t.selectedClipId != clipId) landed.copy(selectedClipId = t.selectedClipId)
+                        else landed
+                    }
+                })
+                val after = _state.value
+                if (after.videoClips.none { it.id == still.id }) {
+                    runCatching { File(made.path ?: "").delete() }
+                    if (after.videoClips.any { it.id == clipId && it.isOverlay }) {
+                        _state.update { it.copy(failure = SquishError.NoRoomOnRow()) }
+                    }
+                }
             } finally {
                 _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
             }
         }
     }
 
-    /** Whether Reverse can be pressed: footage, and no render of it under way. */
+    /** Whether Reverse can be pressed: footage (a still played backwards is the same still), and no render of it under way. */
     fun canReverse(state: EditorUiState, clipId: String): Boolean {
         val clip = state.videoClips.firstOrNull { it.id == clipId } ?: return false
-        return !clip.isStillPicture && clipId !in state.reversing
+        return clip.isFootage && clipId !in state.reversing
     }
 
     /**
      * The clip's footage backwards. A clip already playing a reversed render
      * goes back to its original at once (Clip.unreversed). Otherwise the
      * window is rendered backwards in the background (ReverseRenderer), a card
-     * saying how far along it is, and lands as one step when it is done - on
-     * the clip as it is then, so a trim made meanwhile keeps its frames. Too
-     * long, or failed, it says so and the clip is as it was.
+     * saying how far along it is with a Cancel, and lands as one step when it
+     * is done - beneath whatever gesture is under way (recordLate), like every
+     * result from the background - on the clip as it is then, so a trim made
+     * meanwhile keeps its frames. Cut in two meanwhile, both halves are on
+     * the footage the card said was being reversed, so both get the render:
+     * a piece is any clip new since the render began, on the same file,
+     * inside the rendered window and not reversed by other means (a copy
+     * made meanwhile comes out reversed too, which is what a copy of a clip
+     * being reversed should be). Too long, or failed, it says so and the clip
+     * is as it was; cancelled, nothing is said.
      */
     fun reverseClip(clipId: String) {
         val current = _state.value
@@ -987,8 +1067,9 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         val uri = clip.uri ?: current.sourceUri ?: return
         val inMs = clip.sourceInMs
         val outMs = clip.sourceOutMs
+        val before = current.videoClips.map { it.id }.toSet()
         _state.update { it.copy(reversing = it.reversing + (clipId to 0f)) }
-        viewModelScope.launch {
+        reverseJobs[clipId] = viewModelScope.launch {
             try {
                 val dir = File(app.filesDir, REVERSED_DIR).apply { mkdirs() }
                 val file = File(dir, "reverse_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.mp4")
@@ -996,28 +1077,56 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     _state.update { s -> if (clipId in s.reversing) s.copy(reversing = s.reversing + (clipId to fraction)) else s }
                 }
                 result.onSuccess { rendered ->
-                    record("Reverse") {
-                        mutateTimeline { t ->
-                            // Only the clip still on that footage: replaced or
-                            // reversed by other means meanwhile, it is left alone.
-                            val now = t.clips.firstOrNull { it.id == clipId }
-                            if (now == null || now.uri != uri || now.isReversed) t
-                            else t.withClipReversed(clipId, rendered.uri, rendered.durationMs, inMs, outMs)
+                    recordLate("Reverse", edit = { snapshot ->
+                        snapshot.withTimeline { t ->
+                            // The clip if it is still on that footage - replaced or
+                            // reversed by other means meanwhile, it is left alone -
+                            // and the pieces cut or copied from it since.
+                            val landing = t.clips.filter { c ->
+                                c.kind == ClipKind.Video && c.uri == clip.uri && !c.isReversed &&
+                                    (c.id == clipId || (c.id !in before && c.sourceInMs >= inMs && c.sourceOutMs <= outMs))
+                            }
+                            landing.fold(t) { acc, c -> acc.withClipReversed(c.id, rendered.uri, rendered.durationMs, inMs, outMs) }
                         }
-                    }
+                    })
                     if (_state.value.videoClips.none { it.uri == rendered.uri }) runCatching { file.delete() }
                     else {
                         checkDecodable(rendered.uri)
                         ensureProxies(listOf(rendered.uri))
                     }
-                    recomputeEstimate()
                 }.onFailure { cause ->
                     _state.update { it.copy(failure = SquishError.ReverseFailed(clip.label, cause)) }
                 }
             } finally {
+                reverseJobs.remove(clipId)
                 _state.update { it.copy(reversing = it.reversing - clipId) }
             }
         }
+    }
+
+    /** The card's Cancel: the render stops, its part-file goes, and the clip is as it was. Nothing is said. */
+    fun cancelReverse(clipId: String) {
+        reverseJobs[clipId]?.cancel()
+    }
+
+    /** The renders under way, by clip, so one can be cancelled from its card. */
+    private val reverseJobs = HashMap<String, Job>()
+
+    /**
+     * A timeline operation applied to a recorded state rather than the screen,
+     * for a result landing from the background (recordLate): the same fitting
+     * of fades and effects [mutateTimeline] does, on the snapshot's clips.
+     */
+    private fun EditSnapshot.withTimeline(block: (TimelineState) -> TimelineState): EditSnapshot {
+        val timeline = TimelineState(clips = videoClips + audioClips, selectedClipId = selectedClipId)
+        val next = block(timeline).let { t -> t.copy(clips = t.clips.map(AudioRules::withFittedFades)) }
+        val video = next.clips.filter { it.kind == ClipKind.Video }
+        return copy(
+            videoClips = video,
+            audioClips = next.clips.filter { it.kind == ClipKind.Audio },
+            selectedClipId = next.selectedClipId,
+            effects = effects.fittedTo(video.maxOfOrNull { it.timelineEndMs } ?: 0L)
+        )
     }
 
     // ---- Replace ------------------------------------------------------------------
@@ -1029,7 +1138,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * the window and goes straight in.
      */
     fun beginReplace(clipId: String, uri: Uri) {
-        val clip = _state.value.videoClips.firstOrNull { it.id == clipId && !it.isStillPicture } ?: return
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId && it.isFootage } ?: return
         val needed = clip.replacementNeedsMs()
         val name = displayNameOf(uri) ?: "Clip"
         viewModelScope.launch {
@@ -1060,8 +1169,9 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             }
             val request = ReplaceRequest(clipId, uri, name, meta.durationMs, needed)
             // Where the old clip started in its file, if the new one has that much: the
-            // likeliest match for a retake.
-            _state.update { it.copy(replacing = request.copy(inPointMs = clip.sourceInMs.coerceIn(0L, request.latestInMs))) }
+            // likeliest match for a retake, and what the sheet's Reset goes back to.
+            val opensAt = clip.sourceInMs.coerceIn(0L, request.latestInMs)
+            _state.update { it.copy(replacing = request.copy(inPointMs = opensAt, defaultInMs = opensAt)) }
         }
     }
 

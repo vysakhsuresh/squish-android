@@ -182,13 +182,13 @@ fun RatioPanel(state: EditorUiState, viewModel: EditorViewModel) {
     }
 }
 
-/** The Rotate chip of Frame: the whole edit, a quarter turn at a time. */
+/** The Rotate all chip of Frame: the whole edit, a quarter turn at a time. A clip alone is its own Rotate. */
 @Composable
 fun RotatePanel(state: EditorUiState, viewModel: EditorViewModel) {
     PanelSurface(accent = SquishColors.Violet) {
         PanelHeading(
-            "Rotate",
-            "Turns the whole edit",
+            "Rotate all",
+            "Turns the whole edit; Rotate on a clip's toolbar turns that clip alone",
             icon = Icons.AutoMirrored.Filled.RotateRight,
             accent = SquishColors.Violet
         )

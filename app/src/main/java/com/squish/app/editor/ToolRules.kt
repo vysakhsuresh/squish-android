@@ -56,8 +56,12 @@ enum class Tool(val label: String, val sheet: Boolean) {
     Strength("Strength", true),
     /** A line read aloud by the phone into a sound clip at its start. Acts at once. */
     Speak("Read aloud", false),
-    /** A sticker mirrored to face the other way. Acts at once. */
-    Flip("Flip", false),
+    /**
+     * A sticker mirrored to face the other way. Acts at once. Named as the
+     * clip's [Mirror] is, under the same glyph: one concept, one name
+     * (section 2, item 8) - it was "Flip" beside a "Mirror" that did the same.
+     */
+    Flip("Mirror", false),
 
     // B11: what is done to a clip's footage. Each acts at once; Replace opens
     // the picker, and the sheet with the in-point comes up on the pick.
@@ -121,48 +125,72 @@ val LEVEL_ZERO: List<Tool> = listOf(
  * more, to add to or leave the set, and Delete - whatever kinds they are: a
  * shot's Speed on a set that holds a song would do something to one of them
  * and nothing to the rest, and a button that does that is worse than none.
+ *
+ * Delete is the fifth tool on every row (or the last of a shorter one), where
+ * section 2 and CapCut put it: on the first screenful, in the same place
+ * whatever is selected. It was last, out of a slip's reach - and, once seven
+ * tools had joined a shot's row, three screens of scrolling from Split.
+ *
+ * A shot with no footage in it - a photo, a blank or a freeze rendered into
+ * a file ([footage] false) - is not offered the tools that need frames to
+ * differ ([FOOTAGE_TOOLS]): a freeze of a freeze, a still rendered backwards
+ * for a minute, a stabilizer measuring no shake.
  */
-fun toolsFor(kind: SelectionKind, canTransition: Boolean = false, multi: Boolean = false): List<Tool> = when {
-    kind == SelectionKind.None -> LEVEL_ZERO
-    multi -> listOf(Tool.SelectMore, Tool.Delete)
-    kind == SelectionKind.MainVideo -> listOfNotNull(
-        Tool.Split, Tool.Speed, Tool.Volume, Tool.Animation, Tool.Placement,
-        Tool.Transition.takeIf { canTransition },
-        Tool.Rotate, Tool.Mirror,
-        Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Voice, Tool.ExtractAudio,
-        Tool.Freeze, Tool.Reverse, Tool.Replace, Tool.CopyAttributes, Tool.PasteAttributes,
-        Tool.Duplicate, Tool.SelectMore, Tool.ToOverlay, Tool.Delete
-    )
-    kind == SelectionKind.Overlay -> listOf(
-        Tool.Split, Tool.Speed, Tool.Volume, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement,
-        Tool.Rotate, Tool.Mirror,
-        Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Voice, Tool.ExtractAudio,
-        Tool.Freeze, Tool.Reverse, Tool.Replace, Tool.CopyAttributes, Tool.PasteAttributes,
-        Tool.Duplicate, Tool.SelectMore, Tool.ToMain, Tool.Delete
-    )
-    // A photo has no footage to freeze, reverse or swap for other footage.
-    kind == SelectionKind.PhotoOverlay -> listOf(
-        Tool.Split, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement, Tool.Rotate, Tool.Mirror,
-        Tool.CopyAttributes, Tool.PasteAttributes, Tool.Duplicate, Tool.SelectMore, Tool.ToMain, Tool.Delete
-    )
-    // CapCut's order: the level, then the fades, then everything about time.
-    kind == SelectionKind.Audio -> listOf(
-        Tool.Split, Tool.Volume, Tool.Fade, Tool.Speed, Tool.Beats, Tool.Sync, Tool.Voice,
-        Tool.CopyAttributes, Tool.PasteAttributes, Tool.Duplicate, Tool.SelectMore, Tool.Delete
-    )
-    kind == SelectionKind.Text -> listOf(
-        Tool.Edit, Tool.Style, Tool.Animation, Tool.Opacity, Tool.Speak, Tool.Track, Tool.Split,
-        Tool.Duplicate, Tool.SelectMore, Tool.Delete
-    )
-    kind == SelectionKind.Sticker -> listOf(
-        Tool.Placement, Tool.Animation, Tool.Opacity, Tool.Flip, Tool.Track, Tool.Split,
-        Tool.Duplicate, Tool.SelectMore, Tool.Delete
-    )
-    else -> listOf(Tool.Strength, Tool.Split, Tool.Duplicate, Tool.SelectMore, Tool.Delete)
+fun toolsFor(kind: SelectionKind, canTransition: Boolean = false, multi: Boolean = false, footage: Boolean = true): List<Tool> {
+    val row: List<Tool> = when {
+        kind == SelectionKind.None -> LEVEL_ZERO
+        multi -> listOf(Tool.SelectMore, Tool.Delete)
+        kind == SelectionKind.MainVideo -> listOfNotNull(
+            Tool.Split, Tool.Speed, Tool.Volume, Tool.Animation, Tool.Delete, Tool.Placement,
+            Tool.Transition.takeIf { canTransition },
+            Tool.Rotate, Tool.Mirror,
+            Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Voice, Tool.ExtractAudio,
+            Tool.Freeze, Tool.Reverse, Tool.Replace, Tool.CopyAttributes, Tool.PasteAttributes,
+            Tool.Duplicate, Tool.SelectMore, Tool.ToOverlay
+        )
+        kind == SelectionKind.Overlay -> listOf(
+            Tool.Split, Tool.Speed, Tool.Volume, Tool.Opacity, Tool.Delete, Tool.Layer, Tool.Animation, Tool.Placement,
+            Tool.Rotate, Tool.Mirror,
+            Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Voice, Tool.ExtractAudio,
+            Tool.Freeze, Tool.Reverse, Tool.Replace, Tool.CopyAttributes, Tool.PasteAttributes,
+            Tool.Duplicate, Tool.SelectMore, Tool.ToMain
+        )
+        // A photo has no footage to freeze, reverse or swap for other footage.
+        kind == SelectionKind.PhotoOverlay -> listOf(
+            Tool.Split, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Delete, Tool.Placement, Tool.Rotate, Tool.Mirror,
+            Tool.CopyAttributes, Tool.PasteAttributes, Tool.Duplicate, Tool.SelectMore, Tool.ToMain
+        )
+        // CapCut's order: the level, then the fades, then everything about time.
+        kind == SelectionKind.Audio -> listOf(
+            Tool.Split, Tool.Volume, Tool.Fade, Tool.Speed, Tool.Delete, Tool.Beats, Tool.Sync, Tool.Voice,
+            Tool.CopyAttributes, Tool.PasteAttributes, Tool.Duplicate, Tool.SelectMore
+        )
+        kind == SelectionKind.Text -> listOf(
+            Tool.Edit, Tool.Style, Tool.Animation, Tool.Opacity, Tool.Delete, Tool.Speak, Tool.Track, Tool.Split,
+            Tool.Duplicate, Tool.SelectMore
+        )
+        kind == SelectionKind.Sticker -> listOf(
+            Tool.Placement, Tool.Animation, Tool.Opacity, Tool.Flip, Tool.Delete, Tool.Track, Tool.Split,
+            Tool.Duplicate, Tool.SelectMore
+        )
+        else -> listOf(Tool.Strength, Tool.Split, Tool.Duplicate, Tool.SelectMore, Tool.Delete)
+    }
+    return if (footage) row else row.filterNot { it in NEEDS_MOTION }
 }
 
-/** The tools that act on footage alone - never on a photo, a sound or words. */
+/** Where Delete sits on every clip's row (see [toolsFor]), counted from one. */
+const val DELETE_POSITION = 5
+
+/** The tools that act on a clip's footage alone - never on a photo, a sound or words. */
 val FOOTAGE_TOOLS: Set<Tool> = setOf(Tool.Freeze, Tool.Reverse, Tool.Replace)
+
+/**
+ * The tools that need one frame to differ from the next, so a still rendered
+ * into a video file is not offered them: [FOOTAGE_TOOLS], and the two that
+ * measure motion. Track is on this list and still on a caption's row - a line
+ * of words follows a subject in the footage under it, not in itself.
+ */
+val NEEDS_MOTION: Set<Tool> = FOOTAGE_TOOLS + Tool.Stabilize + Tool.Track
 
 /**
  * Whether an open sheet stays open when the selection changes under it.
@@ -173,8 +201,8 @@ val FOOTAGE_TOOLS: Set<Tool> = setOf(Tool.Freeze, Tool.Reverse, Tool.Replace)
  * while the new selection has that tool too (Speed from one shot to the next),
  * and closes when it does not - Speed has nothing to say about a caption.
  */
-fun sheetSurvives(tool: Tool, kind: SelectionKind, canTransition: Boolean, multi: Boolean = false): Boolean =
-    tool.levelZero || tool in toolsFor(kind, canTransition, multi)
+fun sheetSurvives(tool: Tool, kind: SelectionKind, canTransition: Boolean, multi: Boolean = false, footage: Boolean = true): Boolean =
+    tool.levelZero || tool in toolsFor(kind, canTransition, multi, footage)
 
 /** What system back does next. */
 enum class BackStep { ExitFullscreen, CloseSheet, Deselect, Leave }

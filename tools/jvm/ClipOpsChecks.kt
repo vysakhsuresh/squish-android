@@ -1,10 +1,15 @@
 import android.net.Uri
 import com.squish.app.media.ExportPlan
+import com.squish.app.media.video.MotionTrack
+import com.squish.app.media.video.TrackSample
+import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
 import com.squish.app.timeline.MIN_CLIP_MS
+import com.squish.app.timeline.Mask
+import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.SpeedPoint
 import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.TimelineState
@@ -12,6 +17,9 @@ import com.squish.app.timeline.Transform
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
 import com.squish.app.timeline.VoiceEffect
+import com.squish.app.timeline.carriesSelection
+import com.squish.app.timeline.groupMoveDelta
+import com.squish.app.timeline.isRenderedStill
 import com.squish.app.timeline.mirrored
 import com.squish.app.timeline.replacementNeedsMs
 import com.squish.app.timeline.turnedAspect
@@ -23,6 +31,7 @@ import com.squish.app.timeline.withClipsMoved
 import com.squish.app.timeline.withClipsRemoved
 import com.squish.app.timeline.withClipsReordered
 import com.squish.app.timeline.withFrozenFrame
+import com.squish.app.timeline.withSelectionJoined
 import com.squish.app.timeline.withSelectionToggled
 import kotlin.math.abs
 import kotlin.system.exitProcess
@@ -275,10 +284,25 @@ fun main() {
         butted(front, "carry two to the front")
         val toEnd = two.withClipsReordered(setOf("b", "d"), anchorId = "b", index = 2)
         check(toEnd.main() == listOf("a", "c", "b", "d"), "carry two to the end: ${toEnd.main()}")
-        // The anchor lands where it is dropped: d dropped at index 1 among {a, c} puts b before it.
+        // The anchor lands where it is dropped. The slot is counted among the
+        // track as drawn with d lifted - a, b, c - so slot 1 is between a and
+        // b: the group goes in after a, b ahead of d as it was. It used to
+        // subtract b from the slot and land the group at the front.
         val byD = two.withClipsReordered(setOf("b", "d"), anchorId = "d", index = 1)
-        check(byD.main() == listOf("b", "d", "a", "c") || byD.main() == listOf("a", "b", "d", "c"), "carry by d: ${byD.main()}")
-        check(byD.main().indexOf("d") == byD.main().indexOf("b") + 1, "the group came apart: ${byD.main()}")
+        check(byD.main() == listOf("a", "b", "d", "c"), "carry by d to slot 1: ${byD.main()}")
+        butted(byD, "carry by d")
+        // Slot 2 (between b and c) is the same place among the shots not moving; slot 3 is the end.
+        check(two.withClipsReordered(setOf("b", "d"), "d", 2).main() == listOf("a", "b", "d", "c"), "carry by d to slot 2: ${two.withClipsReordered(setOf("b", "d"), "d", 2).main()}")
+        check(two.withClipsReordered(setOf("b", "d"), "d", 3).main() == listOf("a", "c", "b", "d"), "carry by d to the end: ${two.withClipsReordered(setOf("b", "d"), "d", 3).main()}")
+        check(two.withClipsReordered(setOf("b", "d"), "d", 0).main() == listOf("b", "d", "a", "c"), "carry by d to the front: ${two.withClipsReordered(setOf("b", "d"), "d", 0).main()}")
+        // Dropped back in its own slot, the group still gathers round the
+        // anchor: b and d were apart, and a carry of the two makes them one.
+        check(two.withClipsReordered(setOf("b", "d"), "b", 1).main() == listOf("a", "b", "d", "c"), "a group dropped in its own slot: ${two.withClipsReordered(setOf("b", "d"), "b", 1).main()}")
+        // Three of four by the middle one to the end (slot 3 of a, c, d drawn): d first, then the three as they were.
+        val three = TimelineState(clips = listOf(a, b, c, d), selectedClipId = "a", selectedIds = setOf("b", "c"))
+        check(three.withClipsReordered(setOf("a", "b", "c"), "b", 3).main() == listOf("d", "a", "b", "c"), "three by b past d: ${three.withClipsReordered(setOf("a", "b", "c"), "b", 3).main()}")
+        // And the same three dropped in b's own slot (1): already gathered, nothing moves.
+        check(three.withClipsReordered(setOf("a", "b", "c"), "b", 1) == three, "a gathered group dropped in its own slot moved")
         // One alone is an ordinary reorder.
         check(one.withClipsReordered(setOf("b"), "b", 3).main() == listOf("a", "c", "d", "b"), "one alone: ${one.withClipsReordered(setOf("b"), "b", 3).main()}")
 
@@ -307,6 +331,90 @@ fun main() {
         check(past.byId("o1").timelineStartMs == 12_000L && past.byId("s1").timelineStartMs == 11_000L, "slide past a wall: ${past.byId("o1").timelineStartMs}")
         // Main-track shots are not slid; words are the editor's.
         check(state.withClipsMoved(setOf("base"), 1_000) == state, "a main-track shot was slid")
+        // The editor asks how far the group went, to move the lines of words by
+        // the same: the whole way, the floor, the wall, and the drag itself when
+        // nothing in the set is a sound or an overlay (words alone).
+        check(state.groupMoveDelta(group, 1_500) == 1_500L, "delta of a free slide")
+        check(state.groupMoveDelta(group, -5_000) == -1_000L, "delta to the floor: ${state.groupMoveDelta(group, -5_000)}")
+        check(state.groupMoveDelta(group, 5_000) == 4_000L, "delta into a wall: ${state.groupMoveDelta(group, 5_000)}")
+        check(state.groupMoveDelta(setOf("line-1", "line-2"), 7_000) == 7_000L, "delta of words alone")
+        check(state.withClipsMoved(group, 5_000).byId("o1").timelineStartMs == 2_000L + state.groupMoveDelta(group, 5_000), "the move and its delta disagree")
+    }
+
+    // --- Who carries the set: a lift on one of several selected, and only then. -----
+    run {
+        val a = video("a", 3_000)
+        val b = video("b", 3_000, start = 3_000)
+        val c = video("c", 3_000, start = 6_000)
+        val two = TimelineState(clips = listOf(a, b, c), selectedClipId = "a", selectedIds = setOf("b"))
+        check(two.carriesSelection("a") && two.carriesSelection("b"), "a lift on one of the set does not carry it")
+        check(!two.carriesSelection("c"), "a lift on a clip outside the set carries the set")
+        check(!TimelineState(clips = listOf(a, b, c), selectedClipId = "a").carriesSelection("a"), "one selected alone carries a group")
+        // Lifted or tapped on the picture: joins and leads, never leaves.
+        val joined = two.withSelectionJoined("c")
+        check(joined.allSelectedIds == setOf("a", "b", "c") && joined.selectedClipId == "c", "join from outside: ${joined.selectedClipId} + ${joined.selectedIds}")
+        val led = two.withSelectionJoined("b")
+        check(led.allSelectedIds == setOf("a", "b") && led.selectedClipId == "b", "join from inside: ${led.selectedClipId} + ${led.selectedIds}")
+        check(led.withSelectionJoined("b") == led, "joining twice changed something")
+        // The tap on the strip still toggles out.
+        check(two.withSelectionToggled("b").allSelectedIds == setOf("a"), "a strip tap no longer leaves the set")
+    }
+
+    // --- What was measured on the footage, through Reverse, Replace, Freeze and Copy. ---
+    run {
+        val shake = listOf(Keyframe(2_000, Transform(offsetXFraction = 0.01f), KeyframeEasing.Linear), Keyframe(9_000, Transform(offsetXFraction = -0.02f), KeyframeEasing.Linear))
+        val path = MotionTrack(listOf(TrackSample(2_000, 0.2f, 0.3f), TrackSample(10_000, 0.8f, 0.3f)))
+        val masked = Mask(shape = MaskShape.Ellipse, track = path)
+        val bg = BackgroundRemoval(maskFile = "/data/segments/a.bin")
+        val a = video("a", 8_000, srcIn = 2_000).copy(stabilizer = shake, mask = masked, background = bg)
+        val rendered = Uri.parse("file:///data/reversed/r.mp4")
+        val rev = a.reversed(rendered, 8_000)
+        // The correction measured on the original's frame at 9 s is at the
+        // render's 1 s, since the render's t is the original's 10 s - t, and
+        // the render's own clock is what transformAt samples it with.
+        check(rev.stabilizer.map { it.atMs } == listOf(1_000L, 8_000L), "reverse: the stabilizer's keys are at ${rev.stabilizer.map { it.atMs }}")
+        check(abs(rev.transformAt(0).offsetXFraction - (-0.02f)) < 1e-4f, "reverse: the first frame's correction is ${rev.transformAt(0).offsetXFraction}, not the original's last")
+        check(abs(a.transformAt(a.durationMs - 1).offsetXFraction - rev.transformAt(0).offsetXFraction) < 1e-3f, "reverse: the last frame's correction did not become the first's")
+        // The track follows the same subject: at the render's 0 (the original's 10 s) it is at x 0.8.
+        val sample = rev.mask?.track?.sampleAt(0L)
+        check(sample != null && abs(sample.xFraction - 0.8f) < 1e-4f, "reverse: the track at the render's start is ${sample?.xFraction}")
+        check(rev.mask?.track?.sampleAt(8_000L)?.xFraction?.let { abs(it - 0.2f) < 1e-4f } == true, "reverse: the track at the render's end")
+        // The person masks cannot be re-keyed: off, and kept for the way back.
+        check(rev.background == null && rev.reversedFrom?.background == bg, "reverse: the person masks were kept on the render, or lost")
+        val back = rev.unreversed()
+        check(back.stabilizer == shake && back.mask == masked && back.background == bg, "unreverse did not put the analyses back: ${back.stabilizer.map { it.atMs }}")
+        // Trimmed while reversed, then put back: the keys are still on the original's clock.
+        check(rev.copy(sourceInMs = 1_000, sourceOutMs = 5_000).unreversed().stabilizer == shake, "unreverse after a trim moved the stabilizer")
+        // A clip with none of them reverses to none of them.
+        check(video("plain", 8_000).reversed(rendered, 8_000).let { it.stabilizer.isEmpty() && it.mask == null && it.background == null }, "reverse invented an analysis")
+
+        // Replace keeps the mask's shape and drops its path; Copy carries the shape alone.
+        val replaced = TimelineState(clips = listOf(a)).withClipReplaced("a", Uri.parse("content://new"), 20_000, 0, "new").byId("a")
+        check(replaced.mask?.track == null && replaced.mask?.shape == MaskShape.Ellipse, "replace kept the old footage's track")
+        check(a.attributes.mask?.track == null && a.attributes.mask?.shape == MaskShape.Ellipse, "copied attributes carry a track")
+        // A freeze at the original's 6 s holds the mask where the track had it then (x 0.5 -> 0 in the shader's -1..1).
+        val frozen = TimelineState(clips = listOf(a)).withFrozenFrame("a", 4_000, still).byId(still.id)
+        check(frozen.mask?.track == null && abs((frozen.mask?.centerXFraction ?: 9f) - 0f) < 1e-3f, "freeze: the still's mask is ${frozen.mask}")
+
+        // Copied from a sound, pasted on a picture: the sound of it and nothing else.
+        val song = audio("song", 8_000).copy(volume = 0.3f, fadeInMs = 400, voice = VoiceEffect.Robot)
+        val pip = video("pip", 4_000, layer = 1, keys = listOf(Keyframe(0, Transform(scale = 0.4f)), Keyframe(4_000, Transform(scale = 0.5f))))
+            .copy(scale = 0.4f, offsetXFraction = 0.5f, mask = Mask(), mirrored = true, quarterTurns = 1)
+        val p = TimelineState(clips = listOf(video("base", 10_000), song, pip)).withAttributesPasted("pip", song.attributes).byId("pip")
+        check(p.volume == 0.3f && p.fadeInMs == 400L && p.voice == VoiceEffect.Robot, "paste from a sound: the sound was not carried")
+        check(p.keyframes == pip.keyframes && p.offsetXFraction == 0.5f && p.mask == Mask() && p.mirrored && p.quarterTurns == 1,
+            "paste from a sound reset the picture: keys ${p.keyframes.size}, x ${p.offsetXFraction}, mask ${p.mask}, mirror ${p.mirrored}, turns ${p.quarterTurns}")
+    }
+
+    // --- A still rendered into a file is not footage. ------------------------------------
+    run {
+        check(isRenderedStill("file:///data/user/0/com.squish.app/files/stills/freeze_1_ab.mp4"), "a freeze file is not a rendered still")
+        check(isRenderedStill("file:///data/user/0/com.squish.app/files/stills/photo_1_ab.mp4"), "a photo file is not a rendered still")
+        check(!isRenderedStill("file:///data/user/0/com.squish.app/files/stills/overlay_1.png"), "a photo overlay is a rendered still")
+        check(!isRenderedStill("file:///data/user/0/com.squish.app/files/reversed/reverse_1.mp4"), "a reversed render is a rendered still")
+        check(!isRenderedStill("content://media/external/video/media/12"), "a gallery file is a rendered still")
+        check(video("a", 1_000).isFootage && !still.isFootage && still.isRenderedStill, "footage and a still are confused")
+        check(!audio("s", 1_000).isFootage, "a sound is footage")
     }
 
     println("clip ops: freeze, replace, reverse, mirror and turn, attributes, several at once")

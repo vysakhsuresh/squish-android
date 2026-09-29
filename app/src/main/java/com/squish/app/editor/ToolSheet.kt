@@ -179,7 +179,9 @@ fun EditorToolSheet(
         // button to look for Robot.
         Tool.Sound -> listOf("Music", "Mic & camera", "Sync")
         Tool.Looks -> listOf("Filters", "Adjust", "Templates")
-        Tool.Frame -> listOf("Ratio", "Rotate")
+        // "Rotate all": the whole edit turns here, and the clip toolbar's Rotate
+        // turns one clip - the two read as the same tool in two places.
+        Tool.Frame -> listOf("Ratio", "Rotate all")
         Tool.Cutout -> listOf("Background", "Chroma key")
         // As CapCut lays a line out: the keyboard first, then how it looks,
         // what is behind it and how it moves, all in the one sheet over the
@@ -262,8 +264,9 @@ fun EditorToolSheet(
         Tool.Voice -> clip?.let { c -> { viewModel.audio.setClipVoice(c.id, com.squish.app.timeline.VoiceEffect.None) } }
         Tool.Style -> item?.let { i -> { viewModel.text.restyleCaption(i.id, { it.withDefaultStyle() }) } }
         Tool.Strength -> effect?.let { e -> { viewModel.clips.changeEffect(e.id) { it.copy(intensity = DEFAULT_STRENGTH) } } }
-        // The start of the new file: where a retake usually begins.
-        Tool.Replace -> state.replacing?.let { { viewModel.clips.setReplaceInPoint(0L) } }
+        // Where the sheet opened - the old clip's own in-point - as every sheet's
+        // Reset is the value it opened with. It went to the start of the file.
+        Tool.Replace -> state.replacing?.let { r -> { viewModel.clips.setReplaceInPoint(r.defaultInMs) } }
         else -> null
     }
     // Replace's Done is the replacement itself: the sheet is the question

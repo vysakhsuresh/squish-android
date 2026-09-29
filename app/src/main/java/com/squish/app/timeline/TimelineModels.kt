@@ -1,6 +1,7 @@
 package com.squish.app.timeline
 
 import android.net.Uri
+import com.squish.app.media.video.MotionTrack
 import java.util.UUID
 import kotlin.math.abs
 
@@ -156,6 +157,17 @@ data class Clip(
 
     /** A photo kept as a picture on an overlay row (see [isStillPicture]): drawn, never decoded. */
     val isStillPicture: Boolean get() = isStillPicture(uri?.toString())
+
+    /** A photo, blank or freeze made into a video file (see [isRenderedStill]): plays, but nothing in it moves. */
+    val isRenderedStill: Boolean get() = isRenderedStill(uri?.toString())
+
+    /**
+     * Footage: frames that differ from one to the next. What Freeze, Reverse,
+     * Replace, Stabilize and Track have something to do on - a still of either
+     * kind gives them a frozen frame to freeze, a motionless picture to render
+     * backwards, or no shake and no motion to measure.
+     */
+    val isFootage: Boolean get() = kind == ClipKind.Video && !isStillPicture && !isRenderedStill
 
     /** A take recorded in the editor (see [isVoiceover]): the strip marks it with a mic. */
     val isVoiceover: Boolean get() = isVoiceover(uri?.toString())
@@ -315,6 +327,16 @@ data class Clip(
      * picture now does; the fades swap ends the same way. The keys stay: they
      * are drawn over played time, and played time runs forward whichever way
      * the footage does.
+     *
+     * What was measured on the footage is keyed by the file's time, and the
+     * render's time runs the other way: a moment [t] of the render is the
+     * original's [renderedOutMs - t]. So the stabilizer's keys and a mask's
+     * track are mirrored to the render's clock, and keep correcting and
+     * following the frame they were measured on - left as they were, each
+     * frame took the correction measured for its mirror-image frame, and a
+     * stabilized shot shook harder reversed than raw. The person masks are a
+     * file indexed by the original's time and cannot be re-keyed, so they come
+     * off, and are kept on the origin so Reverse again puts them back.
      */
     fun reversed(
         renderedUri: Uri,
@@ -333,7 +355,10 @@ data class Clip(
             speedRamp = speedRamp.mirrored(sourceSpanMs),
             fadeInMs = fadeOutMs,
             fadeOutMs = fadeInMs,
-            reversedFrom = ReversedSource(uri, renderedInMs, renderedOutMs, sourceDurationMs)
+            stabilizer = stabilizer.mirroredAt(renderedOutMs),
+            mask = mask?.withTrackMirroredAt(renderedOutMs),
+            background = null,
+            reversedFrom = ReversedSource(uri, renderedInMs, renderedOutMs, sourceDurationMs, background)
         )
     }
 
@@ -341,7 +366,8 @@ data class Clip(
      * The original file back under a clip that plays a reversed render, over
      * the same footage: the render's [a, b] is the original's [out - b, out - a].
      * Trimmed or cut since it was reversed, the clip keeps exactly the frames
-     * it shows now. Unchanged when the clip was never reversed.
+     * it shows now. The analyses go back to the original's clock the same way
+     * they left it (see [reversed]). Unchanged when the clip was never reversed.
      */
     fun unreversed(): Clip {
         val from = reversedFrom ?: return this
@@ -355,6 +381,9 @@ data class Clip(
             speedRamp = speedRamp.mirrored(sourceSpanMs),
             fadeInMs = fadeOutMs,
             fadeOutMs = fadeInMs,
+            stabilizer = stabilizer.mirroredAt(from.sourceOutMs),
+            mask = mask?.withTrackMirroredAt(from.sourceOutMs),
+            background = from.background,
             reversedFrom = null
         )
     }
@@ -362,7 +391,8 @@ data class Clip(
     /**
      * What Copy attributes takes from this clip: how it sounds, how fast it
      * plays, where it sits and how it is cut out. Never its footage, its window
-     * or its place in time.
+     * or its place in time - nor a mask's track, which is a path measured on
+     * this footage and would wander over any other.
      */
     val attributes: ClipAttributes
         get() = ClipAttributes(
@@ -378,14 +408,51 @@ data class Clip(
             keyframes = keyframes,
             keyframeSpanMs = durationMs,
             chromaKey = chromaKey,
-            mask = mask,
+            mask = mask?.withoutTrack(),
             mirrored = mirrored,
             quarterTurns = quarterTurns
         )
 }
 
-/** The file a reversed clip was rendered from, and the window of it the render covers. */
-data class ReversedSource(val uri: Uri?, val sourceInMs: Long, val sourceOutMs: Long, val durationMs: Long)
+/**
+ * The file a reversed clip was rendered from, the window of it the render
+ * covers, and the person masks measured on it, which the render cannot use
+ * (see [Clip.reversed]) and Reverse again puts back.
+ */
+data class ReversedSource(
+    val uri: Uri?,
+    val sourceInMs: Long,
+    val sourceOutMs: Long,
+    val durationMs: Long,
+    val background: BackgroundRemoval? = null
+)
+
+/**
+ * Keys measured on a file, re-keyed to a render of it that runs the other
+ * way: a moment [t] of one file is [pivotMs - t] of the other. Its own inverse.
+ */
+fun List<Keyframe>.mirroredAt(pivotMs: Long): List<Keyframe> =
+    map { it.copy(atMs = pivotMs - it.atMs) }.sortedBy { it.atMs }
+
+/** A mask following its track on the other file's clock (see [mirroredAt]); one with no track is unchanged. */
+fun Mask.withTrackMirroredAt(pivotMs: Long): Mask {
+    val path = track ?: return this
+    return copy(track = MotionTrack(path.samples.map { it.copy(atMs = pivotMs - it.atMs) }.sortedBy { it.atMs }))
+}
+
+/**
+ * The mask standing where its track has it at [sourceMs], and no longer
+ * following: for a still cut from the footage at that moment, which has one
+ * frame for the track to be on.
+ */
+fun Mask.settledAt(sourceMs: Long): Mask {
+    if (track == null) return this
+    val (x, y) = centerAt(sourceMs)
+    return copy(centerXFraction = x, centerYFraction = y, track = null)
+}
+
+/** The mask's shape alone, off whatever it was following. */
+fun Mask.withoutTrack(): Mask = if (track == null) this else copy(track = null)
 
 /**
  * A clip's settings, apart from its footage: what Copy attributes carries to
@@ -539,6 +606,17 @@ fun isStillPicture(address: String?): Boolean {
     if (address == null || !address.startsWith("file:")) return false
     val path = address.substringBefore('?').substringBefore('#')
     return path.endsWith(".png") && "/stills/" in path
+}
+
+/**
+ * Whether [address] is a still this app rendered into a video file - a photo,
+ * a blank or a freeze under files/stills/ (StillClips.render). From the
+ * address alone, like [isStillPicture]: only this app writes MP4s there.
+ */
+fun isRenderedStill(address: String?): Boolean {
+    if (address == null || !address.startsWith("file:")) return false
+    val path = address.substringBefore('?').substringBefore('#')
+    return path.endsWith(".mp4") && "/stills/" in path
 }
 
 /**
@@ -1211,8 +1289,10 @@ fun TimelineState.withSplitAllTracks(include: (Clip) -> Boolean = { true }): Tim
  * rendered - put into the picture at that moment, and the shot cut round it.
  *
  * The still is the shot's own: its placement at that moment (still, no keys),
- * its mask and key, its mirror and turn, its row and its level. On the main
- * track the shots after move along by its length, as they do for any insert.
+ * its mask and key - a tracked mask standing where the track had it on that
+ * frame, since the still has no other frame for it to follow - its mirror and
+ * turn, its row and its level. On the main track the shots after move along
+ * by its length, as they do for any insert.
  * On an overlay row the tail half moves along instead, which needs the row to
  * be free for it; with something in the way the state comes back unchanged and
  * the caller says why. Within [MIN_CLIP_MS] of either end there is no half to
@@ -1233,7 +1313,7 @@ fun TimelineState.withFrozenFrame(clipId: String, atMs: Long, still: Clip): Time
         rotation = pose.rotationDegrees,
         keyframes = emptyList(),
         chromaKey = clip.chromaKey,
-        mask = clip.mask,
+        mask = clip.mask?.settledAt(clip.sourceAt(minOf(atMs, clip.timelineEndMs - 1L))),
         mirrored = clip.mirrored,
         quarterTurns = clip.quarterTurns,
         transitionIn = Transition(),
@@ -1263,8 +1343,9 @@ fun TimelineState.withFrozenFrame(clipId: String, atMs: Long, still: Clip): Time
  * Another file under a clip: [uri], [fileMs] long, read from [sourceInMs],
  * for exactly the window the clip had - so its place, its length, its speed,
  * its keys and everything else on it stay. What is measured on the old
- * footage goes: the stabilizer's correction, a person found in it, a reversed
- * render's origin. Unchanged when the file is too short for the window.
+ * footage goes: the stabilizer's correction, a person found in it, the path
+ * a mask was following (the mask itself stays, where the path left it), a
+ * reversed render's origin. Unchanged when the file is too short for the window.
  */
 fun TimelineState.withClipReplaced(clipId: String, uri: Uri, fileMs: Long, sourceInMs: Long, label: String): TimelineState {
     val clip = clips.firstOrNull { it.id == clipId && it.kind == ClipKind.Video } ?: return this
@@ -1279,6 +1360,7 @@ fun TimelineState.withClipReplaced(clipId: String, uri: Uri, fileMs: Long, sourc
         sourceDurationMs = fileMs,
         stabilizer = emptyList(),
         background = null,
+        mask = clip.mask?.withoutTrack(),
         reversedFrom = null,
         beats = emptyList()
     )
@@ -1320,9 +1402,15 @@ private fun TimelineState.withClipChanged(changed: Clip): TimelineState {
 /**
  * Paste attributes: [attrs] laid onto [clipId]. A sound takes what a sound
  * has - level, fades, voice, speed; a picture takes all of it, a photo all but
- * the sound and the speed it has none of. The curve and the keys are shapes,
- * refitted to this clip (see [ClipAttributes]); a new curve changes the
- * clip's length, so the main track re-lays as it does for any retime.
+ * the sound and the speed it has none of. What was copied from a sound is
+ * only the sound of it: laid onto a picture it changes the level, fades,
+ * voice and speed and leaves the placement, animation, cut-out and turn as
+ * they are - a sound's attributes hold a full-frame, motionless, uncut
+ * picture only because a sound has no picture, and pasting that onto a PiP
+ * to carry a fade snapped it to the middle of the frame. The curve and the
+ * keys are shapes, refitted to this clip (see [ClipAttributes]); a new curve
+ * changes the clip's length, so the main track re-lays as it does for any
+ * retime.
  */
 fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): TimelineState {
     val clip = clips.firstOrNull { it.id == clipId } ?: return this
@@ -1334,7 +1422,7 @@ fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): T
         voice = attrs.voice,
         speedRamp = attrs.rampFor(clip.sourceSpanMs)
     )
-    val pasted = if (clip.kind != ClipKind.Video) sounding else {
+    val pasted = if (clip.kind != ClipKind.Video || attrs.kind != ClipKind.Video) sounding else {
         val placed = attrs.transform.clamped()
         sounding.copy(
             opacity = attrs.opacity.coerceIn(0f, 1f),
@@ -1372,6 +1460,32 @@ fun TimelineState.withSelectionToggled(id: String): TimelineState {
 }
 
 /**
+ * A touch while selecting more that is not a tap on the strip - a long press
+ * that lifts a clip, a tap on an overlay's box on the picture: [id] joins the
+ * selection if it was not in it, and either way becomes the one whose box
+ * and tools show. Never leaves: lifting a selected clip toggled it *out* of
+ * the set, so the carry that followed took it alone, and a tap on a PiP to
+ * see which one it was dropped it from the set. Leaving is a tap on the strip
+ * ([withSelectionToggled]).
+ */
+fun TimelineState.withSelectionJoined(id: String): TimelineState {
+    val all = allSelectedIds + id
+    return copy(selectedClipId = id, selectedIds = all - id)
+}
+
+/**
+ * Whether a carry that starts on [id] takes the selection with it: only when
+ * the clip lifted is one of several already selected. A clip lifted from
+ * outside the set moves alone, as it does in every editor with a selection -
+ * it joins the set on the way ([withSelectionJoined]), it does not drag the
+ * set along with it.
+ */
+fun TimelineState.carriesSelection(id: String): Boolean {
+    val all = allSelectedIds
+    return id in all && all.size > 1
+}
+
+/**
  * Every clip in [ids] taken out at once: the main track closes up over its
  * missing shots as one relayout, the overlay rows close up, and nothing is
  * selected afterwards.
@@ -1390,19 +1504,25 @@ fun TimelineState.withClipsRemoved(ids: Set<String>): TimelineState {
 
 /**
  * The main-track shots in [ids] carried together: they leave the order as a
- * group, in the order they had, and go in where [index] puts [anchorId] among
- * the others - the shot under the finger lands where it is dropped and the
- * rest of the group follow it, before and after it as they were. One shot
- * alone is an ordinary reorder.
+ * group, in the order they had, and go in at the slot [anchorId] was dropped
+ * in - [index] counts the slot among the track as the strip drew it while
+ * the anchor was carried, every other shot still in place. The shots of the
+ * group that were drawn before that slot and after it stay on the anchor's
+ * two sides, so the group goes in whole at the slot's place among the shots
+ * that are not moving. It used to subtract the group's earlier members from
+ * the slot regardless of where they were drawn, which put the anchor slots
+ * to the left of where the finger let go. One shot alone is an ordinary
+ * reorder.
  */
 fun TimelineState.withClipsReordered(ids: Set<String>, anchorId: String, index: Int): TimelineState {
     val base = baseVideoClips
-    val group = base.filter { it.id in ids || it.id == anchorId }
+    val moving = ids + anchorId
+    val group = base.filter { it.id in moving }
     if (group.size <= 1) return withClipReordered(anchorId, index)
-    val anchorAt = group.indexOfFirst { it.id == anchorId }
-    if (anchorAt < 0) return this
-    val others = base.filterNot { it.id in ids || it.id == anchorId }
-    val at = (index.coerceIn(0, others.size) - anchorAt).coerceIn(0, others.size)
+    if (group.none { it.id == anchorId }) return this
+    val drawn = base.filterNot { it.id == anchorId }
+    val others = drawn.filterNot { it.id in moving }
+    val at = drawn.take(index.coerceIn(0, drawn.size)).count { it.id !in moving }
     val order = others.take(at) + group + others.drop(at)
     if (order.map { it.id } == base.map { it.id }) return this
     return layOutMain(order, mainSpacing() - group.map { it.id }.toSet())
@@ -1417,8 +1537,23 @@ fun TimelineState.withClipsReordered(ids: Set<String>, anchorId: String, index: 
  * and words are placed by the editor; both are left alone here.
  */
 fun TimelineState.withClipsMoved(ids: Set<String>, deltaMs: Long): TimelineState {
+    val delta = groupMoveDelta(ids, deltaMs)
+    if (delta == 0L) return this
+    val moved = clips.filter { it.id in ids && !it.isMain && it.kind != ClipKind.Text }.map { it.id }.toSet()
+    return copy(clips = clips.map { if (it.id in moved) it.copy(timelineStartMs = it.timelineStartMs + delta) else it })
+}
+
+/**
+ * How far the sounds and overlays in [ids] can slide together when asked to
+ * slide by [deltaMs]: the whole of it, or as far as the group's shape allows
+ * (see [withClipsMoved]). Asked on its own by the editor, which moves the
+ * lines of words in the set by the same amount - they used to be shifted by
+ * the full drag while the sounds and overlays stopped at a wall, and the group
+ * came apart. [deltaMs] itself when nothing in [ids] is a sound or overlay.
+ */
+fun TimelineState.groupMoveDelta(ids: Set<String>, deltaMs: Long): Long {
     val moving = clips.filter { it.id in ids && !it.isMain && it.kind != ClipKind.Text }
-    if (moving.isEmpty() || deltaMs == 0L) return this
+    if (moving.isEmpty() || deltaMs == 0L) return deltaMs
     val fixed = clips.filter { it.id !in ids && it.kind == ClipKind.Video && it.isOverlay }
     val overlays = moving.filter { it.kind == ClipKind.Video && it.isOverlay }
     fun blocked(d: Long): Boolean = overlays.any { clip ->
@@ -1439,7 +1574,5 @@ fun TimelineState.withClipsMoved(ids: Set<String>, deltaMs: Long): TimelineState
         }.filter { if (forward) it in 0L..delta else it in delta..0L }
         delta = walls.filterNot { blocked(it) }.maxByOrNull { abs(it) } ?: 0L
     }
-    if (delta == 0L) return this
-    val moved = moving.map { it.id }.toSet()
-    return copy(clips = clips.map { if (it.id in moved) it.copy(timelineStartMs = it.timelineStartMs + delta) else it })
+    return delta
 }

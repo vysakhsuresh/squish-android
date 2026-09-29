@@ -256,10 +256,17 @@ fun PreparingIndicator(count: Int, modifier: Modifier = Modifier) {
 /**
  * A clip's footage being written backwards (ReverseRenderer): a render that
  * takes as long as the clip, or longer, and lands as one step when done. Said
- * per clip with how far along it is, since the button is greyed meanwhile.
+ * per clip with how far along it is, since the button is greyed meanwhile,
+ * with a Cancel: a three-minute 4K clip reversed by mistake used to be minutes
+ * of rendering with no way out but leaving the editor.
  */
 @Composable
-fun ReversingIndicator(reversing: Map<String, Float>, nameOf: (String) -> String, modifier: Modifier = Modifier) {
+fun ReversingIndicator(
+    reversing: Map<String, Float>,
+    nameOf: (String) -> String,
+    onCancel: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
     if (reversing.isEmpty()) return
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         reversing.forEach { (id, fraction) ->
@@ -268,7 +275,17 @@ fun ReversingIndicator(reversing: Map<String, Float>, nameOf: (String) -> String
                 Text(
                     "Reversing “${nameOf(id)}”… ${(fraction * 100).toInt()}% - it lands on the strip when done.",
                     style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.Violet
+                    color = SquishColors.Violet,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    "Cancel",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.TextSecondary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable(onClickLabel = "Stop reversing ${nameOf(id)}") { onCancel(id) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
         }

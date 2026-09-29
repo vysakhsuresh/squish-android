@@ -59,6 +59,15 @@ object StillClips {
     private const val MAX_SHORT_SIDE = 1080
 
     /**
+     * A freeze is rendered at the frame's own size, up to 4K: it sits between
+     * two frames of the same shot, and one scaled down to 1080 visibly
+     * softened at the cut into it. Past this the phone's encoder is not asked;
+     * a still that cannot be encoded at its own size falls back to
+     * [MAX_SHORT_SIDE] rather than to nothing.
+     */
+    private const val FREEZE_MAX_SHORT_SIDE = 2160
+
+    /**
      * A clip made from the picture at [image], or null if it could not be read or
      * rendered. At least [minMs] long - a photo overlay dropped onto the main
      * track may already have been dragged out past [RENDER_MS].
@@ -150,9 +159,11 @@ object StillClips {
     /**
      * A freeze frame: the frame of [video] at [sourceMs], kept as a picture under
      * files/stills/ and made into a clip like a photo, so it plays, trims and
-     * exports as any still does. At full size - the frame is the shot's own,
-     * and a freeze scaled down would visibly soften at the cut into it. Null
-     * when the frame could not be read or the clip could not be rendered.
+     * exports as any still does. At full size (see [FREEZE_MAX_SHORT_SIDE]) -
+     * the frame is the shot's own, and a freeze scaled down would visibly
+     * soften at the cut into it; it went through the photo cap of 1080 once,
+     * so a freeze of 4K footage was upscaled from 1080p between two 4K frames.
+     * Null when the frame could not be read or the clip could not be rendered.
      */
     suspend fun freezeFrame(context: Context, video: Uri, sourceMs: Long): Uri? {
         val picture = withContext(Dispatchers.IO) {
@@ -181,7 +192,8 @@ object StillClips {
                 Uri.fromFile(target)
             }.onFailure { android.util.Log.w("SquishStill", "could not freeze a frame of $video", it) }.getOrNull()
         } ?: return null
-        return render(context, picture, uniqueName("freeze"), RENDER_MS)
+        return render(context, picture, uniqueName("freeze"), RENDER_MS, maxShortSide = FREEZE_MAX_SHORT_SIDE)
+            ?: render(context, picture, uniqueName("freeze"), RENDER_MS)
     }
 
     /**
@@ -204,9 +216,15 @@ object StillClips {
         return render(context, Uri.fromFile(frame), uniqueName("blank"), RENDER_MS)
     }
 
-    private suspend fun render(context: Context, image: Uri, name: String, lengthMs: Long): Uri? {
+    private suspend fun render(
+        context: Context,
+        image: Uri,
+        name: String,
+        lengthMs: Long,
+        maxShortSide: Int = MAX_SHORT_SIDE
+    ): Uri? {
         val (w, h) = withContext(Dispatchers.IO) { uprightSize(context, image) } ?: return null
-        val (outW, outH) = fit(w, h)
+        val (outW, outH) = fit(w, h, maxShortSide)
         val target = File(dir(context), "$name.mp4")
         val partial = File(target.absolutePath + ".part")
         val done = withContext(Dispatchers.Main) {
@@ -259,7 +277,8 @@ object StillClips {
     ): Boolean =
         suspendCancellableCoroutine { continuation ->
             // A photo straight off a camera is 12 or 50 megapixels, beyond what a
-            // phone's encoder takes. Scaled so its short side is at most 1080.
+            // phone's encoder takes. Scaled so its short side is at most 1080 -
+            // or, for a freeze, the frame's own size (see [freezeFrame]).
             val scale: List<Effect> = listOf(
                 Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT)
             )
@@ -304,9 +323,9 @@ object StillClips {
                 .onFailure { if (continuation.isActive) continuation.resume(false) }
         }
 
-    /** The frame scaled so its short side is at most [MAX_SHORT_SIDE], both sides even as encoders require. */
-    private fun fit(width: Int, height: Int): Pair<Int, Int> {
-        val scale = minOf(1f, MAX_SHORT_SIDE.toFloat() / minOf(width, height))
+    /** The frame scaled so its short side is at most [maxShortSide], both sides even as encoders require. */
+    private fun fit(width: Int, height: Int, maxShortSide: Int = MAX_SHORT_SIDE): Pair<Int, Int> {
+        val scale = minOf(1f, maxShortSide.toFloat() / minOf(width, height))
         fun even(v: Float) = (v.toInt() / 2 * 2).coerceAtLeast(2)
         return even(width * scale) to even(height * scale)
     }

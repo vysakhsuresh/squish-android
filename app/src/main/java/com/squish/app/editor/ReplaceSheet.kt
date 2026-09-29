@@ -49,8 +49,11 @@ fun ReplacePanel(request: ReplaceRequest, viewModel: EditorViewModel) {
         delay(FRAME_SETTLE_MS)
         frame = ThumbnailExtractor.frameAt(context, request.uri, request.inPointMs)
     }
-    // Left without replacing - back, another selection, the clip deleted -
-    // the pick is dropped. Done commits first, and then this finds nothing to drop.
+    // Left without replacing - back, the clip deleted - the pick is dropped.
+    // Done commits first, and then this finds nothing to drop. Another
+    // selection drops it at the source (the view model's selectClip), since
+    // this sheet survives a change from one shot to the next, and used to
+    // stay up over the new shot offering to replace the old one.
     DisposableEffect(request.clipId) {
         onDispose { viewModel.clips.cancelReplace() }
     }

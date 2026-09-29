@@ -446,36 +446,56 @@ should work through it and then delete what holds up.
   negative scale and does not refuse the frame); a photo overlay turns and
   mirrors too (its `Image` is laid out the same way); the overlay box on a
   turned PiP is the turned shape. Freeze grabs the frame under the playhead
-  at full size (`StillClips.freezeFrame`, `OPTION_CLOSEST`) and lands a 3 s
-  "Freeze" still, selected, with the shot's placement, mask, key, mirror and
-  turn - check the frozen picture is the frame that was on screen, not the
-  nearest keyframe, and that it is upright for a portrait clip; on an overlay
-  row with no room after it, it says so. Reverse renders the window backwards
+  at full size (`StillClips.freezeFrame`, `OPTION_CLOSEST`, rendered at the
+  frame's own size up to 4K and only then at 1080 - check a freeze of 4K
+  footage is as sharp as the frames either side of it in the file) and lands
+  a 3 s "Freeze" still, selected, with the shot's placement, mask (a tracked
+  one standing where the track had it), key, mirror and turn - check the
+  frozen picture is the frame that was on screen, not the nearest keyframe,
+  and that it is upright for a portrait clip; on an overlay row with no room
+  after it, it says so; the still lands where its frame is when it is ready,
+  so a trim made while "Preparing" showed does not lose it, and trimmed out
+  altogether it says so. Reverse renders the window backwards
   with the platform codecs (`ReverseRenderer`: keyframe runs decoded forward
   and handed to the encoder last frame first, YUV never leaving YUV, a spool
-  to disk past 96 MB; the sound reversed whole and AAC-encoded first) into
-  `files/reversed/` and lands as one step when done, a card saying how far
-  along it is - check the file plays backwards with its sound backwards, that
-  a portrait clip comes out the right way up (the rotation tag is copied, the
-  pixels are not turned), that a clip trimmed while the render ran keeps the
-  frames it showed, that Reverse again puts the original back at once, that
-  leaving the editor mid-render leaves no `.part` file, and that a clip over
-  three minutes is refused with the message rather than attempted. Replace
+  to disk past a quarter of the heap; the sound reversed in place and
+  AAC-encoded first; 10-bit and HDR files refused by their tags or by the
+  decoder's first picture) into `files/reversed/` and lands as one step when
+  done - beneath a gesture under way, like Stabilize - a card saying how far
+  along it is with a Cancel; the stabilizer's keys and a mask's track go
+  onto the render's clock mirrored and come back the same way, the person
+  masks come off and go back with Reverse again - check the file plays
+  backwards with its sound backwards, that a portrait clip comes out the
+  right way up (the rotation tag is copied, the pixels are not turned), that
+  a clip trimmed while the render ran keeps the frames it showed and a clip
+  cut in two meanwhile gets the render on both halves, that Reverse again
+  puts the original back at once, that Cancel and leaving the editor
+  mid-render leave no `.part` file and say nothing, that a stabilized shot
+  reversed is steady, and that a clip over three minutes is refused with the
+  message rather than attempted. Replace
   opens the picker, then a sheet with a frame of the new file and "Start at"
-  (the old clip's own in-point when the file has that much); Done puts it in
+  (the old clip's own in-point when the file has that much, which is what its
+  Reset goes back to); Done puts it in
   keeping the window, place, speed, keys and settings; a file too short says
-  so with both lengths; a photo picked goes straight in as a still. Copy
-  attributes and Paste attributes carry level, fades, voice, curve (refitted
-  to the span), opacity, placement, keys (refitted to the length), mask, key
-  colour, mirror and turn - a sound takes the sound ones, a photo none of the
-  sound ones; Paste is greyed until something is copied. Select more turns the
-  button orange and taps on the strip add to the set (drawn selected together);
-  the row is then Select more and Delete only; Delete takes all as one step;
-  a carried shot takes the selected shots with it in their order and a carried
-  sound or overlay slides the selected sounds and overlays together, stopping
-  the group against a wall on an overlay row. A draft from before this build
-  opens as it was (the new fields read as unset); one saved by this build
-  writes version 13.
+  so with both lengths; a photo picked goes straight in as a still; tapping
+  another shot while the sheet is up closes it. A photo, blank or freeze on
+  a video track is not offered Freeze, Reverse, Replace, Stabilize or Track.
+  Copy attributes and Paste attributes carry level, fades, voice, curve
+  (refitted to the span), opacity, placement, keys (refitted to the length),
+  mask (its shape, not its track), key colour, mirror and turn - a sound
+  takes the sound ones, a photo none of the sound ones, and a sound's pasted
+  onto a picture changes only its sound; Paste is greyed until something is
+  copied. Delete is the fifth tool on every clip's row. Select more turns the
+  button orange, reads "Done selecting" while on, and taps on the strip add
+  to the set (drawn selected together, no row folded) as does a tap on an
+  overlay's box on the picture; pressing it again keeps the set; the row is
+  then Select more and Delete only; Delete takes all as one step; a shot
+  lifted from among the selected takes them with it in their order (one
+  lifted from outside the set moves alone and joins it) and a carried sound
+  or overlay slides the selected sounds, overlays and lines together,
+  stopping the whole group against a wall on an overlay row. A draft from
+  before this build opens as it was (the new fields read as unset); one
+  saved by this build writes version 13.
 
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry

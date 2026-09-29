@@ -262,6 +262,20 @@ fun TimelineEditor(
      */
     compact: Boolean = false,
     /**
+     * A clip taken hold of by a long press, before it is carried. Selected
+     * through here rather than through [onSelect]: a lift is not a tap, and
+     * while Select more is on a tap toggles - which took the lifted clip out
+     * of the set the moment it lifted, so the set could never be carried by
+     * one of its own.
+     */
+    onLift: (String) -> Unit = { onSelect(it) },
+    /**
+     * Whether the rows of tracks the selection is not on fold to thin bars.
+     * Not while clips are being added to a selection: the caption to add is
+     * on a row the lead is not, and a folded row cannot be read.
+     */
+    foldRows: Boolean = true,
+    /**
      * A clip to keep in view while [compact] and nothing is selected: the row
      * it is on is the one shown. The take being recorded, which is drawn on a
      * sound row but selected by nobody.
@@ -296,6 +310,7 @@ fun TimelineEditor(
     val guard = remember { MultiTouchGuard() }
     val rawScrub by rememberUpdatedState(onScrub)
     val rawSelect by rememberUpdatedState(onSelect)
+    val rawLift by rememberUpdatedState(onLift)
     val guardedSelect: (String?) -> Unit = remember { { id -> if (!guard.blocking) rawSelect(id) } }
 
     // The strip's own width in pixels. Zero until the first layout pass, and
@@ -492,8 +507,14 @@ fun TimelineEditor(
     // Not while something is being carried: picking it up selects it, and rows
     // folding and unfolding under the finger would move the row it is over.
     val carried = lift
-    val foldFor = if (carried != null) carried.foldFor else selectedGroup
-    val latestSelectedGroup by rememberUpdatedState(selectedGroup)
+    val foldFor = when {
+        carried != null -> carried.foldFor
+        !foldRows -> null
+        else -> selectedGroup
+    }
+    // What a lift keeps the rows folded for: read at the lift, not captured
+    // when the gesture handler was made.
+    val latestFoldFor by rememberUpdatedState(if (foldRows) selectedGroup else null)
     fun folded(group: Group) = foldFor != null && foldFor != group && group != Group.Main
     // One overlay row even with no overlay on it, like sound and words: its head
     // is the way to add the first one, beside the track it will go on.
@@ -748,8 +769,8 @@ fun TimelineEditor(
                         onLift = { at ->
                             latestLayout.liftableAt(at)?.let { picked ->
                                 heldMs = heldMs ?: latestState.playheadMs.toDouble()
-                                lift = picked.copy(foldFor = latestSelectedGroup, compact = latestCompactShown)
-                                rawSelect(picked.id)
+                                lift = picked.copy(foldFor = latestFoldFor, compact = latestCompactShown)
+                                rawLift(picked.id)
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
                         },

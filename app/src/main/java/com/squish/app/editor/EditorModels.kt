@@ -1034,7 +1034,9 @@ data class ReplaceRequest(
     val label: String,
     val fileMs: Long,
     val neededMs: Long,
-    val inPointMs: Long = 0L
+    val inPointMs: Long = 0L,
+    /** Where the slider opened - the old clip's own in-point - and what the sheet's Reset puts back, as every sheet's does. */
+    val defaultInMs: Long = inPointMs
 ) {
     /** The last moment the window can start and still fit in the file. */
     val latestInMs: Long get() = (fileMs - neededMs).coerceAtLeast(0L)
