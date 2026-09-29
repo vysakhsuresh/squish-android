@@ -178,6 +178,15 @@ fun TrimStrip(
                 }
             )
         }
+        // On its own line, not between the two ends: three times across a phone
+        // left the end one broken over two lines ("0:16.49 / 6").
+        Text(
+            "${Timecode.format(endMs - startMs)} kept",
+            style = MaterialTheme.typography.bodySmall,
+            color = accent,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -194,11 +203,6 @@ fun TrimStrip(
                     val moved = TrimRules.steppedStart(startMs, frames, endMs, durationMs, frameMs)
                     if (moved != startMs) onRange(moved, endMs, moved)
                 }
-            )
-            Text(
-                "${Timecode.format(endMs - startMs)} kept",
-                style = MaterialTheme.typography.bodySmall,
-                color = accent
             )
             Readout(
                 label = Timecode.format(endMs),
