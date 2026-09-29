@@ -595,6 +595,36 @@ fun TimelineState.withClipRemoved(clipId: String): TimelineState {
 }
 
 /**
+ * A copy of a clip, straight after it, selected - everything on it kept: trim,
+ * speed, placement, keys, mask, key colour.
+ *
+ * On the main track the copy is slotted in right after the original and the
+ * track makes room, so the shots after it move along by its length and keep
+ * the joins they had. It has no transition of its own: a dissolve from a shot
+ * into its own copy is not what anyone asked for, and the join after it keeps
+ * the transition that was there.
+ *
+ * On an overlay row it goes where the original ends, up to the first row free
+ * there if its own row is taken; with every row taken there the state comes back
+ * unchanged and the caller says why. Sound goes where the original ends.
+ */
+fun TimelineState.withClipDuplicated(clipId: String, copyId: String): TimelineState {
+    val clip = clips.firstOrNull { it.id == clipId } ?: return this
+    if (clip.kind == ClipKind.Text) return this
+    val copy = clip.copy(id = copyId, timelineStartMs = clip.timelineEndMs, transitionIn = Transition())
+    if (clip.isMain) {
+        val laid = relaidFrom(this) { if (it.id == clipId) listOf(it, copy) else listOf(it) }
+        return laid.copy(selectedClipId = copyId)
+    }
+    if (clip.kind == ClipKind.Video && clip.isOverlay) {
+        val row = if (layerIsFree(clip.layer, copy.timelineStartMs, copy.timelineEndMs)) clip.layer
+        else firstFreeLayer(copy.timelineStartMs, copy.timelineEndMs) ?: return this
+        return copy(clips = clips + copy.copy(layer = row), selectedClipId = copyId)
+    }
+    return copy(clips = clips + copy, selectedClipId = copyId)
+}
+
+/**
  * Drag. [deltaMs] is how far from where it is now the finger wants the clip -
  * the strip measures a drag from where the clip was when it began (see ClipView),
  * so a clip held back by a neighbour, or moved to a new slot, still ends up

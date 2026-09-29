@@ -16,6 +16,7 @@ import com.squish.app.timeline.shiftedBy
 import com.squish.app.timeline.within
 import com.squish.app.timeline.transformAt
 import com.squish.app.timeline.withClipAdded
+import com.squish.app.timeline.withClipDuplicated
 import com.squish.app.timeline.withClipMoved
 import com.squish.app.timeline.withClipRemoved
 import com.squish.app.timeline.withClipReordered
@@ -522,6 +523,53 @@ fun main() {
         val grown = after.withOverlayGeometry("p", scale = 2.36f).byId("p")
         check(near(grown.keyframes[0].transform.scale, 2f, 0.01f) && near(grown.keyframes[1].transform.scale, 2.36f, 0.01f),
             "an off-clip size change did not scale the whole move: ${grown.keyframes.map { it.transform.scale }}")
+    }
+
+    // --- Duplicate (B6): the copy lands straight after, the track makes room. -----
+    run {
+        val a = video("a", 3_000, keys = pushIn(3_000))
+        val b = video("b", 2_000, start = 3_000 - 500, transition = Transition(TransitionType.CrossFade, 500))
+        val c = video("c", 4_000, start = 4_000)
+        val s = TimelineState(clips = listOf(a, b, c).let { TimelineState(clips = it).rippleVideo().clips })
+        val d = s.withClipDuplicated("a", "a2")
+        mainIsMagnetic(d, "duplicate a")
+        val order = d.baseVideoClips.map { it.id }
+        check(order == listOf("a", "a2", "b", "c"), "duplicate: order is $order")
+        val copy = d.byId("a2")
+        check(copy.timelineStartMs == d.byId("a").timelineEndMs, "duplicate: the copy starts at ${copy.timelineStartMs}")
+        check(copy.keyframes == a.keyframes && copy.sourceInMs == a.sourceInMs && copy.sourceOutMs == a.sourceOutMs,
+            "duplicate: the copy lost its trim or keys")
+        check(!copy.transitionIn.isActive, "duplicate: the copy dissolves into itself")
+        check(d.byId("b").transitionIn == b.transitionIn, "duplicate: the next join lost its transition")
+        check(d.byId("c").timelineStartMs - s.byId("c").timelineStartMs == copy.durationMs,
+            "duplicate: the shots after moved by ${d.byId("c").timelineStartMs - s.byId("c").timelineStartMs}, not ${copy.durationMs}")
+        check(d.selectedClipId == "a2", "duplicate: the copy is not selected")
+        check(s.withClipDuplicated("missing", "x") == s, "duplicate of nothing changed the state")
+
+        // The last shot, and a ramped one: the copy keeps the curve and the length.
+        val ramped = TimelineState(clips = listOf(video("r", 4_000, ramp = SpeedRamp.flat(2f))))
+        val rd = ramped.withClipDuplicated("r", "r2")
+        mainIsMagnetic(rd, "duplicate ramped")
+        check(rd.byId("r2").durationMs == 2_000L && rd.byId("r2").timelineStartMs == 2_000L,
+            "duplicate ramped: ${rd.byId("r2").timelineStartMs}+${rd.byId("r2").durationMs}")
+
+        // Overlays: its own row where free, the next free row where not, nothing when full.
+        val pip = video("p", 2_000, start = 1_000, layer = 1)
+        val free = TimelineState(clips = listOf(video("m", 10_000), pip)).withClipDuplicated("p", "p2")
+        overlayRowsClear(free, "duplicate overlay")
+        check(free.byId("p2").layer == 1 && free.byId("p2").timelineStartMs == 3_000L,
+            "duplicate overlay: row ${free.byId("p2").layer} at ${free.byId("p2").timelineStartMs}")
+        val blocked = TimelineState(clips = listOf(video("m", 10_000), pip, video("q", 2_000, start = 3_500, layer = 1)))
+            .withClipDuplicated("p", "p2")
+        overlayRowsClear(blocked, "duplicate overlay blocked")
+        check(blocked.byId("p2").layer == 2, "duplicate overlay: a taken row put the copy on ${blocked.byId("p2").layer}")
+        val full = TimelineState(clips = listOf(video("m", 10_000), pip) + (1..MAX_LAYER).map { video("w$it", 3_000, start = 3_000, layer = it) })
+        check(full.withClipDuplicated("p", "p2") == full, "duplicate overlay with every row taken still added a clip")
+
+        // Sound goes where the original ends; the main track is left alone.
+        val song = audio("s", 5_000, start = 2_000)
+        val sd = TimelineState(clips = listOf(video("m", 10_000), song)).withClipDuplicated("s", "s2")
+        check(sd.byId("s2").timelineStartMs == 7_000L && sd.byId("m").timelineStartMs == 0L, "duplicate sound misplaced")
     }
 
     println("magnetic checks: main track, cuts, trims, keys, overlay rows")
