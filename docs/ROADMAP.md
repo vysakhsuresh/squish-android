@@ -445,3 +445,7 @@ All on the moto g84 (`adb -s ZY32J8HF2S`), `adb logcat -G 16M` first, build with
 1. Walk every sheet: names consistent, no "Captions tab", no "%" on degrees, seconds on transitions, active chip highlighted.
 2. Base clip: Chroma/Cutout offer "Float this clip"; a tiny clip dims Split.
 3. Proxy building shows a percentage; the end-of-picture veil reads "End of picture" while a song plays on.
+4. Speed → Curves: tap Hero, the Hero chip lights and the line under the chips reads Hero's; drag a point on the curve, the chip goes out and the line says to tap a curve; tap Normal on a flat 2x shot, Normal is lit. Animation → Moves: tap Push in, it lights; trim a frame off the tail, still lit; add a key, it goes out.
+5. Cutout on a main-track shot: no Key green / Key blue / Cut out, a "Float this clip" button on both chips; press it: the shot is on an overlay row, selected, and the sheet now offers the key buttons. With six overlay rows taken it says the rows are taken and the shot stays.
+6. Effects: a placed effect's card has Strength and Remove only; its ends are dragged on the strip. Crop: the Flip buttons carry left-right and up-down icons. Track: a pinned line shows a tick icon, not "✓".
+7. First open on a fresh install (clear the app's data): "Getting around" appears under the strip's notices, Got it dismisses it, and it does not come back on the next project; opening a clip with a saved edit shows the offer, not the hint.

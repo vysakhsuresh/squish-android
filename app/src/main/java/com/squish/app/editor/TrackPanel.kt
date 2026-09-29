@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -66,7 +67,7 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel, acc
     PanelSurface(accent = accent) {
         PanelHeading(
             "Track an object",
-            "Pin a caption or a layer to something moving",
+            "Pin a line of text or an overlay to something moving",
             icon = Icons.Filled.MyLocation,
             accent = accent,
             trailing = {
@@ -205,24 +206,25 @@ private fun PinTargets(state: EditorUiState, clip: Clip, viewModel: EditorViewMo
     Text("Pin to the track", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
 
     SquishOutlinedButton(
-        text = if (clip.mask?.track != null) "✓ Hiding a face or plate on this clip"
+        text = if (clip.mask?.track != null) "Hiding a face or plate on this clip"
         else "Hide a face or plate here",
+        icon = if (clip.mask?.track != null) Icons.Filled.Check else null,
         modifier = Modifier.fillMaxWidth(),
         onClick = { viewModel.analysis.pinMaskToTrack(clip.id) }
     )
 
     if (clip.isOverlay) {
         SquishOutlinedButton(
-            text = "Pin this layer to it",
+            text = "Pin this overlay to it",
             modifier = Modifier.fillMaxWidth(),
             onClick = { viewModel.analysis.pinLayerToTrack(clip.id) }
         )
     } else {
-        state.videoClips.filter { it.isOverlay }.forEach { layer ->
+        state.videoClips.filter { it.isOverlay }.forEach { overlay ->
             SquishOutlinedButton(
-                text = "Pin ${layer.label} to it",
+                text = "Pin ${overlay.label} to it",
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { viewModel.analysis.pinLayerToTrack(layer.id) }
+                onClick = { viewModel.analysis.pinLayerToTrack(overlay.id) }
             )
         }
     }
@@ -242,7 +244,8 @@ private fun PinTargets(state: EditorUiState, clip: Clip, viewModel: EditorViewMo
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 SquishOutlinedButton(
-                    text = if (caption.track != null) "✓ $label" else "Pin “$label”",
+                    text = if (caption.track != null) label else "Pin “$label”",
+                    icon = if (caption.track != null) Icons.Filled.Check else null,
                     modifier = Modifier.weight(1f),
                     onClick = { viewModel.analysis.pinCaptionToTrack(caption.id) }
                 )

@@ -1,5 +1,6 @@
 package com.squish.app.editor
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.HistoryToggleOff
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -197,6 +199,66 @@ fun SetAsideNotice(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
+ * Whether the editor's one-time hint has been read on this phone. Per install,
+ * not per project: the gestures are the editor's, and being told twice is a
+ * nag.
+ */
+object EditorHints {
+    private const val PREFS = "hints"
+    private const val KEY_EDITOR = "editor_seen"
+
+    fun seen(context: Context): Boolean = runCatching {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_EDITOR, false)
+    }.getOrDefault(true)
+
+    fun markSeen(context: Context) {
+        runCatching {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_EDITOR, true).apply()
+        }
+    }
+}
+
+/**
+ * The editor's gestures, said once, the first time it opens on this phone.
+ * The strip scrubs, a tap selects and the picture plays: none of that is
+ * written on the screen, and the first minute of an editor is where people
+ * decide whether it is for them. CapCut says the same things the same way.
+ * One card, one button; nothing steps through anything.
+ */
+@Composable
+fun FirstOpenHint(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SquishColors.Surface)
+            .border(1.dp, SquishColors.Primary.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                Icons.Filled.TouchApp,
+                contentDescription = null,
+                tint = SquishColors.Primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Text("Getting around", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
+        }
+        Text(
+            "Drag the strip to move through the edit, and pinch it to zoom. Tap a clip for its tools, " +
+                "and hold it to move it. Tap the picture to play.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextSecondary
+        )
+        SquishOutlinedButton(text = "Got it", onClick = onDismiss)
+    }
+}
+
+/**
  * Only ever shown for footage heavy enough to need it, and only while it matters.
  * Says plainly that the preview is the low-resolution copy and the export is not.
  *
@@ -204,7 +266,14 @@ fun SetAsideNotice(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
  * counts them: [ready] of [total] copies made.
  */
 @Composable
-fun ProxyIndicator(status: ProxyStatus, modifier: Modifier = Modifier, ready: Int = 0, total: Int = 0) {
+fun ProxyIndicator(
+    status: ProxyStatus,
+    modifier: Modifier = Modifier,
+    ready: Int = 0,
+    total: Int = 0,
+    /** How far the copy being built has got, from its encoder; null until it says. */
+    percent: Int? = null
+) {
     if (status == ProxyStatus.NotNeeded) return
     val count = if (total > 1) " ($ready of $total ready)" else ""
 
@@ -224,7 +293,7 @@ fun ProxyIndicator(status: ProxyStatus, modifier: Modifier = Modifier, ready: In
         }
         Text(
             when (status) {
-                ProxyStatus.Building -> "Building a light preview copy$count — editing stays responsive while it works"
+                ProxyStatus.Building -> PolishRules.proxyBuildingLine(percent, ready, total)
                 ProxyStatus.Ready -> "Previewing at 540p for smooth scrubbing · exports at full resolution"
                 ProxyStatus.Failed -> "Playing the original$count — scrubbing may stutter on footage this large"
                 ProxyStatus.NotNeeded -> ""

@@ -760,6 +760,37 @@ should work through it and then delete what holds up.
   blend (`speedEffects`, then `frameDrop`), so the blended frames are the
   ones kept.
 
+- **Batch B16 (editor polish), all of it.** Built on the desktop with no phone
+  attached. The decisions - which curve chip and which move chip a clip is on,
+  read back off its points and keys since neither is stored by name, and the
+  proxy notice's percentage - are executed on the JVM
+  (`tools/jvm/PolishRulesChecks.kt`); nothing has been seen. Script in
+  `docs/ROADMAP.md` §4 under B16, plus what only a device answers: the proxy
+  notice reads "Building a light preview copy · 37%" and climbs (`ProxyEngine`
+  polls `Transformer.getProgress` on the main looper every half second - check
+  the percentage moves and the poll stops when the copy lands or the editor is
+  left); the Speed sheet's curve chip lights after a tap and goes out when a
+  point is dragged, and the line under the chips is the lit chip's own; the
+  same for the Moves chips on Animation, and a preset survives a frame trimmed
+  off the tail; the keyframe button and the key rows show a vector diamond
+  (`KeyframeGlyph`) at the row's size, not the font's "◆"; Crop's Flip buttons
+  carry the swap icons; a pinned line or mask on Track shows a tick icon;
+  Cutout on a *main-track* shot offers neither Key green nor Cut out but
+  "Float this clip", which is `switchToOverlay` - check it lands the shot on
+  an overlay row selected and the Cutout sheet then shows the key buttons, and
+  that with every row taken the "rows are taken" failure shows instead; a shot
+  that already carries a key or Cut out (pasted, or an old draft) still shows
+  Turn off; the effects library's placed-effect cards have no Start here / End
+  here (the strip's handles retime an effect); the Sync nudges read "−1 frame"
+  and "−10 ms"; the first open of the editor on a fresh install shows
+  "Getting around" under the notices with Got it, once per install
+  (SharedPreferences "hints"), never beside the saved-edit offer; and the
+  preview's per-tick work no longer builds a list to find the clock clip or
+  re-reads a surface's shader values on a tick where nothing changed
+  (`applyLive` returns early on the same clip, loupe state and effects list) -
+  watch that a grade, mask, key or effect edit still reaches the picture at
+  once, paused and playing, and that the loupe still lifts the key while it is
+  up.
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The

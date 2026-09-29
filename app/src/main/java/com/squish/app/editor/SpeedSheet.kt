@@ -183,12 +183,17 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
                 icon = Icons.Filled.Timer,
                 accent = accent
             )
+            // Read back off the curve, since a shape is not stored by name:
+            // the chip lights while the points are the ones it laid, and goes
+            // out the moment one is dragged. The chips used to light none, and
+            // the line under them was always Bullet's.
+            val active = PolishRules.activeRampShape(ramp, clip.sourceSpanMs)
             RampShape.entries.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                     row.forEach { shape ->
                         SelectableChip(
                             label = shape.label,
-                            selected = false,
+                            selected = shape == active,
                             accentColor = accent,
                             modifier = Modifier.weight(1f),
                             onClick = { viewModel.clips.applyRampShape(clip.id, shape) }
@@ -198,7 +203,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
                 }
             }
             Text(
-                RampShape.entries.first { it.label == "Bullet" }.hint,
+                PolishRules.rampHint(active),
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )

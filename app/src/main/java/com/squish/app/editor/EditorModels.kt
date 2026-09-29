@@ -644,6 +644,11 @@ data class EditorUiState(
     val proxyUris: Map<Uri, Uri> = emptyMap(),
     /** Where each file that needs a stand-in has got to. A file that needs none is not here. */
     val proxyStatuses: Map<Uri, ProxyStatus> = emptyMap(),
+    /**
+     * How far the stand-in being built has got, 0..100, once its encoder has
+     * said; null between builds. One at a time, so one number.
+     */
+    val proxyPercent: Int? = null,
     /** How many photos or blanks are being made into clips right now. */
     val preparingStills: Int = 0,
 

@@ -625,10 +625,12 @@ fun AlignPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-            NudgeButton("-1f", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffsetFrames(clip.id, -1) }
-            NudgeButton("-10ms", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffset(clip.id, -10) }
-            NudgeButton("+10ms", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffset(clip.id, 10) }
-            NudgeButton("+1f", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffsetFrames(clip.id, 1) }
+            // A frame or ten milliseconds either way, said as such: "-1f" was
+            // the one label on the sheet that needed decoding.
+            NudgeButton("−1 frame", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffsetFrames(clip.id, -1) }
+            NudgeButton("−10 ms", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffset(clip.id, -10) }
+            NudgeButton("+10 ms", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffset(clip.id, 10) }
+            NudgeButton("+1 frame", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffsetFrames(clip.id, 1) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             SquishOutlinedButton(

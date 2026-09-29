@@ -61,8 +61,15 @@ fun BackgroundPanel(state: EditorUiState, viewModel: EditorViewModel) {
         )
 
         if (removal != null && !progress.running) {
+            // Cut out leaves the person over whatever is underneath, and under
+            // the video track that is black: the chip is only offered on an
+            // overlay, or kept where a shot already has it (an old draft, a
+            // pasted setting), so it can still be turned off.
+            val fills = BackgroundFill.entries.filter {
+                it != BackgroundFill.Remove || clip.isOverlay || removal.fill == BackgroundFill.Remove
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BackgroundFill.entries.forEach { fill ->
+                fills.forEach { fill ->
                     SelectableChip(
                         label = fill.label,
                         selected = removal.fill == fill,
@@ -92,12 +99,25 @@ fun BackgroundPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     }
                 }
             }
-            if (removal.fill == BackgroundFill.Remove) {
+            if (removal.fill == BackgroundFill.Remove && clip.isOverlay) {
                 Text(
-                    "Cut out shows black behind the person, or the picture underneath when this clip is a layer.",
+                    "Cut out leaves only the person, over whatever is under this overlay.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.TextMuted
                 )
+            }
+            if (!clip.isOverlay) {
+                Text(
+                    if (removal.fill == BackgroundFill.Remove)
+                        "Cut out shows black behind the person here: nothing is under the video track. " +
+                            "Float this clip over another shot for that shot to show through."
+                    else "To cut the person out over another shot, float this clip above it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SquishColors.TextMuted
+                )
+                SquishOutlinedButton(text = "Float this clip", modifier = Modifier.fillMaxWidth()) {
+                    viewModel.layers.switchToOverlay(clip.id)
+                }
             }
         }
 

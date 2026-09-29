@@ -47,6 +47,7 @@ run preview    "$SRC/editor/PreviewBox.kt" tools/jvm/PreviewChecks.kt
 run previewrules "$SRC/editor/PreviewRules.kt" tools/jvm/PreviewRulesChecks.kt
 run probegate  "$SRC/editor/ProbeGate.kt" tools/jvm/ProbeGateChecks.kt
 run toolrules  "$SRC/editor/ToolRules.kt" tools/jvm/ToolRulesChecks.kt
+run polish     $TIMELINE "$SRC/editor/MotionPreset.kt" "$SRC/editor/PolishRules.kt" tools/jvm/PolishRulesChecks.kt
 run window     "$SRC/timeline/TimelineWindow.kt" tools/jvm/WindowChecks.kt
 run span       "$SRC/timeline/TimelineSpan.kt" tools/jvm/SpanChecks.kt
 run filmstrip  "$SRC/media/video/Filmstrip.kt" tools/jvm/FilmstripChecks.kt

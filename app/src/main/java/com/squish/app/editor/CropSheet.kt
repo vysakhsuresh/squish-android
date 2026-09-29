@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Crop
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,13 +60,17 @@ fun CropPanel(clip: Clip, pictureAspect: Float, viewModel: EditorViewModel, acce
             viewModel.clips.setClipStraighten(clip.id, it)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            // Icons rather than the arrow glyphs "↔" and "↕", which some phone
+            // fonts have and some draw as a box.
             SquishOutlinedButton(
-                text = if (crop.flipHorizontal) "Flipped ↔" else "Flip ↔",
+                text = if (crop.flipHorizontal) "Flipped" else "Flip",
+                icon = Icons.Filled.SwapHoriz,
                 modifier = Modifier.weight(1f),
                 onClick = { viewModel.clips.flipClip(clip.id, horizontal = true) }
             )
             SquishOutlinedButton(
-                text = if (crop.flipVertical) "Flipped ↕" else "Flip ↕",
+                text = if (crop.flipVertical) "Flipped" else "Flip",
+                icon = Icons.Filled.SwapVert,
                 modifier = Modifier.weight(1f),
                 onClick = { viewModel.clips.flipClip(clip.id, horizontal = false) }
             )

@@ -369,7 +369,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
             )
         }.sortedBy { it.atMs }
 
-        record("Pin layer") {
+        record("Pin overlay") {
             _state.update { state ->
                 state.copy(
                     videoClips = state.videoClips.map {

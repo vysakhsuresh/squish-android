@@ -1111,6 +1111,7 @@ private fun StatusCards(state: EditorUiState, viewModel: EditorViewModel, onStar
         status = state.proxyStatus,
         ready = proxies.count { it == ProxyStatus.Ready },
         total = proxies.size,
+        percent = state.proxyPercent,
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
     )
     PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
@@ -1141,6 +1142,21 @@ private fun StatusCards(state: EditorUiState, viewModel: EditorViewModel, onStar
         FailureCard(
             error = failure,
             onDismiss = viewModel::clearFailure,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+    }
+
+    // The first open on this phone: the gestures, once. Last, under anything
+    // that needs answering, and not beside the saved-edit offer, which is the
+    // one thing a first open must not distract from.
+    val context = LocalContext.current
+    var hintSeen by remember { mutableStateOf(EditorHints.seen(context)) }
+    if (!hintSeen && state.recovery == null) {
+        FirstOpenHint(
+            onDismiss = {
+                EditorHints.markSeen(context)
+                hintSeen = true
+            },
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         )
     }

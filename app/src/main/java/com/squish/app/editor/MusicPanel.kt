@@ -244,7 +244,7 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
                 val recents = remember(favourites) { MusicLibrary.recents(context) }
                 if (favourites.isEmpty() && recents.isEmpty()) {
                     Text(
-                        "Nothing here yet. Star a track with ☆, or add one, and it will be waiting here next time.",
+                        "Nothing here yet. Star a track, or add one, and it will be waiting here next time.",
                         style = MaterialTheme.typography.bodySmall,
                         color = SquishColors.TextMuted
                     )

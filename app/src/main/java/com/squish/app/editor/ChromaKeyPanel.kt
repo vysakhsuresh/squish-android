@@ -50,7 +50,7 @@ fun ChromaKeyPanel(clip: Clip, viewModel: EditorViewModel, onEyedropper: ((Int) 
     PanelSurface(accent = SquishColors.Magenta) {
         PanelHeading(
             "Green screen",
-            "Cut a color out of this layer",
+            if (clip.isOverlay) "Cut a colour out of this overlay" else "Cut a colour out of an overlay",
             icon = Icons.Filled.Colorize,
             accent = SquishColors.Magenta,
             trailing = {
@@ -70,12 +70,27 @@ fun ChromaKeyPanel(clip: Clip, viewModel: EditorViewModel, onEyedropper: ((Int) 
             }
         )
 
-        if (key == null) {
+        // A key cuts a hole through to what is underneath, and under the video
+        // track there is nothing: the file shows black there. So on a shot the
+        // key buttons are not offered at all - they were, under a line saying
+        // they were pointless - and the one useful step is, which is to lift
+        // the shot onto an overlay row over the shot that should show through.
+        // A key a shot already carries (pasted, or from an old draft) keeps its
+        // Turn off above.
+        if (!clip.isOverlay) {
             Text(
-                "Keying only makes sense on a layer — cutting the base track just reveals black.",
+                "A key cuts a hole through to whatever is underneath. On the video track nothing is " +
+                    "under this clip, so float it over another shot first.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )
+            SquishOutlinedButton(text = "Float this clip", modifier = Modifier.fillMaxWidth()) {
+                viewModel.layers.switchToOverlay(clip.id)
+            }
+            return@PanelSurface
+        }
+
+        if (key == null) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 SquishOutlinedButton(text = "Key green", modifier = Modifier.weight(1f)) {
                     viewModel.layers.setChromaKey(clip.id, ChromaKey(keyColorArgb = ChromaKey.STANDARD_GREEN))
