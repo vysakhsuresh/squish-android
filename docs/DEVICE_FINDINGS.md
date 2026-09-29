@@ -346,3 +346,26 @@ encoding is one builder call away.
   extends it past the picture; export runs to the sound's tail (22.5 s) with
   audio and video tracks.
 - Timeline rows keep full height on select (after 66567bd).
+
+### Open: a quarter-turned export's thumbnails disagree with its picture (29 Sep, 23:10)
+`squish_1790638553740.mp4` (a rotate-90 export of a 200x150 clip; 200x150 +
+tag 90, see "Rotated export at Original" above) used as shot 3 plays in the
+preview, and renders into the next export, with the people sideways in a tall
+narrow box (about 0.44 wide-to-tall, where the file's shown shape is 0.75),
+while its filmstrip and filter tiles (MediaMetadataRetriever) show it upright.
+Preview and export agree, so nothing is lost between them; the open questions
+are the 0.44 box and which of the two readings is the file's. A real portrait
+camera clip (1920x1080 + tag 90) is right in both, as the first shot and as a
+later one - checked the same night.
+
+## Verified on device, 29 September late (builds 1b3c998 - f2da944)
+
+- Home cards: the export badge sits on the cover and the name has the line
+  to itself; camera and gallery file names show as "Edit · 29 Sep"; the size
+  is in the card's menu. The editor's header shows the same name.
+- A short text clip on the strip shows a T glyph instead of a blank block.
+- Filters and Adjust say "On shot N", and bring the playhead onto the shot.
+- A video opened in Squish from another app is named by its own file, not by
+  the copy Squish keeps of it.
+- A `VerifyError` on opening the editor after an incremental install was a
+  stale dex; a clean build cured it (CLAUDE.md).
