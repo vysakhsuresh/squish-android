@@ -42,14 +42,23 @@ import com.squish.app.ui.theme.SquishColors
  * fit-to-size switch, so on a phone every tap on a size meant scrolling down to
  * find out what it had done and back up to try another.
  *
+ * Everything that can appear or grow - the notes, the custom size field - sits
+ * above the chips too. The sheet hangs from the bottom of the screen, so what
+ * is below a thing that grows stays where it is and what is above it moves:
+ * the "bigger than the source" note used to appear under the chips and shift
+ * every one of them a hundred pixels up, and a second tap aimed at 480p landed
+ * on 4K.
+ *
  * Eight options in two rows of four: Original, six sizes by name, and Custom for
  * anything else. A size bigger than the source is allowed and says so - it makes
  * a bigger file, but it cannot add detail the camera never recorded.
  *
  * [sourceWidth] and [sourceHeight] are the frame the size is applied to, which
  * for an edit is the picture after its rotation and crop (EditorUiState
- * .croppedFrame) - the same numbers the encoder is given, so the summary is the
- * file's size and not the camera's.
+ * .croppedFrame). [asked] is the frame that gives, and [written] what the
+ * phone's encoder will write for it - the same numbers the encoder is given, so
+ * the summary is the file's size and not the camera's, nor a size the encoder
+ * will quietly halve.
  */
 @Composable
 fun OutputSizePicker(
@@ -57,6 +66,8 @@ fun OutputSizePicker(
     fitToSize: Boolean,
     sourceWidth: Int,
     sourceHeight: Int,
+    asked: ExportPresets.Resolution,
+    written: ExportPresets.Resolution,
     estimatedBytes: Long,
     originalBytes: Long,
     accent: Color,
@@ -69,13 +80,39 @@ fun OutputSizePicker(
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutputSummary(
-            outputP = outputP,
             fitToSize = fitToSize,
-            sourceWidth = sourceWidth,
-            sourceHeight = sourceHeight,
+            written = written,
             estimatedBytes = estimatedBytes,
             originalBytes = originalBytes
         )
+
+        if (written != asked && asked.width > 0 && asked.height > 0) {
+            Text(
+                "This phone's encoder can't write ${asked.width} × ${asked.height}, so the file will be " +
+                    "${written.width} × ${written.height}.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.Amber
+            )
+        }
+        if (!fitToSize && sourceP > 0 && outputP != OutputSize.ORIGINAL && outputP > sourceP) {
+            Text(
+                "Bigger than the source (${sourceP}p). The file grows, but upscaling can't add " +
+                    "detail the camera didn't record.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.Amber
+            )
+        }
+
+        if (editingCustom) {
+            CustomSizeField(
+                initial = if (isCustom) outputP else sourceP.takeIf { it > 0 } ?: 720,
+                accent = accent,
+                onSet = { p ->
+                    editingCustom = false
+                    onPick(p)
+                }
+            )
+        }
 
         val options: List<Int?> = listOf(OutputSize.ORIGINAL) + OutputSize.PRESETS + listOf(null)
         options.chunked(4).forEach { row ->
@@ -106,26 +143,6 @@ fun OutputSizePicker(
                 }
             }
         }
-
-        if (editingCustom) {
-            CustomSizeField(
-                initial = if (isCustom) outputP else sourceP.takeIf { it > 0 } ?: 720,
-                accent = accent,
-                onSet = { p ->
-                    editingCustom = false
-                    onPick(p)
-                }
-            )
-        }
-
-        if (!fitToSize && sourceP > 0 && outputP != OutputSize.ORIGINAL && outputP > sourceP) {
-            Text(
-                "Bigger than the source (${sourceP}p). The file grows, but upscaling can't add " +
-                    "detail the camera didn't record.",
-                style = MaterialTheme.typography.bodySmall,
-                color = SquishColors.Amber
-            )
-        }
     }
 }
 
@@ -135,18 +152,15 @@ fun OutputSizePicker(
  */
 @Composable
 private fun OutputSummary(
-    outputP: Int,
     fitToSize: Boolean,
-    sourceWidth: Int,
-    sourceHeight: Int,
+    written: ExportPresets.Resolution,
     estimatedBytes: Long,
     originalBytes: Long
 ) {
-    val resolution = ExportPresets.resolutionFor(outputP, sourceWidth, sourceHeight)
     val frame = when {
         fitToSize -> "Sized to fit"
-        resolution.width > 0 && resolution.height > 0 -> "${resolution.width} × ${resolution.height}"
-        else -> OutputSize.label(outputP)
+        written.width > 0 && written.height > 0 -> "${written.width} × ${written.height}"
+        else -> "Original size"
     }
     val change = if (originalBytes > 0 && estimatedBytes > 0) {
         val percent = ((estimatedBytes - originalBytes) * 100.0 / originalBytes).toInt()

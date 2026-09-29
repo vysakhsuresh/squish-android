@@ -420,6 +420,8 @@ private fun CompressControls(state: QuickToolViewModel.UiState, viewModel: Quick
             fitToSize = state.fitToSize,
             sourceWidth = state.width,
             sourceHeight = state.height,
+            asked = state.outputFrame,
+            written = state.writtenFrame,
             estimatedBytes = state.estimatedOutputBytes,
             originalBytes = state.originalSizeBytes,
             accent = SquishColors.Blue,

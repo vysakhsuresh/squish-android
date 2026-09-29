@@ -1,0 +1,43 @@
+@file:androidx.annotation.OptIn(UnstableApi::class)
+
+package com.squish.app.media
+
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.transformer.EncoderUtil
+import kotlin.math.abs
+
+/**
+ * What this phone's H.264 encoder will actually write for a frame it is asked
+ * for.
+ *
+ * Media3's DefaultEncoderFactory falls back by itself when an encoder cannot
+ * take the requested size - keeping the encoders whose nearest supported size
+ * is nearest by area and writing at that size - and says nothing. On the
+ * phone, 4K of a 4:3 source was promised as 2880 x 2160 and written at
+ * 1440 x 1080, half the size and a third of the weight the sheet had quoted.
+ * This asks the same question the factory asks, the same way, so the sheet can
+ * show the size that will be written and the export can be built at it.
+ */
+object EncoderCeiling {
+
+    /** The frame the encoder writes for [asked]; [asked] itself when nothing can be said. Blocking: opens the codec list. */
+    fun written(asked: ExportPresets.Resolution): ExportPresets.Resolution {
+        if (asked.width <= 0 || asked.height <= 0) return asked
+        // The encoder is handed landscape frames: a portrait output is turned a
+        // quarter turn for it and the turn written into the file (Transformer's
+        // default, portrait encoding off), so it is asked about that way up.
+        val portrait = asked.height > asked.width
+        val w = if (portrait) asked.height else asked.width
+        val h = if (portrait) asked.width else asked.height
+        val fitted = runCatching {
+            EncoderUtil.getSupportedEncoders(MimeTypes.VIDEO_H264)
+                .mapNotNull { info -> runCatching { EncoderUtil.getSupportedResolution(info, MimeTypes.VIDEO_H264, w, h) }.getOrNull() }
+                // The factory keeps the encoders nearest by area and takes the
+                // first's size; the first of the nearest is the same encoder.
+                .minByOrNull { abs(it.width.toLong() * it.height - w.toLong() * h) }
+        }.getOrNull() ?: return asked
+        return if (portrait) ExportPresets.Resolution(fitted.height, fitted.width)
+        else ExportPresets.Resolution(fitted.width, fitted.height)
+    }
+}

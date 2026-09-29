@@ -458,7 +458,9 @@ data class EditorUiState(
     val isExporting: Boolean = false,
     /** What the encoder says it has done, while it is doing it. */
     val exportProgress: ExportProgress = ExportProgress(),
-    val estimatedOutputBytes: Long = 0
+    val estimatedOutputBytes: Long = 0,
+    /** What the phone's encoder will write for [outputResolution], once asked; see [writtenResolution]. */
+    val encoderAnswer: ExportPresets.EncoderAnswer? = null
 ) {
     /**
      * How long the finished video runs.
@@ -705,6 +707,16 @@ data class EditorUiState(
         }
 
     /**
+     * The frame the file actually comes out at: [outputResolution] unless the
+     * phone's encoder has said it will write something else for it. The canvas
+     * every layer is fitted to, the sheet's number and the bitrate's pixels all
+     * read this, so the size promised is the size delivered - 4K used to be
+     * promised, budgeted for, and quietly written at half the size.
+     */
+    val writtenResolution: ExportPresets.Resolution
+        get() = ExportPresets.writtenFrame(outputResolution, encoderAnswer)
+
+    /**
      * The video bitrate this export is written at. One definition, read by the
      * estimate and by the encoder, so the size promised is the size delivered.
      */
@@ -714,7 +726,7 @@ data class EditorUiState(
         } else {
             val sourceBps = sourceVideoBps.takeIf { it > 0 }
                 ?: ExportPresets.sourceVideoBitrate(originalSizeBytes, durationMs, sourceHasAudio)
-            ExportPresets.bitrateForFrame(outputResolution, sourceWidth, sourceHeight, fps, sourceBps)
+            ExportPresets.bitrateForFrame(writtenResolution, sourceWidth, sourceHeight, fps, sourceBps)
         }
 
     /** What the finished file should weigh. */

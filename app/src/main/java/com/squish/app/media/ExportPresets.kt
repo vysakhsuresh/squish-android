@@ -10,6 +10,19 @@ object ExportPresets {
     const val AUDIO_BITRATE_BPS = 128_000
 
     /**
+     * What the phone's encoder said it will write for the frame it was asked
+     * for (EncoderCeiling). Kept with the question, so an answer to a size no
+     * longer chosen is never read as the answer to the one that is.
+     */
+    data class EncoderAnswer(val asked: Resolution, val written: Resolution) {
+        val shrunk: Boolean get() = written != asked
+    }
+
+    /** The frame that will be written for [asked]: the encoder's answer when it is to this question, else [asked]. */
+    fun writtenFrame(asked: Resolution, answer: EncoderAnswer?): Resolution =
+        if (answer != null && answer.asked == asked) answer.written else asked
+
+    /**
      * The frame an export at [outputP] comes out at, the source's shape kept.
      *
      * The short edge is set to [outputP] - "1080p" is 1080 across a portrait

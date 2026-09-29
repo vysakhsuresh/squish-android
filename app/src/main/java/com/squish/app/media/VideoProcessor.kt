@@ -234,7 +234,10 @@ class VideoProcessor(private val context: Context) {
         // A sound-only export keeps the camera's sound even when the picture's
         // mute is on - sound is all it was asked for.
         val baseAudio = state.audioOnly || !state.muteOriginal
-        val canvas = state.outputResolution.takeIf { it.width > 0 && it.height > 0 }
+        // The size the encoder will write, not the one asked for: fitted here,
+        // the layers are drawn at it and the bitrate is spent on it, rather than
+        // drawn at twice the size and shrunk by the encoder's own fallback.
+        val canvas = state.writtenResolution.takeIf { it.width > 0 && it.height > 0 }
 
         var settings: androidx.media3.common.VideoCompositorSettings? = null
         val videoSequences: List<EditedMediaItemSequence> = when {
@@ -519,7 +522,7 @@ class VideoProcessor(private val context: Context) {
         addAll(ColorGrade.effects(state.grade))
         crop(state, clip = null)?.let { add(it) }
         if (state.outputP != OutputSize.ORIGINAL && !state.fitToSize) {
-            val canvas = state.outputResolution
+            val canvas = state.writtenResolution
             if (canvas.width > 0 && canvas.height > 0) {
                 add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT))
             }

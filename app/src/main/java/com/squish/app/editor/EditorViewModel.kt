@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.ProjectSnapshot
 import com.squish.app.data.SquishRepositories
+import com.squish.app.media.EncoderCeiling
+import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
 import com.squish.app.media.ExportStage
 import com.squish.app.media.MediaCompat
@@ -470,6 +472,20 @@ class EditorViewModel(
     }
 
     /**
+     * Asks the phone's encoder what it will write for the size now chosen, so
+     * the sheet can say so. Off the main thread: it opens the codec list.
+     */
+    fun probeEncoder() {
+        val asked = _state.value.outputResolution
+        if (_state.value.encoderAnswer?.asked == asked) return
+        viewModelScope.launch {
+            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked) }
+            _state.update { it.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written)) }
+            recomputeEstimate()
+        }
+    }
+
+    /**
      * Asks whether this phone can decode [uri], and says so straight away if not -
      * rather than showing a black preview, or letting an export start that cannot
      * finish. The answer is kept for the export's preflight. See [MediaCompat].
@@ -762,7 +778,14 @@ class EditorViewModel(
             val outputDir = SquishError.exportsDir(getApplication()).apply { mkdirs() }
             val outputFile = File(outputDir, "squish_${System.currentTimeMillis()}.mp4")
 
-            val result = processor.export(SquishError.exportable(current), outputFile) { progress ->
+            // Built at the size the encoder will write, asked now rather than
+            // trusted from the sheet: the answer there may be to a size chosen
+            // since. The record below says the same size.
+            val asked = current.outputResolution
+            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked) }
+            val rendering = current.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written))
+
+            val result = processor.export(SquishError.exportable(rendering), outputFile) { progress ->
                 _state.update { it.copy(exportProgress = progress) }
             }
             // From here the file exists and is being handed over; there is
@@ -781,7 +804,7 @@ class EditorViewModel(
                 // never knew it had been exported.
                 withContext(NonCancellable) {
                     val published = GallerySaver.publish(getApplication(), file)
-                    val written = current.outputResolution
+                    val written = rendering.writtenResolution
                     historyRepository.add(
                         ExportRecord(
                             id = UUID.randomUUID().toString(),

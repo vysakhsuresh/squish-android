@@ -128,12 +128,17 @@ fun ExportSheet(
                 // The frame the file is cut to - rotated and cropped - not the one
                 // the camera shot. After a quarter turn the sheet said 1920 × 1080
                 // for a file that came out 1080 × 1920, and after a crop it
-                // promised the whole frame.
+                // promised the whole frame. And the size the encoder will write
+                // for it, asked as the choice changes: 4K was promised and
+                // written at half the size without a word.
+                LaunchedEffect(state.outputResolution) { viewModel.probeEncoder() }
                 OutputSizePicker(
                     outputP = state.outputP,
                     fitToSize = state.fitToSize,
                     sourceWidth = state.croppedFrame.width,
                     sourceHeight = state.croppedFrame.height,
+                    asked = state.outputResolution,
+                    written = state.writtenResolution,
                     estimatedBytes = state.estimatedOutputBytes,
                     originalBytes = state.originalSizeBytes,
                     accent = SquishColors.Blue,

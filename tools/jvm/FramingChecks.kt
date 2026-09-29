@@ -138,6 +138,18 @@ fun main() {
         check("${outputP}p survives an unmeasured source", none.width <= 0 || none.height > 0)
     }
 
+    // The encoder's answer is read only against the size it was asked about:
+    // 4K promised as 2880x2160 and written at 1440x1080 is what the sheet says
+    // and the bitrate pays for; an answer to a size no longer chosen is not.
+    val fourK = ExportPresets.Resolution(2880, 2160)
+    val halved = ExportPresets.EncoderAnswer(fourK, ExportPresets.Resolution(1440, 1080))
+    check("the encoder's answer is the frame written", ExportPresets.writtenFrame(fourK, halved) == ExportPresets.Resolution(1440, 1080))
+    check("a shrunk answer says so", halved.shrunk)
+    val hd = ExportPresets.Resolution(1440, 1080)
+    check("an answer to another size is not applied", ExportPresets.writtenFrame(hd, halved) == hd)
+    check("no answer yet: the size asked for", ExportPresets.writtenFrame(fourK, null) == fourK)
+    check("an answer that matches is not a fallback", !ExportPresets.EncoderAnswer(hd, hd).shrunk)
+
     if (failures.isEmpty()) {
         println("PASS - the output box is always the same shape and the same way round as the rotated frame")
     } else {

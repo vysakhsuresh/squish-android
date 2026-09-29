@@ -12,6 +12,7 @@ import com.squish.app.data.ToolAutosave
 import com.squish.app.data.ToolDraft
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
+import com.squish.app.media.EncoderCeiling
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
 import com.squish.app.media.ExportStage
@@ -70,7 +71,11 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val isLoading: Boolean = false,
         val isExporting: Boolean = false,
         val exportProgress: ExportProgress = ExportProgress(),
-        val estimatedOutputBytes: Long = 0
+        val estimatedOutputBytes: Long = 0,
+        /** The frame the size chosen gives, and what the phone's encoder will write for it - see EncoderCeiling. */
+        val outputFrame: ExportPresets.Resolution = ExportPresets.Resolution(0, 0),
+        val writtenFrame: ExportPresets.Resolution = ExportPresets.Resolution(0, 0),
+        val encoderAnswer: ExportPresets.EncoderAnswer? = null
     ) {
         val hasSource: Boolean get() = sourceUri != null
         val mergeDurationMs: Long get() = mergeClips.sumOf { it.durationMs }
@@ -494,8 +499,28 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      */
     private fun recomputeEstimate() {
         val tool = tool ?: QuickTool.Squeeze
-        val bytes = editorStateOf(tool, _state.value).estimatedExportBytes
-        _state.update { it.copy(estimatedOutputBytes = bytes) }
+        val editor = editorStateOf(tool, _state.value)
+        _state.update {
+            it.copy(
+                estimatedOutputBytes = editor.estimatedExportBytes,
+                outputFrame = editor.outputResolution,
+                writtenFrame = editor.writtenResolution
+            )
+        }
+        probeEncoder(editor.outputResolution)
+    }
+
+    /**
+     * Asks the phone's encoder what it will write for [asked], once per size,
+     * off the main thread; the estimate is worked out again when it answers.
+     */
+    private fun probeEncoder(asked: ExportPresets.Resolution) {
+        if (asked.width <= 0 || asked.height <= 0 || _state.value.encoderAnswer?.asked == asked) return
+        viewModelScope.launch {
+            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked) }
+            _state.update { it.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written)) }
+            recomputeEstimate()
+        }
     }
 
     /**
@@ -526,6 +551,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             outputP = if (tool == QuickTool.Squeeze) current.outputP else OutputSize.ORIGINAL,
             fitToSize = tool == QuickTool.Squeeze && current.fitToSize,
             targetSizeMb = current.targetSizeMb,
+            encoderAnswer = current.encoderAnswer,
             audioOnly = tool == QuickTool.Rip,
             // Checked rather than assumed, so extracting audio from a silent clip
             // fails immediately with a sentence about it instead of after a full
@@ -583,7 +609,13 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             val extension = if (audioOnly) "m4a" else "mp4"
             val outputFile = File(outputDir, "squish_${tool.id}_${System.currentTimeMillis()}.$extension")
 
-            val result = processor.export(SquishError.exportable(editorState), outputFile) { progress ->
+            // Built at the size the encoder will write, asked now: the answer
+            // on screen may be to a size chosen since.
+            val asked = editorState.outputResolution
+            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked) }
+            val rendering = editorState.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written))
+
+            val result = processor.export(SquishError.exportable(rendering), outputFile) { progress ->
                 _state.update { it.copy(exportProgress = progress) }
             }
             // From here the file exists and is being handed over; there is
@@ -616,8 +648,9 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                             originalSizeBytes = current.originalSizeBytes,
                             outputSizeBytes = file.length(),
                             durationMs = editorState.trimmedDurationMs,
-                            width = current.width,
-                            height = current.height,
+                            // The size written, which for a squeeze is not the source's.
+                            width = rendering.writtenResolution.width.takeIf { it > 0 } ?: current.width,
+                            height = rendering.writtenResolution.height.takeIf { it > 0 } ?: current.height,
                             createdAtMillis = System.currentTimeMillis(),
                             savedToGallery = published != null,
                             galleryUri = published?.toString()
