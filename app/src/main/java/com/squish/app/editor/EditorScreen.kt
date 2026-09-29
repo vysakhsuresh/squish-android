@@ -85,8 +85,6 @@ import com.squish.app.media.ExportStage
 import com.squish.app.media.keepReadAccess
 import com.squish.app.timeline.TimelineActionBar
 import com.squish.app.timeline.TimelineEditor
-import com.squish.app.timeline.TimelineState
-import com.squish.app.timeline.rippleVideo
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.ConfirmDialog
 import com.squish.app.ui.components.SquishOutlinedButton
@@ -152,12 +150,6 @@ fun EditorScreen(
 
     val kind = state.selectionKind
     val canTransition = state.selectedCanTransition
-    // Only a draft from before the main track was magnetic can hold a gap; the
-    // way to close one appears when there is one, and not otherwise.
-    val mainTrackHasGaps = remember(state.videoClips) {
-        val track = TimelineState(clips = state.videoClips)
-        track.rippleVideo().baseVideoClips.map { it.timelineStartMs } != track.baseVideoClips.map { it.timelineStartMs }
-    }
     // A clip's own tool closes when the selection no longer has it - Speed with
     // a caption selected, anything once the selection is deleted or let go.
     LaunchedEffect(openTool, kind, canTransition) {
@@ -346,8 +338,8 @@ fun EditorScreen(
                     TimelineEditor(
                         state = timeline,
                         onSelect = selectFromStrip,
-                        onMoveTo = viewModel.clips::moveClipTo,
-                        onTrim = viewModel.clips::trimClip,
+                        onTrimEdge = viewModel.clips::trimEdgeTo,
+                        onTrimHeadIn = viewModel.clips::trimHeadInTo,
                         onScrub = viewModel::scrubTo,
                         onTransitionTap = { clipId ->
                             viewModel.selectClip(clipId)
@@ -355,13 +347,16 @@ fun EditorScreen(
                         },
                         markers = state.markers,
                         barMarkers = state.beats.every(4),
-                        isPlaying = state.isPlaying,
                         fitNonce = state.fitNonce,
                         onZoomTo = viewModel::setPixelsPerSecond,
+                        onReorder = viewModel.clips::reorderClip,
+                        onPlace = viewModel.clips::placeClip,
                         onEffectMove = viewModel.clips::moveEffect,
-                        onEffectTrim = viewModel.clips::trimEffect,
+                        onEffectTrimEdge = viewModel.clips::trimEffectTo,
                         onAddVideo = addVideos,
                         onAddBlank = viewModel.clips::addBlankClip,
+                        onAddOverlay = addOverlay,
+                        onCloseGap = viewModel.clips::closeGap,
                         onOpenSound = { openToolName = Tool.Sound.name },
                         onOpenWords = { openToolName = Tool.Text.name },
                         onScrubbingChange = { timelineScrubbing = it },
@@ -377,7 +372,6 @@ fun EditorScreen(
                         accent = kind.concept?.accent ?: Concept.Video.accent,
                         effectSelected = kind == SelectionKind.Effect,
                         splittable = state.canSplitHere,
-                        onCloseGaps = if (mainTrackHasGaps) viewModel.clips::closeGaps else null,
                         modifier = Modifier.padding(vertical = 6.dp)
                     )
                 }

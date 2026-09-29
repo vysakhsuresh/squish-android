@@ -153,9 +153,9 @@ should work through it and then delete what holds up.
 - **Batch B2 (timeline model and strip mechanics).** The model is executed on
   the JVM (`tools/jvm/MagneticChecks.kt`, including the per-event drag and trim
   streams the strip sends); nothing of it has been seen on a phone. Script in
-  `docs/ROADMAP.md` §4 under B2, plus: dragging a main-track clip past its
-  neighbour swaps them and the finger keeps the clip; an overlay dragged into
-  another stops against it on its own row; the Blend sliders on an animated
+  `docs/ROADMAP.md` §4 under B2, plus (since B7 a clip is carried by a long
+  press, not dragged): an overlay carried into another on its own row stops
+  against it there; the Blend sliders on an animated
   overlay stay where they are put; Cut on beats leaves the song whole; a draft
   saved with gaps on the main track keeps them through a trim or a cut.
 - **Batch B5 (the export pipeline on Media3 1.11.1), all of it.** Built on the
@@ -215,9 +215,31 @@ should work through it and then delete what holds up.
   full screen and back keep the frame, and its scrub bar leaves no scrub
   running when full screen closes mid-drag; a tap on the picture with something
   selected deselects, otherwise plays; a tap on bare track deselects; a double
-  tap on the ruler fits; "Close gaps" appears only on a draft with gaps; To
+  tap on the ruler fits; To
   overlay with every row taken says so; a rename alone keeps a draft, and the
   drafts list shows the name.
+- **Batch B7 (the strip: fixed playhead, carrying, snapping, rows), all of it.**
+  Built on the desktop with no phone attached. The arithmetic - rows for things
+  that overlap, snapping, trim edges that follow the finger on retimed clips,
+  where a carried shot lands, one gap closed at a time, a retime keeping its
+  joins, the centred window - is executed on the JVM (`tools/jvm/LaneChecks.kt`);
+  nothing of the screen has been seen. Script in `docs/ROADMAP.md` §4 under B7,
+  plus: a fling of the strip scrubs until it stops and the preview settles on the
+  frame it stops at; the strip does not jump back a frame when the finger lifts
+  (it holds until the playhead catches up, at most 150 ms); a long press on a
+  selected clip's handle trims rather than lifts; a press that lifts and lets go
+  without moving changes nothing (no undo step); a clip carried to either side
+  scrolls the strip and the playhead with it, and lands where it is dropped; a
+  sound carried below the last sound row gets a row of its own, and one carried
+  onto a taken overlay layer stays on its own layer; the rows scroll inside the
+  strip past four with the ruler fixed, the track heads staying beside their
+  rows; picking a clip up on a folded row does not unfold rows under the finger;
+  a line of words left blank reads "Empty text"; the grey stretch beside a
+  dragged handle shows how much footage is left; a tap on a keyframe diamond puts
+  the playhead on it; "Add media" on an empty main track opens the picker; a gap
+  in an old draft is drawn, and "Close gap" on it closes that one only; a tail
+  trim snaps to a beat with a tick, not to the shots that follow it; playback
+  pauses when the strip is dragged, and also when a clip is picked up.
 
 ## Conventions worth not rediscovering
 
