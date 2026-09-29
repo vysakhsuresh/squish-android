@@ -27,6 +27,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import com.squish.app.media.ThumbnailExtractor
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +63,16 @@ import kotlin.math.sin
 @Composable
 fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
     val placed = state.effects.sortedBy { it.startMs }
+    // The tiles run each effect on the user's own shot - the frame under the
+    // playhead - as CapCut previews on real footage. A drawn sky and sun made
+    // every tile look the same at a glance, and none of them looked like video.
+    val context = LocalContext.current
+    val shot = state.baseClipAt(state.playheadMs) ?: state.videoClips.firstOrNull { it.layer == 0 }
+    val shotUri = shot?.uri ?: state.sourceUri
+    val atMs = shot?.sourceAt(state.playheadMs.coerceIn(shot.timelineStartMs, shot.timelineEndMs)) ?: 0L
+    val frame by produceState<ImageBitmap?>(null, shotUri, atMs / FRAME_BUCKET_MS) {
+        value = shotUri?.let { ThumbnailExtractor.frameAt(context, it, atMs)?.asImageBitmap() }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = SquishColors.Blue) {
@@ -64,7 +85,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             EffectKind.entries.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     row.forEach { kind ->
-                        EffectTile(kind = kind, modifier = Modifier.weight(1f)) { viewModel.clips.addEffect(kind) }
+                        EffectTile(kind = kind, frame = frame, modifier = Modifier.weight(1f)) { viewModel.clips.addEffect(kind) }
                     }
                     repeat(3 - row.size) { Box(modifier = Modifier.weight(1f)) }
                 }
@@ -93,7 +114,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
 /** One effect in the library: its picture running, and its name. */
 @Composable
-private fun EffectTile(kind: EffectKind, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun EffectTile(kind: EffectKind, frame: ImageBitmap?, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val loop = rememberInfiniteTransition(label = "effect")
     val t by loop.animateFloat(
         initialValue = 0f,
@@ -120,7 +141,8 @@ private fun EffectTile(kind: EffectKind, modifier: Modifier = Modifier, onClick:
         ) {
             // The effect over a two-second stretch, at the strength it is added at.
             val sample = TimedEffect(id = "sample", kind = kind, startMs = 0L, endMs = 2_000L)
-            drawSample(FxParams.at(listOf(sample), t.toLong()))
+            val p = FxParams.at(listOf(sample), t.toLong())
+            if (frame != null) drawFrame(frame, p) else drawSample(p)
         }
         Text(
             kind.label,
@@ -206,6 +228,125 @@ private fun DrawScope.drawSample(p: FxParams) {
     if (p.flash > 0.001f) drawRect(Color.White, alpha = p.flash.coerceIn(0f, 1f))
 }
 
+/**
+ * The user's frame, treated as the shader would: zoomed and shifted, colour
+ * split, softened, lined, grained and flashed - [drawSample]'s steps, on real
+ * pixels. Colour (hue, mono, invert) goes through one matrix, built the same
+ * way [drawSample]'s treat() does it per pixel.
+ */
+private fun DrawScope.drawFrame(frame: ImageBitmap, p: FxParams) {
+    val w = size.width
+    val h = size.height
+    // Cover the tile, as the preview fills its box.
+    val cover = maxOf(w / frame.width, h / frame.height) * p.zoom.coerceAtLeast(0.1f)
+    val dw = frame.width * cover
+    val dh = frame.height * cover
+    val left = (w - dw) / 2f - p.offsetX * w
+    val top = (h - dh) / 2f - p.offsetY * h
+    val filter = ColorFilter.colorMatrix(ColorMatrix(colourMatrix(p)))
+
+    fun image(dx: Float, alpha: Float, only: FloatArray? = null) {
+        val f = if (only == null) filter else ColorFilter.colorMatrix(ColorMatrix(times(maskMatrix(only), colourMatrix(p))))
+        drawImage(
+            frame,
+            srcOffset = IntOffset.Zero,
+            srcSize = IntSize(frame.width, frame.height),
+            dstOffset = IntOffset((left + dx).roundToInt(), top.roundToInt()),
+            dstSize = IntSize(dw.roundToInt(), dh.roundToInt()),
+            alpha = alpha,
+            colorFilter = f,
+            blendMode = if (only != null) BlendMode.Plus else BlendMode.SrcOver
+        )
+    }
+
+    if (p.split > 0.0001f) {
+        val d = p.split * w
+        drawRect(Color.Black)
+        image(d, 1f, floatArrayOf(1f, 0f, 0f))
+        image(0f, 1f, floatArrayOf(0f, 1f, 0f))
+        image(-d, 1f, floatArrayOf(0f, 0f, 1f))
+    } else {
+        image(0f, 1f)
+    }
+    if (p.blur > 0.0001f) {
+        val d = p.blur * w * 8f
+        image(d, 0.35f)
+        image(-d, 0.35f)
+    }
+    if (p.scan > 0.001f) {
+        var y = 0f
+        while (y < h) {
+            drawRect(Color.Black.copy(alpha = 0.22f * p.scan), Offset(0f, y), Size(w, 1.5f))
+            y += 4f
+        }
+    }
+    if (p.noise > 0.001f) {
+        val seed = (p.timeSec * 60f).toInt()
+        for (i in 0 until 60) {
+            val x = ((i * 97 + seed * 31) % 101) / 100f * w
+            val y = ((i * 57 + seed * 17) % 103) / 102f * h
+            drawRect(Color.White.copy(alpha = 0.5f * p.noise), Offset(x, y), Size(2f, 2f))
+        }
+    }
+    if (p.flash > 0.001f) drawRect(Color.White, alpha = p.flash.coerceIn(0f, 1f))
+}
+
+/** Hue, then mono, then invert, as a 4x5 colour matrix (row-major, offsets 0-255). */
+private fun colourMatrix(p: FxParams): FloatArray {
+    var m = identity()
+    if (p.hue > 0.001f) {
+        val s = sin(p.hue); val k = cos(p.hue)
+        m = times(
+            floatArrayOf(
+                0.299f + 0.701f * k + 0.168f * s, 0.587f - 0.587f * k + 0.330f * s, 0.114f - 0.114f * k - 0.497f * s, 0f, 0f,
+                0.299f - 0.299f * k - 0.328f * s, 0.587f + 0.413f * k + 0.035f * s, 0.114f - 0.114f * k + 0.292f * s, 0f, 0f,
+                0.299f - 0.300f * k + 1.250f * s, 0.587f - 0.588f * k - 1.050f * s, 0.114f + 0.886f * k - 0.203f * s, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f
+            ),
+            m
+        )
+    }
+    if (p.mono > 0.001f) {
+        val a = p.mono; val r = 0.2126f; val g = 0.7152f; val b = 0.0722f
+        m = times(
+            floatArrayOf(
+                1 - a + a * r, a * g, a * b, 0f, 0f,
+                a * r, 1 - a + a * g, a * b, 0f, 0f,
+                a * r, a * g, 1 - a + a * b, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f
+            ),
+            m
+        )
+    }
+    if (p.invert > 0.001f) {
+        val s = 1f - 2f * p.invert; val o = 255f * p.invert
+        m = times(
+            floatArrayOf(s, 0f, 0f, 0f, o, 0f, s, 0f, 0f, o, 0f, 0f, s, 0f, o, 0f, 0f, 0f, 1f, 0f),
+            m
+        )
+    }
+    return m
+}
+
+private fun maskMatrix(rgb: FloatArray) =
+    floatArrayOf(rgb[0], 0f, 0f, 0f, 0f, 0f, rgb[1], 0f, 0f, 0f, 0f, 0f, rgb[2], 0f, 0f, 0f, 0f, 0f, 1f, 0f)
+
+private fun identity() = floatArrayOf(1f, 0f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 0f, 1f, 0f)
+
+/** a after b: the 4x5 matrices composed as affine maps. */
+private fun times(a: FloatArray, b: FloatArray): FloatArray {
+    val out = FloatArray(20)
+    for (row in 0 until 4) {
+        for (col in 0 until 5) {
+            var v = 0f
+            for (k in 0 until 4) v += a[row * 5 + k] * b[k * 5 + col]
+            if (col == 4) v += a[row * 5 + 4]
+            out[row * 5 + col] = v
+        }
+    }
+    return out
+}
+
 private fun hueRotate(r: Float, g: Float, b: Float, a: Float): Triple<Float, Float, Float> {
     val s = sin(a); val k = cos(a)
     return Triple(
@@ -214,6 +355,9 @@ private fun hueRotate(r: Float, g: Float, b: Float, a: Float): Triple<Float, Flo
         r * (0.299f - 0.300f * k + 1.250f * s) + g * (0.587f - 0.588f * k - 1.050f * s) + b * (0.114f + 0.886f * k - 0.203f * s)
     )
 }
+
+/** Frames for the tiles are refetched only when the playhead moves this far. */
+private const val FRAME_BUCKET_MS = 500L
 
 private val SKY = Color(0xFF3A6EA5)
 private val SUN = Color(0xFFF2C14E)
