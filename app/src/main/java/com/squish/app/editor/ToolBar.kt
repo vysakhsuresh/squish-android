@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.Flip
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.FlipToBack
 import androidx.compose.material.icons.filled.FlipToFront
 import androidx.compose.material.icons.filled.GraphicEq
@@ -132,6 +134,8 @@ val Tool.icon: ImageVector
         Tool.Edit -> Icons.Filled.Edit
         Tool.Style -> Icons.Filled.Palette
         Tool.Strength -> Icons.Filled.Tune
+        Tool.Speak -> Icons.Filled.RecordVoiceOver
+        Tool.Flip -> Icons.Filled.Flip
         Tool.Duplicate -> Icons.Filled.ContentCopy
         Tool.ToOverlay -> Icons.Filled.FlipToFront
         Tool.ToMain -> Icons.Filled.FlipToBack

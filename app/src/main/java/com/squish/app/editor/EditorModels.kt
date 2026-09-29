@@ -86,12 +86,42 @@ data class TextOverlayItem(
     val colorArgb: Int,
     val xFraction: Float = 0.5f,
     val yFraction: Float = 0.85f,
-    val sizeSp: Int = 28,
+    val sizeSp: Int = TextStyleSpec.DEFAULT_SIZE_SP,
 
-    /** How it is set. New captions get an outline, which reads on any picture. */
+    // How it is set - see TextStyleSpec, which gathers these for Apply to all
+    // and Copy style. New captions get an outline, which reads on any picture.
     val font: TextFont = TextFont.Sans,
-    val look: TextLook = TextLook.Outline,
+    val fontFile: String? = null,
+    val bold: Boolean = false,
+    val italic: Boolean = false,
+    val underline: Boolean = false,
+    val align: TextAlign = TextAlign.Center,
+    val letterSpacing: Float = 0f,
+    val lineSpacing: Float = 1f,
+    val stroke: TextStroke = TextLook.OUTLINE_STROKE,
+    val shadow: TextShadow = TextShadow.NONE,
+    val background: TextBackground = TextBackground.NONE,
+    val glow: Boolean = false,
+    val opacity: Float = 1f,
+
+    /** Turned on the picture, degrees clockwise, about its centre. */
+    val rotationDegrees: Float = 0f,
+    /** Mirrored left to right - a sticker facing the other way. */
+    val flipped: Boolean = false,
+
+    // How it arrives, leaves and behaves in between, each with its length.
     val motion: TextMotion = TextMotion.None,
+    val motionInMs: Long = TextAnimation.DEFAULT_IN_MS,
+    val motionOut: TextExit = TextExit.None,
+    val motionOutMs: Long = TextAnimation.DEFAULT_OUT_MS,
+    val loop: TextLoop = TextLoop.None,
+    val loopMs: Long = TextAnimation.DEFAULT_LOOP_MS,
+    /**
+     * Where each word of an auto-caption starts, from [startMs], as the
+     * segmenter heard them; empty for a line typed by hand. Read by the Words
+     * arrival, so the words land on the speech.
+     */
+    val wordStartsMs: List<Long> = emptyList(),
 
     /**
      * A sticker: an emoji placed on the picture. Drawn exactly like a caption -
@@ -118,6 +148,44 @@ data class TextOverlayItem(
     fun anchorAt(timelineMs: Long): Pair<Float, Float> {
         val sample = track?.sampleAt(timelineMs) ?: return xFraction to yFraction
         return sample.xFraction to sample.yFraction
+    }
+
+    /** The style alone: what Apply to all, Copy style and a saved style carry. */
+    val style: TextStyleSpec
+        get() = TextStyleSpec(
+            font = font, fontFile = fontFile, bold = bold, italic = italic, underline = underline,
+            align = align, letterSpacing = letterSpacing, lineSpacing = lineSpacing,
+            colorArgb = colorArgb, sizeSp = sizeSp, stroke = stroke, shadow = shadow,
+            background = background, glow = glow, opacity = opacity
+        )
+
+    /** This line in [spec]'s style; its words, timing and place are its own still. */
+    fun withStyle(spec: TextStyleSpec): TextOverlayItem = copy(
+        font = spec.font, fontFile = spec.fontFile, bold = spec.bold, italic = spec.italic, underline = spec.underline,
+        align = spec.align, letterSpacing = spec.letterSpacing, lineSpacing = spec.lineSpacing,
+        colorArgb = spec.colorArgb, sizeSp = spec.sizeSp, stroke = spec.stroke, shadow = spec.shadow,
+        background = spec.background, glow = spec.glow, opacity = spec.opacity
+    )
+
+    /** Where it is and how big: what a finger on its box changes. */
+    val placement: TextPlacement get() = TextPlacement(xFraction, yFraction, sizeSp, rotationDegrees)
+
+    fun placed(at: TextPlacement): TextOverlayItem = copy(
+        xFraction = at.xFraction, yFraction = at.yFraction, sizeSp = at.sizeSp, rotationDegrees = at.rotationDegrees
+    )
+
+    /** Styled and placed as a title preset is, and moving as it does. */
+    fun styledBy(preset: TitlePreset): TextOverlayItem = withStyle(preset.style).copy(
+        yFraction = preset.yFraction,
+        motion = preset.motion,
+        motionOut = preset.exit
+    )
+
+    /** The caption's state at [timeMs] of the timeline, or null when it is not on screen. */
+    fun frameAt(timeMs: Long): TextFrame? {
+        if (timeMs < startMs || timeMs >= endMs || text.isBlank()) return null
+        val total = (endMs - startMs).coerceAtLeast(1L)
+        return TextAnimation.frameAt(motion, motionOut, loop, motionInMs, motionOutMs, loopMs, timeMs - startMs, total, wordStartsMs)
     }
 
     /**
@@ -152,6 +220,13 @@ const val AUTO_CAPTION_PREFIX = "auto-"
 val TextOverlayItem.isAutoCaption: Boolean get() = id.startsWith(AUTO_CAPTION_PREFIX)
 
 enum class SyncStatus { Idle, Analyzing, Matched, NoMatch }
+
+/** Whose speech auto-captions listen to: the shots' own sound, the sounds added over them, or both. */
+enum class CaptionSource(val label: String) {
+    Camera("Camera sound"),
+    Sounds("Added sounds"),
+    Both("Both")
+}
 
 /**
  * How captioning is going. [transcribed] is separate from [total] because speech
@@ -376,6 +451,13 @@ data class EditorUiState(
     val lookIntensity: Float = 1f,
 
     val textOverlays: List<TextOverlayItem> = emptyList(),
+    /** A line's style, copied and waiting to be pasted onto another. Not an edit until it is. */
+    val styleClipboard: TextStyleSpec? = null,
+    /** What auto-captions listen to, and in which language (null: the phone's own). Settings, not edits. */
+    val captionSource: CaptionSource = CaptionSource.Both,
+    val captionLanguage: String? = null,
+    /** The line being read aloud into a sound clip, while the voice is made. */
+    val speakingId: String? = null,
     /** Timed effects from the library - shake, glitch, flash and the rest. */
     val effects: List<TimedEffect> = emptyList(),
     /**

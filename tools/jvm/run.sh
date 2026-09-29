@@ -81,6 +81,14 @@ run overlay    "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
                "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
                tools/jvm/stub/Uri.kt "$SRC/media/ExportPlan.kt" tools/jvm/OverlayChecks.kt
 
+run text       "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
+               "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
+               "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" "$SRC/editor/EditRules.kt" \
+               "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" "$SRC/media/audio/SpeechSegmenter.kt" \
+               tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt tools/jvm/stub/MonoPcm.kt \
+               "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
+               tools/jvm/stub/Uri.kt "$SRC/media/ExportPlan.kt" tools/jvm/TextChecks.kt
+
 run timecode   "$SRC/editor/Timecode.kt" "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/TimelineModels.kt" \
                "$SRC/timeline/TimelineLanes.kt" "$SRC/timeline/Keyframe.kt" "$SRC/timeline/Mask.kt" "$SRC/timeline/ChromaKey.kt" \
                "$SRC/timeline/Background.kt" "$SRC/editor/TimedEffect.kt" \

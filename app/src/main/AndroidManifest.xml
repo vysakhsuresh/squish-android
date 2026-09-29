@@ -9,6 +9,15 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <!-- Reading a line aloud binds the phone's text-to-speech engine, which
+         since Android 11 is invisible to an app that has not declared it wants
+         one: without this, TextToSpeech reports no engine on every phone. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:name=".SquishApplication"
         android:allowBackup="true"

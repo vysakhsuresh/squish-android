@@ -233,6 +233,18 @@ sealed class SquishError(
         fix = "Check it is a .srt file — SubRip, with lines like 00:00:01,000 --> 00:00:04,000."
     )
 
+    class SpeechUnavailable : SquishError(
+        title = "Couldn't read that aloud",
+        detail = "The phone's text-to-speech engine made no sound for this line. Nothing was sent anywhere; the voice is the phone's own.",
+        fix = "Check a text-to-speech voice is installed under Settings › Accessibility › Text-to-speech, then try again."
+    )
+
+    class FontUnreadable : SquishError(
+        title = "That isn't a font the phone can read",
+        detail = "The file opened, but it did not load as a typeface.",
+        fix = "Pick a .ttf or .otf font file."
+    )
+
     class OutOfMemory(cause: Throwable? = null) : SquishError(
         title = "Ran out of memory",
         detail = "Decoding and encoding at this resolution needed more memory than Android would give the app.",

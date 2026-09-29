@@ -295,6 +295,42 @@ should work through it and then delete what holds up.
   empty lane; a PiP moved To main under a camera mute says it is silent there;
   a photo overlay longer than a minute asks before To main renders it.
 
+- **Batch B10 (text and stickers), all of it.** Built on the desktop with no
+  phone attached. The decisions - the looks as presets over the explicit
+  fields, an arrival, a leaving and a loop each with its length, the letter
+  and word reveals, the box round the letters and the letters back from the
+  box (a pinch to 2x is 56 from 28, measured from the gesture's start), and
+  where the segmenter hears words begin - are executed on the JVM
+  (`tools/jvm/TextChecks.kt`); nothing of the screen has been seen. Script in
+  `docs/ROADMAP.md` §4 under B10, plus: Add text puts "Your text" in the
+  middle of the picture with the keyboard up and the words selected, and a
+  line let go of still saying that is taken off again; the Edit sheet's tabs
+  (Keyboard · Style · Bubble · Animation) sit over the keyboard, and the
+  keyboard folds when a tab other than Keyboard is picked; a double tap on a
+  line on the picture opens its keyboard; the text box's corners are Delete,
+  a copy nudged beside it, Edit (keyboard; Placement for a sticker) and the
+  resize handle, and a small sticker does not grow when touched (its own
+  limits, not the overlay's); a line's turn is drawn by the preview's
+  `rotate` and written by Media3's `setRotationDegrees` negated - check the
+  direction against an export, as B8 did for overlays; a flipped sticker is
+  mirrored in the bitmap itself so the file agrees; the shadow is a blurred
+  copy under the stroke (a shadow layer drew over it); a Band bubble is the
+  frame's full width and a Speech bubble has a tail; the eyedropper reads the
+  window through `PixelCopy` (a 5 px patch averaged) - check it returns the
+  picture's colour, not the box's or the crop's dim; a font imported as .ttf
+  lands under `files/fonts/` and a draft names it by file; Apply to all
+  carries style and place to every line of words but not to stickers; the
+  Words arrival lands each word on the segmenter's dips (`wordStartsMs`,
+  mapped through the shot's clock), and retyping a line clears them; a
+  voiceover's lines follow it when it is dragged; SRT import over existing
+  lines asks Replace or Add beside; Read aloud makes a WAV under
+  `files/speech/` and lands it as a sound clip at the line's start - the
+  manifest's `<queries>` for `TTS_SERVICE` is what lets the engine bind on
+  Android 11+, and whether Media3 plays and exports the WAV is the same
+  question B9's voiceover asks; a draft from before this build opens with its
+  looks read back through `TextStyleJson` (Outline as a stroke, Box as a
+  bubble) and every animated line leaving by a fade, as it did.
+
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The

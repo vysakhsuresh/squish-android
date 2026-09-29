@@ -66,7 +66,15 @@ data class OverlayOnPicture(
     /** Where the editor put it, without that correction: what a gesture moves from. */
     val placed: Transform,
     /** Its picture's width over height, once known. */
-    val aspect: Float?
+    val aspect: Float?,
+    /**
+     * Where a placement is kept within reach and in range. An overlay's limits
+     * are the clip's (OverlayRules.limited); a line of text has its own, since
+     * its box is its letters and a small sticker's is under the overlay's floor.
+     */
+    val limit: (Transform) -> Transform = OverlayRules::limited,
+    /** What the picture says while the finger is on it, moving or resizing. */
+    val readout: (Transform, Boolean) -> String = OverlayRules::readout
 )
 
 /** What the box's gestures and corners do. */
@@ -79,7 +87,15 @@ class OverlayHandleActions(
     val onDelete: (String) -> Unit,
     val onDuplicate: (String) -> Unit,
     /** The overlay's own settings: its Placement sheet, where Reset is, with the numbers. */
-    val onEdit: (String) -> Unit
+    val onEdit: (String) -> Unit,
+    /** A double tap on it: for a line of text, the keyboard, as in CapCut. Null where a double tap is two taps. */
+    val onOpen: ((String) -> Unit)? = null,
+    /**
+     * A line of text's gesture, in the line's own terms - where it is and how
+     * big - worked out by the preview from the box's Transform (TextGeometry);
+     * [onPlace] is for clips.
+     */
+    val onPlaceText: ((id: String, placement: TextPlacement) -> Unit)? = null
 )
 
 /** The corners, in the order [OverlayRules.Box.corners] gives them. */
@@ -151,6 +167,8 @@ fun OverlayHandles(
                 val cornerOutset = CORNER_OUTSET.toPx()
                 val grace = HIT_GRACE.toPx()
                 val snapPx = SNAP_DISTANCE.toPx()
+                // The last tap's target and moment, for telling a double tap.
+                var lastTap: Pair<String, Long>? = null
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     down.consume()
@@ -189,9 +207,9 @@ fun OverlayHandles(
                                 val s = OverlayRules.snapped(raw, selected.aspect, w, h, emptyList(), snapPx, snapPosition = false, snapAngle = true)
                                 if (s.snappedAny && !lastSnapped) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 lastSnapped = s.snappedAny
-                                val placed = OverlayRules.limited(s.transform)
+                                val placed = selected.limit(s.transform)
                                 snap = null
-                                readout = OverlayRules.readout(placed, moving = false)
+                                readout = selected.readout(placed, false)
                                 latestActions.onPlace(selected.clipId, placed)
                                 event.changes.forEach(PointerInputChange::consume)
                             }
@@ -259,9 +277,9 @@ fun OverlayHandles(
                         val s = OverlayRules.snapped(raw, target.aspect, w, h, others(target.clipId), snapPx, snapAngle = multi)
                         if (s.snappedAny && !lastSnapped) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         lastSnapped = s.snappedAny
-                        val placed = OverlayRules.limited(s.transform)
+                        val placed = target.limit(s.transform)
                         snap = s
-                        readout = OverlayRules.readout(placed, moving = !multi)
+                        readout = target.readout(placed, !multi)
                         latestActions.onPlace(target.clipId, placed)
                     }
                     if (moving) {
@@ -273,10 +291,20 @@ fun OverlayHandles(
                         // up, and selects it; on bare picture is the picture's own
                         // tap. While playing it used to select and nothing more -
                         // no box, and the picture played on.
-                        if (hit == null) latestEmptyTap()
-                        else {
+                        if (hit == null) {
+                            lastTap = null
+                            latestEmptyTap()
+                        } else {
                             latestTouch()
                             if (hit.clipId != latestSelected) latestActions.onSelect(hit.clipId)
+                            // A second tap on the same thing soon after the first opens it.
+                            val now = System.currentTimeMillis()
+                            val open = latestActions.onOpen
+                            val again = lastTap?.let { (id, at) -> id == hit.clipId && now - at <= DOUBLE_TAP_MS } == true
+                            if (again && open != null) {
+                                lastTap = null
+                                open(hit.clipId)
+                            } else lastTap = hit.clipId to now
                         }
                     }
                 }
@@ -394,3 +422,6 @@ private val SNAP_DISTANCE = 8.dp
 /** How far two fingers have to spread, or turn, before they count as a pinch rather than a wobble. */
 private const val PINCH_START = 0.03f
 private const val TURN_START = 3f
+
+/** Two taps on the same thing this close together are one double tap. */
+private const val DOUBLE_TAP_MS = 350L

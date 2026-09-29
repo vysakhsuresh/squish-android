@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -29,8 +30,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.squish.app.editor.edits.TextEdits
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TransitionType
 import com.squish.app.ui.components.SelectableChip
@@ -147,6 +150,10 @@ fun EditorToolSheet(
     newLineId: String?,
     /** A sound picked from Sound's list: selected, with its own tools in place of the sheet. */
     onSelectSound: (String) -> Unit,
+    /** Starts the eyedropper over the picture; the colour picked comes back to the caller given. */
+    onEyedropper: ((Int) -> Unit) -> Unit = {},
+    /** A line picked from Text's list: selected, with its keyboard up in place of the sheet. */
+    onEditLine: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val kind = state.selectionKind
@@ -154,15 +161,24 @@ fun EditorToolSheet(
     val clip = (state.videoClips + state.audioClips).firstOrNull { it.id == state.selectedClipId }
     val item = state.textOverlays.firstOrNull { it.id == state.selectedClipId }
     val effect = state.effects.firstOrNull { it.id == state.selectedClipId }
-    var chip by rememberSaveable(tool) { mutableIntStateOf(0) }
+    // A line's Edit opens on its keyboard, whichever tab the last line was left on.
+    var chip by rememberSaveable(tool, if (tool == Tool.Edit) state.selectedClipId else null) { mutableIntStateOf(0) }
 
     val chips = when (tool) {
         Tool.Sound -> listOf("Music", "Voice & FX", "Sync")
         Tool.Looks -> listOf("Filters", "Adjust", "Templates")
         Tool.Frame -> listOf("Ratio", "Rotate")
         Tool.Cutout -> listOf("Background", "Chroma key")
+        // As CapCut lays a line out: the keyboard first, then how it looks,
+        // what is behind it and how it moves, all in the one sheet over the
+        // keyboard so the words can be watched while any of it is changed.
+        Tool.Edit -> listOf("Keyboard", "Style", "Bubble", "Animation")
         else -> emptyList()
     }
+    // The keyboard goes when a tab that is not for typing is picked, so the tab
+    // has the room; the field is a tap away on the Keyboard tab.
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(tool, chip) { if (tool == Tool.Edit && chip != 0) keyboard?.hide() }
     val reset: (() -> Unit)? = when (tool) {
         Tool.Looks -> when (chip) {
             0 -> { { viewModel.clips.setLook(null) } }
@@ -178,13 +194,17 @@ fun EditorToolSheet(
             else { { viewModel.clips.resetClipVolume(c.id) } }
         }
         Tool.Animation -> when {
-            item != null -> { { viewModel.text.restyleCaption(item.id, { it.copy(motion = TextMotion.None) }) } }
+            item != null -> { { viewModel.text.restyleCaption(item.id, { it.withoutMotion() }) } }
             clip != null -> { { viewModel.clips.clearKeyframes(clip.id) } }
             else -> null
         }
         Tool.Placement -> when {
             item != null -> {
-                { viewModel.text.restyleCaption(item.id, { it.copy(xFraction = 0.5f, yFraction = 0.5f, sizeSp = STICKER_SIZE_SP) }) }
+                {
+                    viewModel.text.restyleCaption(item.id, {
+                        it.copy(xFraction = 0.5f, yFraction = 0.5f, sizeSp = TextEdits.STICKER_SIZE_SP, rotationDegrees = 0f, flipped = false)
+                    })
+                }
             }
             clip != null -> { { viewModel.clips.resetPlacement(clip.id) } }
             else -> null
@@ -192,7 +212,19 @@ fun EditorToolSheet(
         Tool.Transition -> clip?.let { c ->
             { viewModel.layers.setTransition(c.id, TransitionType.None, c.transitionIn.durationMs) }
         }
-        Tool.Opacity -> clip?.let { c -> { viewModel.layers.setOpacity(c.id, 1f) } }
+        Tool.Opacity -> when {
+            item != null -> { { viewModel.text.setOpacity(item.id, 1f) } }
+            clip != null -> { { viewModel.layers.setOpacity(clip.id, 1f) } }
+            else -> null
+        }
+        Tool.Edit -> item?.let { i ->
+            when (chip) {
+                1 -> { { viewModel.text.restyleCaption(i.id, { it.withDefaultStyle() }) } }
+                2 -> { { viewModel.text.restyleCaption(i.id, { it.copy(background = TextBackground.NONE) }) } }
+                3 -> { { viewModel.text.restyleCaption(i.id, { it.withoutMotion() }) } }
+                else -> null
+            }
+        }
         Tool.Mask -> clip?.let { c -> { viewModel.layers.setMask(c.id, null) } }
         Tool.Cutout -> clip?.let { c ->
             if (chip == 0) { { viewModel.analysis.setBackground(c.id, null) } }
@@ -232,7 +264,7 @@ fun EditorToolSheet(
                 1 -> SoundVoicePanel(state, viewModel)
                 else -> SoundSyncPanel(state, viewModel)
             }
-            Tool.Text -> TextPanel(state, viewModel, onAddText, onAddTitle)
+            Tool.Text -> TextPanel(state, viewModel, onAddText, onAddTitle, onEditLine)
             Tool.Stickers -> StickersPanel(viewModel)
             Tool.Effects -> EffectsPanel(state, viewModel)
             Tool.Looks -> when (chip) {
@@ -255,7 +287,10 @@ fun EditorToolSheet(
                 clip != null -> PlacementPanel(state, clip, viewModel, accent)
             }
             Tool.Transition -> clip?.let { TransitionPanel(it, viewModel) }
-            Tool.Opacity -> clip?.let { OpacityPanel(it, viewModel) }
+            Tool.Opacity -> when {
+                item != null -> TextOpacityPanel(item, viewModel)
+                clip != null -> OpacityPanel(clip, viewModel)
+            }
             Tool.Layer -> clip?.let { LayerPanel(state, it, viewModel) }
             Tool.Mask -> clip?.let { MaskPanel(it, viewModel) }
             Tool.Cutout -> clip?.let {
@@ -270,16 +305,20 @@ fun EditorToolSheet(
             }
             Tool.Beats -> BeatPanel(state, viewModel)
             Tool.Sync -> clip?.let { AlignPanel(state, it, viewModel) }
-            Tool.Edit -> item?.let { TextEditPanel(it, viewModel, selectAll = it.id == newLineId) }
-            Tool.Style -> item?.let { TextStylePanel(it, viewModel) }
+            Tool.Edit -> item?.let {
+                when (chip) {
+                    0 -> TextEditPanel(it, viewModel, selectAll = it.id == newLineId)
+                    1 -> TextStylePanel(it, viewModel, onEyedropper)
+                    2 -> TextBubblePanel(it, viewModel, onEyedropper)
+                    else -> TextAnimationPanel(it, viewModel)
+                }
+            }
+            Tool.Style -> item?.let { TextStylePanel(it, viewModel, onEyedropper) }
             Tool.Strength -> effect?.let { EffectStrengthPanel(it, viewModel) }
             else -> Unit
         }
     }
 }
-
-/** The size a sticker lands at, which Placement's Reset goes back to. */
-private const val STICKER_SIZE_SP = 64
 
 /** An effect's strength when it is added; Strength's Reset goes back to it. */
 private const val DEFAULT_STRENGTH = 0.7f

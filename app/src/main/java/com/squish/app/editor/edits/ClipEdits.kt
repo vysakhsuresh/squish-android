@@ -248,13 +248,8 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     text = template.titleText ?: preset.sample,
                     startMs = 0L,
                     endMs = DEFAULT_TITLE_MS.coerceAtMost(total),
-                    colorArgb = preset.colorArgb,
-                    yFraction = preset.yFraction,
-                    sizeSp = preset.sizeSp,
-                    font = preset.font,
-                    look = preset.look,
-                    motion = preset.motion
-                )
+                    colorArgb = preset.colorArgb
+                ).styledBy(preset)
             }
             current.copy(
                 cropAspect = template.crop ?: CropAspect.Original,
