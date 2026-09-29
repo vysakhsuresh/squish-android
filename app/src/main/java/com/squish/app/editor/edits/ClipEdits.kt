@@ -896,7 +896,9 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     fun liftClip(clipId: String) {
         val current = _state.value
         carriedGroup = clipId.takeIf { current.toTimeline().carriesSelection(it) }
-        if (current.selectingMore) host.joinSelection(clipId) else host.selectClip(clipId)
+        // A set kept after "Done selecting" is carried too: the plain select
+        // let the set go, so the drop found one clip selected and moved it alone.
+        if (current.selectingMore || carriedGroup != null) host.joinSelection(clipId) else host.selectClip(clipId)
     }
 
     /**

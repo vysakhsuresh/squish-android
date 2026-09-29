@@ -712,7 +712,10 @@ fun TimelineEditor(
     val keyTap: (String, Long) -> Unit = remember {
         { id, atMs ->
             if (!guard.blocking) {
-                rawSelect(id)
+                // A key tap is a seek onto the key, not a toggle: with Select
+                // more on, the strip's tap took a clip that was already in the
+                // set out of it, while parking the playhead on its own key.
+                if (id !in latestState.allSelectedIds) rawSelect(id)
                 latestSeek(atMs)
             }
         }
@@ -1053,7 +1056,14 @@ private data class Lift(
      * back exactly as it was - a snap target a few pixels off its own edge
      * would otherwise move a clip that was only pressed.
      */
-    val moved: Boolean = false
+    val moved: Boolean = false,
+    /**
+     * The selection this carry takes with it, when it was picked up as one of
+     * several selected (carriesSelection, as liftClip decides it) - read at the
+     * press, before the lift changes the selection. The landing is then worked
+     * out for the whole set: its members are neither walls nor snap targets.
+     */
+    val carried: Set<String>? = null
 )
 
 /** Where a carried thing would land if let go now, and where to draw it. */
@@ -1119,7 +1129,9 @@ private class StripLayout(
         // clip's handle is wider than an effect's, and measured with a clip's the
         // strip beside an effect's grip neither trimmed nor lifted.
         fun onHandle(id: String, start: Long, end: Long, gripPx: Float): Boolean {
-            if (id != state.selectedClipId) return false
+            // Every selected bar draws its grips, not only the lead's; a hold
+            // on any of them trims rather than lifts.
+            if (id !in state.allSelectedIds) return false
             val startPx = window.xPx(start)
             val endPx = window.xPx(end)
             val grip = minOf(gripPx, (endPx - startPx) / 3f)
@@ -1151,7 +1163,8 @@ private class StripLayout(
         }
         return Lift(
             clip.id, row.group, clip.shownName, accent, clip.timelineStartMs,
-            clip.durationMs, from, ms - clip.timelineStartMs, at
+            clip.durationMs, from, ms - clip.timelineStartMs, at,
+            carried = state.allSelectedIds.takeIf { state.carriesSelection(clip.id) }
         )
     }
 
@@ -1191,10 +1204,29 @@ private class StripLayout(
         // own edge would otherwise move a clip that was only pressed.
         if (!lift.moved) return Landing(lift.startMs, lift.fromRow, null, null, fallbackTop, fallbackHeight)
 
+        // Nothing that moves with it is a target: snapped to where a member of
+        // its own set was, it landed against an edge that had moved away.
         val snap = TimelineLanes.snapSpan(
-            wanted, lift.lengthMs, TimelineLanes.snapTargets(state, markers, setOf(lift.id)), snapMs
+            wanted, lift.lengthMs, TimelineLanes.snapTargets(state, markers, lift.carried ?: setOf(lift.id)), snapMs
         )
         val asked = askedRow(lift, own)
+
+        // Carried as one of several selected: everyone slides by the same
+        // amount and keeps their rows, as far as the whole set can go - what
+        // placeClip does on the drop. Resolved for the lifted clip alone, the
+        // set's own members were walls: two butted selected overlays could not
+        // be carried forward at all, since the drop never differed from the lift.
+        lift.carried?.let { group ->
+            val asked0 = snap.startMs - lift.startMs
+            val picture = state.pictureEndMs ?: state.videoClips.maxOfOrNull { it.timelineEndMs } ?: Long.MAX_VALUE
+            val stops = listOf(state.groupMoveDelta(group, asked0)) +
+                state.textClips.filter { it.id in group }.map {
+                    EditRules.clampedShift(it.timelineStartMs, it.timelineEndMs, asked0, picture)
+                }
+            val delta = stops.minByOrNull { abs(it) } ?: asked0
+            val startMs = lift.startMs + delta
+            return Landing(startMs, lift.fromRow, snap.lineMs.takeIf { startMs == snap.startMs }, null, fallbackTop, fallbackHeight)
+        }
 
         // Where to draw the track's row [index] (in its own terms); a new one
         // straddles the edge of the track it will open at.

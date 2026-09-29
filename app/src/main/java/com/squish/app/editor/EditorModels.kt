@@ -14,6 +14,7 @@ import com.squish.app.media.video.MotionTrack
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipAttributes
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.selectionAfterRestore
 import com.squish.app.timeline.EffectSpan
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.TimelineState
@@ -798,7 +799,18 @@ data class EditorUiState(
             stabilizeStrength = stabilizeStrength
         )
 
-    /** The same fields put back, leaving the playhead and the zoom where they are. */
+    /**
+     * The same fields put back, leaving the playhead and the zoom where they are.
+     *
+     * The snapshot carries the lead alone, so the rest of a Select more set is
+     * reconciled with it here (selectionAfterRestore): kept, less anything the
+     * step took away, only while the restored lead is one of it. Left as it
+     * was, an undo could leave a set with no lead (the toolbar the set's,
+     * Delete doing nothing, "Done selecting" unable to clear it), a set around
+     * a lead that was never in it (Delete then took both), or ids of clips
+     * that were gone. The Replace sheet is a question about one clip and goes
+     * when the restored selection is another; Done replaced it out of sight.
+     */
     fun restoring(snapshot: EditSnapshot): EditorUiState = copy(
         videoClips = snapshot.videoClips,
         audioClips = snapshot.audioClips,
@@ -806,6 +818,14 @@ data class EditorUiState(
         effects = snapshot.effects,
         markers = snapshot.markers,
         selectedClipId = snapshot.selectedClipId,
+        selectedClipIds = selectionAfterRestore(
+            snapshot.selectedClipId,
+            allSelectedIds,
+            (snapshot.videoClips + snapshot.audioClips).map { it.id }.toSet() +
+                snapshot.textOverlays.map { it.id } + snapshot.effects.map { it.id }
+        ),
+        selectingMore = selectingMore && snapshot.selectedClipId != null,
+        replacing = replacing?.takeIf { it.clipId == snapshot.selectedClipId },
         muteOriginal = snapshot.muteOriginal,
         originalVolume = snapshot.originalVolume,
         rotationDegrees = snapshot.rotationDegrees,

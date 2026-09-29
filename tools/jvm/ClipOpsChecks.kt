@@ -40,6 +40,7 @@ import com.squish.app.timeline.withClipsReordered
 import com.squish.app.timeline.withFrozenFrame
 import com.squish.app.timeline.withSelectionJoined
 import com.squish.app.timeline.withSelectionToggled
+import com.squish.app.timeline.selectionAfterRestore
 import kotlin.math.abs
 import kotlin.system.exitProcess
 
@@ -383,6 +384,36 @@ fun main() {
         check(led.withSelectionJoined("b") == led, "joining twice changed something")
         // The tap on the strip still toggles out.
         check(two.withSelectionToggled("b").allSelectedIds == setOf("a"), "a strip tap no longer leaves the set")
+    }
+
+    // --- A set carried by a member butted against another member: they are no walls. ---
+    run {
+        val o1 = video("o1", 2_000, start = 0, layer = 1)
+        val o2 = video("o2", 2_000, start = 2_000, layer = 1)
+        val o3 = video("o3", 1_000, start = 7_000, layer = 1)
+        val state = TimelineState(clips = listOf(video("a", 10_000), o1, o2, o3), selectedClipId = "o1", selectedIds = setOf("o2"))
+        check(state.carriesSelection("o1"), "the butted pair is not carried together")
+        // What the strip's landing now asks of the set, not of o1 alone.
+        check(state.groupMoveDelta(setOf("o1", "o2"), 500) == 500L, "the set is walled by its own member: ${state.groupMoveDelta(setOf("o1", "o2"), 500)}")
+        check(state.groupMoveDelta(setOf("o1", "o2"), 5_000) == 3_000L, "the set runs through o3: ${state.groupMoveDelta(setOf("o1", "o2"), 5_000)}")
+        // o1 resolved alone is stopped by o2 - the fault the set's landing avoids.
+        check(state.groupMoveDelta(setOf("o1"), 500) == 0L, "o1 alone is not walled by o2")
+        val moved = state.withClipsMoved(setOf("o1", "o2"), state.groupMoveDelta(setOf("o1", "o2"), 500))
+        check(moved.byId("o1").timelineStartMs == 500L && moved.byId("o2").timelineStartMs == 2_500L, "the set did not move together")
+    }
+
+    // --- An undo reconciles the rest of a selection with the lead it puts back. ---
+    run {
+        val all = setOf("a", "b", "o")
+        // Add overlay O (lead O), Select more, tap A, Undo: the lead goes back to nothing.
+        check(selectionAfterRestore(null, setOf("o", "a"), all - "o").isEmpty(), "a set with no lead survived an undo")
+        // The step before had X selected: the set was never built around X.
+        check(selectionAfterRestore("x", setOf("o", "a"), all + "x").isEmpty(), "an undo joined a set to a lead that was never in it")
+        // Lead A, B added then in the set, Undo the add: B is gone from the set.
+        check(selectionAfterRestore("a", setOf("a", "b"), all - "b").isEmpty(), "a clip the undo took away is still in the set")
+        // An undo that touches none of it leaves the set as it was.
+        check(selectionAfterRestore("a", setOf("a", "b", "o"), all) == setOf("b", "o"), "an unrelated undo let the set go")
+        check("a" !in selectionAfterRestore("a", setOf("a", "b"), all), "the lead is in its own set")
     }
 
     // --- What was measured on the footage, through Reverse, Replace, Freeze and Copy. ---

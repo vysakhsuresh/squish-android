@@ -1772,6 +1772,18 @@ fun TimelineState.withSelectionJoined(id: String): TimelineState {
 }
 
 /**
+ * The rest of a selection once an undo or redo has put [lead] back: the set
+ * that was selected ([before], its lead included), less what no longer
+ * [exists], and kept only while [lead] is one of it - a set never built
+ * around the restored lead is let go rather than joined to it. Nothing
+ * selected leaves nothing. The lead itself is never in the result.
+ */
+fun selectionAfterRestore(lead: String?, before: Set<String>, exists: Set<String>): Set<String> {
+    if (lead == null || lead !in before) return emptySet()
+    return (before intersect exists) - lead
+}
+
+/**
  * Whether a carry that starts on [id] takes the selection with it: only when
  * the clip lifted is one of several already selected. A clip lifted from
  * outside the set moves alone, as it does in every editor with a selection -
