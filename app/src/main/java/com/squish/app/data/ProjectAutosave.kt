@@ -711,7 +711,10 @@ class ProjectAutosave(context: Context) {
         clip.lookId?.let { put("lookId", it) }
         if (clip.lookIntensity != 1f) put("lookIntensity", clip.lookIntensity.toDouble())
         if (!clip.adjust.isIdentity) put("adjust", encodeAdjust(clip.adjust))
-        clip.crop?.takeIf { !it.isIdentity }?.let { crop ->
+        // A crop that only holds a shape chip - the window still the whole
+        // frame - is kept too: the chip is what the next drag of a corner is
+        // held to, and it read Free after a reload.
+        clip.crop?.takeIf { !it.isIdentity || it.ratio != CropRatio.Free }?.let { crop ->
             put("crop", JSONObject().apply {
                 put("left", crop.rect.left.toDouble())
                 put("top", crop.rect.top.toDouble())
@@ -868,10 +871,13 @@ class ProjectAutosave(context: Context) {
         // Saved when the look and the colour sliders were one setting for the
         // edit: they go onto every main-track shot, which is what they graded.
         // Told by the fields, like the voice: a draft is only ever read once
-        // this way, since the next save writes them on the clips.
+        // this way, since the next save writes them on the clips. Brightness
+        // was a gain then and is an offset now, so the number is converted
+        // to the offset that leaves the midtones where they were (see
+        // Adjust.brightnessFromLegacyGain) rather than read as it stands.
         val legacyLook = json.optString("lookId").takeIf { it.isNotBlank() && it != "null" }
         val legacyAdjust = Adjust(
-            brightness = json.optDouble("brightness", 0.0).toFloat().coerceIn(-1f, 1f),
+            brightness = Adjust.brightnessFromLegacyGain(json.optDouble("brightness", 0.0).toFloat().coerceIn(-1f, 1f)),
             contrast = json.optDouble("contrast", 0.0).toFloat().coerceIn(-1f, 1f),
             saturation = json.optDouble("saturation", 0.0).toFloat().coerceIn(-1f, 1f)
         )
@@ -1062,7 +1068,7 @@ class ProjectAutosave(context: Context) {
                     flipHorizontal = c.optBoolean("flipH", false),
                     flipVertical = c.optBoolean("flipV", false),
                     ratio = enumOrNull<CropRatio>(c.optString("ratio")) ?: CropRatio.Free
-                ).takeIf { !it.isIdentity }
+                ).takeIf { !it.isIdentity || it.ratio != CropRatio.Free }
             },
             reframe = decodeTrack(json.optJSONArray("reframe")),
             mask = json.optJSONObject("mask")?.let { m ->

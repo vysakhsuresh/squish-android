@@ -242,12 +242,21 @@ fun CanvasPanel(
                 )
             }
         }
+        // A background only shows round a picture fitted into a canvas of a
+        // chosen shape. With Original the picture already fills the frame and
+        // with Custom the drawn rectangle is the frame, so the chip says what
+        // it is waiting for rather than describing a canvas that is not there.
+        val waitingForRatio = background.fill != CanvasFill.Crop && !state.paddedCanvas
         Text(
-            when (background.fill) {
-                CanvasFill.Crop -> "The picture fills the frame and is cut to its shape."
-                CanvasFill.Colour -> "The picture is kept whole, on a colour."
-                CanvasFill.Blur -> "The picture is kept whole, over a blurred copy of the shot."
-                CanvasFill.Image -> "The picture is kept whole, over a picture of your own."
+            when {
+                waitingForRatio && state.cropAspect == CropAspect.Custom ->
+                    "The hand-drawn crop is the frame itself. Pick a shape on Ratio and the picture is put whole on a canvas of it, with this round it."
+                waitingForRatio ->
+                    "Pick a shape on Ratio to see it: with Original the picture already fills the frame."
+                background.fill == CanvasFill.Crop -> "The picture fills the frame and is cut to its shape."
+                background.fill == CanvasFill.Colour -> "The picture is kept whole, on a colour."
+                background.fill == CanvasFill.Blur -> "The picture is kept whole, over a blurred copy of the shot."
+                else -> "The picture is kept whole, over a picture of your own."
             },
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextMuted

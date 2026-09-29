@@ -7,7 +7,8 @@ import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.graphics.Paint
 import android.net.Uri
-import com.squish.app.timeline.Clip
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileOutputStream
 
@@ -23,30 +24,51 @@ import java.io.FileOutputStream
  * of overlays the export is already at the five hardware decoders a mid-range
  * phone opens (MAX_FOOTAGE_LAYER); the failure is a black picture or an export
  * that stops. A still costs nothing to play, and behind a blur the difference
- * between a moving background and a held one is slight.
+ * between a moving background and a held one is slight. Which frame is the
+ * middle is FrameRules.backdropMomentMs, read on a coarse grid.
  */
 object CanvasBackdrop {
 
-    /** The moment of a shot its blurred backdrop is taken from: its middle, in the file's own time. */
-    fun stillMomentOf(clip: Clip): Long = clip.sourceAt(clip.timelineStartMs + clip.durationMs / 2)
+    /**
+     * Blurred stills are made one at a time. Reading a frame is a
+     * MediaMetadataRetriever decoding a 4K picture, blocking and beyond
+     * cancelling once started; a trim drag used to ask for one per pointer
+     * event and every ask ran at once on the IO pool - dozens of decoders,
+     * a memory spike, and the editor stalling. Waiting for the lock is
+     * cancellable, so a preview request overtaken by the next never starts.
+     */
+    private val lane = Mutex()
 
     /**
-     * A blurred still of [uri] at [atMs], cut to fill [aspect]. Blocking; call
-     * it off the main thread. Null when the frame cannot be read.
+     * A blurred still of [uri] at [atMs], cut to fill [aspect]. Call it off
+     * the main thread. Null when the frame cannot be read.
      *
      * Blurred by being shrunk to a few dozen pixels and drawn back up with
      * filtering: the same on every phone, on the CPU, and far softer than any
      * shader blur at a sensible tap count. Darkened a little, the way every
      * editor's blur backdrop is, so the footage on top reads first.
+     *
+     * A photo on the main track is a picture, not footage: the retriever has
+     * no frame to give for it, so it is decoded as the image it is. It used
+     * to be skipped, and the file went black behind every photo while the
+     * preview showed the colour.
      */
     suspend fun blurred(context: Context, uri: Uri, atMs: Long, aspect: Float): File? {
         val file = File(dir(context), "blur_${uri.toString().hashCode().toUInt().toString(16)}_${atMs}_${aspectName(aspect)}.png")
         if (file.exists() && file.length() > 0) return file
-        val frame = ThumbnailExtractor.frameAt(context, uri, atMs) ?: return null
-        return try {
-            write(file, backdropOf(frame, aspect, blur = true))
-        } finally {
-            frame.recycle()
+        return lane.withLock {
+            // Made while this waited its turn.
+            if (file.exists() && file.length() > 0) return@withLock file
+            val frame = if (StillClips.isStill(uri)) {
+                decodeImage(context, uri, BLUR_LONG_SIDE) ?: ThumbnailExtractor.frameAt(context, uri, atMs)
+            } else {
+                ThumbnailExtractor.frameAt(context, uri, atMs) ?: decodeImage(context, uri, BLUR_LONG_SIDE)
+            } ?: return@withLock null
+            try {
+                write(file, backdropOf(frame, aspect, blur = true))?.also { prune(context, keep = it) }
+            } finally {
+                frame.recycle()
+            }
         }
     }
 
@@ -54,15 +76,7 @@ object CanvasBackdrop {
     fun fromImage(context: Context, image: Uri, aspect: Float): File? {
         val file = File(dir(context), "image_${image.toString().hashCode().toUInt().toString(16)}_${aspectName(aspect)}.png")
         if (file.exists() && file.length() > 0) return file
-        val decoded = runCatching {
-            ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, image)) { decoder, info, _ ->
-                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                val long = maxOf(info.size.width, info.size.height).coerceAtLeast(1)
-                var sample = 1
-                while (long / (sample * 2) >= IMAGE_LONG_SIDE) sample *= 2
-                decoder.setTargetSampleSize(sample)
-            }
-        }.getOrNull() ?: return null
+        val decoded = decodeImage(context, image, IMAGE_LONG_SIDE) ?: return null
         return try {
             write(file, backdropOf(decoded, aspect, blur = false))
         } finally {
@@ -78,6 +92,17 @@ object CanvasBackdrop {
         val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { eraseColor(argb or Color.BLACK) }
         return write(file, bitmap)
     }
+
+    /** [image] decoded no larger than [longSide] across, in software; null for anything that is not a picture. */
+    private fun decodeImage(context: Context, image: Uri, longSide: Int): Bitmap? = runCatching {
+        ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, image)) { decoder, info, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val long = maxOf(info.size.width, info.size.height).coerceAtLeast(1)
+            var sample = 1
+            while (long / (sample * 2) >= longSide) sample *= 2
+            decoder.setTargetSampleSize(sample)
+        }
+    }.getOrNull()
 
     /**
      * [source] cut to fill a frame of [aspect]: scaled so the frame is covered,
@@ -118,6 +143,24 @@ object CanvasBackdrop {
         bitmap.recycle()
     }
 
+    /**
+     * Keeps the blurred stills to a few dozen. Every one can be made again
+     * from the footage, and a session of trimming and reordering would
+     * otherwise leave a file for every moment ever asked about, none of them
+     * ever removed. The newest stay, [keep] among them, and nothing younger
+     * than a minute goes: a still just made for an export is read by the
+     * encoder a moment later.
+     */
+    private fun prune(context: Context, keep: File) {
+        val stills = dir(context).listFiles { f -> f.name.startsWith("blur_") && f != keep } ?: return
+        if (stills.size <= BLUR_KEEP) return
+        val now = System.currentTimeMillis()
+        stills.sortedBy { it.lastModified() }
+            .take(stills.size - BLUR_KEEP)
+            .filter { now - it.lastModified() > PRUNE_GRACE_MS }
+            .forEach { runCatching { it.delete() } }
+    }
+
     /** A frame of [aspect] with its long side [longSide], both sides even as encoders require. */
     private fun sizeFor(aspect: Float, longSide: Int): Pair<Int, Int> {
         val a = if (aspect.isFinite() && aspect > 0f) aspect else 1f
@@ -136,4 +179,8 @@ object CanvasBackdrop {
     private const val IMAGE_LONG_SIDE = 1920
     private const val SOLID_LONG_SIDE = 64
     private const val DARKEN_ALPHA = 64
+
+    /** Enough for every shot of a long edit at a couple of shapes; the rest are made again when wanted. */
+    private const val BLUR_KEEP = 48
+    private const val PRUNE_GRACE_MS = 60_000L
 }

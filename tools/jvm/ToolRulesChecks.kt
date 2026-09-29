@@ -163,13 +163,15 @@ fun main() {
         check(Tool.Clip.label != Tool.Split.label, "level 0's Edit and Split share a name")
     }
 
-    // --- A photo on an overlay row: only the tools that do something to a picture. ------
+    // --- A photo on an overlay row: only the tools that do something to a picture -
+    //     its look and sliders among them, graded on the CPU, since the plan puts a
+    //     grade on every clip and Apply to all overlays would otherwise skip it. ------
     run {
         val photo = toolsFor(SelectionKind.PhotoOverlay)
-        for (footageOnly in listOf(Tool.Volume, Tool.Speed, Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Filters, Tool.Adjust)) {
+        for (footageOnly in listOf(Tool.Volume, Tool.Speed, Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track)) {
             check(footageOnly !in photo, "a photo overlay offers $footageOnly, which has nothing to act on")
         }
-        for (wanted in listOf(Tool.Opacity, Tool.Layer, Tool.Placement, Tool.Animation, Tool.ToMain, Tool.Crop)) {
+        for (wanted in listOf(Tool.Opacity, Tool.Layer, Tool.Placement, Tool.Animation, Tool.ToMain, Tool.Crop, Tool.Filters, Tool.Adjust)) {
             check(wanted in photo, "a photo overlay has no $wanted")
         }
         check(photo.all { it in toolsFor(SelectionKind.Overlay) }, "a photo overlay offers a tool footage does not")

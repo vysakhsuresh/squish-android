@@ -907,6 +907,19 @@ data class EditorUiState(
         }
 
     /**
+     * The canvas a base shot is composed on before the frame's crop is cut
+     * from it, in the export's pixels: the padded canvas, or the picture's own
+     * turned frame - the canvas the preview composes on (TimelinePreview),
+     * whose fractions a shot's placement and the frame's crop are in. The
+     * export fits each shot's picture into this before placing and cropping
+     * it; done on the shot's own frame instead, a cropped shot's placement
+     * was cut to the window's bounds and the frame's ratio was cut out of the
+     * window rather than the canvas.
+     */
+    val composeResolution: ExportPresets.Resolution
+        get() = if (paddedCanvas) writtenResolution else ExportPresets.Resolution(framedWidth, framedHeight)
+
+    /**
      * The frame the file actually comes out at: [outputResolution] unless the
      * phone's encoder has said it will write something else for it. The canvas
      * every layer is fitted to, the sheet's number and the bitrate's pixels all

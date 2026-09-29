@@ -99,9 +99,11 @@ val LEVEL_ZERO: List<Tool> = listOf(
  * Voice to every clip with sound, and Extract audio to footage; B10 brought
  * Opacity, Speak and Flip to text.
  *
- * A photo kept as a picture is drawn by the preview itself, not a player, so
- * it has no shader to grade it: Crop, which is done to the view, but no
- * Filters or Adjust.
+ * A photo kept as a picture is drawn by the preview itself, not a player: its
+ * Crop is done to the view and its Filters and Adjust are graded on the CPU
+ * (TimelinePreview's StillPictures), the file grading it through its image
+ * item. It has no sound, speed or footage for the player's shaders to work
+ * on, so the rest stay off it.
  *
  * Text: Edit first, since the keyboard is what a line is usually selected for;
  * a line has no Placement sheet - it is moved on the picture, and Style has
@@ -123,7 +125,9 @@ fun toolsFor(kind: SelectionKind, canTransition: Boolean = false): List<Tool> = 
         Tool.Duplicate, Tool.ToMain, Tool.Delete
     )
     SelectionKind.PhotoOverlay -> listOf(
-        Tool.Split, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement, Tool.Crop, Tool.Duplicate, Tool.ToMain, Tool.Delete
+        Tool.Split, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement,
+        Tool.Filters, Tool.Adjust, Tool.Crop,
+        Tool.Duplicate, Tool.ToMain, Tool.Delete
     )
     // CapCut's order: the level, then the fades, then everything about time.
     SelectionKind.Audio -> listOf(

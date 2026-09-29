@@ -144,6 +144,39 @@ fun main() {
         check(near(h, 240f + HslBand.HUE_SWING_DEGREES, 3f), "blue's hue +1 turned it to $h, not ${240f + HslBand.HUE_SWING_DEGREES}")
     }
 
+    // --- A draft's old brightness gain comes back as the offset that keeps mid-grey where it was. ---
+    run {
+        for (gain in listOf(-0.6f, -0.2f, 0f, 0.3f, 0.5f)) {
+            val offset = Adjust.brightnessFromLegacyGain(gain)
+            val then = (0.5f * (1f + gain)).coerceIn(0f, 1f)
+            val now = 0.5f + offset * Looks.BRIGHTNESS_REACH
+            check(near(then, now, 1e-3f), "a legacy gain of $gain became $offset, which puts mid-grey at $now not $then")
+        }
+        check(near(Adjust.brightnessFromLegacyGain(0f), 0f), "no gain became an offset")
+        check(Adjust.brightnessFromLegacyGain(1f) <= 1f && Adjust.brightnessFromLegacyGain(-1f) >= -1f, "a legacy gain ran off the slider")
+    }
+
+    // --- A whole picture graded: every pixel as applyTo has it, the vignette
+    //     darkening the corners and not the middle, and the alpha kept. --------------
+    run {
+        val w = 8
+        val h = 6
+        val pixels = IntArray(w * h) { (0x80 shl 24) or 0xB8856A }
+        Looks.grade("warm", 1f).applyTo(pixels, w, h)
+        val one = Looks.grade("warm", 1f).applyTo(px(0xB8, 0x85, 0x6A))
+        check(pixels.all { (it and 0xFFFFFF) == (one and 0xFFFFFF) }, "a picture graded differs from its pixels graded one by one")
+        check(pixels.all { (it ushr 24) == 0x80 }, "grading lost the picture's alpha")
+        val shaded = IntArray(w * h) { px(0xB8, 0x85, 0x6A) }
+        Looks.grade(null, 1f, Adjust(vignette = 1f)).applyTo(shaded, w, h)
+        val middle = rgb(shaded[(h / 2) * w + w / 2]).first
+        val corner = rgb(shaded[0]).first
+        check(middle == 0xB8, "the vignette darkened the middle: $middle")
+        check(corner < middle, "the vignette left the corner as bright as the middle: $corner")
+        val untouched = IntArray(4) { skin }
+        Looks.grade(null, 1f).applyTo(untouched, 2, 2)
+        check(untouched.all { it == skin }, "an identity grade changed a picture")
+    }
+
     // --- The swatch maths still holds for every catalogue look with the sliders on. ---
     for (look in Looks.catalog) {
         val g = Looks.grade(look.id, 1f, Adjust(exposure = 0.3f, highlights = 0.5f, hue = 0.2f))

@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.squish.app.media.StillClips
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.effects.Look
 import com.squish.app.media.effects.LookPreview
@@ -40,7 +41,12 @@ class LookFrame(private val pixels: IntArray, val width: Int, val height: Int) {
 
         suspend fun grab(context: Context, uri: Uri, atMs: Long): LookFrame? =
             withContext(Dispatchers.IO) {
-                val frame = ThumbnailExtractor.frameAt(context, uri, atMs) ?: return@withContext null
+                // A photo on an overlay row is a picture, not footage: the
+                // retriever has no frame of it, so it is decoded as the image it is.
+                val frame = (
+                    if (StillClips.isStill(uri)) StillClips.previewBitmap(context, uri, WIDTH * 2)
+                    else ThumbnailExtractor.frameAt(context, uri, atMs)
+                    ) ?: return@withContext null
                 try {
                     val height = (WIDTH.toFloat() * frame.height / frame.width)
                         .toInt().coerceIn(1, WIDTH * 2)

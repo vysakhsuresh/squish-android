@@ -82,15 +82,14 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     }
 
     /**
-     * What fills the canvas round the picture; see CanvasBackground. With a
-     * fill and no ratio chosen yet, 9:16 is - a canvas is only ever wanted for
-     * posting somewhere, and that is where.
+     * What fills the canvas round the picture; see CanvasBackground. The
+     * ratio is left as it is: a background shows once a shape is chosen on
+     * the Ratio chip, and the Background chip says so until then. It used
+     * to switch an Original or Custom ratio to 9:16 by itself, which threw a
+     * hand-drawn crop away without a word.
      */
     fun setCanvasBackground(background: CanvasBackground) = record("Background") {
-        _state.update { current ->
-            val aspect = if (background.pads && current.cropAspect.ratio == null) CropAspect.Portrait else current.cropAspect
-            current.copy(canvasBackground = background, cropAspect = aspect)
-        }
+        _state.update { it.copy(canvasBackground = background) }
     }
 
     /** The background's colour dragged towards: one step for the drag. */
@@ -243,7 +242,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * open. Null with no picture at all.
      */
     fun gradeTarget(current: EditorUiState = _state.value): Clip? =
-        current.videoClips.firstOrNull { it.id == current.selectedClipId && !it.isStillPicture }
+        current.videoClips.firstOrNull { it.id == current.selectedClipId }
             ?: current.baseClipAt(current.playheadMs)
             ?: current.videoClips.filter { it.isMain }.let { shots ->
                 cutTarget(shots.map { ShotSpan(it.id, it.timelineStartMs, it.timelineEndMs) }, current.playheadMs)
@@ -288,15 +287,15 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
 
     /**
      * Apply to all: this clip's look, or its sliders, onto every other picture
-     * of its kind - a shot's onto the shots, an overlay's onto the overlays.
-     * Photos kept as pictures are drawn by the preview itself and have no
-     * grade; they are left alone. One undo step.
+     * of its kind - a shot's onto the shots, an overlay's onto the overlays,
+     * photos among them: a photo is graded on the CPU in the preview and
+     * through its image item in the file. One undo step.
      */
     fun applyLookToAll(clipId: String) = record("Apply look to all") {
         val from = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return@record
         _state.update { s ->
             s.copy(videoClips = s.videoClips.map {
-                if (it.isOverlay != from.isOverlay || it.isStillPicture) it
+                if (it.isOverlay != from.isOverlay) it
                 else it.copy(lookId = from.lookId, lookIntensity = from.lookIntensity)
             })
         }
@@ -306,7 +305,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         val from = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return@record
         _state.update { s ->
             s.copy(videoClips = s.videoClips.map {
-                if (it.isOverlay != from.isOverlay || it.isStillPicture) it else it.copy(adjust = from.adjust)
+                if (it.isOverlay != from.isOverlay) it else it.copy(adjust = from.adjust)
             })
         }
     }

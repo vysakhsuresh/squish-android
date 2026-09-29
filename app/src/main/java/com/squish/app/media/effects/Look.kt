@@ -181,6 +181,18 @@ data class Adjust(
 
         /** Hue at full: half the wheel, so the two ends of the slider meet. */
         const val HUE_TURN_DEGREES = 180f
+
+        /**
+         * The Brightness slider of a draft saved when it was a gain - every
+         * channel times (1 + value) - as the offset it is now, chosen so a
+         * mid-grey lands where it did: the picture's midtones, which are what
+         * the slider was set by eye against, come back the same, and only
+         * the far ends of the range drift a little. Without this a draft
+         * opened after the change showed a different picture from the one
+         * that had been exported, with nothing touched.
+         */
+        fun brightnessFromLegacyGain(gain: Float): Float =
+            (gain * 0.5f / Looks.BRIGHTNESS_REACH).coerceIn(-1f, 1f)
     }
 }
 
@@ -386,6 +398,45 @@ data class Grade(
 
         fun byte(v: Float) = (min(1f, max(0f, v)) * 255f + 0.5f).toInt()
         return (0xFF shl 24) or (byte(r) shl 16) or (byte(g) shl 8) or byte(b)
+    }
+
+    /**
+     * A whole picture graded in place - [applyTo] on every pixel, and the
+     * vignette, which needs a place in the frame: the shader's falloff from
+     * the middle to the corners, in the same numbers. For a photo on an
+     * overlay row, which the preview draws itself rather than through a
+     * player's shader. Grain, bloom and sharpening are left out, as the look
+     * chips leave them out (LookPreview): grain frozen on a still reads as
+     * dirt, and the other two are a texture the file has and the preview
+     * does without.
+     */
+    fun applyTo(pixels: IntArray, width: Int, height: Int, fromRow: Int = 0, toRow: Int = height) {
+        if (width <= 0 || height <= 0 || isIdentity) return
+        val aspect = width.toFloat() / height
+        val halfDiagonal = kotlin.math.sqrt((aspect * 0.5f) * (aspect * 0.5f) + 0.25f)
+        val vignetted = abs(vignette) > 1e-3f
+        val first = fromRow.coerceIn(0, height)
+        val last = toRow.coerceIn(first, height)
+        var i = first * width
+        for (y in first until last) {
+            for (x in 0 until width) {
+                val argb = pixels[i]
+                var graded = applyTo(argb)
+                if (vignetted) {
+                    val px = ((x + 0.5f) / width - 0.5f) * aspect
+                    val py = (y + 0.5f) / height - 0.5f
+                    val d = kotlin.math.sqrt(px * px + py * py) / halfDiagonal
+                    val falloff = 1f - vignette * smoothstep(0.42f, 1.06f, d)
+                    val r = (((graded shr 16) and 0xFF) * falloff + 0.5f).toInt().coerceIn(0, 255)
+                    val g = (((graded shr 8) and 0xFF) * falloff + 0.5f).toInt().coerceIn(0, 255)
+                    val b = ((graded and 0xFF) * falloff + 0.5f).toInt().coerceIn(0, 255)
+                    graded = (r shl 16) or (g shl 8) or b
+                }
+                // The picture's own alpha stays: a transparent logo is still transparent.
+                pixels[i] = (argb and 0xFF000000.toInt()) or (graded and 0xFFFFFF)
+                i++
+            }
+        }
     }
 
     /** One channel of the split-tone colour at luminance [l], as 0..1. */

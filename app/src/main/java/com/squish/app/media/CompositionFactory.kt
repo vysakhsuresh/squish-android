@@ -267,11 +267,13 @@ object CompositionFactory {
             // frame the camera saw rather than from a scaled copy of it.
             clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
             clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
-            ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
-            // The clip's own crop and grade on its own picture, before the fit -
-            // where the preview's shader and layers apply them.
-            clip.crop?.takeIf { !it.isIdentity }?.let { add(ClipCropEffect(it)) }
+            // The grade on the frame the camera saw - the player's shader,
+            // before the view's crop - so a vignette falls off to the corners
+            // of the picture, not of the window; then the clip's own crop, on
+            // its own picture, before the fit, where the preview's layers cut it.
             addAll(ColorGrade.effects(clip.grade))
+            ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
+            clip.crop?.takeIf { !it.isIdentity }?.let { add(ClipCropEffect(it)) }
             if (canvas != null && canvas.width > 0 && canvas.height > 0) {
                 add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT))
             }

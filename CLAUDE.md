@@ -457,7 +457,47 @@ should work through it and then delete what holds up.
   after a purge, not a discard); a draft from before this build opens with
   its one look and sliders on every shot and its reframe track on the shots
   of the first file (`brightness` was a gain then and is an offset now, so
-  the same number is a little different a picture).
+  the old number is converted to the offset that keeps mid-grey where it was,
+  `Adjust.brightnessFromLegacyGain`; the far ends of the range drift a
+  little).
+  From its review round (built, the arithmetic in `FrameRulesChecks.kt` and
+  `GradeChecks.kt`, nothing seen): a base shot's export chain is now the
+  preview's layer for layer - graded on its own frame, its crop window cut,
+  turned, fitted whole onto the compose canvas (`composeResolution`), *then*
+  placed and *then* the frame's ratio or rectangle cut from that canvas - so
+  a 1:1 crop plus Placement 1.6x grows past the fitted square in the file as
+  on screen, and Frame 16:9 over a 1:1 crop pillarboxes the square rather
+  than cutting a band from it; the pass count is unchanged, since Media3
+  folds consecutive matrix transformations into one program; auto-reframe's
+  window follows `FrameRules.subjectOnCanvas` in both (the subject carried
+  through the crop, the quarter turn and the placement - the export probes
+  each reframed file's shape for it) - check step 4's export against the
+  preview with a crop and a placement on the reframed shot, and with Rotate
+  90°; the Mask tool edits in place again (a PiP in the corner stays in the
+  corner with its outline on it, a 9:16 frame stays 9:16), the outline layer
+  walking the surface's own geometry (`ShotFrame`, `OverlayFrame`) so a drag
+  moves the shape under the finger through the placement's scale; base
+  surfaces are laid out at their decoded shape inside the picture's frame
+  (`SurfaceDraw.aspect`), so a portrait clip cut into a landscape edit is
+  pillarboxed as the file has it and its Crop window is measured on its own
+  picture (the sheet probes each clip's file for the chip hold); the blurred
+  backdrop is one still per shot from its middle on a one-second grid, made
+  one at a time under a lock (a trim drag no longer opens a decoder per
+  pointer event), pruned to 48 files, kept up across a cut and over a gap
+  (the shot before the gap, from the very start, and on to the end - the
+  file lays the same stretches), made from a photo's pixels for a main-track
+  photo and falling back to the colour when a frame cannot be read, in both;
+  a gap on a padded canvas shows the backdrop, not a black card; picking a
+  Background no longer switches the ratio to 9:16 - with Original or Custom
+  the chip says a shape on Ratio is needed and nothing is padded; level 0's
+  Looks holds its shot while playback runs and re-picks on a scrub or a
+  selection; Adjust is one chip row (thirteen sliders, then the eight wheel
+  colours) over one control, Apply to all under it; a photo overlay has
+  Filters and Adjust, graded on the CPU in the preview (`Grade.applyTo` on
+  the pixels, vignette included, grain and bloom not) and through its image
+  item in the file - check the two agree on a warm look and a vignette; a
+  crop whose only content is a shape chip survives a reload; a cancelled
+  crop drag closes its undo step.
 
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry

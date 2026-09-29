@@ -400,6 +400,10 @@ All on the moto g84 (`adb -s ZY32J8HF2S`), `adb logcat -G 16M` first, build with
 4. Crop: drag the window off-centre for 1:1, straighten 5°, flip: export check; auto-reframe on a two-clip edit follows the subject in both clips.
 5. Chroma loupe on the preview picks the averaged colour; mask outline visible while adjusting.
 6. Turn off background removal, delete the draft: `files/segments` is empty.
+7. 16:9 shot, Crop 1:1, then Placement 1.6x and 20°; then Frame → Ratio 16:9 over the 1:1 crop: the file matches the preview in both (the square grows past its fitted frame; the square is pillarboxed, not cut to a band).
+8. Mask on a PiP at 35% in a corner: it stays in the corner with its outline on it while the feather is adjusted; the outline drags the shape under the finger.
+9. 9:16 canvas with Blur, video A then a photo, a 1 s gap between: the file and the preview show A's blur across the gap and a blur of the photo behind it; drag A's trim handle across a few seconds: `files/stills/backdrops` gains a handful of files, not hundreds, and the editor does not stall.
+10. Photo overlay: Filters → Warm and Adjust → Vignette: the preview and the file agree; "Apply look to all overlays" from a video PiP reaches the photo.
 
 **B13**
 1. In "Zoom" 1 s + Out "Slide" 0.5 s over existing keyframes: both play, keys intact; opacity keyframe fade of a PiP: preview and file match.

@@ -739,8 +739,14 @@ private fun EditorPreview(
         contentAlignment = Alignment.Center
     ) {
         // Where auto-reframe has the crop centred at the playhead, from the
-        // shot under it - for the outline drawn over the picture.
-        val reframeFocus = if (state.cropAspect.ratio != null) FrameRules.reframeFocus(state.videoClips, state.playheadMs) else null
+        // shot under it, carried onto the canvas - for the outline drawn over
+        // the picture. Shots are taken as the edit's own shape here; the
+        // preview reads each surface's decoded shape, which only differs for
+        // footage of another shape cut in.
+        val reframeFocus = if (state.cropAspect.ratio != null) {
+            val unrotated = if (state.sourceWidth > 0 && state.sourceHeight > 0) state.sourceWidth.toFloat() / state.sourceHeight else null
+            FrameRules.reframeFocus(state.videoClips, state.playheadMs, state.rotationDegrees, state.canvasAspect) { unrotated }
+        } else null
         // The overlay box on the picture. Its moves go through the one way
         // placement is written, so a drag is one undo step and an animated
         // overlay is keyed at the playhead; each gesture ends its step.

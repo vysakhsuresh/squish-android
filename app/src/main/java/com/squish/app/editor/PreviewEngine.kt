@@ -56,7 +56,14 @@ data class SurfaceDraw(
     /** The clip's own crop, applied to the view by the preview (see ClipCrop). */
     val crop: ClipCrop? = null,
     /** Which clip is drawn, so the preview can show it plain while its picture is worked on. */
-    val clipId: String? = null
+    val clipId: String? = null,
+    /**
+     * The decoded picture's shape, width over height, once the player has
+     * said: the surface is laid out at it, fitted into the picture's frame,
+     * so a shot of another shape than the edit's sits where the file puts it
+     * and its crop window is measured on its own picture.
+     */
+    val aspect: Float? = null
 )
 
 /** Where an overlay layer sits this frame. */
@@ -1059,13 +1066,17 @@ class PreviewEngine(private val context: Context) {
         return hold
     }
 
-    /** Notes what each base surface showed, for the hold at the next hard cut. */
+    /**
+     * Notes what each base surface showed, for the hold at the next hard cut,
+     * and stamps each draw with its surface's picture shape - whatever frame
+     * is on the surface, a held one included.
+     */
     private fun remember(a: SurfaceDraw, b: SurfaceDraw, veil: Float): Triple<SurfaceDraw, SurfaceDraw, Float> {
         surfaceA.wasVisible = a.visible
         surfaceB.wasVisible = b.visible
         if (a.visible) { surfaceA.lastTransform = a.transform; surfaceA.lastCrop = a.crop }
         if (b.visible) { surfaceB.lastTransform = b.transform; surfaceB.lastCrop = b.crop }
-        return Triple(a, b, veil)
+        return Triple(a.copy(aspect = surfaceA.videoAspect), b.copy(aspect = surfaceB.videoAspect), veil)
     }
 
     /**

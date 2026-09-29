@@ -148,14 +148,23 @@ fun FiltersPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
 
 /**
  * The colour sliders of one clip: the Adjust chip of Looks, and a clip's own
- * Adjust tool. Thirteen of them, each with its own reset, and the HSL bands
- * under them: one colour of the wheel at a time, its hue, saturation and
- * brightness. Every value is folded with the look into one shader pass
- * (Looks.grade), so however many are moved the picture costs the same.
+ * Adjust tool. Laid out as CapCut lays it: one row of chips - the thirteen
+ * sliders, then the eight colours of the HSL wheel - and under it the one
+ * control picked, with its own reset. Thirteen stacked sliders needed a
+ * screen of scrolling to reach Vignette or Apply to all, and each was a
+ * full-width drag inside a sheet that scrolled. A chip whose value has moved
+ * carries a mark, so what is on is seen from the row. Every value is folded
+ * with the look into one shader pass (Looks.grade), so however many are
+ * moved the picture costs the same.
  */
 @Composable
 fun AdjustPanel(clip: Clip, viewModel: EditorViewModel) {
     val done = viewModel::endGesture
+    // The chip chosen: a slider by its ordinal, or a colour of the wheel past them.
+    var chosen by rememberSaveable { mutableStateOf(0) }
+    val fields = AdjustField.entries
+    val field = fields.getOrNull(chosen)
+    val band = HueBand.entries.getOrNull(chosen - fields.size)
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = SquishColors.Blue) {
             PanelHeading(
@@ -164,8 +173,45 @@ fun AdjustPanel(clip: Clip, viewModel: EditorViewModel) {
                 icon = Icons.Filled.Tune,
                 accent = SquishColors.Blue
             )
-            AdjustField.entries.forEach { field ->
-                AdjustSlider(
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
+                fields.forEachIndexed { i, entry ->
+                    val touched = entry.of(clip.adjust) != 0f
+                    SelectableChip(
+                        label = if (touched) "${entry.label} •" else entry.label,
+                        selected = chosen == i,
+                        accentColor = SquishColors.Blue,
+                        onClick = { chosen = i }
+                    )
+                }
+                // The wheel's colours, as swatches: a colour says what it is
+                // better than its name does.
+                HueBand.entries.forEachIndexed { i, entry ->
+                    val index = fields.size + i
+                    val touched = !clip.adjust.band(entry).isIdentity
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color(entry.swatch))
+                            .border(
+                                if (chosen == index) 3.dp else if (touched) 2.dp else 1.dp,
+                                when {
+                                    chosen == index -> SquishColors.Primary
+                                    touched -> SquishColors.TextPrimary
+                                    else -> SquishColors.Border
+                                },
+                                CircleShape
+                            )
+                            .clickable(onClickLabel = entry.label) { chosen = index }
+                    )
+                }
+            }
+            when {
+                field != null -> AdjustSlider(
                     label = field.label,
                     value = field.of(clip.adjust),
                     range = field.min..field.max,
@@ -174,59 +220,31 @@ fun AdjustPanel(clip: Clip, viewModel: EditorViewModel) {
                     onFinished = done,
                     onChange = { viewModel.clips.setAdjust(clip.id, field, it) }
                 )
-            }
-        }
-
-        PanelSurface(accent = SquishColors.Blue) {
-            PanelHeading(
-                "HSL",
-                "One colour at a time: pick it, then turn it, deepen it, lift it",
-                icon = Icons.Filled.Palette,
-                accent = SquishColors.Blue
-            )
-            var band by rememberSaveable { mutableStateOf(HueBand.Red) }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-            ) {
-                HueBand.entries.forEach { entry ->
-                    val touched = !clip.adjust.band(entry).isIdentity
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(Color(entry.swatch))
-                            .border(
-                                if (band == entry) 3.dp else if (touched) 2.dp else 1.dp,
-                                when {
-                                    band == entry -> SquishColors.Primary
-                                    touched -> SquishColors.TextPrimary
-                                    else -> SquishColors.Border
-                                },
-                                CircleShape
-                            )
-                            .clickable(onClickLabel = entry.label) { band = entry }
+                band != null -> {
+                    val values = clip.adjust.band(band)
+                    Text(
+                        "${band.label} · turn it, deepen it, lift it",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = SquishColors.TextSecondary
                     )
+                    AdjustSlider(
+                        label = "Hue", value = values.hue, range = -1f..1f,
+                        readout = Readout.bandDegrees,
+                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(hue = 0f)) },
+                        onFinished = done
+                    ) { viewModel.clips.setHsl(clip.id, band, values.copy(hue = it)) }
+                    AdjustSlider(
+                        label = "Saturation", value = values.saturation, range = -1f..1f,
+                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(saturation = 0f)) },
+                        onFinished = done
+                    ) { viewModel.clips.setHsl(clip.id, band, values.copy(saturation = it)) }
+                    AdjustSlider(
+                        label = "Luminance", value = values.luminance, range = -1f..1f,
+                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(luminance = 0f)) },
+                        onFinished = done
+                    ) { viewModel.clips.setHsl(clip.id, band, values.copy(luminance = it)) }
                 }
             }
-            val values = clip.adjust.band(band)
-            Text(band.label, style = MaterialTheme.typography.labelMedium, color = SquishColors.TextSecondary)
-            AdjustSlider(
-                label = "Hue", value = values.hue, range = -1f..1f,
-                readout = Readout.bandDegrees,
-                onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(hue = 0f)) },
-                onFinished = done
-            ) { viewModel.clips.setHsl(clip.id, band, values.copy(hue = it)) }
-            AdjustSlider(
-                label = "Saturation", value = values.saturation, range = -1f..1f,
-                onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(saturation = 0f)) },
-                onFinished = done
-            ) { viewModel.clips.setHsl(clip.id, band, values.copy(saturation = it)) }
-            AdjustSlider(
-                label = "Luminance", value = values.luminance, range = -1f..1f,
-                onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(luminance = 0f)) },
-                onFinished = done
-            ) { viewModel.clips.setHsl(clip.id, band, values.copy(luminance = it)) }
         }
 
         ApplyToAllRow(clip, what = "adjustments") { viewModel.clips.applyAdjustToAll(clip.id) }

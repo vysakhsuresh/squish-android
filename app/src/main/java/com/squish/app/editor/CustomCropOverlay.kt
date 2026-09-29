@@ -84,7 +84,13 @@ fun CustomCropOverlay(
                         grip = Grip.None
                         latestCommit()
                     },
-                    onDragCancel = { grip = Grip.None }
+                    // A cancelled drag - a system gesture took the pointer - still
+                    // moved the window, so its step is closed like any other;
+                    // left open, the next drag joined it as one undo.
+                    onDragCancel = {
+                        grip = Grip.None
+                        latestCommit()
+                    }
                 ) { change, drag ->
                     change.consume()
                     val held = latestRatio
