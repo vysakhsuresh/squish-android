@@ -99,7 +99,7 @@ fun LayerPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
  * A shot's or an overlay's own sound: a level, and a switch to silence it that
  * gives the level back when it is switched on again.
  *
- * A shot is also under the camera sound for the whole edit (Sound, Voice & FX);
+ * A shot is also under the camera sound for the whole edit (Sound, Mic & camera);
  * when that is off, the sheet says so, rather than showing a level nobody hears.
  */
 @Composable
@@ -150,14 +150,14 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
         if (!clip.isOverlay && state.muteOriginal) {
             Text(
                 "Camera sound is off for the whole edit, so this clip is silent. Turn it back on in " +
-                    "Sound, Voice & FX.",
+                    "Sound, Mic & camera.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.Amber
             )
         } else if (!clip.isOverlay && state.originalVolume < 0.999f) {
             Text(
                 "Heard at this level under the camera sound for the whole edit " +
-                    "(${(state.originalVolume * 100).toInt()}%, in Sound, Voice & FX).",
+                    "(${(state.originalVolume * 100).toInt()}%, in Sound, Mic & camera).",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )

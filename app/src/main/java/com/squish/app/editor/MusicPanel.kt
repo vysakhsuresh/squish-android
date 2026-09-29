@@ -8,7 +8,6 @@ import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,7 +15,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -155,12 +153,16 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
             icon = Icons.Filled.LibraryMusic,
             accent = SquishColors.Cyan
         )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-        ) {
-            listOf("Squish originals", "Sound effects", "On this phone", "Starred & recent").forEachIndexed { i, label ->
-                SelectableChip(label, tab == i, accentColor = SquishColors.Cyan, onClick = { tab = i })
+        // Two rows of two, each filling the width, so all four are in sight on
+        // a phone. In one scrolling row the fourth sat off screen with nothing
+        // to say so, and the starred list was never found; and a scrolling
+        // chip row straight under the sheet's own read as one muddled control.
+        listOf("Squish originals", "Sound effects", "On this phone", "Starred & recent").chunked(2).forEachIndexed { r, pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                pair.forEachIndexed { c, label ->
+                    val i = r * 2 + c
+                    SelectableChip(label, tab == i, accentColor = SquishColors.Cyan, modifier = Modifier.weight(1f), onClick = { tab = i })
+                }
             }
         }
 

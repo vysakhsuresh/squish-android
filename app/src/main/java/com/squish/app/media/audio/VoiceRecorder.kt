@@ -26,6 +26,11 @@ import kotlin.math.abs
  *
  * The caller holds the RECORD_AUDIO permission; without it [start] fails
  * rather than throws.
+ *
+ * [start] and [stop] take turns: the editor stops a take from the thread that
+ * is clearing it while the coroutine that opened the mic may still be on its
+ * IO thread, and a stop that ran between the two halves of a start left the
+ * mic open with nobody holding it.
  */
 class VoiceRecorder {
 
@@ -43,10 +48,14 @@ class VoiceRecorder {
     @Volatile var level: Float = 0f
         private set
 
+    /** How much has been heard so far: the take's own clock, which runs whether or not the picture does. */
+    val recordedMs: Long get() = framesWritten * 1000L / SAMPLE_RATE
+
     private var suppressor: NoiseSuppressor? = null
     private var gainControl: AutomaticGainControl? = null
 
     /** Starts listening into a new file under [dir]. False when the mic could not be opened. */
+    @Synchronized
     fun start(dir: File): Boolean {
         if (running) return true
         val minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -129,8 +138,10 @@ class VoiceRecorder {
 
     /**
      * Stops listening and finishes the file. Null when nothing was recorded -
-     * the mic never delivered a buffer - and the file is removed.
+     * the mic never delivered a buffer - and the file is removed. A second
+     * stop finds nothing running and returns null: the take went to the first.
      */
+    @Synchronized
     fun stop(): Take? {
         if (!running && record == null) return null
         running = false

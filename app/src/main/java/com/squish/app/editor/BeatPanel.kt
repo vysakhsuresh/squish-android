@@ -43,12 +43,19 @@ import com.squish.app.ui.theme.SquishColors
  * listening, which is how most people mark a drop. The density - every beat,
  * every second, every bar - is a toggle the dots, the markers and the cuts all
  * read, so what is drawn is what a cut lands on.
+ *
+ * [showClear] puts a Clear link in the heading: for the Sound sheet's Sync
+ * chip, which has no Reset. Under the Beats tool the sheet's Reset clears the
+ * grid, and a second control for the same thing beside it was one too many.
  */
 @Composable
-fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
+fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boolean = true) {
     val beats = state.beats
     val hasGrid = state.hasBeatGrid
     val onClip = state.beatClip
+    // Found on the camera's own sound: there is no clip to draw dots on, so
+    // the grid is not seen on the strip until it is marked.
+    val onCamera = hasGrid && beats.clipId == null
 
     PanelSurface(accent = SquishColors.Cyan) {
         PanelHeading(
@@ -61,16 +68,14 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
             },
             icon = Icons.Filled.GraphicEq,
             accent = SquishColors.Cyan,
-            trailing = {
-                if (hasGrid) {
-                    Text(
-                        "Clear",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.audio.clearBeats() }
-                    )
-                }
-            }
+            trailing = if (!showClear || !hasGrid) null else ({
+                Text(
+                    "Clear",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Pink,
+                    modifier = Modifier.clickable { viewModel.audio.clearBeats() }
+                )
+            })
         )
 
         when {
@@ -122,6 +127,15 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     )
                 }
                 TempoReadout(state)
+
+                if (onCamera) {
+                    Text(
+                        "Found on the camera sound, so there is no clip to draw the dots on. " +
+                            "Mark below puts a line across the strip on each one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SquishColors.TextMuted
+                    )
+                }
 
                 DensityToggle(beats.every) { viewModel.audio.setBeatDensity(it) }
 
@@ -188,8 +202,10 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel) {
             else -> {
                 Text(
                     "Squish listens to the music on the timeline, works out the tempo, " +
-                        "and puts a dot on every beat. Or play it and tap the beats in " +
-                        "yourself. Then snap your cuts to them, or have it cut the picture on the bar.",
+                        "and puts a dot on every beat of the song - with no song, it listens " +
+                        "to the camera sound, and Mark draws those beats across the strip. " +
+                        "Or play it and tap the beats in yourself. Then snap your cuts to " +
+                        "them, or have it cut the picture on the bar.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.TextSecondary
                 )
@@ -285,7 +301,7 @@ private fun TempoReadout(state: EditorUiState) {
                 )
             }
             Text(
-                "${AudioRules.chosenBeats(state.allBeats, 4, beats.downbeatOffset).size} bars",
+                "${state.barGrid.size} bars",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextSecondary
             )

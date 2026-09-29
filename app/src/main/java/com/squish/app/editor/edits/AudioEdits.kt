@@ -18,6 +18,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -140,7 +141,8 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             val limit = if (clip.sourceDurationMs > 0) clip.sourceDurationMs else maxOf(endMs, clip.sourceOutMs)
             if (limit < MIN_CLIP_MS) return@updateAudioClip clip
             val start = startMs.coerceIn(0L, limit - MIN_CLIP_MS)
-            clip.copy(sourceInMs = start, sourceOutMs = endMs.coerceIn(start + MIN_CLIP_MS, limit))
+            // Fades that fit the shorter clip; see AudioRules.withFittedFades.
+            AudioRules.withFittedFades(clip.copy(sourceInMs = start, sourceOutMs = endMs.coerceIn(start + MIN_CLIP_MS, limit)))
         }
     }
 
@@ -188,6 +190,25 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     }
 
     /**
+     * The voice on every clip of the selected one's kind - every shot and
+     * overlay for a shot, every added sound for a sound - as one step: the
+     * sheet's "Apply to all" (ROADMAP §2 item 7). The one edit-wide switch
+     * this replaced took one tap; per clip it took one tap per shot, and a
+     * shot added afterwards spoke normally until it was done too.
+     */
+    fun setVoiceForAll(clipId: String, effect: VoiceEffect) {
+        val current = _state.value
+        val clip = (current.videoClips + current.audioClips).firstOrNull { it.id == clipId } ?: return
+        record(if (clip.kind == ClipKind.Audio) "Voice on every sound" else "Voice on every shot") {
+            _state.update { s ->
+                if (clip.kind == ClipKind.Audio) s.copy(audioClips = s.audioClips.map { it.copy(voice = effect) })
+                else s.copy(videoClips = s.videoClips.map { if (it.isStillPicture) it else it.copy(voice = effect) })
+            }
+            recomputeEstimate()
+        }
+    }
+
+    /**
      * A shot's sound as a clip of its own on the sound rows, and the shot
      * silenced (AudioRules.extracted). Refused, with a reason, for a picture
      * with no sound to take: a photo, or footage the background check has
@@ -204,7 +225,11 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             _state.update { it.copy(failure = SquishError.NoSoundToExtract(clip.label)) }
             return
         }
-        val extraction = AudioRules.extracted(clip.copy(uri = uri), UUID.randomUUID().toString())
+        // At the level the shot was heard at a moment ago - under the camera
+        // level for a main-track shot - not its raw slider, which at a camera
+        // level of 30% gave a sound three times louder than the shot had been.
+        val heard = OverlayRules.effectiveVolume(clip, current.muteOriginal, current.originalVolume)
+        val extraction = AudioRules.extracted(clip.copy(uri = uri), UUID.randomUUID().toString(), heardAt = heard)
         record("Extract audio") {
             _state.update { s ->
                 s.copy(
@@ -367,24 +392,43 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     // ---- Voiceover ----------------------------------------------------------------
 
     private val recorder = VoiceRecorder()
-    private var recordJob: Job? = null
     private val stopRequested = AtomicBoolean(false)
+
+    /**
+     * A take the mic has closed but the strip does not have yet. Stopping and
+     * landing are two steps on two threads, and the editor can be cleared
+     * between them: the coroutine's stop hands the take here, and whichever of
+     * the coroutine and [finishRecordingNow] comes next takes it, once. Both
+     * halves hold this object's lock, as does the recorder's own stop, so a
+     * stop from the clearing editor waits for a stop already under way and
+     * then finds the take here rather than nothing.
+     */
+    private var unlanded: Pair<VoiceRecorder.Take, RecordingState>? = null
 
     /**
      * Records a take over the timeline: a three-second count-in, then the
      * picture plays - silently, so the speaker is not in the take - while the
      * mic listens, until [stopVoiceover], the end of the edit, or the app being
      * put away. The take lands as a sound clip at the moment it started, as
-     * CapCut's does. With a take selected, the new one replaces it.
+     * CapCut's does, and is left selected.
+     *
+     * Always a new take at the playhead: CapCut's Record adds. Doing a take
+     * again is a deliberate act - [replaceSelected], from the panel's own
+     * "Record this take again" - because the take just made is the selected
+     * one, and Record for the next sentence used to replace it silently, at
+     * the old take's start, whatever the playhead had been moved to.
      *
      * Started at the playhead; from the last second of the edit there is
      * nothing to record over, so it starts from the top, which is what
-     * pressing play there does too.
+     * pressing play there does too. Nothing on the picture at all is refused:
+     * with nothing to play over, the transport never started and a take of
+     * whatever length the wait allowed landed by itself.
      */
-    fun startVoiceover() {
+    fun startVoiceover(replaceSelected: Boolean = false) {
         val current = _state.value
-        if (current.recording.active) return
-        val replaces = current.audioClips.firstOrNull { it.id == current.selectedClipId && it.isVoiceover }
+        if (current.recording.active || current.pictureEndMs <= 0L) return
+        val replaces = if (!replaceSelected) null
+        else current.audioClips.firstOrNull { it.id == current.selectedClipId && it.isVoiceover }
         var startMs = (replaces?.timelineStartMs ?: current.playheadMs).coerceAtLeast(0L)
         if (startMs >= current.trimmedDurationMs - MIN_CLIP_MS) startMs = 0L
         requestPause()
@@ -397,42 +441,64 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 recording = RecordingState(RecordingState.Phase.Countdown, COUNT_IN, startMs, replacesId = replaces?.id)
             )
         }
-        recordJob = viewModelScope.launch {
+        viewModelScope.launch {
+            // Cancel is read every tick, not once a second: read only at the
+            // top of each second, a Cancel on the "1" fell through to the mic
+            // opening, the picture starting and a failed take being reported.
             for (n in COUNT_IN downTo 1) {
-                if (stopRequested.get()) {
-                    _state.update { it.copy(recording = RecordingState()) }
-                    return@launch
-                }
                 _state.update { it.copy(recording = it.recording.copy(countdown = n)) }
-                delay(1_000)
+                repeat((1_000L / METER_MS).toInt()) {
+                    delay(METER_MS)
+                    if (stopRequested.get()) {
+                        _state.update { it.copy(recording = RecordingState()) }
+                        return@launch
+                    }
+                }
             }
             val opened = withContext(Dispatchers.IO) { recorder.start(VoiceRecorder.dir(app)) }
             if (!opened) {
                 _state.update { it.copy(recording = RecordingState(failed = true)) }
                 return@launch
             }
+            // Cancelled in the moment the mic was opening: closed again, and
+            // the sliver it heard is not a take.
+            if (stopRequested.get()) {
+                withContext(Dispatchers.IO) { recorder.stop()?.file?.delete() }
+                _state.update { it.copy(recording = RecordingState()) }
+                return@launch
+            }
             _state.update { it.copy(recording = it.recording.copy(phase = RecordingState.Phase.Recording, countdown = 0)) }
             requestPlay()
 
             // Until the picture stops - the end of the edit, Home, a tap on it -
-            // or Stop. A transport that never started is given a few seconds
-            // and then the take is kept as it is.
+            // or Stop. A moment's rebuffering is not the picture stopping, so a
+            // stop has to hold for a few ticks. A transport that never starts
+            // - a source still loading, a request the preview never saw -
+            // does not end the take on its own: it used to, after five
+            // seconds, and landed a clip cut mid-sentence with nothing to say
+            // why. The take goes on without the picture and the panel says so.
             var started = false
+            var stoppedFor = 0
             var waited = 0L
             while (isActive && !stopRequested.get()) {
                 delay(METER_MS)
                 waited += METER_MS
-                val playing = _state.value.isPlaying
-                if (playing) started = true
-                else if (started || waited > START_TIMEOUT_MS) break
-                val level = recorder.level
-                _state.update { it.copy(recording = it.recording.copy(level = level)) }
+                if (_state.value.isPlaying) {
+                    started = true
+                    stoppedFor = 0
+                } else if (started && ++stoppedFor >= STOP_TICKS) {
+                    break
+                }
+                val stalled = !started && waited > START_TIMEOUT_MS
+                _state.update {
+                    it.copy(recording = it.recording.copy(level = recorder.level, recordedMs = recorder.recordedMs, pictureStalled = stalled))
+                }
             }
             finishTake()
         }
     }
 
-    /** Ends the take; it lands on the strip once the file is closed. */
+    /** Ends the take; it lands on the strip once the file is closed. During the count-in, cancels it. */
     fun stopVoiceover() {
         stopRequested.set(true)
     }
@@ -441,14 +507,29 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         requestPause()
         val rec = _state.value.recording
         _state.update { it.copy(recording = it.recording.copy(phase = RecordingState.Phase.Saving, level = 0f)) }
-        val take = withContext(Dispatchers.IO) { recorder.stop() }
-        recordJob = null
-        if (take == null) {
-            _state.update { it.copy(recording = RecordingState(failed = true)) }
+        // Off the main thread (the mic's thread is joined), and not cancelled
+        // with this job: the editor being cleared while the file is closing
+        // used to drop the take on the floor, on disk but on no strip and in
+        // no draft. Held in [unlanded] for whoever gets to it first.
+        withContext(NonCancellable + Dispatchers.IO) { holdTake(rec) }
+        val held = claimTake()
+        if (held == null) {
+            // Nothing heard - or the clearing editor landed it already.
+            if (_state.value.recording.active) _state.update { it.copy(recording = RecordingState(failed = true)) }
             return
         }
-        landTake(take, rec)
+        landTake(held.first, held.second)
     }
+
+    /** Closes the mic and keeps what it heard for [claimTake]; nothing heard keeps nothing. */
+    @Synchronized
+    private fun holdTake(rec: RecordingState) {
+        val take = recorder.stop() ?: return
+        unlanded = take to rec
+    }
+
+    @Synchronized
+    private fun claimTake(): Pair<VoiceRecorder.Take, RecordingState>? = unlanded.also { unlanded = null }
 
     /** The take onto the sound rows, at the moment it started, as one step. */
     private fun landTake(take: VoiceRecorder.Take, rec: RecordingState) {
@@ -483,20 +564,23 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      * The editor is being cleared under a take: the mic is closed and what it
      * heard so far is put on the strip, on this thread, so the save that
      * follows keeps it. Nothing recorded means nothing added.
+     *
+     * In every phase, not only while recording: the scope is already
+     * cancelled here, so a mic that the coroutine was opening at that moment
+     * would stay open with nobody to close it, and a take it was closing would
+     * be finished and then dropped. The stop waits its turn behind either.
      */
     fun finishRecordingNow() {
         val rec = _state.value.recording
-        if (rec.phase != RecordingState.Phase.Recording) {
-            if (rec.active) _state.update { it.copy(recording = RecordingState()) }
-            return
-        }
+        if (!rec.active) return
         stopRequested.set(true)
-        val take = recorder.stop()
-        if (take == null) {
+        holdTake(rec)
+        val held = claimTake()
+        if (held == null) {
             _state.update { it.copy(recording = RecordingState()) }
             return
         }
-        landTake(take, rec)
+        landTake(held.first, held.second)
     }
 
     // ---- Beat detection ---------------------------------------------------------
@@ -581,13 +665,16 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     /**
      * A beat dropped by ear at the playhead, while listening: onto the sound
      * under the playhead, in its file's time, so it travels with the sound;
-     * onto the camera-audio grid when no sound is there. Not doubled onto a
-     * beat already within a few frames (AudioRules.withBeat).
+     * onto the camera-audio grid when no sound is there - or when that grid
+     * is the one found, whatever sound the playhead is over, since a tap
+     * onto a sound used to move the grid there and throw the camera's away.
+     * Not doubled onto a beat already within a few frames (AudioRules.withBeat).
      */
     fun addBeatAtPlayhead() {
         val current = _state.value
         val at = current.playheadMs
-        val covering = current.audioClips.filter { at >= it.timelineStartMs && at < it.timelineEndMs }
+        val cameraGrid = current.beats.clipId == null && current.beats.beatsMs.isNotEmpty()
+        val covering = if (cameraGrid) emptyList() else current.audioClips.filter { at >= it.timelineStartMs && at < it.timelineEndMs }
         val target = covering.firstOrNull { it.id == current.beats.clipId }
             ?: covering.firstOrNull { it.id == current.selectedClipId }
             ?: covering.firstOrNull { it.beats.isNotEmpty() }
@@ -598,7 +685,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 updateAudioClip(target.id) { it.copy(beats = AudioRules.withBeat(it.beats, source)) }
                 _state.update { s ->
                     if (s.beats.clipId != null) s
-                    else s.copy(beats = s.beats.copy(finished = true, clipId = target.id, clipLabel = target.label, beatsMs = emptyList()))
+                    else s.copy(beats = s.beats.copy(finished = true, clipId = target.id, clipLabel = target.label))
                 }
             } else {
                 _state.update { s ->
@@ -725,7 +812,10 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         /** How often the mic's level reaches the meter, and the transport is checked. */
         const val METER_MS = 100L
 
-        /** How long a take waits for the picture to start before it is kept as it is. */
+        /** How long a take waits for the picture to start before saying it has not. */
         const val START_TIMEOUT_MS = 5_000L
+
+        /** Ticks the picture must be stopped for before the take ends with it: half a second, past any rebuffering. */
+        const val STOP_TICKS = 5
     }
 }

@@ -54,6 +54,25 @@ fun main() {
         check(AudioRules.fades(5_000, -100, 0, changedIn = true) == (0L to 0L), "a negative fade was kept")
     }
 
+    // --- A clip that got shorter keeps fades that fit it. ------------------------
+    run {
+        // Eight seconds each way on a thirty-second song, trimmed to a six-second sting.
+        check(AudioRules.fittedFades(6_000, 8_000, 8_000) == (3_000L to 3_000L), "equal fades on a short clip did not share it")
+        check(AudioRules.fittedFades(6_000, 1_000, 8_000) == (1_000L to 5_000L), "the shorter fade gave way instead of the longer")
+        check(AudioRules.fittedFades(6_000, 8_000, 1_000) == (5_000L to 1_000L), "the shorter fade in gave way instead of the longer out")
+        check(AudioRules.fittedFades(10_000, 1_000, 2_000) == (1_000L to 2_000L), "fades that fit were changed")
+        check(AudioRules.fittedFades(0, 1_000, 2_000) == (0L to 0L), "a clip of no length kept fades")
+        val sting = sound(srcIn = 0, srcOut = 6_000, fadeIn = 8_000, fadeOut = 8_000)
+        val fitted = AudioRules.withFittedFades(sting)
+        check(fitted.fadeInMs == 3_000L && fitted.fadeOutMs == 3_000L, "the clip's fades were not fitted")
+        check(near(AudioRules.fadeGain(3_000, 6_000, fitted.fadeInMs, fitted.fadeOutMs), 1f), "a fitted sting never reaches full level")
+        val fine = sound(fadeIn = 1_000, fadeOut = 1_000)
+        check(AudioRules.withFittedFades(fine) === fine, "a clip whose fades fit was copied")
+        // A speed-up halves the played length; the fades follow it.
+        val fast = sound(srcIn = 0, srcOut = 10_000, fadeIn = 4_000, fadeOut = 4_000, ramp = SpeedRamp.flat(2f))
+        check(AudioRules.withFittedFades(fast).let { it.fadeInMs + it.fadeOutMs <= it.durationMs }, "fades outlive a retimed clip")
+    }
+
     // --- Gain to 400%: the player to its ceiling, the processor for the rest. ---
     run {
         check(AudioRules.gainSplit(0.4f) == (0.4f to 1f), "below full level the processor is not idle")
@@ -87,6 +106,16 @@ fun main() {
         check(AudioRules.chosenBeats(beats, 2, 1) == listOf(500L, 1_500L), "every 2 from beat 2 gave ${AudioRules.chosenBeats(beats, 2, 1)}")
         check(AudioRules.chosenBeats(beats, 4, 0) == listOf(0L, 2_000L), "every bar gave ${AudioRules.chosenBeats(beats, 4, 0)}")
         check(AudioRules.beatsOnTimeline(listOf(whole), 2, 0, emptyList()) == listOf(1_000L, 2_000L, 3_000L), "the density is not applied on the timeline")
+        // The bar is counted over the file, not the window: a head trimmed by
+        // one beat keeps the bar where the detector put it (downbeat = beat 2,
+        // at 500 ms), and both halves of a cut song agree on it.
+        val eight = (0L until 8).map { it * 500L }
+        val trimmed = sound(srcIn = 500, srcOut = 4_000, start = 0, beats = eight)
+        val bars = AudioRules.chosenInWindow(trimmed, 4, 1)
+        check(bars == listOf(500L, 2_500L), "a trimmed head moved the bar: $bars")
+        check(AudioRules.beatsOnTimeline(listOf(trimmed), 4, 1, emptyList()) == listOf(0L, 2_000L), "the timeline bars are not on the downbeat")
+        val (h, t) = sound(srcIn = 0, srcOut = 4_000, start = 0, beats = eight).splitAt(1_800)!!
+        check(AudioRules.beatsOnTimeline(listOf(h, t), 4, 1, emptyList()) == listOf(500L, 2_500L), "a cut song's halves disagree on the bar")
         // Nothing carrying beats: the camera-audio grid, at the same density.
         check(AudioRules.beatsOnTimeline(listOf(sound()), 2, 0, listOf(10L, 20L, 30L)) == listOf(10L, 30L), "the fallback grid is not used")
         // Tapping a beat in by ear: sorted in, and not doubled onto a found one.
@@ -136,6 +165,9 @@ fun main() {
         check(e.sound.layer == 0 && e.sound.keyframes.isEmpty(), "the sound carried picture fields")
         // A muted shot's sound comes out audible.
         check(AudioRules.extracted(shot.copy(volume = 0f), "s2").sound.volume == 1f, "a muted shot gave a silent sound")
+        // At the level it was heard: a shot at 60% under a camera level of 50%.
+        check(near(AudioRules.extracted(shot, "s3", heardAt = 0.3f).sound.volume, 0.3f), "the sound is not at the level the shot was heard at")
+        check(AudioRules.extracted(shot, "s4", heardAt = 0f).sound.volume == 1f, "a shot under a camera mute gave a silent sound")
     }
 
     // --- A split keeps each fade on its own end. -----------------------------

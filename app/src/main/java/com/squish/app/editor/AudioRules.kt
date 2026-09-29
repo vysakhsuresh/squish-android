@@ -66,6 +66,34 @@ object AudioRules {
     }
 
     /**
+     * Both fades as they may stand on a clip that has since got shorter - a
+     * trim, a speed-up, a cut - with neither just set: each within the clip,
+     * and together no longer than it, the longer one giving way. A fade left
+     * longer than its clip never reached full level and, with the other,
+     * crossed it: an eight-second fade each way on a six-second sting held it
+     * under forty percent throughout, with the slider showing its maximum and
+     * the wedge running off the clip's edge, so nothing said why.
+     */
+    fun fittedFades(lengthMs: Long, fadeInMs: Long, fadeOutMs: Long): Pair<Long, Long> {
+        val cap = MAX_FADE_MS.coerceAtMost(lengthMs.coerceAtLeast(0L))
+        var fadeIn = fadeInMs.coerceIn(0L, cap)
+        var fadeOut = fadeOutMs.coerceIn(0L, cap)
+        if (fadeIn + fadeOut > lengthMs) {
+            if (fadeIn > fadeOut) fadeIn = lengthMs - fadeOut
+            else if (fadeOut > fadeIn) fadeOut = lengthMs - fadeIn
+            else { fadeIn = lengthMs / 2; fadeOut = lengthMs - fadeIn }
+        }
+        return fadeIn to fadeOut
+    }
+
+    /** [clip] with its fades fitted to its played length; the same clip when they already are. */
+    fun withFittedFades(clip: Clip): Clip {
+        if (clip.fadeInMs <= 0L && clip.fadeOutMs <= 0L) return clip
+        val (fadeIn, fadeOut) = fittedFades(clip.durationMs, clip.fadeInMs, clip.fadeOutMs)
+        return if (fadeIn == clip.fadeInMs && fadeOut == clip.fadeOutMs) clip else clip.copy(fadeInMs = fadeIn, fadeOutMs = fadeOut)
+    }
+
+    /**
      * A sound's [volume] as the two numbers that make it: the player's own
      * level, which stops at 1, and the gain a processor in front of it applies
      * for the rest. Below full level the processor does nothing; above it the
@@ -95,6 +123,17 @@ object AudioRules {
         clip.beats.filter { it >= clip.sourceInMs && it <= clip.sourceOutMs }
 
     /**
+     * The chosen beats of [clip] inside the part of the file it plays. The
+     * density is counted over the whole file's beats and the window taken
+     * afterwards: [downbeatOffset] is an index into the file's list, so
+     * counting over the window put the bar one beat off for every beat a
+     * trim had cut from the head, and a song cut in two had a different bar
+     * on each half.
+     */
+    fun chosenInWindow(clip: Clip, every: Int, downbeatOffset: Int): List<Long> =
+        chosenBeats(clip.beats, every, downbeatOffset).filter { it >= clip.sourceInMs && it <= clip.sourceOutMs }
+
+    /**
      * The beat grid on the timeline: every sound's chosen beats, carried to
      * where they are heard through its position and its speed curve, as one
      * sorted list without doubles. With no sound carrying beats the grid is
@@ -110,7 +149,7 @@ object AudioRules {
         val out = ArrayList<Long>()
         clips.forEach { clip ->
             if (clip.kind != ClipKind.Audio || clip.beats.isEmpty()) return@forEach
-            chosenBeats(beatsInWindow(clip), every, downbeatOffset).forEach { at ->
+            chosenInWindow(clip, every, downbeatOffset).forEach { at ->
                 out.add(clip.timelineAtSource(at))
             }
         }
@@ -185,11 +224,13 @@ object AudioRules {
     /**
      * The sound of [clip] as a clip of its own on the sound rows, playing the
      * same part of the same file at the same time and speed, with the shot's
-     * level, voice and fades - and the shot itself silenced, so nothing is
-     * heard twice. What "Extract audio" on a shot or an overlay does; from
-     * there the sound can be slid, trimmed or cut apart from the picture.
+     * voice and fades at the level it was heard at ([heardAt]: a main-track
+     * shot's own level under the camera level, see OverlayRules.effectiveVolume)
+     * - and the shot itself silenced, so nothing is heard twice. What "Extract
+     * audio" on a shot or an overlay does; from there the sound can be slid,
+     * trimmed or cut apart from the picture.
      */
-    fun extracted(clip: Clip, id: String): Extraction {
+    fun extracted(clip: Clip, id: String, heardAt: Float = clip.volume): Extraction {
         val sound = Clip(
             id = id,
             kind = ClipKind.Audio,
@@ -199,9 +240,10 @@ object AudioRules {
             sourceOutMs = clip.sourceOutMs,
             timelineStartMs = clip.timelineStartMs,
             sourceDurationMs = clip.sourceDurationMs,
-            // A shot muted by its own slider gives a sound heard at full: the
-            // point of extracting is to hear it on its own.
-            volume = clip.volume.coerceIn(0f, 1f).takeIf { it > 0f } ?: 1f,
+            // A shot heard at nothing - its own slider, or the camera switch -
+            // gives a sound heard at full: the point of extracting is to hear
+            // it on its own.
+            volume = heardAt.coerceIn(0f, 1f).takeIf { it > 0f } ?: 1f,
             fadeInMs = clip.fadeInMs,
             fadeOutMs = clip.fadeOutMs,
             voice = clip.voice,

@@ -261,6 +261,12 @@ fun TimelineEditor(
      * the room below.
      */
     compact: Boolean = false,
+    /**
+     * A clip to keep in view while [compact] and nothing is selected: the row
+     * it is on is the one shown. The take being recorded, which is drawn on a
+     * sound row but selected by nobody.
+     */
+    focusClipId: String? = null,
     /** A double tap on the ruler: the whole edit on screen. Pinch zooms; the zoom buttons are gone. */
     onFit: () -> Unit = {},
     /**
@@ -270,7 +276,10 @@ fun TimelineEditor(
      * middle was not on, and the strip jumped when the finger lifted.
      */
     onSeek: (Long) -> Unit = onScrub,
-    /** Whether dragging the strip pulls the playhead onto nearby cuts, markers and beats. */
+    /**
+     * Whether the markers and beats are snapped to - by a drag of the strip,
+     * of a clip or of a handle. Cuts and the playhead are always snapped to.
+     */
     snapScrub: Boolean = true,
     /**
      * How tall the rows are, whatever is in them - the editor's to say, from the
@@ -320,8 +329,13 @@ fun TimelineEditor(
     val latestZoomTo by rememberUpdatedState(onZoomTo)
     val latestWindow by rememberUpdatedState(window)
     val latestState by rememberUpdatedState(state)
-    // What a drag snaps to: the markers and the beat dots alike.
-    val snapMarks = remember(markers, beats) { if (beats.isEmpty()) markers else (markers + beats).distinct() }
+    // What a drag snaps to: the markers and the beat dots alike - and neither
+    // with the switch off. Cuts and the playhead always snap; the marks were
+    // folded in whatever the switch said, so at "Every beat" on a 120 BPM song
+    // a title could not be put between two dots without clearing the grid.
+    val snapMarks = remember(markers, beats, snapScrub) {
+        if (!snapScrub) emptyList() else if (beats.isEmpty()) markers else (markers + beats).distinct()
+    }
     val latestMarkers by rememberUpdatedState(snapMarks)
     val latestSeek by rememberUpdatedState(onSeek)
     val latestSnapScrub by rememberUpdatedState(snapScrub)
@@ -503,12 +517,14 @@ fun TimelineEditor(
     // row under the finger put the drop on a row nobody pointed at.
     val compactShown = carried?.compact ?: compact
     val latestCompactShown by rememberUpdatedState(compactShown)
+    val focus = if (selected == null) state.clips.firstOrNull { it.id == focusClipId } else null
     val rows: List<StripRow> = if (!compactShown) allRows else {
-        val home = when (selectedGroup) {
-            Group.Overlay -> allRows.firstOrNull { it.group == Group.Overlay && it.index == selected?.layer }
-            Group.Sound -> allRows.firstOrNull { it.group == Group.Sound && it.index == soundRows[selected?.id] }
-            Group.Words -> allRows.firstOrNull { it.group == Group.Words && it.index == wordRows[selected?.id] }
-            Group.Effects -> allRows.firstOrNull { it.group == Group.Effects && it.index == effectRows[selectedEffect?.id] }
+        val home = when {
+            focus != null && focus.kind == ClipKind.Audio -> allRows.firstOrNull { it.group == Group.Sound && it.index == soundRows[focus.id] }
+            selectedGroup == Group.Overlay -> allRows.firstOrNull { it.group == Group.Overlay && it.index == selected?.layer }
+            selectedGroup == Group.Sound -> allRows.firstOrNull { it.group == Group.Sound && it.index == soundRows[selected?.id] }
+            selectedGroup == Group.Words -> allRows.firstOrNull { it.group == Group.Words && it.index == wordRows[selected?.id] }
+            selectedGroup == Group.Effects -> allRows.firstOrNull { it.group == Group.Effects && it.index == effectRows[selectedEffect?.id] }
             else -> null
         } ?: allRows.first { it.group == Group.Main }
         listOf(home.copy(folded = false, first = true))

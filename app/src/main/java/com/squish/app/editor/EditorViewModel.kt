@@ -697,7 +697,11 @@ class EditorViewModel(
                 selectedClipId = current.selectedClipId,
                 playheadMs = current.playheadMs
             )
-            val next = block(timeline)
+            // Every change to a clip's played length comes through here too, so
+            // this is where its fades are kept inside it (AudioRules.withFittedFades):
+            // a fade set on the whole song and left on a six-second sting of it
+            // held the sting under forty percent from end to end.
+            val next = block(timeline).let { t -> t.copy(clips = t.clips.map(AudioRules::withFittedFades)) }
             val video = next.clips.filter { it.kind == ClipKind.Video }
             // Every change to how long the picture runs comes through here -
             // trims, cuts, deletes, retimes, transitions, layer changes - so this

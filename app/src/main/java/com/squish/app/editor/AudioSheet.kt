@@ -42,6 +42,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,7 +115,11 @@ fun SoundMusicPanel(
                         clip = clip,
                         selected = clip.id == state.selectedClipId,
                         onSelect = { onSelectSound(clip.id) },
-                        onRemove = { viewModel.audio.removeAudioClip(clip.id) }
+                        onRemove = { viewModel.audio.removeAudioClip(clip.id) },
+                        // Beside the song, where someone with a 30 s song under a
+                        // two-minute video looks for it; it is on the sound's
+                        // Sync sheet too, but that was the eighth control down.
+                        onLoop = if (state.pictureEndMs - clip.timelineEndMs >= MIN_CLIP_MS) ({ viewModel.audio.loopToEnd(clip.id) }) else null
                     )
                 }
             }
@@ -123,9 +128,11 @@ fun SoundMusicPanel(
 }
 
 /**
- * The Voice & FX chip of Sound: a voiceover taken over the picture, and the
+ * The Mic & camera chip of Sound: a voiceover taken over the picture, and the
  * camera's own sound. The voice changer that was here is each clip's own now,
- * on its toolbar as Voice.
+ * on its toolbar as Voice - which is why the chip is no longer called
+ * "Voice & FX": someone who used Robot last week went there and, finding a
+ * mic button and a switch, took the effect for gone.
  */
 @Composable
 fun SoundVoicePanel(state: EditorUiState, viewModel: EditorViewModel) {
@@ -139,24 +146,28 @@ fun SoundVoicePanel(state: EditorUiState, viewModel: EditorViewModel) {
  * Record: a take over the timeline, the way CapCut's Audio > Record works. One
  * big button; a three-second count-in; the picture plays silently while the
  * mic listens; Stop, or the end of the edit, lands the take at the moment it
- * started. With a take selected, the next one replaces it.
+ * started. Always a new take at the playhead; with a take selected, a second
+ * link records that one again in its place - a deliberate act, since the
+ * take just made is the selected one.
  *
  * The mic is asked for on the first press and never before: a permission
  * dialog on opening the editor would be asking for something nobody had
- * reached for yet.
+ * reached for yet. Granted, the count-in starts at once, rather than leaving
+ * the person to press Record a second time for nothing.
  */
 @Composable
 fun RecordPanel(state: EditorUiState, viewModel: EditorViewModel) {
-    val mic = rememberPermission(android.Manifest.permission.RECORD_AUDIO)
+    val mic = rememberPermission(android.Manifest.permission.RECORD_AUDIO, onGranted = { viewModel.audio.startVoiceover() })
     val rec = state.recording
     val replacing = state.audioClips.firstOrNull { it.id == state.selectedClipId && it.isVoiceover }
+    val hasPicture = state.pictureEndMs > 0L
     PanelCard {
         PanelHeading(
             "Record",
             when (rec.phase) {
-                RecordingState.Phase.Idle -> if (replacing != null) "A new take replaces the selected one" else "A voiceover over the picture, from the playhead"
+                RecordingState.Phase.Idle -> "A voiceover over the picture, from the playhead"
                 RecordingState.Phase.Countdown -> "Get ready…"
-                RecordingState.Phase.Recording -> "Listening - the picture plays silently"
+                RecordingState.Phase.Recording -> if (rec.pictureStalled) "Listening" else "Listening - the picture plays silently"
                 RecordingState.Phase.Saving -> "Saving the take…"
             },
             icon = Icons.Filled.Mic,
@@ -184,13 +195,28 @@ fun RecordPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        RecordButton(recording = false) {
+                        // Off with nothing on the picture: there is nothing to
+                        // record over, and the button used to run the count-in
+                        // and land a take by itself.
+                        RecordButton(recording = false, enabled = hasPicture) {
                             if (mic.granted) viewModel.audio.startVoiceover() else mic.ask()
                         }
                         Text(
-                            if (state.pictureEndMs <= 0L) "Add a clip first: the take is recorded over the picture."
+                            if (!hasPicture) "Add a clip first: the take is recorded over the picture."
                             else "Tap to start after a count of three. Stop, or the end of the edit, ends the take.",
                             style = MaterialTheme.typography.bodySmall,
+                            color = SquishColors.TextMuted
+                        )
+                    }
+                    if (replacing != null && hasPicture) {
+                        SquishOutlinedButton(
+                            text = "Record this take again",
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { if (mic.granted) viewModel.audio.startVoiceover(replaceSelected = true) else mic.ask() }
+                        )
+                        Text(
+                            "The new take lands where \"${replacing.label}\" starts, and that one goes.",
+                            style = MaterialTheme.typography.labelSmall,
                             color = SquishColors.TextMuted
                         )
                     }
@@ -223,12 +249,22 @@ fun RecordPanel(state: EditorUiState, viewModel: EditorViewModel) {
             ) {
                 RecordButton(recording = true) { viewModel.audio.stopVoiceover() }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // The take's own clock, from the mic: the playhead's would
+                    // sit at zero while the picture has not started.
                     Text(
-                        Timecode.format((state.playheadMs - rec.startMs).coerceAtLeast(0L)),
+                        Timecode.format(rec.recordedMs),
                         style = MaterialTheme.typography.titleMedium,
                         color = SquishColors.TextPrimary
                     )
                     LevelMeter(rec.level)
+                    if (rec.pictureStalled) {
+                        Text(
+                            "The picture hasn't started, so the take runs without it. It still lands at " +
+                                "${Timecode.format(rec.startMs)} when you press Stop.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SquishColors.Yellow
+                        )
+                    }
                 }
             }
             RecordingState.Phase.Saving -> Row(
@@ -242,15 +278,15 @@ fun RecordPanel(state: EditorUiState, viewModel: EditorViewModel) {
     }
 }
 
-/** The one big button: red to start, a stop square while a take runs. */
+/** The one big button: red to start, a stop square while a take runs; dim when there is nothing to record over. */
 @Composable
-private fun RecordButton(recording: Boolean, onClick: () -> Unit) {
+private fun RecordButton(recording: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(56.dp)
             .clip(CircleShape)
-            .background(SquishColors.Danger)
-            .clickable(onClickLabel = if (recording) "Stop recording" else "Record", onClick = onClick),
+            .background(if (enabled) SquishColors.Danger else SquishColors.Danger.copy(alpha = 0.35f))
+            .clickable(enabled = enabled, onClickLabel = if (recording) "Stop recording" else "Record", onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -295,17 +331,23 @@ class PermissionState(
     val openSettings: () -> Unit
 )
 
+/**
+ * [onGranted] runs when the dialog answers yes: the thing the press was for
+ * goes ahead, rather than the person pressing again to find out.
+ */
 @Composable
-fun rememberPermission(permission: String): PermissionState {
+fun rememberPermission(permission: String, onGranted: () -> Unit = {}): PermissionState {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     fun held() = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     var granted by remember { mutableStateOf(held()) }
     var deniedForGood by remember { mutableStateOf(false) }
+    val latestOnGranted by rememberUpdatedState(onGranted)
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         granted = ok
         // Refused, and the phone will not show the dialog again: only Settings can change it now.
         if (!ok) deniedForGood = activity?.let { !ActivityCompat.shouldShowRequestPermissionRationale(it, permission) } ?: false
+        else latestOnGranted()
     }
     // Back from Settings, or from anywhere: what is held may have changed.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -466,12 +508,14 @@ private fun seconds(v: Float): String = "%.1f s".format(v)
  * A clip's Voice: the effect on its own sound - a shot's, an overlay's, an
  * added sound's - heard live and written to the file. It was one setting for
  * the whole edit, so the song could not be left alone while the take was made
- * a robot.
+ * a robot; "Apply to all" below is the one tap that setting was, for every
+ * shot (or every sound) at once.
  */
 @Composable
 fun VoicePanel(clip: Clip, viewModel: EditorViewModel) {
+    val isSound = clip.kind == com.squish.app.timeline.ClipKind.Audio
     val accent = when {
-        clip.kind == com.squish.app.timeline.ClipKind.Audio -> SquishColors.Cyan
+        isSound -> SquishColors.Cyan
         clip.isOverlay -> SquishColors.Magenta
         else -> SquishColors.Violet
     }
@@ -512,6 +556,11 @@ fun VoicePanel(clip: Clip, viewModel: EditorViewModel) {
                 repeat(3 - row.size) { Box(modifier = Modifier.weight(1f)) }
             }
         }
+        SquishOutlinedButton(
+            text = if (isSound) "Apply to all sounds" else "Apply to all shots",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { viewModel.audio.setVoiceForAll(clip.id, clip.voice) }
+        )
     }
 }
 
@@ -599,9 +648,9 @@ fun AlignPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
     }
 }
 
-/** One added sound. Selecting it hands over to its own tools. */
+/** One added sound. Selecting it hands over to its own tools; [onLoop] repeats it to the end of the picture, when there is room. */
 @Composable
-private fun TrackRow(clip: Clip, selected: Boolean, onSelect: () -> Unit, onRemove: () -> Unit) {
+private fun TrackRow(clip: Clip, selected: Boolean, onSelect: () -> Unit, onRemove: () -> Unit, onLoop: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -633,6 +682,14 @@ private fun TrackRow(clip: Clip, selected: Boolean, onSelect: () -> Unit, onRemo
                 "${Timecode.format(clip.durationMs)} at ${Timecode.format(clip.timelineStartMs)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted
+            )
+        }
+        if (onLoop != null) {
+            Text(
+                "Loop to end",
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.Cyan,
+                modifier = Modifier.clickable(onClick = onLoop)
             )
         }
         Text(

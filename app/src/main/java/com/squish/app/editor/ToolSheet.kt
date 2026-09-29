@@ -157,7 +157,11 @@ fun EditorToolSheet(
     var chip by rememberSaveable(tool) { mutableIntStateOf(0) }
 
     val chips = when (tool) {
-        Tool.Sound -> listOf("Music", "Voice & FX", "Sync")
+        // Named by what the chip holds - the mic, and the camera's sound. It
+        // was "Voice & FX" from when the voice changer lived there; that is
+        // each clip's own Voice now, and the old name sent people to a mic
+        // button to look for Robot.
+        Tool.Sound -> listOf("Music", "Mic & camera", "Sync")
         Tool.Looks -> listOf("Filters", "Adjust", "Templates")
         Tool.Frame -> listOf("Ratio", "Rotate")
         Tool.Cutout -> listOf("Background", "Chroma key")
@@ -270,7 +274,7 @@ fun EditorToolSheet(
                 val tracked = clip ?: state.baseClipAt(state.playheadMs) ?: state.headVideoClip
                 tracked?.let { TrackPanel(state, it, viewModel, accent) }
             }
-            Tool.Beats -> BeatPanel(state, viewModel)
+            Tool.Beats -> BeatPanel(state, viewModel, showClear = false)
             Tool.Sync -> clip?.let { AlignPanel(state, it, viewModel) }
             Tool.Fade -> clip?.let { FadePanel(it, viewModel) }
             Tool.Voice -> clip?.let { VoicePanel(it, viewModel) }

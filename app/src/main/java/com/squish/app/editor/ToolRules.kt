@@ -80,7 +80,7 @@ val LEVEL_ZERO: List<Tool> = listOf(
  * Only tools that act on the selected clip are listed. Looks, crop and rotation
  * are still one setting for the whole edit, so they stay on level 0 rather than
  * appear here as if they changed this clip alone. Volume is the clip's own
- * level; the camera sound for the whole edit stays on Sound (Voice & FX).
+ * level; the camera sound for the whole edit stays on Sound (Mic & camera).
  *
  * Section 2's lists are longer; the rest arrive with the batch that builds what
  * they act on (docs/ROADMAP.md, B6, "Deferred"): Opacity on text (B10);

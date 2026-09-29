@@ -218,7 +218,7 @@ sealed class SquishError(
     class SilentOnMainTrack : SquishError(
         title = "This clip is silent on the main track",
         detail = "Camera sound is off for the whole edit, and every clip on the main track plays under it. As an overlay its sound was its own.",
-        fix = "Turn camera sound back on in Sound, Voice & FX, or undo to keep it as an overlay."
+        fix = "Turn camera sound back on in Sound, Mic & camera, or undo to keep it as an overlay."
     )
 
     class NoAudioTrack : SquishError(
