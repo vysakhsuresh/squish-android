@@ -36,15 +36,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.theme.SquishColors
 import kotlin.math.cos
 import kotlin.math.sin
 
 /**
  * The effects library: tap one and it covers the next two seconds from the
- * playhead. Each placed effect can be stretched to wherever the playhead is,
- * turned up or down, given its own knob, or removed.
+ * playhead. Each placed effect can be turned up or down, given its own knob,
+ * or removed here; its ends are the handles on the strip.
  *
  * Each tile is the effect running on a small picture - the same FxParams the
  * shader is handed, drawn with what Compose has - so what it does is seen
@@ -82,7 +81,6 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             placed.forEach { effect ->
                 PlacedEffect(
                     effect = effect,
-                    playheadMs = state.playheadMs,
                     onJump = { viewModel.scrubTo(effect.startMs) },
                     onChange = { change -> viewModel.clips.changeEffect(effect.id, change) },
                     onRemove = { viewModel.clips.removeEffect(effect.id) },
@@ -224,7 +222,6 @@ private val HILL = Color(0xFF3B7A57)
 @Composable
 private fun PlacedEffect(
     effect: TimedEffect,
-    playheadMs: Long,
     onJump: () -> Unit,
     onChange: ((TimedEffect) -> TimedEffect) -> Unit,
     onRemove: () -> Unit,
@@ -259,19 +256,17 @@ private fun PlacedEffect(
             )
         }
         EffectSliders(effect, onChange, onGestureEnd)
-        // The playhead is the most exact pointer on a phone; these move either end to it.
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            SquishOutlinedButton(
-                text = "Start here",
-                modifier = Modifier.weight(1f),
-                onClick = { onChange { it.copy(startMs = playheadMs.coerceAtMost(it.endMs - 100L)) } }
-            )
-            SquishOutlinedButton(
-                text = "End here",
-                modifier = Modifier.weight(1f),
-                onClick = { onChange { it.copy(endMs = playheadMs.coerceAtLeast(it.startMs + 100L)) } }
-            )
-        }
+        // Its ends are retimed on the strip, where the effect is a clip with
+        // handles like any other. "Start here" and "End here" buttons did the
+        // same job a second way, with a second set of limits. The handles only
+        // show on the selected effect, and selecting one closes this level-0
+        // sheet, so the line says the whole path rather than pointing at
+        // handles the open sheet keeps off the strip.
+        Text(
+            "To retime it, close this sheet and tap it on the strip: its ends are handles",
+            style = MaterialTheme.typography.labelSmall,
+            color = SquishColors.TextMuted
+        )
     }
 }
 

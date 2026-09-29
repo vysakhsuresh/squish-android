@@ -183,7 +183,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
                     icon = Icons.Filled.Flag,
                     title = "Snap to the beat",
                     body = "Drops a marker on every dot. Dragging a clip, setting an " +
-                        "in point and moving a caption all snap to markers already. " +
+                        "in point and moving a line of text all snap to markers already. " +
                         "Markers you placed yourself stay.",
                     accent = SquishColors.Amber,
                     action = "Mark ${densityName(beats.every)}"

@@ -350,7 +350,7 @@ fun EditorToolSheet(
             Tool.Mask -> clip?.let { MaskPanel(it, viewModel) }
             Tool.Cutout -> clip?.let {
                 if (chip == 0) BackgroundPanel(state, viewModel)
-                else ChromaKeyPanel(clip = it, viewModel = viewModel, onEyedropper = onEyedropper)
+                else ChromaKeyPanel(state = state, clip = it, viewModel = viewModel, onEyedropper = onEyedropper)
             }
             Tool.Stabilize -> clip?.let { StabilizePanel(state, it, viewModel, accent) }
             Tool.Track -> {

@@ -1139,6 +1139,7 @@ private fun StatusCards(
         status = state.proxyStatus,
         ready = proxies.count { it == ProxyStatus.Ready },
         total = proxies.size,
+        percent = state.proxyPercent,
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
     )
     PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))

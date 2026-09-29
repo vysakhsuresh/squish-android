@@ -61,8 +61,17 @@ fun BackgroundPanel(state: EditorUiState, viewModel: EditorViewModel) {
         )
 
         if (removal != null && !progress.running) {
+            // Cut out leaves the person over whatever is underneath, and under
+            // the video track that is black - in the preview even over a padded
+            // canvas, since the base surface's chain writes alpha 1 (see
+            // FloatOffer): the chip is only offered on an overlay, or kept where
+            // a shot already has it (an old draft, a pasted setting), so it can
+            // still be turned off. The person over a colour is Colour.
+            val fills = BackgroundFill.entries.filter {
+                it != BackgroundFill.Remove || clip.isOverlay || removal.fill == BackgroundFill.Remove
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BackgroundFill.entries.forEach { fill ->
+                fills.forEach { fill ->
                     SelectableChip(
                         label = fill.label,
                         selected = removal.fill == fill,
@@ -92,11 +101,21 @@ fun BackgroundPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     }
                 }
             }
-            if (removal.fill == BackgroundFill.Remove) {
-                Text(
-                    "Cut out shows black behind the person, or the picture underneath when this clip is a layer.",
+            when {
+                removal.fill != BackgroundFill.Remove -> Unit
+                clip.isOverlay -> Text(
+                    "Cut out leaves only the person, over whatever is under this overlay.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.TextMuted
+                )
+                // A shot that carries Cut out (an old draft, a pasted setting):
+                // what it shows, and the way to another shot under it. Under
+                // Blur or Colour there is nothing to float for, so nothing is
+                // offered - the person over a colour is Colour, on any track.
+                else -> FloatOffer(
+                    state, clip, viewModel,
+                    hole = "the cut-out",
+                    forColour = "For the person over a plain colour, choose Colour."
                 )
             }
         }

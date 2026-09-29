@@ -175,12 +175,16 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
      * landing in the corner an added overlay lands in; the track closes up behind
      * it (OverlayRules.withMainOnOverlay). With every row taken there, it says so
      * rather than leaving a button that did nothing.
+     *
+     * [keepPlacement] is the Cutout sheet's "Float this clip": the shot stays
+     * where it was on the picture, keys and all, so the person in it shows over
+     * the shot that slides in under it.
      */
-    fun switchToOverlay(clipId: String) {
+    fun switchToOverlay(clipId: String, keepPlacement: Boolean = false) {
         val clip = _state.value.videoClips.firstOrNull { it.id == clipId && it.isMain } ?: return
         val levels = _state.value
-        record("To overlay") {
-            mutateTimeline { it.withMainOnOverlay(clip.id, levels.muteOriginal, levels.originalVolume) }
+        record(if (keepPlacement) "Float" else "To overlay") {
+            mutateTimeline { it.withMainOnOverlay(clip.id, levels.muteOriginal, levels.originalVolume, keepPlacement) }
         }
         if (_state.value.videoClips.firstOrNull { it.id == clipId }?.isMain == true) {
             _state.update { it.copy(failure = SquishError.OverlayRowsFull(footage = !clip.isStillPicture)) }

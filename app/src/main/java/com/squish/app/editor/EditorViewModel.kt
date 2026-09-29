@@ -1323,7 +1323,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         fun status(value: ProxyStatus, proxy: Uri? = null) = _state.update {
             it.copy(
                 proxyStatuses = it.proxyStatuses + (uri to value),
-                proxyUris = if (proxy != null) it.proxyUris + (uri to proxy) else it.proxyUris - uri
+                proxyUris = if (proxy != null) it.proxyUris + (uri to proxy) else it.proxyUris - uri,
+                proxyPercent = null
             )
         }
         if (!ProxyEngine.isWorthProxying(meta.displayWidth, meta.displayHeight, meta.durationMs)) {
@@ -1335,7 +1336,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         status(ProxyStatus.Building)
-        val file = ProxyEngine.ensure(app, uri)
+        // The encoder's own percentage, for the notice over the strip: a bare
+        // spinner for a minute on heavy footage read as stuck.
+        val file = ProxyEngine.ensure(app, uri) { percent -> _state.update { it.copy(proxyPercent = percent) } }
         // Not worth a dialogue when it fails: the original still plays, just heavier.
         if (file != null) status(ProxyStatus.Ready, Uri.fromFile(file)) else status(ProxyStatus.Failed)
     }

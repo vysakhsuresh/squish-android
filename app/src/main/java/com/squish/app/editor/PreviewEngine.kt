@@ -249,6 +249,9 @@ class PreviewEngine(private val context: Context) {
         val grade = AtomicReference(IDENTITY_GRADE)
         /** The clip [grade] was last worked out from, so a tick on the same clip costs a reference check. */
         var gradedClip: Clip? = null
+        /** The clip, and the loupe state, the shader values were last written for; see [applyLive]. */
+        var liveClip: Clip? = null
+        var liveKeyPreview = true
         val effects = AtomicReference<List<TimedEffect>>(emptyList())
         var effectsClip: Clip? = null
         var effectsFrom: List<TimedEffect>? = null
@@ -722,6 +725,13 @@ class PreviewEngine(private val context: Context) {
      * nothing new by itself.
      */
     private fun applyLive(s: Surface, clip: Clip) {
+        // Only when something read here has changed: an edit makes a new Clip,
+        // the loupe flips keyPreview, the library makes a new effects list.
+        // This runs per surface per tick, and the pairs and lists built below
+        // to find "nothing changed" were the churn the playback audit named.
+        if (clip === s.liveClip && keyPreview == s.liveKeyPreview && (!s.isBase || effects === s.effectsFrom)) return
+        s.liveClip = clip
+        s.liveKeyPreview = keyPreview
         var changed = false
         val chroma = if (keyPreview) clip.chromaKey else null
         if (s.chroma.get() != chroma) {
@@ -913,7 +923,8 @@ class PreviewEngine(private val context: Context) {
 
         val clock = if (clockKey == KEY_A) surfaceA else surfaceB
         val clockPlayer = clock.player
-        val clockClip = (rollA + rollB).firstOrNull { it.id == clockClipId }
+        // Searched in place: joining the rolls built a list thirty times a second.
+        val clockClip = rollA.firstOrNull { it.id == clockClipId } ?: rollB.firstOrNull { it.id == clockClipId }
         val state = clockPlayer.playbackState
         val driving = clockClip != null && state == Player.STATE_READY && clockPlayer.isPlaying
         val stalled = playing && clockClip != null && state == Player.STATE_BUFFERING

@@ -144,6 +144,11 @@ object OverlayRules {
      * the button had done nothing but shorten the edit. Unchanged when every row
      * is taken there.
      *
+     * With [keepPlacement] it stays where it was, keys and all: the Cutout
+     * sheet floats a shot so the person in it shows over the next shot, and a
+     * corner tile with its Push in gone is not that. Floated from there the
+     * shot is meant to cover the picture.
+     *
      * It keeps the level it was heard at ([levelAsOverlay]): an overlay is not
      * under the camera switch, so a shot lifted out of an edit with camera sound
      * off started talking over the music.
@@ -151,15 +156,28 @@ object OverlayRules {
     fun TimelineState.withMainOnOverlay(
         clipId: String,
         muteOriginal: Boolean = false,
-        originalVolume: Float = 1f
+        originalVolume: Float = 1f,
+        keepPlacement: Boolean = false
     ): TimelineState {
         val lifted = withLayerChanged(clipId, +1)
         val clip = lifted.clips.firstOrNull { it.id == clipId } ?: return this
         if (!clip.isOverlay) return this
         val heard = levelAsOverlay(clip.volume, muteOriginal, originalVolume)
-        return lifted.withPlacementReset(clipId)
+        return (if (keepPlacement) lifted else lifted.withPlacementReset(clipId))
             .let { t -> t.copy(clips = t.clips.map { if (it.id == clipId) it.copy(volume = heard) else it }) }
             .copy(selectedClipId = clipId)
+    }
+
+    /**
+     * Whether floating [clipId] off the main track puts another shot under it:
+     * a shot follows it, and slides into its place when the track closes up.
+     * The last shot lifted stays where it was, past the track's new end, over
+     * nothing; the only shot lifted leaves the track empty. Neither is what a
+     * cut-out or a key is floated for, so the sheet offers it for neither.
+     */
+    fun floatsOverAShot(clips: List<Clip>, clipId: String): Boolean {
+        val clip = clips.firstOrNull { it.id == clipId && it.isMain } ?: return false
+        return clips.any { it.isMain && it.id != clipId && it.timelineStartMs > clip.timelineStartMs }
     }
 
     /** A shot's level as an overlay: what it was heard at under the camera sound. */

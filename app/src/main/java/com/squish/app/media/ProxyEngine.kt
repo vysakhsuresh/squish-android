@@ -4,6 +4,8 @@ package com.squish.app.media
 
 import android.content.Context
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -15,6 +17,7 @@ import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import com.google.common.collect.ImmutableList
@@ -71,6 +74,9 @@ object ProxyEngine {
      */
     private const val PROXY_MAX_DURATION_MS = 15L * 60_000
 
+    /** How often the encoder is asked how far it has got, for the notice over the strip. */
+    private const val PROGRESS_POLL_MS = 500L
+
     fun isWorthProxying(width: Int, height: Int, durationMs: Long): Boolean =
         maxOf(width, height) > PROXY_THRESHOLD_LONG_EDGE &&
             durationMs in 1..PROXY_MAX_DURATION_MS
@@ -87,8 +93,12 @@ object ProxyEngine {
      * Builds the proxy if it is missing. Returns null when the source cannot be
      * transcoded, and that is not an error the user needs to hear about: the
      * editor simply keeps playing the original, which still works, just heavier.
+     *
+     * [onProgress] hears the encoder's own percentage, 0..100, on the main
+     * thread, whenever it has one - a light copy of a long 4K file takes a
+     * minute or two, and a spinner alone for that long read as stuck.
      */
-    suspend fun ensure(context: Context, uri: Uri): File? {
+    suspend fun ensure(context: Context, uri: Uri, onProgress: (Int) -> Unit = {}): File? {
         cached(context, uri)?.let { return it }
 
         val target = fileFor(context, uri)
@@ -98,7 +108,7 @@ object ProxyEngine {
         // Transformer posts callbacks to the looper it was built on, so it is built
         // and started on the main thread exactly like the export path. The encoding
         // itself runs on the library's own threads; this coroutine only waits.
-        val built = withContext(Dispatchers.Main) { transcode(context, uri, partial) }
+        val built = withContext(Dispatchers.Main) { transcode(context, uri, partial, onProgress) }
 
         return if (built && partial.length() > 0 && partial.renameTo(target)) {
             target
@@ -120,7 +130,7 @@ object ProxyEngine {
         proxyDir(context).listFiles()?.forEach { runCatching { it.delete() } }
     }
 
-    private suspend fun transcode(context: Context, uri: Uri, output: File): Boolean =
+    private suspend fun transcode(context: Context, uri: Uri, output: File, onProgress: (Int) -> Unit): Boolean =
         suspendCancellableCoroutine { continuation ->
             // Declared as List<Effect> before the copy: Java generics are invariant,
             // so an ImmutableList<Presentation> will not satisfy ImmutableList<Effect>.
@@ -136,13 +146,32 @@ object ProxyEngine {
                 )
                 .build()
 
-            val transformer = Transformer.Builder(context)
+            // Transformer only reports progress when asked, and only from the
+            // thread it was built on - this one - so a poll on the main looper
+            // reads it off every half second until the session ends.
+            var transformer: Transformer? = null
+            val handler = Handler(Looper.getMainLooper())
+            val holder = ProgressHolder()
+            val poll = object : Runnable {
+                override fun run() {
+                    val session = transformer ?: return
+                    if (!continuation.isActive) return
+                    if (session.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) onProgress(holder.progress)
+                    handler.postDelayed(this, PROGRESS_POLL_MS)
+                }
+            }
+            fun finish(built: Boolean) {
+                handler.removeCallbacks(poll)
+                if (continuation.isActive) continuation.resume(built)
+            }
+
+            val session = Transformer.Builder(context)
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
                 .setAudioMimeType(MimeTypes.AUDIO_AAC)
                 .setEncoderFactory(encoderFactory)
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                        if (continuation.isActive) continuation.resume(true)
+                        finish(true)
                     }
 
                     override fun onError(
@@ -152,14 +181,19 @@ object ProxyEngine {
                     ) {
                         // Deliberately silent. A proxy is an optimization; failing to
                         // build one must never interrupt an edit in progress.
-                        if (continuation.isActive) continuation.resume(false)
+                        finish(false)
                     }
                 })
                 .build()
+            transformer = session
 
-            continuation.invokeOnCancellation { runCatching { transformer.cancel() } }
-            runCatching { transformer.start(item, output.absolutePath) }
-                .onFailure { if (continuation.isActive) continuation.resume(false) }
+            continuation.invokeOnCancellation {
+                handler.removeCallbacks(poll)
+                runCatching { session.cancel() }
+            }
+            runCatching { session.start(item, output.absolutePath) }
+                .onSuccess { handler.postDelayed(poll, PROGRESS_POLL_MS) }
+                .onFailure { finish(false) }
         }
 
     private fun proxyDir(context: Context): File =

@@ -183,12 +183,18 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
                 icon = Icons.Filled.Timer,
                 accent = accent
             )
+            // Read back off the curve, since a shape is not stored by name:
+            // the chip lights while the points are the ones it laid, and goes
+            // out the moment one is dragged. The chips used to light none, and
+            // the line under them was always Bullet's. Normal lights at 1x
+            // only: a lit chip must be one a tap leaves alone.
+            val active = PolishRules.activeRampShape(ramp, clip.sourceSpanMs)
             RampShape.entries.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                     row.forEach { shape ->
                         SelectableChip(
                             label = shape.label,
-                            selected = false,
+                            selected = shape == active,
                             accentColor = accent,
                             modifier = Modifier.weight(1f),
                             onClick = { viewModel.clips.applyRampShape(clip.id, shape) }
@@ -198,7 +204,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
                 }
             }
             Text(
-                RampShape.entries.first { it.label == "Bullet" }.hint,
+                PolishRules.rampHint(active, ramp),
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )
@@ -265,10 +271,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
 }
 
 /** A rate as the sheet prints it: "0.25x", "2x", "100x". */
-private fun rateLabel(speed: Float): String =
-    if (speed < 1f) "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}x"
-    else if (abs(speed - speed.toInt()) < 0.005f) "${speed.toInt()}x"
-    else "${"%.1f".format(speed).trimEnd('0').trimEnd('.')}x"
+private fun rateLabel(speed: Float): String = PolishRules.rateLabel(speed)
 
 /**
  * Whether the sound's pitch follows the speed. Held is the default: a voice at

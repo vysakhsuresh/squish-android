@@ -27,6 +27,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipAnimation
@@ -119,28 +123,24 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                 icon = Icons.Filled.Transform,
                 accent = accent
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                MotionPreset.entries.take(3).forEach { preset ->
-                    SelectableChip(
-                        label = preset.label,
-                        selected = false,
-                        modifier = Modifier.weight(1f),
-                        onClick = { viewModel.clips.applyMotionPreset(clip.id, preset) }
-                    )
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                MotionPreset.entries.drop(3).forEach { preset ->
-                    SelectableChip(
-                        label = preset.label,
-                        selected = false,
-                        modifier = Modifier.weight(1f),
-                        onClick = { viewModel.clips.applyMotionPreset(clip.id, preset) }
-                    )
+            // Read back off the keys, since a move is not stored by name: the
+            // chip lights while the two keys are the ones it laid, and goes
+            // out once one is moved or a third is added. None used to light.
+            val active = PolishRules.activeMotionPreset(clip.keyframes, clip.durationMs)
+            MotionPreset.entries.chunked(3).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    row.forEach { preset ->
+                        SelectableChip(
+                            label = preset.label,
+                            selected = preset == active,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.clips.applyMotionPreset(clip.id, preset) }
+                        )
+                    }
                 }
             }
             Text(
-                "A preset lays two keys across the whole clip. Adjust them below, or add your own.",
+                PolishRules.motionHint(active),
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )
@@ -256,10 +256,11 @@ fun KeyframeButton(
             .clickable(enabled = onClip, onClick = onToggle)
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        Text(
-            if (keyed) "◆" else "◇",
-            style = MaterialTheme.typography.titleMedium,
-            color = if (onClip) accent else SquishColors.TextMuted
+        Icon(
+            if (keyed) KeyframeGlyph else KeyframeOutlineGlyph,
+            contentDescription = null,
+            tint = if (onClip) accent else SquishColors.TextMuted,
+            modifier = Modifier.size(18.dp)
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -405,13 +406,22 @@ private fun KeyRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f).clickable(onClick = onGoTo)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(
+                        KeyframeGlyph,
+                        contentDescription = null,
+                        tint = if (atPlayhead) accent else SquishColors.TextPrimary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        Timecode.format(key.atMs),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (atPlayhead) accent else SquishColors.TextPrimary
+                    )
+                }
+                // The size as the Placement slider reads it, so the two agree.
                 Text(
-                    "◆ ${Timecode.format(key.atMs)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (atPlayhead) accent else SquishColors.TextPrimary
-                )
-                Text(
-                    "${(key.transform.scale * 100).toInt()}%" +
+                    Readout.times(key.transform.scale) +
                         if (key.transform.rotationDegrees != 0f) " · ${key.transform.rotationDegrees.toInt()}°" else "",
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextMuted
@@ -564,4 +574,28 @@ fun StabilizePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
             onClick = { if (!status.running && !busyElsewhere) viewModel.analysis.stabilizeClip(clip.id) }
         )
     }
+}
+
+/**
+ * A key: the diamond the strip draws on a clip, as an icon for the sheets.
+ * It was the text glyph "◆", which the phone's font drew a different size
+ * and weight from the rest of the row - the reason the timeline's own marks
+ * are vectors (see MiniAction in TimelineEditor).
+ */
+val KeyframeGlyph: ImageVector by lazy {
+    ImageVector.Builder("Keyframe", 24.dp, 24.dp, 24f, 24f).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(12f, 2f); lineTo(22f, 12f); lineTo(12f, 22f); lineTo(2f, 12f); close()
+        }
+    }.build()
+}
+
+/** The same diamond hollow: no key here yet. */
+val KeyframeOutlineGlyph: ImageVector by lazy {
+    ImageVector.Builder("KeyframeOutline", 24.dp, 24.dp, 24f, 24f).apply {
+        path(fill = SolidColor(Color.Black), pathFillType = PathFillType.EvenOdd) {
+            moveTo(12f, 2f); lineTo(22f, 12f); lineTo(12f, 22f); lineTo(2f, 12f); close()
+            moveTo(12f, 5f); lineTo(19f, 12f); lineTo(12f, 19f); lineTo(5f, 12f); close()
+        }
+    }.build()
 }

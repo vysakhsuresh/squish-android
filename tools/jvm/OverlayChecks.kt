@@ -163,6 +163,29 @@ fun main() {
         check(lifted.byId("c").timelineStartMs == 5_000L, "to overlay left a hole")
         val full = TimelineState(clips = state.clips + (1..MAX_LAYER).map { video("w$it", 20_000, layer = it) })
         check(full.withMainOnOverlay("b") == full, "to overlay with every row taken changed something")
+
+        // The Cutout sheet's Float this clip: the shot stays where it was on the
+        // picture, keys and all, over the shot that slides in under it. It used
+        // to land in the corner at 40% with its Push in gone (B16 review).
+        val keys = listOf(Keyframe(0, Transform(1f), KeyframeEasing.Smooth), Keyframe(5_000, Transform(1.2f), KeyframeEasing.Smooth))
+        val placed = TimelineState(clips = state.clips.map { if (it.id == "b") it.copy(keyframes = keys, rotation = 3f, offsetXFraction = 0.1f) else it })
+        val floated = placed.withMainOnOverlay("b", keepPlacement = true)
+        butted(floated, "float")
+        val fb = floated.byId("b")
+        check(fb.layer == 1 && fb.keyframes == keys && fb.rotation == 3f && fb.offsetXFraction == 0.1f, "float lost the placement or the keys: $fb")
+        check(fb.timelineStartMs == 5_000L && floated.byId("c").timelineStartMs == 5_000L, "float did not leave the next shot under it")
+        check(floated.selectedClipId == "b", "float let go of the clip")
+        check(full.withMainOnOverlay("b", keepPlacement = true) == full, "float with every row taken changed something")
+
+        // Float is offered where a shot follows: the last shot floated hangs past
+        // the track's end over nothing, and the only shot floated empties the track.
+        check(OverlayRules.floatsOverAShot(state.clips, "a"), "the first of three cannot float")
+        check(OverlayRules.floatsOverAShot(state.clips, "b"), "the middle of three cannot float")
+        check(!OverlayRules.floatsOverAShot(state.clips, "c"), "the last shot is offered a float over nothing")
+        check(!OverlayRules.floatsOverAShot(listOf(video("only", 5_000)), "only"), "the only shot is offered a float")
+        check(!OverlayRules.floatsOverAShot(state.clips + video("o", 2_000, layer = 1), "o"), "an overlay is offered a float")
+        // A shot after it on an overlay row is not under it.
+        check(!OverlayRules.floatsOverAShot(listOf(video("m", 5_000), video("o", 2_000, start = 6_000, layer = 1)), "m"), "an overlay after the shot counts as under it")
     }
 
     // --- The box's Duplicate: same moment, a row up, nudged. ----------------------------

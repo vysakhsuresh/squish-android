@@ -71,7 +71,14 @@ fun FailureCard(error: SquishError, onDismiss: () -> Unit, modifier: Modifier = 
  * counts them: [ready] of [total] copies made.
  */
 @Composable
-fun ProxyIndicator(status: ProxyStatus, modifier: Modifier = Modifier, ready: Int = 0, total: Int = 0) {
+fun ProxyIndicator(
+    status: ProxyStatus,
+    modifier: Modifier = Modifier,
+    ready: Int = 0,
+    total: Int = 0,
+    /** How far the copy being built has got, from its encoder; null until it says. */
+    percent: Int? = null
+) {
     if (status == ProxyStatus.NotNeeded) return
     val count = if (total > 1) " ($ready of $total ready)" else ""
 
@@ -91,7 +98,7 @@ fun ProxyIndicator(status: ProxyStatus, modifier: Modifier = Modifier, ready: In
         }
         Text(
             when (status) {
-                ProxyStatus.Building -> "Building a light preview copy$count — editing stays responsive while it works"
+                ProxyStatus.Building -> PolishRules.proxyBuildingLine(percent, ready, total)
                 ProxyStatus.Ready -> "Previewing at 540p for smooth scrubbing · exports at full resolution"
                 ProxyStatus.Failed -> "Playing the original$count — scrubbing may stutter on footage this large"
                 ProxyStatus.NotNeeded -> ""

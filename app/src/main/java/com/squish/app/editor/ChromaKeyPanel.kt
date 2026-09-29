@@ -28,7 +28,12 @@ import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.theme.SquishColors
 
 /**
- * Green screen for the selected layer.
+ * Chroma key for the selected clip: a green or blue screen cut out.
+ *
+ * On a main-track shot every control is here too, since a shot can carry a key
+ * (pasted, or from an old draft) and it has to stay adjustable - but the hole
+ * shows black there, and the sheet says so and offers to float the shot over
+ * the next one (FloatOffer).
  *
  * The sampler is the point of this panel. Screen paint and cloth vary enormously -
  * a cheap fabric under warm light is nowhere near the digital green a preset
@@ -44,13 +49,15 @@ import com.squish.app.ui.theme.SquishColors
  * own green and not the hole a first guess has cut (PreviewEngine.setKeyPreview).
  */
 @Composable
-fun ChromaKeyPanel(clip: Clip, viewModel: EditorViewModel, onEyedropper: ((Int) -> Unit) -> Unit) {
+fun ChromaKeyPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel, onEyedropper: ((Int) -> Unit) -> Unit) {
     val key = clip.chromaKey
 
     PanelSurface(accent = SquishColors.Magenta) {
+        // Named as the chip that opens it is: it read "Green screen" under a
+        // "Chroma key" chip.
         PanelHeading(
-            "Green screen",
-            "Cut a color out of this layer",
+            "Chroma key",
+            if (clip.isOverlay) "Cut a green or blue screen out of this overlay" else "Cut a green or blue screen out of this shot",
             icon = Icons.Filled.Colorize,
             accent = SquishColors.Magenta,
             trailing = {
@@ -70,12 +77,18 @@ fun ChromaKeyPanel(clip: Clip, viewModel: EditorViewModel, onEyedropper: ((Int) 
             }
         )
 
+        // A key cuts a hole through to what is underneath, and under the video
+        // track there is nothing: black, in the preview and the file. So on a
+        // shot the key buttons are not offered - they were, under a line saying
+        // they were pointless - and the one useful step is: float the shot,
+        // as it stands, over the shot that should show through. A key a shot
+        // already carries (pasted, or from an old draft) keeps every control,
+        // so it can be adjusted or turned off; the offer sits under them.
         if (key == null) {
-            Text(
-                "Keying only makes sense on a layer — cutting the base track just reveals black.",
-                style = MaterialTheme.typography.bodySmall,
-                color = SquishColors.TextMuted
-            )
+            if (!clip.isOverlay) {
+                FloatOffer(state, clip, viewModel, hole = "the keyed colour")
+                return@PanelSurface
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 SquishOutlinedButton(text = "Key green", modifier = Modifier.weight(1f)) {
                     viewModel.layers.setChromaKey(clip.id, ChromaKey(keyColorArgb = ChromaKey.STANDARD_GREEN))
@@ -152,5 +165,6 @@ fun ChromaKeyPanel(clip: Clip, viewModel: EditorViewModel, onEyedropper: ((Int) 
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextMuted
         )
+        if (!clip.isOverlay) FloatOffer(state, clip, viewModel, hole = "the keyed colour")
     }
 }

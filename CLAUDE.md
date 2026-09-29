@@ -843,6 +843,57 @@ should work through it and then delete what holds up.
   files count for `referencedUris`, so a purge cannot release a grant it is
   about to open; Freeze is 3 s again (Settings' photo length is for photos).
 
+- **Batch B16 (editor polish), all of it.** Built on the desktop with no phone
+  attached. The decisions - which curve chip and which move chip a clip is on,
+  read back off its points and keys since neither is stored by name, and the
+  proxy notice's percentage - are executed on the JVM
+  (`tools/jvm/PolishRulesChecks.kt`); nothing has been seen. Script in
+  `docs/ROADMAP.md` §4 under B16, plus what only a device answers: the proxy
+  notice reads "Building a light preview copy · 37%" and climbs (`ProxyEngine`
+  polls `Transformer.getProgress` on the main looper every half second - check
+  the percentage moves and the poll stops when the copy lands or the editor is
+  left); the Speed sheet's curve chip lights after a tap and goes out when a
+  point is dragged, and the line under the chips is the lit chip's own; the
+  same for the Moves chips on Animation, and a preset survives a frame trimmed
+  off the tail; Normal lights at 1x only - a lit chip must be one a tap leaves
+  alone, and it lit for any flat rate, so a 2x shot read as "Normal" and a tap
+  on the lit chip dropped it to 1x, rippling the track - and a flat 2x lights
+  no chip, the line reading "One rate, 2x…"; the keyframe button and the key
+  rows show a vector diamond
+  (`KeyframeGlyph`) at the row's size, not the font's "◆"; Crop's Flip buttons
+  carry the swap icons; a pinned line or mask on Track shows a tick icon;
+  Cutout on a *main-track* shot offers neither Key green nor Cut out - a hole
+  in the base shows black in the preview even over a padded canvas, since the
+  base surface's chain ends in the effects pass, which writes alpha 1
+  (`squish_fx_es2.glsl`), while the file would show the backdrop, so offering
+  it there would be a preview the file disagrees with; the person over a
+  colour is the Colour fill - but "Float this clip" (`FloatOffer`), which is
+  `switchToOverlay(keepPlacement = true)`: the shot keeps its placement and
+  its keys and the next shot slides in under it (the toolbar's To overlay
+  still lands in the corner, placement reset) - check it lands the shot on an
+  overlay row selected, full frame where it was, with its Push in still on it,
+  and the Cutout sheet then shows the key buttons; that with every row taken
+  the "rows are taken" failure shows instead; and that the button is not
+  offered on the last shot or the only shot (`OverlayRules.floatsOverAShot`:
+  nothing would be under it - the only shot floated used to empty the video
+  track), nor under Blur or Colour; a shot that already carries a key or Cut
+  out (pasted, or an old draft) keeps every control - swatch, Pick, the
+  sliders, Turn off - with the float offer under them; the panel under the
+  Chroma key chip is headed "Chroma key" (it read "Green screen"); the effects
+  library's placed-effect cards have no Start here / End here (the strip's
+  handles retime an effect, and the card says to close the sheet and tap the
+  effect first, since selecting an effect closes a level-0 sheet and the
+  handles draw only on the selected effect); the Sync nudges read "−1 frame"
+  and "−10 ms", two rows of two so the frame labels do not wrap at the larger
+  font sizes; the first-open gesture hint is B15's editor coach mark alone
+  (B16 had its own "Getting around" card, dropped in the merge over B15 since
+  the two said the same three things - check one card shows, not two); and the
+  preview's per-tick work no longer builds a list to find the clock clip or
+  re-reads a surface's shader values on a tick where nothing changed
+  (`applyLive` returns early on the same clip, loupe state and effects list) -
+  watch that a grade, mask, key or effect edit still reaches the picture at
+  once, paused and playing, and that the loupe still lifts the key while it is
+  up.
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The
