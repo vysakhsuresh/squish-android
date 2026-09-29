@@ -21,8 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material.icons.filled.Pause
@@ -1334,7 +1334,7 @@ private fun Transport(
         ) {
             // A frame at a time, the unit a cut is placed in. Five-second skips
             // were a player's controls, and the strip does long moves better.
-            TransportButton(Icons.Filled.SkipPrevious, "Back one frame") { onStep(-1) }
+            TransportButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Back one frame") { onStep(-1) }
             Box(
                 modifier = Modifier
                     .size(36.dp)
@@ -1350,7 +1350,7 @@ private fun Transport(
                     modifier = Modifier.size(20.dp)
                 )
             }
-            TransportButton(Icons.Filled.SkipNext, "Forward one frame") { onStep(1) }
+            TransportButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Forward one frame") { onStep(1) }
 
             Text(
                 Timecode.format(frame.positionMs),
