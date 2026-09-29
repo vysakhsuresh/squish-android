@@ -90,7 +90,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
 
         PanelSurface(accent = accent) {
             PanelHeading(
-                clip.label,
+                state.clipTitle(clip),
                 lengthLine(clip),
                 icon = Icons.Filled.Speed,
                 accent = accent

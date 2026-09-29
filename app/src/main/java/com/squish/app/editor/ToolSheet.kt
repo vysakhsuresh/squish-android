@@ -182,9 +182,14 @@ fun EditorToolSheet(
     // A look put on shot 2 while the preview showed shot 1 could not be seen:
     // opening a picture tool on a clip the playhead is off brings the playhead
     // a little way into it, past where a transition would cover it.
-    val pictureTool = tool == Tool.Looks || tool == Tool.Filters || tool == Tool.Adjust
-    LaunchedEffect(tool, graded?.id) {
-        val shot = graded?.takeIf { pictureTool } ?: return@LaunchedEffect
+    // The same for a shot's speed, animation and crop, each of which is seen, not read.
+    val shown = when (tool) {
+        Tool.Looks, Tool.Filters, Tool.Adjust -> graded
+        Tool.Speed, Tool.Animation, Tool.Crop -> clip?.takeIf { it.kind == ClipKind.Video }
+        else -> null
+    }
+    LaunchedEffect(tool, shown?.id) {
+        val shot = shown ?: return@LaunchedEffect
         if (state.playheadMs !in shot.timelineStartMs until shot.timelineEndMs) {
             viewModel.seekTo(shot.timelineStartMs + minOf(LOOK_LEAD_MS, shot.durationMs / 3))
         }

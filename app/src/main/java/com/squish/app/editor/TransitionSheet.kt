@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.squish.app.media.ExportPlan
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TransitionCategory
 import com.squish.app.timeline.TransitionType
 import com.squish.app.timeline.transitionOverlapMs
@@ -306,3 +307,7 @@ internal fun EditorUiState.shotName(clip: Clip): String =
         val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
         "shot ${base.indexOfFirst { it.id == clip.id } + 1}"
     }
+
+/** A clip's name at the head of its sheet: "Shot 2" for a picture, a song's own title for sound. */
+internal fun EditorUiState.clipTitle(clip: Clip): String =
+    if (clip.kind == ClipKind.Video) shotName(clip).replaceFirstChar { it.uppercase() } else clip.label

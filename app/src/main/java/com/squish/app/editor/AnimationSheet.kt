@@ -75,7 +75,7 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = accent) {
             PanelHeading(
-                clip.label,
+                state.clipTitle(clip),
                 when {
                     clip.hasAnimation && animated -> "Arrives, leaves and moves while it plays"
                     clip.hasAnimation -> "Arrives and leaves as set below"
