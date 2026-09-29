@@ -218,13 +218,19 @@ sealed class SquishError(
     class SilentOnMainTrack : SquishError(
         title = "This clip is silent on the main track",
         detail = "Camera sound is off for the whole edit, and every clip on the main track plays under it. As an overlay its sound was its own.",
-        fix = "Turn camera sound back on in Sound, Voice & FX, or undo to keep it as an overlay."
+        fix = "Turn camera sound back on in Sound, Mic & camera, or undo to keep it as an overlay."
     )
 
     class NoAudioTrack : SquishError(
         title = "This clip has no sound",
         detail = "You asked for an audio-only export, but the source file carries no audio track.",
         fix = "Turn off audio-only, or add a separate audio track first."
+    )
+
+    class NoSoundToExtract(val name: String) : SquishError(
+        title = "Nothing to extract from $name",
+        detail = "This clip carries no sound to take out: it is a photo, or its file has no audio track.",
+        fix = "Pick a clip with sound, or add music from Sound."
     )
 
     class CaptionsUnreadable : SquishError(

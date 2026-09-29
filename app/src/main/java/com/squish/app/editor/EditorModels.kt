@@ -192,13 +192,15 @@ data class StabilizeProgress(
 )
 
 /**
- * The pulse of whichever track was analysed.
+ * The pulse of whichever track was analysed: its tempo, how much to trust it,
+ * and which beat the bar starts on.
  *
- * [beatsMs] is in **timeline** time, already mapped out of the analysed clip's
- * source clock - so moving or ramping that clip afterwards leaves the beats where
- * they were, which is wrong, and re-running the analysis is the fix. That is a
- * deliberate trade: recomputing the grid on every drag would mean decoding the
- * audio again on every drag.
+ * The beats themselves live on the sound that was listened to
+ * ([Clip.beats], in the file's own time), named here by [clipId], so they
+ * travel with the clip and through its speed curve; the grid on the timeline
+ * is read through [EditorUiState.beatGrid]. Only a grid found on the camera's
+ * own audio - which no sound clip can carry - is kept here in [beatsMs], in
+ * timeline time, as every grid was before beats moved onto the clip.
  */
 data class BeatProgress(
     val running: Boolean = false,
@@ -210,6 +212,14 @@ data class BeatProgress(
     val downbeatOffset: Int = 0,
     /** Which clip was listened to, so the card can say so. */
     val clipLabel: String = "",
+    /** The sound the beats are on, or null for a grid on the camera audio. */
+    val clipId: String? = null,
+    /**
+     * The density: every beat, every second one, or every bar. A toggle the
+     * dots on the clip, "Snap to the beat" and "Cut on the beat" all read, so
+     * what is drawn is what a cut lands on.
+     */
+    val every: Int = 1,
     /**
      * What is being listened to while [running]. Separate from [clipLabel] so that
      * a new analysis leaves the grid already found in place until it has an
@@ -218,19 +228,68 @@ data class BeatProgress(
      */
     val listeningTo: String = ""
 ) {
-    val hasBeats: Boolean get() = beatsMs.size >= 2
+    /** Whether a grid was found: on a clip, or on the camera audio. */
+    val hasBeats: Boolean get() = beatsMs.size >= 2 || clipId != null
 
     /** The grid alone, as undo keeps it: no analysis in flight, no last failure. */
     val settled: BeatProgress
         get() = if (!running && !failed && listeningTo.isEmpty()) this
         else copy(running = false, failed = false, listeningTo = "", finished = hasBeats)
-
-    /** Every nth beat from the downbeat: the cut points for "on the bar". */
-    fun every(n: Int): List<Long> {
-        if (n <= 1) return beatsMs
-        return beatsMs.filterIndexed { i, _ -> (i - downbeatOffset).mod(n) == 0 }
-    }
 }
+
+/**
+ * A take being recorded over the timeline, from the Sound sheet's Record.
+ *
+ * The count-in gives the picture a moment to be looked at and the mic a moment
+ * to open; then the timeline plays, silently, while the mic listens, until
+ * Stop or the end of the edit. [replacesId] is a take being done again, on
+ * purpose: the new one lands where it was and it goes.
+ */
+data class RecordingState(
+    val phase: Phase = Phase.Idle,
+    /** Seconds left in the count-in, while [Phase.Countdown]. */
+    val countdown: Int = 0,
+    /** Where on the timeline the take starts. */
+    val startMs: Long = 0L,
+    /** How much the mic has heard so far, in ms: what the panel's clock and the strip's growing take read. */
+    val recordedMs: Long = 0L,
+    /** The mic's level just now, 0..1, for the meter. */
+    val level: Float = 0f,
+    val replacesId: String? = null,
+    /**
+     * The picture did not start playing within a few seconds of the mic
+     * opening. The take goes on without it rather than ending on its own
+     * mid-sentence, and the panel says so.
+     */
+    val pictureStalled: Boolean = false,
+    /** The mic could not be opened, or nothing was heard; shown until the next attempt. */
+    val failed: Boolean = false
+) {
+    enum class Phase { Idle, Countdown, Recording, Saving }
+
+    /** Whether the editor's sound should be held quiet: from the count-in until the take is saved. */
+    val active: Boolean get() = phase != Phase.Idle
+
+    /** Where the take being made ends on the timeline just now. */
+    val endMs: Long get() = startMs + recordedMs
+}
+
+/**
+ * The id of the take being recorded as the strip draws it: a sound clip that
+ * grows under the playhead so the take is seen against the picture, as
+ * CapCut's is. It is the strip's alone - not in the edit, not played, not
+ * saved - and a tap on it selects nothing.
+ */
+const val RECORDING_CLIP_ID = "recording"
+
+/**
+ * The editor asking the preview to play or to pause - the one direction the
+ * transport did not have. Playback is the preview's own (its button, a tap on
+ * the picture); the editor reads what it is doing. A recording that has to
+ * start the timeline, and a song auditioned that has to stop it, ask through
+ * this. [nonce] tells a new request from the last one answered.
+ */
+data class TransportRequest(val play: Boolean, val nonce: Long)
 
 data class CaptionProgress(
     val running: Boolean = false,
@@ -299,7 +358,6 @@ data class EditSnapshot(
     val markers: List<Long>,
     val selectedClipId: String?,
     val muteOriginal: Boolean,
-    val voiceEffect: VoiceEffect,
     val originalVolume: Float,
     val rotationDegrees: Int,
     val cropAspect: CropAspect,
@@ -360,8 +418,6 @@ data class EditorUiState(
     val audioOnly: Boolean = false,
 
     val muteOriginal: Boolean = false,
-    /** A voice effect on the clip's own sound; see [VoiceEffect]. */
-    val voiceEffect: VoiceEffect = VoiceEffect.None,
     val originalVolume: Float = 1f,
     val rotationDegrees: Int = 0,
     val cropAspect: CropAspect = CropAspect.Original,
@@ -392,6 +448,10 @@ data class EditorUiState(
     val stabilizeStrength: Float = 0.5f,
     val tracking: TrackProgress = TrackProgress(),
     val beats: BeatProgress = BeatProgress(),
+    /** A voiceover being taken; see [RecordingState]. */
+    val recording: RecordingState = RecordingState(),
+    /** The editor's last ask of the preview's transport; see [TransportRequest]. */
+    val transportRequest: TransportRequest? = null,
 
     // The video track, in order. Seeded with the whole source clip on load; split,
     // trim, reorder and merge all operate on this list, and export renders it.
@@ -571,7 +631,6 @@ data class EditorUiState(
             markers = markers,
             selectedClipId = selectedClipId,
             muteOriginal = muteOriginal,
-            voiceEffect = voiceEffect,
             originalVolume = originalVolume,
             rotationDegrees = rotationDegrees,
             cropAspect = cropAspect,
@@ -595,7 +654,6 @@ data class EditorUiState(
         markers = snapshot.markers,
         selectedClipId = snapshot.selectedClipId,
         muteOriginal = snapshot.muteOriginal,
-        voiceEffect = snapshot.voiceEffect,
         originalVolume = snapshot.originalVolume,
         rotationDegrees = snapshot.rotationDegrees,
         cropAspect = snapshot.cropAspect,
@@ -626,6 +684,39 @@ data class EditorUiState(
         get() = audioClips.firstOrNull { it.id == selectedClipId } ?: audioClips.firstOrNull()
 
     fun waveformFor(clip: Clip): Waveform? = clip.uri?.let { audioWaveforms[it.toString()] }
+
+    /**
+     * Where the picture ends: the last shot's or overlay's end, sounds left
+     * out. What "Loop to the end" fills up to, and what a recording stops at.
+     */
+    val pictureEndMs: Long get() = videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
+
+    /**
+     * Every beat on the timeline, at the chosen density: the sounds' own beats
+     * carried to where they play, or the camera-audio grid. See
+     * [AudioRules.beatsOnTimeline].
+     */
+    val beatGrid: List<Long>
+        get() = AudioRules.beatsOnTimeline(audioClips, beats.every, beats.downbeatOffset, beats.beatsMs)
+
+    /** The beat grid at every beat, whatever the density: what the strip snaps to and the readout counts. */
+    val allBeats: List<Long>
+        get() = AudioRules.beatsOnTimeline(audioClips, 1, 0, beats.beatsMs)
+
+    /**
+     * The beats that start a bar, on the timeline: the readout's count and the
+     * taller lines on the strip. Through the clips, like [beatGrid], because
+     * the bar is a phase of each file's own list - counted over the merged
+     * timeline list it drifted by a beat wherever two sounds or a cut song met.
+     */
+    val barGrid: List<Long>
+        get() = AudioRules.beatsOnTimeline(audioClips, 4, beats.downbeatOffset, beats.beatsMs)
+
+    /** Whether there is a grid to snap or cut to. */
+    val hasBeatGrid: Boolean get() = allBeats.size >= 2
+
+    /** The sound the beats are on, if it is still in the edit. */
+    val beatClip: Clip? get() = beats.clipId?.let { id -> audioClips.firstOrNull { it.id == id } }
 
     /** The first shot of the main track: the picture everything else is lined up against. */
     val headVideoClip: Clip?
@@ -783,8 +874,24 @@ fun EditorUiState.toTimeline(): TimelineState {
         )
     }
 
+    // The take under way, drawn growing on a sound row from where it started
+    // to what the mic has heard, so it is seen against the picture. Sized by
+    // the mic's own clock, not the playhead: it grows whether or not the
+    // picture is playing.
+    val taking = recording.takeIf { it.phase == RecordingState.Phase.Recording }?.let { rec ->
+        Clip(
+            id = RECORDING_CLIP_ID,
+            kind = ClipKind.Audio,
+            uri = null,
+            label = "Recording…",
+            sourceInMs = 0L,
+            sourceOutMs = rec.recordedMs.coerceAtLeast(1L),
+            timelineStartMs = rec.startMs
+        )
+    }
+
     return TimelineState(
-        clips = videoClips + audioClips + captions,
+        clips = videoClips + audioClips + listOfNotNull(taking) + captions,
         selectedClipId = selectedClipId,
         playheadMs = playheadMs,
         pixelsPerSecond = pixelsPerSecond,

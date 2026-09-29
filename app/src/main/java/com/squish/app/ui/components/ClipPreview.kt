@@ -431,7 +431,7 @@ private fun SoundWave(
     LaunchedEffect(uri, totalMs) {
         if (uri == null || totalMs <= 0L) return@LaunchedEffect
         val pcm = PcmDecoder.decodeMono(context, uri, maxDurationMs = totalMs.coerceAtMost(WAVE_MAX_MS))
-        wave = pcm?.let { WaveformBuilder.build(it, buckets = WAVE_BARS) }
+        wave = pcm?.let { WaveformBuilder.buildBars(it, buckets = WAVE_BARS) }
     }
 
     val shown = wave

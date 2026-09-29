@@ -8,6 +8,7 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.ByteOrder
+import kotlin.math.abs
 import kotlin.math.max
 
 class MonoPcm(val samples: FloatArray, val sampleRate: Int) {
@@ -29,6 +30,86 @@ object PcmDecoder {
         targetSampleRate: Int = 8_000,
         maxDurationMs: Long = 60_000L
     ): MonoPcm? = withContext(Dispatchers.IO) {
+        var out = FloatArray(0)
+        var written = 0
+        var stride = 1
+        var analysisRate = 0
+        var limit = 0
+        var framesSeen = 0L
+        val ok = decodeFrames(context, uri, onFormat = { sourceRate ->
+            stride = max(1, sourceRate / targetSampleRate)
+            analysisRate = sourceRate / stride
+            limit = ((maxDurationMs / 1000.0) * analysisRate).toInt().coerceAtLeast(1024)
+            out = FloatArray(minOf(limit, 1 shl 20))
+        }) { sample ->
+            if (framesSeen % stride == 0L) {
+                if (written == out.size) out = out.copyOf(minOf(out.size * 2, limit))
+                if (written < out.size) out[written++] = sample
+            }
+            framesSeen++
+            written < limit
+        }
+        if (!ok || written == 0) null else MonoPcm(out.copyOf(written), analysisRate)
+    }
+
+    /**
+     * The loudest sample in each [bucketMs] of the file, 0..1 after
+     * normalising, for as much of it as [maxDurationMs] covers - the whole of
+     * any song. Read straight off the decoder into one float per bucket, so an
+     * hour of audio costs a few hundred kilobytes rather than the samples
+     * themselves: the waveform used to be built from a ten-minute decode held
+     * in memory, and a longer file's strip went flat past the tenth minute.
+     */
+    suspend fun decodePeaks(
+        context: Context,
+        uri: Uri,
+        bucketMs: Int = WaveformBuilder.BUCKET_MS,
+        maxDurationMs: Long = 60 * 60_000L
+    ): Waveform? = withContext(Dispatchers.IO) {
+        var rate = 1
+        var perBucket = 1L
+        var peaks = FloatArray(0)
+        var buckets = 0
+        var limitFrames = 0L
+        var frames = 0L
+        var peak = 0f
+        val ok = decodeFrames(context, uri, onFormat = { sourceRate ->
+            rate = sourceRate.coerceAtLeast(1)
+            perBucket = (rate.toLong() * bucketMs / 1000L).coerceAtLeast(1L)
+            limitFrames = rate.toLong() * maxDurationMs / 1000L
+            peaks = FloatArray(1024)
+        }) { sample ->
+            val v = abs(sample)
+            if (v > peak) peak = v
+            frames++
+            if (frames % perBucket == 0L) {
+                if (buckets == peaks.size) peaks = peaks.copyOf(peaks.size * 2)
+                peaks[buckets++] = peak
+                peak = 0f
+            }
+            frames < limitFrames
+        }
+        if (!ok || frames == 0L) return@withContext null
+        // The last, partial bucket counts: a sound that ends on a hit should show it.
+        if (frames % perBucket != 0L) {
+            if (buckets == peaks.size) peaks = peaks.copyOf(peaks.size + 1)
+            peaks[buckets++] = peak
+        }
+        WaveformBuilder.fromPeaks(peaks.copyOf(buckets), frames * 1000L / rate)
+    }
+
+    /**
+     * Runs the decoder over the file's first audio track, handing every frame -
+     * the channels averaged to one float - to [onFrame] until it returns false
+     * or the file ends. [onFormat] gets the sample rate before the first frame.
+     * False when there is no readable audio track at all.
+     */
+    private fun decodeFrames(
+        context: Context,
+        uri: Uri,
+        onFormat: (sampleRate: Int) -> Unit,
+        onFrame: (Float) -> Boolean
+    ): Boolean {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         try {
@@ -44,22 +125,15 @@ object PcmDecoder {
                     break
                 }
             }
-            if (trackIndex < 0 || format == null) return@withContext null
+            if (trackIndex < 0 || format == null) return false
             extractor.selectTrack(trackIndex)
 
-            val mime = format.getString(MediaFormat.KEY_MIME) ?: return@withContext null
+            val mime = format.getString(MediaFormat.KEY_MIME) ?: return false
             val sourceRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             val channels = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
                 format.getInteger(MediaFormat.KEY_CHANNEL_COUNT).coerceAtLeast(1)
             } else 1
-
-            val stride = max(1, sourceRate / targetSampleRate)
-            val analysisRate = sourceRate / stride
-            val limit = ((maxDurationMs / 1000.0) * analysisRate).toInt().coerceAtLeast(1024)
-
-            var out = FloatArray(minOf(limit, 1 shl 20))
-            var written = 0
-            var framesSeen = 0L
+            onFormat(sourceRate)
 
             codec = MediaCodec.createDecoderByType(mime)
             codec.configure(format, null, null, 0)
@@ -68,6 +142,7 @@ object PcmDecoder {
             val info = MediaCodec.BufferInfo()
             var inputDone = false
             var outputDone = false
+            var delivered = false
 
             while (!outputDone) {
                 if (!inputDone) {
@@ -93,7 +168,7 @@ object PcmDecoder {
                             buf.position(info.offset)
                             buf.limit(info.offset + info.size)
                             val shorts = buf.order(ByteOrder.nativeOrder()).asShortBuffer()
-                            while (shorts.hasRemaining() && written < limit) {
+                            while (shorts.hasRemaining() && !outputDone) {
                                 var sum = 0f
                                 var read = 0
                                 while (read < channels && shorts.hasRemaining()) {
@@ -101,23 +176,18 @@ object PcmDecoder {
                                     read++
                                 }
                                 if (read == 0) break
-                                if (framesSeen % stride == 0L) {
-                                    if (written == out.size) out = out.copyOf(minOf(out.size * 2, limit))
-                                    if (written < out.size) out[written++] = sum / read
-                                }
-                                framesSeen++
+                                delivered = true
+                                if (!onFrame(sum / read)) outputDone = true
                             }
                         }
                     }
                     codec.releaseOutputBuffer(outIndex, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
-                    if (written >= limit) outputDone = true
                 }
             }
-
-            if (written == 0) null else MonoPcm(out.copyOf(written), analysisRate)
+            return delivered
         } catch (t: Throwable) {
-            null
+            return false
         } finally {
             runCatching { codec?.stop() }
             runCatching { codec?.release() }

@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -63,6 +64,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -201,10 +203,19 @@ fun TimelineEditor(
     onScrub: (Long) -> Unit,
     onTransitionTap: (String) -> Unit,
     modifier: Modifier = Modifier,
-    /** Marks to snap to — the beat grid, or anything dropped by hand. */
+    /** Marks to snap to, drawn as lines across the rows: anything dropped by hand, and beats snapped to. */
     markers: List<Long> = emptyList(),
     /** Which of those start a bar, drawn taller so the phrasing is readable. */
     barMarkers: List<Long> = emptyList(),
+    /**
+     * The beat grid on the timeline, at its chosen density: snapped to like
+     * the markers, but drawn as dots on the sound they belong to (see
+     * [soundBeats]) rather than as lines - forty lines across every row was
+     * a cage.
+     */
+    beats: List<Long> = emptyList(),
+    /** The beats a sound carries, in its file's time, to draw on it at the chosen density. */
+    soundBeats: (Clip) -> List<Long> = { emptyList() },
     /**
      * Bumped to ask the strip to fit the whole edit across its width. Only the
      * strip knows how wide it is, so the zoom has to be computed here and handed
@@ -250,6 +261,12 @@ fun TimelineEditor(
      * the room below.
      */
     compact: Boolean = false,
+    /**
+     * A clip to keep in view while [compact] and nothing is selected: the row
+     * it is on is the one shown. The take being recorded, which is drawn on a
+     * sound row but selected by nobody.
+     */
+    focusClipId: String? = null,
     /** A double tap on the ruler: the whole edit on screen. Pinch zooms; the zoom buttons are gone. */
     onFit: () -> Unit = {},
     /**
@@ -259,7 +276,10 @@ fun TimelineEditor(
      * middle was not on, and the strip jumped when the finger lifted.
      */
     onSeek: (Long) -> Unit = onScrub,
-    /** Whether dragging the strip pulls the playhead onto nearby cuts, markers and beats. */
+    /**
+     * Whether the markers and beats are snapped to - by a drag of the strip,
+     * of a clip or of a handle. Cuts and the playhead are always snapped to.
+     */
     snapScrub: Boolean = true,
     /**
      * How tall the rows are, whatever is in them - the editor's to say, from the
@@ -309,7 +329,14 @@ fun TimelineEditor(
     val latestZoomTo by rememberUpdatedState(onZoomTo)
     val latestWindow by rememberUpdatedState(window)
     val latestState by rememberUpdatedState(state)
-    val latestMarkers by rememberUpdatedState(markers)
+    // What a drag snaps to: the markers and the beat dots alike - and neither
+    // with the switch off. Cuts and the playhead always snap; the marks were
+    // folded in whatever the switch said, so at "Every beat" on a 120 BPM song
+    // a title could not be put between two dots without clearing the grid.
+    val snapMarks = remember(markers, beats, snapScrub) {
+        if (!snapScrub) emptyList() else if (beats.isEmpty()) markers else (markers + beats).distinct()
+    }
+    val latestMarkers by rememberUpdatedState(snapMarks)
     val latestSeek by rememberUpdatedState(onSeek)
     val latestSnapScrub by rememberUpdatedState(snapScrub)
 
@@ -490,12 +517,14 @@ fun TimelineEditor(
     // row under the finger put the drop on a row nobody pointed at.
     val compactShown = carried?.compact ?: compact
     val latestCompactShown by rememberUpdatedState(compactShown)
+    val focus = if (selected == null) state.clips.firstOrNull { it.id == focusClipId } else null
     val rows: List<StripRow> = if (!compactShown) allRows else {
-        val home = when (selectedGroup) {
-            Group.Overlay -> allRows.firstOrNull { it.group == Group.Overlay && it.index == selected?.layer }
-            Group.Sound -> allRows.firstOrNull { it.group == Group.Sound && it.index == soundRows[selected?.id] }
-            Group.Words -> allRows.firstOrNull { it.group == Group.Words && it.index == wordRows[selected?.id] }
-            Group.Effects -> allRows.firstOrNull { it.group == Group.Effects && it.index == effectRows[selectedEffect?.id] }
+        val home = when {
+            focus != null && focus.kind == ClipKind.Audio -> allRows.firstOrNull { it.group == Group.Sound && it.index == soundRows[focus.id] }
+            selectedGroup == Group.Overlay -> allRows.firstOrNull { it.group == Group.Overlay && it.index == selected?.layer }
+            selectedGroup == Group.Sound -> allRows.firstOrNull { it.group == Group.Sound && it.index == soundRows[selected?.id] }
+            selectedGroup == Group.Words -> allRows.firstOrNull { it.group == Group.Words && it.index == wordRows[selected?.id] }
+            selectedGroup == Group.Effects -> allRows.firstOrNull { it.group == Group.Effects && it.index == effectRows[selectedEffect?.id] }
             else -> null
         } ?: allRows.first { it.group == Group.Main }
         listOf(home.copy(folded = false, first = true))
@@ -519,7 +548,7 @@ fun TimelineEditor(
         effectRows = effectRows,
         handlePx = with(density) { HANDLE_WIDTH.toPx() },
         effectGripPx = with(density) { STACKED_GRIP.toPx() },
-        markers = markers,
+        markers = snapMarks,
         snapMs = window.msForDp(SNAP_DP.value).roundToLong(),
         vertical = !compactShown
     )
@@ -822,7 +851,8 @@ fun TimelineEditor(
                                     onKeyTap = keyTap,
                                     clipColor = remember(state.audioClips) {
                                         coloursByKey(state.audioClips, MUSIC_COLOURS) { it.uri?.toString() ?: it.id }
-                                    }
+                                    },
+                                    soundBeats = soundBeats
                                 )
                                 Group.Words -> Lane(
                                     clips = state.textClips.filter { wordRows[it.id] == row.index },
@@ -1429,7 +1459,9 @@ private fun Lane(
      * apart at a glance - two songs, a title and a caption. Otherwise every clip
      * wears the lane's [accent].
      */
-    clipColor: ((Clip) -> Color)? = null
+    clipColor: ((Clip) -> Color)? = null,
+    /** A sound's beats to draw on it, in its file's time. */
+    soundBeats: (Clip) -> List<Long> = { emptyList() }
 ) {
     val latestBareTap by rememberUpdatedState(onBareTap)
 
@@ -1470,7 +1502,8 @@ private fun Lane(
                     accent = clipColor?.invoke(clip) ?: accent,
                     onSelect = onSelect,
                     trims = trims,
-                    onKeyTap = onKeyTap
+                    onKeyTap = onKeyTap,
+                    beats = if (clip.kind == ClipKind.Audio) soundBeats(clip) else emptyList()
                 )
             }
         }
@@ -1622,7 +1655,9 @@ private fun ClipView(
     accent: Color,
     onSelect: (String?) -> Unit,
     trims: Trims,
-    onKeyTap: (String, Long) -> Unit
+    onKeyTap: (String, Long) -> Unit,
+    /** A sound's beats, in its file's time, drawn as dots along it. */
+    beats: List<Long> = emptyList()
 ) {
     val latestSelect by rememberUpdatedState(onSelect)
     val latestClip by rememberUpdatedState(clip)
@@ -1704,6 +1739,51 @@ private fun ClipView(
                 }
             }
         }
+        // A sound's fades, as CapCut draws them: the corner above the ramp
+        // shaded out, with the ramp's own line, at each end that fades. Drawn
+        // over the part on screen, measured from the clip's real edges, so a
+        // fade on a clip half off screen still starts where the clip does.
+        if (clip.kind == ClipKind.Audio && (clip.fadeInMs > 0L || clip.fadeOutMs > 0L)) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val pxPerMs = size.width / (drawnEndMs - drawnStartMs).coerceAtLeast(1L).toFloat()
+                val shade = SquishColors.Background.copy(alpha = 0.55f)
+                if (clip.fadeInMs > 0L) {
+                    val x0 = (clip.timelineStartMs - drawnStartMs) * pxPerMs
+                    val x1 = (clip.timelineStartMs + clip.fadeInMs - drawnStartMs) * pxPerMs
+                    val wedge = Path().apply {
+                        moveTo(x0, size.height); lineTo(x0, 0f); lineTo(x1, 0f); close()
+                    }
+                    drawPath(wedge, shade)
+                    drawLine(accent, Offset(x0, size.height), Offset(x1, 0f), strokeWidth = 1.5.dp.toPx())
+                }
+                if (clip.fadeOutMs > 0L) {
+                    val x1 = (clip.timelineEndMs - drawnStartMs) * pxPerMs
+                    val x0 = (clip.timelineEndMs - clip.fadeOutMs - drawnStartMs) * pxPerMs
+                    val wedge = Path().apply {
+                        moveTo(x0, 0f); lineTo(x1, 0f); lineTo(x1, size.height); close()
+                    }
+                    drawPath(wedge, shade)
+                    drawLine(accent, Offset(x0, 0f), Offset(x1, size.height), strokeWidth = 1.5.dp.toPx())
+                }
+            }
+        }
+        // The beats a sound carries, as dots along its bottom edge that travel
+        // with it - through its speed curve too, so a slowed song's dots spread
+        // out as its beats do. What "Cut on the beat" lands on.
+        if (beats.isNotEmpty()) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val pxPerMs = size.width / (drawnEndMs - drawnStartMs).coerceAtLeast(1L).toFloat()
+                val radius = 2.5.dp.toPx()
+                val y = size.height - radius - 2.dp.toPx()
+                beats.forEach { at ->
+                    val onTimeline = clip.timelineAtSource(at)
+                    if (onTimeline < drawnStartMs || onTimeline > drawnEndMs) return@forEach
+                    val x = (onTimeline - drawnStartMs) * pxPerMs
+                    drawCircle(SquishColors.Background, radius + 1.dp.toPx(), Offset(x, y))
+                    drawCircle(SquishColors.Amber, radius, Offset(x, y))
+                }
+            }
+        }
         if (strip != null) {
             // The frames under the part being drawn, not under the whole clip.
             // The box is a window onto the clip, so sampling the clip's whole
@@ -1747,15 +1827,21 @@ private fun ClipView(
         ) {
             // A line added and left blank still has to be findable on the strip.
             val empty = clip.kind == ClipKind.Text && clip.text.isNullOrBlank()
-            Text(
-                text = clip.shownName,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (empty) SquishColors.TextMuted else SquishColors.TextPrimary,
-                fontStyle = if (empty) FontStyle.Italic else FontStyle.Normal,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                // A take made in the editor wears a mic, so it is told from a song at a glance.
+                if (clip.isVoiceover) {
+                    Icon(Icons.Filled.Mic, contentDescription = "Voiceover", tint = SquishColors.Cyan, modifier = Modifier.size(11.dp))
+                }
+                Text(
+                    text = clip.shownName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (empty) SquishColors.TextMuted else SquishColors.TextPrimary,
+                    fontStyle = if (empty) FontStyle.Italic else FontStyle.Normal,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             if (width > 88.dp) {
                 Text(
                     text = Timecode.format(clip.durationMs).removeSuffix(".000"),

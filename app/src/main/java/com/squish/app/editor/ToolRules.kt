@@ -48,6 +48,9 @@ enum class Tool(val label: String, val sheet: Boolean) {
     Track("Track", true),
     Beats("Beats", true),
     Sync("Sync", true),
+    Fade("Fade", true),
+    Voice("Voice", true),
+    ExtractAudio("Extract audio", false),
     Edit("Edit", true),
     Style("Style", true),
     Strength("Strength", true),
@@ -77,30 +80,34 @@ val LEVEL_ZERO: List<Tool> = listOf(
  * Only tools that act on the selected clip are listed. Looks, crop and rotation
  * are still one setting for the whole edit, so they stay on level 0 rather than
  * appear here as if they changed this clip alone. Volume is the clip's own
- * level; the camera sound for the whole edit stays on Sound (Voice & FX).
+ * level; the camera sound for the whole edit stays on Sound (Mic & camera).
  *
  * Section 2's lists are longer; the rest arrive with the batch that builds what
- * they act on (docs/ROADMAP.md, B6, "Deferred"): Fade and Voice on sounds (B9);
- * Opacity on text (B10); Rotate, Mirror, Freeze, Reverse, Replace and Extract
- * audio (B11); Filters, Adjust and Crop per clip (B12). A button for a tool that
- * does not exist yet would be one more thing that does nothing.
+ * they act on (docs/ROADMAP.md, B6, "Deferred"): Opacity on text (B10);
+ * Rotate, Mirror, Freeze, Reverse and Replace (B11); Filters, Adjust and Crop
+ * per clip (B12). A button for a tool that does not exist yet would be one
+ * more thing that does nothing. B9 brought Fade and Voice to sounds, Voice to
+ * every clip with sound, and Extract audio to footage.
  */
 fun toolsFor(kind: SelectionKind, canTransition: Boolean = false): List<Tool> = when (kind) {
     SelectionKind.None -> LEVEL_ZERO
     SelectionKind.MainVideo -> listOfNotNull(
         Tool.Split, Tool.Speed, Tool.Volume, Tool.Animation, Tool.Placement,
         Tool.Transition.takeIf { canTransition },
-        Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Duplicate, Tool.ToOverlay, Tool.Delete
+        Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Voice, Tool.ExtractAudio,
+        Tool.Duplicate, Tool.ToOverlay, Tool.Delete
     )
     SelectionKind.Overlay -> listOf(
         Tool.Split, Tool.Speed, Tool.Volume, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement,
-        Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Duplicate, Tool.ToMain, Tool.Delete
+        Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Voice, Tool.ExtractAudio,
+        Tool.Duplicate, Tool.ToMain, Tool.Delete
     )
     SelectionKind.PhotoOverlay -> listOf(
         Tool.Split, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement, Tool.Duplicate, Tool.ToMain, Tool.Delete
     )
+    // CapCut's order: the level, then the fades, then everything about time.
     SelectionKind.Audio -> listOf(
-        Tool.Split, Tool.Volume, Tool.Speed, Tool.Beats, Tool.Sync, Tool.Duplicate, Tool.Delete
+        Tool.Split, Tool.Volume, Tool.Fade, Tool.Speed, Tool.Beats, Tool.Sync, Tool.Voice, Tool.Duplicate, Tool.Delete
     )
     SelectionKind.Text -> listOf(
         Tool.Edit, Tool.Style, Tool.Animation, Tool.Track, Tool.Split, Tool.Duplicate, Tool.Delete

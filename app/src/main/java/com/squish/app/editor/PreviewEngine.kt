@@ -14,6 +14,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -22,6 +23,7 @@ import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import com.squish.app.media.StillClips
+import com.squish.app.media.audio.GainProcessor
 import com.squish.app.media.audio.VoiceProcessor
 import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.ChromaKeyEffect
@@ -137,8 +139,23 @@ class PreviewEngine(private val context: Context) {
      */
     private val liveGrade = AtomicReference(IDENTITY_GRADE)
 
-    /** The voice effect on the clip's own sound, read by the players' audio every buffer. */
-    private val liveVoice = AtomicReference(VoiceEffect.None)
+    /**
+     * Whether every level is held at nothing: while a voiceover is being taken,
+     * so the speaker does not feed the picture's sound back into the mic. The
+     * levels are still worked out and set the moment it lifts.
+     */
+    private var muted = false
+
+    /**
+     * What sits in front of one sound player's sink, read every buffer: the
+     * boost above the player's own ceiling (see AudioRules.gainSplit) and the
+     * clip's voice. Written by the tick, so a slider or a voice chip is heard
+     * at once with no player rebuilt.
+     */
+    private class AudioChain {
+        val gain = AtomicReference(1f)
+        val voice = AtomicReference(VoiceEffect.None)
+    }
 
     /**
      * How fast one player is running, and when that was last changed.
@@ -156,9 +173,11 @@ class PreviewEngine(private val context: Context) {
 
     /** One video player and everything known about what it is showing. */
     private inner class Surface(val key: String, val isBase: Boolean) {
-        // Only the main track's sound carries the voice effect; an overlay's is
-        // its own, and the export leaves it alone.
-        val player: ExoPlayer = newVideoPlayer(voiced = isBase)
+        /** The voice of the clip this surface is showing, read by its sink every buffer. */
+        val voice = AtomicReference(VoiceEffect.None)
+        // Every surface carries a voice: it is the clip's own now, an
+        // overlay's as much as a shot's, and the export voices both.
+        val player: ExoPlayer = newVideoPlayer { voice.get() }
 
         // Read by the shaders every frame; written by the tick.
         val chroma = AtomicReference<ChromaKey?>(null)
@@ -303,6 +322,7 @@ class PreviewEngine(private val context: Context) {
     private val audioPlayers = LinkedHashMap<String, ExoPlayer>()
     private val audioSources = HashMap<String, String>()
     private val audioRates = HashMap<String, Rate>()
+    private val audioChains = HashMap<String, AudioChain>()
 
     /** What each sound's placement was when it was last positioned; see [setTimeline]. */
     private var audioKeys: Map<String, String> = emptyMap()
@@ -378,33 +398,33 @@ class PreviewEngine(private val context: Context) {
 
     private val scrubbing: Boolean get() = scrubbingHeld || scrub.inFlight
 
-    fun setVoice(effect: VoiceEffect) {
-        if (liveVoice.getAndSet(effect) == effect) return
-        // Pitch is a playback parameter, and only the clip's own sound carries the
-        // voice: the export leaves added music alone, so the preview does too.
-        listOf(surfaceA, surfaceB).forEach { s ->
-            runCatching { s.player.playbackParameters = PlaybackParameters(s.player.playbackParameters.speed, effect.pitch) }
-            s.rate.pitch = effect.pitch
-        }
+    /**
+     * Holds every level at nothing while [on] - a take is being recorded - and
+     * lets them back the moment it lifts. The levels are set every tick, so
+     * this is one flag they all read rather than a pass over the players.
+     */
+    fun setMuted(on: Boolean) {
+        muted = on
     }
 
     /**
-     * Renderers whose audio passes through a [VoiceProcessor] that reads
-     * [liveVoice], so robot, echo and radio are heard in the preview and change
-     * without the player being rebuilt.
+     * Renderers whose audio passes through the given processors - a
+     * [VoiceProcessor] reading the clip's voice, and for a sound player a
+     * [GainProcessor] before it - so robot, echo, radio and a boost past full
+     * are heard in the preview and change without the player being rebuilt.
      */
-    private fun voiceRenderers() = object : DefaultRenderersFactory(context) {
+    private fun processedRenderers(vararg processors: AudioProcessor) = object : DefaultRenderersFactory(context) {
         override fun buildAudioSink(
             context: Context,
             enableFloatOutput: Boolean,
             enableAudioTrackPlaybackParams: Boolean
         ): AudioSink = DefaultAudioSink.Builder(context)
-            .setAudioProcessors(arrayOf(VoiceProcessor { liveVoice.get() }))
+            .setAudioProcessors(arrayOf(*processors))
             .build()
     }
 
-    private fun newVideoPlayer(voiced: Boolean) =
-        (if (voiced) ExoPlayer.Builder(context, voiceRenderers()) else ExoPlayer.Builder(context))
+    private fun newVideoPlayer(voiceNow: () -> VoiceEffect) =
+        ExoPlayer.Builder(context, processedRenderers(VoiceProcessor(voiceNow)))
         // Ready on half a second of buffer rather than the default two and a half.
         // A shot parked ahead of a cut has to be ready before the cut, and on a
         // heavy original the default was a large part of the stall at every one.
@@ -445,7 +465,11 @@ class PreviewEngine(private val context: Context) {
      *   decode its pictures into nowhere, holding a hardware decoder the surfaces
      *   need.
      */
-    private fun newAudioPlayer() = ExoPlayer.Builder(context)
+    private fun newAudioPlayer(chain: AudioChain) = ExoPlayer.Builder(
+        context,
+        // The boost first, so a voice hears the level it will be written at.
+        processedRenderers(GainProcessor { chain.gain.get() }, VoiceProcessor { chain.voice.get() })
+    )
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
@@ -1125,12 +1149,13 @@ class PreviewEngine(private val context: Context) {
 
         val source = playbackUriFor(clip) ?: return
         applyLive(s, clip)
+        // The clip's own voice: the processed ones through the sink, a pitch
+        // shift as a playback parameter.
+        s.voice.set(clip.voice)
         setSpeed(
             player, s.rate, clip.id,
             clip.speedAt(if (park) clip.timelineStartMs else t),
-            // The voice is on the clip's own sound, which only the base carries;
-            // an overlay is muted and the export does not voice it.
-            pitch = if (s.isBase) liveVoice.get().pitch else 1f
+            pitch = clip.voice.pitch
         )
         val wanted = PreviewRules.seekTarget(clip.sourceAt(t), clip.sourceInMs, clip.sourceOutMs)
         s.lastWanted = wanted
@@ -1178,8 +1203,13 @@ class PreviewEngine(private val context: Context) {
 
         // The clip's own level, every tick: cheap, and a slider or the camera
         // switch is heard at once. A shot's is under the camera sound for the
-        // edit, an overlay's is its own - the export's rule (OverlayRules).
-        val level = if (park) 0f else OverlayRules.effectiveVolume(clip, muteOriginal, originalVolume)
+        // edit, an overlay's is its own - the export's rule (OverlayRules) -
+        // and through its fades, as the export plays them (FadeProcessor).
+        val level = when {
+            park || muted -> 0f
+            else -> OverlayRules.effectiveVolume(clip, muteOriginal, originalVolume) *
+                AudioRules.fadeGain(t - clip.timelineStartMs, clip.durationMs, clip.fadeInMs, clip.fadeOutMs)
+        }
         if (player.volume != level) player.volume = level
 
         val run = playing && !park
@@ -1295,7 +1325,7 @@ class PreviewEngine(private val context: Context) {
                 // sample by the time it is due.
                 val untilDue = clip.timelineStartMs - t
                 if (untilDue in 1..PREROLL_MS && !primed.contains(clip.id)) {
-                    setSpeed(player, rate, clip.id, clip.speedAt(clip.timelineStartMs), pitch = 1f)
+                    setSpeed(player, rate, clip.id, clip.speedAt(clip.timelineStartMs), pitch = clip.voice.pitch)
                     player.seekTo(clip.sourceInMs)
                     primed.add(clip.id)
                 }
@@ -1305,10 +1335,17 @@ class PreviewEngine(private val context: Context) {
                 return@forEach
             }
 
-            player.volume = clip.volume
-            // Always at its natural pitch: the voice effect belongs to the clip's
-            // own sound, and the export leaves added music alone.
-            setSpeed(player, rate, clip.id, clip.speedAt(t), pitch = 1f)
+            // The level up to the player's ceiling, through the fades; the part
+            // above it and the clip's voice go to the chain in front of its
+            // sink - the same split the export writes (AudioMixing, FadeProcessor).
+            val (level, boost) = AudioRules.gainSplit(clip.volume)
+            val fade = AudioRules.fadeGain(t - clip.timelineStartMs, clip.durationMs, clip.fadeInMs, clip.fadeOutMs)
+            player.volume = if (muted) 0f else level * fade
+            audioChains[clip.id]?.let { chain ->
+                chain.gain.set(boost)
+                chain.voice.set(clip.voice)
+            }
+            setSpeed(player, rate, clip.id, clip.speedAt(t), pitch = clip.voice.pitch)
             val wanted = clip.sourceAt(t).coerceAtLeast(0L)
 
             if (!holdPosition) {
@@ -1338,6 +1375,7 @@ class PreviewEngine(private val context: Context) {
             audioPlayers.remove(id)?.release()
             audioSources.remove(id)
             audioRates.remove(id)
+            audioChains.remove(id)
             primed.remove(id)
         }
 
@@ -1346,12 +1384,17 @@ class PreviewEngine(private val context: Context) {
             val existing = audioPlayers[clip.id]
             when {
                 existing == null -> {
-                    audioPlayers[clip.id] = newAudioPlayer().apply {
+                    val chain = AudioChain().also {
+                        it.gain.set(AudioRules.gainSplit(clip.volume).second)
+                        it.voice.set(clip.voice)
+                    }
+                    audioChains[clip.id] = chain
+                    audioPlayers[clip.id] = newAudioPlayer(chain).apply {
                         setMediaItem(MediaItem.fromUri(uri))
                         // Prepared the moment the track is added, so the first play
                         // is not also the first read off storage.
                         prepare()
-                        volume = clip.volume
+                        volume = AudioRules.gainSplit(clip.volume).first
                     }
                     audioSources[clip.id] = uri.toString()
                 }
@@ -1380,6 +1423,7 @@ class PreviewEngine(private val context: Context) {
         audioPlayers.clear()
         audioSources.clear()
         audioRates.clear()
+        audioChains.clear()
         primed.clear()
     }
 

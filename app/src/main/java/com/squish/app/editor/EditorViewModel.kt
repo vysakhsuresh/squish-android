@@ -23,7 +23,6 @@ import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.VideoProcessor
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.video.FilmstripLoader
-import com.squish.app.media.audio.WaveformBuilder
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TimelineState
@@ -698,7 +697,11 @@ class EditorViewModel(
                 selectedClipId = current.selectedClipId,
                 playheadMs = current.playheadMs
             )
-            val next = block(timeline)
+            // Every change to a clip's played length comes through here too, so
+            // this is where its fades are kept inside it (AudioRules.withFittedFades):
+            // a fade set on the whole song and left on a six-second sting of it
+            // held the sting under forty percent from end to end.
+            val next = block(timeline).let { t -> t.copy(clips = t.clips.map(AudioRules::withFittedFades)) }
             val video = next.clips.filter { it.kind == ClipKind.Video }
             // Every change to how long the picture runs comes through here -
             // trims, cuts, deletes, retimes, transitions, layer changes - so this
@@ -1001,8 +1004,7 @@ class EditorViewModel(
     private suspend fun restoreAudioWaveforms(clips: List<Clip>) {
         clips.mapNotNull { it.uri }.distinct().forEach { uri ->
             if (_state.value.audioWaveforms[uri.toString()] != null) return@forEach
-            val pcm = PcmDecoder.decodeMono(getApplication(), uri, maxDurationMs = 10 * 60_000L) ?: return@forEach
-            val wave = WaveformBuilder.build(pcm)
+            val wave = PcmDecoder.decodePeaks(getApplication(), uri) ?: return@forEach
             _state.update { it.copy(audioWaveforms = it.audioWaveforms + (uri.toString() to wave)) }
         }
     }
@@ -1036,7 +1038,7 @@ class EditorViewModel(
         targetSizeMb = snapshot.targetSizeMb,
         audioOnly = snapshot.audioOnly,
         muteOriginal = snapshot.muteOriginal,
-        voiceEffect = snapshot.voiceEffect,
+
         originalVolume = snapshot.originalVolume,
         rotationDegrees = snapshot.rotationDegrees,
         cropAspect = snapshot.cropAspect,
@@ -1122,6 +1124,9 @@ class EditorViewModel(
      */
     override fun onCleared() {
         super.onCleared()
+        // A take under way is closed and put on the strip first, so the save
+        // below keeps it.
+        audio.finishRecordingNow()
         // The last edit, before the ticker that would have saved it is gone.
         // Blocking, on purpose: viewModelScope is already cancelled here, and a
         // write handed to another thread has no guarantee of running before the

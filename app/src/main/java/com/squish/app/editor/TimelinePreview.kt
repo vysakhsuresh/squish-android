@@ -119,7 +119,10 @@ fun TimelinePreview(
     /** Auto-reframe: where the crop sits through the head clip, in its source time. */
     reframe: MotionTrack? = null,
     reframeOffsetMs: Long = 0L,
-    voiceEffect: VoiceEffect = VoiceEffect.None,
+    /** Every level held at nothing: a voiceover is being taken over the picture. */
+    muted: Boolean = false,
+    /** The editor asking the transport to play or pause; see [TransportRequest]. */
+    transportRequest: TransportRequest? = null,
     /** The shape of the picture after the rotation: the canvas everything is composed on. */
     sourceAspect: Float,
     playheadMs: Long,
@@ -204,7 +207,19 @@ fun TimelinePreview(
     // no decoder, and keeps its transparency. Their shapes, once read, for the box.
     val stillAspects = remember { mutableStateMapOf<String, Float>() }
 
-    LaunchedEffect(voiceEffect) { engine.setVoice(voiceEffect) }
+    LaunchedEffect(muted) { engine.setMuted(muted) }
+
+    // The editor's ask of the transport - a recording starting the timeline, a
+    // song auditioned stopping it - answered once each. The request standing
+    // when this preview is first made was answered by the one before it (or
+    // by nobody, and is stale); only a new one counts.
+    var answeredRequest by remember { mutableStateOf(transportRequest) }
+    LaunchedEffect(transportRequest) {
+        val request = transportRequest ?: return@LaunchedEffect
+        if (request == answeredRequest) return@LaunchedEffect
+        answeredRequest = request
+        if (request.play) engine.play() else engine.pause()
+    }
     // The full-screen scrub bar is a finger on the timeline too.
     var barScrubbing by remember { mutableStateOf(false) }
     LaunchedEffect(scrubbing, barScrubbing) {

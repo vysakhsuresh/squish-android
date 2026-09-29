@@ -134,14 +134,7 @@ enum class TitlePreset(
 }
 
 /**
- * A voice effect on the clip's own sound. Pitch effects shift the voice without
- * changing its timing; the rest are processed by VoiceProcessor.
+ * The voice effects live with the clip now (timeline/VoiceEffect.kt); the
+ * name here keeps every panel that spoke of them working unchanged.
  */
-enum class VoiceEffect(val label: String, val pitch: Float = 1f) {
-    None("None"),
-    Chipmunk("Chipmunk", pitch = 1.6f),
-    Deep("Deep", pitch = 0.72f),
-    Robot("Robot"),
-    Echo("Echo"),
-    Radio("Radio")
-}
+typealias VoiceEffect = com.squish.app.timeline.VoiceEffect

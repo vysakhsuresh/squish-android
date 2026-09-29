@@ -59,6 +59,29 @@ fun main() {
             "an overlay has no opacity or layer")
     }
 
+    // --- The sound tools (B9): fades and a voice on a sound, a voice and extraction on footage. ---
+    run {
+        val sound = toolsFor(SelectionKind.Audio)
+        check(Tool.Fade in sound && Tool.Voice in sound, "a sound has no Fade or Voice")
+        check(sound.indexOf(Tool.Fade) == sound.indexOf(Tool.Volume) + 1, "Fade is not beside Volume on a sound")
+        check(Tool.ExtractAudio !in sound, "a sound offers to extract its own sound")
+        for (kind in listOf(SelectionKind.MainVideo, SelectionKind.Overlay)) {
+            check(Tool.Voice in toolsFor(kind, true) && Tool.ExtractAudio in toolsFor(kind, true), "$kind has no Voice or Extract audio")
+            check(Tool.Fade !in toolsFor(kind, true), "$kind offers Fade, which the sheet only has for sounds")
+        }
+        // A photo has no sound: nothing to voice, nothing to extract.
+        check(Tool.Voice !in toolsFor(SelectionKind.PhotoOverlay) && Tool.ExtractAudio !in toolsFor(SelectionKind.PhotoOverlay),
+            "a photo offers sound tools")
+        for (kind in listOf(SelectionKind.Text, SelectionKind.Sticker, SelectionKind.Effect)) {
+            check(toolsFor(kind).none { it == Tool.Voice || it == Tool.Fade || it == Tool.ExtractAudio }, "$kind offers sound tools")
+        }
+        check(!Tool.ExtractAudio.sheet, "Extract audio opens a sheet instead of acting")
+        check(Tool.Fade.sheet && Tool.Voice.sheet, "Fade or Voice acts at once instead of opening a sheet")
+        // Voice from a shot to a sound stays open; Fade from a sound to a shot does not.
+        check(sheetSurvives(Tool.Voice, SelectionKind.Audio, false), "Voice closed moving from a shot to a sound")
+        check(!sheetSurvives(Tool.Fade, SelectionKind.MainVideo, false), "Fade stayed open over a shot")
+    }
+
     // --- Sheets across a change of selection. -------------------------------------
     run {
         check(sheetSurvives(Tool.Stickers, SelectionKind.Sticker, false), "adding a sticker closed the sticker sheet")

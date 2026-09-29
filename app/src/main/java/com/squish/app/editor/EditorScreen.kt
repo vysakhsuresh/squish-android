@@ -277,6 +277,7 @@ fun EditorScreen(
             Tool.Duplicate -> viewModel.clips.duplicateSelected()
             Tool.Delete -> viewModel.clips.deleteSelectedClip()
             Tool.ToOverlay -> state.selectedClipId?.let(viewModel.layers::switchToOverlay)
+            Tool.ExtractAudio -> state.selectedClipId?.let(viewModel.audio::extractAudio)
             Tool.ToMain -> state.videoClips.firstOrNull { it.id == state.selectedClipId }?.let { clip ->
                 // A photo dragged out long is minutes of rendering on the main
                 // track; asked about rather than started with a spinner.
@@ -291,9 +292,12 @@ fun EditorScreen(
     // the sheet goes and the clip's own tools come up. A selection the sheet
     // made itself - a sticker it just added - is left alone.
     val selectFromStrip: (String?) -> Unit = { id ->
-        val before = state.selectedClipId
-        viewModel.selectClip(id)
-        if (id != null && id != before && openTool?.levelZero == true) openToolName = null
+        // The take being recorded is drawn, not in the edit: a tap on it selects nothing.
+        if (id != RECORDING_CLIP_ID) {
+            val before = state.selectedClipId
+            viewModel.selectClip(id)
+            if (id != null && id != before && openTool?.levelZero == true) openToolName = null
+        }
     }
 
     // The picture, its transport and everything drawn over it. Movable, so a
@@ -371,7 +375,13 @@ fun EditorScreen(
                             openToolName = Tool.Transition.name
                         },
                         markers = state.markers,
-                        barMarkers = state.beats.every(4),
+                        barMarkers = state.barGrid,
+                        // The dots on the sounds, at the chosen density, and the
+                        // grid the strip snaps to.
+                        beats = state.beatGrid,
+                        soundBeats = { clip -> AudioRules.chosenInWindow(clip, state.beats.every, state.beats.downbeatOffset) },
+                        // The take being recorded, kept in view under the sheet.
+                        focusClipId = RECORDING_CLIP_ID.takeIf { state.recording.phase == RecordingState.Phase.Recording },
                         fitNonce = state.fitNonce,
                         onZoomTo = viewModel::setPixelsPerSecond,
                         onReorder = viewModel.clips::reorderClip,
@@ -713,7 +723,9 @@ private fun EditorPreview(
             fallbackUri = sourceUri,
             proxies = state.proxyUris,
             muteOriginal = state.muteOriginal,
-            voiceEffect = state.voiceEffect,
+            // Silent while a take is recorded, so the speaker stays out of the mic.
+            muted = state.recording.active,
+            transportRequest = state.transportRequest,
             originalVolume = state.originalVolume,
             grade = state.grade,
             rotationDegrees = state.rotationDegrees,

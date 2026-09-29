@@ -157,7 +157,11 @@ fun EditorToolSheet(
     var chip by rememberSaveable(tool) { mutableIntStateOf(0) }
 
     val chips = when (tool) {
-        Tool.Sound -> listOf("Music", "Voice & FX", "Sync")
+        // Named by what the chip holds - the mic, and the camera's sound. It
+        // was "Voice & FX" from when the voice changer lived there; that is
+        // each clip's own Voice now, and the old name sent people to a mic
+        // button to look for Robot.
+        Tool.Sound -> listOf("Music", "Mic & camera", "Sync")
         Tool.Looks -> listOf("Filters", "Adjust", "Templates")
         Tool.Frame -> listOf("Ratio", "Rotate")
         Tool.Cutout -> listOf("Background", "Chroma key")
@@ -210,6 +214,8 @@ fun EditorToolSheet(
         }
         Tool.Beats -> viewModel.audio::clearBeats
         Tool.Sync -> clip?.let { c -> { viewModel.audio.resetAudioAlignment(c.id) } }
+        Tool.Fade -> clip?.let { c -> { viewModel.audio.clearFades(c.id) } }
+        Tool.Voice -> clip?.let { c -> { viewModel.audio.setClipVoice(c.id, com.squish.app.timeline.VoiceEffect.None) } }
         Tool.Style -> item?.let { i -> { viewModel.text.restyleCaption(i.id, { it.withDefaultStyle() }) } }
         Tool.Strength -> effect?.let { e -> { viewModel.clips.changeEffect(e.id) { it.copy(intensity = DEFAULT_STRENGTH) } } }
         else -> null
@@ -268,8 +274,10 @@ fun EditorToolSheet(
                 val tracked = clip ?: state.baseClipAt(state.playheadMs) ?: state.headVideoClip
                 tracked?.let { TrackPanel(state, it, viewModel, accent) }
             }
-            Tool.Beats -> BeatPanel(state, viewModel)
+            Tool.Beats -> BeatPanel(state, viewModel, showClear = false)
             Tool.Sync -> clip?.let { AlignPanel(state, it, viewModel) }
+            Tool.Fade -> clip?.let { FadePanel(it, viewModel) }
+            Tool.Voice -> clip?.let { VoicePanel(it, viewModel) }
             Tool.Edit -> item?.let { TextEditPanel(it, viewModel, selectAll = it.id == newLineId) }
             Tool.Style -> item?.let { TextStylePanel(it, viewModel) }
             Tool.Strength -> effect?.let { EffectStrengthPanel(it, viewModel) }

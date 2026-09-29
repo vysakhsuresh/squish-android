@@ -45,6 +45,25 @@ data class Clip(
     val volume: Float = 1f,
 
     /**
+     * The sound's rise from silence at its start and fall to it at its end, in
+     * played milliseconds - the strip's clock, so a fade drawn as a wedge on
+     * the clip is the length it plays. A music bed trimmed to the picture's end
+     * used to stop dead; a voiceover started with a click.
+     */
+    val fadeInMs: Long = 0L,
+    val fadeOutMs: Long = 0L,
+
+    /** A voice effect on this clip's own sound; see [VoiceEffect]. */
+    val voice: VoiceEffect = VoiceEffect.None,
+
+    /**
+     * Beats on this sound, in the file's own time, so they travel with the clip
+     * and through its speed curve. Found by the beat detector or tapped in by
+     * ear; drawn as dots on the clip, and what the cuts snap to.
+     */
+    val beats: List<Long> = emptyList(),
+
+    /**
      * How fast this clip plays, and where that changes across it.
      *
      * Per clip rather than per project, which is the whole difference between a
@@ -115,6 +134,9 @@ data class Clip(
     /** A photo kept as a picture on an overlay row (see [isStillPicture]): drawn, never decoded. */
     val isStillPicture: Boolean get() = isStillPicture(uri?.toString())
 
+    /** A take recorded in the editor (see [isVoiceover]): the strip marks it with a mic. */
+    val isVoiceover: Boolean get() = isVoiceover(uri?.toString())
+
     /**
      * The highest overlay row this clip may sit on. Footage stops at
      * [MAX_FOOTAGE_LAYER]: each row of it is a decoder in the preview and in
@@ -157,6 +179,9 @@ data class Clip(
      * its frames - no pose is re-sampled, so no easing restarts at the cut - and
      * revealing footage past the cut later brings back the move that was there.
      *
+     * A fade belongs to an end: the head keeps the fade in and the tail the fade
+     * out, so cutting a song in two does not put a dip in the middle of it.
+     *
      * The halves have to add up to the whole, or everything after a main-track cut
      * shifts. A ramp's played length is rounded, and each half is rounded - and
      * its staircase stepped - on its own, so the two can come out a few
@@ -180,14 +205,15 @@ data class Clip(
     }
 
     private fun halvesAt(offset: Long): Pair<Clip, Clip> {
-        val head = copy(sourceOutMs = sourceInMs + offset, speedRamp = speedRamp.sliced(0L, offset))
+        val head = copy(sourceOutMs = sourceInMs + offset, speedRamp = speedRamp.sliced(0L, offset), fadeOutMs = 0L)
         val tail = copy(
             id = UUID.randomUUID().toString(),
             sourceInMs = sourceInMs + offset,
             timelineStartMs = head.timelineEndMs,
             speedRamp = speedRamp.sliced(offset, sourceSpanMs),
             transitionIn = Transition(),
-            keyframes = keyframes.shiftedBy(-head.durationMs)
+            keyframes = keyframes.shiftedBy(-head.durationMs),
+            fadeInMs = 0L
         )
         return head to tail
     }
@@ -323,6 +349,17 @@ fun isStillPicture(address: String?): Boolean {
     if (address == null || !address.startsWith("file:")) return false
     val path = address.substringBefore('?').substringBefore('#')
     return path.endsWith(".png") && "/stills/" in path
+}
+
+/**
+ * Whether [address] is a take the editor recorded - a WAV it wrote under its
+ * own files/voice/ (VoiceRecorder). From the address alone, like a still, so
+ * no draft field is needed to draw the mic on it.
+ */
+fun isVoiceover(address: String?): Boolean {
+    if (address == null || !address.startsWith("file:")) return false
+    val path = address.substringBefore('?').substringBefore('#')
+    return path.endsWith(".wav") && "/voice/" in path
 }
 
 /**

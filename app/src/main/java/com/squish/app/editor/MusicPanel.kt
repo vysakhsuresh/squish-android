@@ -1,11 +1,10 @@
+@file:androidx.annotation.OptIn(UnstableApi::class)
+
 package com.squish.app.editor
 
 import android.Manifest
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +23,8 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,9 +33,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,44 +46,104 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.squish.app.media.audio.MusicLibrary
+import com.squish.app.media.audio.MusicPick
 import com.squish.app.media.audio.MusicSynth
 import com.squish.app.media.audio.PhoneTrack
 import com.squish.app.ui.components.SelectableChip
+import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.theme.SquishColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Music to put under the video: Squish Originals, composed on the phone, and a
- * browser for the songs already on it. Tap a row to hear it; Add drops it on
- * the timeline at the playhead.
+ * Music to put under the video: Squish Originals, composed on the phone, its
+ * sound effects, a browser for the songs already on it, and what was starred
+ * or used lately. Tap a row to hear it; Add drops it on the timeline at the
+ * playhead.
+ *
+ * An audition is heard on its own: it pauses the editor before it starts
+ * (a song over the edit's own sound was two songs at once), stops when the
+ * editor plays, when the list changes, when the app is put away, or when it
+ * ends - and it takes audio focus, so whatever else the phone was playing
+ * pauses for it.
  */
 @Composable
-fun MusicPanel(viewModel: EditorViewModel) {
+fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var tab by remember { mutableStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
 
     // One small player for listening before adding, released with the panel.
-    val player = remember { ExoPlayer.Builder(context).build() }
-    DisposableEffect(player) { onDispose { player.release() } }
     var playingKey by remember { mutableStateOf<String?>(null) }
+    val player = remember {
+        ExoPlayer.Builder(context)
+            .setAudioAttributes(
+                AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
+                /* handleAudioFocus = */ true
+            )
+            .build()
+    }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) playingKey = null
+            }
+            // Focus lost - a call, another app - pauses it; the row says so.
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isPlaying && player.playbackState != Player.STATE_BUFFERING) playingKey = null
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
+    }
     var preparing by remember { mutableStateOf<String?>(null) }
+
+    fun stopListening() {
+        if (player.playWhenReady) player.pause()
+        playingKey = null
+    }
 
     fun listen(key: String, uri: Uri) {
         if (playingKey == key) {
-            player.pause()
-            playingKey = null
+            stopListening()
             return
         }
+        viewModel.audio.requestPause()
         player.setMediaItem(MediaItem.fromUri(uri))
         player.prepare()
         player.play()
         playingKey = key
+    }
+
+    // The editor playing is the end of the audition; so is a change of list.
+    LaunchedEffect(editorPlaying) { if (editorPlaying) stopListening() }
+    LaunchedEffect(tab) { stopListening() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { stopListening() }
+
+    // Starred, read once and kept as it changes under the taps here.
+    var favourites by remember { mutableStateOf(MusicLibrary.favourites(context)) }
+    fun star(pick: MusicPick) {
+        MusicLibrary.toggleFavourite(context, pick)
+        favourites = MusicLibrary.favourites(context)
+    }
+    fun isStarred(key: String) = favourites.any { it.key == key }
+
+    fun add(pick: MusicPick, uri: Uri) {
+        stopListening()
+        MusicLibrary.noteUsed(context, pick)
+        viewModel.audio.addAudioTrack(uri, pick.title)
     }
 
     PanelSurface(accent = SquishColors.Cyan) {
@@ -90,61 +153,178 @@ fun MusicPanel(viewModel: EditorViewModel) {
             icon = Icons.Filled.LibraryMusic,
             accent = SquishColors.Cyan
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SelectableChip("Squish originals", tab == 0, accentColor = SquishColors.Cyan, onClick = { tab = 0 })
-            SelectableChip("On this phone", tab == 1, accentColor = SquishColors.Cyan, onClick = { tab = 1 })
+        // Two rows of two, each filling the width, so all four are in sight on
+        // a phone. In one scrolling row the fourth sat off screen with nothing
+        // to say so, and the starred list was never found; and a scrolling
+        // chip row straight under the sheet's own read as one muddled control.
+        listOf("Squish originals", "Sound effects", "On this phone", "Starred & recent").chunked(2).forEachIndexed { r, pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                pair.forEachIndexed { c, label ->
+                    val i = r * 2 + c
+                    SelectableChip(label, tab == i, accentColor = SquishColors.Cyan, modifier = Modifier.weight(1f), onClick = { tab = i })
+                }
+            }
         }
 
-        if (tab == 0) {
-            Text(
-                "Composed by Squish on your phone — yours to use anywhere, no credit needed.",
-                style = MaterialTheme.typography.labelSmall,
-                color = SquishColors.TextMuted
-            )
-            MusicSynth.styles.forEach { style ->
-                MusicRow(
-                    title = style.title,
-                    subtitle = "${style.mood} · ${style.seconds}s",
-                    playing = playingKey == style.id,
-                    busy = preparing == style.id,
-                    onListen = {
-                        scope.launch {
-                            preparing = style.id
-                            val uri = MusicLibrary.original(context, style)
-                            preparing = null
-                            listen(style.id, uri)
-                        }
-                    },
-                    onAdd = {
-                        scope.launch {
-                            preparing = style.id
-                            val uri = MusicLibrary.original(context, style)
-                            preparing = null
-                            player.pause()
-                            playingKey = null
-                            viewModel.audio.addAudioTrack(uri, style.title)
-                        }
-                    }
+        when (tab) {
+            0 -> {
+                Text(
+                    "Composed by Squish on your phone — yours to use anywhere, no credit needed.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.TextMuted
                 )
-            }
-        } else {
-            PhoneMusic(
-                playingKey = playingKey,
-                onListen = { track -> listen(track.uri.toString(), track.uri) },
-                onAdd = { track ->
-                    player.pause()
-                    playingKey = null
-                    viewModel.audio.addAudioTrack(track.uri, track.title)
+                MusicSynth.styles.forEach { style ->
+                    val pick = MusicPick("orig:${style.id}", style.title, "${style.mood} · ${style.seconds}s")
+                    MusicRow(
+                        pick = pick,
+                        playing = playingKey == pick.key,
+                        busy = preparing == pick.key,
+                        starred = isStarred(pick.key),
+                        onListen = {
+                            scope.launch {
+                                preparing = pick.key
+                                val uri = MusicLibrary.original(context, style)
+                                preparing = null
+                                listen(pick.key, uri)
+                            }
+                        },
+                        onStar = { star(pick) },
+                        onAdd = {
+                            scope.launch {
+                                preparing = pick.key
+                                val uri = MusicLibrary.original(context, style)
+                                preparing = null
+                                add(pick, uri)
+                            }
+                        }
+                    )
                 }
+            }
+            1 -> {
+                Text(
+                    "A whoosh on a cut, a pop on a sticker, a riser into the drop. Made on the phone, like the music.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.TextMuted
+                )
+                MusicSynth.effects.forEach { effect ->
+                    val pick = MusicPick("sfx:${effect.id}", effect.title, effect.hint)
+                    MusicRow(
+                        pick = pick,
+                        playing = playingKey == pick.key,
+                        busy = preparing == pick.key,
+                        starred = isStarred(pick.key),
+                        onListen = {
+                            scope.launch {
+                                preparing = pick.key
+                                val uri = MusicLibrary.effect(context, effect)
+                                preparing = null
+                                listen(pick.key, uri)
+                            }
+                        },
+                        onStar = { star(pick) },
+                        onAdd = {
+                            scope.launch {
+                                preparing = pick.key
+                                val uri = MusicLibrary.effect(context, effect)
+                                preparing = null
+                                add(pick, uri)
+                            }
+                        }
+                    )
+                }
+            }
+            2 -> PhoneMusic(
+                playingKey = playingKey,
+                isStarred = ::isStarred,
+                onListen = { track -> listen(track.uri.toString(), track.uri) },
+                onStar = { track -> star(track.pick) },
+                onAdd = { track -> add(track.pick, track.uri) }
             )
+            else -> {
+                val recents = remember(favourites) { MusicLibrary.recents(context) }
+                if (favourites.isEmpty() && recents.isEmpty()) {
+                    Text(
+                        "Nothing here yet. Star a track with ☆, or add one, and it will be waiting here next time.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SquishColors.TextMuted
+                    )
+                }
+                if (recents.isNotEmpty()) {
+                    Text("Recently added", style = MaterialTheme.typography.labelMedium, color = SquishColors.TextSecondary)
+                    recents.forEach { pick ->
+                        RememberedRow(pick, playingKey, preparing, isStarred(pick.key), context,
+                            onListen = { key, uri -> listen(key, uri) },
+                            onBusy = { preparing = it },
+                            onStar = { star(pick) },
+                            onAdd = { uri -> add(pick, uri) })
+                    }
+                }
+                if (favourites.isNotEmpty()) {
+                    Text("Starred", style = MaterialTheme.typography.labelMedium, color = SquishColors.TextSecondary)
+                    favourites.forEach { pick ->
+                        RememberedRow(pick, playingKey, preparing, starred = true, context = context,
+                            onListen = { key, uri -> listen(key, uri) },
+                            onBusy = { preparing = it },
+                            onStar = { star(pick) },
+                            onAdd = { uri -> add(pick, uri) })
+                    }
+                }
+            }
         }
     }
 }
 
+/** A starred or recent pick, resolved to its file when it is heard or added. */
+@Composable
+private fun RememberedRow(
+    pick: MusicPick,
+    playingKey: String?,
+    preparing: String?,
+    starred: Boolean,
+    context: android.content.Context,
+    onListen: (String, Uri) -> Unit,
+    onBusy: (String?) -> Unit,
+    onStar: () -> Unit,
+    onAdd: (Uri) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    MusicRow(
+        pick = pick,
+        playing = playingKey == pick.key,
+        busy = preparing == pick.key,
+        starred = starred,
+        onListen = {
+            scope.launch {
+                onBusy(pick.key)
+                val uri = MusicLibrary.resolve(context, pick)
+                onBusy(null)
+                if (uri != null) onListen(pick.key, uri)
+            }
+        },
+        onStar = onStar,
+        onAdd = {
+            scope.launch {
+                onBusy(pick.key)
+                val uri = MusicLibrary.resolve(context, pick)
+                onBusy(null)
+                if (uri != null) onAdd(uri)
+            }
+        }
+    )
+}
+
+private val PhoneTrack.pick: MusicPick
+    get() = MusicPick(
+        uri.toString(), title,
+        listOfNotNull(artist, Timecode.format(durationMs).substringBefore('.')).joinToString(" · ")
+    )
+
 @Composable
 private fun PhoneMusic(
     playingKey: String?,
+    isStarred: (String) -> Boolean,
     onListen: (PhoneTrack) -> Unit,
+    onStar: (PhoneTrack) -> Unit,
     onAdd: (PhoneTrack) -> Unit
 ) {
     val context = LocalContext.current
@@ -153,22 +333,26 @@ private fun PhoneMusic(
     } else {
         Manifest.permission.READ_EXTERNAL_STORAGE
     }
-    var granted by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED)
-    }
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
+    val access = rememberPermission(permission)
 
-    if (!granted) {
-        Text(
-            "Squish needs permission to see the music on your phone. It only reads the list — nothing is uploaded.",
-            style = MaterialTheme.typography.bodySmall,
-            color = SquishColors.TextMuted
-        )
-        com.squish.app.ui.components.SquishOutlinedButton(
-            text = "Allow access to music",
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { ask.launch(permission) }
-        )
+    if (!access.granted) {
+        if (access.deniedForGood) {
+            // The phone has stopped asking on Squish's behalf; a button that
+            // asked again did nothing at all.
+            Text(
+                "Squish was refused access to the music on your phone. Allow it in Settings to browse your songs here.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.Yellow
+            )
+            SquishOutlinedButton(text = "Open settings", modifier = Modifier.fillMaxWidth(), onClick = access.openSettings)
+        } else {
+            Text(
+                "Squish needs permission to see the music on your phone. It only reads the list — nothing is uploaded.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.TextMuted
+            )
+            SquishOutlinedButton(text = "Allow access to music", modifier = Modifier.fillMaxWidth(), onClick = access.ask)
+        }
         return
     }
 
@@ -212,31 +396,45 @@ private fun PhoneMusic(
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextMuted
         )
-        else -> list.take(60).forEach { track ->
-            MusicRow(
-                title = track.title,
-                subtitle = listOfNotNull(track.artist, Timecode.format(track.durationMs).substringBefore('.')).joinToString(" · "),
-                playing = playingKey == track.uri.toString(),
-                busy = false,
-                onListen = { onListen(track) },
-                onAdd = { onAdd(track) }
-            )
+        else -> {
+            list.take(SHOWN).forEach { track ->
+                MusicRow(
+                    pick = track.pick,
+                    playing = playingKey == track.uri.toString(),
+                    busy = false,
+                    starred = isStarred(track.uri.toString()),
+                    onListen = { onListen(track) },
+                    onStar = { onStar(track) },
+                    onAdd = { onAdd(track) }
+                )
+            }
+            if (list.size > SHOWN) {
+                Text(
+                    "Showing the first $SHOWN of ${list.size} — search to narrow it down.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.TextMuted
+                )
+            }
         }
     }
 }
 
+/** The list stops here and says so; a search finds the rest. It used to stop at sixty in silence. */
+private const val SHOWN = 100
+
 @Composable
 private fun MusicRow(
-    title: String,
-    subtitle: String,
+    pick: MusicPick,
     playing: Boolean,
     busy: Boolean,
+    starred: Boolean,
     onListen: () -> Unit,
+    onStar: () -> Unit,
     onAdd: () -> Unit
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
@@ -256,9 +454,19 @@ private fun MusicRow(
             }
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+            Text(pick.title, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+            Text(pick.subtitle, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
         }
+        Icon(
+            if (starred) Icons.Filled.Star else Icons.Filled.StarBorder,
+            contentDescription = if (starred) "Unstar" else "Star",
+            tint = if (starred) SquishColors.Amber else SquishColors.TextMuted,
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .clickable(onClick = onStar)
+                .padding(6.dp)
+        )
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier

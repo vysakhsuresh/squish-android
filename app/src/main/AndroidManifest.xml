@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- A voiceover is taken over the timeline from the editor. Asked for when
+         Record is first pressed, never before. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- The music browser lists songs already on the phone. Read-only, and only
          asked for when that tab is opened. -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />

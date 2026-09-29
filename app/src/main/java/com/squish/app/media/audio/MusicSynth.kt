@@ -112,6 +112,122 @@ object MusicSynth {
 
     fun byId(id: String): Style? = styles.firstOrNull { it.id == id }
 
+    /** One sound effect: a moment of sound, made from nothing like the music. */
+    class Effect(val id: String, val title: String, val hint: String, val seconds: Float)
+
+    /**
+     * The sound effects: the handful every montage reaches for - a whoosh on a
+     * cut, a pop on a sticker, a click, a riser into the drop, a ding on a
+     * point made. Synthesised, so there is no library to license or download.
+     */
+    val effects = listOf(
+        Effect("sfx-whoosh", "Whoosh", "Transition · 0.8s", 0.8f),
+        Effect("sfx-pop", "Pop", "Funny · 0.3s", 0.3f),
+        Effect("sfx-click", "Click", "UI · 0.15s", 0.15f),
+        Effect("sfx-riser", "Riser", "Build-up · 2.5s", 2.5f),
+        Effect("sfx-ding", "Ding", "Notice · 1.5s", 1.5f)
+    )
+
+    fun effectById(id: String): Effect? = effects.firstOrNull { it.id == id }
+
+    /** Renders [effect] to a stereo 16-bit WAV at [out]. */
+    fun renderEffect(effect: Effect, out: File) {
+        val frames = (effect.seconds * SAMPLE_RATE).toInt()
+        val left = FloatArray(frames)
+        val right = FloatArray(frames)
+        val rng = Random(effect.id.hashCode())
+        when (effect.id) {
+            "sfx-whoosh" -> whoosh(left, right, rng)
+            "sfx-pop" -> pop(left, right)
+            "sfx-click" -> click(left, right, rng)
+            "sfx-riser" -> riser(left, right, rng)
+            else -> ding(left, right)
+        }
+        write(out, left, right)
+    }
+
+    /** Noise through a low-pass whose cutoff sweeps up and back: air moving past. */
+    private fun whoosh(l: FloatArray, r: FloatArray, rng: Random) {
+        var lpL = 0.0
+        var lpR = 0.0
+        val n = l.size
+        for (i in 0 until n) {
+            val x = i.toDouble() / n
+            // Loudest a third of the way in, gone by the end.
+            val env = sin(PI * x.pow(0.7))
+            val cutoff = 0.02 + 0.3 * sin(PI * x)
+            val nl = rng.nextFloat() * 2 - 1
+            val nr = rng.nextFloat() * 2 - 1
+            lpL += (nl - lpL) * cutoff
+            lpR += (nr - lpR) * cutoff
+            l[i] = (lpL * env * 0.9).toFloat()
+            r[i] = (lpR * env * 0.9).toFloat()
+        }
+    }
+
+    /** A sine that drops an octave and a half in sixty milliseconds: a cork. */
+    private fun pop(l: FloatArray, r: FloatArray) {
+        var phase = 0.0
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            val f = 220 + 700 * exp(-x * 45)
+            phase += 2 * PI * f / SAMPLE_RATE
+            val v = sin(phase) * exp(-x * 22) * 0.9
+            l[i] = v.toFloat()
+            r[i] = v.toFloat()
+        }
+    }
+
+    /** A two-millisecond impulse with a little high-passed noise behind it. */
+    private fun click(l: FloatArray, r: FloatArray, rng: Random) {
+        var prev = 0f
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            val noise = rng.nextFloat() * 2 - 1
+            val hp = noise - prev
+            prev = noise
+            val impulse = if (x < 0.002) 1.0 - x / 0.002 else 0.0
+            val v = impulse * 0.8 + hp * 0.25 * exp(-x * 400)
+            l[i] = v.toFloat()
+            r[i] = v.toFloat()
+        }
+    }
+
+    /** Noise and a tone both climbing, louder all the way, ending on the hit. */
+    private fun riser(l: FloatArray, r: FloatArray, rng: Random) {
+        var lp = 0.0
+        var phase = 0.0
+        val n = l.size
+        for (i in 0 until n) {
+            val x = i.toDouble() / n
+            val t = i.toDouble() / SAMPLE_RATE
+            val env = x.pow(2.2)
+            val noise = rng.nextFloat() * 2 - 1
+            lp += (noise - lp) * (0.05 + 0.4 * x)
+            val f = 180 * 2.0.pow(x * 3.2)
+            phase += 2 * PI * f / SAMPLE_RATE
+            val tone = sin(phase) * 0.35
+            // A hit at the very end, so a cut on it lands on something.
+            val hit = if (x > 0.97) sin(2 * PI * 60 * t) * (1 - (x - 0.97) / 0.03) else 0.0
+            val v = (lp * 0.7 + tone) * env * 0.8 + hit * 0.6
+            l[i] = v.toFloat()
+            r[i] = (v * (1 - 0.3 * x)).toFloat()
+        }
+    }
+
+    /** A struck bell: a tone and an inharmonic partial, decaying apart. */
+    private fun ding(l: FloatArray, r: FloatArray) {
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            val v = sin(2 * PI * 1318.5 * x) * exp(-x * 2.5) +
+                0.4 * sin(2 * PI * 1318.5 * 2.76 * x) * exp(-x * 6.0) +
+                0.2 * sin(2 * PI * 1318.5 * 5.4 * x) * exp(-x * 12.0)
+            val attack = minOf(1.0, x * 800)
+            l[i] = (v * attack * 0.6).toFloat()
+            r[i] = (v * attack * 0.6).toFloat()
+        }
+    }
+
     /** Renders [style] to a stereo 16-bit WAV at [out]. */
     fun render(style: Style, out: File) {
         val frames = style.seconds * SAMPLE_RATE

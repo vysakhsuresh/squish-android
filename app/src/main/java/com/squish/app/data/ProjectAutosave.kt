@@ -15,7 +15,7 @@ import com.squish.app.editor.TextMotion
 import com.squish.app.editor.TextOverlayItem
 import com.squish.app.editor.EffectKind
 import com.squish.app.editor.TimedEffect
-import com.squish.app.editor.VoiceEffect
+import com.squish.app.timeline.VoiceEffect
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
 import com.squish.app.timeline.BackgroundFill
@@ -523,7 +523,6 @@ class ProjectAutosave(context: Context) {
         put("targetSizeMb", state.targetSizeMb)
         put("audioOnly", state.audioOnly)
         put("muteOriginal", state.muteOriginal)
-        put("voiceEffect", state.voiceEffect.name)
         put("originalVolume", state.originalVolume.toDouble())
         put("rotationDegrees", state.rotationDegrees)
         put("cropAspect", state.cropAspect.name)
@@ -558,6 +557,10 @@ class ProjectAutosave(context: Context) {
                 put("confidence", state.beats.confidence.toDouble())
                 put("downbeatOffset", state.beats.downbeatOffset)
                 put("clipLabel", state.beats.clipLabel)
+                put("every", state.beats.every)
+                state.beats.clipId?.let { put("clipId", it) }
+                // Only a grid on the camera audio has beats here; a sound's are
+                // saved on the sound, with the clip they belong to.
                 put("beatsMs", JSONArray().apply { state.beats.beatsMs.forEach { put(it) } })
             })
         }
@@ -598,6 +601,10 @@ class ProjectAutosave(context: Context) {
         put("timelineStartMs", clip.timelineStartMs)
         put("sourceDurationMs", clip.sourceDurationMs)
         put("volume", clip.volume.toDouble())
+        if (clip.fadeInMs > 0L) put("fadeInMs", clip.fadeInMs)
+        if (clip.fadeOutMs > 0L) put("fadeOutMs", clip.fadeOutMs)
+        if (clip.voice != VoiceEffect.None) put("voice", clip.voice.name)
+        if (clip.beats.isNotEmpty()) put("beats", JSONArray().apply { clip.beats.forEach { put(it) } })
         put(
             "speedPoints",
             JSONArray().apply {
@@ -720,7 +727,14 @@ class ProjectAutosave(context: Context) {
         // moves onto the shots, and the overlays - silent then - stay silent.
         val perClip = version < PER_CLIP_VOLUME_VERSION
         val savedLevel = json.optDouble("originalVolume", 1.0).toFloat()
-        val clips = if (perClip) OverlayRules.withPerClipVolume(saved, savedLevel) else saved
+        val levelled = if (perClip) OverlayRules.withPerClipVolume(saved, savedLevel) else saved
+        // Saved when the voice was one setting for the edit, applied to every
+        // main-track shot: it goes onto each of them, and overlays - never
+        // voiced then - stay as they were.
+        val legacyVoice = enumOrNull<VoiceEffect>(json.optString("voiceEffect")) ?: VoiceEffect.None
+        val clips = if (version < PER_CLIP_VOICE_VERSION && legacyVoice != VoiceEffect.None) {
+            levelled.map { if (it.isOverlay) it else it.copy(voice = legacyVoice) }
+        } else levelled
 
         val audio = json.optJSONArray("audioClips")?.let { array ->
             (0 until array.length()).mapNotNull { i -> decodeClip(array.optJSONObject(i), ClipKind.Audio) }
@@ -772,7 +786,6 @@ class ProjectAutosave(context: Context) {
             targetSizeMb = json.optInt("targetSizeMb", 16),
             audioOnly = json.optBoolean("audioOnly"),
             muteOriginal = json.optBoolean("muteOriginal"),
-            voiceEffect = enumOrNull<VoiceEffect>(json.optString("voiceEffect")) ?: VoiceEffect.None,
             originalVolume = if (perClip) 1f else savedLevel,
             rotationDegrees = json.optInt("rotationDegrees"),
             cropAspect = enumOrNull<CropAspect>(json.optString("cropAspect")) ?: CropAspect.Original,
@@ -790,13 +803,18 @@ class ProjectAutosave(context: Context) {
                 val beatsMs = b.optJSONArray("beatsMs")?.let { array ->
                     (0 until array.length()).map { i -> array.optLong(i) }
                 }.orEmpty()
+                // A sound named here that is no longer in the draft carries no
+                // grid, and the card must not say it does.
+                val clipId = b.optString("clipId").takeIf { id -> id.isNotBlank() && audio.any { it.id == id } }
                 BeatProgress(
                     finished = true,
                     bpm = b.optDouble("bpm", 0.0).toFloat(),
                     confidence = b.optDouble("confidence", 0.0).toFloat(),
                     beatsMs = beatsMs,
                     downbeatOffset = b.optInt("downbeatOffset"),
-                    clipLabel = b.optString("clipLabel")
+                    clipLabel = b.optString("clipLabel"),
+                    clipId = clipId,
+                    every = b.optInt("every", 1).coerceIn(1, 4)
                 ).takeIf { it.hasBeats }
             } ?: BeatProgress(),
             brightness = json.optDouble("brightness").toFloat(),
@@ -840,6 +858,12 @@ class ProjectAutosave(context: Context) {
             timelineStartMs = json.optLong("timelineStartMs"),
             sourceDurationMs = json.optLong("sourceDurationMs"),
             volume = json.optDouble("volume", 1.0).toFloat(),
+            fadeInMs = json.optLong("fadeInMs").coerceAtLeast(0L),
+            fadeOutMs = json.optLong("fadeOutMs").coerceAtLeast(0L),
+            voice = enumOrNull<VoiceEffect>(json.optString("voice")) ?: VoiceEffect.None,
+            beats = json.optJSONArray("beats")?.let { array ->
+                (0 until array.length()).map { i -> array.optLong(i) }
+            }.orEmpty().sorted(),
             speedRamp = decodeRamp(json),
             transitionIn = Transition(
                 type = enumOrNull<TransitionType>(json.optString("transitionType")) ?: TransitionType.None,
@@ -972,12 +996,20 @@ class ProjectAutosave(context: Context) {
          * 11: a picture's "volume" is its own level, heard - on the main track
          * under the camera level, on an overlay alone. Before it the field was
          * written and never read; see [PER_CLIP_VOLUME_VERSION].
+         *
+         * 12: a clip's fades, its own voice effect (the edit-wide "voiceEffect"
+         * moves onto the main-track shots; see [PER_CLIP_VOICE_VERSION]) and a
+         * sound's beats in its file's time; the beat grid names its sound and
+         * its density.
          */
-        const val FORMAT_VERSION = 11
+        const val FORMAT_VERSION = 12
         const val OLDEST_READABLE_VERSION = 9
 
         /** The first version whose pictures' levels are their own; older ones are moved over on reading. */
         const val PER_CLIP_VOLUME_VERSION = 11
+
+        /** The first version whose voice effect is each clip's own; older drafts' one setting goes onto every shot. */
+        const val PER_CLIP_VOICE_VERSION = 12
     }
 }
 
@@ -998,7 +1030,6 @@ data class ProjectSnapshot(
     val targetSizeMb: Int,
     val audioOnly: Boolean,
     val muteOriginal: Boolean,
-    val voiceEffect: VoiceEffect,
     val originalVolume: Float,
     val rotationDegrees: Int,
     val cropAspect: CropAspect,
@@ -1041,10 +1072,10 @@ data class ProjectSnapshot(
             !beats.hasBeats &&
             lookId == null && brightness == 0f && contrast == 0f && saturation == 0f &&
             cropAspect == CropAspect.Original && cropRect.isFull && rotationDegrees == 0 &&
-            voiceEffect == VoiceEffect.None && !muteOriginal && originalVolume == 1f &&
+            !muteOriginal && originalVolume == 1f &&
             clips.first().let {
                 it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs &&
-                    it.volume == 1f &&
+                    it.volume == 1f && it.voice == VoiceEffect.None && it.fadeInMs == 0L && it.fadeOutMs == 0L &&
                     it.chromaKey == null && it.mask == null && it.background == null &&
                     it.keyframes.isEmpty() && it.stabilizer.isEmpty() && it.speedRamp == com.squish.app.timeline.SpeedRamp()
             }

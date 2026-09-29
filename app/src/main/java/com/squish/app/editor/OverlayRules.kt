@@ -273,7 +273,7 @@ object OverlayRules {
 
     /**
      * How loud a picture's own sound is played and written. A shot's level is
-     * its own times the camera sound for the whole edit (Sound, Voice & FX),
+     * its own times the camera sound for the whole edit (Sound, Mic & camera),
      * which is also where it is switched off; an overlay is at its own level
      * only - that switch is for the main track, and turning the camera off to
      * put music under a video must not silence the reaction clip over it.
