@@ -432,11 +432,7 @@ class ProjectAutosave(context: Context) {
      * apart, so it is only ever handed a fresh one.
      */
     private fun editKeyOf(document: JSONObject): String = document.apply {
-        remove("playheadMs")
-        remove("pixelsPerSecond")
-        remove("snapToMarkers")
-        remove("stabilizeStrength")
-        remove("savedAtMillis")
+        DraftHousekeeping.NOT_THE_EDIT.forEach { remove(it) }
     }.toString()
 
     /**
@@ -551,6 +547,8 @@ class ProjectAutosave(context: Context) {
                 put("clipCount", earlier.clipCount)
                 put("savedAtMillis", earlier.savedAtMillis.takeIf { it > 0L } ?: version.savedAtMillis)
                 put("editFingerprint", DraftHousekeeping.fingerprint(editKeyOf(JSONObject(text))))
+                val (coverUri, coverAt, owned) = coverAndOwned(earlier.clips, earlier.audioClips, earlier.sourceUri)
+                putCover(coverUri, coverAt, owned + text.toByteArray().size)
             }
             DraftFiles.writeAtomically(metaScratchFile(slot), metaFile(slot), meta.toString().toByteArray())
             DraftFiles.writeAtomically(scratchFile(slot), liveFile(slot), text.toByteArray())
@@ -669,6 +667,30 @@ class ProjectAutosave(context: Context) {
         runCatching { Segmenter.sweep(appContext, referencedMaskFiles()) }
     }
 
+    /**
+     * The cover and the size a sidecar carries: the first shot on the main
+     * track as it stands, a little way in, and what the edit keeps under the
+     * app (its owned stills, freezes and recordings). Shared by a save and by
+     * "Earlier version", which used to write a sidecar without them - the card
+     * then showed the source's first frame and no size until the next save.
+     */
+    private fun coverAndOwned(clips: List<Clip>, audio: List<Clip>, fallback: Uri): Triple<Uri, Long, Long> {
+        val lead = clips.filter { it.isMain }.minByOrNull { it.timelineStartMs }
+        val coverUri = lead?.uri ?: fallback
+        val coverAt = lead?.let { ProjectRules.coverTimeMs(it.sourceInMs, it.sourceOutMs) } ?: 0L
+        val filesDir = appContext.filesDir.absolutePath
+        val owned = (clips + audio).mapNotNull { it.uri?.toString() }.distinct()
+            .filter { ProjectRules.ownedFile(it, filesDir) }
+            .sumOf { File(Uri.parse(it).path.orEmpty()).length() }
+        return Triple(coverUri, coverAt, owned)
+    }
+
+    private fun JSONObject.putCover(coverUri: Uri, coverAtMs: Long, sizeBytes: Long) {
+        put("coverUri", coverUri.toString())
+        put("coverAtMs", coverAtMs)
+        put("sizeBytes", sizeBytes)
+    }
+
     private fun writeMeta(
         slot: String,
         state: EditorUiState,
@@ -678,15 +700,7 @@ class ProjectAutosave(context: Context) {
         previous: JSONObject?,
         snapshots: SnapshotInfo
     ) {
-        // The cover is the first shot on the main track as it stands, a
-        // little way in; the size is what the edit keeps under the app.
-        val lead = state.videoClips.filter { it.isMain }.minByOrNull { it.timelineStartMs }
-        val coverUri = lead?.uri ?: uri
-        val coverAt = lead?.let { ProjectRules.coverTimeMs(it.sourceInMs, it.sourceOutMs) } ?: 0L
-        val filesDir = appContext.filesDir.absolutePath
-        val owned = (state.videoClips + state.audioClips).mapNotNull { it.uri?.toString() }.distinct()
-            .filter { ProjectRules.ownedFile(it, filesDir) }
-            .sumOf { File(Uri.parse(it).path.orEmpty()).length() }
+        val (coverUri, coverAt, owned) = coverAndOwned(state.videoClips, state.audioClips, uri)
         val json = JSONObject().apply {
             put("id", slot)
             put("title", state.projectName ?: state.videoClips.firstOrNull()?.label ?: "Untitled edit")
@@ -696,9 +710,7 @@ class ProjectAutosave(context: Context) {
             put("clipCount", state.videoClips.size)
             put("savedAtMillis", savedAtMillis)
             put("editFingerprint", fingerprint)
-            put("coverUri", coverUri.toString())
-            put("coverAtMs", coverAt)
-            put("sizeBytes", owned + scratchFile(slot).length())
+            putCover(coverUri, coverAt, owned + scratchFile(slot).length())
             // The export stamp is the one thing in the sidecar the edit does not
             // carry, so it is kept from the previous sidecar rather than lost on
             // the next save.
@@ -1136,10 +1148,15 @@ class ProjectAutosave(context: Context) {
         if (version !in OLDEST_READABLE_VERSION..FORMAT_VERSION) return null
         val sourceUri = json.optString("sourceUri").takeIf { it.isNotBlank() } ?: return null
 
-        val saved = json.optJSONArray("clips")?.let { array ->
-            (0 until array.length()).mapNotNull { i -> decodeClip(array.optJSONObject(i), ClipKind.Video) }
-        }.orEmpty()
-        if (saved.isEmpty()) return null
+        // An empty "clips" is a real edit: the last shot can be deleted (the
+        // main track then offers Add media), or only sounds and text left.
+        // What is refused is a file with no list at all, or a list whose
+        // entries all failed to read - that is damage, and the backup is
+        // the better answer. Refusing the empty list brought a deleted shot
+        // back from the backup, or lost the project once both were empty.
+        val savedArray = json.optJSONArray("clips") ?: return null
+        val saved = (0 until savedArray.length()).mapNotNull { i -> decodeClip(savedArray.optJSONObject(i), ClipKind.Video) }
+        if (!DraftHousekeeping.clipListReadable(savedArray.length(), saved.size)) return null
         // Saved before each picture had its own level: the edit-wide camera level
         // moves onto the shots, and the overlays - silent then - stay silent.
         val perClip = version < PER_CLIP_VOLUME_VERSION

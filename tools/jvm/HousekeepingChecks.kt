@@ -192,6 +192,26 @@ fun main() {
         root.deleteRecursively()
     }
 
+    // --- A draft with its last shot deleted reopens as itself. ------------------
+    run {
+        check(DraftHousekeeping.clipListReadable(written = 0, read = 0), "an empty picture list was refused, bringing a deleted shot back from the backup")
+        check(DraftHousekeeping.clipListReadable(written = 3, read = 3), "a whole list was refused")
+        check(DraftHousekeeping.clipListReadable(written = 3, read = 1), "a list with one readable shot was refused")
+        check(!DraftHousekeeping.clipListReadable(written = 2, read = 0), "a list none of whose entries read was taken as an empty edit")
+    }
+
+    // --- A rename is kept, but is not an edit since export. ---------------------
+    run {
+        val keys = DraftHousekeeping.NOT_THE_EDIT
+        check("name" in keys, "the project's name is part of the edit fingerprint, so a rename reads as edited since export")
+        listOf("playheadMs", "pixelsPerSecond", "snapToMarkers", "stabilizeStrength", "savedAtMillis").forEach {
+            check(it in keys, "$it is part of the edit fingerprint")
+        }
+        listOf("clips", "audioClips", "textOverlays", "effects", "sourceUri").forEach {
+            check(it !in keys, "$it is stripped from the edit fingerprint, so a change to it would not show")
+        }
+    }
+
     if (problems.isNotEmpty()) {
         problems.forEach { println("FAIL - $it") }
         exitProcess(1)

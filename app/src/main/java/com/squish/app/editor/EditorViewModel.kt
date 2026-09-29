@@ -1084,13 +1084,31 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         // main-track shot that still reads stands in for its shape, so the
         // edit is laid out right while the missing file waits for Relink.
         val app = getApplication<Application>()
-        val meta = ThumbnailExtractor.probe(app, snapshot.sourceUri).takeIf { it.durationMs > 0L }
+        val sourceMeta = ThumbnailExtractor.probe(app, snapshot.sourceUri).takeIf { it.durationMs > 0L }
+        // What loadFresh reads off the source and a draft does not carry: its
+        // name (the export's title when the project has none), its size (what
+        // the bitrate is measured from - 0 fell back to the nominal rate, so a
+        // reopened project estimated and wrote a different file) and whether
+        // it has sound (a silent source read as having some, by default).
+        val sourceName = withContext(Dispatchers.IO) { displayNameOf(snapshot.sourceUri) }
+            ?: snapshot.clips.firstOrNull { it.uri == snapshot.sourceUri }?.label
+        val sourceSize = withContext(Dispatchers.IO) {
+            runCatching { app.contentResolver.openFileDescriptor(snapshot.sourceUri, "r")?.use { it.statSize } ?: 0L }
+                .getOrDefault(0L)
+        }
+        val meta = sourceMeta
             ?: snapshot.clips.filter { it.isMain }.sortedBy { it.timelineStartMs }.mapNotNull { it.uri }.distinct()
                 .filter { it != snapshot.sourceUri }
                 .firstNotNullOfOrNull { uri -> ThumbnailExtractor.probe(app, uri).takeIf { it.durationMs > 0L } }
             ?: ThumbnailExtractor.probe(app, snapshot.sourceUri)
         _state.update {
             it.applying(snapshot, meta.durationMs, meta.displayWidth, meta.displayHeight, meta.fps)
+                .copy(
+                    sourceName = sourceName,
+                    originalSizeBytes = sourceSize.coerceAtLeast(0L),
+                    // A source that no longer reads is not known to have sound.
+                    sourceHasAudio = sourceMeta?.hasAudio ?: false
+                )
                 // Drafts saved before effects were fitted can carry some
                 // running far past the end; tidy those on the way in.
                 .let { s -> s.copy(effects = s.effects.fittedTo(s.videoClips.maxOfOrNull { c -> c.timelineEndMs } ?: 0L)) }

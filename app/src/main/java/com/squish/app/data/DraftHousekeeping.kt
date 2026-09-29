@@ -34,6 +34,27 @@ object DraftHousekeeping {
      */
     const val SNAPSHOT_INTERVAL_MS: Long = 10L * 60 * 1000
 
+    /**
+     * Whether a draft's picture list reads as an edit. [written] is how many
+     * entries the file holds, [read] how many decoded. An empty list is an
+     * edit - the last shot deleted, or only sounds and text left - and must
+     * reopen as one: refusing it brought a deleted shot back from the backup,
+     * or, once the backup was empty too, lost the project with it still listed.
+     * Entries that all fail to read are damage, and the backup is the answer.
+     */
+    fun clipListReadable(written: Int, read: Int): Boolean = read > 0 || written == 0
+
+    /**
+     * The document keys that are not the edit: where the playhead and the zoom
+     * were, the snap switch, the stabilizer's default, the save time, and the
+     * project's name. Stripped before fingerprinting, so "edited since export"
+     * and "an earlier version" go by the video alone - a rename is saved (it is
+     * enough to keep a draft) but is not an edit to what was rendered.
+     */
+    val NOT_THE_EDIT: List<String> = listOf(
+        "playheadMs", "pixelsPerSecond", "snapToMarkers", "stabilizeStrength", "savedAtMillis", "name"
+    )
+
     /** The name a discarded slot is filed under in the bin: the slot, then when. */
     fun trashName(slot: String, discardedAtMillis: Long): String = "$slot-$discardedAtMillis"
 
