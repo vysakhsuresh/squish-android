@@ -236,11 +236,22 @@ should work through it and then delete what holds up.
   too); overlay audio is heard in the preview at its Volume and not under the
   camera switch, and a shot's Volume is under the camera level; an overlay row
   with nothing within 5 s lets its decoder go and reloads before its next clip
-  (watch for a late first frame); six rows of footage at once is the decoder
-  budget the cap assumes; a draft from before this build opens with its
+  (watch for a late first frame); three rows of footage at once over a
+  transition (five video decoders) is the budget `MAX_FOOTAGE_LAYER` assumes -
+  rows 4 to 6 take photos only; a draft from before this build opens with its
   overlays at Volume 0 and its shots at the old camera level; the hand-drawn
-  crop's handles give way to the overlay box while an overlay is selected, and
-  come back on the Frame sheet.
+  crop is only editable on the Frame sheet (the overlay box stands aside there)
+  and is drawn, untouchable, everywhere else.
+  From its review round: the box's buttons sit just past its corners and the
+  inside is always the body - pinch an overlay to about 20% and it still drags
+  with one finger, and a tap on its middle selects rather than deletes; the
+  buttons of an overlay hanging off a 9:16 crop, over the bars or the
+  letterbox, can be pressed (the box's layer covers the whole preview now); the
+  fourth button is Edit (opens Placement), not Reset; a tap on an overlay while
+  playing pauses and shows its box; the overlay row's head opens the picker;
+  Send back / Bring forward swap two overlapping overlays and never leave an
+  empty lane; a PiP moved To main under a camera mute says it is silent there;
+  a photo overlay longer than a minute asks before To main renders it.
 
 ## Conventions worth not rediscovering
 

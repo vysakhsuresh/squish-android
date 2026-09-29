@@ -252,7 +252,7 @@ fun EditorToolSheet(
             }
             Tool.Transition -> clip?.let { TransitionPanel(it, viewModel) }
             Tool.Opacity -> clip?.let { OpacityPanel(it, viewModel) }
-            Tool.Layer -> clip?.let { LayerPanel(it, viewModel) }
+            Tool.Layer -> clip?.let { LayerPanel(state, it, viewModel) }
             Tool.Mask -> clip?.let { MaskPanel(it, viewModel) }
             Tool.Cutout -> clip?.let {
                 if (chip == 0) BackgroundPanel(state, viewModel)

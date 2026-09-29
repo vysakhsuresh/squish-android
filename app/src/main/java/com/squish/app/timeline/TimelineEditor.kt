@@ -264,10 +264,12 @@ fun TimelineEditor(
     /**
      * What each track's icon does when tapped - the way in to adding to that
      * track, beside the track itself. Video offers a menu (see [VideoTrackButton]);
-     * sound and words open their tools. Null leaves the icon a plain label.
+     * an overlay row opens the overlay picker; sound and words open their tools.
+     * Null leaves the icon a plain label.
      */
     onAddVideo: (() -> Unit)? = null,
     onAddBlank: (() -> Unit)? = null,
+    onAddOverlay: (() -> Unit)? = null,
     onOpenSound: (() -> Unit)? = null,
     onOpenWords: (() -> Unit)? = null,
     /**
@@ -542,10 +544,15 @@ fun TimelineEditor(
             Spacer(modifier = Modifier.height(RULER_HEIGHT))
             // Each track's head is its glyph in its colour, from the one table the
             // toolbar uses too (see Concept). Where it adds to its track it is a
-            // button: video offers a menu, sound and words open their tools.
+            // button: video offers a menu, an overlay row the overlay picker, sound
+            // and words open their tools.
             rows.forEach { row ->
                 when (row) {
-                    is StripRow.Layer -> LaneBadge(Concept.Overlay.icon, Concept.Overlay.accent)
+                    is StripRow.Layer -> if (onAddOverlay != null) {
+                        TrackButton(Concept.Overlay.icon, Concept.Overlay.accent, "Add overlay", onAddOverlay)
+                    } else {
+                        LaneBadge(Concept.Overlay.icon, Concept.Overlay.accent)
+                    }
                     StripRow.Base -> if (onAddVideo != null) {
                         VideoTrackButton(onAddVideo, onAddBlank)
                     } else {

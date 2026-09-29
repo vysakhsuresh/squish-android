@@ -363,6 +363,10 @@ All on the moto g84 (`adb -s ZY32J8HF2S`), `adb logcat -G 16M` first, build with
 5. Two 4K overlays: the proxy status shows per item and scrubbing is smooth once built.
 6. Overlay Switch to main: it joins the main track at the playhead at full size and the track ripples.
 7. PNG logo with transparency: transparent in preview and file.
+8. Pinch a logo to about 20%: one finger still drags it; a tap on its middle does not delete it. Drag a PiP half off a 9:16 crop and tap its buttons over the bars: they work.
+9. A logo over a PiP, both at the playhead: Layer → Send back swaps them; a lone overlay offers neither button and the strip never shows an empty overlay lane.
+10. Park the playhead at the end of the edit and add a 60 s clip: it ends where the main track ends; the edit does not grow.
+11. Four videos as overlays at one moment: three land, the fourth says the video rows are taken; a photo still lands above them.
 
 **B9**
 1. Sound → Record: countdown, timeline plays, release: a mic clip at the playhead; export contains it.

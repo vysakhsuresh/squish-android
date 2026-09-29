@@ -2,7 +2,7 @@ package com.squish.app.editor
 
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
-import com.squish.app.timeline.MAX_LAYER
+import com.squish.app.timeline.withRowsCompacted
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.OVERLAY_LANDING
 import com.squish.app.timeline.SpeedRamp
@@ -48,15 +48,27 @@ object OverlayRules {
      */
     const val STILL_ROOM_MS = 30L * 60_000
 
+    /** Where an overlay lands on the timeline, and how long it is there. */
+    data class Landing(val startMs: Long, val lengthMs: Long)
+
     /**
-     * How long an overlay lands: the whole of it, but no further than the main
-     * track goes - a reaction clip longer than the video under it used to run on
-     * over black. With the playhead at (or past) the end of the main track there
-     * is nothing to fit it to, and it lands whole.
+     * Where an overlay lands: at the playhead, the whole of it but no further
+     * than the main track goes - a reaction clip longer than the video under it
+     * used to run on over black.
+     *
+     * With the playhead at the main track's end, or too close to it for a clip,
+     * or past it, there is no room after it. It used to land whole there and
+     * stretch the edit by its own length over black; it lands ending where the
+     * main track ends instead, as much of it as the edit is long. With no main
+     * track at all there is nothing to fit it to, and it lands whole.
      */
-    fun landingLengthMs(sourceMs: Long, startMs: Long, mainEndMs: Long): Long {
-        val room = mainEndMs - startMs
-        return if (room >= MIN_CLIP_MS) minOf(sourceMs, room) else sourceMs
+    fun landing(sourceMs: Long, atMs: Long, mainEndMs: Long): Landing {
+        val at = atMs.coerceAtLeast(0L)
+        if (mainEndMs <= 0L) return Landing(at, sourceMs)
+        val room = mainEndMs - at
+        if (room >= MIN_CLIP_MS) return Landing(at, minOf(sourceMs, room))
+        val length = minOf(sourceMs, mainEndMs.coerceAtLeast(MIN_CLIP_MS))
+        return Landing((mainEndMs - length).coerceAtLeast(0L), length)
     }
 
     /**
@@ -89,13 +101,24 @@ object OverlayRules {
      * was a small picture over black in the middle of the edit (O9). Its opacity
      * goes too - the main track draws every shot opaque, so a faded one would
      * say one thing on the Opacity sheet and show another.
+     *
+     * Its sound is kept as loud as it was heard ([levelOnMain]): a shot plays
+     * under the camera level for the whole edit and an overlay does not, so the
+     * same Volume moved across was quieter, or silent, with nothing to say why.
+     * Under the camera switch being off it is silent there all the same; the
+     * caller says so.
      */
-    fun TimelineState.withOverlayOnMain(clipId: String, atMs: Long): TimelineState {
+    fun TimelineState.withOverlayOnMain(
+        clipId: String,
+        atMs: Long,
+        originalVolume: Float = 1f
+    ): TimelineState {
         val clip = clips.firstOrNull { it.id == clipId && it.kind == ClipKind.Video && it.isOverlay } ?: return this
         val base = baseVideoClips
         val index = EditRules.insertion(base.map { Span(it.timelineStartMs, it.timelineEndMs) }, atMs, listOf(clip.durationMs)).index
         val main = clip.copy(
             layer = 0,
+            volume = levelOnMain(clip.volume, originalVolume),
             opacity = 1f,
             keyframes = emptyList(),
             scale = 1f,
@@ -110,6 +133,7 @@ object OverlayRules {
         return copy(clips = clips.filterNot { it.id == clipId })
             .withClipAdded(main)
             .withClipReordered(clipId, index)
+            .withRowsCompacted()
             .copy(selectedClipId = clipId)
     }
 
@@ -119,13 +143,97 @@ object OverlayRules {
      * corner, small. Full frame it covered the whole picture, and it looked as if
      * the button had done nothing but shorten the edit. Unchanged when every row
      * is taken there.
+     *
+     * It keeps the level it was heard at ([levelAsOverlay]): an overlay is not
+     * under the camera switch, so a shot lifted out of an edit with camera sound
+     * off started talking over the music.
      */
-    fun TimelineState.withMainOnOverlay(clipId: String): TimelineState {
+    fun TimelineState.withMainOnOverlay(
+        clipId: String,
+        muteOriginal: Boolean = false,
+        originalVolume: Float = 1f
+    ): TimelineState {
         val lifted = withLayerChanged(clipId, +1)
         val clip = lifted.clips.firstOrNull { it.id == clipId } ?: return this
         if (!clip.isOverlay) return this
-        return lifted.withPlacementReset(clipId).copy(selectedClipId = clipId)
+        val heard = levelAsOverlay(clip.volume, muteOriginal, originalVolume)
+        return lifted.withPlacementReset(clipId)
+            .let { t -> t.copy(clips = t.clips.map { if (it.id == clipId) it.copy(volume = heard) else it }) }
+            .copy(selectedClipId = clipId)
     }
+
+    /** A shot's level as an overlay: what it was heard at under the camera sound. */
+    fun levelAsOverlay(volume: Float, muteOriginal: Boolean, originalVolume: Float): Float =
+        if (muteOriginal) 0f else (volume * originalVolume).coerceIn(0f, 1f)
+
+    /**
+     * An overlay's level as a shot: as loud as it was, once the camera level is
+     * applied - as near as a shot's own level can go, which is full.
+     */
+    fun levelOnMain(volume: Float, originalVolume: Float): Float =
+        if (originalVolume <= 0f) volume.coerceIn(0f, 1f) else (volume / originalVolume).coerceIn(0f, 1f)
+
+    /** Longer than this, a photo moved to the main track is a render worth asking about first. */
+    const val LONG_STILL_MS = 60_000L
+
+    /**
+     * Whether moving [clip] to the main track means rendering a long video: a
+     * photo overlay is made into a clip there as long as it has been dragged
+     * out, and one stretched over a whole edit as a watermark is minutes of
+     * encoding.
+     */
+    fun needsLongRender(clip: Clip): Boolean =
+        clip.kind == ClipKind.Video && clip.isOverlay && clip.isStillPicture && clip.durationMs > LONG_STILL_MS
+
+    /**
+     * Send back or Bring forward: this overlay past the nearest one drawn under
+     * or over it at some moment of it. Stacking only means something between
+     * overlays on screen together, so that is what a step is measured against.
+     *
+     * The two swap rows where they can - a logo on row 2 over a PiP on row 1
+     * becomes a logo under it, and no row is added. Where the swap would put
+     * either on top of something else on its new row, this one goes on to the
+     * first row free beyond the other instead. The rows are closed up after,
+     * so a lane is never left empty. Unchanged when there is nothing to step
+     * past, or no room to do it - the caller hides the button then.
+     */
+    fun TimelineState.withOverlayStepped(clipId: String, up: Boolean): TimelineState {
+        val clip = clips.firstOrNull { it.id == clipId && it.kind == ClipKind.Video && it.isOverlay } ?: return this
+        val start = clip.timelineStartMs
+        val end = clip.timelineEndMs
+        val stacked = overlayClips.filter {
+            it.id != clipId && it.timelineStartMs < end && start < it.timelineEndMs &&
+                (if (up) it.layer > clip.layer else it.layer < clip.layer)
+        }
+        if (stacked.isEmpty()) return this
+        val past = if (up) stacked.minOf { it.layer } else stacked.maxOf { it.layer }
+        val swapped = stacked.filter { it.layer == past }
+        val moving = swapped.map { it.id }.toSet() + clipId
+        fun free(layer: Int, from: Long, to: Long) = clips.none {
+            it.kind == ClipKind.Video && it.layer == layer && it.id !in moving &&
+                it.timelineStartMs < to && from < it.timelineEndMs
+        }
+        val canSwap = past <= clip.topLayer && swapped.all { clip.layer <= it.topLayer } &&
+            free(past, start, end) && swapped.all { free(clip.layer, it.timelineStartMs, it.timelineEndMs) }
+        val next = if (canSwap) {
+            val swappedIds = swapped.map { it.id }.toSet()
+            clips.map {
+                when (it.id) {
+                    clipId -> it.copy(layer = past)
+                    in swappedIds -> it.copy(layer = clip.layer)
+                    else -> it
+                }
+            }
+        } else {
+            val rows = if (up) (past + 1)..clip.topLayer else (past - 1) downTo 1
+            val row = rows.firstOrNull { layerIsFree(it, start, end, clipId) } ?: return this
+            clips.map { if (it.id == clipId) it.copy(layer = row) else it }
+        }
+        return copy(clips = next).withRowsCompacted()
+    }
+
+    /** Whether Send back ([up] false) or Bring forward would change anything. */
+    fun TimelineState.canStep(clipId: String, up: Boolean): Boolean = withOverlayStepped(clipId, up) != this
 
     /** How far a copy made from the box's corner sits from the original, in half-canvases. */
     const val COPY_NUDGE = 0.1f
@@ -141,8 +249,8 @@ object OverlayRules {
         val clip = clips.firstOrNull { it.id == clipId && it.kind == ClipKind.Video && it.isOverlay } ?: return this
         val start = clip.timelineStartMs
         val end = clip.timelineEndMs
-        val row = ((clip.layer + 1)..MAX_LAYER).firstOrNull { layerIsFree(it, start, end) }
-            ?: firstFreeLayer(start, end)
+        val row = ((clip.layer + 1)..clip.topLayer).firstOrNull { layerIsFree(it, start, end) }
+            ?: firstFreeLayer(start, end, top = clip.topLayer)
             ?: return this
         fun nudged(t: Transform) = t.copy(
             offsetXFraction = t.offsetXFraction + COPY_NUDGE,
@@ -226,6 +334,20 @@ object OverlayRules {
                 toPicture(halfW, halfH), toPicture(-halfW, halfH)
             )
 
+        /**
+         * Where the corner buttons sit, in the order of [corners]: out past each
+         * corner, diagonally, by [outset] pixels. Drawn on the corners they
+         * covered the middle of a small overlay, and a tap meant to grab it
+         * deleted it.
+         */
+        fun handles(outset: Float): List<Pair<Float, Float>> {
+            val d = outset / SQRT2
+            return listOf(
+                toPicture(-halfW - d, -halfH - d), toPicture(halfW + d, -halfH - d),
+                toPicture(halfW + d, halfH + d), toPicture(-halfW - d, halfH + d)
+            )
+        }
+
         /** Half the width and height of the upright rectangle the turned box fits in. */
         val extent: Pair<Float, Float>
             get() {
@@ -233,6 +355,28 @@ object OverlayRules {
                 val s = abs(sin(radians).toFloat())
                 return (halfW * c + halfH * s) to (halfW * s + halfH * c)
             }
+    }
+
+    private const val SQRT2 = 1.4142135f
+
+    /**
+     * Which corner button of [box] a finger landing at ([x], [y]) takes, as an
+     * index into [Box.corners], or null for none.
+     *
+     * Never one from inside the box: the body is for dragging, however small
+     * the overlay. The buttons were tested first, each with a thumb's reach, and
+     * on an overlay pinched small the four reaches covered all of it - it could
+     * not be dragged with one finger, and a tap on its middle ran the nearest
+     * corner, or the first of a tie, which was Delete. Outside, the nearest
+     * button within [reach] of its centre.
+     */
+    fun cornerAt(box: Box, x: Float, y: Float, outset: Float, reach: Float): Int? {
+        if (box.contains(x, y)) return null
+        return box.handles(outset)
+            .mapIndexed { i, (hx, hy) -> i to hypot(hx - x, hy - y) }
+            .filter { it.second <= reach }
+            .minByOrNull { it.second }
+            ?.first
     }
 
     /**

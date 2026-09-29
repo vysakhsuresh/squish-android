@@ -14,12 +14,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
-import com.squish.app.timeline.MAX_LAYER
+import com.squish.app.editor.OverlayRules.canStep
+import com.squish.app.timeline.TimelineState
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
 import com.squish.app.ui.theme.SquishColors
@@ -46,38 +50,45 @@ fun OpacityPanel(clip: Clip, viewModel: EditorViewModel) {
 }
 
 /**
- * Which row an overlay sits on - what it is drawn over and under - and the way
- * down onto the main track.
+ * What an overlay is drawn over and under: Send back and Bring forward, each
+ * past the nearest overlay on screen with it (OverlayRules.withOverlayStepped).
+ * Offered only when they would change something - a button that raised a lone
+ * overlay a row at a time changed nothing on the picture and left empty lanes.
+ * The main track is To main, on the toolbar; it was here a second time.
  */
 @Composable
-fun LayerPanel(clip: Clip, viewModel: EditorViewModel) {
+fun LayerPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
+    val timeline = TimelineState(clips = state.videoClips)
+    val back = timeline.canStep(clip.id, up = false)
+    val forward = timeline.canStep(clip.id, up = true)
     PanelSurface(accent = SquishColors.Magenta) {
         PanelHeading(
-            "Row ${clip.layer} of $MAX_LAYER",
+            "Row ${clip.layer} of ${timeline.layerCount}",
             "Higher rows are drawn over lower ones",
             icon = Icons.Filled.Layers,
             accent = SquishColors.Magenta
         )
-        // Only the moves there are: from the lowest row, down is the main track,
-        // which is the button below and not a row.
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            if (clip.layer > 1) {
-                SquishOutlinedButton(text = "Send back", modifier = Modifier.weight(1f)) {
-                    viewModel.layers.changeLayer(clip.id, -1)
+        if (back || forward) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                if (back) {
+                    SquishOutlinedButton(text = "Send back", modifier = Modifier.weight(1f)) {
+                        viewModel.layers.stepLayer(clip.id, up = false)
+                    }
+                }
+                if (forward) {
+                    SquishOutlinedButton(text = "Bring forward", modifier = Modifier.weight(1f)) {
+                        viewModel.layers.stepLayer(clip.id, up = true)
+                    }
                 }
             }
-            if (clip.layer < MAX_LAYER) {
-                SquishOutlinedButton(text = "Bring forward", modifier = Modifier.weight(1f)) {
-                    viewModel.layers.changeLayer(clip.id, +1)
-                }
-            }
-        }
-        SquishOutlinedButton(text = "Move to main track", modifier = Modifier.fillMaxWidth()) {
-            viewModel.layers.switchToMain(clip.id)
         }
         Text(
-            "A row that is taken at this moment is skipped for the next free one. On the main track " +
-                "the clip goes in at the playhead, full frame, and the shots after it move along.",
+            if (back || forward) {
+                "Moves it past the next overlay on screen with it, over or under."
+            } else {
+                "No other overlay is on screen at the same time as this one, so there is nothing to put it " +
+                    "in front of or behind."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextMuted
         )
@@ -95,7 +106,13 @@ fun LayerPanel(clip: Clip, viewModel: EditorViewModel) {
 fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
     // The level to come back to after Mute. Kept per clip, across a rotation.
     var lastHeard by rememberSaveable(clip.id) { mutableFloatStateOf(clip.volume.takeIf { it > 0f } ?: 1f) }
-    LaunchedEffect(clip.volume) { if (clip.volume > 0f) lastHeard = clip.volume }
+    // Where a drag of the slider began. Noting every level on the way through
+    // left a drag down to nothing remembering the last sliver above it, and the
+    // switch then brought the clip back at 5%, as if it had done nothing.
+    var dragFrom by remember(clip.id) { mutableStateOf<Float?>(null) }
+    val volumeNow by rememberUpdatedState(clip.volume)
+    // Changes from elsewhere - Reset, undo - but not mid-drag.
+    LaunchedEffect(clip.volume) { if (dragFrom == null && clip.volume > 0f) lastHeard = clip.volume }
     val accent = if (clip.isOverlay) SquishColors.Magenta else SquishColors.Violet
     val muted = clip.volume <= 0f
     PanelSurface(accent = accent) {
@@ -111,7 +128,23 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
                 )
             }
         )
-        LabeledSlider("Level", clip.volume, 0f..1f, onFinished = viewModel::endGesture) {
+        LabeledSlider(
+            "Level",
+            clip.volume,
+            0f..1f,
+            onFinished = {
+                // Where it ended, if that is a level; dragged down to nothing,
+                // where it began.
+                val from = dragFrom
+                dragFrom = null
+                when {
+                    volumeNow > 0f -> lastHeard = volumeNow
+                    from != null && from > 0f -> lastHeard = from
+                }
+                viewModel.endGesture()
+            }
+        ) {
+            if (dragFrom == null) dragFrom = clip.volume
             viewModel.clips.setClipVolume(clip.id, it)
         }
         if (!clip.isOverlay && state.muteOriginal) {

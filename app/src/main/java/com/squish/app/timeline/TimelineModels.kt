@@ -112,6 +112,16 @@ data class Clip(
     /** On the main track: the magnetic spine of the edit. See [layOutMain]. */
     val isMain: Boolean get() = kind == ClipKind.Video && layer == 0
 
+    /** A photo kept as a picture on an overlay row (see [isStillPicture]): drawn, never decoded. */
+    val isStillPicture: Boolean get() = isStillPicture(uri?.toString())
+
+    /**
+     * The highest overlay row this clip may sit on. Footage stops at
+     * [MAX_FOOTAGE_LAYER]: each row of it is a decoder in the preview and in
+     * the export, and a photo is none.
+     */
+    val topLayer: Int get() = if (kind == ClipKind.Video && !isStillPicture) MAX_FOOTAGE_LAYER else MAX_LAYER
+
     /**
      * How far into the file a cut at [timelineMs] would fall, or null when this
      * clip cannot be cut there.
@@ -281,11 +291,32 @@ const val ZOOM_MIN = 0.05f
 const val ZOOM_MAX = 2_000f
 /**
  * Overlay rows. Three was a cap a logo, a reaction clip and a caption card
- * already filled. Each row that holds footage is a decoder in the preview, and
- * with the two main-track rolls this stays within what a mid-range phone runs
- * at once; a photo on a row costs no decoder at all.
+ * already filled. Only the lowest [MAX_FOOTAGE_LAYER] of them take footage; a
+ * photo on a row costs no decoder at all, so the rest are for pictures.
  */
 const val MAX_LAYER = 6
+
+/**
+ * The overlay rows footage may use. Each row of it is its own player in the
+ * preview and its own sequence in the export, so with the two main-track rolls
+ * three rows is five video decoders at once - what the old three-row cap kept
+ * to. Six rows of footage was eight, past what a mid-range phone (the moto g84's
+ * hardware decoders) opens, and the failure is a black preview and an export
+ * that stops at a decoder error.
+ */
+const val MAX_FOOTAGE_LAYER = 3
+
+/**
+ * Whether [address] is a picture this app keeps for an overlay row - a PNG it
+ * wrote under its own files/stills/ (StillClips.overlayFromImage). Here, from
+ * the address alone, so the rows' rules can tell a photo from footage; gallery
+ * picks are all content:// addresses.
+ */
+fun isStillPicture(address: String?): Boolean {
+    if (address == null || !address.startsWith("file:")) return false
+    val path = address.substringBefore('?').substringBefore('#')
+    return path.endsWith(".png") && "/stills/" in path
+}
 
 /**
  * How close two key times may be before they are the same key, when a placement
@@ -429,8 +460,23 @@ fun TimelineState.layerIsFree(layer: Int, startMs: Long, endMs: Long, exceptId: 
  * row - showed only one of them while the export drew both. An overlay added
  * onto an occupied row goes to the lowest one with room instead.
  */
-fun TimelineState.firstFreeLayer(startMs: Long, endMs: Long, exceptId: String? = null): Int? =
-    (1..MAX_LAYER).firstOrNull { layerIsFree(it, startMs, endMs, exceptId) }
+fun TimelineState.firstFreeLayer(startMs: Long, endMs: Long, exceptId: String? = null, top: Int = MAX_LAYER): Int? =
+    (1..top).firstOrNull { layerIsFree(it, startMs, endMs, exceptId) }
+
+/**
+ * The overlay rows closed up: a row nothing is on any more - its overlay
+ * deleted, moved to the main track or raised past it - is taken out, and the
+ * rows above come down one, in the order they were. The strip draws a lane for
+ * every row up to the highest, so an empty row was an empty lane pushing the
+ * main track and the sound down. Only ever lowers a row, so footage stays within
+ * [MAX_FOOTAGE_LAYER].
+ */
+fun TimelineState.withRowsCompacted(): TimelineState {
+    val used = clips.filter { it.kind == ClipKind.Video && it.layer > 0 }.map { it.layer }.distinct().sorted()
+    if (used.withIndex().all { (i, layer) -> layer == i + 1 }) return this
+    val row = used.withIndex().associate { (i, layer) -> layer to i + 1 }
+    return copy(clips = clips.map { if (it.kind == ClipKind.Video && it.layer > 0) it.copy(layer = row.getValue(it.layer)) else it })
+}
 
 /**
  * Adds a clip. On the main track it is slotted in where it was placed and the
@@ -446,9 +492,9 @@ fun TimelineState.withClipAdded(clip: Clip): TimelineState {
             .layOutMain(base.take(at) + clip + base.drop(at), mainSpacing())
     }
     if (clip.kind == ClipKind.Video && clip.isOverlay &&
-        !layerIsFree(clip.layer, clip.timelineStartMs, clip.timelineEndMs)
+        (clip.layer > clip.topLayer || !layerIsFree(clip.layer, clip.timelineStartMs, clip.timelineEndMs))
     ) {
-        val row = firstFreeLayer(clip.timelineStartMs, clip.timelineEndMs) ?: return this
+        val row = firstFreeLayer(clip.timelineStartMs, clip.timelineEndMs, top = clip.topLayer) ?: return this
         return copy(clips = clips + clip.copy(layer = row), selectedClipId = clip.id)
     }
     return copy(clips = clips + clip, selectedClipId = clip.id)
@@ -476,8 +522,8 @@ fun TimelineState.withLayerChanged(clipId: String, delta: Int): TimelineState {
         if (clip.layer == 1) 0 else return this
     } else {
         val step = if (delta > 0) 1 else -1
-        generateSequence((clip.layer + delta).coerceAtMost(MAX_LAYER)) { it + step }
-            .takeWhile { it in 1..MAX_LAYER }
+        generateSequence((clip.layer + delta).coerceAtMost(clip.topLayer)) { it + step }
+            .takeWhile { it in 1..clip.topLayer }
             .firstOrNull { layerIsFree(it, clip.timelineStartMs, clip.timelineEndMs, clipId) }
             ?: return this
     }
@@ -487,12 +533,13 @@ fun TimelineState.withLayerChanged(clipId: String, delta: Int): TimelineState {
     val moved = clip.copy(layer = target, transitionIn = if (target > 0) Transition() else clip.transitionIn)
     val next = copy(clips = clips.map { if (it.id == clipId) moved else it })
     if (target > 0) {
-        return if (clip.isMain) next.layOutMain(baseVideoClips.filterNot { it.id == clipId }, mainSpacing()) else next
+        return if (clip.isMain) next.layOutMain(baseVideoClips.filterNot { it.id == clipId }, mainSpacing())
+        else next.withRowsCompacted()
     }
 
     val others = baseVideoClips
     val at = insertionIndex(others, clip.timelineStartMs + clip.durationMs / 2)
-    return next.layOutMain(others.take(at) + moved + others.drop(at), mainSpacing())
+    return next.layOutMain(others.take(at) + moved + others.drop(at), mainSpacing()).withRowsCompacted()
 }
 
 /**
@@ -623,7 +670,11 @@ fun TimelineState.withClipRemoved(clipId: String): TimelineState {
         clips = clips.filterNot { it.id == clipId },
         selectedClipId = if (selectedClipId == clipId) null else selectedClipId
     )
-    return if (clip.isMain) next.relaidFrom(this) { if (it.id == clipId) emptyList() else listOf(it) } else next
+    return when {
+        clip.isMain -> next.relaidFrom(this) { if (it.id == clipId) emptyList() else listOf(it) }
+        clip.kind == ClipKind.Video -> next.withRowsCompacted()
+        else -> next
+    }
 }
 
 /**
@@ -650,7 +701,7 @@ fun TimelineState.withClipDuplicated(clipId: String, copyId: String): TimelineSt
     }
     if (clip.kind == ClipKind.Video && clip.isOverlay) {
         val row = if (layerIsFree(clip.layer, copy.timelineStartMs, copy.timelineEndMs)) clip.layer
-        else firstFreeLayer(copy.timelineStartMs, copy.timelineEndMs) ?: return this
+        else firstFreeLayer(copy.timelineStartMs, copy.timelineEndMs, top = clip.topLayer) ?: return this
         return copy(clips = clips + copy.copy(layer = row), selectedClipId = copyId)
     }
     return copy(clips = clips + copy, selectedClipId = copyId)

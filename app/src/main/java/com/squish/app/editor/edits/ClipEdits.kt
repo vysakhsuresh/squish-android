@@ -17,7 +17,6 @@ import com.squish.app.timeline.rippleVideo
 import com.squish.app.timeline.withClipMoved
 import com.squish.app.timeline.withClipRemoved
 import com.squish.app.timeline.withClipDuplicated
-import com.squish.app.timeline.MAX_LAYER
 import com.squish.app.timeline.withClipTrimmed
 import com.squish.app.timeline.withOverlayGeometry
 import com.squish.app.timeline.withPlacementReset
@@ -817,10 +816,9 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 // Every overlay row is taken where the copy would go: said, rather
                 // than a button that did nothing.
                 val after = _state.value
-                if (after.videoClips.none { it.id == copyId } && after.audioClips.none { it.id == copyId } &&
-                    current.videoClips.any { it.id == selected && it.isOverlay }
-                ) {
-                    _state.update { it.copy(failure = SquishError.OverlayRowsFull(MAX_LAYER)) }
+                val overlay = current.videoClips.firstOrNull { it.id == selected && it.isOverlay }
+                if (overlay != null && after.videoClips.none { it.id == copyId }) {
+                    _state.update { it.copy(failure = SquishError.OverlayRowsFull(footage = !overlay.isStillPicture)) }
                 }
             }
         }

@@ -1,4 +1,7 @@
+import android.net.Uri
 import com.squish.app.editor.OverlayRules
+import com.squish.app.editor.OverlayRules.canStep
+import com.squish.app.editor.OverlayRules.withOverlayStepped
 import com.squish.app.editor.OverlayRules.withMainOnOverlay
 import com.squish.app.editor.OverlayRules.withOverlayCopiedInPlace
 import com.squish.app.editor.OverlayRules.withOverlayOnMain
@@ -7,7 +10,13 @@ import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
+import com.squish.app.timeline.MAX_FOOTAGE_LAYER
 import com.squish.app.timeline.MAX_LAYER
+import com.squish.app.timeline.MIN_CLIP_MS
+import com.squish.app.timeline.isStillPicture
+import com.squish.app.timeline.withClipRemoved
+import com.squish.app.timeline.withLayerChanged
+import com.squish.app.timeline.withRowsCompacted
 import com.squish.app.timeline.OVERLAY_LANDING
 import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.TimelineState
@@ -39,6 +48,10 @@ fun video(
     offsetYFraction = if (layer > 0) OVERLAY_LANDING.offsetYFraction else 0f
 )
 
+/** A photo kept as a picture on an overlay row: a PNG under the app's stills. */
+fun photo(id: String, span: Long, start: Long = 0, layer: Int = 1) =
+    video(id, span, start = start, layer = layer).copy(uri = Uri.parse("file:///data/user/0/com.squish.app/files/stills/overlay_$id.png"))
+
 fun TimelineState.byId(id: String) = clips.first { it.id == id }
 
 fun butted(state: TimelineState, what: String) {
@@ -60,13 +73,35 @@ fun rowsClear(state: TimelineState, what: String) {
 }
 
 fun main() {
-    // --- Landing: no longer than the main track runs past the playhead. ---------------
+    // --- Landing: no further than the main track goes, wherever the playhead is. -------
     run {
-        check(OverlayRules.landingLengthMs(60_000, 2_000, 10_000) == 8_000L, "a long overlay did not stop at the main track's end")
-        check(OverlayRules.landingLengthMs(5_000, 2_000, 10_000) == 5_000L, "a short overlay was cut")
-        check(OverlayRules.landingLengthMs(60_000, 10_000, 10_000) == 60_000L, "at the end, an overlay was cut to nothing")
-        check(OverlayRules.landingLengthMs(60_000, 9_950, 10_000) == 60_000L, "a sliver of room cut it below the shortest clip")
-        check(OverlayRules.landingLengthMs(OverlayRules.STILL_LANDING_MS, 1_000, 2_500) == 1_500L, "a photo past the end")
+        fun land(source: Long, at: Long, end: Long) = OverlayRules.landing(source, at, end).let { it.startMs to it.lengthMs }
+        check(land(60_000, 2_000, 10_000) == (2_000L to 8_000L), "a long overlay did not stop at the main track's end")
+        check(land(5_000, 2_000, 10_000) == (2_000L to 5_000L), "a short overlay was cut or moved")
+        check(land(OverlayRules.STILL_LANDING_MS, 1_000, 2_500) == (1_000L to 1_500L), "a photo past the end")
+        // At the end, near it, or past it: ending with the main track, never past it.
+        check(land(60_000, 30_000, 30_000) == (0L to 30_000L), "at the end, a long overlay ran on over black: ${land(60_000, 30_000, 30_000)}")
+        check(land(60_000, 29_900, 30_000) == (0L to 30_000L), "100 ms from the end: ${land(60_000, 29_900, 30_000)}")
+        check(land(OverlayRules.STILL_LANDING_MS, 30_000, 30_000) == (27_000L to 3_000L), "a photo at the end: ${land(3_000, 30_000, 30_000)}")
+        check(land(5_000, 45_000, 30_000) == (25_000L to 5_000L), "past the end: ${land(5_000, 45_000, 30_000)}")
+        // Nothing on the main track: nothing to fit to.
+        check(land(60_000, 0, 0) == (0L to 60_000L), "no main track cut an overlay")
+        for (source in listOf(150L, 3_000L, 60_000L)) for (at in listOf(0L, 5_000L, 9_950L, 10_000L, 20_000L)) {
+            val (start, length) = land(source, at, 10_000)
+            check(start >= 0L && start + length <= maxOf(10_000L, MIN_CLIP_MS) && length <= source.coerceAtLeast(MIN_CLIP_MS),
+                "landing $source at $at: $start + $length")
+        }
+    }
+
+    // --- A photo kept as a picture is told from footage by its address alone. ---------
+    run {
+        check(isStillPicture("file:///data/user/0/com.squish.app/files/stills/overlay_1_ab12cd34.png"), "a kept photo is not a still")
+        check(!isStillPicture("content://media/external/images/media/12"), "a gallery pick counted as a kept still")
+        check(!isStillPicture("file:///data/user/0/com.squish.app/files/stills/photo_1.mp4"), "a rendered photo clip counted as a still")
+        check(!isStillPicture("file:///sdcard/Download/logo.png"), "a PNG outside the app's stills counted")
+        check(!isStillPicture(null), "no address is a still")
+        check(photo("p", 1_000, layer = 1).topLayer == MAX_LAYER && video("v", 1_000, layer = 1).topLayer == MAX_FOOTAGE_LAYER,
+            "the rows' ceilings are wrong")
     }
 
     // --- A photo: trimmed like footage, either way; exported for as long as it plays. --
@@ -146,12 +181,112 @@ fun main() {
         check(top.withOverlayCopiedInPlace("t", "t2").byId("t2").layer == 1, "copy from the top row found no row")
         val full = TimelineState(clips = listOf(video("m", 10_000)) + (1..MAX_LAYER).map { video("w$it", 5_000, layer = it) })
         check(full.withOverlayCopiedInPlace("w1", "x") == full, "copy in place with every row taken added a clip")
-        // Adding lands on the lowest free row, never on top of another (O7).
+        // Adding lands on the lowest free row, never on top of another (O7) -
+        // footage on the rows that take footage, photos on any.
         var added = TimelineState(clips = listOf(video("m", 10_000)))
         repeat(MAX_LAYER) { i -> added = added.withClipAdded(video("n$i", 4_000, start = 1_000, layer = 1)) }
-        rowsClear(added, "adding at one moment")
+        rowsClear(added, "adding footage at one moment")
+        check(added.overlayClips.map { it.layer }.sorted() == (1..MAX_FOOTAGE_LAYER).toList(),
+            "footage past its rows: ${added.overlayClips.map { it.layer }}")
+        repeat(MAX_LAYER) { i -> added = added.withClipAdded(photo("p$i", 4_000, start = 1_000, layer = 1)) }
+        rowsClear(added, "adding photos over footage")
         check(added.overlayClips.map { it.layer }.sorted() == (1..MAX_LAYER).toList(), "adding at one moment: ${added.overlayClips.map { it.layer }}")
-        check(added.withClipAdded(video("late", 4_000, start = 1_000, layer = 1)) == added, "an overlay past the last row was added")
+        check(added.withClipAdded(photo("late", 4_000, start = 1_000, layer = 1)) == added, "an overlay past the last row was added")
+        // Footage asked onto a high row comes down to one it may use.
+        val high = TimelineState(clips = listOf(video("m", 10_000))).withClipAdded(video("h", 2_000, layer = MAX_LAYER))
+        check(high.byId("h").layer == 1, "footage landed on row ${high.byId("h").layer}")
+        // The box's copy of footage on the top footage row goes below, not above.
+        val band = TimelineState(clips = listOf(video("m", 10_000), video("f", 3_000, layer = MAX_FOOTAGE_LAYER)))
+        check(band.withOverlayCopiedInPlace("f", "f2").byId("f2").layer == 1, "a copy of footage went past its rows")
+        // Nor does a row change take it there.
+        check(band.withLayerChanged("f", +1) == band, "footage raised past its rows")
+    }
+
+    // --- The rows close up: no lane is left empty below another. -----------------------
+    run {
+        val state = TimelineState(clips = listOf(video("m", 10_000), video("a", 2_000, layer = 1), photo("b", 2_000, layer = 2), photo("c", 2_000, start = 5_000, layer = 3)))
+        val gone = state.withClipRemoved("a")
+        check(gone.byId("b").layer == 1 && gone.byId("c").layer == 2, "deleting row 1 left an empty lane: ${gone.overlayClips.map { it.id to it.layer }}")
+        check(gone.layerCount == 2, "lanes after a delete: ${gone.layerCount}")
+        val toMain = state.withOverlayOnMain("a", 0)
+        check(toMain.byId("b").layer == 1 && toMain.layerCount == 2, "to main left an empty lane: ${toMain.overlayClips.map { it.id to it.layer }}")
+        check(state.withRowsCompacted() == state, "rows already close were renumbered")
+        val stray = TimelineState(clips = listOf(video("m", 10_000), photo("s", 2_000, layer = 5)))
+        check(stray.withRowsCompacted().byId("s").layer == 1, "a lone overlay high up stayed there")
+    }
+
+    // --- Send back and Bring forward: past the overlay on screen with it. ---------------
+    run {
+        val main = video("m", 10_000)
+        // Alone: nothing to step past, and nothing changes - no empty lanes.
+        val lone = TimelineState(clips = listOf(main, video("o", 3_000, layer = 1)))
+        check(!lone.canStep("o", up = true) && !lone.canStep("o", up = false), "a lone overlay offered a step")
+        // A logo over a PiP swaps under it, on the rows they had (the audit's no-op).
+        val pair = TimelineState(clips = listOf(main, video("pip", 5_000, layer = 1), photo("logo", 5_000, start = 1_000, layer = 2)))
+        val back = pair.withOverlayStepped("logo", up = false)
+        check(back.byId("logo").layer == 1 && back.byId("pip").layer == 2, "send back did not swap: ${back.overlayClips.map { it.id to it.layer }}")
+        check(pair.withOverlayStepped("pip", up = true) == back, "bring forward is not the same swap")
+        check(!pair.canStep("logo", up = true) && !pair.canStep("pip", up = false), "a step past nothing was offered")
+        rowsClear(back, "a swap")
+        // A swap that would stack the other on a neighbour: over it instead.
+        val blocked = TimelineState(clips = listOf(main, video("a", 2_000, start = 2_000, layer = 1), video("b", 10_000, layer = 2),
+            photo("c", 2_000, start = 6_000, layer = 1)))
+        val over = blocked.withOverlayStepped("a", up = true)
+        check(over.byId("a").layer == 3 && over.byId("b").layer == 2 && over.byId("c").layer == 1, "blocked swap: ${over.overlayClips.map { it.id to it.layer }}")
+        rowsClear(over, "stepping over")
+        // Footage is not stepped past its rows.
+        val ceiling = TimelineState(clips = listOf(main, video("f", 3_000, layer = MAX_FOOTAGE_LAYER), photo("p", 3_000, layer = MAX_FOOTAGE_LAYER + 1)))
+        check(!ceiling.canStep("f", up = true), "footage offered a step past its rows")
+        check(ceiling.canStep("p", up = false), "a photo over footage could not be sent back")
+        val under = ceiling.withOverlayStepped("p", up = false)
+        check(under.byId("f").layer == 1 && under.byId("p").layer == 2 ||
+            under.byId("p").layer < under.byId("f").layer, "photo sent back is not under the footage: ${under.overlayClips.map { it.id to it.layer }}")
+        check(under.overlayClips.all { it.layer <= it.topLayer }, "a step left footage past its rows")
+    }
+
+    // --- Sound across the move: heard as loud as before, both ways. --------------------
+    run {
+        check(OverlayRules.levelAsOverlay(0.8f, muteOriginal = true, originalVolume = 1f) == 0f, "a shot under a camera mute started talking as an overlay")
+        check(near(OverlayRules.levelAsOverlay(0.8f, false, 0.5f), 0.4f), "a shot's heard level was not kept as an overlay")
+        check(near(OverlayRules.levelOnMain(0.4f, 0.5f), 0.8f), "an overlay's level was not kept on the main track")
+        check(OverlayRules.levelOnMain(1f, 0.5f) == 1f, "a level past full")
+        check(OverlayRules.levelOnMain(0.6f, 0f) == 0.6f, "a zero camera level divided by zero")
+        val state = TimelineState(clips = listOf(video("a", 5_000), video("b", 5_000, start = 5_000, volume = 0.8f)))
+        check(state.withMainOnOverlay("b", muteOriginal = true, originalVolume = 1f).byId("b").volume == 0f, "to overlay under a camera mute is heard")
+        check(near(state.withMainOnOverlay("b", muteOriginal = false, originalVolume = 0.5f).byId("b").volume, 0.4f), "to overlay changed the heard level")
+        val o = TimelineState(clips = listOf(video("a", 5_000), video("o", 2_000, layer = 1, volume = 0.4f)))
+        val down = o.withOverlayOnMain("o", 0, originalVolume = 0.5f).byId("o")
+        check(near(OverlayRules.effectiveVolume(down, false, 0.5f), 0.4f), "to main changed the heard level: ${down.volume}")
+    }
+
+    // --- The box's buttons: past its corners, never taking a touch inside it. ----------
+    run {
+        val outset = 13f * 2.75f  // half a 26 dp button at 2.75 px/dp
+        val reach = 22f * 2.75f
+        // A logo pinched small: about 34 x 19 dp.
+        val small = OverlayRules.Box(cx = 300f, cy = 400f, halfW = 17f * 2.75f, halfH = 9.5f * 2.75f, degrees = 0f)
+        for (fx in listOf(-0.99f, -0.5f, 0f, 0.5f, 0.99f)) for (fy in listOf(-0.99f, 0f, 0.99f)) {
+            val x = small.cx + fx * small.halfW
+            val y = small.cy + fy * small.halfH
+            check(OverlayRules.cornerAt(small, x, y, outset, reach) == null, "a touch inside a small box at ($fx, $fy) took a button")
+        }
+        for (degrees in listOf(0f, 30f, -135f)) {
+            val box = small.copy(degrees = degrees)
+            box.handles(outset).forEachIndexed { i, (hx, hy) ->
+                check(!box.contains(hx, hy), "button $i is inside the box at $degrees°")
+                check(OverlayRules.cornerAt(box, hx, hy, outset, reach) == i, "a touch on button $i took ${OverlayRules.cornerAt(box, hx, hy, outset, reach)} at $degrees°")
+                val (cx, cy) = box.corners[i]
+                check(near(kotlin.math.hypot(hx - cx, hy - cy), outset, 0.01f), "button $i is not $outset past its corner")
+            }
+        }
+        check(OverlayRules.cornerAt(small, 5_000f, 5_000f, outset, reach) == null, "a touch far away took a button")
+    }
+
+    // --- A photo made long is asked about before it is rendered. -------------------------
+    run {
+        check(OverlayRules.needsLongRender(photo("p", 10 * 60_000, layer = 1)), "a ten-minute photo was not asked about")
+        check(!OverlayRules.needsLongRender(photo("p", 30_000, layer = 1)), "a short photo was asked about")
+        check(!OverlayRules.needsLongRender(video("v", 10 * 60_000, layer = 1)), "footage needs no render")
     }
 
     // --- Sound: a shot under the camera level, an overlay on its own. --------------------

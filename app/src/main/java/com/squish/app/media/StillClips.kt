@@ -64,7 +64,7 @@ object StillClips {
      * track may already have been dragged out past [RENDER_MS].
      */
     suspend fun fromImage(context: Context, image: Uri, minMs: Long = RENDER_MS): Uri? =
-        render(context, image, "photo_${System.currentTimeMillis()}", maxOf(RENDER_MS, minMs))
+        render(context, image, uniqueName("photo"), maxOf(RENDER_MS, minMs))
 
     /**
      * A picture for an overlay row, kept a picture: upright, no larger than an
@@ -89,7 +89,7 @@ object StillClips {
         val (w, h) = overlayFit(decoded.width, decoded.height)
         val bitmap = if (w == decoded.width && h == decoded.height) decoded
         else Bitmap.createScaledBitmap(decoded, w, h, true).also { if (it !== decoded) decoded.recycle() }
-        val target = File(dir(context), "overlay_${System.currentTimeMillis()}.png")
+        val target = File(dir(context), uniqueName("overlay", "png"))
         val partial = File(target.absolutePath + ".part")
         try {
             FileOutputStream(partial).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -109,8 +109,7 @@ object StillClips {
      * only as PNGs in its own folder; everything picked from the gallery arrives
      * as a content:// address.
      */
-    fun isStill(uri: Uri?): Boolean =
-        uri != null && uri.scheme == "file" && uri.path?.let { it.endsWith(".png") && it.contains("/$DIR/") } == true
+    fun isStill(uri: Uri?): Boolean = com.squish.app.timeline.isStillPicture(uri?.toString())
 
     /** The picture's width over its height, from its header alone. Blocking. */
     fun aspectOf(context: Context, uri: Uri): Float? = runCatching {
@@ -165,7 +164,7 @@ object StillClips {
             }
             if (!made) return null
         }
-        return render(context, Uri.fromFile(frame), "blank_${System.currentTimeMillis()}", RENDER_MS)
+        return render(context, Uri.fromFile(frame), uniqueName("blank"), RENDER_MS)
     }
 
     private suspend fun render(context: Context, image: Uri, name: String, lengthMs: Long): Uri? {
@@ -303,6 +302,18 @@ object StillClips {
     }
 
     private fun dir(context: Context): File = File(context.filesDir, DIR).apply { mkdirs() }
+
+    /**
+     * A file name no other still has. The time alone was not: photos picked
+     * together are made back to back, two small ones finished in the same
+     * millisecond, and the second was renamed over the first - both overlays
+     * then showed the second picture, and the first was gone. The name only
+     * has to be new; the time stays in it so the folder still sorts by age.
+     */
+    private fun uniqueName(prefix: String, extension: String? = null): String {
+        val name = "${prefix}_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().take(8)}"
+        return if (extension == null) name else "$name.$extension"
+    }
 
     private const val DIR = "stills"
 

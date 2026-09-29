@@ -18,11 +18,10 @@ import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
-import com.squish.app.timeline.withLayerChanged
+import com.squish.app.editor.OverlayRules.withOverlayStepped
 import com.squish.app.timeline.withOverlayGeometry
 import com.squish.app.timeline.withTransition
 import com.squish.app.timeline.withClipAdded
-import com.squish.app.timeline.MAX_LAYER
 import com.squish.app.timeline.OVERLAY_LANDING
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
@@ -45,7 +44,7 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
      *
      * A photo stays a picture (StillClips.overlayFromImage), so a transparent
      * logo is transparent. Each lands no longer than the main track runs past
-     * the playhead (OverlayRules.landingLengthMs); its handles drag it out.
+     * the playhead (OverlayRules.landing); its handles drag it out.
      */
     fun addOverlayClips(uris: List<Uri>) {
         if (uris.isEmpty()) return
@@ -91,10 +90,11 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
             _state.update { current ->
                 var timeline = TimelineState(clips = current.videoClips)
                 val mainEnd = timeline.baseVideoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
-                var full = false
+                var refused: Clip? = null
                 var last: String? = null
                 for (p in ready) {
-                    val length = OverlayRules.landingLengthMs(p.lengthMs, at, mainEnd)
+                    val landing = OverlayRules.landing(p.lengthMs, at, mainEnd)
+                    val length = landing.lengthMs
                     val (inMs, outMs, fileMs) = if (p.still) OverlayRules.stillWindow(length)
                     else Triple(0L, length, p.lengthMs)
                     val clip = Clip(
@@ -103,7 +103,7 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                         label = p.label,
                         sourceInMs = inMs,
                         sourceOutMs = outMs,
-                        timelineStartMs = at,
+                        timelineStartMs = landing.startMs,
                         sourceDurationMs = fileMs,
                         layer = 1,
                         scale = OVERLAY_LANDING.scale,
@@ -113,7 +113,7 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                     // Onto the first row free at this moment, never on top of another
                     // overlay: the preview shows one clip per row, the export all of them.
                     val next = timeline.withClipAdded(clip)
-                    if (next.clips.size == timeline.clips.size) full = true
+                    if (next.clips.size == timeline.clips.size) refused = clip
                     else {
                         timeline = next
                         last = clip.id
@@ -122,7 +122,7 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                 current.copy(
                     videoClips = timeline.clips,
                     selectedClipId = last ?: current.selectedClipId,
-                    failure = if (full) SquishError.OverlayRowsFull(MAX_LAYER) else current.failure
+                    failure = refused?.let { SquishError.OverlayRowsFull(footage = !it.isStillPicture) } ?: current.failure
                 )
             }
         }
@@ -135,8 +135,9 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
     fun duplicateInPlace(clipId: String) {
         val copyId = UUID.randomUUID().toString()
         record("Duplicate") { mutateTimeline { it.withOverlayCopiedInPlace(clipId, copyId) } }
+        val original = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return
         if (_state.value.videoClips.none { it.id == copyId }) {
-            _state.update { it.copy(failure = SquishError.OverlayRowsFull(MAX_LAYER)) }
+            _state.update { it.copy(failure = SquishError.OverlayRowsFull(footage = !original.isStillPicture)) }
         }
     }
 
@@ -157,21 +158,17 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
     }
 
     /**
-     * Up or down the overlay rows. Down from the lowest row is onto the main
-     * track, which is [switchToMain]'s move - full frame, at the playhead, and a
-     * photo made into a clip - never the bare change of row it used to be, which
-     * put a corner picture into the main track (and a PNG where only video plays).
+     * Bring forward or Send back: past the nearest overlay drawn over or under
+     * this one (OverlayRules.withOverlayStepped). It used to be a row up or down,
+     * whatever was there - raising a lone overlay five times changed nothing on
+     * the picture and left five empty lanes on the strip, and two overlays on
+     * rows next to each other could not be swapped. The main track is not a step
+     * down from here; it is To main, on the toolbar.
      */
-    fun changeLayer(clipId: String, delta: Int) {
-        val clip = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return
-        if (clip.isOverlay && clip.layer + delta <= 0) {
-            switchToMain(clipId)
-            return
+    fun stepLayer(clipId: String, up: Boolean) =
+        record(if (up) "Bring forward" else "Send back") {
+            mutateTimeline { it.withOverlayStepped(clipId, up) }
         }
-        record(if (delta > 0) "Raise layer" else "Lower layer") {
-            mutateTimeline { it.withLayerChanged(clipId, delta) }
-        }
-    }
 
     /**
      * A shot lifted off the main track onto the lowest overlay row free over it,
@@ -181,9 +178,12 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
      */
     fun switchToOverlay(clipId: String) {
         val clip = _state.value.videoClips.firstOrNull { it.id == clipId && it.isMain } ?: return
-        record("To overlay") { mutateTimeline { it.withMainOnOverlay(clip.id) } }
+        val levels = _state.value
+        record("To overlay") {
+            mutateTimeline { it.withMainOnOverlay(clip.id, levels.muteOriginal, levels.originalVolume) }
+        }
         if (_state.value.videoClips.firstOrNull { it.id == clipId }?.isMain == true) {
-            _state.update { it.copy(failure = SquishError.OverlayRowsFull(MAX_LAYER)) }
+            _state.update { it.copy(failure = SquishError.OverlayRowsFull(footage = !clip.isStillPicture)) }
         }
     }
 
@@ -203,7 +203,10 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
         val at = _state.value.playheadMs
         val picture = clip.uri
         if (!StillClips.isStill(picture) || picture == null) {
-            record("To main track") { mutateTimeline { it.withOverlayOnMain(clipId, at) } }
+            record("To main track") {
+                mutateTimeline { it.withOverlayOnMain(clipId, at, _state.value.originalVolume) }
+            }
+            sayIfSilencedOnMain(clip)
             return
         }
         viewModelScope.launch {
@@ -229,12 +232,25 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                             speedRamp = SpeedRamp()
                         )
                         timeline.copy(clips = timeline.clips.map { if (it.id == clipId) filmed else it })
-                            .withOverlayOnMain(clipId, at)
+                            .withOverlayOnMain(clipId, at, _state.value.originalVolume)
                     }
                 }
+                sayIfSilencedOnMain(clip)
             } finally {
                 _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
             }
+        }
+    }
+
+    /**
+     * An overlay with sound, moved onto a main track whose camera sound is off:
+     * said, because its Volume came across and it is silent all the same.
+     */
+    private fun sayIfSilencedOnMain(overlay: Clip) {
+        val now = _state.value
+        val moved = now.videoClips.firstOrNull { it.id == overlay.id }?.isMain == true
+        if (moved && now.muteOriginal && overlay.volume > 0f && !overlay.isStillPicture) {
+            _state.update { it.copy(failure = SquishError.SilentOnMainTrack()) }
         }
     }
 

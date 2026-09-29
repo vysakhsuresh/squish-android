@@ -19,8 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.OpenInFull
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -42,7 +43,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
@@ -51,12 +51,10 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Transform
 import com.squish.app.ui.theme.SquishColors
 import kotlin.math.abs
-import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /** One overlay on the picture at the moment showing, as the box needs it. */
@@ -80,31 +78,42 @@ class OverlayHandleActions(
     val onPlaceEnd: () -> Unit,
     val onDelete: (String) -> Unit,
     val onDuplicate: (String) -> Unit,
-    val onReset: (String) -> Unit
+    /** The overlay's own settings: its Placement sheet, where Reset is, with the numbers. */
+    val onEdit: (String) -> Unit
 )
 
 /** The corners, in the order [OverlayRules.Box.corners] gives them. */
 private enum class Corner(val label: String, val icon: ImageVector) {
     Delete("Delete overlay", Icons.Filled.Close),
-    Duplicate("Duplicate overlay", Icons.Filled.ContentCopy),
+    // Not the toolbar's Duplicate, which puts the copy after the original in
+    // time: on the picture a copy you cannot see is no copy, so this one is a
+    // copy on top, and says so.
+    Duplicate("Copy overlay on top", Icons.Filled.ContentCopy),
     Resize("Resize and turn overlay", Icons.Filled.OpenInFull),
-    Reset("Reset overlay placement", Icons.Filled.RestartAlt)
+    // Section 2's "edit". It was a one-tap Reset, which threw away an animated
+    // overlay's every key when brushed; Reset is on the sheet this opens.
+    Edit("Edit overlay placement", Icons.Filled.Edit)
 }
 
 /**
  * An overlay you can grab, the way CapCut's are: tap one on the picture to
- * select it; the selected one has a box with four corners - delete, duplicate,
- * reset, and a handle that resizes and turns it; one finger drags it, two pinch
- * and turn it (anywhere on the picture, once one is selected). While it moves
+ * select it; the selected one has a box with four buttons just past its corners -
+ * delete, copy, edit, and a handle that resizes and turns it; one finger drags
+ * it, two pinch and turn it (anywhere on the picture, once one is selected). The
+ * inside of the box is always the body, so a small overlay can still be dragged
+ * and a tap on it never lands on a button. While it moves
  * it snaps to the picture's centre lines and edges and to the other layers', with
  * a tick, and says where it is.
  *
- * Laid over exactly the frame the export keeps - the overlay's own canvas - so
- * the box is where the overlay is drawn in the file (OverlayRules.box). Every
+ * Measured against exactly the frame the export keeps - the overlay's own
+ * canvas, [frame] here - so the box is where the overlay is drawn in the file
+ * (OverlayRules.box). The layer itself covers the whole preview, not just that
+ * frame: an overlay can hang half off the frame, over a crop's bars or the
+ * letterbox, and its buttons there have to be reachable. Every
  * move goes through the one way placement is written, which keys the move at the
  * playhead when the overlay is animated (TimelineState.withOverlayGeometry).
  *
- * Every touch inside the frame is this layer's, so a tap on bare picture comes
+ * Every touch on the preview is this layer's, so a tap on bare picture comes
  * back as [onEmptyTap] - deselect, or play - rather than falling through to a
  * play button underneath as well.
  */
@@ -112,10 +121,12 @@ private enum class Corner(val label: String, val icon: ImageVector) {
 fun OverlayHandles(
     overlays: List<OverlayOnPicture>,
     selectedId: String?,
+    /** The frame the export keeps, in this layer's own pixels: what the overlays' placements are fractions of. */
+    frame: Rect,
     /** The box is left off while the picture plays; a touch stops it, and the box comes back. */
     showBox: Boolean,
     actions: OverlayHandleActions,
-    /** A finger has started to move an overlay: the transport stops, so the playhead holds still under it. */
+    /** A finger has started to move an overlay, or tapped one: the transport stops, so the playhead holds still and the box shows. */
     onTouch: () -> Unit,
     onEmptyTap: () -> Unit,
     modifier: Modifier = Modifier
@@ -128,39 +139,40 @@ fun OverlayHandles(
     val latestTouch by rememberUpdatedState(onTouch)
     val latestEmptyTap by rememberUpdatedState(onEmptyTap)
     val latestShowBox by rememberUpdatedState(showBox)
+    val latestFrame by rememberUpdatedState(frame)
 
-    var size by remember { mutableStateOf(IntSize.Zero) }
     var snap by remember { mutableStateOf<OverlayRules.Snapped?>(null) }
     var readout by remember { mutableStateOf<String?>(null) }
 
     Box(
         modifier = modifier
-            .onSizeChanged { size = it }
             .pointerInput(Unit) {
                 val cornerReach = CORNER_REACH.toPx()
+                val cornerOutset = CORNER_OUTSET.toPx()
                 val grace = HIT_GRACE.toPx()
                 val snapPx = SNAP_DISTANCE.toPx()
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     down.consume()
                     val slop = viewConfiguration.touchSlop
-                    val w = size.width.toFloat()
-                    val h = size.height.toFloat()
+                    // Everything below is in the frame's own pixels.
+                    val area = latestFrame
+                    val w = area.width
+                    val h = area.height
+                    val origin = area.topLeft
+                    val at = down.position - origin
                     // Top row first: a tap where two overlap takes the one on top.
                     val items = latestOverlays.sortedByDescending { it.layer }
                     val boxes = items.associate { it.clipId to OverlayRules.box(it.drawn, it.aspect, w, h) }
                     val selected = items.firstOrNull { it.clipId == latestSelected }
                     val selectedBox = selected?.let { boxes[it.clipId] }
 
-                    // A corner of the selected box - they reach past its edge. The
-                    // nearest, on a box small enough for two to be in reach: the
-                    // first in the list was Delete, a slip from Duplicate away.
-                    // Only corners that are drawn: while it plays there are none.
-                    val corner = selectedBox?.takeIf { latestShowBox }?.corners
-                        ?.mapIndexed { i, (x, y) -> i to hypot(x - down.position.x, y - down.position.y) }
-                        ?.filter { it.second <= cornerReach }
-                        ?.minByOrNull { it.second }
-                        ?.let { Corner.entries[it.first] }
+                    // A button of the selected box - never from inside it (see
+                    // OverlayRules.cornerAt). Only buttons that are drawn: while
+                    // it plays there are none.
+                    val corner = selectedBox?.takeIf { latestShowBox && w > 0f && h > 0f }
+                        ?.let { OverlayRules.cornerAt(it, at.x, at.y, cornerOutset, cornerReach) }
+                        ?.let { Corner.entries[it] }
                     if (selected != null && selectedBox != null && corner != null) {
                         if (corner == Corner.Resize) {
                             latestTouch()
@@ -169,9 +181,10 @@ fun OverlayHandles(
                                 val event = awaitPointerEvent()
                                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                                 if (!change.pressed) break
+                                val now = change.position - origin
                                 val raw = OverlayRules.handled(
                                     selected.placed, selectedBox.cx, selectedBox.cy,
-                                    down.position.x, down.position.y, change.position.x, change.position.y
+                                    at.x, at.y, now.x, now.y
                                 )
                                 val s = OverlayRules.snapped(raw, selected.aspect, w, h, emptyList(), snapPx, snapPosition = false, snapAngle = true)
                                 if (s.snappedAny && !lastSnapped) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -197,14 +210,14 @@ fun OverlayHandles(
                             if (stayed) when (corner) {
                                 Corner.Delete -> latestActions.onDelete(selected.clipId)
                                 Corner.Duplicate -> latestActions.onDuplicate(selected.clipId)
-                                Corner.Reset -> latestActions.onReset(selected.clipId)
+                                Corner.Edit -> latestActions.onEdit(selected.clipId)
                                 Corner.Resize -> Unit
                             }
                         }
                         return@awaitEachGesture
                     }
 
-                    val (x, y) = down.position
+                    val (x, y) = at
                     val hit = selected?.takeIf { selectedBox?.contains(x, y, grace) == true }
                         ?: items.firstOrNull { boxes[it.clipId]?.contains(x, y, grace) == true }
                     // Two fingers on bare picture work the selected overlay, so a
@@ -256,33 +269,39 @@ fun OverlayHandles(
                         readout = null
                         latestActions.onPlaceEnd()
                     } else if (!wandered && !multi) {
-                        // A tap: on an overlay selects it; on bare picture is the
-                        // picture's own tap.
-                        when {
-                            hit == null -> latestEmptyTap()
-                            hit.clipId != latestSelected -> latestActions.onSelect(hit.clipId)
+                        // A tap: on an overlay stops the picture, so its box comes
+                        // up, and selects it; on bare picture is the picture's own
+                        // tap. While playing it used to select and nothing more -
+                        // no box, and the picture played on.
+                        if (hit == null) latestEmptyTap()
+                        else {
+                            latestTouch()
+                            if (hit.clipId != latestSelected) latestActions.onSelect(hit.clipId)
                         }
                     }
                 }
             }
     ) {
         val selected = overlays.firstOrNull { it.clipId == selectedId }
-        val w = size.width.toFloat()
-        val h = size.height.toFloat()
+        val w = frame.width
+        val h = frame.height
+        val ox = frame.left
+        val oy = frame.top
         val box = selected?.takeIf { showBox && w > 0f && h > 0f }?.let { OverlayRules.box(it.drawn, it.aspect, w, h) }
+        val outset = with(density) { CORNER_OUTSET.toPx() }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             snap?.let { s ->
                 val guide = SquishColors.Magenta
                 val line = with(density) { 1.dp.toPx() }
-                s.xLines.forEach { gx -> drawLine(guide, Offset(gx, 0f), Offset(gx, this.size.height), strokeWidth = line) }
-                s.yLines.forEach { gy -> drawLine(guide, Offset(0f, gy), Offset(this.size.width, gy), strokeWidth = line) }
+                s.xLines.forEach { gx -> drawLine(guide, Offset(ox + gx, oy), Offset(ox + gx, oy + h), strokeWidth = line) }
+                s.yLines.forEach { gy -> drawLine(guide, Offset(ox, oy + gy), Offset(ox + w, oy + gy), strokeWidth = line) }
             }
             box?.let { b ->
                 val outline = Path().apply {
                     val c = b.corners
-                    moveTo(c[0].first, c[0].second)
-                    c.drop(1).forEach { (px, py) -> lineTo(px, py) }
+                    moveTo(ox + c[0].first, oy + c[0].second)
+                    c.drop(1).forEach { (px, py) -> lineTo(ox + px, oy + py) }
                     close()
                 }
                 // Dark under light, so the edge reads on a white shirt and a night sky alike.
@@ -292,18 +311,18 @@ fun OverlayHandles(
         }
 
         box?.let { b ->
-            b.corners.forEachIndexed { i, (cx, cy) ->
+            b.handles(outset).forEachIndexed { i, (cx, cy) ->
                 val corner = Corner.entries[i]
                 CornerButton(
                     corner = corner,
-                    centreX = cx,
-                    centreY = cy,
+                    centreX = ox + cx,
+                    centreY = oy + cy,
                     onClick = {
                         val id = selected.clipId
                         when (corner) {
                             Corner.Delete -> actions.onDelete(id)
                             Corner.Duplicate -> actions.onDuplicate(id)
-                            Corner.Reset -> actions.onReset(id)
+                            Corner.Edit -> actions.onEdit(id)
                             Corner.Resize -> Unit
                         }
                     }
@@ -360,8 +379,11 @@ private fun BoxScope.Readout(text: String) {
 /** A corner's drawn size. */
 private val CORNER_SIZE = 26.dp
 
-/** How far from a corner's centre a finger still takes it: a thumb, not the dot. */
+/** How far from a button's centre a finger still takes it: a thumb, not the dot. */
 private val CORNER_REACH = 22.dp
+
+/** How far past the box's corner each button's centre sits: half a button, so the box's inside stays clear. */
+private val CORNER_OUTSET = CORNER_SIZE / 2
 
 /** Grace around the box, so a small overlay can still be picked up. */
 private val HIT_GRACE = 12.dp

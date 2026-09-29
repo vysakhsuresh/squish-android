@@ -640,10 +640,19 @@ data class EditorUiState(
     /**
      * Whether any audio at all reaches the exported file: the shots' own sound,
      * an overlay's, or an added one.
+     *
+     * An overlay counts only when its file has sound this phone decodes, as far
+     * as the background check has said: a silent screen recording used to count,
+     * and a size-targeted export set aside audio bits for a track that was never
+     * written. Not yet checked counts as sound, the safe side of the estimate.
      */
     val hasAnyAudio: Boolean
         get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio ||
-            videoClips.any { it.isOverlay && it.volume > 0f && !com.squish.app.media.StillClips.isStill(it.uri) }
+            videoClips.any { clip ->
+                clip.isOverlay && clip.volume > 0f && !clip.isStillPicture &&
+                    clip.uri?.let { com.squish.app.media.MediaCompat.cached(it) }
+                        .let { it == null || (it.hasAudio && it.audioProblem == null) }
+            }
 
     /** The stand-in for the file first opened, for the analyses that read it. */
     val proxyUri: Uri? get() = sourceUri?.let { proxyUris[it] }

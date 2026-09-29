@@ -477,6 +477,9 @@ class EditorViewModel(
     private fun checkDecodable(uri: Uri) {
         viewModelScope.launch {
             val report = MediaCompat.check(getApplication(), uri) ?: return@launch
+            // Whether an overlay has sound is only known from here on, and the
+            // size estimate sets bits aside for it (EditorUiState.hasAnyAudio).
+            recomputeEstimate()
             val problem = report.videoProblem?.let { SquishError.UnsupportedCodec(it) }
                 ?: report.audioProblem?.let { SquishError.UnsupportedAudio(it) }
                 ?: return@launch

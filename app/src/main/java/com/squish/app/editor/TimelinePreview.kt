@@ -255,11 +255,15 @@ fun TimelinePreview(
     // The transport sits under the picture rather than over it. Laid over the
     // bottom of the frame it hid whatever was there - a caption, a subtitle, the
     // bottom of a screen recording - which is exactly what an editor has to show.
+    // The whole preview area, letterbox included: the overlay box is laid over
+    // all of it, so a button hanging off the picture can still be pressed.
+    var areaSize by remember { mutableStateOf(IntSize.Zero) }
     Column(modifier = modifier.background(Color.Black)) {
     Box(
         modifier = Modifier
             .weight(1f)
             .fillMaxWidth()
+            .onSizeChanged { areaSize = it }
             // Nothing drawn outside the picture. A stabilised, zoomed or moved
             // frame is scaled up and shifted, and without this it spilled over
             // the transport below and covered the play button.
@@ -274,6 +278,24 @@ fun TimelinePreview(
             ),
         contentAlignment = Alignment.Center
     ) {
+        val focus = reframe?.sampleAt(frame.positionMs + reframeOffsetMs)?.let { it.xFraction to it.yFraction }
+        // The part of the canvas the export keeps. A fixed ratio is clipped
+        // here, which is pixel-for-pixel what the export writes; a hand-drawn
+        // rectangle is left visible and dimmed by the crop tool instead.
+        val kept = if (customCrop != null) {
+            PreviewBox.Frame(customCrop.left, customCrop.top, customCrop.right, customCrop.bottom)
+        } else {
+            PreviewBox.cropFrame(canvasAspect, cropRatio, focus)
+        }
+        val clipped = if (customCrop != null) PreviewBox.Frame() else kept
+        // The moment the layers are drawn for - parked on the very end, the
+        // last frame, as the engine does.
+        val layerTime = PreviewRules.lastFrameTime(frame.positionMs, frame.durationMs)
+        val stills = videoClips.filter {
+            it.isOverlay && StillClips.isStill(it.uri) && layerTime >= it.timelineStartMs && layerTime < it.timelineEndMs
+        }
+        val overlayCovers = frame.overlays.any { it.covers } || stills.isNotEmpty()
+
         // The canvas the edit is composed on. Overlay offsets are fractions of it,
         // so they have to be measured against the picture rather than the letterbox.
         //
@@ -288,24 +310,6 @@ fun TimelinePreview(
                 .aspectRatio(ratio = canvasAspect, matchHeightConstraintsFirst = true)
                 .onSizeChanged { pictureSize = it }
         ) {
-            val focus = reframe?.sampleAt(frame.positionMs + reframeOffsetMs)?.let { it.xFraction to it.yFraction }
-            // The part of the canvas the export keeps. A fixed ratio is clipped
-            // here, which is pixel-for-pixel what the export writes; a hand-drawn
-            // rectangle is left visible and dimmed by the crop tool instead.
-            val kept = if (customCrop != null) {
-                PreviewBox.Frame(customCrop.left, customCrop.top, customCrop.right, customCrop.bottom)
-            } else {
-                PreviewBox.cropFrame(canvasAspect, cropRatio, focus)
-            }
-            val clipped = if (customCrop != null) PreviewBox.Frame() else kept
-            // The moment the layers are drawn for - parked on the very end, the
-            // last frame, as the engine does.
-            val layerTime = PreviewRules.lastFrameTime(frame.positionMs, frame.durationMs)
-            val stills = videoClips.filter {
-                it.isOverlay && StillClips.isStill(it.uri) && layerTime >= it.timelineStartMs && layerTime < it.timelineEndMs
-            }
-            val overlayCovers = frame.overlays.any { it.covers } || stills.isNotEmpty()
-
             // Everything the export composites, clipped to the frame it keeps -
             // layers included: the export cuts a picture-in-picture off at the
             // crop, so showing it whole over cropped-away footage was a promise the
@@ -379,36 +383,41 @@ fun TimelinePreview(
                 modifier = Modifier.fillMaxSize().zIndex(25f)
             )
 
-            // Over the captions, so a layer under a title can still be taken hold
-            // of; under the crop tool, which is modal while it is up.
-            if (overlayActions != null && !fullscreen) {
-                // The box follows the edit, not the engine's last tick, so it stays
-                // under the finger; the picture catches up a tick later.
-                val onPicture = frame.overlays.mapNotNull { placement ->
-                    val clip = videoClips.firstOrNull { it.id == placement.clipId } ?: return@mapNotNull null
-                    OverlayOnPicture(clip.id, clip.layer, clip.transformAt(layerTime), clip.placementAt(layerTime), placement.aspect)
-                } + stills.map { clip ->
-                    OverlayOnPicture(
-                        clip.id, clip.layer, clip.transformAt(layerTime), clip.placementAt(layerTime),
-                        clip.uri?.let { stillAspects[it.toString()] }
-                    )
-                }
-                OverlayHandles(
-                    overlays = onPicture,
-                    selectedId = selectedClipId,
-                    showBox = !frame.isPlaying,
-                    actions = overlayActions,
-                    onTouch = { engine.pause() },
-                    onEmptyTap = { if (!onPictureTap()) engine.togglePlay() },
-                    modifier = Modifier.fillMaxSize().zIndex(28f).inFrame(kept)
-                )
-            }
-
             // Above every layer: the crop rectangle and its handles are drawn over
             // a picture-in-picture, never under it.
             Box(modifier = Modifier.fillMaxSize().zIndex(30f)) {
                 pictureOverlay()
             }
+        }
+
+        // Over the captions, so a layer under a title can still be taken hold
+        // of, and over the whole preview rather than the kept frame: an overlay
+        // may hang off the frame - over a crop's bars, the letterbox - and the
+        // buttons drawn there were beyond reach, a tap on one letting go of the
+        // overlay instead. The caller leaves it out while the hand-drawn crop is
+        // being edited, which is modal.
+        if (overlayActions != null && !fullscreen && pictureSize != IntSize.Zero && areaSize != IntSize.Zero) {
+            // The box follows the edit, not the engine's last tick, so it stays
+            // under the finger; the picture catches up a tick later.
+            val onPicture = frame.overlays.mapNotNull { placement ->
+                val clip = videoClips.firstOrNull { it.id == placement.clipId } ?: return@mapNotNull null
+                OverlayOnPicture(clip.id, clip.layer, clip.transformAt(layerTime), clip.placementAt(layerTime), placement.aspect)
+            } + stills.map { clip ->
+                OverlayOnPicture(
+                    clip.id, clip.layer, clip.transformAt(layerTime), clip.placementAt(layerTime),
+                    clip.uri?.let { stillAspects[it.toString()] }
+                )
+            }
+            OverlayHandles(
+                overlays = onPicture,
+                selectedId = selectedClipId,
+                frame = keptOnArea(kept, pictureSize, areaSize),
+                showBox = !frame.isPlaying,
+                actions = overlayActions,
+                onTouch = { engine.pause() },
+                onEmptyTap = { if (!onPictureTap()) engine.togglePlay() },
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 
@@ -577,6 +586,22 @@ private object StillPictures {
 }
 
 /** Lays the content out over [frame] of the space it is given - a fraction of it, as the crop is. */
+/**
+ * The kept frame as a rectangle on the whole preview area: the canvas is
+ * [picture] big, centred in [area], and the frame is where [inFrame] lays the
+ * layers out inside it - rounded the same way, so the box sits on the layer to
+ * the pixel.
+ */
+private fun keptOnArea(frame: PreviewBox.Frame, picture: IntSize, area: IntSize): Rect {
+    val canvasLeft = (area.width - picture.width) / 2
+    val canvasTop = (area.height - picture.height) / 2
+    val left = canvasLeft + (frame.left * picture.width).roundToInt()
+    val top = canvasTop + (frame.top * picture.height).roundToInt()
+    val width = ((frame.right - frame.left) * picture.width).roundToInt().coerceIn(1, picture.width.coerceAtLeast(1))
+    val height = ((frame.bottom - frame.top) * picture.height).roundToInt().coerceIn(1, picture.height.coerceAtLeast(1))
+    return Rect(left.toFloat(), top.toFloat(), (left + width).toFloat(), (top + height).toFloat())
+}
+
 private fun Modifier.inFrame(frame: PreviewBox.Frame): Modifier = layout { measurable, constraints ->
     if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
         val placeable = measurable.measure(constraints)

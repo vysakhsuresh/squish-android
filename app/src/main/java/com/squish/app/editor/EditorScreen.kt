@@ -145,6 +145,8 @@ fun EditorScreen(
     var confirmStopExport by remember { mutableStateOf(false) }
     var confirmStartNew by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
+    // A photo overlay waiting on "make it a long clip?" before it goes to the main track.
+    var confirmLongStill by remember { mutableStateOf<String?>(null) }
     // A finger on the playhead, told to the preview so it can serve the drag from
     // sync samples and land exactly when the finger lifts.
     var timelineScrubbing by remember { mutableStateOf(false) }
@@ -275,7 +277,12 @@ fun EditorScreen(
             Tool.Duplicate -> viewModel.clips.duplicateSelected()
             Tool.Delete -> viewModel.clips.deleteSelectedClip()
             Tool.ToOverlay -> state.selectedClipId?.let(viewModel.layers::switchToOverlay)
-            Tool.ToMain -> state.selectedClipId?.let(viewModel.layers::switchToMain)
+            Tool.ToMain -> state.videoClips.firstOrNull { it.id == state.selectedClipId }?.let { clip ->
+                // A photo dragged out long is minutes of rendering on the main
+                // track; asked about rather than started with a spinner.
+                if (OverlayRules.needsLongRender(clip)) confirmLongStill = clip.id
+                else viewModel.layers.switchToMain(clip.id)
+            }
             else -> if (tool.sheet) openToolName = tool.name
         }
     }
@@ -305,6 +312,7 @@ fun EditorScreen(
                 timelineScrubbing = timelineScrubbing,
                 onFullscreen = { fullscreen = it },
                 onCloseSheet = { openToolName = null },
+                onOpenTool = { tool -> openToolName = tool.name },
                 modifier = modifier
             )
         }
@@ -367,6 +375,7 @@ fun EditorScreen(
                         onEffectTrim = viewModel.clips::trimEffect,
                         onAddVideo = addVideos,
                         onAddBlank = viewModel.clips::addBlankClip,
+                        onAddOverlay = addOverlay,
                         onOpenSound = { openToolName = Tool.Sound.name },
                         onOpenWords = { openToolName = Tool.Text.name },
                         onScrubbingChange = { timelineScrubbing = it },
@@ -560,6 +569,25 @@ fun EditorScreen(
         )
     }
 
+    confirmLongStill?.let { clipId ->
+        val minutes = state.videoClips.firstOrNull { it.id == clipId }?.durationMs?.let { (it + 59_999) / 60_000 } ?: 1
+        ConfirmDialog(
+            title = "Make this photo a $minutes-minute clip?",
+            body = "The main track plays video, so the photo is made into a clip as long as the overlay is. " +
+                "That takes a while at this length - keep the editor open until it lands.",
+            caution = "To keep it quick, shorten the overlay first.",
+            confirmLabel = "Make clip",
+            dismissLabel = "Not now",
+            icon = Icons.Filled.HistoryToggleOff,
+            accent = SquishColors.Amber,
+            onConfirm = {
+                viewModel.layers.switchToMain(clipId)
+                confirmLongStill = null
+            },
+            onDismiss = { confirmLongStill = null }
+        )
+    }
+
     if (renaming) {
         RenameDialog(
             current = state.projectName.orEmpty(),
@@ -610,6 +638,8 @@ private fun EditorPreview(
     onFullscreen: (Boolean) -> Unit,
     /** Closes whatever sheet is open. */
     onCloseSheet: () -> Unit,
+    /** Opens a tool's sheet. */
+    onOpenTool: (Tool) -> Unit,
     modifier: Modifier
 ) {
     Box(
@@ -628,7 +658,8 @@ private fun EditorPreview(
         // overlay is keyed at the playhead; each gesture ends its step.
         val latestOpenTool by rememberUpdatedState(openTool)
         val latestCloseSheet by rememberUpdatedState(onCloseSheet)
-        val overlayActions = remember(viewModel) {
+        val latestOpenToolSheet by rememberUpdatedState(onOpenTool)
+        val boxActions = remember(viewModel) {
             OverlayHandleActions(
                 // As a tap on the strip: a layer picked while an add-things sheet
                 // is up is a new job, and the sheet makes way for its tools.
@@ -648,14 +679,19 @@ private fun EditorPreview(
                     viewModel.clips.deleteSelectedClip()
                 },
                 onDuplicate = viewModel.layers::duplicateInPlace,
-                onReset = viewModel.clips::resetPlacement
+                onEdit = { id ->
+                    viewModel.selectClip(id)
+                    latestOpenToolSheet(Tool.Placement)
+                }
             )
         }
-        // The hand-drawn crop takes every touch on the picture while it is up,
-        // so with an overlay selected it waits for the Frame sheet, where it is
-        // the thing being worked on; otherwise the overlay's box could not be
-        // taken hold of anywhere under it.
-        val overlaySelected = state.selectionKind.let { it == SelectionKind.Overlay || it == SelectionKind.PhotoOverlay }
+        // The hand-drawn crop is only taken hold of on the Frame sheet, where it
+        // is the thing being worked on, and there it is modal: the overlay box
+        // stands aside. Anywhere else it is drawn and left alone - it took every
+        // touch on the picture whenever no overlay was selected, so an overlay
+        // could not be tapped on the picture to select it.
+        val editingCrop = state.cropAspect == CropAspect.Custom && openTool == Tool.Frame
+        val overlayActions = boxActions.takeIf { !editingCrop }
         TimelinePreview(
             videoClips = state.videoClips,
             audioClips = state.audioClips,
@@ -710,9 +746,9 @@ private fun EditorPreview(
                 // which is for watching.
                 when {
                     fullscreen -> Unit
-                    state.cropAspect == CropAspect.Custom && overlaySelected && openTool != Tool.Frame -> Unit
                     state.cropAspect == CropAspect.Custom -> CustomCropOverlay(
                         rect = state.cropRect,
+                        editable = editingCrop,
                         // Live while dragging, recorded once at the end:
                         // the view model coalesces, so a gesture is one
                         // undo step rather than one per frame of movement.
