@@ -755,7 +755,64 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
 
     private fun applyTrim(clipId: String, startDeltaMs: Long, endDeltaMs: Long) {
         if (_state.value.textOverlays.any { it.id == clipId }) resizeOverlay(clipId, startDeltaMs, endDeltaMs)
-        else mutateTimeline { it.withClipTrimmed(clipId, startDeltaMs, endDeltaMs) }
+        else {
+            // A photo's tail is not held at its rendering's end: the file is
+            // rendered again, longer, when the finger lifts (trimEnded), and
+            // the export writes the picture itself for the clip's whole run.
+            val clip = _state.value.videoClips.firstOrNull { it.id == clipId }
+            val ceiling = if (clip != null && clip.isMain && hasPicture(clip.uri)) StillRules.MAX_MS else null
+            mutateTimeline { it.withClipTrimmed(clipId, startDeltaMs, endDeltaMs, maxOutMs = ceiling) }
+        }
+    }
+
+    /**
+     * Whether a main-track still has the picture it was made from kept beside
+     * it (StillClips.originalImage). Asked once per file: the answer is a
+     * look at the disk, and a trim asks on every touch event.
+     */
+    private val pictures = HashMap<Uri, Boolean>()
+
+    private fun hasPicture(uri: Uri?): Boolean {
+        if (uri == null) return false
+        return pictures.getOrPut(uri) { StillClips.originalImage(uri) != null }
+    }
+
+    /** The clips whose longer renderings are under way, so a second lift of the finger does not start a second. */
+    private val extending = HashSet<String>()
+
+    /**
+     * The finger lifted off a trim handle. A photo dragged out past its
+     * rendering (StillRules.outrunning) is rendered again to cover its new
+     * length and the longer clip swapped in - the same file the export would
+     * have written anyway, now under the preview too. Until it lands the
+     * preview holds the picture's last frame past the file's end, which for a
+     * picture is the picture. Not an undo step: the swap changes nothing about
+     * the edit, only which file plays it.
+     */
+    fun trimEnded() {
+        for (clip in StillRules.outrunning(_state.value.videoClips)) {
+            val uri = clip.uri ?: continue
+            if (!hasPicture(uri) || !extending.add(clip.id)) continue
+            viewModelScope.launch {
+                try {
+                    val wanted = StillRules.renderLengthFor(clip.sourceOutMs, StillClips.RENDER_MS)
+                    val longer = StillClips.extended(app, uri, wanted) ?: return@launch
+                    val fileMs = ThumbnailExtractor.probe(app, longer).durationMs
+                    if (fileMs <= 0L) return@launch
+                    _state.update { current ->
+                        current.copy(
+                            videoClips = current.videoClips.map { now ->
+                                // As it is now, not as it was: it may have been
+                                // trimmed again, or replaced, while the render ran.
+                                if (now.id == clip.id && now.uri == uri) now.copy(uri = longer, sourceDurationMs = fileMs) else now
+                            }
+                        )
+                    }
+                } finally {
+                    extending.remove(clip.id)
+                }
+            }
+        }
     }
 
     /**

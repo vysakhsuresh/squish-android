@@ -54,7 +54,6 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import com.squish.app.home.countOf
 import com.squish.app.home.formatSize
-import com.squish.app.media.ExportPlan
 import com.squish.app.media.ExportQuality
 import com.squish.app.media.ExportSettings
 import com.squish.app.media.ExportStage
@@ -154,11 +153,18 @@ fun ExportSheet(
         ) {
             // Capped short of the top, so the header behind it can still be seen
             // to be there; what does not fit scrolls, and the button stays put.
+            // While the settings show, the sheet is that height whatever is on
+            // it: it is anchored to the bottom, so a row growing - a hint going
+            // to two lines, the Fit chips appearing - pushed every row above it
+            // up under the finger, and a second tap landed a row off. The
+            // progress and overshoot cards, with nothing to tap twice, fit
+            // themselves.
             val cap = LocalConfiguration.current.screenHeightDp.dp * 0.88f
+            val settings = !state.isExporting && state.fitOvershoot == null
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = cap)
+                    .then(if (settings) Modifier.height(cap) else Modifier.heightIn(max = cap))
                     .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
                     .background(SquishColors.Surface)
                     .padding(20.dp),
@@ -210,30 +216,34 @@ fun ExportSheet(
                 )
 
                 Column(
-                    modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                    modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    if (!state.audioOnly) PictureRows(state, viewModel)
+                    if (!state.audioOnly) {
+                        PictureRows(state, viewModel)
 
-                    SwitchRow(
-                        title = "Fit to a size",
-                        subtitle = "For a strict upload limit. The size and the bitrate are chosen to land under it.",
-                        checked = state.fitToSize,
-                        onCheckedChange = viewModel::setFitToSize
-                    )
-                    if (state.fitToSize) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            listOf(16, 25, 50, 100).forEach { mb ->
-                                SelectableChip(
-                                    label = "$mb MB",
-                                    selected = state.targetSizeMb == mb,
-                                    accentColor = SquishColors.Cyan,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { viewModel.setTargetSizeMb(mb) }
-                                )
+                        // With the picture: a fit changes nothing about an
+                        // .m4a, whose sound is at one fixed rate.
+                        SwitchRow(
+                            title = "Fit to a size",
+                            subtitle = "For a strict upload limit. The size and the bitrate are chosen to land under it.",
+                            checked = state.fitToSize,
+                            onCheckedChange = viewModel::setFitToSize
+                        )
+                        if (state.fitToSize) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                listOf(16, 25, 50, 100).forEach { mb ->
+                                    SelectableChip(
+                                        label = "$mb MB",
+                                        selected = state.targetSizeMb == mb,
+                                        accentColor = SquishColors.Cyan,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { viewModel.setTargetSizeMb(mb) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -324,7 +334,8 @@ private fun PictureRows(state: EditorUiState, viewModel: EditorViewModel) {
         hint = when {
             ExportSettings.exceedsSource(state.outputFps, sourceFps) ->
                 "The footage runs at ${"%.0f".format(sourceFps)} fps. A higher rate can't add frames; the file keeps the ones it has."
-            state.outputFps == ExportSettings.SOURCE_FPS && sourceFps > 1f -> "Auto keeps the footage's ${"%.0f".format(sourceFps)} fps."
+            state.outputFps == ExportSettings.SOURCE_FPS ->
+                if (sourceFps > 1f) "Auto keeps the footage's ${"%.0f".format(sourceFps)} fps." else "Auto keeps the footage's own rate."
             else -> "Frames are dropped to reach it. 24 or 25 for a film look; 30 for a smaller file."
         },
         options = listOf("Auto" to ExportSettings.SOURCE_FPS) + ExportSettings.FPS_CHOICES.map { "$it" to it },
@@ -338,7 +349,7 @@ private fun PictureRows(state: EditorUiState, viewModel: EditorViewModel) {
             label = "Quality",
             hint = when (state.quality) {
                 ExportQuality.Lower -> "About the bits a phone spends on a message-sized copy: smaller, a little softer."
-                ExportQuality.Recommended -> "The same bits per pixel the footage was shot at."
+                ExportQuality.Recommended -> "Recommended: the same bits per pixel the footage was shot at."
                 ExportQuality.Higher -> "More bits than the footage was shot at: no softer, and a bigger file."
             },
             options = ExportQuality.entries.map { it.label to it },
@@ -351,11 +362,18 @@ private fun PictureRows(state: EditorUiState, viewModel: EditorViewModel) {
     // Offered only where the phone has the encoder; asked of one that does
     // not, Media3 stops at the start of the render.
     if (state.hevcAvailable == true) {
-        val forHdr = state.keepHdr && state.hasHdrSource
+        // Locked on only when the render will in fact keep HDR - not on a
+        // layered edit, where the switch below says it is converted.
+        val forHdr = state.effectiveKeepHdr
         SwitchRow(
-            title = "Smaller file (HEVC)",
-            subtitle = if (forHdr) "Needed to keep HDR."
-            else "About a third smaller at the same quality. Plays on phones from 2015 on; some older computers need a codec.",
+            title = if (state.fitToSize) "Sharper file (HEVC)" else "Smaller file (HEVC)",
+            subtitle = when {
+                forHdr -> "Needed to keep HDR."
+                // In fit mode the bits are the budget, so HEVC cannot make the
+                // file smaller; it spends the same bits better.
+                state.fitToSize -> "The same size, with a better picture in it. Plays on phones from 2015 on; some older computers need a codec."
+                else -> "About a third smaller at the same quality. Plays on phones from 2015 on; some older computers need a codec."
+            },
             checked = state.exportCodecHevc,
             enabled = !forHdr,
             onCheckedChange = viewModel::setHevc
@@ -366,7 +384,7 @@ private fun PictureRows(state: EditorUiState, viewModel: EditorViewModel) {
         // A layered export is always written in ordinary colour: its first
         // input is the clock still, which sets the file's colour
         // (CompositionFactory). The switch says so rather than promising.
-        val layered = ExportPlan.needsCompositing(state.videoClips, state.trimmedDurationMs)
+        val layered = state.isLayered
         SwitchRow(
             title = "Keep HDR",
             subtitle = when {
@@ -406,7 +424,9 @@ private fun <T> ChoiceRow(
             }
         }
         if (hint != null) {
-            Text(hint, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
+            // Two lines' room whatever the hint says, so a chip tapped does not
+            // move the row when its hint changes length.
+            Text(hint, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted, minLines = 2)
         }
     }
 }
@@ -427,7 +447,9 @@ private fun SwitchRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
+            // Two lines' room, as a chip row's hint has: a switch whose words
+            // change with it does not move the rows above.
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted, minLines = 2)
         }
         SquishToggleSwitch(
             checked = checked,

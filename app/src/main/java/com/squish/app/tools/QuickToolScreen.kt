@@ -1,6 +1,9 @@
 package com.squish.app.tools
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -45,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
@@ -96,6 +100,21 @@ fun QuickToolScreen(
     val state by viewModel.state.collectAsState()
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var confirmStopExport by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val render = {
+        errorMessage = null
+        viewModel.export(tool, onResult = onExported, onError = { errorMessage = it })
+    }
+    // The progress notification wants asking for from Android 13 on, here as
+    // in the editor: a Squeeze was the first export for most people, and it
+    // never asked, so the card's promise of a notification was never kept.
+    // Refused, the export runs the same with none.
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { render() }
+    val startRender = {
+        val wanted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (wanted) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) else render()
+    }
 
     // Leaving flushes the session first. And mid-export, leaving is a question:
     // the back gesture used to pop the screen, clear the view model and cancel
@@ -125,7 +144,6 @@ fun QuickToolScreen(
     // handle being dragged. Seeing the cut is the entire point of the preview.
     var seekNonce by remember { mutableStateOf(0L) }
     var seekTarget by remember { mutableStateOf(0L) }
-    val context = LocalContext.current
 
     val pickVideo = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let { context.keepReadAccess(it); viewModel.load(it) }
@@ -261,10 +279,7 @@ fun QuickToolScreen(
                             text = tool.actionLabel,
                             enabled = !state.isLoading,
                             modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                errorMessage = null
-                                viewModel.export(tool, onResult = onExported, onError = { errorMessage = it })
-                            }
+                            onClick = startRender
                         )
                     }
                 }

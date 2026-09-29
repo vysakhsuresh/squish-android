@@ -326,12 +326,15 @@ class VideoProcessor(private val context: Context) {
      * when there is none (VideoEncoderWrapper, read in the 1.11.1 bytecode),
      * so the choice can never fail a render. A layered export is converted
      * whatever is chosen: its first input is the clock still, which sets the
-     * file's colour (CompositionFactory). A plain cut is left alone: the
-     * stream is copied, colour and all, and converting it would mean
-     * re-encoding a file that was only ever meant to be cut.
+     * file's colour (CompositionFactory) - so it is not asked to keep
+     * (EditorUiState.effectiveKeepHdr, the one answer the sheet reads too).
+     * A plain cut is left alone: the stream is copied, colour and all, and
+     * converting it would mean re-encoding a file that was only ever meant
+     * to be cut. That is Snip's path alone - the editor always has clips -
+     * and Snip offers no colour choice to contradict.
      */
     private fun hdrMode(state: EditorUiState): Int =
-        if (state.keepHdr || isPlainTrim(state)) Composition.HDR_MODE_KEEP_HDR
+        if (state.effectiveKeepHdr || isPlainTrim(state)) Composition.HDR_MODE_KEEP_HDR
         else Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL
 
     /**

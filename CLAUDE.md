@@ -457,8 +457,43 @@ should work through it and then delete what holds up.
   (SharedPreferences "export_defaults", size capped at the footage's) while a
   reopened draft keeps its own; the codec-mute line reads on the sheet for a
   DTS source. Not built, by choice: a Stop action on the notification (it
-  cannot ask first), and the strip's own limit on a photo's length, which is
-  still the rendered still's ten seconds.
+  cannot ask first).
+  From its review round (built, the arithmetic in `ExportSettingsChecks.kt`
+  and `StillRulesChecks.kt`, nothing seen): on Android 15 the service asks
+  the framework for the media-processing type directly - androidx.core
+  1.13.1's `ServiceCompat` masks that type to NONE, which a targetSdk 35 app
+  is refused, so through it the export ran with no notification at all -
+  check `SquishExport: could not go foreground` never logs on the S23 and the
+  notification stands with the screen locked; the codec probe starts on
+  opening the clip and Render waits for it, so a draft's HEVC or Keep HDR is
+  written as HEVC even when tapped at once; HEVC and Keep HDR read one
+  answer (`effectiveKeepHdr`): on a layered HLG edit both say converted and
+  HEVC can be turned off, and the render tone-maps; a photo on the main track
+  drags out to ten minutes (`StillRules.MAX_MS`) - lifting the finger past
+  the rendering's end renders the still again in half-minute steps
+  (`StillClips.extended`, the picture copied beside it) and swaps the file in;
+  until it lands, and this is the thing to watch, the preview plays the
+  ten-second file to its end and holds its last frame while the clock runs
+  on at wall time (`PreviewEngine.tick` drives the clock from a READY,
+  playing player only, and `watchStalls` counts BUFFERING and a frozen READY,
+  not ENDED) - play across a photo dragged to 40 s straight after the drag,
+  and scrub into its second half, and neither may stick; the export writes
+  the picture for the clip's whole run either way; with Keep HDR on a
+  cuts-only HLG edit that has a photo on the main track, the JPEG goes into
+  an HLG graph as an SDR bitmap - a combination Media3's bitmap input may
+  refuse (`VideoFrameProcessingException` at the first photo frame) where
+  the old SDR clip did not, so check it, with Keep HDR off as the fallback
+  that must work; a fitted run that misses is chased at a bitrate the size is
+  solved from too, so a second run can step down a size rather than starve
+  (`fitOutputPForBitrate`), and the tightened scale lives for that one run;
+  back on the "Keep this one / Try again, tighter" card keeps the file and
+  lands on the done screen; "Back to editor" from the done screen lands on
+  the bare editor; 30 chosen on 60 fps footage at Original size halves the
+  estimate and the file (`bitrateForFrame` takes the source rate); Fit to a
+  size is not remembered as a default (its MB is); the sheet holds one height
+  while its rows show, so a chip tapped stays under the finger when its hint
+  grows; a Squeeze asks for notifications too, and the card promises one only
+  when it may post; the Quality chips read Lower · Standard · Higher.
 
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry

@@ -412,7 +412,9 @@ All on the moto g84 (`adb -s ZY32J8HF2S`), `adb logcat -G 16M` first, build with
 2. Lock the screen during a 3-minute 4K export: notification shows progress; file completes.
 3. Export at 30 fps from a 60 fps source; HEVC toggle: file is HEVC and smaller; 4K greyed on a device whose encoder caps at 1080p (S23 for HDR test).
 4. HLG source: default export is SDR with correct colours; Keep HDR exports HDR.
-5. Fit to 16 MB: file under 16 MB and 720p; export screen plays the result; Back returns to the editor; settings remembered on the next project.
+5. Fit to 16 MB: file under 16 MB and 720p; export screen plays the result; Back returns to the editor; settings remembered on the next project. Back on the "over the limit" card keeps the file and lands on the done screen; "Back to editor" lands on the bare editor, no sheet.
+6. Android 15 (S23): lock the screen during a 4K export - the notification must appear (logcat: no `could not go foreground`) and stay full during Saving. Two HLG clips with a Dissolve: HEVC can be turned off, Keep HDR reads converted, the file is SDR.
+7. Drag a main-track photo's tail to 40 s: it goes; play across it straight away and scrub into its second half (the ten-second file is held on its last frame until the longer one lands); export it and the photo runs 40 s sharp. With Keep HDR on an HLG edit that has a photo, the export must complete or fail cleanly; with it off it must complete.
 
 **B15**
 1. Home shows the project grid; New project with 3 videos + 2 photos: editor opens with all five butted; rename and duplicate a project; two projects from the same clip coexist.

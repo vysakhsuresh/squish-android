@@ -331,6 +331,7 @@ class EditorViewModel(
                     fps = meta.fps,
                     trimStartMs = 0L,
                     trimEndMs = meta.durationMs,
+                    sourceName = name,
                     isLoadingSource = false,
                     // Fitted the moment the clip is known. At the default zoom a
                     // ten-minute video is twenty-five thousand dp of strip, so it
@@ -354,6 +355,10 @@ class EditorViewModel(
                 ).let { fresh -> Preferences.exportDefaults(getApplication())?.let { fresh.withExportDefaults(it) } ?: fresh }
             }
             recomputeEstimate()
+            // Whether this phone writes HEVC is asked now, not when the sheet
+            // first opens: a remembered "Smaller file" rendered before the codec
+            // list had come back was written in H.264 without a word said.
+            probeCodecs()
             baseline = autosave.editKey(_state.value)
             // Every real video has a length. None means the file could not be read
             // - gone, or handed over without permission - and an empty editor with
@@ -837,8 +842,21 @@ class EditorViewModel(
 
     fun clearFailure() = _state.update { it.copy(failure = null) }
 
-    fun export(onResult: (String) -> Unit) {
-        val current = _state.value
+    fun export(onResult: (String) -> Unit) = export(onResult, tightened = false)
+
+    /**
+     * [tightened] is the second run after a fitted export missed its limit
+     * (see [retryFit]): the one run that keeps the pulled-down fit scale.
+     * Every other render starts from the plain budget - the scale used to
+     * outlive the run it was measured on, so an edit cut down to a quarter of
+     * its length was still rendered a fifth under what it was allowed.
+     */
+    private fun export(onResult: (String) -> Unit, tightened: Boolean) {
+        if (!tightened && _state.value.fitScale != 1f) {
+            _state.update { it.copy(fitScale = 1f) }
+            recomputeEstimate()
+        }
+        var current = _state.value
         val sourceUri = current.sourceUri ?: run {
             _state.update { it.copy(failure = SquishError.FileUnreadable()) }
             return
@@ -859,7 +877,7 @@ class EditorViewModel(
         // handed over: with the screen locked, or the app behind a call, a
         // process with nothing in front is one Android may kill mid-encode,
         // and the notification is the one place the progress can be seen then.
-        val title = current.projectName ?: displayNameOf(sourceUri) ?: "your video"
+        val title = current.projectName ?: current.sourceName ?: "your video"
         ExportService.begin(getApplication(), title)
 
         exportJob = viewModelScope.launch {
@@ -868,6 +886,17 @@ class EditorViewModel(
             // sent to the back and killed, and a nudge made a second before
             // Render is the edit the file was made from.
             withContext(Dispatchers.IO) { persist() }
+
+            // The codec is settled before anything is built on it. The probe
+            // starts on opening the clip, but Render tapped before it answers
+            // - a slow first enumeration of the codec list - used to write a
+            // draft's "Smaller file" or "Keep HDR" as H.264 at H.264's rate.
+            if (current.hevcAvailable == null) {
+                val hevc = withContext(Dispatchers.IO) { EncoderCeiling.hasEncoder(EncoderCeiling.mimeFor(hevc = true)) }
+                _state.update { it.copy(hevcAvailable = hevc) }
+                current = current.copy(hevcAvailable = hevc)
+                recomputeEstimate()
+            }
 
             // Every sound opened and asked about before a frame is encoded: one no
             // decoder takes used to fail minutes in, as a generic sound error.
@@ -917,7 +946,7 @@ class EditorViewModel(
                     historyRepository.add(
                         ExportRecord(
                             id = UUID.randomUUID().toString(),
-                            title = current.projectName ?: displayNameOf(sourceUri) ?: "Squished video",
+                            title = current.projectName ?: current.sourceName ?: "Squished video",
                             outputPath = file.absolutePath,
                             originalSizeBytes = current.originalSizeBytes,
                             outputSizeBytes = file.length(),
@@ -993,7 +1022,7 @@ class EditorViewModel(
     /** Runs the fitted export again at the tightened budget (see [FitOvershoot]); the oversize file stays in the library. */
     fun retryFit(onResult: (String) -> Unit) {
         _state.update { it.copy(fitOvershoot = null) }
-        export(onResult)
+        export(onResult, tightened = true)
     }
 
     /**

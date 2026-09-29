@@ -203,6 +203,8 @@ fun TimelineEditor(
     onScrub: (Long) -> Unit,
     onTransitionTap: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** The finger lifted off a trim handle, however the drag ended. */
+    onTrimEnd: () -> Unit = {},
     /** Marks to snap to, drawn as lines across the rows: anything dropped by hand, and beats snapped to. */
     markers: List<Long> = emptyList(),
     /** Which of those start a bar, drawn taller so the phrasing is readable. */
@@ -617,6 +619,7 @@ fun TimelineEditor(
 
     val latestTrimEdge by rememberUpdatedState(onTrimEdge)
     val latestTrimHeadIn by rememberUpdatedState(onTrimHeadIn)
+    val latestTrimEnd by rememberUpdatedState(onTrimEnd)
     val latestEffectTrimEdge by rememberUpdatedState(onEffectTrimEdge)
     val trims = remember {
         Trims(
@@ -660,6 +663,7 @@ fun TimelineEditor(
                 trimming = null
                 trimSnapMs = null
                 frozenRows = null
+                latestTrimEnd()
             }
         )
     }

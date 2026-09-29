@@ -90,6 +90,33 @@ object StillClips {
     }
 
     /**
+     * The same still rendered again, [lengthMs] long, from the picture kept
+     * beside it - so a tail dragged past the rendering's end (StillRules) has
+     * a file under it in the preview. The picture is copied beside the new
+     * clip, as [fromImage] keeps it, so the new clip exports as the picture
+     * too. The old clip is left where it was: a draft, or an undo step, may
+     * still name it. Null when the picture was not kept or the render failed;
+     * the clip then stays as it is.
+     */
+    suspend fun extended(context: Context, still: Uri, lengthMs: Long): Uri? {
+        val picture = originalImage(still) ?: return null
+        val name = uniqueName("photo")
+        val clip = render(context, picture, name, lengthMs) ?: return null
+        val kept = withContext(Dispatchers.IO) {
+            runCatching {
+                File(picture.path!!).copyTo(File(dir(context), name + ORIGINAL_SUFFIX), overwrite = true)
+            }.isSuccess
+        }
+        // Without its picture the longer clip would export as 1080p frames
+        // where the shorter one exported as the picture: worse, not longer.
+        if (!kept) {
+            withContext(Dispatchers.IO) { runCatching { File(clip.path!!).delete() } }
+            return null
+        }
+        return clip
+    }
+
+    /**
      * Writes the picture as the export will read it: upright, no bigger than
      * the biggest export, as a JPEG at a quality nothing shows.
      *

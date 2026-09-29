@@ -78,9 +78,9 @@ class ExportService : Service() {
         // it exists (Android 15), data sync before it. Wrapped because a start
         // refused - the app already in the background by the time this ran -
         // is an export without a notification, not a crashed one.
-        val inFront = runCatching {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(progress.value), foregroundType())
-        }.onFailure { android.util.Log.w("SquishExport", "could not go foreground", it) }.isSuccess
+        val inFront = runCatching { goForeground(notification(progress.value)) }
+            .onFailure { android.util.Log.w("SquishExport", "could not go foreground", it) }
+            .isSuccess
         if (!inFront) {
             stopSelf()
             return START_NOT_STICKY
@@ -106,9 +106,21 @@ class ExportService : Service() {
         super.onDestroy()
     }
 
-    private fun foregroundType(): Int = when {
-        Build.VERSION.SDK_INT >= 35 -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
-        else -> ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+    /**
+     * Android 15's media-processing type is asked for from the framework
+     * directly. ServiceCompat in androidx.core 1.13.1 masks the type against
+     * the set it knows (FOREGROUND_SERVICE_TYPE_ALLOWED_SINCE_U), which
+     * predates media processing, so through it the framework was handed type
+     * NONE - refused on a targetSdk 35 app - and every export on Android 15
+     * ran with no notification at all, exactly what the service exists to
+     * prevent. Below 15, data sync is a type the compat layer knows.
+     */
+    private fun goForeground(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= 35) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
+        } else {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        }
     }
 
     private fun notification(progress: ExportProgress): Notification {
@@ -133,7 +145,10 @@ class ExportService : Service() {
             .setSmallIcon(R.drawable.ic_export_notification)
             .setContentTitle("Exporting $title")
             .setContentText(text)
-            .setProgress(100, percent ?: 0, percent == null && !saving)
+            // Full while the file is copied into the gallery, as the card's bar
+            // is: the encode is done, and a bar back at nothing under "Saving"
+            // read as an export that had started over.
+            .setProgress(100, if (saving) 100 else percent ?: 0, percent == null && !saving)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)

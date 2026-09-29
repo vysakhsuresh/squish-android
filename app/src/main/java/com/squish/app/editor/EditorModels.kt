@@ -2,6 +2,7 @@ package com.squish.app.editor
 
 import android.net.Uri
 import com.squish.app.data.ProjectSnapshot
+import com.squish.app.media.ExportPlan
 import com.squish.app.media.ExportPresets
 import com.squish.app.media.ExportProgress
 import com.squish.app.media.ExportQuality
@@ -485,6 +486,12 @@ data class EditorUiState(
      * saved with the draft, so a rename alone is enough to keep one.
      */
     val projectName: String? = null,
+    /**
+     * The file's own name, read once when it is opened. Read again on Render,
+     * a document provider's round trip stalled the one button that has to
+     * feel immediate; the export's title and its record take this instead.
+     */
+    val sourceName: String? = null,
     val isLoadingSource: Boolean = true,
     val durationMs: Long = 0,
     val sourceWidth: Int = 0,
@@ -938,8 +945,18 @@ data class EditorUiState(
      * than left at the frame's own; see ExportPresets.fitOutputP.
      */
     val fittedOutputP: Int
-        get() = croppedFrame.let {
-            ExportPresets.fitOutputP(targetSizeMb * 1_000_000L, trimmedDurationMs, exportFps, it.width, it.height, hasAnyAudio)
+        get() = croppedFrame.let { ExportPresets.fitOutputPForBitrate(fitVideoBitrate, exportFps, it.width, it.height) }
+
+    /**
+     * The video bitrate of a fitted export: the target's budget, pulled down
+     * after a run that missed its limit (see [FitOvershoot]; 1 until one
+     * does). The size is solved from this same number, so a run aimed lower
+     * steps down to a smaller frame rather than starving the one it had.
+     */
+    private val fitVideoBitrate: Int
+        get() {
+            val budget = ExportPresets.bitrateForTargetSize(targetSizeMb * 1_000_000L, trimmedDurationMs, hasAnyAudio)
+            return (budget * fitScale).toInt().coerceAtLeast(ExportPresets.MIN_VIDEO_BPS)
         }
 
     /** The rate the file is written at: the choice on the sheet, or the footage's own. */
@@ -954,13 +971,33 @@ data class EditorUiState(
             .any { MediaCompat.cached(it)?.hdr == true }
 
     /**
+     * Whether the picture goes through the compositor: transitions, overlays
+     * or gaps. Such a file is written in ordinary colour whatever is chosen -
+     * its first input is the clock still, which sets the file's colour
+     * (CompositionFactory) - so the HDR switch and the codec it drags in read
+     * this rather than promising.
+     */
+    val isLayered: Boolean
+        get() = ExportPlan.needsCompositing(videoClips, trimmedDurationMs)
+
+    /**
+     * Whether the file keeps its HDR: asked for, on an HDR source, and not
+     * layered. One answer for the switch, the codec and the render: the switch
+     * used to show itself off on a layered edit while the codec row above it
+     * stayed locked to HEVC "to keep HDR" and the render asked Media3 to keep
+     * it anyway.
+     */
+    val effectiveKeepHdr: Boolean
+        get() = keepHdr && hasHdrSource && !isLayered
+
+    /**
      * Whether the file is written in HEVC: asked for as the smaller file, or
      * needed to keep HDR, and only where this phone has the encoder. Media3
      * would refuse a codec the phone has no encoder for at the start of the
      * render, so the choice is made here, where the sheet can read it too.
      */
     val exportCodecHevc: Boolean
-        get() = hevcAvailable == true && (hevc || (keepHdr && hasHdrSource))
+        get() = hevcAvailable == true && (hevc || effectiveKeepHdr)
 
     /**
      * The frame the file actually comes out at: [outputResolution] unless the
@@ -978,13 +1015,13 @@ data class EditorUiState(
      */
     val exportVideoBitrate: Int
         get() = if (fitToSize) {
-            // Pulled down after a run that missed its limit; 1 until one does.
-            val budget = ExportPresets.bitrateForTargetSize(targetSizeMb * 1_000_000L, trimmedDurationMs, hasAnyAudio)
-            (budget * fitScale).toInt().coerceAtLeast(ExportPresets.MIN_VIDEO_BPS)
+            fitVideoBitrate
         } else {
             val sourceBps = sourceVideoBps.takeIf { it > 0 }
                 ?: ExportPresets.sourceVideoBitrate(originalSizeBytes, durationMs, sourceHasAudio)
-            val recommended = ExportPresets.bitrateForFrame(writtenResolution, sourceWidth, sourceHeight, exportFps, sourceBps)
+            val recommended = ExportPresets.bitrateForFrame(
+                writtenResolution, sourceWidth, sourceHeight, exportFps, sourceBps, sourceFps = fps
+            )
             ExportSettings.scaledBitrate(recommended, quality, exportCodecHevc)
         }
 

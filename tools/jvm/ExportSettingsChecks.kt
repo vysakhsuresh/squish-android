@@ -92,6 +92,31 @@ fun main() {
             sizeRank(ExportPresets.fitOutputP(25 * MB, 60_000L, 30f, 3840, 2160, true))
     )
 
+    // ---- A chosen rate is paid for -----------------------------------------------
+    // 30 chosen on 60 fps footage at Original size: half the frames, about half
+    // the bits. It used to keep the source's whole bitrate at its own size.
+    val at60 = ExportPresets.bitrateForFrame(ExportPresets.Resolution(1920, 1080), 1920, 1080, 60f, 20_000_000L, sourceFps = 60f)
+    val at30 = ExportPresets.bitrateForFrame(ExportPresets.Resolution(1920, 1080), 1920, 1080, 30f, 20_000_000L, sourceFps = 60f)
+    check("Original at the source's rate is the source's bitrate", at60 == 20_000_000)
+    check("30 on 60 fps footage at Original is half the bits ($at30)", at30 == 10_000_000)
+    check("60 asked of 30 fps footage adds nothing", ExportPresets.bitrateForFrame(ExportPresets.Resolution(1920, 1080), 1920, 1080, 60f, 20_000_000L, sourceFps = 30f) == 20_000_000)
+    check("an unknown source rate is left alone", ExportPresets.bitrateForFrame(ExportPresets.Resolution(1920, 1080), 1920, 1080, 30f, 20_000_000L, sourceFps = 0f) == 20_000_000)
+    val down60 = ExportPresets.bitrateForFrame(ExportPresets.Resolution(1280, 720), 1920, 1080, 60f, 20_000_000L, sourceFps = 60f)
+    val down30 = ExportPresets.bitrateForFrame(ExportPresets.Resolution(1280, 720), 1920, 1080, 30f, 20_000_000L, sourceFps = 60f)
+    check("a smaller size at fewer frames is fewer bits still ($down30 < $down60)", down30 < down60)
+    check("the old callers, with no source rate, are unchanged", ExportPresets.bitrateForFrame(ExportPresets.Resolution(1920, 1080), 1920, 1080, 30f, 20_000_000L) == 20_000_000)
+
+    // ---- The fit steps down when the budget is pulled down -----------------------
+    // The rate a missed run is chased at is what the size is solved from: the
+    // next run at a fifth of the budget lands on a smaller frame, not on the
+    // same frame starved.
+    val budget = ExportPresets.bitrateForTargetSize(16 * MB, 60_000L, includeAudio = true)
+    val plain = ExportPresets.fitOutputPForBitrate(budget, 30f, 3840, 2160)
+    val chased = ExportPresets.fitOutputPForBitrate((budget * 0.2f).toInt(), 30f, 3840, 2160)
+    check("the plain budget solves as fitOutputP does", plain == ExportPresets.fitOutputP(16 * MB, 60_000L, 30f, 3840, 2160, true))
+    check("a fifth of the budget lands smaller ($chased < $plain)", sizeRank(chased) < sizeRank(plain))
+    check("...on a named size", chased in OutputSize.PRESETS)
+
     // ---- Verifying the file afterwards -------------------------------------------
     check("under the target is not a miss", !ExportSettings.overshoots(15_900_000L, 16 * MB))
     check("within two per cent is not a miss", !ExportSettings.overshoots(16_200_000L, 16 * MB))

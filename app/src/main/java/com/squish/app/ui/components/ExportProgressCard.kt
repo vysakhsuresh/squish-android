@@ -1,5 +1,8 @@
 package com.squish.app.ui.components
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -22,7 +25,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.squish.app.media.ExportProgress
 import com.squish.app.media.ExportStage
 import com.squish.app.ui.theme.SquishColors
@@ -50,6 +55,12 @@ fun ExportProgressCard(
     cover: ImageBitmap? = null,
     onCancel: (() -> Unit)? = null
 ) {
+    // Promised only where it will be kept: from Android 13 the notification
+    // needs a permission, and refused, the card used to send people to a
+    // shade with nothing in it.
+    val context = LocalContext.current
+    val notifies = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     // Saving has no percentage of its own: the render is done, and what is left
     // is a copy into the gallery that Android does not report on. The bar stays
     // full rather than sweeping back as if the work had started again.
@@ -126,7 +137,7 @@ fun ExportProgressCard(
                 "The video is finished. Copying it into your gallery - a big file takes a few seconds."
             } else {
                 "Nothing is uploaded - the encoding is happening on this phone. It carries on with the " +
-                    "screen locked; the notification shows how far it has got."
+                    "screen locked" + if (notifies) "; the notification shows how far it has got." else "."
             },
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextSecondary

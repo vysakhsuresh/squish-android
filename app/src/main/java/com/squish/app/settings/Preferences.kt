@@ -7,9 +7,15 @@ import com.squish.app.media.ExportSettings
 
 /**
  * What the last export was set to: size, frame rate, quality, codec, HDR and
- * the size limit. A new project starts from these, the way CapCut's does;
- * every edit used to open at Original, so a 4K60 clip re-encoded at 4K60
- * until the sheet was changed by hand, on every project.
+ * the last size limit chosen. A new project starts from these, the way
+ * CapCut's does; every edit used to open at Original, so a 4K60 clip
+ * re-encoded at 4K60 until the sheet was changed by hand, on every project.
+ *
+ * Fit to a size itself is not remembered, any more than Sound only is: both
+ * are choices for one file. Remembered, one export squeezed for a chat made
+ * every project after it open on a 16 MB limit, downsizing 4K to 720p by
+ * default with nothing on the sheet in red. The limit last picked is kept,
+ * so the chips are on the right one when Fit is next turned on.
  *
  * A draft keeps its own choices in its file (ProjectAutosave) and those win
  * when it is reopened; these only fill in a fresh project.
@@ -20,7 +26,6 @@ data class ExportDefaults(
     val quality: ExportQuality,
     val hevc: Boolean,
     val keepHdr: Boolean,
-    val fitToSize: Boolean,
     val targetSizeMb: Int
 )
 
@@ -41,12 +46,11 @@ object Preferences {
             quality = ExportQuality.fromName(prefs.getString(KEY_QUALITY, null)),
             hevc = prefs.getBoolean(KEY_HEVC, false),
             keepHdr = prefs.getBoolean(KEY_KEEP_HDR, false),
-            fitToSize = prefs.getBoolean(KEY_FIT, false),
             targetSizeMb = prefs.getInt(KEY_TARGET_MB, 16)
         )
     }
 
-    /** Keeps [state]'s export choices as the next project's defaults. Sound-only is not kept: it is a choice for one file. */
+    /** Keeps [state]'s export choices as the next project's defaults; not Fit or Sound only, which are for one file. */
     fun rememberExport(context: Context, state: EditorUiState) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putInt(KEY_OUTPUT_P, state.outputP)
@@ -54,7 +58,6 @@ object Preferences {
             .putString(KEY_QUALITY, state.quality.name)
             .putBoolean(KEY_HEVC, state.hevc)
             .putBoolean(KEY_KEEP_HDR, state.keepHdr)
-            .putBoolean(KEY_FIT, state.fitToSize)
             .putInt(KEY_TARGET_MB, state.targetSizeMb)
             .apply()
     }
@@ -65,7 +68,6 @@ object Preferences {
     private const val KEY_QUALITY = "quality"
     private const val KEY_HEVC = "hevc"
     private const val KEY_KEEP_HDR = "keepHdr"
-    private const val KEY_FIT = "fitToSize"
     private const val KEY_TARGET_MB = "targetSizeMb"
 }
 
@@ -80,6 +82,5 @@ fun EditorUiState.withExportDefaults(defaults: ExportDefaults): EditorUiState = 
     quality = defaults.quality,
     hevc = defaults.hevc,
     keepHdr = defaults.keepHdr,
-    fitToSize = defaults.fitToSize,
     targetSizeMb = defaults.targetSizeMb
 )

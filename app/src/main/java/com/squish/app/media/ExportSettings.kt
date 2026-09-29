@@ -4,13 +4,16 @@ import com.squish.app.editor.OutputSize
 
 /**
  * How much the encoder is allowed to spend, against the rate the source's own
- * pixels would get (ExportPresets.bitrateForFrame). "Recommended" is that rate;
- * the other two are a clear step either side of it, far enough apart to see
- * and to weigh, close enough that neither is a mistake.
+ * pixels would get (ExportPresets.bitrateForFrame). "Standard" is that rate -
+ * the recommended one, which its hint says; the chip is a third of a 360 dp
+ * sheet, where "Recommended" lost its last letter. The other two are a clear
+ * step either side of it, far enough apart to see and to weigh, close enough
+ * that neither is a mistake. The names are in drafts and the defaults; the
+ * labels are free to change.
  */
 enum class ExportQuality(val label: String, val bitrateScale: Float) {
     Lower("Lower", 0.6f),
-    Recommended("Recommended", 1f),
+    Recommended("Standard", 1f),
     Higher("Higher", 1.6f);
 
     companion object {

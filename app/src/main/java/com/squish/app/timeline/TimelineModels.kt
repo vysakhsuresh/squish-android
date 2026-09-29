@@ -932,13 +932,23 @@ fun TimelineState.withClipMoved(clipId: String, deltaMs: Long): TimelineState {
  * outwards used to leave the start where it was and grow the tail, over the
  * next clip, by the amount dragged.
  */
-fun TimelineState.withClipTrimmed(clipId: String, startDeltaMs: Long, endDeltaMs: Long): TimelineState {
+fun TimelineState.withClipTrimmed(
+    clipId: String,
+    startDeltaMs: Long,
+    endDeltaMs: Long,
+    /**
+     * How far into the file the tail may go, when that is not the file's own
+     * length: a photo's clip is a rendering of a picture that can be made
+     * longer (StillRules), so its tail is not held at the rendering's end.
+     */
+    maxOutMs: Long? = null
+): TimelineState {
     val clip = clips.firstOrNull { it.id == clipId } ?: return this
     val ramp = clip.speedRamp
     val span = clip.sourceSpanMs
 
     var newIn = (clip.sourceInMs + startDeltaMs).coerceIn(0L, clip.sourceOutMs - MIN_CLIP_MS)
-    var maxOut = if (clip.sourceDurationMs > 0) clip.sourceDurationMs else clip.sourceOutMs + endDeltaMs
+    var maxOut = maxOutMs ?: if (clip.sourceDurationMs > 0) clip.sourceDurationMs else clip.sourceOutMs + endDeltaMs
 
     if (!clip.isMain) {
         val row = if (clip.kind == ClipKind.Video && clip.isOverlay) {

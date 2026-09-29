@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.squish.app.ui.theme.SquishColors
 
@@ -55,7 +56,9 @@ fun SelectableChip(
             .padding(vertical = 10.dp, horizontal = 10.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = content, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        // Ellipsis rather than the default clip: a label a few pixels too
+        // wide for a narrow phone lost its last letter mid-glyph.
+        Text(label, color = content, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
