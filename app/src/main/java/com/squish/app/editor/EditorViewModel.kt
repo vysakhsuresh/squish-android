@@ -246,13 +246,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(preparingStills = images) }
         val sources = try {
             start.uris.mapNotNull { picked ->
+                // Named by the file handed over, not by its copy: a copy is kept under
+                // a made-up name, and that was the project's title - "5ee44925-efb7...".
+                val name = withContext(Dispatchers.IO) { displayNameOf(picked) }
                 val uri = if (start.copyIn) withContext(Dispatchers.IO) { app.importCopy(picked) } else picked
                 if (resolver.getType(uri)?.startsWith("image/") == true) {
                     val still = StillClips.fromImage(app, uri)
                     _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
-                    still?.let { Triple(it, displayNameOf(uri) ?: "Photo", true) }
+                    still?.let { Triple(it, name ?: displayNameOf(uri) ?: "Photo", true) }
                 } else {
-                    Triple(uri, displayNameOf(uri) ?: "Clip", false)
+                    Triple(uri, name ?: displayNameOf(uri) ?: "Clip", false)
                 }
             }
         } finally {
@@ -1106,8 +1109,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         // the bitrate is measured from - 0 fell back to the nominal rate, so a
         // reopened project estimated and wrote a different file) and whether
         // it has sound (a silent source read as having some, by default).
-        val sourceName = withContext(Dispatchers.IO) { displayNameOf(snapshot.sourceUri) }
-            ?: snapshot.clips.firstOrNull { it.uri == snapshot.sourceUri }?.label
+        // A file of the app's own - a copy of a shared video - is named by its
+        // clip: the copy's own name is made up.
+        val sourceLabel = snapshot.clips.firstOrNull { it.uri == snapshot.sourceUri }?.label
+        val sourceName = if (snapshot.sourceUri.scheme == "file" && sourceLabel != null) sourceLabel
+            else withContext(Dispatchers.IO) { displayNameOf(snapshot.sourceUri) } ?: sourceLabel
         val sourceSize = withContext(Dispatchers.IO) {
             runCatching { app.contentResolver.openFileDescriptor(snapshot.sourceUri, "r")?.use { it.statSize } ?: 0L }
                 .getOrDefault(0L)

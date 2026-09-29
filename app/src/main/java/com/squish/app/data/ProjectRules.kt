@@ -84,11 +84,14 @@ object ProjectRules {
     fun displayTitle(label: String?, createdAtMillis: Long, zone: TimeZone = TimeZone.getDefault()): String {
         val stem = label?.trim()?.substringBeforeLast('.')?.trim().orEmpty()
         val letters = stem.count { it.isLetter() }
-        if (letters >= 3 && !MADE_UP_NAME.matches(stem)) return stem
+        if (letters >= 3 && !MADE_UP_NAME.matches(stem) && !COPY_NAME.matches(stem)) return stem
         if (createdAtMillis <= 0L) return "Untitled edit"
         val format = SimpleDateFormat("d MMM", Locale.getDefault()).apply { timeZone = zone }
         return "Edit · " + format.format(Date(createdAtMillis))
     }
+
+    // The name a shared file's copy is kept under (MediaAccess.importCopy): a UUID.
+    private val COPY_NAME = Regex("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
     private val MADE_UP_NAME = Regex(
         "(?i)^(vid|img|pxl|mvimg|dsc|dscn|dcim|mov|video|photo|image|picture|screenshot|screen[ _-]?record\\w*|record\\w*|wa|signal|snapchat|inshot|capcut)[ _-]*[0-9].*"

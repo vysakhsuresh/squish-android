@@ -179,6 +179,16 @@ fun EditorToolSheet(
     val graded = if (tool == Tool.Looks) {
         state.videoClips.firstOrNull { it.id == pinnedId } ?: viewModel.clips.gradeTarget(state)
     } else clip?.takeIf { it.kind == ClipKind.Video }
+    // A look put on shot 2 while the preview showed shot 1 could not be seen:
+    // opening a picture tool on a clip the playhead is off brings the playhead
+    // a little way into it, past where a transition would cover it.
+    val pictureTool = tool == Tool.Looks || tool == Tool.Filters || tool == Tool.Adjust
+    LaunchedEffect(tool, graded?.id) {
+        val shot = graded?.takeIf { pictureTool } ?: return@LaunchedEffect
+        if (state.playheadMs !in shot.timelineStartMs until shot.timelineEndMs) {
+            viewModel.seekTo(shot.timelineStartMs + minOf(LOOK_LEAD_MS, shot.durationMs / 3))
+        }
+    }
     // A line's Edit opens on its keyboard, whichever tab the last line was left on.
     var chip by rememberSaveable(tool, if (tool == Tool.Edit) state.selectedClipId else null) { mutableIntStateOf(0) }
     // The new line's sample words are selected the first time its field opens,
@@ -320,7 +330,7 @@ fun EditorToolSheet(
             Tool.Effects -> EffectsPanel(state, viewModel)
             Tool.Looks -> when (chip) {
                 0 -> if (graded != null) FiltersPanel(state, graded, viewModel) else NoPicturePanel()
-                1 -> if (graded != null) AdjustPanel(graded, viewModel) else NoPicturePanel()
+                1 -> if (graded != null) AdjustPanel(state, graded, viewModel) else NoPicturePanel()
                 else -> TemplatesPanel(viewModel)
             }
             Tool.Frame -> when (chip) {
@@ -329,7 +339,7 @@ fun EditorToolSheet(
                 else -> RotatePanel(state, viewModel)
             }
             Tool.Filters -> graded?.let { FiltersPanel(state, it, viewModel) }
-            Tool.Adjust -> graded?.let { AdjustPanel(it, viewModel) }
+            Tool.Adjust -> graded?.let { AdjustPanel(state, it, viewModel) }
             Tool.Crop -> clip?.let { CropPanel(it, rememberClipAspect(state, it), viewModel, accent) }
 
             Tool.Speed -> if (clip != null) SpeedPanel(state, viewModel, accent)
@@ -383,6 +393,9 @@ fun EditorToolSheet(
 
 /** An effect's strength when it is added; Strength's Reset goes back to it. */
 private const val DEFAULT_STRENGTH = 0.7f
+
+/** How far into a shot the playhead is brought when a look is opened on it. */
+private const val LOOK_LEAD_MS = 500L
 
 /**
  * A clip's own picture, width over height, unrotated: what its crop window

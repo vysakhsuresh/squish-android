@@ -85,7 +85,7 @@ fun FiltersPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
         PanelSurface(accent = SquishColors.Blue) {
             PanelHeading(
                 "Filters",
-                "On ${clip.label} · tap to apply, again to clear",
+                "On ${state.shotName(clip)} · tap to apply, again to clear",
                 icon = Icons.Filled.AutoAwesome,
                 accent = SquishColors.Blue
             )
@@ -158,7 +158,7 @@ fun FiltersPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
  * moved the picture costs the same.
  */
 @Composable
-fun AdjustPanel(clip: Clip, viewModel: EditorViewModel) {
+fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
     val done = viewModel::endGesture
     // The chip chosen: a slider by its ordinal, or a colour of the wheel past them.
     var chosen by rememberSaveable { mutableStateOf(0) }
@@ -169,7 +169,7 @@ fun AdjustPanel(clip: Clip, viewModel: EditorViewModel) {
         PanelSurface(accent = SquishColors.Blue) {
             PanelHeading(
                 "Adjust",
-                "On ${clip.label} · refines whatever filter is on",
+                "On ${state.shotName(clip)} · refines whatever filter is on",
                 icon = Icons.Filled.Tune,
                 accent = SquishColors.Blue
             )

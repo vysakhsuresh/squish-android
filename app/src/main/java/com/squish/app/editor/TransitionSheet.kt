@@ -93,12 +93,7 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
     val outgoingFrame by produceState<ImageBitmap?>(null, previous?.uri, previous?.sourceOutMs) {
         value = previous?.let { p -> p.uri?.let { ThumbnailExtractor.frameAt(context, it, (p.sourceOutMs - FRAME_INSET_MS).coerceAtLeast(p.sourceInMs))?.asImageBitmap() } }
     }
-    // Which shot, by its place in the edit: "shot 3" is how a person thinks of
-    // it, and the file name - "1001317917.mp4" - is not.
-    val shotName = if (clip.isOverlay) "this overlay" else {
-        val base = state.videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
-        "shot ${base.indexOfFirst { it.id == clip.id } + 1}"
-    }
+    val shotName = state.shotName(clip)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = accent) {
@@ -301,3 +296,13 @@ private val INCOMING = Color(0xFFB8C4DC)
 /** Shorter than this a transition is a flicker; longer, it is a scene of its own. */
 private const val MIN_TRANSITION_MS = 150f
 private const val MAX_TRANSITION_MS = 2_000f
+
+/**
+ * A picture by its place in the edit - "shot 3", "this overlay" - which is how
+ * a person thinks of it; the file name ("1001317917.mp4") is not.
+ */
+internal fun EditorUiState.shotName(clip: Clip): String =
+    if (clip.isOverlay) "this overlay" else {
+        val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
+        "shot ${base.indexOfFirst { it.id == clip.id } + 1}"
+    }
