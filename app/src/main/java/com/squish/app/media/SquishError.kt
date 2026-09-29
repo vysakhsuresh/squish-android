@@ -233,6 +233,43 @@ sealed class SquishError(
         fix = "Pick a clip with sound, or add music from Sound."
     )
 
+    /**
+     * A file picked to replace a clip's footage that cannot cover the clip's
+     * window. Said with the two lengths: the fix is to pick a longer file or
+     * shorten the clip, and which one is a matter of how far apart they are.
+     */
+    class ReplacementTooShort(val name: String, val fileMs: Long, val neededMs: Long) : SquishError(
+        title = "“$name” is too short to replace this clip",
+        detail = "The clip plays ${seconds(neededMs)} of footage and the file picked runs ${seconds(fileMs)}. " +
+            "Replace keeps the clip's length, speed and everything set on it.",
+        fix = "Pick a longer file, or trim the clip first and replace it then."
+    )
+
+    /** A freeze on an overlay row with something on the row where the rest of the shot would move to. */
+    class NoRoomOnRow : SquishError(
+        title = "No room on this row for the freeze",
+        detail = "The rest of the clip moves along by the freeze's length, and something else on its row is in the way.",
+        fix = "Move or shorten the overlay after it, or freeze a moment nearer this clip's end."
+    )
+
+    /** A clip too long for a reversed render, whose sound is held whole while it is made. */
+    class TooLongToReverse(val name: String, val maxMs: Long) : SquishError(
+        title = "“$name” is too long to reverse",
+        detail = "Reversing keeps the whole clip's sound in memory while the picture is written backwards, " +
+            "so it stops at ${seconds(maxMs)}.",
+        fix = "Cut the clip and reverse the part that needs it."
+    )
+
+    /** The reversed render did not finish. */
+    class ReverseFailed(val name: String, cause: Throwable? = null) : SquishError(
+        title = "Couldn't reverse “$name”",
+        detail = cause?.message?.takeIf { it.isNotBlank() }
+            ?.let { "The render stopped: $it." }
+            ?: "The phone's decoder or encoder stopped part-way through the render.",
+        fix = "Try again, or cut the clip shorter first. The clip is as it was.",
+        cause = cause
+    )
+
     class CaptionsUnreadable : SquishError(
         title = "No captions in that file",
         detail = "The file opened, but nothing in it looked like subtitle timings.",
@@ -509,6 +546,13 @@ sealed class SquishError(
             bytes >= 1_000_000_000 -> "%.1f GB".format(bytes / 1_000_000_000.0)
             bytes >= 1_000_000 -> "%.0f MB".format(bytes / 1_000_000.0)
             else -> "%.0f KB".format(bytes / 1_000.0)
+        }
+
+        /** A length in whole seconds, or with a decimal under ten, as a sentence says it. */
+        fun seconds(ms: Long): String = when {
+            ms >= 60_000L -> "${ms / 60_000L} min ${(ms % 60_000L) / 1_000L} s"
+            ms >= 10_000L -> "${ms / 1_000L} s"
+            else -> "%.1f s".format(ms / 1_000.0)
         }
 
         // Media3 ExportException codes, by name, pinned as ints so a library rename

@@ -52,7 +52,16 @@ data class SurfaceDraw(
     /** The incoming shot of a transition draws over the outgoing one. */
     val zIndex: Int = 0,
     /** The clip's own placement, animated if it carries keyframes. */
-    val transform: Transform = Transform.Identity
+    val transform: Transform = Transform.Identity,
+    /**
+     * The clip's own mirror and quarter turns, applied to the view inside the
+     * canvas (see Clip.quarterTurns); and the decoded picture's shape, which a
+     * turned view is fitted by - an unturned base view fills the canvas as it
+     * always has.
+     */
+    val mirrored: Boolean = false,
+    val quarterTurns: Int = 0,
+    val aspect: Float? = null
 )
 
 /** Where an overlay layer sits this frame. */
@@ -62,6 +71,9 @@ data class OverlayPlacement(
     val visible: Boolean = false,
     val opacity: Float = 1f,
     val transform: Transform = Transform.Identity,
+    /** The clip's own mirror and quarter turns, applied to the view inside its fitted box. */
+    val mirrored: Boolean = false,
+    val quarterTurns: Int = 0,
     /**
      * The layer's picture shape, once its decoder has said. The surface is laid
      * out at this shape, fitted into the canvas, which is where the export's
@@ -212,6 +224,9 @@ class PreviewEngine(private val context: Context) {
         var covering = false
         var wasVisible = false
         var lastTransform: Transform = Transform.Identity
+        /** The turn the last shot shown had, kept with its placement for the hold at a cut. */
+        var lastMirrored = false
+        var lastTurns = 0
 
         var lastWanted = 0L
         var wantedIn = 0L
@@ -952,10 +967,14 @@ class PreviewEngine(private val context: Context) {
             val onA = clipA != null
             val only = (clipA ?: clipB)!!
             val ready = if (onA) readyA else readyB
-            val shown = SurfaceDraw(visible = ready, transform = only.transformAt(at))
+            val own = if (onA) surfaceA else surfaceB
+            val shown = SurfaceDraw(visible = ready, transform = only.transformAt(at)).turnedAs(only, own)
             val held = if (onA) surfaceB else surfaceA
             val other = if (!ready && (if (onA) holdB else holdA)) {
-                SurfaceDraw(visible = true, transform = held.lastTransform)
+                SurfaceDraw(
+                    visible = true, transform = held.lastTransform,
+                    mirrored = held.lastMirrored, quarterTurns = held.lastTurns, aspect = held.videoAspect
+                )
             } else {
                 SurfaceDraw(visible = false, transform = only.transformAt(at))
             }
@@ -977,7 +996,9 @@ class PreviewEngine(private val context: Context) {
         // A shot not yet decoded sits the blend out rather than blending in a
         // stale frame.
         val outMoved = outDraw.copy(visible = outDraw.visible && outReady, transform = outgoing.transformAt(at))
+            .turnedAs(outgoing, if (aIsIncoming) surfaceB else surfaceA)
         val inMoved = inDraw.copy(visible = inDraw.visible && inReady, transform = incoming.transformAt(at))
+            .turnedAs(incoming, if (aIsIncoming) surfaceA else surfaceB)
         return remember(
             if (aIsIncoming) inMoved else outMoved,
             if (aIsIncoming) outMoved else inMoved,
@@ -1026,10 +1047,20 @@ class PreviewEngine(private val context: Context) {
     private fun remember(a: SurfaceDraw, b: SurfaceDraw, veil: Float): Triple<SurfaceDraw, SurfaceDraw, Float> {
         surfaceA.wasVisible = a.visible
         surfaceB.wasVisible = b.visible
-        if (a.visible) surfaceA.lastTransform = a.transform
-        if (b.visible) surfaceB.lastTransform = b.transform
+        if (a.visible) surfaceA.noteShown(a)
+        if (b.visible) surfaceB.noteShown(b)
         return Triple(a, b, veil)
     }
+
+    private fun Surface.noteShown(draw: SurfaceDraw) {
+        lastTransform = draw.transform
+        lastMirrored = draw.mirrored
+        lastTurns = draw.quarterTurns
+    }
+
+    /** The draw with [clip]'s own mirror and turn, and the shape [s] has decoded. */
+    private fun SurfaceDraw.turnedAs(clip: Clip, s: Surface): SurfaceDraw =
+        copy(mirrored = clip.mirrored, quarterTurns = clip.quarterTurns, aspect = s.videoAspect)
 
     /**
      * Gives one roll's player its work for this tick: the clip under the playhead
@@ -1120,6 +1151,8 @@ class PreviewEngine(private val context: Context) {
                 visible = s.shownClipId == clip.id,
                 opacity = clip.opacity,
                 transform = clip.transformAt(t),
+                mirrored = clip.mirrored,
+                quarterTurns = clip.quarterTurns,
                 aspect = s.videoAspect,
                 covers = true,
                 clipId = clip.id

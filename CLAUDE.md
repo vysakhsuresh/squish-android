@@ -64,6 +64,14 @@ function first; if it can, it can be checked.
   nothing to run, so it proves nothing. The `tools/jvm` suites are the tests.
 - **Python is not installed here**, so the `tools/check_*.py` checkers only run
   in the sandbox. On this machine `assembleDebug` is the check.
+- **No `kotlinc` here either, but the `tools/jvm` suites still run:** the
+  Kotlin 2.0.20 compiler is in the Gradle cache. With `java` from JBR 21,
+  `java -cp <kotlin-compiler-embeddable;kotlin-stdlib;kotlin-reflect;kotlin-script-runtime;kotlin-daemon-embeddable;trove4j;annotations-13.0;kotlinx-coroutines-core-jvm>
+  org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib -classpath <kotlin-stdlib> -d <dir> <the suite's files from run.sh>`
+  then `java -cp "<dir>;<kotlin-stdlib>" <Suite>Kt`. Every jar is under
+  `~/.gradle/caches/modules-2/files-2.1/`.
+- **A worktree has no `local.properties`**, so a build there wants
+  `ANDROID_HOME=C:\Users\vysak\AppData\Local\Android\Sdk` in the environment.
 - **The device is the user's own phone** (moto g84 5G, serial ZY32J8HF2S),
   driven with `C:/Users/vysak/AppData/Local/Android/Sdk/platform-tools/adb`.
   Before any taps, confirm it is free: `dumpsys telephony.registry | grep
@@ -416,6 +424,58 @@ should work through it and then delete what holds up.
   question B9's voiceover asks; a draft from before this build opens with its
   looks read back through `TextStyleJson` (Outline as a stroke, Box as a
   bubble) and every animated line leaving by a fade, as it did.
+
+- **Batch B11 (clip operations), all of it.** Built on the desktop with no
+  phone attached. The decisions - a freeze cut into a shot and the track
+  closing round it, a replacement keeping the window and everything on it, a
+  reversed render under a clip and the original back (trimmed meanwhile or
+  not), the curve mirrored, the preview's and the file's turn being the same
+  turn, attributes carried as shapes, and several clips toggled, deleted and
+  carried as one - are executed on the JVM (`tools/jvm/ClipOpsChecks.kt`), and
+  the toolbar's new tools in `ToolRulesChecks.kt`; nothing has been seen.
+  Script in `docs/ROADMAP.md` §4 under B11, plus what only a device answers:
+  Rotate on a clip turns it a quarter clockwise on screen *and* in the file
+  (`CompositionFactory.turn` passes 270 for one turn, since Media3's degrees
+  run the other way - the same disagreement `PreviewBox.screenRotation`
+  settles for the edit-wide rotation; if the two disagree, `ExportPlan.turnDegrees`
+  is the one number to flip), a turned landscape shot stands pillarboxed in
+  both (`TimelinePreview.turnedInside` fits the view by the turned shape, the
+  export's Presentation fits the turned frame), and Mirror flips left to right
+  in both with the mirror applied before the turn (`ScaleAndRotateTransformation`
+  with scale -1 is the one Media3 call this leans on - check it accepts a
+  negative scale and does not refuse the frame); a photo overlay turns and
+  mirrors too (its `Image` is laid out the same way); the overlay box on a
+  turned PiP is the turned shape. Freeze grabs the frame under the playhead
+  at full size (`StillClips.freezeFrame`, `OPTION_CLOSEST`) and lands a 3 s
+  "Freeze" still, selected, with the shot's placement, mask, key, mirror and
+  turn - check the frozen picture is the frame that was on screen, not the
+  nearest keyframe, and that it is upright for a portrait clip; on an overlay
+  row with no room after it, it says so. Reverse renders the window backwards
+  with the platform codecs (`ReverseRenderer`: keyframe runs decoded forward
+  and handed to the encoder last frame first, YUV never leaving YUV, a spool
+  to disk past 96 MB; the sound reversed whole and AAC-encoded first) into
+  `files/reversed/` and lands as one step when done, a card saying how far
+  along it is - check the file plays backwards with its sound backwards, that
+  a portrait clip comes out the right way up (the rotation tag is copied, the
+  pixels are not turned), that a clip trimmed while the render ran keeps the
+  frames it showed, that Reverse again puts the original back at once, that
+  leaving the editor mid-render leaves no `.part` file, and that a clip over
+  three minutes is refused with the message rather than attempted. Replace
+  opens the picker, then a sheet with a frame of the new file and "Start at"
+  (the old clip's own in-point when the file has that much); Done puts it in
+  keeping the window, place, speed, keys and settings; a file too short says
+  so with both lengths; a photo picked goes straight in as a still. Copy
+  attributes and Paste attributes carry level, fades, voice, curve (refitted
+  to the span), opacity, placement, keys (refitted to the length), mask, key
+  colour, mirror and turn - a sound takes the sound ones, a photo none of the
+  sound ones; Paste is greyed until something is copied. Select more turns the
+  button orange and taps on the strip add to the set (drawn selected together);
+  the row is then Select more and Delete only; Delete takes all as one step;
+  a carried shot takes the selected shots with it in their order and a carried
+  sound or overlay slides the selected sounds and overlays together, stopping
+  the group against a wall on an overlay row. A draft from before this build
+  opens as it was (the new fields read as unset); one saved by this build
+  writes version 13.
 
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry

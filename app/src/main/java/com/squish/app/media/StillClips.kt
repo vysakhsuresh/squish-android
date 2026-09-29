@@ -148,6 +148,43 @@ object StillClips {
     }
 
     /**
+     * A freeze frame: the frame of [video] at [sourceMs], kept as a picture under
+     * files/stills/ and made into a clip like a photo, so it plays, trims and
+     * exports as any still does. At full size - the frame is the shot's own,
+     * and a freeze scaled down would visibly soften at the cut into it. Null
+     * when the frame could not be read or the clip could not be rendered.
+     */
+    suspend fun freezeFrame(context: Context, video: Uri, sourceMs: Long): Uri? {
+        val picture = withContext(Dispatchers.IO) {
+            runCatching {
+                val retriever = android.media.MediaMetadataRetriever()
+                val grabbed: Bitmap? = try {
+                    retriever.setDataSource(context, video)
+                    // The frame itself, not the nearest keyframe: a freeze a second
+                    // off the frame under the playhead is a different picture.
+                    retriever.getFrameAtTime(sourceMs * 1_000L, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
+                } finally {
+                    retriever.release()
+                }
+                val frame = grabbed ?: return@runCatching null
+                val target = File(dir(context), uniqueName("freeze", "png"))
+                val partial = File(target.absolutePath + ".part")
+                try {
+                    FileOutputStream(partial).use { frame.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                } finally {
+                    frame.recycle()
+                }
+                if (partial.length() <= 0L || !partial.renameTo(target)) {
+                    partial.delete()
+                    error("could not keep $target")
+                }
+                Uri.fromFile(target)
+            }.onFailure { android.util.Log.w("SquishStill", "could not freeze a frame of $video", it) }.getOrNull()
+        } ?: return null
+        return render(context, picture, uniqueName("freeze"), RENDER_MS)
+    }
+
+    /**
      * A plain black clip, [width] by [height] - the edit's own frame shape, so it
      * sits in the timeline without bars.
      */

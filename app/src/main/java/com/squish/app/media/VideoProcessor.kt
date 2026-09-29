@@ -419,6 +419,10 @@ class VideoProcessor(private val context: Context) {
             clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
             clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
+            // The clip's own mirror and turn belong to its footage, so they go
+            // on before the edit's rotation, as the preview turns the view
+            // inside the turned canvas.
+            CompositionFactory.turn(clip)?.let { add(it) }
             rotation(state)?.let { add(it) }
             addAll(ColorGrade.effects(state.grade))
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.User)?.let { add(it) }

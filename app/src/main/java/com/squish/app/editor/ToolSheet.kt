@@ -262,14 +262,19 @@ fun EditorToolSheet(
         Tool.Voice -> clip?.let { c -> { viewModel.audio.setClipVoice(c.id, com.squish.app.timeline.VoiceEffect.None) } }
         Tool.Style -> item?.let { i -> { viewModel.text.restyleCaption(i.id, { it.withDefaultStyle() }) } }
         Tool.Strength -> effect?.let { e -> { viewModel.clips.changeEffect(e.id) { it.copy(intensity = DEFAULT_STRENGTH) } } }
+        // The start of the new file: where a retake usually begins.
+        Tool.Replace -> state.replacing?.let { { viewModel.clips.setReplaceInPoint(0L) } }
         else -> null
     }
+    // Replace's Done is the replacement itself: the sheet is the question
+    // "start where?", and Done is the answer. Every other sheet's Done just closes.
+    val done: () -> Unit = if (tool == Tool.Replace) ({ viewModel.clips.commitReplace(); onDone() }) else onDone
 
     ToolSheet(
         title = tool.label,
         icon = tool.icon,
         accent = accent,
-        onDone = onDone,
+        onDone = done,
         onReset = reset,
         chips = chips,
         chip = chip,
@@ -335,6 +340,7 @@ fun EditorToolSheet(
             }
             Tool.Style -> item?.let { TextStylePanel(it, viewModel, onEyedropper) }
             Tool.Strength -> effect?.let { EffectStrengthPanel(it, viewModel) }
+            Tool.Replace -> state.replacing?.let { ReplacePanel(it, viewModel) }
             else -> Unit
         }
     }

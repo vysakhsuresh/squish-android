@@ -15,6 +15,7 @@ import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.AlphaScale
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -252,6 +253,10 @@ object CompositionFactory {
             clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
             clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
+            // Mirrored and turned as footage, before it is fitted: a turned
+            // landscape layer is then fitted standing, as the preview lays its
+            // view out (TimelinePreview.turnedInside).
+            turn(clip)?.let { add(it) }
             if (canvas != null && canvas.width > 0 && canvas.height > 0) {
                 add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT))
             }
@@ -259,6 +264,22 @@ object CompositionFactory {
             addAll(speed)
             if (clip.opacity < 1f) add(AlphaScale(clip.opacity.coerceIn(0f, 1f)))
         }
+
+    /**
+     * A clip's own mirror and quarter turns, or null when it has neither. One
+     * effect: the flip is a scale of -1 across, applied before the turn, which
+     * is the order the preview's layer applies them (scale, then rotation).
+     * The clip's turns are clockwise as seen and Media3's degrees run the other
+     * way, so the number is negated - the same disagreement PreviewBox.screenRotation
+     * settles for the edit-wide rotation, from the other side.
+     */
+    fun turn(clip: Clip): Effect? {
+        if (!clip.mirrored && clip.quarterTurns % 4 == 0) return null
+        return ScaleAndRotateTransformation.Builder()
+            .setScale(if (clip.mirrored) -1f else 1f, 1f)
+            .setRotationDegrees(ExportPlan.turnDegrees(clip.quarterTurns))
+            .build()
+    }
 
     /**
      * The compositor told the two things it cannot know: how big the output is,

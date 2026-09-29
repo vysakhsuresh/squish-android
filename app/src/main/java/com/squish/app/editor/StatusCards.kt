@@ -254,6 +254,28 @@ fun PreparingIndicator(count: Int, modifier: Modifier = Modifier) {
 }
 
 /**
+ * A clip's footage being written backwards (ReverseRenderer): a render that
+ * takes as long as the clip, or longer, and lands as one step when done. Said
+ * per clip with how far along it is, since the button is greyed meanwhile.
+ */
+@Composable
+fun ReversingIndicator(reversing: Map<String, Float>, nameOf: (String) -> String, modifier: Modifier = Modifier) {
+    if (reversing.isEmpty()) return
+    Column(modifier = modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        reversing.forEach { (id, fraction) ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CircularProgressIndicator(color = SquishColors.Violet, strokeWidth = 2.dp, modifier = Modifier.size(12.dp))
+                Text(
+                    "Reversing “${nameOf(id)}”… ${(fraction * 100).toInt()}% - it lands on the strip when done.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Violet
+                )
+            }
+        }
+    }
+}
+
+/**
  * A line being read aloud: the phone's engine takes seconds to bind and speak,
  * and with nothing said the button looked dead and got tapped again.
  */

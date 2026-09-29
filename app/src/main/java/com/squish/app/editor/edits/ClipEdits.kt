@@ -1,6 +1,7 @@
 package com.squish.app.editor.edits
 
 import android.net.Uri
+import com.squish.app.media.ReverseRenderer
 import com.squish.app.media.SquishError
 import com.squish.app.media.StillClips
 import com.squish.app.media.ThumbnailExtractor
@@ -28,8 +29,18 @@ import com.squish.app.timeline.withRowsCompacted
 import com.squish.app.timeline.withClipReordered
 import com.squish.app.timeline.withGapClosed
 import com.squish.app.timeline.withClipRetimed
+import com.squish.app.timeline.replacementNeedsMs
+import com.squish.app.timeline.withAttributesPasted
+import com.squish.app.timeline.withClipReplaced
+import com.squish.app.timeline.withClipReversed
+import com.squish.app.timeline.withClipUnreversed
+import com.squish.app.timeline.withClipsMoved
+import com.squish.app.timeline.withClipsRemoved
+import com.squish.app.timeline.withClipsReordered
+import com.squish.app.timeline.withFrozenFrame
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
 import kotlin.math.abs
 import com.squish.app.editor.*
@@ -506,8 +517,16 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * transition in from, so its transition does nothing until it moves again.
      */
     fun reorderClip(clipId: String, index: Int) {
-        val base = _state.value.videoClips.filter { it.layer == 0 }.sortedBy { it.timelineStartMs }
+        val current = _state.value
+        val base = current.videoClips.filter { it.layer == 0 }.sortedBy { it.timelineStartMs }
         if (base.none { it.id == clipId }) return
+        // Carried with others selected alongside it, the whole group goes where
+        // it is dropped, in the order it had (withClipsReordered).
+        val group = current.allSelectedIds.takeIf { clipId in it && base.count { c -> c.id in it } > 1 }
+        if (group != null) {
+            record("Reorder") { mutateTimeline { it.withClipsReordered(group, clipId, index) } }
+            return
+        }
         val order = EditRules.reordered(base.map { it.id }, clipId, index)
         if (order == base.map { it.id }) return
         // The model's own reorder, which keeps any spacing an old draft's shots
@@ -525,7 +544,20 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * the one carried changes row.
      */
     fun placeClip(clipId: String, startMs: Long, row: Int) = record("Move clip") {
-        val text = _state.value.textOverlays.firstOrNull { it.id == clipId }
+        val current = _state.value
+        val text = current.textOverlays.firstOrNull { it.id == clipId }
+        // One of several selected: they all slide by the same amount and keep
+        // their rows, as a group (withClipsMoved); the lines among them the same.
+        val group = current.allSelectedIds.takeIf { clipId in it && it.size > 1 }
+        if (group != null) {
+            val from = text?.startMs ?: (current.videoClips + current.audioClips).firstOrNull { it.id == clipId }?.timelineStartMs
+                ?: return@record
+            val delta = startMs - from
+            if (delta == 0L) return@record
+            mutateTimeline { it.withClipsMoved(group, delta) }
+            group.filter { id -> _state.value.textOverlays.any { it.id == id } }.forEach { shiftOverlay(it, delta) }
+            return@record
+        }
         if (text == null) {
             // An overlay carried off a row it was alone on leaves that row empty.
             mutateTimeline { it.withClipPlaced(clipId, startMs, row).withRowsCompacted() }
@@ -835,7 +867,20 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     fun closeGaps() = record("Close gaps") { mutateTimeline { it.rippleVideo() } }
 
     fun deleteSelectedClip() {
-        val selected = _state.value.selectedClipId ?: return
+        val current = _state.value
+        val selected = current.selectedClipId ?: return
+        val all = current.allSelectedIds
+        if (all.size > 1) {
+            // Several at once: every kind among them, as one step, the main
+            // track closing up once over all of its missing shots.
+            record("Delete ${all.size} clips") {
+                all.filter { id -> _state.value.textOverlays.any { it.id == id } }.forEach(::dropTextOverlay)
+                _state.update { s -> s.copy(effects = s.effects.filterNot { it.id in all }) }
+                mutateTimeline { it.withClipsRemoved(all) }
+                _state.update { it.copy(selectedClipId = null, selectedClipIds = emptySet(), selectingMore = false) }
+            }
+            return
+        }
         record("Delete") {
             if (_state.value.textOverlays.any { it.id == selected }) dropTextOverlay(selected)
             else if (_state.value.effects.any { it.id == selected }) {
@@ -843,6 +888,221 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             } else mutateTimeline { it.withClipRemoved(selected) }
             _state.update { it.copy(selectedClipId = null) }
         }
+    }
+
+    // ---- Footage (B11) ------------------------------------------------------------
+
+    /** This clip's picture a quarter turn clockwise more. Each press is a step. */
+    fun turnClip(clipId: String) = record("Rotate clip") {
+        mutateTimeline { t -> t.copy(clips = t.clips.map { if (it.id == clipId && it.kind == ClipKind.Video) it.withQuarterTurn() else it }) }
+    }
+
+    /** This clip's picture the other way round. */
+    fun mirrorClip(clipId: String) = record("Mirror") {
+        mutateTimeline { t -> t.copy(clips = t.clips.map { if (it.id == clipId && it.kind == ClipKind.Video) it.withMirrorToggled() else it }) }
+    }
+
+    /** Whether Freeze would do anything: the playhead is on this footage. */
+    fun canFreeze(state: EditorUiState, clipId: String): Boolean {
+        val clip = state.videoClips.firstOrNull { it.id == clipId } ?: return false
+        return !clip.isStillPicture && state.playheadMs >= clip.timelineStartMs && state.playheadMs <= clip.timelineEndMs
+    }
+
+    /**
+     * The frame under the playhead held for a few seconds: made into a still
+     * clip (StillClips.freezeFrame) and put in with the shot cut round it
+     * (withFrozenFrame), selected, as one step. A still takes a moment to
+     * render; the "Preparing" line says so meanwhile. On an overlay row with no
+     * room for the rest of the shot to move along, it says so instead.
+     */
+    fun freezeFrame(clipId: String) {
+        val current = _state.value
+        if (!canFreeze(current, clipId)) return
+        val clip = current.videoClips.firstOrNull { it.id == clipId } ?: return
+        val at = current.playheadMs.coerceIn(clip.timelineStartMs, clip.timelineEndMs)
+        // The frame on screen: the very end of a clip shows its last frame.
+        val sourceMs = clip.sourceAt(minOf(at, clip.timelineEndMs - 1L)).coerceIn(clip.sourceInMs, (clip.sourceOutMs - 1L).coerceAtLeast(clip.sourceInMs))
+        val uri = clip.uri ?: current.sourceUri ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(preparingStills = it.preparingStills + 1) }
+            try {
+                val made = StillClips.freezeFrame(app, uri, sourceMs)
+                val fileMs = made?.let { ThumbnailExtractor.probe(app, it).durationMs } ?: 0L
+                if (made == null || fileMs <= 0L) {
+                    _state.update { it.copy(failure = SquishError.Unknown(null)) }
+                    return@launch
+                }
+                val still = Clip(
+                    kind = ClipKind.Video,
+                    uri = made,
+                    label = "Freeze",
+                    sourceInMs = 0L,
+                    sourceOutMs = minOf(StillClips.DEFAULT_MS, fileMs),
+                    timelineStartMs = at,
+                    sourceDurationMs = fileMs
+                )
+                record("Freeze frame") { mutateTimeline { it.withFrozenFrame(clipId, at, still) } }
+                val after = _state.value
+                if (after.videoClips.none { it.id == still.id } && after.videoClips.any { it.id == clipId && it.isOverlay }) {
+                    _state.update { it.copy(failure = SquishError.NoRoomOnRow()) }
+                }
+                recomputeEstimate()
+            } finally {
+                _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
+            }
+        }
+    }
+
+    /** Whether Reverse can be pressed: footage, and no render of it under way. */
+    fun canReverse(state: EditorUiState, clipId: String): Boolean {
+        val clip = state.videoClips.firstOrNull { it.id == clipId } ?: return false
+        return !clip.isStillPicture && clipId !in state.reversing
+    }
+
+    /**
+     * The clip's footage backwards. A clip already playing a reversed render
+     * goes back to its original at once (Clip.unreversed). Otherwise the
+     * window is rendered backwards in the background (ReverseRenderer), a card
+     * saying how far along it is, and lands as one step when it is done - on
+     * the clip as it is then, so a trim made meanwhile keeps its frames. Too
+     * long, or failed, it says so and the clip is as it was.
+     */
+    fun reverseClip(clipId: String) {
+        val current = _state.value
+        if (!canReverse(current, clipId)) return
+        val clip = current.videoClips.firstOrNull { it.id == clipId } ?: return
+        if (clip.isReversed) {
+            record("Reverse") { mutateTimeline { it.withClipUnreversed(clipId) } }
+            clip.reversedFrom?.uri?.let { original ->
+                checkDecodable(original)
+                ensureProxies(listOf(original))
+            }
+            recomputeEstimate()
+            return
+        }
+        if (clip.sourceSpanMs > ReverseRenderer.MAX_MS) {
+            _state.update { it.copy(failure = SquishError.TooLongToReverse(clip.label, ReverseRenderer.MAX_MS)) }
+            return
+        }
+        val uri = clip.uri ?: current.sourceUri ?: return
+        val inMs = clip.sourceInMs
+        val outMs = clip.sourceOutMs
+        _state.update { it.copy(reversing = it.reversing + (clipId to 0f)) }
+        viewModelScope.launch {
+            try {
+                val dir = File(app.filesDir, REVERSED_DIR).apply { mkdirs() }
+                val file = File(dir, "reverse_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.mp4")
+                val result = ReverseRenderer.render(app, uri, inMs, outMs, file) { fraction ->
+                    _state.update { s -> if (clipId in s.reversing) s.copy(reversing = s.reversing + (clipId to fraction)) else s }
+                }
+                result.onSuccess { rendered ->
+                    record("Reverse") {
+                        mutateTimeline { t ->
+                            // Only the clip still on that footage: replaced or
+                            // reversed by other means meanwhile, it is left alone.
+                            val now = t.clips.firstOrNull { it.id == clipId }
+                            if (now == null || now.uri != uri || now.isReversed) t
+                            else t.withClipReversed(clipId, rendered.uri, rendered.durationMs, inMs, outMs)
+                        }
+                    }
+                    if (_state.value.videoClips.none { it.uri == rendered.uri }) runCatching { file.delete() }
+                    else {
+                        checkDecodable(rendered.uri)
+                        ensureProxies(listOf(rendered.uri))
+                    }
+                    recomputeEstimate()
+                }.onFailure { cause ->
+                    _state.update { it.copy(failure = SquishError.ReverseFailed(clip.label, cause)) }
+                }
+            } finally {
+                _state.update { it.copy(reversing = it.reversing - clipId) }
+            }
+        }
+    }
+
+    // ---- Replace ------------------------------------------------------------------
+
+    /**
+     * A file picked to go under [clipId]. A video long enough for the clip's
+     * window opens the Replace sheet, where the start is chosen; too short, it
+     * says so. A photo needs no start: it is made into a clip long enough for
+     * the window and goes straight in.
+     */
+    fun beginReplace(clipId: String, uri: Uri) {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId && !it.isStillPicture } ?: return
+        val needed = clip.replacementNeedsMs()
+        val name = displayNameOf(uri) ?: "Clip"
+        viewModelScope.launch {
+            val photo = app.contentResolver.getType(uri)?.startsWith("image/") == true
+            if (photo) {
+                _state.update { it.copy(preparingStills = it.preparingStills + 1) }
+                try {
+                    val made = StillClips.fromImage(app, uri, minMs = needed + StillClips.DEFAULT_MS)
+                    val fileMs = made?.let { ThumbnailExtractor.probe(app, it).durationMs } ?: 0L
+                    if (made == null || fileMs < needed) {
+                        _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+                        return@launch
+                    }
+                    applyReplace(ReplaceRequest(clipId, made, name, fileMs, needed, inPointMs = 0L))
+                } finally {
+                    _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
+                }
+                return@launch
+            }
+            val meta = ThumbnailExtractor.probe(app, uri)
+            if (meta.durationMs <= 0L) {
+                _state.update { it.copy(failure = SquishError.FileUnreadable(name = name)) }
+                return@launch
+            }
+            if (meta.durationMs < needed) {
+                _state.update { it.copy(failure = SquishError.ReplacementTooShort(name, meta.durationMs, needed)) }
+                return@launch
+            }
+            val request = ReplaceRequest(clipId, uri, name, meta.durationMs, needed)
+            // Where the old clip started in its file, if the new one has that much: the
+            // likeliest match for a retake.
+            _state.update { it.copy(replacing = request.copy(inPointMs = clip.sourceInMs.coerceIn(0L, request.latestInMs))) }
+        }
+    }
+
+    /** The Replace sheet's slider: where in the new file the clip's window starts. */
+    fun setReplaceInPoint(ms: Long) = _state.update { current ->
+        val request = current.replacing ?: return@update current
+        current.copy(replacing = request.copy(inPointMs = ms.coerceIn(0L, request.latestInMs)))
+    }
+
+    /** The Replace sheet's Done: the file goes under the clip, as one step. */
+    fun commitReplace() {
+        val request = _state.value.replacing ?: return
+        applyReplace(request)
+    }
+
+    /** The Replace sheet closed without replacing: nothing changes. */
+    fun cancelReplace() = _state.update { if (it.replacing == null) it else it.copy(replacing = null) }
+
+    private fun applyReplace(request: ReplaceRequest) {
+        record("Replace") {
+            mutateTimeline { it.withClipReplaced(request.clipId, request.uri, request.fileMs, request.inPointMs, request.label) }
+        }
+        _state.update { it.copy(replacing = null) }
+        if (!StillClips.isStill(request.uri)) checkDecodable(request.uri)
+        ensureProxies(listOf(request.uri))
+        recomputeEstimate()
+    }
+
+    // ---- Copy and paste attributes -----------------------------------------------------
+
+    /** The clip's settings taken (Clip.attributes), for pasting onto another. Not an edit. */
+    fun copyAttributes(clipId: String) {
+        val current = _state.value
+        val clip = (current.videoClips + current.audioClips).firstOrNull { it.id == clipId } ?: return
+        _state.update { it.copy(attributeClipboard = clip.attributes) }
+    }
+
+    /** The copied settings laid onto the clip (withAttributesPasted), as one step. */
+    fun pasteAttributes(clipId: String) {
+        val attrs = _state.value.attributeClipboard ?: return
+        record("Paste attributes") { mutateTimeline { it.withAttributesPasted(clipId, attrs) } }
     }
 
     /**
@@ -937,5 +1197,8 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
 
         /** Marks what a template added, so the next template replaces it rather than piling on. */
         const val TEMPLATE_PREFIX = "tpl-"
+
+        /** Under files/: the reversed renders, which a draft refers to by file. */
+        const val REVERSED_DIR = "reversed"
     }
 }

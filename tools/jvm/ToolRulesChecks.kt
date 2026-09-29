@@ -1,4 +1,5 @@
 import com.squish.app.editor.BackStep
+import com.squish.app.editor.FOOTAGE_TOOLS
 import com.squish.app.editor.LEVEL_ZERO
 import com.squish.app.editor.ProjectName
 import com.squish.app.editor.SelectionKind
@@ -175,6 +176,43 @@ fun main() {
         check(photo.all { it in toolsFor(SelectionKind.Overlay) }, "a photo overlay offers a tool footage does not")
         check(sheetSurvives(Tool.Opacity, SelectionKind.PhotoOverlay, false), "Opacity closed moving to a photo overlay")
         check(!sheetSurvives(Tool.Volume, SelectionKind.PhotoOverlay, false), "Volume stayed open over a photo")
+    }
+
+    // --- The clip operations (B11): on footage, and on what has settings to carry. ------
+    run {
+        val footage = listOf(Tool.Rotate, Tool.Mirror, Tool.Freeze, Tool.Reverse, Tool.Replace)
+        for (kind in listOf(SelectionKind.MainVideo, SelectionKind.Overlay)) {
+            val tools = toolsFor(kind, canTransition = true)
+            check(footage.all { it in tools }, "$kind is missing one of $footage")
+            check(Tool.CopyAttributes in tools && Tool.PasteAttributes in tools, "$kind cannot copy or paste attributes")
+            check(tools.indexOf(Tool.CopyAttributes) + 1 == tools.indexOf(Tool.PasteAttributes), "$kind: Paste is not beside Copy")
+        }
+        // A photo turns and mirrors, and carries settings; it has no footage to freeze, reverse or swap.
+        val photo = toolsFor(SelectionKind.PhotoOverlay)
+        check(Tool.Rotate in photo && Tool.Mirror in photo && Tool.CopyAttributes in photo, "a photo cannot turn, mirror or copy")
+        check(FOOTAGE_TOOLS.none { it in photo }, "a photo offers a footage tool")
+        // A sound carries its level, fades, voice and speed; nothing of the picture.
+        val sound = toolsFor(SelectionKind.Audio)
+        check(Tool.CopyAttributes in sound && Tool.PasteAttributes in sound, "a sound cannot copy or paste attributes")
+        check(sound.none { it in FOOTAGE_TOOLS || it == Tool.Rotate || it == Tool.Mirror }, "a sound offers a picture tool")
+        for (kind in listOf(SelectionKind.Text, SelectionKind.Sticker, SelectionKind.Effect)) {
+            check(toolsFor(kind).none { it in FOOTAGE_TOOLS || it == Tool.CopyAttributes || it == Tool.Rotate }, "$kind offers a clip's footage tool")
+        }
+        // Everything on the strip can be selected alongside something else; the
+        // set then offers what acts on all of it and nothing that acts on one.
+        for (kind in SelectionKind.entries.filter { it != SelectionKind.None }) {
+            check(Tool.SelectMore in toolsFor(kind, canTransition = true), "$kind has no Select more")
+            val several = toolsFor(kind, canTransition = true, multi = true)
+            check(several == listOf(Tool.SelectMore, Tool.Delete), "$kind with several selected shows $several")
+        }
+        check(toolsFor(SelectionKind.None, multi = true) == LEVEL_ZERO, "nothing selected but several: not level 0")
+        check(footage.none { it.sheet } && !Tool.CopyAttributes.sheet && !Tool.SelectMore.sheet, "a clip operation opens a sheet instead of acting")
+        // Replace's sheet - where in the new file to start - opens on the pick, and
+        // stays while a footage clip is selected; a shot's tool closes over a set.
+        check(sheetSurvives(Tool.Replace, SelectionKind.MainVideo, false), "the Replace sheet closed over a shot")
+        check(!sheetSurvives(Tool.Replace, SelectionKind.Audio, false), "the Replace sheet stayed over a sound")
+        check(!sheetSurvives(Tool.Speed, SelectionKind.MainVideo, false, multi = true), "Speed stayed open over several clips")
+        check(sheetSurvives(Tool.Sound, SelectionKind.MainVideo, false, multi = true), "the Sound sheet closed over several clips")
     }
 
     println("tool rules: toolbar levels, sheets, back, cut target, project names")

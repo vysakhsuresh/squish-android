@@ -808,6 +808,7 @@ fun TimelineEditor(
                                     clips = state.clips.filter { it.kind == ClipKind.Video && it.layer == row.index },
                                     row = row,
                                     selectedId = state.selectedClipId,
+                                    alsoSelected = state.selectedIds,
                                     window = window,
                                     accent = Concept.Overlay.accent,
                                     waveforms = state.waveforms,
@@ -822,6 +823,7 @@ fun TimelineEditor(
                                     clips = mainShown,
                                     row = row,
                                     selectedId = state.selectedClipId,
+                                    alsoSelected = state.selectedIds,
                                     window = window,
                                     accent = Concept.Video.accent,
                                     waveforms = state.waveforms,
@@ -840,6 +842,7 @@ fun TimelineEditor(
                                     clips = state.audioClips.filter { soundRows[it.id] == row.index },
                                     row = row,
                                     selectedId = state.selectedClipId,
+                                    alsoSelected = state.selectedIds,
                                     window = window,
                                     accent = Concept.Sound.accent,
                                     waveforms = state.waveforms,
@@ -858,6 +861,7 @@ fun TimelineEditor(
                                     clips = state.textClips.filter { wordRows[it.id] == row.index },
                                     row = row,
                                     selectedId = state.selectedClipId,
+                                    alsoSelected = state.selectedIds,
                                     window = window,
                                     accent = Concept.Text.accent,
                                     waveforms = state.waveforms,
@@ -875,6 +879,7 @@ fun TimelineEditor(
                                     effects = state.effects.filter { effectRows[it.id] == row.index },
                                     row = row,
                                     selectedId = state.selectedClipId,
+                                    alsoSelected = state.selectedIds,
                                     window = window,
                                     onSelect = guardedSelect,
                                     onBareTap = bareTap,
@@ -1461,7 +1466,9 @@ private fun Lane(
      */
     clipColor: ((Clip) -> Color)? = null,
     /** A sound's beats to draw on it, in its file's time. */
-    soundBeats: (Clip) -> List<Long> = { emptyList() }
+    soundBeats: (Clip) -> List<Long> = { emptyList() },
+    /** Clips selected alongside [selectedId] (Select more): drawn selected too. */
+    alsoSelected: Set<String> = emptySet()
 ) {
     val latestBareTap by rememberUpdatedState(onBareTap)
 
@@ -1494,7 +1501,7 @@ private fun Lane(
             key(clip.id) {
                 ClipView(
                     clip = clip,
-                    selected = clip.id == selectedId,
+                    selected = clip.id == selectedId || clip.id in alsoSelected,
                     folded = row.folded,
                     lifted = clip.id == liftedId,
                     waveform = clip.uri?.let { waveforms[it.toString()] },
@@ -1958,7 +1965,8 @@ private fun EffectsRow(
     onSelect: (String?) -> Unit,
     onBareTap: () -> Unit,
     trims: Trims,
-    liftedId: String?
+    liftedId: String?,
+    alsoSelected: Set<String> = emptySet()
 ) {
     val latestBareTap by rememberUpdatedState(onBareTap)
     Box(
@@ -1975,7 +1983,7 @@ private fun EffectsRow(
         effects.forEach { effect ->
             if (!window.intersects(effect.startMs, effect.endMs)) return@forEach
             key(effect.id) {
-                EffectBar(effect, effect.id == selectedId, row.folded, effect.id == liftedId, window, onSelect, trims)
+                EffectBar(effect, effect.id == selectedId || effect.id in alsoSelected, row.folded, effect.id == liftedId, window, onSelect, trims)
             }
         }
     }

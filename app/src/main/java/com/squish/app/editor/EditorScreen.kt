@@ -165,11 +165,28 @@ fun EditorScreen(
 
     val kind = state.selectionKind
     val canTransition = state.selectedCanTransition
+    // Select more on, or several already selected: the toolbar is the set's.
+    // From the press itself, so the mode is seen to be on before a second tap.
+    val multi = state.multiSelected || (state.selectingMore && state.selectedClipId != null)
     // A clip's own tool closes when the selection no longer has it - Speed with
     // a caption selected, anything once the selection is deleted or let go.
-    LaunchedEffect(openTool, kind, canTransition) {
+    LaunchedEffect(openTool, kind, canTransition, multi) {
         val tool = openTool ?: return@LaunchedEffect
-        if (!sheetSurvives(tool, kind, canTransition)) openToolName = null
+        if (!sheetSurvives(tool, kind, canTransition, multi)) openToolName = null
+    }
+    // Replace: the file is picked first, and the sheet asking where in it to
+    // start comes up when the pick has been read - or not at all for a photo,
+    // which goes straight in. The sheet goes with the question.
+    LaunchedEffect(state.replacing) {
+        if (state.replacing != null) openToolName = Tool.Replace.name
+        else if (openToolName == Tool.Replace.name) openToolName = null
+    }
+    // The file to go under the selected clip, for Replace.
+    val pickReplacement = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            context.keepReadAccess(uri)
+            viewModel.state.value.selectedClipId?.let { viewModel.clips.beginReplace(it, uri) }
+        }
     }
 
     // Leaving flushes the edit first, so the last thing done before back is on
@@ -293,6 +310,19 @@ fun EditorScreen(
             Tool.ExtractAudio -> state.selectedClipId?.let(viewModel.audio::extractAudio)
             Tool.Speak -> state.selectedClipId?.let(viewModel.text::speak)
             Tool.Flip -> state.selectedClipId?.let(viewModel.text::flip)
+            Tool.Rotate -> state.selectedClipId?.let(viewModel.clips::turnClip)
+            Tool.Mirror -> state.selectedClipId?.let(viewModel.clips::mirrorClip)
+            Tool.Freeze -> state.selectedClipId?.let(viewModel.clips::freezeFrame)
+            Tool.Reverse -> state.selectedClipId?.let(viewModel.clips::reverseClip)
+            Tool.Replace -> pickReplacement.launch(
+                PickVisualMediaRequest.Builder()
+                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                    .build()
+            )
+            Tool.CopyAttributes -> state.selectedClipId?.let(viewModel.clips::copyAttributes)
+            Tool.PasteAttributes -> state.selectedClipId?.let(viewModel.clips::pasteAttributes)
+            // On with something selected; pressed again, back to that one alone.
+            Tool.SelectMore -> viewModel.setSelectingMore(!state.selectingMore)
             Tool.ToMain -> state.videoClips.firstOrNull { it.id == state.selectedClipId }?.let { clip ->
                 // A photo dragged out long is minutes of rendering on the main
                 // track; asked about rather than started with a spinner.
@@ -310,7 +340,8 @@ fun EditorScreen(
         // The take being recorded is drawn, not in the edit: a tap on it selects nothing.
         if (id != RECORDING_CLIP_ID) {
             val before = state.selectedClipId
-            viewModel.selectClip(id)
+            // With Select more on, a tap adds to the set or takes from it.
+            if (state.selectingMore) viewModel.toggleSelected(id) else viewModel.selectClip(id)
             if (id != null && id != before && openTool?.levelZero == true) openToolName = null
         }
     }
@@ -446,8 +477,13 @@ fun EditorScreen(
                 val toolbar = @Composable {
                     val accent = kind.concept?.accent
                     ToolBar(
-                        tools = toolsFor(kind, canTransition),
-                        accentOf = { tool -> accent ?: tool.levelZeroAccent },
+                        tools = toolsFor(kind, canTransition, multi),
+                        // Select more wears the primary colour while it is on: the
+                        // one tool on the row that is a state, not an action.
+                        accentOf = { tool ->
+                            if (tool == Tool.SelectMore && state.selectingMore) SquishColors.Primary
+                            else accent ?: tool.levelZeroAccent
+                        },
                         onTool = onTool,
                         enabled = { tool ->
                             when (tool) {
@@ -457,6 +493,11 @@ fun EditorScreen(
                                 // has somewhere to go other than nowhere; and on a
                                 // line with nothing to say.
                                 Tool.Speak -> state.selectedClipId?.let { TextEdits.canSpeak(state, it) } == true
+                                // Freeze wants the playhead on the clip; Reverse one
+                                // render of it at a time; Paste something copied.
+                                Tool.Freeze -> state.selectedClipId?.let { viewModel.clips.canFreeze(state, it) } == true
+                                Tool.Reverse -> state.selectedClipId?.let { viewModel.clips.canReverse(state, it) } == true
+                                Tool.PasteAttributes -> state.attributeClipboard != null
                                 else -> true
                             }
                         },
@@ -989,6 +1030,11 @@ private fun StatusCards(state: EditorUiState, viewModel: EditorViewModel, onStar
     )
     PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
     SpeakingIndicator(speaking = state.speakingId != null, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+    ReversingIndicator(
+        reversing = state.reversing,
+        nameOf = { id -> state.videoClips.firstOrNull { it.id == id }?.label ?: "clip" },
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+    )
 
     // Only the inline offer lives here; the modal one is over everything.
     state.recovery?.takeIf { !it.modal }?.let { offer ->
