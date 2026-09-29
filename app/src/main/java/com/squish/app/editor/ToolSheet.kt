@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -191,6 +192,12 @@ fun EditorToolSheet(
     LaunchedEffect(tool, shown?.id) {
         val shot = shown ?: return@LaunchedEffect
         if (state.playheadMs !in shot.timelineStartMs until shot.timelineEndMs) {
+            // Stopped first: playing on, the clock carried the playhead on
+            // through the shot before and the jump never showed.
+            viewModel.audio.requestPause()
+            // The pause lands first: answered after the jump, it put the playhead
+            // back where the clock had got to.
+            repeat(2) { withFrameNanos { } }
             viewModel.seekTo(shot.timelineStartMs + minOf(LOOK_LEAD_MS, shot.durationMs / 3))
         }
     }
