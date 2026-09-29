@@ -26,10 +26,15 @@ fun main() {
                 check(active == shape, "$shape laid over $span ms reads as $active")
             }
         }
-        // Normal is any one rate: the hint says "one rate, no ramp".
+        // Normal is one rate at 1x - what a tap on the chip lays - so it lights
+        // only where the tap would change nothing. A flat 2x lights no chip:
+        // it did, and a tap on the lit chip dropped the shot to 1x.
         check(PolishRules.activeRampShape(SpeedRamp(), 5_000L) == RampShape.Normal, "an untouched clip is not Normal")
-        check(PolishRules.activeRampShape(SpeedRamp.flat(2f), 5_000L) == RampShape.Normal, "a flat 2x is not Normal")
-        check(PolishRules.activeRampShape(SpeedRamp.flat(0.25f), 5_000L) == RampShape.Normal, "a flat quarter is not Normal")
+        check(PolishRules.activeRampShape(SpeedRamp.flat(1f), 5_000L) == RampShape.Normal, "a flat 1x is not Normal")
+        check(PolishRules.activeRampShape(SpeedRamp.flat(1.005f), 5_000L) == RampShape.Normal, "a flat 1.005x is not Normal")
+        check(PolishRules.activeRampShape(SpeedRamp.flat(2f), 5_000L) == null, "a flat 2x lights a chip")
+        check(PolishRules.activeRampShape(SpeedRamp.flat(0.25f), 5_000L) == null, "a flat quarter lights a chip")
+        check(PolishRules.activeRampShape(SpeedRamp.flat(1.5f), 5_000L) == null, "a flat 1.5x lights a chip")
     }
 
     // --- A point dragged, added or the clip cut: no chip claims the curve. -----
@@ -47,10 +52,14 @@ fun main() {
         // The clip cut in half keeps points over footage it no longer shows; the
         // half is no preset.
         check(PolishRules.activeRampShape(SpeedRamp(hero), span / 2) == null, "half of a Hero clip still reads as Hero")
-        // Two points of the same rate is not a ramp at all.
+        // Two points of the same rate is not a ramp at all: Normal at 1x, nothing at 2x.
         check(
             PolishRules.activeRampShape(SpeedRamp(listOf(SpeedPoint(0L, 1f), SpeedPoint(span, 1f))), span) == RampShape.Normal,
             "two points at one rate is not Normal"
+        )
+        check(
+            PolishRules.activeRampShape(SpeedRamp(listOf(SpeedPoint(0L, 2f), SpeedPoint(span, 2f))), span) == null,
+            "two points at 2x light a chip"
         )
     }
 
@@ -60,6 +69,18 @@ fun main() {
         check(PolishRules.rampHint(RampShape.Normal) == "One rate, no ramp", "Normal's hint is ${PolishRules.rampHint(RampShape.Normal)}")
         check(PolishRules.rampHint(null).startsWith("Tap a curve"), "no shape reads as ${PolishRules.rampHint(null)}")
         check(RampShape.entries.map { it.hint }.distinct().size == RampShape.entries.size, "two shapes share a hint")
+        // A flat shot off 1x has no chip lit, so the line carries its rate.
+        val flat2 = PolishRules.rampHint(null, SpeedRamp.flat(2f))
+        check(flat2.startsWith("One rate, 2x.") && flat2.contains("Tap a curve"), "a flat 2x reads as $flat2")
+        check(PolishRules.rampHint(null, SpeedRamp.flat(0.25f)).startsWith("One rate, 0.25x."), "a flat quarter reads as ${PolishRules.rampHint(null, SpeedRamp.flat(0.25f))}")
+        // A dragged Hero is a ramp: the line says to tap a curve, with no rate.
+        val hero = SpeedRamp.preset(RampShape.Hero, 5_000L).ordered
+        val dragged = SpeedRamp(hero.mapIndexed { i, p -> if (i == 1) p.copy(speed = 0.6f) else p })
+        check(PolishRules.rampHint(null, dragged) == "Tap a curve to lay it across the whole shot", "a dragged curve reads as ${PolishRules.rampHint(null, dragged)}")
+        // And the lit chip's own line wins whatever the ramp.
+        check(PolishRules.rampHint(RampShape.Normal, SpeedRamp.flat(1f)) == "One rate, no ramp", "Normal's line lost to the rate")
+        check(PolishRules.rateLabel(2f) == "2x" && PolishRules.rateLabel(0.5f) == "0.5x" && PolishRules.rateLabel(0.25f) == "0.25x" &&
+            PolishRules.rateLabel(1.5f) == "1.5x" && PolishRules.rateLabel(10f) == "10x", "rate labels read wrong")
     }
 
     // --- A move laid by a tap lights its own chip. -----------------------------

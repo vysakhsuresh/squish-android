@@ -258,9 +258,12 @@ private fun PlacedEffect(
         EffectSliders(effect, onChange, onGestureEnd)
         // Its ends are retimed on the strip, where the effect is a clip with
         // handles like any other. "Start here" and "End here" buttons did the
-        // same job a second way, with a second set of limits.
+        // same job a second way, with a second set of limits. The handles only
+        // show on the selected effect, and selecting one closes this level-0
+        // sheet, so the line says the whole path rather than pointing at
+        // handles the open sheet keeps off the strip.
         Text(
-            "Drag its ends on the strip to retime it",
+            "To retime it, close this sheet and tap it on the strip: its ends are handles",
             style = MaterialTheme.typography.labelSmall,
             color = SquishColors.TextMuted
         )

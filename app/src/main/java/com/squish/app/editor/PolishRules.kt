@@ -32,13 +32,16 @@ object PolishRules {
      * The ramp shape [ramp] is, or null when it is no preset - points added,
      * dragged, or the clip cut so its curve is a piece of one.
      *
-     * Normal is any single rate: its hint says "one rate, no ramp", and a shot
-     * at 2x flat is exactly that. The other shapes are matched on their points
+     * Normal is one rate, and that rate 1x: the chip lays [SpeedRamp.Normal],
+     * which is 1x, so it may only light where a tap on it would change
+     * nothing. It used to light for any flat rate, so a shot at 2x read as
+     * "Normal" and a tap on the lit chip dropped it to 1x, rippling the track.
+     * A flat 2x lights no chip. The other shapes are matched on their points
      * as fractions of [spanMs], which is how [SpeedRamp.preset] lays them, so a
      * preset stays recognised whatever the clip's length.
      */
     fun activeRampShape(ramp: SpeedRamp, spanMs: Long): RampShape? {
-        if (!ramp.isRamped) return RampShape.Normal
+        if (!ramp.isRamped) return if (abs(ramp.flatSpeed - 1f) <= SPEED_TOLERANCE) RampShape.Normal else null
         val span = spanMs.coerceAtLeast(1L).toDouble()
         val points = ramp.ordered
         return RampShape.entries.firstOrNull { shape ->
@@ -50,9 +53,22 @@ object PolishRules {
         }
     }
 
-    /** The line under the curve chips: the chosen shape's own hint, or what a tap does. */
-    fun rampHint(active: RampShape?): String =
-        active?.hint ?: "Tap a curve to lay it across the whole shot"
+    /**
+     * The line under the curve chips: the chosen shape's own hint, or what a
+     * tap does - with the rate, on a flat shot that is not at 1x, since no
+     * chip is lit to say what it is on.
+     */
+    fun rampHint(active: RampShape?, ramp: SpeedRamp? = null): String = when {
+        active != null -> active.hint
+        ramp != null && !ramp.isRamped -> "One rate, ${rateLabel(ramp.flatSpeed)}. Tap a curve to lay it across the whole shot, or Normal for 1x"
+        else -> "Tap a curve to lay it across the whole shot"
+    }
+
+    /** A rate as the Speed sheet prints it everywhere: "2x", "0.5x", "0.25x", "1.5x". */
+    fun rateLabel(speed: Float): String =
+        if (speed < 1f) "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}x"
+        else if (abs(speed - speed.toInt()) < 0.005f) "${speed.toInt()}x"
+        else "${"%.1f".format(speed).trimEnd('0').trimEnd('.')}x"
 
     /**
      * How far a key may sit from the clip's start or end, as a fraction of the

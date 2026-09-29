@@ -855,17 +855,37 @@ should work through it and then delete what holds up.
   left); the Speed sheet's curve chip lights after a tap and goes out when a
   point is dragged, and the line under the chips is the lit chip's own; the
   same for the Moves chips on Animation, and a preset survives a frame trimmed
-  off the tail; the keyframe button and the key rows show a vector diamond
+  off the tail; Normal lights at 1x only - a lit chip must be one a tap leaves
+  alone, and it lit for any flat rate, so a 2x shot read as "Normal" and a tap
+  on the lit chip dropped it to 1x, rippling the track - and a flat 2x lights
+  no chip, the line reading "One rate, 2x…"; the keyframe button and the key
+  rows show a vector diamond
   (`KeyframeGlyph`) at the row's size, not the font's "◆"; Crop's Flip buttons
   carry the swap icons; a pinned line or mask on Track shows a tick icon;
-  Cutout on a *main-track* shot offers neither Key green nor Cut out but
-  "Float this clip", which is `switchToOverlay` - check it lands the shot on
-  an overlay row selected and the Cutout sheet then shows the key buttons, and
-  that with every row taken the "rows are taken" failure shows instead; a shot
-  that already carries a key or Cut out (pasted, or an old draft) still shows
-  Turn off; the effects library's placed-effect cards have no Start here / End
-  here (the strip's handles retime an effect); the Sync nudges read "−1 frame"
-  and "−10 ms"; the first-open gesture hint is B15's editor coach mark alone
+  Cutout on a *main-track* shot offers neither Key green nor Cut out - a hole
+  in the base shows black in the preview even over a padded canvas, since the
+  base surface's chain ends in the effects pass, which writes alpha 1
+  (`squish_fx_es2.glsl`), while the file would show the backdrop, so offering
+  it there would be a preview the file disagrees with; the person over a
+  colour is the Colour fill - but "Float this clip" (`FloatOffer`), which is
+  `switchToOverlay(keepPlacement = true)`: the shot keeps its placement and
+  its keys and the next shot slides in under it (the toolbar's To overlay
+  still lands in the corner, placement reset) - check it lands the shot on an
+  overlay row selected, full frame where it was, with its Push in still on it,
+  and the Cutout sheet then shows the key buttons; that with every row taken
+  the "rows are taken" failure shows instead; and that the button is not
+  offered on the last shot or the only shot (`OverlayRules.floatsOverAShot`:
+  nothing would be under it - the only shot floated used to empty the video
+  track), nor under Blur or Colour; a shot that already carries a key or Cut
+  out (pasted, or an old draft) keeps every control - swatch, Pick, the
+  sliders, Turn off - with the float offer under them; the panel under the
+  Chroma key chip is headed "Chroma key" (it read "Green screen"); the effects
+  library's placed-effect cards have no Start here / End here (the strip's
+  handles retime an effect, and the card says to close the sheet and tap the
+  effect first, since selecting an effect closes a level-0 sheet and the
+  handles draw only on the selected effect); the Sync nudges read "−1 frame"
+  and "−10 ms", two rows of two so the frame labels do not wrap at the larger
+  font sizes; the first-open gesture hint is B15's editor coach mark alone
   (B16 had its own "Getting around" card, dropped in the merge over B15 since
   the two said the same three things - check one card shows, not two); and the
   preview's per-tick work no longer builds a list to find the clock clip or
