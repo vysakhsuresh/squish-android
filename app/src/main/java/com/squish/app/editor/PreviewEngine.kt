@@ -1561,6 +1561,25 @@ class PreviewEngine(private val context: Context) {
     fun attachSurface(player: ExoPlayer, view: TextureView) {
         if (released) return
         player.setVideoTextureView(view)
+        // A still picture resized - a sheet opening shrinks the preview - kept
+        // the frame it had at the old size, drawn at the old scale into the new
+        // box: a third smaller and off to one side, until something drew again.
+        // After the picture had played, the effects pass kept drawing into a
+        // surface of the old size, even new frames after a seek - measured:
+        // a 370x658 picture in the bottom-left of a 557x991 buffer. The view
+        // is handed to the player again, which makes it a surface of the new
+        // size, and a seek to where it is draws a frame into it.
+        view.addOnLayoutChangeListener { v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            val resized = right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop
+            if (!resized || oldRight - oldLeft == 0) return@addOnLayoutChangeListener
+            v.post {
+                if (released || player.isPlaying || player.playbackState == Player.STATE_IDLE) return@post
+                player.clearVideoTextureView(view)
+                player.setVideoTextureView(view)
+                val at = player.currentPosition
+                player.seekTo(if (player.playbackState == Player.STATE_ENDED) (at - REDRAW_BACK_MS).coerceAtLeast(0L) else at)
+            }
+        }
     }
 
     fun release() {
@@ -1582,6 +1601,9 @@ class PreviewEngine(private val context: Context) {
         const val KEY_A = "base-a"
         const val KEY_B = "base-b"
         const val KEY_OVERLAY = "overlay-"
+
+        /** How far back an ended player is sent to draw its last picture again: under two frames. */
+        const val REDRAW_BACK_MS = 50L
 
         /**
          * How far ahead the next shot is opened and parked. Longer than the
