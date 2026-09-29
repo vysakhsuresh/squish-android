@@ -402,6 +402,34 @@ object OverlayRules {
     }
 
     /**
+     * The buttons where they can be pressed: each kept [margin] inside the
+     * layer the picture is shown in, which runs from [minX], [minY] to [maxX],
+     * [maxY] in the frame's own pixels. An overlay grown or dragged to the top
+     * of the picture had its Delete and Copy drawn above the preview, where no
+     * finger could reach them.
+     */
+    fun reachableHandles(box: Box, outset: Float, minX: Float, minY: Float, maxX: Float, maxY: Float, margin: Float): List<Pair<Float, Float>> =
+        box.handles(outset).map { (hx, hy) ->
+            val x = if (maxX - minX > margin * 2) hx.coerceIn(minX + margin, maxX - margin) else hx
+            val y = if (maxY - minY > margin * 2) hy.coerceIn(minY + margin, maxY - margin) else hy
+            x to y
+        }
+
+    /**
+     * Which of [handles] a touch at [x], [y] takes. Never from inside the box
+     * (see [cornerAt]) - unless the button was pulled in there to be reachable,
+     * where the button is what is under the finger.
+     */
+    fun handleAt(box: Box, x: Float, y: Float, handles: List<Pair<Float, Float>>, outset: Float, reach: Float): Int? {
+        val natural = box.handles(outset)
+        return handles
+            .mapIndexed { i, (hx, hy) -> i to hypot(hx - x, hy - y) }
+            .filter { (i, d) -> d <= reach && (!box.contains(x, y) || handles[i] != natural[i]) }
+            .minByOrNull { it.second }
+            ?.first
+    }
+
+    /**
      * The overlay's frame fitted into a [frameW] x [frameH] picture - the fit the
      * export's Presentation gives it - before its own scale. Null aspect (the
      * decoder has not said yet) is the whole frame.

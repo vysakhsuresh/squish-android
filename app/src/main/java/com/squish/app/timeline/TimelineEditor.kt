@@ -79,6 +79,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -1983,7 +1984,17 @@ private fun ClipView(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-        } else if (clip.kind != ClipKind.Video && width > 16.dp) {
+        } else if (clip.kind == ClipKind.Text && width > 12.dp && clip.text.orEmpty().trim().let { it.isNotEmpty() && it.codePointCount(0, it.length) <= 2 }) {
+            // A sticker is a line of one emoji: the emoji is its glyph.
+            Text(
+                clip.text.orEmpty().trim(),
+                // Fitted to the clip: a thin one had the emoji hanging off its edge.
+                fontSize = with(LocalDensity.current) { minOf(12.sp.toPx(), (width - 4.dp).toPx() * 0.8f).toSp() },
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        } else if (clip.kind != ClipKind.Video && width > 12.dp) {
             // Too narrow for a name, a line or a song was a blank block; a
             // glyph still says which it is, as CapCut's short clips do.
             Icon(

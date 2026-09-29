@@ -303,6 +303,19 @@ fun main() {
             }
         }
         check(OverlayRules.cornerAt(small, 5_000f, 5_000f, outset, reach) == null, "a touch far away took a button")
+
+        // Buttons pushed off the layer come back inside it, and still take their touch.
+        val margin = outset
+        val high = small.copy(cy = 10f)  // grown or dragged to the top edge
+        val kept = OverlayRules.reachableHandles(high, outset, 0f, 0f, 1_000f, 1_000f, margin)
+        kept.forEachIndexed { i, (hx, hy) ->
+            check(hx in margin..1_000f - margin && hy in margin..1_000f - margin, "button $i was left off the layer at ($hx, $hy)")
+            check(OverlayRules.handleAt(high, hx, hy, kept, outset, reach) == i, "a touch on kept button $i took ${OverlayRules.handleAt(high, hx, hy, kept, outset, reach)}")
+        }
+        // In the open, nothing moves and the inside of the box is still the body.
+        val open = OverlayRules.reachableHandles(small, outset, 0f, 0f, 1_000f, 1_000f, margin)
+        check(open == small.handles(outset), "a box in the open had its buttons moved")
+        check(OverlayRules.handleAt(small, small.cx, small.cy, open, outset, reach) == null, "the middle of a box in the open took a button")
     }
 
     // --- A photo made long is asked about before it is rendered. -------------------------

@@ -50,7 +50,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Transform
 import com.squish.app.ui.theme.SquishColors
@@ -159,13 +161,16 @@ fun OverlayHandles(
 
     var snap by remember { mutableStateOf<OverlayRules.Snapped?>(null) }
     var readout by remember { mutableStateOf<String?>(null) }
+    var layer by remember { mutableStateOf(IntSize.Zero) }
 
     Box(
         modifier = modifier
+            .onSizeChanged { layer = it }
             .pointerInput(Unit) {
                 val cornerReach = CORNER_REACH.toPx()
                 val cornerOutset = CORNER_OUTSET.toPx()
                 val grace = HIT_GRACE.toPx()
+                val margin = (CORNER_SIZE / 2).toPx()
                 val snapPx = SNAP_DISTANCE.toPx()
                 // The last tap's target and moment, for telling a double tap.
                 var lastTap: Pair<String, Long>? = null
@@ -189,7 +194,10 @@ fun OverlayHandles(
                     // OverlayRules.cornerAt). Only buttons that are drawn: while
                     // it plays there are none.
                     val corner = selectedBox?.takeIf { latestShowBox && w > 0f && h > 0f }
-                        ?.let { OverlayRules.cornerAt(it, at.x, at.y, cornerOutset, cornerReach) }
+                        ?.let {
+                            val handles = OverlayRules.reachableHandles(it, cornerOutset, -origin.x, -origin.y, size.width - origin.x, size.height - origin.y, margin)
+                            OverlayRules.handleAt(it, at.x, at.y, handles, cornerOutset, cornerReach)
+                        }
                         ?.let { Corner.entries[it] }
                     if (selected != null && selectedBox != null && corner != null) {
                         if (corner == Corner.Resize) {
@@ -317,6 +325,7 @@ fun OverlayHandles(
         val oy = frame.top
         val box = selected?.takeIf { showBox && w > 0f && h > 0f }?.let { OverlayRules.box(it.drawn, it.aspect, w, h) }
         val outset = with(density) { CORNER_OUTSET.toPx() }
+        val margin = with(density) { (CORNER_SIZE / 2).toPx() }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             snap?.let { s ->
@@ -339,7 +348,7 @@ fun OverlayHandles(
         }
 
         box?.let { b ->
-            b.handles(outset).forEachIndexed { i, (cx, cy) ->
+            OverlayRules.reachableHandles(b, outset, -ox, -oy, layer.width - ox, layer.height - oy, margin).forEachIndexed { i, (cx, cy) ->
                 val corner = Corner.entries[i]
                 CornerButton(
                     corner = corner,
