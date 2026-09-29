@@ -2,6 +2,8 @@ import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.EffectSpan
 import com.squish.app.timeline.LaneItem
+import android.net.Uri
+import com.squish.app.timeline.MAX_FOOTAGE_LAYER
 import com.squish.app.timeline.MAX_LAYER
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.SpeedPoint
@@ -17,6 +19,7 @@ import com.squish.app.timeline.withClipReordered
 import com.squish.app.timeline.withClipTrimmed
 import com.squish.app.timeline.withGapClosed
 import com.squish.app.timeline.withClipRetimed
+import com.squish.app.timeline.withRowsCompacted
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
 import kotlin.math.abs
@@ -49,6 +52,7 @@ private fun words(id: String, start: Long, end: Long) = Clip(
 )
 
 private fun TimelineState.byId(id: String) = clips.first { it.id == id }
+private fun TimelineState.overlayRows() = overlayClips.map { it.id to it.layer }
 
 private fun noOverlapOnARow(items: List<LaneItem>, rows: Map<String, Int>, tag: String) {
     for (a in items) for (b in items) {
@@ -185,8 +189,20 @@ private fun rows() {
     check(blocked.byId("p").timelineStartMs == 6_500L, "overlay onto a taken layer did not move along its own: ${blocked.byId("p").timelineStartMs}")
     val down = pips.withClipPlaced("p", 1_000, 0)
     check(down.byId("p").layer == 1 && down.baseVideoClips.size == 1, "overlay dropped low joined the main track")
+    // Footage stops at its own top row (a decoder each); a photo may use them all.
     val high = pips.withClipPlaced("p", 1_000, MAX_LAYER + 4)
-    check(high.byId("p").layer == MAX_LAYER, "overlay past the top row: layer ${high.byId("p").layer}")
+    check(high.byId("p").layer == MAX_FOOTAGE_LAYER, "footage past its top row: layer ${high.byId("p").layer}")
+    val still = pips.copy(clips = pips.clips.map {
+        if (it.id == "p") it.copy(uri = Uri.parse("file:///data/user/0/com.squish.app/files/stills/overlay_p.png")) else it
+    })
+    val highStill = still.withClipPlaced("p", 1_000, MAX_LAYER + 4)
+    check(highStill.byId("p").layer == MAX_LAYER, "photo past the top row: layer ${highStill.byId("p").layer}")
+    // The drop leaves the rows as the strip drew them; closing up after it (as
+    // placeClip does) takes out the row the overlay left and keeps the order.
+    val left = pips.withClipPlaced("p", 12_000, 3)
+    check(left.byId("p").layer == 3 && left.byId("q").layer == 2, "overlay to a new top row: ${left.overlayRows()}")
+    val closed = left.withRowsCompacted()
+    check(closed.byId("q").layer == 1 && closed.byId("p").layer == 2, "rows after the drop: ${closed.overlayRows()}")
     check(pips.withClipPlaced("p", -500, 1).byId("p").timelineStartMs == 0L, "overlay dropped before zero")
 }
 

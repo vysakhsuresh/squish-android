@@ -7,6 +7,7 @@ import com.squish.app.editor.CropAspect
 import com.squish.app.editor.CropRect
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
+import com.squish.app.editor.OverlayRules
 import com.squish.app.editor.ProjectName
 import com.squish.app.editor.TextFont
 import com.squish.app.editor.TextLook
@@ -707,13 +708,19 @@ class ProjectAutosave(context: Context) {
         // Every version since the last incompatible change is read: the fields
         // added since then all have defaults, and a bump that orphaned every
         // draft on the phone would be the very loss this file exists to prevent.
-        if (json.optInt("version") !in OLDEST_READABLE_VERSION..FORMAT_VERSION) return null
+        val version = json.optInt("version")
+        if (version !in OLDEST_READABLE_VERSION..FORMAT_VERSION) return null
         val sourceUri = json.optString("sourceUri").takeIf { it.isNotBlank() } ?: return null
 
-        val clips = json.optJSONArray("clips")?.let { array ->
+        val saved = json.optJSONArray("clips")?.let { array ->
             (0 until array.length()).mapNotNull { i -> decodeClip(array.optJSONObject(i), ClipKind.Video) }
         }.orEmpty()
-        if (clips.isEmpty()) return null
+        if (saved.isEmpty()) return null
+        // Saved before each picture had its own level: the edit-wide camera level
+        // moves onto the shots, and the overlays - silent then - stay silent.
+        val perClip = version < PER_CLIP_VOLUME_VERSION
+        val savedLevel = json.optDouble("originalVolume", 1.0).toFloat()
+        val clips = if (perClip) OverlayRules.withPerClipVolume(saved, savedLevel) else saved
 
         val audio = json.optJSONArray("audioClips")?.let { array ->
             (0 until array.length()).mapNotNull { i -> decodeClip(array.optJSONObject(i), ClipKind.Audio) }
@@ -766,7 +773,7 @@ class ProjectAutosave(context: Context) {
             audioOnly = json.optBoolean("audioOnly"),
             muteOriginal = json.optBoolean("muteOriginal"),
             voiceEffect = enumOrNull<VoiceEffect>(json.optString("voiceEffect")) ?: VoiceEffect.None,
-            originalVolume = json.optDouble("originalVolume", 1.0).toFloat(),
+            originalVolume = if (perClip) 1f else savedLevel,
             rotationDegrees = json.optInt("rotationDegrees"),
             cropAspect = enumOrNull<CropAspect>(json.optString("cropAspect")) ?: CropAspect.Original,
             cropRect = json.optJSONObject("cropRect")?.let { r ->
@@ -961,9 +968,16 @@ class ProjectAutosave(context: Context) {
          *
          * 10: the hand-drawn crop, the beat grid, snapping and the stabilizer
          * strength, none of which survived a kill before.
+         *
+         * 11: a picture's "volume" is its own level, heard - on the main track
+         * under the camera level, on an overlay alone. Before it the field was
+         * written and never read; see [PER_CLIP_VOLUME_VERSION].
          */
-        const val FORMAT_VERSION = 10
+        const val FORMAT_VERSION = 11
         const val OLDEST_READABLE_VERSION = 9
+
+        /** The first version whose pictures' levels are their own; older ones are moved over on reading. */
+        const val PER_CLIP_VOLUME_VERSION = 11
     }
 }
 
@@ -1022,6 +1036,7 @@ data class ProjectSnapshot(
             voiceEffect == VoiceEffect.None && !muteOriginal && originalVolume == 1f &&
             clips.first().let {
                 it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs &&
+                    it.volume == 1f &&
                     it.chromaKey == null && it.mask == null && it.background == null &&
                     it.keyframes.isEmpty() && it.stabilizer.isEmpty() && it.speedRamp == com.squish.app.timeline.SpeedRamp()
             }

@@ -261,6 +261,40 @@ should work through it and then delete what holds up.
   it on another row; deleting the last shot with the playhead at the end brings
   the playhead back to the new end.
 
+- **Batch B8 (overlays), all of it.** Built on the desktop with no phone
+  attached. The decisions - landing length, the main track and back, the box's
+  copy, per-clip levels and the old-draft move, and the box itself (hit test,
+  drag, pinch, corner handle, snapping, readout) - are executed on the JVM
+  (`tools/jvm/OverlayChecks.kt`), including that the box's corners are exactly
+  where `ExportPlan.placementMatrix` draws the layer. Script in
+  `docs/ROADMAP.md` §4 under B8, plus: overlays are now laid out in the frame the
+  export keeps, so with a 9:16 or hand-drawn crop a PiP sits inside the crop on
+  screen as in the file (it used to be placed against the uncropped picture);
+  a photo overlay is a PNG under `files/stills/` drawn by Compose, not a player -
+  check its transparency, that it exports through Media3's image input with its
+  alpha (the one path here that leans on that), and its filmstrip tile; an
+  overlay row declared with sound fills its photos, gaps and muted clips with
+  silence (the BUILD_NOTES fact B5 leans on for base rolls, now on overlay rows
+  too); overlay audio is heard in the preview at its Volume and not under the
+  camera switch, and a shot's Volume is under the camera level; an overlay row
+  with nothing within 5 s lets its decoder go and reloads before its next clip
+  (watch for a late first frame); three rows of footage at once over a
+  transition (five video decoders) is the budget `MAX_FOOTAGE_LAYER` assumes -
+  rows 4 to 6 take photos only; a draft from before this build opens with its
+  overlays at Volume 0 and its shots at the old camera level; the hand-drawn
+  crop is only editable on the Frame sheet (the overlay box stands aside there)
+  and is drawn, untouchable, everywhere else.
+  From its review round: the box's buttons sit just past its corners and the
+  inside is always the body - pinch an overlay to about 20% and it still drags
+  with one finger, and a tap on its middle selects rather than deletes; the
+  buttons of an overlay hanging off a 9:16 crop, over the bars or the
+  letterbox, can be pressed (the box's layer covers the whole preview now); the
+  fourth button is Edit (opens Placement), not Reset; a tap on an overlay while
+  playing pauses and shows its box; the overlay row's head opens the picker;
+  Send back / Bring forward swap two overlapping overlays and never leave an
+  empty lane; a PiP moved To main under a camera mute says it is silent there;
+  a photo overlay longer than a minute asks before To main renders it.
+
 ## Conventions worth not rediscovering
 
 - **A tool's `id` is a handle, not a name.** `QuickTool.id` is in the navigation

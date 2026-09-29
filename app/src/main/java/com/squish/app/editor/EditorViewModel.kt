@@ -14,6 +14,7 @@ import com.squish.app.media.ExportStage
 import com.squish.app.media.MediaCompat
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.SquishError
+import com.squish.app.media.StillClips
 import com.squish.app.media.GallerySaver
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.VideoProcessor
@@ -91,6 +92,7 @@ class EditorViewModel(
         override fun recomputeEstimate() = this@EditorViewModel.recomputeEstimate()
         override fun displayNameOf(uri: Uri): String? = this@EditorViewModel.displayNameOf(uri)
         override fun checkDecodable(uri: Uri) = this@EditorViewModel.checkDecodable(uri)
+        override fun ensureProxies(uris: Collection<Uri>) = this@EditorViewModel.ensureProxies(uris)
     }
 
     /** Clips and the timeline: add, cut, move, trim, speed, placement, look, effects. */
@@ -342,7 +344,7 @@ class EditorViewModel(
                 acceptRecovery()
                 return@launch
             }
-            startProxy(uri, meta.displayWidth, meta.displayHeight, meta.durationMs)
+            ensureProxies(listOf(uri))
             confirmSourceAudio(uri)
         }
     }
@@ -475,6 +477,9 @@ class EditorViewModel(
     private fun checkDecodable(uri: Uri) {
         viewModelScope.launch {
             val report = MediaCompat.check(getApplication(), uri) ?: return@launch
+            // Whether an overlay has sound is only known from here on, and the
+            // size estimate sets bits aside for it (EditorUiState.hasAnyAudio).
+            recomputeEstimate()
             val problem = report.videoProblem?.let { SquishError.UnsupportedCodec(it) }
                 ?: report.audioProblem?.let { SquishError.UnsupportedAudio(it) }
                 ?: return@launch
@@ -921,10 +926,33 @@ class EditorViewModel(
                     .let { s -> s.copy(effects = s.effects.fittedTo(s.videoClips.maxOfOrNull { c -> c.timelineEndMs } ?: 0L)) }
             }
             recomputeEstimate()
-            startProxy(snapshot.sourceUri, meta.displayWidth, meta.displayHeight, meta.durationMs)
+            val files = (snapshot.clips.mapNotNull { it.uri } + snapshot.sourceUri).distinct()
+            ensureProxies(files)
             confirmSourceAudio(snapshot.sourceUri)
-            (snapshot.clips.mapNotNull { it.uri } + snapshot.sourceUri).distinct().forEach(::checkDecodable)
+            reportMissingLayers(snapshot.clips)
+            files.filterNot(StillClips::isStill).forEach(::checkDecodable)
             restoreAudioWaveforms(snapshot.audioClips)
+        }
+    }
+
+    /**
+     * A restored edit whose picture files are not all readable any more - a grant
+     * that did not survive, a file deleted from the gallery - says which one, by
+     * name, the moment it is restored. The offer only checked the file first
+     * opened, so a missing overlay came back as a row with a clip on it, a black
+     * layer in the preview and an export that failed when it got there (O10).
+     */
+    private suspend fun reportMissingLayers(clips: List<Clip>) {
+        val missing = withContext(Dispatchers.IO) {
+            clips.filter { it.kind == ClipKind.Video }
+                .distinctBy { it.uri }
+                .firstOrNull { clip -> clip.uri?.let { !canRead(it) } == true }
+        } ?: return
+        _state.update {
+            it.copy(
+                failure = if (missing.isOverlay) SquishError.LayerUnreadable(missing.label, missing.layer)
+                else SquishError.FileUnreadable(name = missing.label.takeIf { l -> l.isNotBlank() })
+            )
         }
     }
 
@@ -992,37 +1020,57 @@ class EditorViewModel(
 
     // ---- Proxy media ----------------------------------------------------------
 
+    /** Files waiting to be looked at for a stand-in, in the order they arrived. Main thread only. */
+    private val proxyQueue = ArrayDeque<Uri>()
+
     /**
      * Heavy footage gets a 540p stand-in for the preview player while the export
      * pipeline keeps reading the original. Everything at or below 1080p skips this
      * entirely - it already scrubs smoothly, and transcoding it would cost more
      * time than it ever saves.
+     *
+     * Every video file in the edit, main track and overlay rows alike - only the
+     * file first opened used to get one (P8). Built one at a time, in the order
+     * the files came: each build is an encoder session, and two at once beside
+     * a playing preview is two sessions too many. A file is looked at once per
+     * editor; a photo kept as a picture is never looked at.
      */
-    private fun startProxy(uri: Uri, width: Int, height: Int, durationMs: Long) {
-        proxyJob?.cancel()
-
-        if (!ProxyEngine.isWorthProxying(width, height, durationMs)) {
-            _state.update { it.copy(proxyUri = null, proxyStatus = ProxyStatus.NotNeeded) }
-            return
-        }
-
-        ProxyEngine.cached(getApplication(), uri)?.let { file ->
-            _state.update { it.copy(proxyUri = Uri.fromFile(file), proxyStatus = ProxyStatus.Ready) }
-            return
-        }
-
-        _state.update { it.copy(proxyUri = null, proxyStatus = ProxyStatus.Building) }
+    private fun ensureProxies(uris: Collection<Uri>) {
+        val known = _state.value.proxyStatuses
+        uris.distinct()
+            .filter { it !in known && it !in proxyQueue && !StillClips.isStill(it) }
+            .forEach { proxyQueue.addLast(it) }
+        if (proxyQueue.isEmpty() || proxyJob?.isActive == true) return
         proxyJob = viewModelScope.launch {
-            val file = ProxyEngine.ensure(getApplication(), uri)
-            _state.update {
-                if (file != null) {
-                    it.copy(proxyUri = Uri.fromFile(file), proxyStatus = ProxyStatus.Ready)
-                } else {
-                    // Not worth a dialogue: the original still plays, just heavier.
-                    it.copy(proxyUri = null, proxyStatus = ProxyStatus.Failed)
-                }
+            while (true) {
+                val uri = proxyQueue.removeFirstOrNull() ?: break
+                if (uri in _state.value.proxyStatuses) continue
+                buildProxy(uri)
             }
         }
+    }
+
+    private suspend fun buildProxy(uri: Uri) {
+        val app = getApplication<Application>()
+        val meta = ThumbnailExtractor.probe(app, uri)
+        fun status(value: ProxyStatus, proxy: Uri? = null) = _state.update {
+            it.copy(
+                proxyStatuses = it.proxyStatuses + (uri to value),
+                proxyUris = if (proxy != null) it.proxyUris + (uri to proxy) else it.proxyUris - uri
+            )
+        }
+        if (!ProxyEngine.isWorthProxying(meta.displayWidth, meta.displayHeight, meta.durationMs)) {
+            status(ProxyStatus.NotNeeded)
+            return
+        }
+        ProxyEngine.cached(app, uri)?.let { file ->
+            status(ProxyStatus.Ready, Uri.fromFile(file))
+            return
+        }
+        status(ProxyStatus.Building)
+        val file = ProxyEngine.ensure(app, uri)
+        // Not worth a dialogue when it fails: the original still plays, just heavier.
+        if (file != null) status(ProxyStatus.Ready, Uri.fromFile(file)) else status(ProxyStatus.Failed)
     }
 
     /**

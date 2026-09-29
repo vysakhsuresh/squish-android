@@ -36,6 +36,8 @@ fun CustomCropOverlay(
     rect: CropRect,
     onChange: (CropRect) -> Unit,
     onCommit: () -> Unit,
+    /** Off, it is only drawn - the part cropped away dimmed, and the edge - and every touch goes past it. */
+    editable: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val latestChange by rememberUpdatedState(onChange)
@@ -50,7 +52,8 @@ fun CustomCropOverlay(
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
+            .pointerInput(editable) {
+                if (!editable) return@pointerInput
                 detectDragGestures(
                     onDragStart = { at ->
                         grip = gripAt(
@@ -98,6 +101,9 @@ fun CustomCropOverlay(
             size = Size(right - left, bottom - top),
             style = Stroke(width = 2f)
         )
+
+        // The rest are the handles, for taking hold of it.
+        if (!editable) return@Canvas
 
         // Thirds, because framing is judged against them.
         val guide = SquishColors.TextPrimary.copy(alpha = 0.22f)

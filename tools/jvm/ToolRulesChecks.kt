@@ -131,11 +131,27 @@ fun main() {
 
     // --- A tool on a clip's toolbar changes that clip, not the edit. --------------------
     run {
-        // Volume on a shot was the camera's sound for every shot at once; it
-        // comes back with per-clip levels (B8). A sound's Volume is its own.
-        check(Tool.Volume !in toolsFor(SelectionKind.MainVideo, canTransition = true), "a shot's Volume changes every shot")
+        // Volume is each clip's own level now (B8): a shot's, an overlay's, a
+        // sound's. The camera sound for every shot at once stays on Sound.
+        check(Tool.Volume in toolsFor(SelectionKind.MainVideo, canTransition = true), "a shot has no Volume")
+        check(Tool.Volume in toolsFor(SelectionKind.Overlay), "an overlay has no Volume")
         check(Tool.Volume in toolsFor(SelectionKind.Audio), "a sound has no Volume")
+        check(toolsFor(SelectionKind.MainVideo).indexOf(Tool.Volume) in 0..3, "Volume is not near the start for a shot")
         check(Tool.Clip.label != Tool.Split.label, "level 0's Edit and Split share a name")
+    }
+
+    // --- A photo on an overlay row: only the tools that do something to a picture. ------
+    run {
+        val photo = toolsFor(SelectionKind.PhotoOverlay)
+        for (footageOnly in listOf(Tool.Volume, Tool.Speed, Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track)) {
+            check(footageOnly !in photo, "a photo overlay offers $footageOnly, which has nothing to act on")
+        }
+        for (wanted in listOf(Tool.Opacity, Tool.Layer, Tool.Placement, Tool.Animation, Tool.ToMain)) {
+            check(wanted in photo, "a photo overlay has no $wanted")
+        }
+        check(photo.all { it in toolsFor(SelectionKind.Overlay) }, "a photo overlay offers a tool footage does not")
+        check(sheetSurvives(Tool.Opacity, SelectionKind.PhotoOverlay, false), "Opacity closed moving to a photo overlay")
+        check(!sheetSurvives(Tool.Volume, SelectionKind.PhotoOverlay, false), "Volume stayed open over a photo")
     }
 
     println("tool rules: toolbar levels, sheets, back, cut target, project names")

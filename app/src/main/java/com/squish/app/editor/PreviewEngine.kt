@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import com.squish.app.media.StillClips
 import com.squish.app.media.audio.VoiceProcessor
 import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.ChromaKeyEffect
@@ -66,7 +67,9 @@ data class OverlayPlacement(
      */
     val aspect: Float? = null,
     /** A clip covers this moment on this layer, whether or not it has drawn yet. */
-    val covers: Boolean = false
+    val covers: Boolean = false,
+    /** Which clip that is, so the box on the picture can find the shape it is drawn at. */
+    val clipId: String? = null
 )
 
 /** One reading of the transport, and everything the UI needs to draw the frame. */
@@ -153,7 +156,9 @@ class PreviewEngine(private val context: Context) {
 
     /** One video player and everything known about what it is showing. */
     private inner class Surface(val key: String, val isBase: Boolean) {
-        val player: ExoPlayer = newVideoPlayer()
+        // Only the main track's sound carries the voice effect; an overlay's is
+        // its own, and the export leaves it alone.
+        val player: ExoPlayer = newVideoPlayer(voiced = isBase)
 
         // Read by the shaders every frame; written by the tick.
         val chroma = AtomicReference<ChromaKey?>(null)
@@ -318,16 +323,21 @@ class PreviewEngine(private val context: Context) {
     private var effects: List<TimedEffect> = emptyList()
 
     private var fallbackUri: Uri? = null
-    private var proxyUri: Uri? = null
+    /** Each heavy file's light stand-in, by the file. */
+    private var proxies: Map<Uri, Uri> = emptyMap()
 
     /**
-     * A proxy that finished while the transport was running. Swapping to it
+     * Proxies that finished while the transport was running. Swapping to one
      * reloads the surface on screen - a hitch in the middle of playback, for a
      * file that looks the same - so it waits for a pause or a jump, either of
      * which interrupts the picture anyway.
      */
-    private var pendingProxy: Uri? = null
+    private var pendingProxies: Map<Uri, Uri> = emptyMap()
     private var proxyPending = false
+
+    /** The camera sound for the whole edit, which every main-track shot is heard under. */
+    private var muteOriginal = false
+    private var originalVolume = 1f
 
     private var clockClipId: String? = null
     private var clockKey: String = KEY_A
@@ -393,7 +403,8 @@ class PreviewEngine(private val context: Context) {
             .build()
     }
 
-    private fun newVideoPlayer() = ExoPlayer.Builder(context, voiceRenderers())
+    private fun newVideoPlayer(voiced: Boolean) =
+        (if (voiced) ExoPlayer.Builder(context, voiceRenderers()) else ExoPlayer.Builder(context))
         // Ready on half a second of buffer rather than the default two and a half.
         // A shot parked ahead of a cut has to be ready before the cut, and on a
         // heavy original the default was a large part of the stall at every one.
@@ -457,7 +468,7 @@ class PreviewEngine(private val context: Context) {
         }
 
     private fun overlaySurface(layer: Int): Surface = overlaySurfaces.getOrPut(layer) {
-        // Muted, because the export removes an overlay's audio too.
+        // Silent until a clip gives it a level; see syncSurface.
         Surface(KEY_OVERLAY + layer, isBase = false).also {
             it.player.volume = 0f
             it.player.setSeekParameters(videoSeek)
@@ -485,7 +496,7 @@ class PreviewEngine(private val context: Context) {
         audioClips: List<Clip>,
         effects: List<TimedEffect>,
         fallbackUri: Uri,
-        proxyUri: Uri?,
+        proxies: Map<Uri, Uri>,
         muteOriginal: Boolean,
         originalVolume: Float,
         grade: Grade
@@ -507,7 +518,9 @@ class PreviewEngine(private val context: Context) {
         rollAStarts = rollA.map { it.timelineStartMs }
         rollBStarts = rollB.map { it.timelineStartMs }
 
-        overlayByLayer = videoClips.filter { it.isOverlay }
+        // Footage only. A photo on a row is drawn by the preview itself (see
+        // TimelinePreview) and needs no player - and no decoder.
+        overlayByLayer = videoClips.filter { it.isOverlay && !StillClips.isStill(it.uri) }
             .groupBy { it.layer }
             .mapValues { (_, clips) -> clips.sortedBy { it.timelineStartMs } }
         overlayStarts = overlayByLayer.mapValues { (_, clips) -> clips.map { it.timelineStartMs } }
@@ -517,23 +530,26 @@ class PreviewEngine(private val context: Context) {
         // longer walked by syncOverlays, so nothing would ever tell its player to
         // stop - it would keep playing, unseen and unheard but decoding.
         overlaySurfaces.forEach { (layer, s) ->
-            if (layer !in layers && s.player.playWhenReady) s.player.pause()
+            if (layer in layers) return@forEach
+            if (s.player.playWhenReady) s.player.pause()
+            unload(s)
         }
 
         this.audioClips = audioClips
         this.fallbackUri = fallbackUri
-        if (playing && proxyUri != this.proxyUri) {
-            pendingProxy = proxyUri
+        if (playing && proxies != this.proxies) {
+            pendingProxies = proxies
             proxyPending = true
         } else {
-            this.proxyUri = proxyUri
+            this.proxies = proxies
             proxyPending = false
         }
 
         liveGrade.set(grade)
-        val baseVolume = if (muteOriginal) 0f else originalVolume
-        surfaceA.player.volume = baseVolume
-        surfaceB.player.volume = baseVolume
+        // Each surface's level is set from the clip it is showing, every tick
+        // (see syncSurface): a shot's own under these, an overlay's alone.
+        this.muteOriginal = muteOriginal
+        this.originalVolume = originalVolume
 
         durationMs = maxOf(
             videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L,
@@ -562,7 +578,7 @@ class PreviewEngine(private val context: Context) {
 
     private fun applyPendingProxy() {
         if (!proxyPending) return
-        proxyUri = pendingProxy
+        proxies = pendingProxies
         proxyPending = false
     }
 
@@ -1058,7 +1074,12 @@ class PreviewEngine(private val context: Context) {
         when {
             clip != null -> syncSurface(s, clip, t, park = false)
             next != null -> syncSurface(s, next, next.timelineStartMs, park = true)
-            else -> syncSurface(s, null, t, park = false)
+            else -> {
+                syncSurface(s, null, t, park = false)
+                // Nothing on this row anywhere near: its decoder goes back. Not
+                // mid-scrub, where the playhead may swing straight back.
+                if (!scrubbing && clips.none { near(it, t) }) unload(s)
+            }
         }
 
         if (clip == null) {
@@ -1070,10 +1091,15 @@ class PreviewEngine(private val context: Context) {
                 opacity = clip.opacity,
                 transform = clip.transformAt(t),
                 aspect = s.videoAspect,
-                covers = true
+                covers = true,
+                clipId = clip.id
             )
         }
     }
+
+    /** Whether [clip] is within [IDLE_RELEASE_MS] of [t], either side. */
+    private fun near(clip: Clip, t: Long): Boolean =
+        t >= clip.timelineStartMs - IDLE_RELEASE_MS && t < clip.timelineEndMs + IDLE_RELEASE_MS
 
     // ---- Shared surface plumbing --------------------------------------------------
 
@@ -1144,9 +1170,33 @@ class PreviewEngine(private val context: Context) {
             }
         }
 
+        // The clip's own level, every tick: cheap, and a slider or the camera
+        // switch is heard at once. A shot's is under the camera sound for the
+        // edit, an overlay's is its own - the export's rule (OverlayRules).
+        val level = if (park) 0f else OverlayRules.effectiveVolume(clip, muteOriginal, originalVolume)
+        if (player.volume != level) player.volume = level
+
         val run = playing && !park
         if (run && !player.playWhenReady) player.play()
         if (!run && player.playWhenReady) player.pause()
+    }
+
+    /**
+     * Lets go of what a surface has loaded, decoder and all. An overlay row with
+     * nothing near the playhead gives its decoder back, so six rows of footage
+     * do not hold six decoders for the whole edit; the lookahead loads it again
+     * before its next clip is due.
+     */
+    private fun unload(s: Surface) {
+        if (s.loadedUri == null) return
+        runCatching {
+            s.player.stop()
+            s.player.clearMediaItems()
+        }
+        s.loadedUri = null
+        s.activeClipId = null
+        s.shownClipId = null
+        s.firstFrameFor = null
     }
 
     private fun switchTo(s: Surface, clipId: String) {
@@ -1215,8 +1265,9 @@ class PreviewEngine(private val context: Context) {
 
     private fun playbackUriFor(clip: Clip): Uri? {
         val source = clip.uri ?: fallbackUri ?: return null
-        // Heavy footage previews from its light copy; export never comes through here.
-        return if (proxyUri != null && source == fallbackUri) proxyUri else source
+        // Heavy footage previews from its light copy, whichever file it is and
+        // whichever row it is on; export never comes through here.
+        return proxies[source] ?: source
     }
 
     // ---- Sound --------------------------------------------------------------------
@@ -1339,6 +1390,13 @@ class PreviewEngine(private val context: Context) {
          * with its effect chain took most of two seconds.
          */
         const val LOOKAHEAD_MS = 1_500L
+
+        /**
+         * How far from anything on its row an overlay's player has to be before
+         * it lets its decoder go. Well past the lookahead, so a row is never
+         * unloaded and loaded again for one clip.
+         */
+        const val IDLE_RELEASE_MS = 5_000L
 
         /** Ticks a player must sit ready after a switch before its surface is trusted without the callback. */
         const val READY_TICKS = 2

@@ -32,8 +32,12 @@ import java.util.concurrent.TimeUnit
  */
 object MediaCompat {
 
-    /** What cannot be decoded, in words, or null for each part that is fine. */
-    data class Report(val videoProblem: String?, val audioProblem: String?)
+    /**
+     * What cannot be decoded, in words, or null for each part that is fine; and
+     * whether the file has any sound at all, for what a file with none needs no
+     * room for (EditorUiState.hasAnyAudio).
+     */
+    data class Report(val videoProblem: String?, val audioProblem: String?, val hasAudio: Boolean = true)
 
     private val reports = ConcurrentHashMap<String, Report>()
 
@@ -75,7 +79,8 @@ object MediaCompat {
         }
         val report = Report(
             videoProblem = if (video.isNotEmpty() && video.none { decodable(context, it) }) describe(video.first()) else null,
-            audioProblem = if (audio.isNotEmpty() && audio.none { decodable(context, it) }) describe(audio.first()) else null
+            audioProblem = if (audio.isNotEmpty() && audio.none { decodable(context, it) }) describe(audio.first()) else null,
+            hasAudio = audio.isNotEmpty()
         )
         reports[uri.toString()] = report
         return report

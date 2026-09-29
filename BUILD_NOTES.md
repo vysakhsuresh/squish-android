@@ -46,6 +46,13 @@ to build otherwise). Gaps under `ExportPlan.MIN_GAP_MS` are rounding: dropped in
 a layer, where each slip is made good at the next real gap, and allowed in a
 cuts-only export only while their sum stays under the same bound.
 
+Overlay rows (B8) lean on two more: an overlay row that has a clip with sound
+is declared with an audio track and so relies on the same silence-filling for
+its gaps, photos and muted clips; and a photo on an overlay row is handed over
+as a PNG image item (`CompositionFactory.stillItem`), relying on Media3's image
+input keeping the picture's alpha through to the compositor. If a transparent
+logo comes out on black, that is the fact that did not hold.
+
 Photos and blanks are rendered with a silent AAC track; if that render fails,
 they are rendered again picture-only, as before 1.11 (`StillClips.render`).
 

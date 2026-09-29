@@ -167,9 +167,12 @@ fun EditorToolSheet(
         }
         Tool.Frame -> if (chip == 0) viewModel.clips::resetCrop else viewModel.clips::resetRotation
         Tool.Speed -> clip?.let { c -> { viewModel.clips.clearSpeed(c.id) } }
-        // A sound's own level. A shot has no Volume until clips carry their own
-        // (see toolsFor); the camera's sound for the whole edit is on Sound.
-        Tool.Volume -> clip?.takeIf { it.kind == ClipKind.Audio }?.let { c -> { viewModel.audio.setAudioClipVolume(c.id, 1f) } }
+        // The clip's own level, a sound's or a picture's; the camera's sound for
+        // the whole edit is on Sound.
+        Tool.Volume -> clip?.let { c ->
+            if (c.kind == ClipKind.Audio) { { viewModel.audio.setAudioClipVolume(c.id, 1f) } }
+            else { { viewModel.clips.resetClipVolume(c.id) } }
+        }
         Tool.Animation -> when {
             item != null -> { { viewModel.text.restyleCaption(item.id, { it.copy(motion = TextMotion.None) }) } }
             clip != null -> { { viewModel.clips.clearKeyframes(clip.id) } }
@@ -185,7 +188,7 @@ fun EditorToolSheet(
         Tool.Transition -> clip?.let { c ->
             { viewModel.layers.setTransition(c.id, TransitionType.None, c.transitionIn.durationMs) }
         }
-        Tool.Opacity -> clip?.let { c -> { viewModel.layers.setOverlayGeometry(c.id, opacity = 1f) } }
+        Tool.Opacity -> clip?.let { c -> { viewModel.layers.setOpacity(c.id, 1f) } }
         Tool.Mask -> clip?.let { c -> { viewModel.layers.setMask(c.id, null) } }
         Tool.Cutout -> clip?.let { c ->
             if (chip == 0) { { viewModel.analysis.setBackground(c.id, null) } }
@@ -236,7 +239,9 @@ fun EditorToolSheet(
             Tool.Frame -> if (chip == 0) RatioPanel(state, viewModel) else RotatePanel(state, viewModel)
 
             Tool.Speed -> if (clip != null) SpeedPanel(state, viewModel, accent)
-            Tool.Volume -> clip?.takeIf { it.kind == ClipKind.Audio }?.let { SoundVolumePanel(state, it, viewModel) }
+            Tool.Volume -> clip?.let {
+                if (it.kind == ClipKind.Audio) SoundVolumePanel(state, it, viewModel) else ClipVolumePanel(state, it, viewModel)
+            }
             Tool.Animation -> when {
                 item != null -> TextAnimationPanel(item, viewModel)
                 clip != null -> AnimationPanel(state, clip, viewModel, accent)
@@ -247,7 +252,7 @@ fun EditorToolSheet(
             }
             Tool.Transition -> clip?.let { TransitionPanel(it, viewModel) }
             Tool.Opacity -> clip?.let { OpacityPanel(it, viewModel) }
-            Tool.Layer -> clip?.let { LayerPanel(it, viewModel) }
+            Tool.Layer -> clip?.let { LayerPanel(state, it, viewModel) }
             Tool.Mask -> clip?.let { MaskPanel(it, viewModel) }
             Tool.Cutout -> clip?.let {
                 if (chip == 0) BackgroundPanel(state, viewModel)

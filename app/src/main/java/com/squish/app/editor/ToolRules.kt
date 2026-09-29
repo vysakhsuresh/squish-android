@@ -7,8 +7,13 @@ package com.squish.app.editor
  * on the JVM (tools/jvm/ToolRulesChecks.kt); ToolBar.kt draws it.
  */
 
-/** What is selected, as far as the toolbar cares. */
-enum class SelectionKind { None, MainVideo, Overlay, Audio, Text, Sticker, Effect }
+/**
+ * What is selected, as far as the toolbar cares. [PhotoOverlay] is a photo kept
+ * as a picture on an overlay row: it has no sound or speed, and the tools that
+ * work on footage in the player's shaders (mask, cutout, stabilize, track) have
+ * nothing to act on there.
+ */
+enum class SelectionKind { None, MainVideo, Overlay, PhotoOverlay, Audio, Text, Sticker, Effect }
 
 /**
  * Every tool on either level of the toolbar. [sheet] tools open a sheet over
@@ -71,27 +76,28 @@ val LEVEL_ZERO: List<Tool> = listOf(
  *
  * Only tools that act on the selected clip are listed. Looks, crop and rotation
  * are still one setting for the whole edit, so they stay on level 0 rather than
- * appear here as if they changed this clip alone. So is the camera's sound: a
- * shot's Volume opened it and silenced every shot at once, so it lives on
- * Sound (Voice & FX) until each clip has its own level.
+ * appear here as if they changed this clip alone. Volume is the clip's own
+ * level; the camera sound for the whole edit stays on Sound (Voice & FX).
  *
  * Section 2's lists are longer; the rest arrive with the batch that builds what
- * they act on (docs/ROADMAP.md, B6, "Deferred"): Volume on shots and overlays
- * with per-clip sound (B8); Fade and Voice on sounds (B9); Opacity on text
- * (B10); Rotate, Mirror, Freeze, Reverse, Replace and Extract audio (B11);
- * Filters, Adjust and Crop per clip (B12). A button for a tool that does not
- * exist yet would be one more thing that does nothing.
+ * they act on (docs/ROADMAP.md, B6, "Deferred"): Fade and Voice on sounds (B9);
+ * Opacity on text (B10); Rotate, Mirror, Freeze, Reverse, Replace and Extract
+ * audio (B11); Filters, Adjust and Crop per clip (B12). A button for a tool that
+ * does not exist yet would be one more thing that does nothing.
  */
 fun toolsFor(kind: SelectionKind, canTransition: Boolean = false): List<Tool> = when (kind) {
     SelectionKind.None -> LEVEL_ZERO
     SelectionKind.MainVideo -> listOfNotNull(
-        Tool.Split, Tool.Speed, Tool.Animation, Tool.Placement,
+        Tool.Split, Tool.Speed, Tool.Volume, Tool.Animation, Tool.Placement,
         Tool.Transition.takeIf { canTransition },
         Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Duplicate, Tool.ToOverlay, Tool.Delete
     )
     SelectionKind.Overlay -> listOf(
-        Tool.Split, Tool.Speed, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement,
+        Tool.Split, Tool.Speed, Tool.Volume, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement,
         Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Duplicate, Tool.ToMain, Tool.Delete
+    )
+    SelectionKind.PhotoOverlay -> listOf(
+        Tool.Split, Tool.Opacity, Tool.Layer, Tool.Animation, Tool.Placement, Tool.Duplicate, Tool.ToMain, Tool.Delete
     )
     SelectionKind.Audio -> listOf(
         Tool.Split, Tool.Volume, Tool.Speed, Tool.Beats, Tool.Sync, Tool.Duplicate, Tool.Delete

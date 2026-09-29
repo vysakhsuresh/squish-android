@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.squish.app.editor.edits.MIN_EFFECT_MS
+import com.squish.app.media.StillClips
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.TimelineState
 import com.squish.app.ui.theme.SquishColors
@@ -91,7 +92,7 @@ val SelectionKind.concept: Concept?
     get() = when (this) {
         SelectionKind.None -> null
         SelectionKind.MainVideo -> Concept.Video
-        SelectionKind.Overlay -> Concept.Overlay
+        SelectionKind.Overlay, SelectionKind.PhotoOverlay -> Concept.Overlay
         SelectionKind.Audio -> Concept.Sound
         SelectionKind.Text -> Concept.Text
         SelectionKind.Sticker -> Concept.Sticker
@@ -167,7 +168,13 @@ val TransitionGlyph: ImageVector by lazy {
 val EditorUiState.selectionKind: SelectionKind
     get() {
         val id = selectedClipId ?: return SelectionKind.None
-        videoClips.firstOrNull { it.id == id }?.let { return if (it.isOverlay) SelectionKind.Overlay else SelectionKind.MainVideo }
+        videoClips.firstOrNull { it.id == id }?.let {
+            return when {
+                !it.isOverlay -> SelectionKind.MainVideo
+                StillClips.isStill(it.uri) -> SelectionKind.PhotoOverlay
+                else -> SelectionKind.Overlay
+            }
+        }
         if (audioClips.any { it.id == id }) return SelectionKind.Audio
         textOverlays.firstOrNull { it.id == id }?.let { return if (it.sticker) SelectionKind.Sticker else SelectionKind.Text }
         if (effects.any { it.id == id }) return SelectionKind.Effect

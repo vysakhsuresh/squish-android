@@ -17,7 +17,6 @@ import com.squish.app.timeline.rippleVideo
 import com.squish.app.timeline.withClipMoved
 import com.squish.app.timeline.withClipRemoved
 import com.squish.app.timeline.withClipDuplicated
-import com.squish.app.timeline.MAX_LAYER
 import com.squish.app.timeline.withClipTrimmed
 import com.squish.app.timeline.withOverlayGeometry
 import com.squish.app.timeline.withPlacementReset
@@ -25,6 +24,7 @@ import com.squish.app.timeline.withSplitAtPlayhead
 import com.squish.app.timeline.LaneItem
 import com.squish.app.timeline.TimelineLanes
 import com.squish.app.timeline.withClipPlaced
+import com.squish.app.timeline.withRowsCompacted
 import com.squish.app.timeline.withClipReordered
 import com.squish.app.timeline.withGapClosed
 import com.squish.app.timeline.withClipRetimed
@@ -476,7 +476,32 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             }
             recomputeEstimate()
             probed.forEach { (uri, _, label) -> if (label == null) checkDecodable(uri) }
+            ensureProxies(probed.filter { it.third == null }.map { it.first })
         }
+    }
+
+    // ---- Sound of a picture ---------------------------------------------------------
+
+    /**
+     * A shot's or an overlay's own level. Each slider drag on each clip is one
+     * step. A shot's is heard under the camera sound for the whole edit (see
+     * OverlayRules.effectiveVolume).
+     */
+    fun setClipVolume(clipId: String, volume: Float) = record("Volume", gesture = "Volume $clipId") {
+        writeVolume(clipId, volume)
+    }
+
+    /** Volume's Reset: full level, as one step. */
+    fun resetClipVolume(clipId: String) = record("Volume") { writeVolume(clipId, 1f) }
+
+    /** Mute, or back to [restoreTo] - the level it had - as one step. */
+    fun setClipMuted(clipId: String, muted: Boolean, restoreTo: Float = 1f) =
+        record(if (muted) "Mute" else "Unmute") { writeVolume(clipId, if (muted) 0f else restoreTo.coerceIn(0.05f, 1f)) }
+
+    private fun writeVolume(clipId: String, volume: Float) = mutateTimeline { timeline ->
+        timeline.copy(clips = timeline.clips.map {
+            if (it.id == clipId && it.kind == ClipKind.Video) it.copy(volume = volume.coerceIn(0f, 1f)) else it
+        })
     }
 
     /**
@@ -507,7 +532,8 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     fun placeClip(clipId: String, startMs: Long, row: Int) = record("Move clip") {
         val text = _state.value.textOverlays.firstOrNull { it.id == clipId }
         if (text == null) {
-            mutateTimeline { it.withClipPlaced(clipId, startMs, row) }
+            // An overlay carried off a row it was alone on leaves that row empty.
+            mutateTimeline { it.withClipPlaced(clipId, startMs, row).withRowsCompacted() }
             return@record
         }
         _state.update { s ->
@@ -848,10 +874,9 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 // Every overlay row is taken where the copy would go: said, rather
                 // than a button that did nothing.
                 val after = _state.value
-                if (after.videoClips.none { it.id == copyId } && after.audioClips.none { it.id == copyId } &&
-                    current.videoClips.any { it.id == selected && it.isOverlay }
-                ) {
-                    _state.update { it.copy(failure = SquishError.OverlayRowsFull(MAX_LAYER)) }
+                val overlay = current.videoClips.firstOrNull { it.id == selected && it.isOverlay }
+                if (overlay != null && after.videoClips.none { it.id == copyId }) {
+                    _state.update { it.copy(failure = SquishError.OverlayRowsFull(footage = !overlay.isStillPicture)) }
                 }
             }
         }

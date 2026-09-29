@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -143,6 +144,8 @@ fun EditorScreen(
     var confirmStopExport by remember { mutableStateOf(false) }
     var confirmStartNew by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
+    // A photo overlay waiting on "make it a long clip?" before it goes to the main track.
+    var confirmLongStill by remember { mutableStateOf<String?>(null) }
     // A finger on the playhead, told to the preview so it can serve the drag from
     // sync samples and land exactly when the finger lifts.
     var timelineScrubbing by remember { mutableStateOf(false) }
@@ -238,13 +241,16 @@ fun EditorScreen(
                 .build()
         )
     }
-    val pickOverlayClip = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { context.keepReadAccess(it); viewModel.layers.addOverlayClip(it) }
+    // Photos and videos, several at once: a logo, a cut-out and a reaction clip
+    // are all overlays. It was one video at a time.
+    val pickOverlayClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
+        uris.forEach { context.keepReadAccess(it) }
+        viewModel.layers.addOverlayClips(uris)
     }
     val addOverlay = {
-        pickOverlayClip.launch(
+        pickOverlayClips.launch(
             PickVisualMediaRequest.Builder()
-                .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                 .build()
         )
     }
@@ -265,7 +271,12 @@ fun EditorScreen(
             Tool.Duplicate -> viewModel.clips.duplicateSelected()
             Tool.Delete -> viewModel.clips.deleteSelectedClip()
             Tool.ToOverlay -> state.selectedClipId?.let(viewModel.layers::switchToOverlay)
-            Tool.ToMain -> state.selectedClipId?.let(viewModel.layers::switchToMain)
+            Tool.ToMain -> state.videoClips.firstOrNull { it.id == state.selectedClipId }?.let { clip ->
+                // A photo dragged out long is minutes of rendering on the main
+                // track; asked about rather than started with a spinner.
+                if (OverlayRules.needsLongRender(clip)) confirmLongStill = clip.id
+                else viewModel.layers.switchToMain(clip.id)
+            }
             else -> if (tool.sheet) openToolName = tool.name
         }
     }
@@ -294,6 +305,8 @@ fun EditorScreen(
                 fullscreen = fullscreen,
                 timelineScrubbing = timelineScrubbing,
                 onFullscreen = { fullscreen = it },
+                onCloseSheet = { openToolName = null },
+                onOpenTool = { tool -> openToolName = tool.name },
                 modifier = modifier
             )
         }
@@ -561,6 +574,25 @@ fun EditorScreen(
         )
     }
 
+    confirmLongStill?.let { clipId ->
+        val minutes = state.videoClips.firstOrNull { it.id == clipId }?.durationMs?.let { (it + 59_999) / 60_000 } ?: 1
+        ConfirmDialog(
+            title = "Make this photo a $minutes-minute clip?",
+            body = "The main track plays video, so the photo is made into a clip as long as the overlay is. " +
+                "That takes a while at this length - keep the editor open until it lands.",
+            caution = "To keep it quick, shorten the overlay first.",
+            confirmLabel = "Make clip",
+            dismissLabel = "Not now",
+            icon = Icons.Filled.HistoryToggleOff,
+            accent = SquishColors.Amber,
+            onConfirm = {
+                viewModel.layers.switchToMain(clipId)
+                confirmLongStill = null
+            },
+            onDismiss = { confirmLongStill = null }
+        )
+    }
+
     if (renaming) {
         RenameDialog(
             current = state.projectName.orEmpty(),
@@ -609,6 +641,10 @@ private fun EditorPreview(
     fullscreen: Boolean,
     timelineScrubbing: Boolean,
     onFullscreen: (Boolean) -> Unit,
+    /** Closes whatever sheet is open. */
+    onCloseSheet: () -> Unit,
+    /** Opens a tool's sheet. */
+    onOpenTool: (Tool) -> Unit,
     modifier: Modifier
 ) {
     Box(
@@ -622,13 +658,52 @@ private fun EditorPreview(
         val reframeOffset = state.videoClips.firstOrNull()?.let { it.sourceInMs - it.timelineStartMs } ?: 0L
         val reframeFocus = state.reframe?.takeIf { state.cropAspect.ratio != null }
             ?.sampleAt(state.playheadMs + reframeOffset)?.let { it.xFraction to it.yFraction }
+        // The overlay box on the picture. Its moves go through the one way
+        // placement is written, so a drag is one undo step and an animated
+        // overlay is keyed at the playhead; each gesture ends its step.
+        val latestOpenTool by rememberUpdatedState(openTool)
+        val latestCloseSheet by rememberUpdatedState(onCloseSheet)
+        val latestOpenToolSheet by rememberUpdatedState(onOpenTool)
+        val boxActions = remember(viewModel) {
+            OverlayHandleActions(
+                // As a tap on the strip: a layer picked while an add-things sheet
+                // is up is a new job, and the sheet makes way for its tools.
+                onSelect = { id ->
+                    val before = viewModel.state.value.selectedClipId
+                    viewModel.selectClip(id)
+                    if (id != before && latestOpenTool?.levelZero == true) latestCloseSheet()
+                },
+                onPlace = { id, t ->
+                    viewModel.clips.setClipTransform(
+                        id, scale = t.scale, offsetX = t.offsetXFraction, offsetY = t.offsetYFraction, rotation = t.rotationDegrees
+                    )
+                },
+                onPlaceEnd = viewModel::endGesture,
+                onDelete = { id ->
+                    viewModel.selectClip(id)
+                    viewModel.clips.deleteSelectedClip()
+                },
+                onDuplicate = viewModel.layers::duplicateInPlace,
+                onEdit = { id ->
+                    viewModel.selectClip(id)
+                    latestOpenToolSheet(Tool.Placement)
+                }
+            )
+        }
+        // The hand-drawn crop is only taken hold of on the Frame sheet, where it
+        // is the thing being worked on, and there it is modal: the overlay box
+        // stands aside. Anywhere else it is drawn and left alone - it took every
+        // touch on the picture whenever no overlay was selected, so an overlay
+        // could not be tapped on the picture to select it.
+        val editingCrop = state.cropAspect == CropAspect.Custom && openTool == Tool.Frame
+        val overlayActions = boxActions.takeIf { !editingCrop }
         TimelinePreview(
             videoClips = state.videoClips,
             audioClips = state.audioClips,
             captions = state.textOverlays,
             effects = state.effects,
             fallbackUri = sourceUri,
-            proxyUri = state.proxyUri,
+            proxies = state.proxyUris,
             muteOriginal = state.muteOriginal,
             voiceEffect = state.voiceEffect,
             originalVolume = state.originalVolume,
@@ -663,6 +738,8 @@ private fun EditorPreview(
                 } else false
             },
             scrubbing = timelineScrubbing,
+            selectedClipId = state.selectedClipId,
+            overlayActions = overlayActions,
             modifier = Modifier.fillMaxSize(),
             // Inside the picture, so the crop rectangle is measured
             // against the frame rather than against the whole box.
@@ -676,6 +753,7 @@ private fun EditorPreview(
                     fullscreen -> Unit
                     state.cropAspect == CropAspect.Custom -> CustomCropOverlay(
                         rect = state.cropRect,
+                        editable = editingCrop,
                         // Live while dragging, recorded once at the end:
                         // the view model coalesces, so a gesture is one
                         // undo step rather than one per frame of movement.
@@ -801,7 +879,13 @@ private fun HeaderIcon(icon: ImageVector, label: String, enabled: Boolean, onCli
 /** What is happening outside the edit itself: proxies, stills, a saved edit on offer, a failure. */
 @Composable
 private fun StatusCards(state: EditorUiState, viewModel: EditorViewModel, onStartNew: () -> Unit) {
-    ProxyIndicator(status = state.proxyStatus, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+    val proxies = state.proxiesInEdit.values.filter { it != ProxyStatus.NotNeeded }
+    ProxyIndicator(
+        status = state.proxyStatus,
+        ready = proxies.count { it == ProxyStatus.Ready },
+        total = proxies.size,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+    )
     PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
 
     // Only the inline offer lives here; the modal one is over everything.

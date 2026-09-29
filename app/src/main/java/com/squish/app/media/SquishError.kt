@@ -8,6 +8,8 @@ import android.os.StatFs
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.ExportException
 import com.squish.app.editor.EditorUiState
+import com.squish.app.timeline.MAX_FOOTAGE_LAYER
+import com.squish.app.timeline.MAX_LAYER
 import java.io.File
 
 /**
@@ -34,6 +36,17 @@ sealed class SquishError(
         fix = if (name != null) "Delete that clip from the timeline and add it again from the gallery."
         else "Pick the clip again from the gallery.",
         cause = cause
+    )
+
+    /**
+     * An overlay whose file can no longer be read - named, with its row, because
+     * the row on the strip still shows a clip and the preview only a black layer,
+     * and "that file" sent people looking at the main track.
+     */
+    class LayerUnreadable(val name: String, val row: Int) : SquishError(
+        title = "Can't open the overlay “$name”",
+        detail = "The overlay on row $row moved, was deleted, or the app lost permission to read it since you added it.",
+        fix = "Delete that overlay and add it again from the gallery, or delete it to export without it."
     )
 
     /**
@@ -160,10 +173,37 @@ sealed class SquishError(
         fix = "Add a clip, or widen a trim handle."
     )
 
-    class OverlayRowsFull(val rows: Int) : SquishError(
+    /**
+     * No row for an overlay. [footage] says which kind was refused: a video can
+     * only use the lowest [MAX_FOOTAGE_LAYER] rows - each is a decoder - so it
+     * can be refused with a photo's rows still free, and the message has to say
+     * why or it reads as a wrong count.
+     */
+    class OverlayRowsFull(val footage: Boolean) : SquishError(
         title = "No room for another overlay here",
-        detail = "All $rows overlay rows already have something playing at this point, and two overlays on one row would hide each other.",
-        fix = "Move the playhead to where a row is free, or shorten or delete one of the overlays."
+        detail = if (footage) {
+            "Overlay videos go on the lowest $MAX_FOOTAGE_LAYER rows - more playing at once is more than a phone " +
+                "can decode - and each of those rows already has something at this point."
+        } else {
+            "All $MAX_LAYER overlay rows already have something at this point, and two overlays on one row would hide each other."
+        },
+        fix = if (footage) {
+            "Move the playhead to where one is free, shorten or delete an overlay there, or bring a photo on one of " +
+                "those rows forward past the others."
+        } else {
+            "Move the playhead to where a row is free, or shorten or delete one of the overlays."
+        }
+    )
+
+    /**
+     * An overlay moved to the main track while camera sound is off for the whole
+     * edit. Its Volume came with it, but the main track plays under that switch,
+     * so the clip went quiet with nothing to say why.
+     */
+    class SilentOnMainTrack : SquishError(
+        title = "This clip is silent on the main track",
+        detail = "Camera sound is off for the whole edit, and every clip on the main track plays under it. As an overlay its sound was its own.",
+        fix = "Turn camera sound back on in Sound, Voice & FX, or undo to keep it as an overlay."
     )
 
     class NoAudioTrack : SquishError(
@@ -241,7 +281,9 @@ sealed class SquishError(
             // checked last: with clips on the timeline it may not be in the edit.
             for (clip in state.videoClips) {
                 val uri = clip.uri ?: state.sourceUri
-                if (!canRead(context, uri)) return FileUnreadable(name = clip.label.takeIf { it.isNotBlank() })
+                if (canRead(context, uri)) continue
+                return if (clip.isOverlay) LayerUnreadable(clip.label.ifBlank { "Overlay" }, clip.layer)
+                else FileUnreadable(name = clip.label.takeIf { it.isNotBlank() })
             }
             if (state.videoClips.isEmpty() && !canRead(context, state.sourceUri)) return FileUnreadable()
             // Sounds are read too. They used to be left out, so a song whose grant
@@ -263,7 +305,11 @@ sealed class SquishError(
             if (!state.audioOnly) {
                 reports.firstNotNullOfOrNull { it.videoProblem }?.let { return UnsupportedCodec(it) }
             } else if (!state.hasSeparateAudio) {
-                reports.firstNotNullOfOrNull { it.audioProblem }?.let { return UnsupportedAudio(it) }
+                // The shots' sound, which is what a sound-only export of an edit
+                // with no music is. An overlay's that no decoder takes is only
+                // left out (exportable), as it is from a video export.
+                val shots = (state.videoClips.filter { !it.isOverlay }.mapNotNull { it.uri } + state.sourceUri).distinct()
+                shots.firstNotNullOfOrNull { MediaCompat.cached(it)?.audioProblem }?.let { return UnsupportedAudio(it) }
             }
 
             // Measured where the file is written, and for both copies of it: the
@@ -286,10 +332,24 @@ sealed class SquishError(
          * the export completes silent rather than failing in the audio pipeline.
          */
         fun exportable(state: EditorUiState): EditorUiState {
-            if (state.audioOnly || state.muteOriginal) return state
-            val sources = (state.videoClips.mapNotNull { it.uri } + listOfNotNull(state.sourceUri)).distinct()
+            // Sound only included. It used to return here untouched, which was
+            // safe while a sound-only export was the camera track alone, which
+            // preflight checks; overlays' sound is in it now, and so is added
+            // music beside a camera track no decoder takes, which preflight lets
+            // through. Either went into the audio pipeline and failed there.
+            //
+            // An overlay carries its own sound now; one no decoder takes is
+            // silenced on its own, and the rest of the mix is kept.
+            val overlays = state.videoClips.map { clip ->
+                val deaf = clip.isOverlay && clip.volume > 0f &&
+                    (clip.uri ?: state.sourceUri)?.let { MediaCompat.cached(it)?.audioProblem } != null
+                if (deaf) clip.copy(volume = 0f) else clip
+            }
+            val quieted = if (overlays == state.videoClips) state else state.copy(videoClips = overlays)
+            if (quieted.muteOriginal) return quieted
+            val sources = (quieted.videoClips.filter { !it.isOverlay }.mapNotNull { it.uri } + listOfNotNull(quieted.sourceUri)).distinct()
             val soundless = sources.any { MediaCompat.cached(it)?.audioProblem != null }
-            return if (soundless) state.copy(muteOriginal = true) else state
+            return if (soundless) quieted.copy(muteOriginal = true) else quieted
         }
 
         /**

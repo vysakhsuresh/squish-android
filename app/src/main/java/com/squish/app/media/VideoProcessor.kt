@@ -32,6 +32,7 @@ import com.google.common.collect.ImmutableList
 import com.squish.app.editor.CropAspect
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.OutputSize
+import com.squish.app.editor.OverlayRules
 import com.squish.app.editor.VoiceEffect
 import com.squish.app.media.audio.VoiceProcessor
 import com.squish.app.media.effects.BackgroundEffect
@@ -258,8 +259,9 @@ class VideoProcessor(private val context: Context) {
                     videoOut = videoOut,
                     baseAudio = baseAudio,
                     filler = { ms -> CompositionFactory.filler(checkNotNull(clear), ms, rate) },
+                    overlaySound = ::overlayHeard,
                     editedFor = { clip, layer ->
-                        if (layer.role == ExportPlan.Role.Overlay) editedOverlay(state, clip, canvas)
+                        if (layer.role == ExportPlan.Role.Overlay) editedOverlay(state, clip, canvas, rate)
                         else editedClip(state, clip, canvas, layers.baseRolls)
                     }
                 )
@@ -411,25 +413,44 @@ class VideoProcessor(private val context: Context) {
             }
         }
 
+        // The shot's own level under the camera sound for the whole edit - the
+        // number the preview plays it at (OverlayRules.effectiveVolume). A
+        // sound-only export keeps the camera's sound even with the picture's
+        // mute on, as it always has: sound is all it was asked for.
+        val level = if (state.audioOnly) (clip.volume * state.originalVolume).coerceIn(0f, 1f)
+        else OverlayRules.effectiveVolume(clip, state.muteOriginal, state.originalVolume)
         return EditedMediaItem.Builder(item)
             .setRemoveAudio(state.muteOriginal && !state.audioOnly)
             .setRemoveVideo(state.audioOnly)
             .setEffects(
                 Effects(
-                    buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, state.originalVolume, state.voiceEffect),
+                    buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, level, state.voiceEffect),
                     ImmutableList.copyOf(effects)
                 )
             )
             .build()
     }
 
+    /** Whether an overlay is heard: footage, at a level above nothing. A photo has no sound. */
+    private fun overlayHeard(clip: Clip): Boolean = !StillClips.isStill(clip.uri) && clip.volume > 0f
+
     /**
-     * A floating clip: silent (an overlay's sound is not mixed yet), placed on the
-     * canvas and retimed. See CompositionFactory.overlayEffects.
+     * A floating clip: placed on the canvas and retimed (see
+     * CompositionFactory.overlayEffects), with its own sound at its own level -
+     * which used to be thrown away, so a reaction clip was silent in the file
+     * and the preview alike. No voice effect: that belongs to the camera sound
+     * of the main track, and the preview leaves an overlay's alone too.
+     *
+     * A photo kept as a picture goes in as the image it is.
      */
-    private fun editedOverlay(state: EditorUiState, clip: Clip, canvas: ExportPresets.Resolution?): EditedMediaItem {
+    private fun editedOverlay(state: EditorUiState, clip: Clip, canvas: ExportPresets.Resolution?, frameRate: Int): EditedMediaItem {
+        val uri = clip.uri ?: state.sourceUri
+        if (StillClips.isStill(uri) && uri != null) {
+            val still = OverlayRules.asStill(clip)
+            return CompositionFactory.stillItem(uri, still.durationMs, frameRate, CompositionFactory.overlayEffects(still, canvas, emptyList()))
+        }
         val item = MediaItem.Builder()
-            .setUri(clip.uri ?: state.sourceUri)
+            .setUri(uri)
             .setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder()
                     .setStartPositionMs(clip.sourceInMs)
@@ -437,12 +458,20 @@ class VideoProcessor(private val context: Context) {
                     .build()
             )
             .build()
+        val heard = overlayHeard(clip)
         // The same retime the preview plays it at. Overlays used to get none, so
         // a slowed picture-in-picture ran at full speed and ended early.
-        val effects = CompositionFactory.overlayEffects(clip, canvas, speedEffects(clip))
+        val effects = if (state.audioOnly) emptyList() else CompositionFactory.overlayEffects(clip, canvas, speedEffects(clip))
         return EditedMediaItem.Builder(item)
-            .setRemoveAudio(true)
-            .setEffects(Effects(ImmutableList.of(), ImmutableList.copyOf(effects)))
+            .setRemoveAudio(!heard)
+            .setRemoveVideo(state.audioOnly)
+            .setEffects(
+                Effects(
+                    if (heard) buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, clip.volume.coerceIn(0f, 1f))
+                    else ImmutableList.of(),
+                    ImmutableList.copyOf(effects)
+                )
+            )
             .build()
     }
 

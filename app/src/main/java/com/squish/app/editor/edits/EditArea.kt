@@ -33,6 +33,8 @@ internal interface EditHost {
     fun recomputeEstimate()
     fun displayNameOf(uri: Uri): String?
     fun checkDecodable(uri: Uri)
+    /** Starts a light preview copy of each heavy video file among [uris] that has none yet. */
+    fun ensureProxies(uris: Collection<Uri>)
 }
 
 /**
@@ -66,6 +68,7 @@ internal abstract class EditArea(protected val host: EditHost) {
     protected fun recomputeEstimate() = host.recomputeEstimate()
     protected fun displayNameOf(uri: Uri): String? = host.displayNameOf(uri)
     protected fun checkDecodable(uri: Uri) = host.checkDecodable(uri)
+    protected fun ensureProxies(uris: Collection<Uri>) = host.ensureProxies(uris)
 
     protected fun dropTextOverlay(id: String) {
         _state.update {
