@@ -304,9 +304,14 @@ should work through it and then delete what holds up.
   (`tools/jvm/TextChecks.kt`); nothing of the screen has been seen. Script in
   `docs/ROADMAP.md` §4 under B10, plus: Add text puts "Your text" in the
   middle of the picture with the keyboard up and the words selected, and a
-  line let go of still saying that is taken off again; the Edit sheet's tabs
-  (Keyboard · Style · Bubble · Animation) sit over the keyboard, and the
-  keyboard folds when a tab other than Keyboard is picked; a double tap on a
+  line let go of still saying that is taken off again (the text track's head
+  adds one the same way); adding a line, title or sticker pauses playback;
+  the Edit sheet's tabs (Keyboard · Style · Bubble · Animation) sit over the
+  keyboard, the keyboard folds when a tab other than Keyboard is picked and
+  the sheet takes the keyboard's room so the tab row does not move (it holds
+  the keyboard's last measured height - check the strip comes back when the
+  sheet closes), and back on the Keyboard tab the cursor is at the end, the
+  sample words selected only the first time; a double tap on a
   line on the picture opens its keyboard; the text box's corners are Delete,
   a copy nudged beside it, Edit (keyboard; Placement for a sticker) and the
   resize handle, and a small sticker does not grow when touched (its own
@@ -315,16 +320,28 @@ should work through it and then delete what holds up.
   direction against an export, as B8 did for overlays; a flipped sticker is
   mirrored in the bitmap itself so the file agrees; the shadow is a blurred
   copy under the stroke (a shadow layer drew over it); a Band bubble is the
-  frame's full width and a Speech bubble has a tail; the eyedropper reads the
+  frame's full width and a Speech bubble has a tail, and a Band's box is its
+  letters, not the band (`CaptionRenderer.paint`), so its corners stay on the
+  picture; the eyedropper reads the
   window through `PixelCopy` (a 5 px patch averaged) - check it returns the
-  picture's colour, not the box's or the crop's dim; a font imported as .ttf
-  lands under `files/fonts/` and a draft names it by file; Apply to all
-  carries style and place to every line of words but not to stickers; the
-  Words arrival lands each word on the segmenter's dips (`wordStartsMs`,
-  mapped through the shot's clock), and retyping a line clears them; a
+  picture's colour, not the box's or the crop's dim - and is given up by
+  back, Done, a change of tab or of selection; the Style tab's Reset puts the
+  outline back (`TextStyleSpec.NEW_LINE`); "Save this style" names the first
+  free "Style N" and says so; a font imported as .ttf
+  lands under `files/fonts/` and a draft names it by file; Apply to all on
+  Style carries the style alone (not the place) to every line of words but
+  not to stickers, and Animation has its own Apply to all; auto-captions
+  listen to the camera unless "Listen to" says otherwise, never to a line
+  read aloud, and land still with their word timings kept: the Words arrival
+  is a choice on Animation, landing each word on the segmenter's dips
+  (`wordStartsMs`, mapped through the shot's clock); retyping a line clears
+  the timings, a head trim moves them with the start and a cut between words
+  gives each half its own words (`TextTiming`, executed in `TextChecks.kt`); a
   voiceover's lines follow it when it is dragged; SRT import over existing
-  lines asks Replace or Add beside; Read aloud makes a WAV under
-  `files/speech/` and lands it as a sound clip at the line's start - the
+  lines asks Replace or Add beside; Read aloud greys its button and shows a
+  card while the voice is made, keeps the line selected when the sound lands,
+  and makes a WAV under
+  `files/speech/` landed as a sound clip at the line's start - the
   manifest's `<queries>` for `TTS_SERVICE` is what lets the engine bind on
   Android 11+, and whether Media3 plays and exports the WAV is the same
   question B9's voiceover asks; a draft from before this build opens with its

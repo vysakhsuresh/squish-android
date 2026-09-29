@@ -771,6 +771,12 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * whole, and the video and music underneath were cut instead. A cut that
      * changes nothing - no clip under the playhead, or a sliver too short to
      * split - no longer leaves an "Undo: Cut" that undoes nothing.
+     *
+     * A line whose words are timed is cut between its words: the ones said
+     * before the cut stay, the rest go with the second half (TextTiming.split).
+     * Both halves used to keep every word and every timing, so the first never
+     * showed its last words and the second showed them all again from its own
+     * first frame, out of step with the speech.
      */
     fun splitAtPlayhead() {
         val current = _state.value
@@ -779,17 +785,23 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         val text = current.textOverlays.firstOrNull { it.id == selected && EditRules.cutsItem(it.startMs, it.endMs, at) }
         if (text != null) {
             val halves = EditRules.splitAt(text.startMs, text.endMs, at, MIN_CLIP_MS) ?: return
+            val words = TextTiming.split(text.text, text.wordStartsMs, at - text.startMs)
             record("Cut") {
+                val first = text.copy(
+                    endMs = halves.first.endMs,
+                    text = words?.firstText ?: text.text,
+                    wordStartsMs = words?.firstStarts ?: text.wordStartsMs
+                )
                 val second = text.copy(
                     id = if (text.isAutoCaption) AUTO_CAPTION_PREFIX + UUID.randomUUID() else UUID.randomUUID().toString(),
                     startMs = halves.second.startMs,
-                    endMs = halves.second.endMs
+                    endMs = halves.second.endMs,
+                    text = words?.secondText ?: text.text,
+                    wordStartsMs = words?.secondStarts ?: TextTiming.shifted(text.wordStartsMs, at - text.startMs)
                 )
                 _state.update { s ->
                     s.copy(
-                        textOverlays = s.textOverlays.flatMap {
-                            if (it.id == text.id) listOf(it.copy(endMs = halves.first.endMs), second) else listOf(it)
-                        },
+                        textOverlays = s.textOverlays.flatMap { if (it.id == text.id) listOf(first, second) else listOf(it) },
                         selectedClipId = second.id
                     )
                 }
@@ -911,7 +923,8 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     if (it.id != id) it
                     else {
                         val span = EditRules.resized(it.startMs, it.endMs, startDeltaMs, endDeltaMs, picture, MIN_CLIP_MS)
-                        it.copy(startMs = span.startMs, endMs = span.endMs)
+                        // The words' timings are from the start, so they go with it.
+                        it.copy(startMs = span.startMs, endMs = span.endMs, wordStartsMs = TextTiming.shifted(it.wordStartsMs, span.startMs - it.startMs))
                     }
                 }
             )

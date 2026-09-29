@@ -288,7 +288,7 @@ fun TextPanel(
                     if (!status.recognitionAvailable)
                         "${status.total} lines timed. This device has no on-device speech " +
                             "recognition, so the words are yours to type — the timing is done."
-                    else "${status.total} lines timed, ${status.transcribed} transcribed, each word on its beat.",
+                    else "${status.total} lines timed, ${status.transcribed} transcribed. Animation → Words lands each word as it is said.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.Teal
                 )
@@ -590,10 +590,13 @@ private val CAPTION_COLOURS = listOf(
  * [selectAll] opens with the whole line selected: a new line comes with sample
  * words, a title with its own, and typing replaces them the way it does in any
  * other editor. A tapped title used to sit on the picture saying BIG NEWS with
- * no keyboard and no obvious way to make it say anything else.
+ * no keyboard and no obvious way to make it say anything else. [onOpened] is
+ * told once the field is up, so the caller can stop asking for that: the panel
+ * is rebuilt on every return from the Style tab, and the cursor then goes to
+ * the end, as CapCut's does.
  */
 @Composable
-fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel, selectAll: Boolean = false) {
+fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel, selectAll: Boolean = false, onOpened: () -> Unit = {}) {
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     // Same rule as the rows in the list: the report that the field is attached
@@ -617,6 +620,7 @@ fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel, selectAl
         withFrameNanos { }
         runCatching { focusRequester.requestFocus() }
         keyboard?.show()
+        onOpened()
     }
     // Leaving the sheet ends the run of typing, even with the field still focused.
     DisposableEffect(caption.id) { onDispose { viewModel.text.endCaptionTyping(caption.id) } }
@@ -665,6 +669,15 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
     val done = viewModel::endGesture
     val style = item.style
     var savedStyles by remember { mutableStateOf(UserStyles.list(context)) }
+    // What "Save this style" just did, for a moment: the tap gave no sign, so
+    // it was tapped twice and two chips could not be told apart.
+    var savedNotice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(savedNotice) {
+        if (savedNotice != null) {
+            delay(NOTICE_MS)
+            savedNotice = null
+        }
+    }
     var fonts by remember { mutableStateOf(CustomFonts.names()) }
     var pickingColour by remember(item.id) { mutableStateOf(false) }
     var pickingStroke by remember(item.id) { mutableStateOf(false) }
@@ -700,14 +713,22 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
             // The person's own: this line's style kept by name, for the next
             // edit. A chip applies it; its × forgets it.
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("Mine", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted, modifier = Modifier.weight(1f))
+                Text(
+                    savedNotice ?: "Mine",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (savedNotice != null) SquishColors.Teal else SquishColors.TextMuted,
+                    modifier = Modifier.weight(1f)
+                )
                 Text(
                     "Save this style",
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.Amber,
                     modifier = Modifier.clickable {
-                        UserStyles.save(context, "Style ${savedStyles.size + 1}", style)
+                        // Under a name nobody has, never over a kept style.
+                        val name = TextStyleNames.next(savedStyles.map { it.first })
+                        UserStyles.save(context, name, style)
                         savedStyles = UserStyles.list(context)
+                        savedNotice = "Saved as $name"
                     }
                 )
             }
@@ -1090,6 +1111,17 @@ fun TextAnimationPanel(item: TextOverlayItem, viewModel: EditorViewModel) {
                 TextAnimation.MIN_LOOP_MS.toFloat()..TextAnimation.MAX_LOOP_MS.toFloat(), seconds, done
             ) { v -> drag { it.copy(loopMs = v.roundToInt().toLong()) } }
         }
+        if (item.motion == TextMotion.Words && !item.sticker) {
+            Text(
+                if (item.wordStartsMs.size > 1) "Each word lands where the speech says it - this line's words were timed by auto-captions."
+                else "The words land evenly over the arrival; auto-captions time them to the speech.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.TextMuted
+            )
+        }
+        // The same motion on every other line of this kind, in one step: forty
+        // auto-captions landing word by word are one tap, not forty tabs.
+        SquishOutlinedButton(text = "Apply to all", modifier = Modifier.fillMaxWidth()) { viewModel.text.applyMotionToAll(item.id) }
     }
 }
 
@@ -1104,9 +1136,9 @@ fun TextOpacityPanel(item: TextOverlayItem, viewModel: EditorViewModel) {
     }
 }
 
-/** The style a new line starts with, for the Style tool's Reset. */
+/** The style a new line starts with - outlined, see [TextStyleSpec.NEW_LINE] - for the Style tool's Reset. */
 fun TextOverlayItem.withDefaultStyle(): TextOverlayItem =
-    withStyle(if (sticker) TextStyleSpec(stroke = TextStroke.NONE, sizeSp = sizeSp) else TextStyleSpec())
+    withStyle(if (sticker) TextStyleSpec(stroke = TextStroke.NONE, sizeSp = sizeSp) else TextStyleSpec.NEW_LINE)
 
 /** Still: no arrival, no leaving, no loop, for Animation's Reset. */
 fun TextOverlayItem.withoutMotion(): TextOverlayItem =

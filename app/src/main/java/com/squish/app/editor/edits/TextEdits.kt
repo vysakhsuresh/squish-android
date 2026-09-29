@@ -101,8 +101,16 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             yFraction = 0.5f
         )
         // Selected, so the toolbar is the line's own and Edit has something to open on.
-        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id) }
+        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id).stilled() }
     }
+
+    /**
+     * Paused: a line is typed and styled against the picture, and its box only
+     * shows while the picture is still. Added while playing, a title with a
+     * Pop arrival was invisible on the frame it landed on and the playhead
+     * left it behind before its words were typed.
+     */
+    private fun EditorUiState.stilled(): EditorUiState = if (isPlaying) copy(isPlaying = false) else this
 
     /**
      * A title at the playhead, styled by [preset]: its text, face, look, colour,
@@ -130,7 +138,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             endMs = span.endMs,
             colorArgb = preset.colorArgb
         ).styledBy(preset)
-        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id) }
+        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id).stilled() }
     }
 
     /**
@@ -153,7 +161,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             motionOut = TextExit.Fade,
             sticker = true
         )
-        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id) }
+        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id).stilled() }
     }
 
     /**
@@ -219,9 +227,11 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
     }
 
     /**
-     * This line's style - and, for words, its place on the picture - on every
-     * other line of words. Stickers keep their own: a caption's face on a
-     * sticker is an outlined emoji. One undo step for the forty lines.
+     * This line's style on every other line of words - the style alone, as
+     * CapCut's is: it carried the place and the turn too, so giving forty
+     * subtitles a centred title's face put every one of them in the middle of
+     * the picture at the title's angle. Stickers keep their own: a caption's
+     * face on a sticker is an outlined emoji. One undo step for the forty lines.
      */
     fun applyStyleToAll(id: String) {
         val from = _state.value.textOverlays.firstOrNull { it.id == id } ?: return
@@ -229,10 +239,25 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             _state.update { current ->
                 current.copy(
                     textOverlays = current.textOverlays.map { line ->
-                        if (line.id == id || line.sticker != from.sticker) line
-                        else line.withStyle(from.style).let {
-                            if (from.sticker) it else it.copy(xFraction = from.xFraction, yFraction = from.yFraction, rotationDegrees = from.rotationDegrees)
-                        }
+                        if (line.id == id || line.sticker != from.sticker) line else line.withStyle(from.style)
+                    }
+                )
+            }
+        }
+    }
+
+    /**
+     * This line's arrival, leaving and loop on every other line of the same
+     * kind. Forty auto-captions asked to land word by word, or asked to stop,
+     * were forty visits to the Animation tab.
+     */
+    fun applyMotionToAll(id: String) {
+        val from = _state.value.textOverlays.firstOrNull { it.id == id } ?: return
+        record("Apply animation to all") {
+            _state.update { current ->
+                current.copy(
+                    textOverlays = current.textOverlays.map { line ->
+                        if (line.id == id || line.sticker != from.sticker) line else line.withMotion(from.motionSpec)
                     }
                 )
             }
@@ -275,12 +300,15 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
     /**
      * The line read aloud by the phone's own voice, landing as a sound clip
      * where the line starts - so a caption typed for a silent clip can be heard
-     * as well as read. Made in the background; the button waits on
-     * [EditorUiState.speakingId] and a phone without a voice gets a card.
+     * as well as read. Made in the background: the toolbar's button is greyed
+     * and a card says the voice is being made while [EditorUiState.speakingId]
+     * is set, and a phone without a voice gets a card. The line stays selected
+     * when the sound lands - selecting the sound closed the Edit sheet under
+     * whoever was still styling the line.
      */
     fun speak(id: String) {
         val item = _state.value.textOverlays.firstOrNull { it.id == id } ?: return
-        if (item.text.isBlank() || _state.value.speakingId != null) return
+        if (!canSpeak(_state.value, id)) return
         _state.update { it.copy(speakingId = id) }
         viewModelScope.launch {
             val dir = File(app.filesDir, SPEECH_DIR).apply { mkdirs() }
@@ -307,7 +335,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                         timelineStartMs = line.startMs,
                         sourceDurationMs = duration
                     )
-                    current.copy(audioClips = current.audioClips + clip, selectedClipId = clip.id, speakingId = null)
+                    current.copy(audioClips = current.audioClips + clip, speakingId = null)
                 }
             }
             _state.update { it.copy(speakingId = null) }
@@ -347,9 +375,11 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         // opened, from its top, and write the file's times straight onto the
         // timeline - so a trimmed, moved or retimed shot got its captions early
         // or late, a second file got none, and speech trimmed away still got a card.
+        // Never a line read aloud: that sound was made from a caption, and
+        // listening to it landed a second copy of the line exactly under the first.
         val source = current.captionSource
         val shots = if (source == CaptionSource.Sounds) emptyList() else current.videoClips.filter { it.layer == 0 && it.uri != null }
-        val sounds = if (source == CaptionSource.Camera) emptyList() else current.audioClips.filter { it.uri != null }
+        val sounds = if (source == CaptionSource.Camera) emptyList() else current.audioClips.filter { it.uri != null && !isSpokenLine(it) }
         val listened = (shots + sounds).sortedBy { it.timelineStartMs }
         if (listened.isEmpty()) return
 
@@ -527,9 +557,11 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             endMs = clip.timelineAtSource(end),
             colorArgb = android.graphics.Color.WHITE,
             // Through the clip's own clock, as the line's ends are, so a word
-            // on a slowed shot lands where it is heard.
-            wordStartsMs = wordStarts.map { (clip.timelineAtSource(plan.segment.startMs + it) - lineStart).coerceAtLeast(0L) },
-            motion = if (wordStarts.size > 1) TextMotion.Words else TextMotion.None
+            // on a slowed shot lands where it is heard. Kept for the Words
+            // arrival, which is a choice on the Animation tab (with Apply to
+            // all for the rest): every line landing word by word stuttered
+            // through the whole edit, and CapCut's captions land still.
+            wordStartsMs = wordStarts.map { (clip.timelineAtSource(plan.segment.startMs + it) - lineStart).coerceAtLeast(0L) }
         )
         if (line.endMs <= line.startMs) return false
         val replacing = !run.landed
@@ -703,7 +735,19 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         return if (continuesAdd) history.undoLabel ?: "Caption text" else "Caption text"
     }
 
+    /** A sound clip that is a line read aloud: its file is under [SPEECH_DIR]. */
+    private fun isSpokenLine(clip: Clip): Boolean {
+        val path = clip.uri?.takeIf { it.scheme == "file" }?.path ?: return false
+        return File(path).parentFile == File(app.filesDir, SPEECH_DIR)
+    }
+
     companion object {
+        /** Whether Read aloud has anything to do for [id]: a line with words, and no voice already being made. */
+        fun canSpeak(state: EditorUiState, id: String): Boolean {
+            val item = state.textOverlays.firstOrNull { it.id == id } ?: return false
+            return !item.sticker && item.text.isNotBlank() && state.speakingId == null
+        }
+
         /** What a new line says until it is typed over; a line still saying it when let go of is taken off. */
         const val NEW_TEXT_SAMPLE = "Your text"
 

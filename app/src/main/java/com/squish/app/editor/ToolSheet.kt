@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -152,6 +153,8 @@ fun EditorToolSheet(
     onSelectSound: (String) -> Unit,
     /** Starts the eyedropper over the picture; the colour picked comes back to the caller given. */
     onEyedropper: ((Int) -> Unit) -> Unit = {},
+    /** Gives the eyedropper up: the tab that asked for it has gone. */
+    onEyedropperCancel: () -> Unit = {},
     /** A line picked from Text's list: selected, with its keyboard up in place of the sheet. */
     onEditLine: (String) -> Unit = {},
     modifier: Modifier = Modifier
@@ -163,6 +166,11 @@ fun EditorToolSheet(
     val effect = state.effects.firstOrNull { it.id == state.selectedClipId }
     // A line's Edit opens on its keyboard, whichever tab the last line was left on.
     var chip by rememberSaveable(tool, if (tool == Tool.Edit) state.selectedClipId else null) { mutableIntStateOf(0) }
+    // The new line's sample words are selected the first time its field opens,
+    // and only then: the field is rebuilt on every return to the Keyboard tab,
+    // and selecting the whole line again there meant the next letter typed
+    // replaced everything already said.
+    var sampleSelected by rememberSaveable(newLineId) { mutableStateOf(false) }
 
     val chips = when (tool) {
         Tool.Sound -> listOf("Music", "Voice & FX", "Sync")
@@ -178,7 +186,11 @@ fun EditorToolSheet(
     // The keyboard goes when a tab that is not for typing is picked, so the tab
     // has the room; the field is a tap away on the Keyboard tab.
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(tool, chip) { if (tool == Tool.Edit && chip != 0) keyboard?.hide() }
+    LaunchedEffect(tool, chip) {
+        if (tool == Tool.Edit && chip != 0) keyboard?.hide()
+        // A pick asked for by the Style tab must not land on the Bubble tab's colour.
+        onEyedropperCancel()
+    }
     val reset: (() -> Unit)? = when (tool) {
         Tool.Looks -> when (chip) {
             0 -> { { viewModel.clips.setLook(null) } }
@@ -307,7 +319,7 @@ fun EditorToolSheet(
             Tool.Sync -> clip?.let { AlignPanel(state, it, viewModel) }
             Tool.Edit -> item?.let {
                 when (chip) {
-                    0 -> TextEditPanel(it, viewModel, selectAll = it.id == newLineId)
+                    0 -> TextEditPanel(it, viewModel, selectAll = it.id == newLineId && !sampleSelected, onOpened = { sampleSelected = true })
                     1 -> TextStylePanel(it, viewModel, onEyedropper)
                     2 -> TextBubblePanel(it, viewModel, onEyedropper)
                     else -> TextAnimationPanel(it, viewModel)

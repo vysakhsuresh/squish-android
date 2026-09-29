@@ -9,7 +9,9 @@ import com.squish.app.editor.TextLoop
 import com.squish.app.editor.TextMotion
 import com.squish.app.editor.TextPlacement
 import com.squish.app.editor.TextStroke
+import com.squish.app.editor.TextStyleNames
 import com.squish.app.editor.TextStyleSpec
+import com.squish.app.editor.TextTiming
 import com.squish.app.editor.TitlePreset
 import com.squish.app.media.audio.MonoPcm
 import com.squish.app.media.audio.SpeechSegment
@@ -50,8 +52,41 @@ fun main() {
         val tuned = TextLook.Outline.applied(base).copy(stroke = TextStroke(0xFFFF0000.toInt(), 0.3f))
         check(TextLook.of(tuned) == null, "a tuned edge still reads as Outline")
         check(TextStyleSpec().stroke == TextStroke.NONE, "a bare spec has an edge")
+        // What a new line starts as, and what Reset puts back: the outline, not the bare spec.
+        check(TextLook.of(TextStyleSpec.NEW_LINE) == TextLook.Outline, "a new line does not start outlined")
         for (preset in TitlePreset.entries) check(TextLook.of(preset.style) == preset.look, "${preset.label}'s style is not its look")
         check(CaptionStylePreset.entries.map { it.style }.distinct().size == CaptionStylePreset.entries.size, "two caption presets are the same style")
+        // A saved style's name is the first free number, never one that is taken.
+        check(TextStyleNames.next(emptyList()) == "Style 1", "the first saved style")
+        check(TextStyleNames.next(listOf("Style 1", "Style 2", "Style 3")) == "Style 4", "the fourth saved style")
+        check(TextStyleNames.next(listOf("Style 1", "Style 3")) == "Style 2", "a removed style's number is not reused: ${TextStyleNames.next(listOf("Style 1", "Style 3"))}")
+        check(TextStyleNames.next(listOf("Style 2", "Style 3", "Mine")) == "Style 1", "a name of the person's own gets in the way")
+    }
+
+    // --- Word timings follow the line's start: a head trim, and a cut between words. ----
+    run {
+        val starts = listOf(0L, 300L, 600L, 900L)
+        // The head dragged 500 ms later: the two words already said show at once, the rest keep their beat.
+        check(TextTiming.shifted(starts, 500) == listOf(0L, 0L, 100L, 400L), "a head trim did not move the words: ${TextTiming.shifted(starts, 500)}")
+        check(TextTiming.shifted(starts, 0) === starts, "an untouched head copied the words")
+        // A tail trim moves nothing.
+        check(TextTiming.shifted(starts, -200) == listOf(200L, 500L, 800L, 1100L), "the head dragged earlier did not move the words later")
+        // Cut at 500 ms: "one two" stay with the first half, "three four" go with the second, from its own start.
+        val halves = TextTiming.split("one two three four", starts, 500)
+        check(halves != null, "a cut between words did not split them")
+        check(halves?.firstText == "one two" && halves.firstStarts == listOf(0L, 300L), "the first half: ${halves?.firstText} ${halves?.firstStarts}")
+        check(halves?.secondText == "three four" && halves.secondStarts == listOf(100L, 400L), "the second half: ${halves?.secondText} ${halves?.secondStarts}")
+        // A cut on a word's start puts that word in the second half.
+        check(TextTiming.split("one two three four", starts, 600)?.secondText == "three four", "a cut on a word's beat lost it")
+        // Nothing to split: the words and the timings disagree, one word, or every word on one side.
+        check(TextTiming.split("one two three", starts, 500) == null, "words and timings that disagree were split")
+        check(TextTiming.split("one", listOf(0L), 500) == null, "one word was split")
+        check(TextTiming.split("one two", listOf(0L, 100L), 500) == null, "a cut after every word split them")
+        check(TextTiming.split("one two", emptyList(), 500) == null, "an untimed line was split")
+        // The Words arrival on each half lands its words where the speech is.
+        val second = frame(motion = TextMotion.Words, at = 99, total = 1000, words = halves!!.secondStarts)
+        check(near(second.reveal, 0f), "the second half showed a word before its beat")
+        check(near(frame(motion = TextMotion.Words, at = 100, total = 1000, words = halves.secondStarts).reveal, 0.5f), "the second half's first word is late")
     }
 
     // --- Still is still; an arrival and a leaving each take their time and never overlap. ---
@@ -190,7 +225,7 @@ fun main() {
         check(SpeechSegmenter.wordStarts(brief, SpeechSegment(0, 100), 3) == SpeechSegmenter.evenWordStarts(3, 100), "a brief segment guessed")
     }
 
-    println("text: looks, arrivals and leavings, reveals, the loop, the box round the letters, word starts")
+    println("text: looks, style names, arrivals and leavings, reveals, the loop, the box round the letters, word starts, words through a trim and a cut")
     if (problems.isEmpty()) println("PASS - a line looks, moves and is grabbed as B10 decided")
     else { println("FAIL (${problems.size})"); problems.take(30).forEach { println("  - $it") }; exitProcess(1) }
 }

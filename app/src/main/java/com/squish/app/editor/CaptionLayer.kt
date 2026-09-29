@@ -87,7 +87,7 @@ fun CaptionLayer(
 ) {
     // Each caption's letters, by what they look like and the size they were drawn
     // for, so animating one or scrubbing past it does not redraw its text.
-    val glyphs = remember { HashMap<String, ImageBitmap>() }
+    val glyphs = remember { HashMap<String, PaintedLetters>() }
 
     Canvas(modifier = modifier) {
         val boxLeft = frame.left * size.width
@@ -106,14 +106,15 @@ fun CaptionLayer(
             val key = "${item.id}/${item.style}/${item.flipped}/${item.align}/${item.motion}/" +
                 "${item.text}/$shown@${boxWidth}x$boxHeight"
             live.add(key)
-            val glyph = glyphs.getOrPut(key) {
-                CaptionRenderer.render(item, shown, boxWidth, boxHeight).asImageBitmap()
+            val (glyph, grab) = glyphs.getOrPut(key) {
+                val painted = CaptionRenderer.paint(item, shown, boxWidth, boxHeight)
+                PaintedLetters(painted.bitmap.asImageBitmap(), TextBox(painted.grabWidth.toFloat(), painted.grabHeight.toFloat()))
             }
             if (boxes != null && shown == item.text) {
                 // Written only when it changed: every write wakes whoever builds
-                // the box from it, and that is every frame while playing.
-                val box = TextBox(glyph.width.toFloat(), glyph.height.toFloat())
-                if (boxes[item.id] != box) boxes[item.id] = box
+                // the box from it, and that is every frame while playing. The
+                // letters' own extent, not a Band's full-width picture.
+                if (boxes[item.id] != grab) boxes[item.id] = grab
             }
 
             val (x, y) = item.anchorAt(timeMs)
@@ -137,6 +138,9 @@ fun CaptionLayer(
         if (glyphs.size > MAX_GLYPHS) glyphs.keys.retainAll(live)
     }
 }
+
+/** One caption's letters as painted, and the part of them a finger takes hold of. */
+private data class PaintedLetters(val image: ImageBitmap, val grab: TextBox)
 
 private const val MAX_GLYPHS = 48
 

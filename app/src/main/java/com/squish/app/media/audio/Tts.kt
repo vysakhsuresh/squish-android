@@ -40,7 +40,7 @@ object Tts {
                         runCatching { engine?.shutdown() }
                         if (continuation.isActive) continuation.resume(result)
                     }
-                    engine = TextToSpeech(context.applicationContext) { status ->
+                    val made = TextToSpeech(context.applicationContext) { status ->
                         val tts = engine
                         if (status != TextToSpeech.SUCCESS || tts == null) {
                             finish(false)
@@ -62,6 +62,12 @@ object Tts {
                         val queued = tts.synthesizeToFile(text, Bundle(), out, UTTERANCE)
                         if (queued != TextToSpeech.SUCCESS) finish(false)
                     }
+                    engine = made
+                    // With no engine installed the constructor answers ERROR
+                    // before it returns, so the answer came with nothing to
+                    // shut down and each attempt left a client holding the
+                    // application context.
+                    if (settled) runCatching { made.shutdown() }
                     continuation.invokeOnCancellation {
                         runCatching { engine?.stop() }
                         runCatching { engine?.shutdown() }

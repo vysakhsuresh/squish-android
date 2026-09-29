@@ -112,6 +112,77 @@ data class TextStyleSpec(
         const val MIN_LINE_SPACING = 0.8f
         const val MAX_LINE_SPACING = 2f
         const val MAX_STROKE = 0.4f
+
+        /**
+         * What a new line of words starts as, and what the Style tab's Reset
+         * puts back: outlined, since white letters with nothing round them are
+         * unreadable over a bright shot. A bare [TextStyleSpec] has no edge -
+         * it is what the looks and the presets build on - and Reset used to
+         * apply that, so it took the outline off instead of putting it back.
+         */
+        val NEW_LINE: TextStyleSpec get() = TextStyleSpec(stroke = TextLook.OUTLINE_STROKE)
+    }
+}
+
+/** Names for the styles a person keeps. */
+object TextStyleNames {
+    /**
+     * The next "Style N" not already taken. Counting the list gave "Style 3"
+     * after Style 2 of three was removed, and saving under a taken name
+     * silently replaced the style that had it.
+     */
+    fun next(existing: Collection<String>): String {
+        var n = 1
+        while ("Style $n" in existing) n++
+        return "Style $n"
+    }
+}
+
+/**
+ * How a line arrives, leaves and behaves in between, with each one's length:
+ * what Animation's Apply to all carries from one line to the others.
+ */
+data class TextMotionSpec(
+    val motion: TextMotion,
+    val motionInMs: Long,
+    val motionOut: TextExit,
+    val motionOutMs: Long,
+    val loop: TextLoop,
+    val loopMs: Long
+)
+
+/**
+ * A line's word timings kept true to the speech when the line's own ends move.
+ * They are held from the line's start, so a start that moves has to move them
+ * too; the strip's head handle and Cut used to leave them where they were, and
+ * every word then landed late by the amount trimmed off.
+ */
+object TextTiming {
+    /** The timings after the line's start moved [shiftMs] later: a word already said shows at once. */
+    fun shifted(wordStartsMs: List<Long>, shiftMs: Long): List<Long> =
+        if (shiftMs == 0L) wordStartsMs else wordStartsMs.map { (it - shiftMs).coerceAtLeast(0L) }
+
+    /** Each half of a timed line cut in two: its words and when they start. */
+    data class Halves(val firstText: String, val firstStarts: List<Long>, val secondText: String, val secondStarts: List<Long>)
+
+    /**
+     * A timed line cut [atMs] from its start: the words said before the cut
+     * stay with the first half, the rest go with the second, each half's
+     * timings from its own start. Null when the cut does not fall between two
+     * words, or the words and the timings disagree - the halves then share the
+     * words, as an untimed line's do.
+     */
+    fun split(text: String, wordStartsMs: List<Long>, atMs: Long): Halves? {
+        val words = text.split(' ')
+        if (words.size != wordStartsMs.size || words.size < 2) return null
+        val before = wordStartsMs.count { it < atMs }
+        if (before == 0 || before == words.size) return null
+        return Halves(
+            firstText = words.take(before).joinToString(" "),
+            firstStarts = wordStartsMs.take(before),
+            secondText = words.drop(before).joinToString(" "),
+            secondStarts = shifted(wordStartsMs.drop(before), atMs)
+        )
     }
 }
 

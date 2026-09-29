@@ -167,6 +167,16 @@ data class TextOverlayItem(
         background = spec.background, glow = spec.glow, opacity = spec.opacity
     )
 
+    /** How it moves, on its own: what Animation's Apply to all carries. */
+    val motionSpec: TextMotionSpec
+        get() = TextMotionSpec(motion, motionInMs, motionOut, motionOutMs, loop, loopMs)
+
+    /** This line moving as [spec] says; its words, timing, place and style are its own still. */
+    fun withMotion(spec: TextMotionSpec): TextOverlayItem = copy(
+        motion = spec.motion, motionInMs = spec.motionInMs, motionOut = spec.motionOut,
+        motionOutMs = spec.motionOutMs, loop = spec.loop, loopMs = spec.loopMs
+    )
+
     /** Where it is and how big: what a finger on its box changes. */
     val placement: TextPlacement get() = TextPlacement(xFraction, yFraction, sizeSp, rotationDegrees)
 
@@ -453,8 +463,13 @@ data class EditorUiState(
     val textOverlays: List<TextOverlayItem> = emptyList(),
     /** A line's style, copied and waiting to be pasted onto another. Not an edit until it is. */
     val styleClipboard: TextStyleSpec? = null,
-    /** What auto-captions listen to, and in which language (null: the phone's own). Settings, not edits. */
-    val captionSource: CaptionSource = CaptionSource.Both,
+    /**
+     * What auto-captions listen to, and in which language (null: the phone's
+     * own). Settings, not edits. The camera alone unless asked: a song added
+     * from Sound is a sound too, and listening to everything by default put a
+     * caption on every loud bar of it, over the lines the speech had.
+     */
+    val captionSource: CaptionSource = CaptionSource.Camera,
     val captionLanguage: String? = null,
     /** The line being read aloud into a sound clip, while the voice is made. */
     val speakingId: String? = null,

@@ -132,11 +132,23 @@ object CaptionRenderer {
     }
 
     /**
+     * A caption painted: its picture, and the part of it a finger takes hold
+     * of. The two differ for a Band, whose picture is the frame's whole width
+     * while its letters are what a box should outline - a box the width of the
+     * frame put its buttons past the picture's edge, out of reach.
+     */
+    class Painted(val bitmap: Bitmap, val grabWidth: Int, val grabHeight: Int)
+
+    /**
      * The caption drawn for a frame [frameWidth] by [frameHeight], showing [shown]
      * inside the box the full text needs - so typed text does not re-centre itself
      * letter by letter.
      */
-    fun render(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int): Bitmap {
+    fun render(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int): Bitmap =
+        paint(item, shown, frameWidth, frameHeight).bitmap
+
+    /** [render], with the part of the picture that is the letters and their own decoration. */
+    fun paint(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int): Painted {
         val shortEdge = minOf(frameWidth, frameHeight).toFloat().coerceAtLeast(1f)
         val textSize = (item.sizeSp / 360f * shortEdge).coerceAtLeast(6f)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -156,7 +168,8 @@ object CaptionRenderer {
         val pad = (textSize * padShare(item)).roundToInt()
         val band = background.isOn && background.bubble == TextBubble.Band
         val tail = if (background.isOn && background.bubble == TextBubble.Speech) (textSize * 0.5f).roundToInt() else 0
-        val width = (if (band) frameWidth else fullLayout.width + pad * 2).coerceAtLeast(1)
+        val grabWidth = (fullLayout.width + pad * 2).coerceAtLeast(1)
+        val width = if (band) frameWidth.coerceAtLeast(1) else grabWidth
         val boxHeight = (fullLayout.height + pad * 2).coerceAtLeast(1)
         val height = boxHeight + tail
         val textLeft = if (band) (width - fullLayout.width) / 2f else pad.toFloat()
@@ -213,11 +226,12 @@ object CaptionRenderer {
         shownLayout.draw(canvas)
         canvas.restore()
 
-        if (!item.flipped) return bitmap
+        // The letters are centred in a band, so the grab is centred where the picture is.
+        if (!item.flipped) return Painted(bitmap, minOf(grabWidth, width), height)
         // Mirrored in the picture itself, so the preview and the file - which
         // places a bitmap and cannot flip one - show the same sticker.
         val mirror = Matrix().apply { preScale(-1f, 1f) }
-        return Bitmap.createBitmap(bitmap, 0, 0, width, height, mirror, true)
+        return Painted(Bitmap.createBitmap(bitmap, 0, 0, width, height, mirror, true), minOf(grabWidth, width), height)
     }
 
     /** How much room round the letters, as a share of the text size: the widest of what is drawn past them. */
