@@ -1,5 +1,7 @@
 package com.squish.app.editor
 
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToLong
 
 /**
@@ -20,6 +22,62 @@ object Timecode {
         val frame = (ms / 1000.0 * fps).roundToLong()
         return (frame * 1000.0 / fps).roundToLong()
     }
+
+    /**
+     * Where the transport's frame buttons put the playhead: [frames] frames on
+     * from the one showing at [atMs].
+     *
+     * A player seeked exactly shows the first frame at or after the position
+     * (see PreviewRules.END_BACKOFF_MS), so frame n shows for any position in
+     * (start of n-1, start of n], and the step lands on the whole millisecond at
+     * or just before frame n's start. It used to add a frame's length rounded
+     * to whole milliseconds - 33 for 33.37 - which drifted a third of a
+     * millisecond a press, and at 60fps every fiftieth press skipped a frame.
+     *
+     * Frames are the shot's own when the playhead is on one: the grid is laid in
+     * the file's time from [sourceAt] and brought back through [timelineAt], so
+     * a trimmed shot, a shot that starts mid-frame on the timeline and a retimed
+     * one all step one of their own frames at a time. [shotStartMs] and
+     * [shotEndMs] bound the shot on the timeline; past its last frame the step
+     * is the next shot's first, and before its first it goes back, on a plain
+     * grid and never short of the shot's start, into whatever is before it.
+     * With no shot, the grid starts at zero.
+     */
+    fun frameStep(
+        atMs: Long,
+        frames: Int,
+        fps: Float,
+        shotStartMs: Long? = null,
+        shotEndMs: Long? = null,
+        sourceAt: (Long) -> Long = { it },
+        timelineAt: (Long) -> Long = { it }
+    ): Long {
+        if (frames == 0) return atMs
+        val period = 1000.0 / (if (fps > 0f) fps else DEFAULT_FPS)
+        fun showing(ms: Long): Long = ceil(ms / period - EPSILON).toLong()
+        fun startOf(index: Long): Long = floor(index * period + EPSILON).toLong()
+        val plain = startOf(showing(atMs) + frames)
+        if (shotStartMs == null || shotEndMs == null || shotEndMs <= shotStartMs) return plain
+
+        val wanted = showing(sourceAt(atMs)) + frames
+        val target = startOf(wanted)
+        val previous = startOf(wanted - 1)
+        if (target < sourceAt(shotStartMs)) return minOf(plain, shotStartMs - 1)
+        if (target >= sourceAt(shotEndMs)) return if (frames > 0) shotEndMs else plain
+        // The speed curve rounds to whole milliseconds either way; walk the last
+        // few so the position asked for is inside the frame wanted.
+        var t = timelineAt(target).coerceIn(shotStartMs, shotEndMs - 1)
+        var guard = 0
+        while (t > shotStartMs && sourceAt(t) > target && guard++ < WALK_LIMIT) t--
+        while (t < shotEndMs - 1 && sourceAt(t) <= previous && guard++ < WALK_LIMIT) t++
+        val onward = if (frames > 0) t > atMs else t < atMs
+        return if (onward) t else plain
+    }
+
+    private const val EPSILON = 1e-6
+    private const val DEFAULT_FPS = 30f
+    /** More than a frame's worth of timeline milliseconds at any speed a clip can have. */
+    private const val WALK_LIMIT = 64
 
     /**
      * "1:04.320" - millisecond precision, the minimum useful for sync work - and

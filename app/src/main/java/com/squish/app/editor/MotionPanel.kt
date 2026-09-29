@@ -149,19 +149,26 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
 fun PlacementPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel, accent: Color) {
     // What the editor set, not what is drawn: the drawn transform includes the
     // stabilizer, and showing it here showed a 108% "scale" nobody chose - which
-    // the next nudge then wrote back, doubling the stabilizer's zoom. An
-    // overlay reads its pose at the nearer end while the playhead is off it,
-    // which is what its edit then moves (see withOverlayGeometry).
-    val here = if (clip.isOverlay) clip.placementAt(state.playheadMs) else clip.userTransformAt(state.playheadMs)
+    // the next nudge then wrote back, doubling the stabilizer's zoom. With the
+    // playhead off the clip it reads the pose at the nearer end, which is what
+    // an edit then moves (see withOverlayGeometry) - read and written by the
+    // same rule, for every slider.
+    val here = clip.placementAt(state.playheadMs)
     val animated = clip.keyframes.isNotEmpty()
     val offsets = -TransformLimits.OFFSET_MAX..TransformLimits.OFFSET_MAX
     // A shot is straightened a few degrees at a time; an overlay can be turned right round.
     val turn = if (clip.isOverlay) -TransformLimits.ROTATION_MAX..TransformLimits.ROTATION_MAX else -45f..45f
 
+    val onClip = state.playheadMs in clip.timelineStartMs..clip.timelineEndMs
+
     PanelSurface(accent = accent) {
         PanelHeading(
-            if (animated) "At ${Timecode.format(state.playheadMs)}" else "Placement",
-            if (animated) "Changing these sets a key at the playhead" else "Where the picture sits",
+            if (animated && onClip) "At ${Timecode.format(state.playheadMs)}" else "Placement",
+            when {
+                !animated -> "Where the picture sits"
+                onClip -> "Changing these sets a key at the playhead"
+                else -> "The playhead is off this clip, so these move the whole animation"
+            },
             icon = Icons.Filled.Transform,
             accent = accent
         )
@@ -169,16 +176,13 @@ fun PlacementPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
             "Scale", here.scale, TransformLimits.SCALE_MIN..TransformLimits.SCALE_MAX,
             readout = Readout.times, onFinished = viewModel::endGesture
         ) {
-            if (clip.isOverlay) viewModel.layers.setOverlayGeometry(clip.id, scale = it)
-            else viewModel.clips.setClipTransform(clip.id, scale = it)
+            viewModel.clips.setClipTransform(clip.id, scale = it)
         }
         LabeledSlider("Across", here.offsetXFraction, offsets, onFinished = viewModel::endGesture) {
-            if (clip.isOverlay) viewModel.layers.setOverlayGeometry(clip.id, offsetX = it)
-            else viewModel.clips.setClipTransform(clip.id, offsetX = it)
+            viewModel.clips.setClipTransform(clip.id, offsetX = it)
         }
         LabeledSlider("Up / down", here.offsetYFraction, offsets, onFinished = viewModel::endGesture) {
-            if (clip.isOverlay) viewModel.layers.setOverlayGeometry(clip.id, offsetY = it)
-            else viewModel.clips.setClipTransform(clip.id, offsetY = it)
+            viewModel.clips.setClipTransform(clip.id, offsetY = it)
         }
         LabeledSlider(
             "Rotation", here.rotationDegrees.coerceIn(turn.start, turn.endInclusive), turn,

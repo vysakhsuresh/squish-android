@@ -2,7 +2,7 @@ package com.squish.app.editor
 
 /**
  * The editor's toolbar as decisions rather than drawing: which tools show for
- * what is selected, what system back does next, which clip "Cut" means, and
+ * what is selected, what system back does next, which shot Edit opens, and
  * what a typed project name becomes. Kept free of Compose so it can be executed
  * on the JVM (tools/jvm/ToolRulesChecks.kt); ToolBar.kt draws it.
  */
@@ -15,8 +15,11 @@ enum class SelectionKind { None, MainVideo, Overlay, Audio, Text, Sticker, Effec
  * the toolbar; the rest act at once - a tap on Split splits.
  */
 enum class Tool(val label: String, val sheet: Boolean) {
-    // Level 0: adding things, and the project-wide settings.
-    Cut("Cut", false),
+    // Level 0: adding things, and the project-wide settings. The first opens the
+    // tools of the shot under the playhead. It was called Cut and drawn as
+    // scissors, beside a Split that is also scissors and does cut; a scissors
+    // button that only selected read as a Split that did nothing.
+    Clip("Edit", false),
     Sound("Sound", true),
     Text("Text", true),
     Stickers("Stickers", true),
@@ -58,7 +61,7 @@ enum class Tool(val label: String, val sheet: Boolean) {
  * belong to a clip, so they are on the clip's own toolbar now.
  */
 val LEVEL_ZERO: List<Tool> = listOf(
-    Tool.Cut, Tool.Sound, Tool.Text, Tool.Stickers, Tool.Overlay, Tool.Effects, Tool.Looks, Tool.Frame
+    Tool.Clip, Tool.Sound, Tool.Text, Tool.Stickers, Tool.Overlay, Tool.Effects, Tool.Looks, Tool.Frame
 )
 
 /**
@@ -68,12 +71,21 @@ val LEVEL_ZERO: List<Tool> = listOf(
  *
  * Only tools that act on the selected clip are listed. Looks, crop and rotation
  * are still one setting for the whole edit, so they stay on level 0 rather than
- * appear here as if they changed this clip alone.
+ * appear here as if they changed this clip alone. So is the camera's sound: a
+ * shot's Volume opened it and silenced every shot at once, so it lives on
+ * Sound (Voice & FX) until each clip has its own level.
+ *
+ * Section 2's lists are longer; the rest arrive with the batch that builds what
+ * they act on (docs/ROADMAP.md, B6, "Deferred"): Volume on shots and overlays
+ * with per-clip sound (B8); Fade and Voice on sounds (B9); Opacity on text
+ * (B10); Rotate, Mirror, Freeze, Reverse, Replace and Extract audio (B11);
+ * Filters, Adjust and Crop per clip (B12). A button for a tool that does not
+ * exist yet would be one more thing that does nothing.
  */
 fun toolsFor(kind: SelectionKind, canTransition: Boolean = false): List<Tool> = when (kind) {
     SelectionKind.None -> LEVEL_ZERO
     SelectionKind.MainVideo -> listOfNotNull(
-        Tool.Split, Tool.Speed, Tool.Volume, Tool.Animation, Tool.Placement,
+        Tool.Split, Tool.Speed, Tool.Animation, Tool.Placement,
         Tool.Transition.takeIf { canTransition },
         Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track, Tool.Duplicate, Tool.ToOverlay, Tool.Delete
     )
@@ -124,7 +136,7 @@ fun backStep(fullscreen: Boolean, sheetOpen: Boolean, hasSelection: Boolean): Ba
 data class ShotSpan(val id: String, val startMs: Long, val endMs: Long)
 
 /**
- * The shot "Cut" opens the clip tools for: the one under the playhead. On a cut
+ * The shot level 0's Edit opens the clip tools for: the one under the playhead. On a cut
  * that is the incoming shot - the one that starts there - and past the end the
  * last one. Null only when there is no shot at all.
  */
@@ -146,6 +158,9 @@ object ProjectName {
     /** Long enough for any real title; short enough to fit a header and a list row. */
     const val MAX_LENGTH = 60
 
+    /** What the rename field holds at most: room to edit a long paste down, not a paragraph. */
+    const val FIELD_LENGTH = MAX_LENGTH * 2
+
     /**
      * What gets stored: one line, no runs of spaces, at most [MAX_LENGTH]
      * characters and never half an emoji. Blank means "no name", which shows the
@@ -154,9 +169,20 @@ object ProjectName {
     fun clean(raw: String): String? {
         val oneLine = raw.replace(Regex("\\s+"), " ").trim()
         if (oneLine.isEmpty()) return null
-        if (oneLine.length <= MAX_LENGTH) return oneLine
-        var cut = oneLine.take(MAX_LENGTH)
-        if (cut.last().isHighSurrogate()) cut = cut.dropLast(1)
-        return cut.trimEnd()
+        return cut(oneLine, MAX_LENGTH).trimEnd()
+    }
+
+    /**
+     * [text] cut to at most [max] characters, at the last whole character a
+     * person would see. Guarding only a lone high surrogate still split a family
+     * or a skin-toned hand - one emoji built of several joined ones - and left a
+     * "man" and a dangling joiner at the end of the name.
+     */
+    fun cut(text: String, max: Int): String {
+        if (text.length <= max) return text
+        val graphemes = java.text.BreakIterator.getCharacterInstance()
+        graphemes.setText(text)
+        val end = graphemes.preceding(max + 1).coerceAtLeast(0)
+        return text.substring(0, end)
     }
 }

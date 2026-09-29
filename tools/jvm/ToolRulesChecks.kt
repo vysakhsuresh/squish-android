@@ -21,7 +21,7 @@ fun main() {
     // --- Level 0: the order section 2 decided, nothing clip-scoped on it. -------
     run {
         check(
-            LEVEL_ZERO == listOf(Tool.Cut, Tool.Sound, Tool.Text, Tool.Stickers, Tool.Overlay, Tool.Effects, Tool.Looks, Tool.Frame),
+            LEVEL_ZERO == listOf(Tool.Clip, Tool.Sound, Tool.Text, Tool.Stickers, Tool.Overlay, Tool.Effects, Tool.Looks, Tool.Frame),
             "level 0 is $LEVEL_ZERO"
         )
         check(toolsFor(SelectionKind.None) == LEVEL_ZERO, "nothing selected does not show level 0")
@@ -109,6 +109,33 @@ fun main() {
         check(!cut.last().isHighSurrogate(), "a name was cut through an emoji")
         check(cut.length == ProjectName.MAX_LENGTH - 1, "the straddling emoji: ${cut.length} chars")
         check(ProjectName.clean("Trip 🎉") == "Trip 🎉", "an emoji inside the limit was touched")
+
+        // A family is five code points joined by ZWJs: cut through, it left a
+        // "man" and a dangling joiner. It goes whole or not at all.
+        val family = "👨‍👩‍👧"
+        val famName = ProjectName.clean("b".repeat(ProjectName.MAX_LENGTH - 2) + family)!!
+        check(famName == "b".repeat(ProjectName.MAX_LENGTH - 2), "a family emoji was cut into: ${famName.takeLast(6).map { it.code }}")
+        check(!famName.endsWith("‍"), "a name ends in a joiner")
+        val thumbs = "👍🏽" // thumbs up, medium skin tone: four chars
+        val thumbName = ProjectName.clean("c".repeat(ProjectName.MAX_LENGTH - 2) + thumbs)!!
+        check(thumbName == "c".repeat(ProjectName.MAX_LENGTH - 2), "a skin-toned emoji was split: ${thumbName.length} chars")
+        val fits = "d".repeat(ProjectName.MAX_LENGTH - 4) + thumbs
+        check(ProjectName.clean(fits) == fits, "an emoji that fits exactly was dropped")
+
+        // The field keeps a long paste, cut back rather than refused.
+        val paste = "word ".repeat(80)
+        val held = ProjectName.cut(paste, ProjectName.FIELD_LENGTH)
+        check(held.length == ProjectName.FIELD_LENGTH && paste.startsWith(held), "a long paste became '${held.length}' chars")
+        check(ProjectName.cut("short", ProjectName.FIELD_LENGTH) == "short", "a short value was changed")
+    }
+
+    // --- A tool on a clip's toolbar changes that clip, not the edit. --------------------
+    run {
+        // Volume on a shot was the camera's sound for every shot at once; it
+        // comes back with per-clip levels (B8). A sound's Volume is its own.
+        check(Tool.Volume !in toolsFor(SelectionKind.MainVideo, canTransition = true), "a shot's Volume changes every shot")
+        check(Tool.Volume in toolsFor(SelectionKind.Audio), "a sound has no Volume")
+        check(Tool.Clip.label != Tool.Split.label, "level 0's Edit and Split share a name")
     }
 
     println("tool rules: toolbar levels, sheets, back, cut target, project names")

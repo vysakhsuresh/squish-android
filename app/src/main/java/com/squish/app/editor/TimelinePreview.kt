@@ -117,14 +117,16 @@ fun TimelinePreview(
     scrubNonce: Long,
     onPositionChange: (Long) -> Unit,
     onPlayingChange: (Boolean) -> Unit,
-    /** Rewind (negative) or forward by a step. Routed through the edit so the playhead and picture move together. */
-    onJump: (Long) -> Unit = {},
-    /** One frame of the edit, for the transport's step buttons. */
-    frameStepMs: Long = 33L,
+    /**
+     * A frame back (-1) or forward (+1). Routed through the edit so the playhead
+     * and picture move together, and worked out there, where the shot under the
+     * playhead - whose frames these are - is known.
+     */
+    onStep: (Int) -> Unit = {},
     /** The picture has the whole screen; the transport grows a scrub bar, since the strip is gone. */
     fullscreen: Boolean = false,
     onToggleFullscreen: (() -> Unit)? = null,
-    /** Where the full-screen scrub bar sends the playhead. */
+    /** Where the full-screen scrub bar sends the playhead: exactly there, so the thumb and the picture agree. */
     onScrub: (Long) -> Unit = {},
     /**
      * A tap on the picture, before it is taken as play or pause: true when it was
@@ -346,7 +348,7 @@ fun TimelinePreview(
         Transport(
             frame = frame,
             onToggle = { engine.togglePlay() },
-            onStep = { frames -> onJump(frames * frameStepMs) },
+            onStep = onStep,
             fullscreen = fullscreen,
             onToggleFullscreen = onToggleFullscreen,
             onScrub = onScrub,

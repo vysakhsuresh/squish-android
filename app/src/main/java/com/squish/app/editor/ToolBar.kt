@@ -100,12 +100,13 @@ val SelectionKind.concept: Concept?
 
 /**
  * A tool's glyph. A level-0 tool that adds something wears that thing's glyph -
- * Sound is the sound track's note, Text the text track's letters - so the
+ * Sound is the sound track's note, Text the text track's letters, Edit (the
+ * shot under the playhead) the video track's camera - so the
  * toolbar and the track heads say the same thing.
  */
 val Tool.icon: ImageVector
     get() = when (this) {
-        Tool.Cut -> Icons.Filled.ContentCut
+        Tool.Clip -> Concept.Video.icon
         Tool.Sound -> Concept.Sound.icon
         Tool.Text -> Concept.Text.icon
         Tool.Stickers -> Concept.Sticker.icon
@@ -233,9 +234,11 @@ fun ToolBar(
                 icon = tool.icon,
                 label = tool.label,
                 tint = if (!on) SquishColors.TextMuted.copy(alpha = 0.5f)
-                else if (tool == Tool.Delete) SquishColors.Pink
+                // Its own colour on every toolbar, overlay's magenta included.
+                else if (tool == Tool.Delete) SquishColors.Danger
                 else accentOf(tool),
                 enabled = on,
+                description = if (tool == Tool.Clip) "Edit the shot under the playhead" else tool.label,
                 onClick = { onTool(tool) }
             )
         }

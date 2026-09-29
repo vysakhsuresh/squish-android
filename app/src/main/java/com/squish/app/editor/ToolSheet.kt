@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.TransitionType
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.theme.SquishColors
@@ -140,8 +141,8 @@ fun EditorToolSheet(
     onDone: () -> Unit,
     onPickAudio: () -> Unit,
     onAddText: () -> Unit,
-    /** Whether Edit should take the keyboard the moment it opens - true after Add text. */
-    focusText: Boolean,
+    /** A sound picked from Sound's list: selected, with its own tools in place of the sheet. */
+    onSelectSound: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val kind = state.selectionKind
@@ -166,11 +167,9 @@ fun EditorToolSheet(
         }
         Tool.Frame -> if (chip == 0) viewModel.clips::resetCrop else viewModel.clips::resetRotation
         Tool.Speed -> clip?.let { c -> { viewModel.clips.clearSpeed(c.id) } }
-        Tool.Volume -> when {
-            clip?.kind == com.squish.app.timeline.ClipKind.Audio -> { { viewModel.audio.setAudioClipVolume(clip.id, 1f) } }
-            clip != null -> viewModel.audio::resetCameraSound
-            else -> null
-        }
+        // A sound's own level. A shot has no Volume until clips carry their own
+        // (see toolsFor); the camera's sound for the whole edit is on Sound.
+        Tool.Volume -> clip?.takeIf { it.kind == ClipKind.Audio }?.let { c -> { viewModel.audio.setAudioClipVolume(c.id, 1f) } }
         Tool.Animation -> when {
             item != null -> { { viewModel.text.restyleCaption(item.id, { it.copy(motion = TextMotion.None) }) } }
             clip != null -> { { viewModel.clips.clearKeyframes(clip.id) } }
@@ -180,7 +179,7 @@ fun EditorToolSheet(
             item != null -> {
                 { viewModel.text.restyleCaption(item.id, { it.copy(xFraction = 0.5f, yFraction = 0.5f, sizeSp = STICKER_SIZE_SP) }) }
             }
-            clip != null -> { { viewModel.clips.setClipTransform(clip.id, scale = 1f, offsetX = 0f, offsetY = 0f, rotation = 0f) } }
+            clip != null -> { { viewModel.clips.resetPlacement(clip.id) } }
             else -> null
         }
         Tool.Transition -> clip?.let { c ->
@@ -193,7 +192,15 @@ fun EditorToolSheet(
             else { { viewModel.layers.setChromaKey(c.id, null) } }
         }
         Tool.Stabilize -> clip?.let { c -> { viewModel.analysis.clearStabilization(c.id) } }
-        Tool.Track -> viewModel.analysis::clearTrack
+        // What Track put on this selection comes off, as an undo step. The
+        // measurement itself is not an edit and is kept: Reset here used to
+        // throw away whichever clip's track had been measured last - tens of
+        // seconds of analysis - with nothing to undo.
+        Tool.Track -> when {
+            item != null -> item.takeIf { it.track != null }?.let { i -> { viewModel.analysis.unpinCaption(i.id) } }
+            clip != null -> clip.takeIf { it.mask?.track != null }?.let { c -> { viewModel.analysis.unpinMask(c.id) } }
+            else -> null
+        }
         Tool.Beats -> viewModel.audio::clearBeats
         Tool.Sync -> clip?.let { c -> { viewModel.audio.resetAudioAlignment(c.id) } }
         Tool.Style -> item?.let { i -> { viewModel.text.restyleCaption(i.id, { it.withDefaultStyle() }) } }
@@ -214,7 +221,7 @@ fun EditorToolSheet(
     ) {
         when (tool) {
             Tool.Sound -> when (chip) {
-                0 -> SoundMusicPanel(state, viewModel, onPickAudio)
+                0 -> SoundMusicPanel(state, viewModel, onPickAudio, onSelectSound)
                 1 -> SoundVoicePanel(state, viewModel)
                 else -> SoundSyncPanel(state, viewModel)
             }
@@ -229,10 +236,7 @@ fun EditorToolSheet(
             Tool.Frame -> if (chip == 0) RatioPanel(state, viewModel) else RotatePanel(state, viewModel)
 
             Tool.Speed -> if (clip != null) SpeedPanel(state, viewModel, accent)
-            Tool.Volume -> when {
-                clip?.kind == com.squish.app.timeline.ClipKind.Audio -> SoundVolumePanel(state, clip, viewModel)
-                clip != null -> CameraSoundPanel(state, viewModel)
-            }
+            Tool.Volume -> clip?.takeIf { it.kind == ClipKind.Audio }?.let { SoundVolumePanel(state, it, viewModel) }
             Tool.Animation -> when {
                 item != null -> TextAnimationPanel(item, viewModel)
                 clip != null -> AnimationPanel(state, clip, viewModel, accent)
@@ -257,7 +261,7 @@ fun EditorToolSheet(
             }
             Tool.Beats -> BeatPanel(state, viewModel)
             Tool.Sync -> clip?.let { AlignPanel(state, it, viewModel) }
-            Tool.Edit -> item?.let { TextEditPanel(it, viewModel, focusText) }
+            Tool.Edit -> item?.let { TextEditPanel(it, viewModel) }
             Tool.Style -> item?.let { TextStylePanel(it, viewModel) }
             Tool.Strength -> effect?.let { EffectStrengthPanel(it, viewModel) }
             else -> Unit

@@ -38,10 +38,38 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * A blank line starting at the playhead. Spanning the whole clip - which is what
      * this used to do - is never what anyone wants from a caption.
      */
-    fun addCaptionAtPlayhead() = record("Add line") {
+    fun addCaptionAtPlayhead(): String {
+        val id = UUID.randomUUID().toString()
+        record("Add line", tag = addLineTag(id)) { addBlankLine(id) }
+        return id
+    }
+
+    /**
+     * The line Add text made, let go of without a word typed in it, taken back
+     * off: a blank line draws nothing, so it sat on the strip as an empty bar to
+     * be found and deleted by hand. While adding it is still the last step it is
+     * taken out of the history too, as if it had never been added; after other
+     * steps it goes as a step of its own, so undo can still bring it back.
+     */
+    fun discardIfBlank(id: String) {
+        val item = _state.value.textOverlays.firstOrNull { it.id == id && !it.sticker } ?: return
+        if (item.text.isNotBlank()) return
+        val tag = addLineTag(id)
+        if (history.undoTag == tag) {
+            history.drop(tag)
+            dropTextOverlay(id)
+            publishHistory()
+        } else {
+            removeTextOverlay(id)
+        }
+    }
+
+    private fun addLineTag(id: String) = "Add line $id"
+
+    private fun addBlankLine(id: String) {
         val span = placeNewText(_state.value, DEFAULT_CAPTION_MS)
         val item = TextOverlayItem(
-            id = UUID.randomUUID().toString(),
+            id = id,
             text = "",
             startMs = span.startMs,
             endMs = span.endMs,

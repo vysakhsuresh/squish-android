@@ -19,6 +19,8 @@ import com.squish.app.timeline.withClipRemoved
 import com.squish.app.timeline.withClipDuplicated
 import com.squish.app.timeline.MAX_LAYER
 import com.squish.app.timeline.withClipTrimmed
+import com.squish.app.timeline.withOverlayGeometry
+import com.squish.app.timeline.withPlacementReset
 import com.squish.app.timeline.withSplitAtPlayhead
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -527,8 +529,14 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * once you have said "this shot moves", changing the picture at a moment in time
      * can only sensibly mean "and here is where it should be at that moment".
      *
-     * Starts from the user's own transform, never the drawn one: see
-     * [userTransformAt]. Each slider on each clip is its own gesture.
+     * Starts from the user's own transform, never the drawn one (the
+     * stabilizer's correction is measured, not placed). Each slider on each clip
+     * is its own gesture.
+     *
+     * The one way placement is written, for shots and overlays alike, through
+     * [withOverlayGeometry]: with the playhead off an animated clip there is no
+     * moment of it to key, and keying the nearer end - which this did on its own
+     * - quietly rewrote the end of the move; there the whole move shifts instead.
      */
     fun setClipTransform(
         clipId: String,
@@ -540,30 +548,19 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         "Placement",
         gesture = "Motion ${fieldsNamed("scale" to scale, "x" to offsetX, "y" to offsetY, "rotation" to rotation)} $clipId"
     ) {
-        mutateTimeline { timeline ->
-            val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
-            val playhead = timeline.playheadMs
-            val current = clip.userTransformAt(playhead)
-            val next = Transform(
-                scale = (scale ?: current.scale).coerceIn(0.1f, 4f),
-                offsetXFraction = (offsetX ?: current.offsetXFraction).coerceIn(-1.5f, 1.5f),
-                offsetYFraction = (offsetY ?: current.offsetYFraction).coerceIn(-1.5f, 1.5f),
-                rotationDegrees = (rotation ?: current.rotationDegrees).coerceIn(-180f, 180f)
-            )
+        mutateTimeline { it.withOverlayGeometry(clipId, scale = scale, offsetX = offsetX, offsetY = offsetY, rotation = rotation) }
+    }
 
-            val updated = if (clip.keyframes.isEmpty()) {
-                clip.copy(
-                    scale = next.scale,
-                    offsetXFraction = next.offsetXFraction,
-                    offsetYFraction = next.offsetYFraction,
-                    rotation = next.rotationDegrees
-                )
-            } else {
-                val at = (playhead - clip.timelineStartMs).coerceIn(0L, clip.durationMs)
-                clip.copy(keyframes = clip.keyframes.upsert(Keyframe(at, next, easingNear(clip, at))))
-            }
-            timeline.copy(clips = timeline.clips.map { if (it.id == clipId) updated else it })
-        }
+    /**
+     * Placement's Reset: the clip still again, where a clip of its kind lands -
+     * filling the frame on the main track, the corner an overlay is added to -
+     * one undo step. It used to set a full-frame placement through the
+     * auto-keying path, which on an animated clip added a snap-to-full-frame key
+     * in the middle of the move instead of undoing it, and blew a corner overlay
+     * up over the whole picture.
+     */
+    fun resetPlacement(clipId: String) = record("Reset placement") {
+        mutateTimeline { it.withPlacementReset(clipId) }
     }
 
     /**

@@ -47,7 +47,17 @@ import com.squish.app.ui.theme.SquishColors
  * and on its own toolbar once it is selected.
  */
 @Composable
-fun SoundMusicPanel(state: EditorUiState, viewModel: EditorViewModel, onPickAudio: () -> Unit) {
+fun SoundMusicPanel(
+    state: EditorUiState,
+    viewModel: EditorViewModel,
+    onPickAudio: () -> Unit,
+    /**
+     * A row tapped: the sound selected and its own tools up, the way a tap on
+     * the strip does. It used to only highlight the row, with the tools it
+     * spoke of under this sheet where they could not be seen.
+     */
+    onSelectSound: (String) -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SquishPrimaryButton(
             text = "Add from your files",
@@ -61,7 +71,7 @@ fun SoundMusicPanel(state: EditorUiState, viewModel: EditorViewModel, onPickAudi
             PanelCard {
                 PanelHeading(
                     "On the timeline",
-                    "Tap one to work on it",
+                    "Tap one for its volume, sync and more",
                     icon = Icons.Filled.MusicNote,
                     accent = SquishColors.Cyan,
                     trailing = {
@@ -76,7 +86,7 @@ fun SoundMusicPanel(state: EditorUiState, viewModel: EditorViewModel, onPickAudi
                     TrackRow(
                         clip = clip,
                         selected = clip.id == state.selectedClipId,
-                        onSelect = { viewModel.selectClip(clip.id) },
+                        onSelect = { onSelectSound(clip.id) },
                         onRemove = { viewModel.audio.removeAudioClip(clip.id) }
                     )
                 }
@@ -135,8 +145,9 @@ fun SoundVoicePanel(state: EditorUiState, viewModel: EditorViewModel) {
 
 /**
  * The sound recorded with the video: on or off, and how loud. One setting for
- * every shot on the main track - which the heading says, since it also opens
- * from a single shot's Volume.
+ * every shot on the main track, which the heading says - and which is why it is
+ * here on Sound and not on a shot's toolbar, where it silenced every shot while
+ * looking like that shot's own level.
  */
 @Composable
 fun CameraSoundPanel(state: EditorUiState, viewModel: EditorViewModel) {
@@ -273,10 +284,17 @@ fun AlignPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                 onClick = { viewModel.audio.resetAudioAlignment(clip.id) }
             )
         }
+        // Where the sound starts, put on a moment picked with the picture: the
+        // playhead. Dragging on the strip does it by eye; this does it exactly.
+        SquishOutlinedButton(
+            text = "Start at the playhead",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { viewModel.audio.placeAudioAtPlayhead(clip.id) }
+        )
     }
 }
 
-/** One added sound. Selecting it points the whole panel - and the strip - at it. */
+/** One added sound. Selecting it hands over to its own tools. */
 @Composable
 private fun TrackRow(clip: Clip, selected: Boolean, onSelect: () -> Unit, onRemove: () -> Unit) {
     Row(

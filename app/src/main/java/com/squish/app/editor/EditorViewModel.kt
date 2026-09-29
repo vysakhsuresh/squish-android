@@ -78,8 +78,8 @@ class EditorViewModel(
         override val state: MutableStateFlow<EditorUiState> get() = _state
         override val scope: CoroutineScope get() = viewModelScope
         override val history: UndoStack<EditSnapshot> get() = this@EditorViewModel.history
-        override fun record(label: String, gesture: String?, holdMs: Long, change: () -> Unit) =
-            this@EditorViewModel.record(label, gesture, holdMs, change)
+        override fun record(label: String, gesture: String?, holdMs: Long, tag: String?, change: () -> Unit) =
+            this@EditorViewModel.record(label, gesture, holdMs, tag, change)
         override fun recordLate(
             label: String,
             edit: (EditSnapshot) -> EditSnapshot,
@@ -258,8 +258,15 @@ class EditorViewModel(
      * Names the project, or with a blank name un-names it. Saved at once rather
      * than at the next tick: the rename dialog is often the last thing done
      * before leaving.
+     *
+     * Not while a saved edit is on offer. The name is part of what a save
+     * compares, so naming the bare clip counted as working on it: the offered
+     * edit went to the bin and the bare clip was saved in its slot - and since a
+     * name is not an undo step, undo could never bring the offer back. The
+     * header does not offer the rename then; this is the rule behind it.
      */
     fun renameProject(raw: String) {
+        if (_state.value.recovery != null) return
         val name = ProjectName.clean(raw)
         if (name == _state.value.projectName) return
         _state.update { it.copy(projectName = name) }
@@ -381,15 +388,29 @@ class EditorViewModel(
     }
 
     /**
-     * Rewind or forward by a fixed step, from wherever the playhead is.
-     *
-     * Not snapped, unlike a scrub: a skip of five seconds that landed on a nearby
-     * cut instead would be a skip of some other amount, and pressing it twice
-     * would not go twice as far.
+     * The transport's frame buttons: [frames] frames on from the one showing,
+     * counted in the frames of the shot under the playhead - see
+     * [Timecode.frameStep]. Not snapped, unlike a scrub: a step that landed on
+     * a nearby cut instead would not be a frame.
      */
-    fun jumpBy(deltaMs: Long) = _state.update {
-        val target = (it.playheadMs + deltaMs).coerceIn(0L, it.timelineDurationMs)
-        it.copy(playheadMs = target, scrubNonce = it.scrubNonce + 1)
+    fun stepFrames(frames: Int) = _state.update {
+        val shot = it.baseClipAt(it.playheadMs)
+        val target = if (shot == null) Timecode.frameStep(it.playheadMs, frames, it.fps)
+        else Timecode.frameStep(
+            it.playheadMs, frames, it.fps,
+            shot.timelineStartMs, shot.timelineEndMs, shot::sourceAt, shot::timelineAtSource
+        )
+        it.copy(playheadMs = target.coerceIn(0L, it.timelineDurationMs), scrubNonce = it.scrubNonce + 1)
+    }
+
+    /**
+     * The playhead exactly where it is put, not snapped - the full-screen scrub
+     * bar. Snapping there went by the strip's zoom, not the bar's, so on a
+     * fitted strip the picture stuck to a cut across a second of bar while the
+     * thumb moved on without it.
+     */
+    fun seekTo(ms: Long) = _state.update {
+        it.copy(playheadMs = ms.coerceIn(0L, it.timelineDurationMs), scrubNonce = it.scrubNonce + 1)
     }
 
     /**
@@ -506,6 +527,8 @@ class EditorViewModel(
         label: String,
         gesture: String? = null,
         holdMs: Long = UndoStack.COALESCE_MS,
+        /** Names the step, so it can be taken back out if it turns out to be nothing; see [UndoStack.drop]. */
+        tag: String? = null,
         change: () -> Unit
     ) {
         if (recordDepth > 0) {
@@ -528,7 +551,7 @@ class EditorViewModel(
             gestureContinues = false
         }
         if (_state.value.editSnapshot == before) return
-        history.record(label, before, now, gesture, holdMs)
+        history.record(label, before, now, gesture, holdMs, tag)
         edited()
     }
 

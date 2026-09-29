@@ -562,6 +562,32 @@ fun TimelineState.withOverlayGeometry(
     }
 )
 
+/**
+ * Where an overlay added from the picker lands: a picture-in-picture in the
+ * top-right corner, small enough that the shot under it still reads.
+ */
+val OVERLAY_LANDING = Transform(scale = 0.4f, offsetXFraction = 0.45f, offsetYFraction = -0.45f)
+
+/**
+ * A clip's placement put back: still, with no animation, where a clip of its
+ * kind lands - filling the frame on the main track, [OVERLAY_LANDING] on an
+ * overlay row. The stabilizer's correction is a measurement, not a placement,
+ * and is left alone; so are opacity, mask and key.
+ */
+fun TimelineState.withPlacementReset(clipId: String): TimelineState = copy(
+    clips = clips.map { clip ->
+        if (clip.id != clipId || clip.kind != ClipKind.Video) return@map clip
+        val home = if (clip.isOverlay) OVERLAY_LANDING else Transform.Identity
+        clip.copy(
+            keyframes = emptyList(),
+            scale = home.scale,
+            offsetXFraction = home.offsetXFraction,
+            offsetYFraction = home.offsetYFraction,
+            rotation = home.rotationDegrees
+        )
+    }
+)
+
 // ---- Everyday edits ---------------------------------------------------------------
 
 fun TimelineState.select(clipId: String?): TimelineState = copy(selectedClipId = clipId)

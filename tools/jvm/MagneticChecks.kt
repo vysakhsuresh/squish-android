@@ -23,6 +23,8 @@ import com.squish.app.timeline.withClipReordered
 import com.squish.app.timeline.withClipTrimmed
 import com.squish.app.timeline.withLayerChanged
 import com.squish.app.timeline.withOverlayGeometry
+import com.squish.app.timeline.withPlacementReset
+import com.squish.app.timeline.OVERLAY_LANDING
 import com.squish.app.timeline.withSplitAllTracks
 import com.squish.app.timeline.withSplitAtPlayhead
 import com.squish.app.timeline.withTransition
@@ -523,6 +525,37 @@ fun main() {
         val grown = after.withOverlayGeometry("p", scale = 2.36f).byId("p")
         check(near(grown.keyframes[0].transform.scale, 2f, 0.01f) && near(grown.keyframes[1].transform.scale, 2.36f, 0.01f),
             "an off-clip size change did not scale the whole move: ${grown.keyframes.map { it.transform.scale }}")
+
+        // Rotation goes the same way: the Placement sheet's fourth slider used to
+        // key the nearer end off the clip while the other three shifted the move.
+        val turned = after.withOverlayGeometry("p", rotation = 30f).byId("p")
+        check(turned.keyframes.size == 2 && turned.keyframes.all { near(it.transform.rotationDegrees, 30f) },
+            "an off-clip turn did not turn the whole move: ${turned.keyframes.map { it.transform.rotationDegrees }}")
+
+        // A main-track shot is placed by the same rule.
+        val shot = video("m", 5_000, keys = pushIn(5_000L))
+        val shotAfter = TimelineState(clips = listOf(shot, video("n", 3_000, start = 5_000)), playheadMs = 6_000)
+        val shotSlid = shotAfter.withOverlayGeometry("m", offsetY = 0.2f).byId("m")
+        check(shotSlid.keyframes.size == 2 && shotSlid.keyframes.all { near(it.transform.offsetYFraction, 0.2f) },
+            "an off-clip shot edit rewrote one key: ${shotSlid.keyframes}")
+    }
+
+    // --- Placement's Reset (B6): still again, where the kind of clip lands. --------
+    run {
+        val keyed = video("p", 5_000, layer = 1, keys = pushIn(5_000L))
+            .copy(scale = 0.7f, offsetXFraction = -0.2f, rotation = 12f, opacity = 0.5f, stabilizer = pushIn(5_000L))
+        // Off the clip, as in the review: no key at the playhead, no key anywhere.
+        val s = TimelineState(clips = listOf(video("m", 10_000), keyed), playheadMs = 9_000)
+        val reset = s.withPlacementReset("p").byId("p")
+        check(reset.keyframes.isEmpty(), "an overlay's reset left ${reset.keyframes.size} keys")
+        check(reset.staticTransform == OVERLAY_LANDING, "an overlay reset to ${reset.staticTransform}, not where overlays land")
+        check(reset.opacity == 0.5f && reset.stabilizer.size == 2, "a placement reset touched opacity or the stabilizer")
+        check(s.withPlacementReset("p").byId("m") == s.byId("m"), "a placement reset touched another clip")
+
+        val shotReset = TimelineState(clips = listOf(video("m", 5_000, keys = pushIn(5_000L)).copy(scale = 2f)), playheadMs = 2_000)
+            .withPlacementReset("m").byId("m")
+        check(shotReset.keyframes.isEmpty() && shotReset.staticTransform == Transform.Identity,
+            "a shot's reset left ${shotReset.keyframes.size} keys at ${shotReset.staticTransform}")
     }
 
     // --- Duplicate (B6): the copy lands straight after, the track makes room. -----

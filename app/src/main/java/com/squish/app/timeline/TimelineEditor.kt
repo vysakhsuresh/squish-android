@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -1747,6 +1748,14 @@ private fun BoxScope.TrimHandle(
  * The three things done most to whatever is selected, under the strip: Split,
  * Duplicate, Delete - and a line saying what they will act on.
  *
+ * Only where the toolbar is not already showing them. A selected clip's toolbar
+ * leads with Split and ends with Duplicate and Delete, and the same three again
+ * here, in other colours, was six buttons for three actions. So with a clip's
+ * tools up this is the line alone; with nothing selected it is Split (the main
+ * track at the playhead, which level 0 has no button for); and with a sheet
+ * open over the toolbar it is all three, so a split or a delete is never more
+ * taps with a sheet open than without.
+ *
  * It used to be eleven buttons in a scrolling row: undo and redo (in the header
  * now, where they never leave the screen), close gaps (the main track closes up
  * by itself), start and end, zoom in, out and fit (pinch zooms and a double tap
@@ -1758,6 +1767,10 @@ fun TimelineActionBar(
     onSplit: () -> Unit,
     onDelete: () -> Unit,
     onDuplicate: () -> Unit,
+    /** The toolbar under the strip is a clip's, with its own Split, Duplicate and Delete. */
+    toolbarHasThem: Boolean,
+    /** The selection's colour - the one its toolbar wears - so a button looks the same in both places. */
+    accent: Color,
     modifier: Modifier = Modifier,
     /** An effect is selected: it is not a clip, but it can be split, copied and deleted too. */
     effectSelected: Boolean = false,
@@ -1777,31 +1790,35 @@ fun TimelineActionBar(
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            // As tall with the buttons gone as with them, so the strip does not jump
+            // when a clip is selected.
+            modifier = Modifier.fillMaxWidth().heightIn(min = MINI_ACTION_SIZE).padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            MiniAction(
-                Icons.Filled.ContentCut,
-                "Split at the playhead",
-                SquishColors.Primary,
-                onSplit,
-                enabled = splittable
-            )
-            MiniAction(
-                Icons.Filled.ContentCopy,
-                "Duplicate the selection",
-                SquishColors.TextSecondary,
-                onDuplicate,
-                enabled = anything
-            )
-            MiniAction(
-                Icons.Filled.DeleteOutline,
-                "Delete the selection",
-                SquishColors.Magenta,
-                onDelete,
-                enabled = anything
-            )
+            if (!toolbarHasThem) {
+                MiniAction(
+                    Icons.Filled.ContentCut,
+                    "Split at the playhead",
+                    accent,
+                    onSplit,
+                    enabled = splittable
+                )
+                if (anything) {
+                    MiniAction(
+                        Icons.Filled.ContentCopy,
+                        "Duplicate the selection",
+                        accent,
+                        onDuplicate
+                    )
+                    MiniAction(
+                        Icons.Filled.DeleteOutline,
+                        "Delete the selection",
+                        SquishColors.Pink,
+                        onDelete
+                    )
+                }
+            }
             onCloseGaps?.let { close ->
                 MiniAction(Icons.Filled.Compress, "Close the gaps between shots", SquishColors.TextSecondary, close)
             }

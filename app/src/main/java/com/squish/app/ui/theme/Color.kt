@@ -35,9 +35,16 @@ object SquishColors {
     /** The primary action: Export, a sheet's Done, the play button. */
     val Primary = Orange
 
+    /**
+     * Destructive and failed: Delete, Remove, an error. Not a logo hue - it was
+     * magenta, which became the overlay's colour, so on an overlay's toolbar
+     * Delete wore the same colour as every other tool.
+     */
+    val Danger = Color(0xFFFF4F4F)
+
     // Semantic aliases used across the app
     val Teal = Cyan               // audio, savings, success
     val Purple = Violet           // video track, crop
-    val Pink = Magenta            // destructive, overlays
+    val Pink = Danger             // destructive, failure
     val Yellow = Amber            // markers, warnings, text track
 }

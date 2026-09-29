@@ -1,7 +1,12 @@
 package com.squish.app.editor
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
+import android.view.Window
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -18,7 +23,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -57,6 +66,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
@@ -116,10 +126,16 @@ fun EditorScreen(
     var openToolName by rememberSaveable { mutableStateOf<String?>(null) }
     val openTool = openToolName?.let { name -> Tool.entries.firstOrNull { it.name == name } }
     var fullscreen by rememberSaveable { mutableStateOf(false) }
-    // Add text is two taps to typing: set when it opens Edit, so the field takes
-    // the keyboard - and cleared when Edit closes, so reopening it by hand does not.
-    var focusText by remember { mutableStateOf(false) }
-    LaunchedEffect(openTool) { if (openTool != Tool.Edit) focusText = false }
+    // The line Add text just made, until it has words or is let go of. Let go of
+    // blank - Done, back, another selection - it is taken off again: a line with
+    // no words draws nothing, and sat on the strip as an empty bar.
+    var newLineId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(openTool, state.selectedClipId) {
+        val id = newLineId ?: return@LaunchedEffect
+        if (openTool == Tool.Edit && state.selectedClipId == id) return@LaunchedEffect
+        newLineId = null
+        viewModel.text.discardIfBlank(id)
+    }
 
     var exportSheetOpen by rememberSaveable { mutableStateOf(false) }
     // A failure is explained by a card under the picture, which the sheet covers.
@@ -156,6 +172,8 @@ fun EditorScreen(
     val leave = {
         if (state.isExporting) confirmStopExport = true
         else {
+            newLineId?.let(viewModel.text::discardIfBlank)
+            newLineId = null
             viewModel.saveNow()
             onBack()
         }
@@ -183,6 +201,22 @@ fun EditorScreen(
     DisposableEffect(state.isExporting) {
         view.keepScreenOn = state.isExporting
         onDispose { view.keepScreenOn = false }
+    }
+    // The keyboard is made room for here, by the layout (see imePadding below),
+    // rather than by the window sliding up: panned, the header and the picture
+    // went off the top, so the line being typed could not be seen on the
+    // picture - and the window drawing edge to edge meant it might not pan at
+    // all and the keyboard sat over the field. Only while the editor is up;
+    // every other screen keeps the window's own behaviour.
+    DisposableEffect(view) {
+        val window = view.context.findWindow()
+        val before = window?.attributes?.softInputMode
+        @Suppress("DEPRECATION")
+        window?.setSoftInputMode(
+            (before ?: 0) and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST.inv() or
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        )
+        onDispose { if (before != null) window.setSoftInputMode(before) }
     }
     // An export that finishes while "Stop exporting?" is open takes the question
     // with it: there is nothing left to stop, and a Stop tapped then looked as if
@@ -221,14 +255,13 @@ fun EditorScreen(
         )
     }
     val addText = {
-        viewModel.text.addCaptionAtPlayhead()
-        focusText = true
+        newLineId = viewModel.text.addCaptionAtPlayhead()
         openToolName = Tool.Edit.name
     }
 
     val onTool: (Tool) -> Unit = { tool ->
         when (tool) {
-            Tool.Cut -> {
+            Tool.Clip -> {
                 val shots = state.videoClips.filter { it.isMain }
                     .map { ShotSpan(it.id, it.timelineStartMs, it.timelineEndMs) }
                 cutTarget(shots, state.playheadMs)?.let(viewModel::selectClip)
@@ -273,151 +306,202 @@ fun EditorScreen(
     }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->
-        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(padding)) {
+        // Which way up is decided before the keyboard takes its share: a short
+        // phone with the keyboard up is not a phone on its side, and switching
+        // layouts mid-word would rebuild the sheet being typed in.
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
             val landscape = maxWidth > maxHeight
-            val available = maxHeight
-            val sheetHeight = sheetHeightFor(available)
-            val sheetOpen = openTool != null
+            BoxWithConstraints(modifier = Modifier.fillMaxSize().imePadding()) {
+                val available = maxHeight
+                val sheetHeight = sheetHeightFor(available)
+                val sheetOpen = openTool != null
+                // The keyboard is up - for a line of text, a search, a size. The strip
+                // and the notices fold away until it goes (kept composed, so the strip
+                // comes back scrolled where it was), and the sheet sits on the
+                // keyboard with the picture above it, where the words being typed
+                // can be seen landing.
+                val typing = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+                val cardsScroll = rememberScrollState()
+                val stripScroll = rememberScrollState()
 
-            val header = @Composable {
-                EditorHeader(
-                    state = state,
-                    onBack = leave,
-                    onRename = { renaming = true },
-                    onUndo = viewModel::undo,
-                    onRedo = viewModel::redo,
-                    onExport = { exportSheetOpen = true }
-                )
-            }
-            val controls = @Composable { compactStrip: Boolean ->
-                StatusCards(state, viewModel, onStartNew = { confirmStartNew = true })
-                val timeline = state.toTimeline()
-                TimelineEditor(
-                    state = timeline,
-                    onSelect = selectFromStrip,
-                    onMoveTo = viewModel.clips::moveClipTo,
-                    onTrim = viewModel.clips::trimClip,
-                    onScrub = viewModel::scrubTo,
-                    onTransitionTap = { clipId ->
-                        viewModel.selectClip(clipId)
-                        openToolName = Tool.Transition.name
-                    },
-                    markers = state.markers,
-                    barMarkers = state.beats.every(4),
-                    isPlaying = state.isPlaying,
-                    fitNonce = state.fitNonce,
-                    onZoomTo = viewModel::setPixelsPerSecond,
-                    onEffectMove = viewModel.clips::moveEffect,
-                    onEffectTrim = viewModel.clips::trimEffect,
-                    onAddVideo = addVideos,
-                    onAddBlank = viewModel.clips::addBlankClip,
-                    onOpenSound = { openToolName = Tool.Sound.name },
-                    onOpenWords = { openToolName = Tool.Text.name },
-                    onScrubbingChange = { timelineScrubbing = it },
-                    compact = compactStrip,
-                    onFit = viewModel::fitTimeline
-                )
-                TimelineActionBar(
-                    state = timeline,
-                    onSplit = viewModel.clips::splitAtPlayhead,
-                    onDelete = viewModel.clips::deleteSelectedClip,
-                    onDuplicate = viewModel.clips::duplicateSelected,
-                    effectSelected = kind == SelectionKind.Effect,
-                    splittable = state.canSplitHere,
-                    onCloseGaps = if (mainTrackHasGaps) viewModel.clips::closeGaps else null,
-                    modifier = Modifier.padding(vertical = 6.dp)
-                )
-            }
-            val toolbar = @Composable {
-                val accent = kind.concept?.accent
-                ToolBar(
-                    tools = toolsFor(kind, canTransition),
-                    accentOf = { tool -> accent ?: tool.levelZeroAccent },
-                    onTool = onTool,
-                    enabled = { tool ->
-                        when (tool) {
-                            Tool.Cut -> state.videoClips.any { it.isMain }
-                            Tool.Split -> state.canSplitHere
-                            else -> true
-                        }
-                    },
-                    onBack = if (kind == SelectionKind.None) null else ({ viewModel.selectClip(null) }),
-                    backAccent = accent ?: SquishColors.TextSecondary
-                )
-            }
-            val sheet = @Composable { modifier: Modifier ->
-                openTool?.let { tool ->
-                    EditorToolSheet(
-                        tool = tool,
+                val header = @Composable {
+                    EditorHeader(
                         state = state,
-                        viewModel = viewModel,
-                        onDone = { openToolName = null },
-                        onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) },
-                        onAddText = addText,
-                        focusText = focusText,
-                        modifier = modifier
+                        onBack = leave,
+                        // Not while a saved edit is on offer - see renameProject.
+                        onRename = if (state.recovery == null) ({ renaming = true }) else null,
+                        onUndo = viewModel::undo,
+                        onRedo = viewModel::redo,
+                        onExport = { exportSheetOpen = true }
                     )
                 }
-            }
-
-            when {
-                state.isLoadingSource -> Column(modifier = Modifier.fillMaxSize()) {
-                    header()
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = SquishColors.Primary)
+                // Beside the strip, never in its column: in there a failure or a
+                // banner pushed the compressed strip out of its capped height, and
+                // the strip is the one thing section 2 says never goes.
+                val cards = @Composable {
+                    StatusCards(state, viewModel, onStartNew = { confirmStartNew = true })
+                }
+                val controls = @Composable { compactStrip: Boolean ->
+                    val timeline = state.toTimeline()
+                    TimelineEditor(
+                        state = timeline,
+                        onSelect = selectFromStrip,
+                        onMoveTo = viewModel.clips::moveClipTo,
+                        onTrim = viewModel.clips::trimClip,
+                        onScrub = viewModel::scrubTo,
+                        onTransitionTap = { clipId ->
+                            viewModel.selectClip(clipId)
+                            openToolName = Tool.Transition.name
+                        },
+                        markers = state.markers,
+                        barMarkers = state.beats.every(4),
+                        isPlaying = state.isPlaying,
+                        fitNonce = state.fitNonce,
+                        onZoomTo = viewModel::setPixelsPerSecond,
+                        onEffectMove = viewModel.clips::moveEffect,
+                        onEffectTrim = viewModel.clips::trimEffect,
+                        onAddVideo = addVideos,
+                        onAddBlank = viewModel.clips::addBlankClip,
+                        onOpenSound = { openToolName = Tool.Sound.name },
+                        onOpenWords = { openToolName = Tool.Text.name },
+                        onScrubbingChange = { timelineScrubbing = it },
+                        compact = compactStrip,
+                        onFit = viewModel::fitTimeline
+                    )
+                    TimelineActionBar(
+                        state = timeline,
+                        onSplit = viewModel.clips::splitAtPlayhead,
+                        onDelete = viewModel.clips::deleteSelectedClip,
+                        onDuplicate = viewModel.clips::duplicateSelected,
+                        toolbarHasThem = !sheetOpen && kind != SelectionKind.None,
+                        accent = kind.concept?.accent ?: Concept.Video.accent,
+                        effectSelected = kind == SelectionKind.Effect,
+                        splittable = state.canSplitHere,
+                        onCloseGaps = if (mainTrackHasGaps) viewModel.clips::closeGaps else null,
+                        modifier = Modifier.padding(vertical = 6.dp)
+                    )
+                }
+                val toolbar = @Composable {
+                    val accent = kind.concept?.accent
+                    ToolBar(
+                        tools = toolsFor(kind, canTransition),
+                        accentOf = { tool -> accent ?: tool.levelZeroAccent },
+                        onTool = onTool,
+                        enabled = { tool ->
+                            when (tool) {
+                                Tool.Clip -> state.videoClips.any { it.isMain }
+                                Tool.Split -> state.canSplitHere
+                                else -> true
+                            }
+                        },
+                        onBack = if (kind == SelectionKind.None) null else ({ viewModel.selectClip(null) }),
+                        backAccent = accent ?: SquishColors.TextSecondary
+                    )
+                }
+                val sheet = @Composable { modifier: Modifier ->
+                    openTool?.let { tool ->
+                        EditorToolSheet(
+                            tool = tool,
+                            state = state,
+                            viewModel = viewModel,
+                            onDone = { openToolName = null },
+                            onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) },
+                            onAddText = addText,
+                            onSelectSound = { id ->
+                                viewModel.selectClip(id)
+                                openToolName = null
+                            },
+                            modifier = modifier
+                        )
                     }
                 }
 
-                // The picture and its transport, and nothing else. Back, or the
-                // transport's own button, returns.
-                fullscreen -> preview(Modifier.fillMaxSize())
+                when {
+                    state.isLoadingSource -> Column(modifier = Modifier.fillMaxSize()) {
+                        header()
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = SquishColors.Primary)
+                        }
+                    }
 
-                // A phone on its side has no height to stack everything in, so
-                // the picture takes the left half and the tools the right.
-                landscape -> Row(modifier = Modifier.fillMaxSize()) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    // The picture and its transport, and nothing else. Back, or the
+                    // transport's own button, returns.
+                    fullscreen -> preview(Modifier.fillMaxSize())
+
+                    // A phone on its side has no height to stack everything in, so
+                    // the picture takes the left half and the tools the right.
+                    landscape -> Row(modifier = Modifier.fillMaxSize()) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            header()
+                            preview(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp))
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Column(
+                                modifier = Modifier
+                                    .heightIn(max = if (typing) 0.dp else available * CARDS_SHARE)
+                                    .verticalScroll(cardsScroll)
+                            ) {
+                                cards()
+                            }
+                            // One place for the strip whether a sheet is open or not, so
+                            // opening one does not build a new strip scrolled to the start.
+                            // It takes what the sheet leaves: the sheet's height is fixed
+                            // first, so a notice or a long strip can never squeeze it -
+                            // and its Done - down to nothing.
+                            Column(
+                                modifier = (if (typing) Modifier.heightIn(max = 0.dp) else Modifier.weight(1f))
+                                    .verticalScroll(stripScroll)
+                            ) {
+                                controls(sheetOpen)
+                            }
+                            if (sheetOpen) {
+                                sheet(if (typing) Modifier.weight(1f) else Modifier.height(available * LANDSCAPE_SHEET_SHARE))
+                            } else toolbar()
+                        }
+                    }
+
+                    else -> Column(modifier = Modifier.fillMaxSize()) {
                         header()
                         preview(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp))
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        // One place for the strip whether a sheet is open or not, so
-                        // opening one does not build a new strip scrolled to the start.
+                        // Never more than their share, however many rows and notices
+                        // there are: past it they scroll, and the picture keeps a size
+                        // worth looking at.
                         Column(
-                            modifier = if (sheetOpen) Modifier
-                            else Modifier.weight(1f).verticalScroll(rememberScrollState())
+                            modifier = Modifier
+                                .heightIn(max = if (typing) 0.dp else available * CARDS_SHARE)
+                                .verticalScroll(cardsScroll)
+                        ) {
+                            cards()
+                        }
+                        Column(
+                            modifier = Modifier
+                                .heightIn(
+                                    max = when {
+                                        typing -> 0.dp
+                                        sheetOpen -> available * STRIP_SHARE_WITH_SHEET
+                                        else -> available * STRIP_SHARE
+                                    }
+                                )
+                                .verticalScroll(stripScroll)
                         ) {
                             controls(sheetOpen)
                         }
-                        if (sheetOpen) sheet(Modifier.weight(1f)) else toolbar()
+                        if (sheetOpen) {
+                            sheet(Modifier.height(if (typing) typingSheetHeightFor(available) else sheetHeight))
+                        } else toolbar()
                     }
                 }
 
-                else -> Column(modifier = Modifier.fillMaxSize()) {
-                    header()
-                    preview(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp))
-                    // Never more than its share, however many rows and notices
-                    // there are: past it the strip scrolls, and the picture keeps
-                    // a size worth looking at.
-                    Column(
-                        modifier = Modifier
-                            .heightIn(max = available * if (sheetOpen) STRIP_SHARE_WITH_SHEET else STRIP_SHARE)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        controls(sheetOpen)
-                    }
-                    if (sheetOpen) sheet(Modifier.height(sheetHeight)) else toolbar()
+                if (exportSheetOpen) {
+                    ExportSheet(
+                        state = state,
+                        viewModel = viewModel,
+                        onDismiss = { exportSheetOpen = false },
+                        onRender = {
+                            viewModel.export(onResult = onExported)
+                        }
+                    )
                 }
-            }
-
-            if (exportSheetOpen) {
-                ExportSheet(
-                    state = state,
-                    viewModel = viewModel,
-                    onDismiss = { exportSheetOpen = false },
-                    onRender = {
-                        viewModel.export(onResult = onExported)
-                    }
-                )
             }
         }
     }
@@ -493,6 +577,22 @@ private fun sheetHeightFor(available: Dp): Dp {
     return (available * SHEET_SHARE).coerceIn(floor, maxOf(floor, SHEET_MAX))
 }
 
+/**
+ * The sheet's height with the keyboard up: half of what the keyboard leaves,
+ * so the picture keeps the other half and the words can be watched landing.
+ */
+private fun typingSheetHeightFor(available: Dp): Dp {
+    val floor = minOf(TYPING_SHEET_MIN, available * 0.8f)
+    return (available * 0.5f).coerceIn(floor, maxOf(floor, SHEET_MAX))
+}
+
+/** The window the editor is drawn in, for its keyboard behaviour. */
+private tailrec fun Context.findWindow(): Window? = when (this) {
+    is Activity -> window
+    is ContextWrapper -> baseContext.findWindow()
+    else -> null
+}
+
 /** The picture, and what is drawn over it for the tool that is open. */
 @Composable
 private fun EditorPreview(
@@ -544,11 +644,10 @@ private fun EditorPreview(
             scrubNonce = state.scrubNonce,
             onPositionChange = viewModel::setPlayhead,
             onPlayingChange = viewModel::setPlaying,
-            onJump = viewModel::jumpBy,
-            frameStepMs = state.frameMs,
+            onStep = viewModel::stepFrames,
             fullscreen = fullscreen,
             onToggleFullscreen = { onFullscreen(!fullscreen) },
-            onScrub = viewModel::scrubTo,
+            onScrub = viewModel::seekTo,
             onPictureTap = {
                 // Empty picture lets go of the selection, the way bare track does;
                 // with nothing selected, the picture is the play button.
@@ -599,7 +698,8 @@ private fun EditorPreview(
 private fun EditorHeader(
     state: EditorUiState,
     onBack: () -> Unit,
-    onRename: () -> Unit,
+    /** Null while the name cannot be changed - a saved edit is on offer; see renameProject. */
+    onRename: (() -> Unit)?,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onExport: () -> Unit
@@ -616,7 +716,7 @@ private fun EditorHeader(
             modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(9.dp))
-                .clickable(onClickLabel = "Rename the project", onClick = onRename)
+                .clickable(enabled = onRename != null, onClickLabel = "Rename the project", onClick = { onRename?.invoke() })
                 .padding(horizontal = 6.dp, vertical = 2.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -630,7 +730,9 @@ private fun EditorHeader(
                     modifier = Modifier.weight(1f, fill = false)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Icon(Icons.Filled.Edit, contentDescription = null, tint = SquishColors.TextMuted, modifier = Modifier.size(14.dp))
+                if (onRename != null) {
+                    Icon(Icons.Filled.Edit, contentDescription = null, tint = SquishColors.TextMuted, modifier = Modifier.size(14.dp))
+                }
             }
             Text(
                 "${countOf(state.videoClips.size, "clip")} · ${Timecode.format(state.trimmedDurationMs)}",
@@ -749,8 +851,13 @@ private fun RenameDialog(current: String, placeholder: String, onSave: (String) 
             OutlinedTextField(
                 value = text,
                 // A paste of a whole paragraph is cut back here rather than held
-                // in the field; ProjectName decides the final length.
-                onValueChange = { if (it.text.length <= ProjectName.MAX_LENGTH * 2) text = it },
+                // in the field - cut, not refused: a paste over the limit used to
+                // do nothing at all. ProjectName decides the final length.
+                onValueChange = { typed ->
+                    val kept = ProjectName.cut(typed.text, ProjectName.FIELD_LENGTH)
+                    text = if (kept.length == typed.text.length) typed
+                    else TextFieldValue(kept, TextRange(kept.length))
+                },
                 singleLine = true,
                 placeholder = { Text(placeholder, color = SquishColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
@@ -783,8 +890,21 @@ private val SHEET_MIN = 260.dp
 /** On a tall screen, past this the sheet is only taking room from the picture. */
 private val SHEET_MAX = 460.dp
 
-/** The most of the editor's height the strip and its notices take, before they scroll. */
-private const val STRIP_SHARE = 0.5f
+/** With the keyboard up: the sheet's heading and a line or two of field. */
+private val TYPING_SHEET_MIN = 160.dp
+
+/** The most of the editor's height the strip takes, before it scrolls. */
+private const val STRIP_SHARE = 0.4f
+
+/**
+ * The most the notices over the strip take - a failure, the saved-edit banner,
+ * the proxy's progress - before they scroll. Their own share, apart from the
+ * strip's, so no number of them can push the strip out of sight.
+ */
+private const val CARDS_SHARE = 0.18f
+
+/** On its side, the sheet's share of the right-hand pane; the strip has the rest. */
+private const val LANDSCAPE_SHEET_SHARE = 0.5f
 
 /** The same with a sheet open, when the strip is its ruler and one row. */
 private const val STRIP_SHARE_WITH_SHEET = 0.3f

@@ -41,7 +41,7 @@ fun FailureCard(error: SquishError, onDismiss: () -> Unit, modifier: Modifier = 
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(SquishColors.Surface)
-            .border(1.dp, SquishColors.Magenta, RoundedCornerShape(12.dp))
+            .border(1.dp, SquishColors.Danger, RoundedCornerShape(12.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -52,7 +52,7 @@ fun FailureCard(error: SquishError, onDismiss: () -> Unit, modifier: Modifier = 
             Icon(
                 Icons.Filled.ErrorOutline,
                 contentDescription = null,
-                tint = SquishColors.Magenta,
+                tint = SquishColors.Danger,
                 modifier = Modifier.size(18.dp)
             )
             Text(error.title, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)

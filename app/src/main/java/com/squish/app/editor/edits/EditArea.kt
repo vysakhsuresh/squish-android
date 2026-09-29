@@ -25,7 +25,7 @@ internal interface EditHost {
     val state: MutableStateFlow<EditorUiState>
     val scope: CoroutineScope
     val history: UndoStack<EditSnapshot>
-    fun record(label: String, gesture: String?, holdMs: Long, change: () -> Unit)
+    fun record(label: String, gesture: String?, holdMs: Long, tag: String?, change: () -> Unit)
     fun recordLate(label: String, edit: (EditSnapshot) -> EditSnapshot, alongside: (EditorUiState) -> EditorUiState)
     fun edited()
     fun publishHistory()
@@ -50,8 +50,9 @@ internal abstract class EditArea(protected val host: EditHost) {
         label: String,
         gesture: String? = null,
         holdMs: Long = UndoStack.COALESCE_MS,
+        tag: String? = null,
         change: () -> Unit
-    ) = host.record(label, gesture, holdMs, change)
+    ) = host.record(label, gesture, holdMs, tag, change)
 
     protected fun recordLate(
         label: String,

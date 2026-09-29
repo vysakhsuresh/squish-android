@@ -541,19 +541,21 @@ private fun CaptionRow(
 }
 
 /**
- * One line's words: the line's Edit. [focus] puts the cursor in the field and
- * the keyboard up at once - Text then Add text is two taps to typing, where it
+ * One line's words: the line's Edit, with the cursor in the field and the
+ * keyboard up at once - Text then Add text is two taps to typing, where it
  * used to be finding the new blank line in a list and tapping its field.
  */
 @Composable
-fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel, focus: Boolean) {
+fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel) {
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     // Same rule as the rows in the list: the report that the field is attached
     // unfocused is not the cursor leaving, and must not end a step.
     var hadFocus by remember(caption.id) { mutableStateOf(false) }
-    LaunchedEffect(caption.id, focus) {
-        if (!focus) return@LaunchedEffect
+    // Edit is for typing, so it opens with the keyboard up - after Add text and
+    // from a line's own toolbar alike. Only Add text used to, and editing an
+    // existing line took a third tap on the field.
+    LaunchedEffect(caption.id) {
         // A frame for the field to be laid out; asking before that is ignored.
         withFrameNanos { }
         runCatching { focusRequester.requestFocus() }

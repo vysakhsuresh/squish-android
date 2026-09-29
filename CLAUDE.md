@@ -193,10 +193,23 @@ should work through it and then delete what holds up.
   JVM (`tools/jvm/ToolRulesChecks.kt`), and Duplicate's model in
   `MagneticChecks.kt`; nothing of the screen has been seen. Script in
   `docs/ROADMAP.md` §4 under B6, plus: the colours (primary is orange now, blue
-  is effects and looks); Add text puts the keyboard up in the Edit sheet (the
-  window pans, as it did before - no insets were added); the strip compresses to
-  its ruler and the selected row under a sheet and scrolls when its rows and
-  notices pass half the screen; the phone on its side lays out in two panes and
+  is effects and looks, Delete and failures red); Add text, and Edit on a
+  line, put the keyboard up with the cursor in the field, and the sheet sits on
+  the keyboard with the picture above it (the editor sets the window to
+  adjustResize while it is up and pads for the IME; the strip and notices fold
+  away while typing and come back scrolled where they were) - also check the
+  Export sheet's custom size field and the music search there; a line added and
+  left blank is gone again after Done, and Undo then offers the step before it;
+  the strip compresses to its ruler and the selected row under a sheet, and the
+  notices (failure, banner, proxy) have their own capped, scrolling place above
+  it, so neither can push the other or the sheet's Done off screen, upright or on
+  its side; the frame buttons step exactly one frame each press, forward and
+  back, on a trimmed and on a retimed shot (the arithmetic is executed in
+  `tools/jvm/TimecodeChecks.kt`, assuming an exact seek shows the first frame at
+  or after the position); the full-screen bar lands where the thumb is, with no
+  snapping; Placement's Reset on an animated clip leaves it still, full frame for
+  a shot and in the corner for an overlay; the name in the header cannot be
+  tapped while the "your edit is saved" banner stands; the phone on its side lays out in two panes and
   carries the same players across (the preview is movable content - check the
   picture does not go black or stall after rotating, playing and paused);
   full screen and back keep the frame, and its scrub bar leaves no scrub

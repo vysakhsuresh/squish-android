@@ -17,6 +17,7 @@ import com.squish.app.timeline.withOverlayGeometry
 import com.squish.app.timeline.withTransition
 import com.squish.app.timeline.withClipAdded
 import com.squish.app.timeline.MAX_LAYER
+import com.squish.app.timeline.OVERLAY_LANDING
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.squish.app.editor.*
@@ -44,9 +45,9 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                     timelineStartMs = current.playheadMs,
                     sourceDurationMs = meta.durationMs,
                     layer = 1,
-                    scale = 0.4f,
-                    offsetXFraction = 0.45f,
-                    offsetYFraction = -0.45f
+                    scale = OVERLAY_LANDING.scale,
+                    offsetXFraction = OVERLAY_LANDING.offsetXFraction,
+                    offsetYFraction = OVERLAY_LANDING.offsetYFraction
                 )
                 // Onto the first row free at this moment, never on top of another
                 // overlay: the preview shows one clip per row, the export all of them.
