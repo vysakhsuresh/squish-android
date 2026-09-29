@@ -34,14 +34,21 @@ import com.squish.app.editor.TextStyleSpec
 import com.squish.app.editor.EffectKind
 import com.squish.app.editor.TimedEffect
 import com.squish.app.timeline.VoiceEffect
+import com.squish.app.media.video.FrameMotion
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.Segmenter
+import com.squish.app.media.video.StabilizerMeasurement
 import com.squish.app.media.video.TrackSample
 import com.squish.app.timeline.BackgroundFill
 import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ClipAnimation
+import com.squish.app.timeline.ClipArrival
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.ClipLeaving
+import com.squish.app.timeline.ClipLoop
+import com.squish.app.timeline.ValueKey
 import com.squish.app.timeline.Mask
 import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
@@ -623,6 +630,7 @@ class ProjectAutosave(context: Context) {
                     put("startMs", e.startMs)
                     put("endMs", e.endMs)
                     put("intensity", e.intensity.toDouble())
+                    put("amount", e.amount.toDouble())
                 })
             }
         })
@@ -639,6 +647,7 @@ class ProjectAutosave(context: Context) {
         put("timelineStartMs", clip.timelineStartMs)
         put("sourceDurationMs", clip.sourceDurationMs)
         put("volume", clip.volume.toDouble())
+        if (clip.muted) put("muted", true)
         if (clip.fadeInMs > 0L) put("fadeInMs", clip.fadeInMs)
         if (clip.fadeOutMs > 0L) put("fadeOutMs", clip.fadeOutMs)
         if (clip.voice != VoiceEffect.None) put("voice", clip.voice.name)
@@ -664,6 +673,30 @@ class ProjectAutosave(context: Context) {
         put("rotation", clip.rotation.toDouble())
         put("keyframes", JSONArray().apply { clip.keyframes.forEach { put(encodeKeyframe(it)) } })
         put("stabilizer", JSONArray().apply { clip.stabilizer.forEach { put(encodeKeyframe(it)) } })
+        // The measurement as columns rather than an object per frame: a long
+        // shot has thousands, and this is written on every autosave.
+        clip.stabilizerMeasurement?.takeIf { !it.isEmpty }?.let { m ->
+            put("stabilizerMeasurement", JSONObject().apply {
+                put("width", m.analysisWidth)
+                put("height", m.analysisHeight)
+                put("times", JSONArray(m.timesMs))
+                put("dx", JSONArray().apply { m.motions.forEach { put(it.dx.toDouble()) } })
+                put("dy", JSONArray().apply { m.motions.forEach { put(it.dy.toDouble()) } })
+                put("rotation", JSONArray().apply { m.motions.forEach { put(it.rotationDegrees.toDouble()) } })
+                put("confidence", JSONArray().apply { m.motions.forEach { put(it.confidence.toDouble()) } })
+            })
+        }
+        clip.stabilizeStrength?.let { put("stabilizeStrength", it.toDouble()) }
+        if (clip.opacityKeys.isNotEmpty()) put("opacityKeys", JSONArray().apply { clip.opacityKeys.forEach { put(encodeValueKey(it)) } })
+        if (clip.volumeKeys.isNotEmpty()) put("volumeKeys", JSONArray().apply { clip.volumeKeys.forEach { put(encodeValueKey(it)) } })
+        if (clip.arrival != ClipArrival.None) put("arrival", clip.arrival.name)
+        if (clip.leaving != ClipLeaving.None) put("leaving", clip.leaving.name)
+        if (clip.loop != ClipLoop.None) put("loop", clip.loop.name)
+        put("arrivalMs", clip.arrivalMs)
+        put("leavingMs", clip.leavingMs)
+        put("loopMs", clip.loopMs)
+        if (clip.frameBlend) put("frameBlend", true)
+        if (clip.pitchFollowsSpeed) put("pitchFollowsSpeed", true)
         clip.mask?.let { m ->
             put("mask", JSONObject().apply {
                 put("shape", m.shape.name)
@@ -827,6 +860,48 @@ class ProjectAutosave(context: Context) {
         put("easing", key.easing.name)
     }
 
+    private fun encodeValueKey(key: ValueKey): JSONObject = JSONObject().apply {
+        put("atMs", key.atMs)
+        put("value", key.value.toDouble())
+        put("easing", key.easing.name)
+    }
+
+    private fun decodeValueKeys(array: JSONArray?): List<ValueKey> {
+        if (array == null) return emptyList()
+        return (0 until array.length()).mapNotNull { i ->
+            val o = array.optJSONObject(i) ?: return@mapNotNull null
+            ValueKey(
+                atMs = o.optLong("atMs"),
+                value = o.optDouble("value", 1.0).toFloat(),
+                easing = enumOrNull<KeyframeEasing>(o.optString("easing")) ?: KeyframeEasing.Smooth
+            )
+        }.sortedBy { it.atMs }
+    }
+
+    private fun decodeMeasurement(json: JSONObject?): StabilizerMeasurement? {
+        if (json == null) return null
+        val times = json.optJSONArray("times") ?: return null
+        val dx = json.optJSONArray("dx") ?: return null
+        val dy = json.optJSONArray("dy") ?: return null
+        val rotation = json.optJSONArray("rotation") ?: return null
+        val confidence = json.optJSONArray("confidence") ?: return null
+        val n = minOf(times.length(), dx.length(), dy.length(), rotation.length(), confidence.length())
+        val measurement = StabilizerMeasurement(
+            analysisWidth = json.optInt("width"),
+            analysisHeight = json.optInt("height"),
+            timesMs = (0 until n).map { times.optLong(it) },
+            motions = (0 until n).map {
+                FrameMotion(
+                    dx = dx.optDouble(it).toFloat(),
+                    dy = dy.optDouble(it).toFloat(),
+                    rotationDegrees = rotation.optDouble(it).toFloat(),
+                    confidence = confidence.optDouble(it, 1.0).toFloat()
+                )
+            }
+        )
+        return measurement.takeIf { !it.isEmpty }
+    }
+
     private fun encodeText(item: TextOverlayItem): JSONObject = JSONObject().apply {
         put("id", item.id)
         put("text", item.text)
@@ -954,7 +1029,8 @@ class ProjectAutosave(context: Context) {
                         kind = enumOrNull<EffectKind>(o.optString("kind")) ?: return@mapNotNull null,
                         startMs = o.optLong("startMs"),
                         endMs = o.optLong("endMs"),
-                        intensity = o.optDouble("intensity", 0.7).toFloat()
+                        intensity = o.optDouble("intensity", 0.7).toFloat(),
+                        amount = o.optDouble("amount", TimedEffect.DEFAULT_AMOUNT.toDouble()).toFloat()
                     )
                 }
             }.orEmpty(),
@@ -1032,6 +1108,7 @@ class ProjectAutosave(context: Context) {
             timelineStartMs = json.optLong("timelineStartMs"),
             sourceDurationMs = json.optLong("sourceDurationMs"),
             volume = json.optDouble("volume", 1.0).toFloat(),
+            muted = json.optBoolean("muted", false),
             fadeInMs = json.optLong("fadeInMs").coerceAtLeast(0L),
             fadeOutMs = json.optLong("fadeOutMs").coerceAtLeast(0L),
             voice = enumOrNull<VoiceEffect>(json.optString("voice")) ?: VoiceEffect.None,
@@ -1057,6 +1134,20 @@ class ProjectAutosave(context: Context) {
             stabilizer = json.optJSONArray("stabilizer")?.let { array ->
                 (0 until array.length()).mapNotNull { i -> decodeKeyframe(array.optJSONObject(i)) }
             }.orEmpty().sortedBy { it.atMs },
+            stabilizerMeasurement = decodeMeasurement(json.optJSONObject("stabilizerMeasurement")),
+            // Absent on a draft from before the strength was the clip's: the
+            // edit's one strength then, which the sheet falls back to.
+            stabilizeStrength = if (json.has("stabilizeStrength")) json.optDouble("stabilizeStrength", 0.5).toFloat().coerceIn(0f, 1f) else null,
+            opacityKeys = decodeValueKeys(json.optJSONArray("opacityKeys")),
+            volumeKeys = decodeValueKeys(json.optJSONArray("volumeKeys")),
+            arrival = enumOrNull<ClipArrival>(json.optString("arrival")) ?: ClipArrival.None,
+            leaving = enumOrNull<ClipLeaving>(json.optString("leaving")) ?: ClipLeaving.None,
+            loop = enumOrNull<ClipLoop>(json.optString("loop")) ?: ClipLoop.None,
+            arrivalMs = json.optLong("arrivalMs", ClipAnimation.DEFAULT_IN_MS),
+            leavingMs = json.optLong("leavingMs", ClipAnimation.DEFAULT_OUT_MS),
+            loopMs = json.optLong("loopMs", ClipAnimation.DEFAULT_LOOP_MS),
+            frameBlend = json.optBoolean("frameBlend", false),
+            pitchFollowsSpeed = json.optBoolean("pitchFollowsSpeed", false),
             background = json.optJSONObject("background")?.let(::decodeBackground),
             chromaKey = json.optJSONObject("chromaKey")?.let { k ->
                 ChromaKey(
@@ -1296,11 +1387,15 @@ data class ProjectSnapshot(
             !muteOriginal && originalVolume == 1f &&
             clips.first().let {
                 it.sourceInMs == 0L && it.timelineStartMs == 0L && it.sourceOutMs >= it.sourceDurationMs &&
-                    it.volume == 1f && it.voice == VoiceEffect.None && it.fadeInMs == 0L && it.fadeOutMs == 0L &&
+                    it.volume == 1f && !it.muted && it.voice == VoiceEffect.None && it.fadeInMs == 0L && it.fadeOutMs == 0L &&
                     it.chromaKey == null && it.mask == null && it.background == null &&
                     !it.mirrored && it.quarterTurns == 0 && it.reversedFrom == null &&
                     !it.isGraded && it.crop == null && it.reframe == null &&
                     it.keyframes.isEmpty() && it.stabilizer.isEmpty() && it.speedRamp == com.squish.app.timeline.SpeedRamp()
+                    it.keyframes.isEmpty() && it.stabilizer.isEmpty() && it.speedRamp == com.squish.app.timeline.SpeedRamp() &&
+                    // An arrival, a keyed fade or a switched pitch is an edit as much as a trim is.
+                    !it.hasAnimation && it.opacityKeys.isEmpty() && it.volumeKeys.isEmpty() &&
+                    !it.frameBlend && !it.pitchFollowsSpeed
             }
 }
 

@@ -172,3 +172,248 @@ fun List<Keyframe>.easingAt(atMs: Long): KeyframeEasing =
  */
 fun List<Keyframe>.upserted(key: Keyframe, toleranceMs: Long): List<Keyframe> =
     (filterNot { kotlin.math.abs(it.atMs - key.atMs) <= toleranceMs } + key).sortedBy { it.atMs }
+
+// ---- One number over time --------------------------------------------------------
+
+/**
+ * One control point on a single number's track - a clip's opacity, a sound's
+ * level. The same clock as [Keyframe]: [atMs] from the clip's start on the
+ * timeline, so the track travels with the clip and a trim or a cut moves it
+ * exactly as it moves the placement keys.
+ *
+ * Its own type rather than a field on [Keyframe], because the two tracks are
+ * keyed at different moments: a fade of an overlay is two keys, a move across
+ * the frame may be five, and a key on one must not invent a key on the other.
+ */
+data class ValueKey(
+    val atMs: Long,
+    val value: Float,
+    val easing: KeyframeEasing = KeyframeEasing.Smooth
+)
+
+/**
+ * The value at a moment inside the clip, holding outside the first and last key
+ * exactly as [transformAt] does, and [fallback] with no keys at all. Runs per
+ * tick and per frame, so it walks the sorted list and allocates nothing.
+ */
+fun List<ValueKey>.valueAt(tInClipMs: Long, fallback: Float): Float {
+    if (isEmpty()) return fallback
+    val first = this[0]
+    if (tInClipMs <= first.atMs) return first.value
+    val last = this[size - 1]
+    if (tInClipMs >= last.atMs) return last.value
+
+    var i = 0
+    while (i < size - 1 && this[i + 1].atMs <= tInClipMs) i++
+    val a = this[i]
+    val b = this[i + 1]
+    val span = (b.atMs - a.atMs).coerceAtLeast(1L)
+    val raw = ((tInClipMs - a.atMs).toFloat() / span).coerceIn(0f, 1f)
+    return a.value + (b.value - a.value) * a.easing.ease(raw)
+}
+
+/** The track with every key [deltaMs] later; see [shiftedBy] for why nothing is dropped. */
+@JvmName("valueKeysShiftedBy")
+fun List<ValueKey>.shiftedBy(deltaMs: Long): List<ValueKey> =
+    if (deltaMs == 0L || isEmpty()) this else map { it.copy(atMs = it.atMs + deltaMs) }
+
+/** The keys that fall on a clip [durationMs] long. */
+@JvmName("valueKeysWithin")
+fun List<ValueKey>.within(durationMs: Long): List<ValueKey> = filter { it.atMs in 0L..durationMs }
+
+/** The easing of the segment a moment falls in. */
+@JvmName("valueKeysEasingAt")
+fun List<ValueKey>.easingAt(atMs: Long): KeyframeEasing =
+    lastOrNull { it.atMs <= atMs }?.easing ?: firstOrNull()?.easing ?: KeyframeEasing.Smooth
+
+/** Inserts a key, or replaces the one already within [toleranceMs] of it. */
+@JvmName("valueKeysUpserted")
+fun List<ValueKey>.upserted(key: ValueKey, toleranceMs: Long): List<ValueKey> =
+    (filterNot { kotlin.math.abs(it.atMs - key.atMs) <= toleranceMs } + key).sortedBy { it.atMs }
+
+/** Whether a key sits within [toleranceMs] of [atMs] - what a keyframe button lights up for. */
+fun List<ValueKey>.hasKeyNear(atMs: Long, toleranceMs: Long): Boolean =
+    any { kotlin.math.abs(it.atMs - atMs) <= toleranceMs }
+
+@JvmName("keyframesHaveKeyNear")
+fun List<Keyframe>.hasKeyNear(atMs: Long, toleranceMs: Long): Boolean =
+    any { kotlin.math.abs(it.atMs - atMs) <= toleranceMs }
+
+// ---- Arrivals, leavings and loops --------------------------------------------------
+
+/**
+ * How a clip's picture arrives. Layered over the keyframes rather than written
+ * into them: an arrival is a stretch at the clip's head, and a move drawn across
+ * the whole clip must survive it being switched on, changed and taken off again.
+ */
+enum class ClipArrival(val label: String) {
+    None("None"),
+    Fade("Fade"),
+    /** Grows into place from smaller, fading up. */
+    Zoom("Zoom in"),
+    /** Settles into place from larger. */
+    Shrink("Zoom out"),
+    /** Comes in from the right, to the left. */
+    SlideLeft("Slide left"),
+    SlideRight("Slide right"),
+    /** Rises into place from below. */
+    SlideUp("Slide up"),
+    SlideDown("Slide down"),
+    /** Turns a quarter turn into place, growing. */
+    Spin("Spin")
+}
+
+/** How a clip's picture leaves. */
+enum class ClipLeaving(val label: String) {
+    None("None"),
+    Fade("Fade"),
+    /** Grows past full size as it fades. */
+    Zoom("Zoom in"),
+    Shrink("Zoom out"),
+    /** Goes out to the left. */
+    SlideLeft("Slide left"),
+    SlideRight("Slide right"),
+    /** Goes out over the top. */
+    SlideUp("Slide up"),
+    SlideDown("Slide down"),
+    Spin("Spin")
+}
+
+/** What a clip's picture does the whole time it is on screen. */
+enum class ClipLoop(val label: String) {
+    None("None"),
+    /** Breathes a little bigger and back. */
+    Pulse("Pulse"),
+    /** Rocks a few degrees either way. */
+    Swing("Swing"),
+    /** Floats up and down. */
+    Bob("Bob"),
+    /** Flickers between full and part brightness, never to black. */
+    Flicker("Flicker"),
+    /** Creeps in and back out, slowly. */
+    Drift("Drift")
+}
+
+/**
+ * One moment of a clip's arrival, leaving and loop, as changes to lay over its
+ * placement: [scale] multiplies, [dx] and [dy] add in fractions of half the
+ * canvas (the offset's own units; +y is down, as on screen), [tilt] adds
+ * degrees, and [alpha] multiplies the opacity.
+ */
+data class AnimFrame(
+    val alpha: Float = 1f,
+    val scale: Float = 1f,
+    val dx: Float = 0f,
+    val dy: Float = 0f,
+    val tilt: Float = 0f
+) {
+    val isStill: Boolean get() = alpha == 1f && scale == 1f && dx == 0f && dy == 0f && tilt == 0f
+
+    companion object {
+        val STILL = AnimFrame()
+    }
+}
+
+/** A placement with an animation's moment laid over it. */
+fun Transform.animated(frame: AnimFrame): Transform =
+    if (frame.isStill) this
+    else Transform(
+        scale = scale * frame.scale,
+        offsetXFraction = offsetXFraction + frame.dx,
+        offsetYFraction = offsetYFraction + frame.dy,
+        rotationDegrees = rotationDegrees + frame.tilt
+    )
+
+/**
+ * The arrival, the leaving and the loop of a clip's picture, worked out
+ * together - the same shape as TextAnimation, because a line of words and a
+ * picture-in-picture are asked to arrive the same way.
+ *
+ * Each of the three has its own length; the arrival and the leaving are each
+ * cut back to half the clip so the two never overlap, whatever the sliders say
+ * on a short clip. A slide comes from one full frame away: far enough that a
+ * picture at any placement within [TransformLimits] has cleared the canvas.
+ */
+object ClipAnimation {
+    const val DEFAULT_IN_MS = 500L
+    const val DEFAULT_OUT_MS = 500L
+    const val DEFAULT_LOOP_MS = 1_200L
+    const val MIN_MOTION_MS = 100L
+    const val MAX_MOTION_MS = 3_000L
+    const val MIN_LOOP_MS = 300L
+    const val MAX_LOOP_MS = 4_000L
+
+    /** How far off the canvas a slide starts or ends, in half-canvas units. */
+    private const val OFF_CANVAS = 2f
+
+    fun frameAt(
+        arrival: ClipArrival,
+        leaving: ClipLeaving,
+        loop: ClipLoop,
+        inMs: Long,
+        outMs: Long,
+        loopMs: Long,
+        elapsedMs: Long,
+        totalMs: Long
+    ): AnimFrame {
+        if (arrival == ClipArrival.None && leaving == ClipLeaving.None && loop == ClipLoop.None) return AnimFrame.STILL
+        val total = totalMs.coerceAtLeast(1L)
+        val half = (total / 2).coerceAtLeast(1L)
+        val inWindow = inMs.coerceIn(1L, half).toFloat()
+        val outWindow = outMs.coerceIn(1L, half).toFloat()
+        val inT = (elapsedMs / inWindow).coerceIn(0f, 1f)
+        val outT = ((total - elapsedMs) / outWindow).coerceIn(0f, 1f)
+
+        val arriving = when (arrival) {
+            ClipArrival.None -> AnimFrame.STILL
+            ClipArrival.Fade -> AnimFrame(alpha = easeOut(inT))
+            ClipArrival.Zoom -> AnimFrame(alpha = minOf(1f, inT * 2.5f), scale = 0.5f + 0.5f * easeOut(inT))
+            ClipArrival.Shrink -> AnimFrame(alpha = minOf(1f, inT * 2.5f), scale = 1.5f - 0.5f * easeOut(inT))
+            ClipArrival.SlideLeft -> AnimFrame(dx = OFF_CANVAS * (1f - easeOut(inT)))
+            ClipArrival.SlideRight -> AnimFrame(dx = -OFF_CANVAS * (1f - easeOut(inT)))
+            ClipArrival.SlideUp -> AnimFrame(dy = OFF_CANVAS * (1f - easeOut(inT)))
+            ClipArrival.SlideDown -> AnimFrame(dy = -OFF_CANVAS * (1f - easeOut(inT)))
+            ClipArrival.Spin -> AnimFrame(
+                alpha = minOf(1f, inT * 2.5f),
+                scale = 0.4f + 0.6f * easeOut(inT),
+                tilt = -90f * (1f - easeOut(inT))
+            )
+        }
+        val leavingNow = when (leaving) {
+            ClipLeaving.None -> AnimFrame.STILL
+            ClipLeaving.Fade -> AnimFrame(alpha = easeOut(outT))
+            ClipLeaving.Zoom -> AnimFrame(alpha = easeOut(outT), scale = 1.5f - 0.5f * easeOut(outT))
+            ClipLeaving.Shrink -> AnimFrame(alpha = easeOut(outT), scale = 0.5f + 0.5f * easeOut(outT))
+            ClipLeaving.SlideLeft -> AnimFrame(dx = -OFF_CANVAS * (1f - easeOut(outT)))
+            ClipLeaving.SlideRight -> AnimFrame(dx = OFF_CANVAS * (1f - easeOut(outT)))
+            ClipLeaving.SlideUp -> AnimFrame(dy = -OFF_CANVAS * (1f - easeOut(outT)))
+            ClipLeaving.SlideDown -> AnimFrame(dy = OFF_CANVAS * (1f - easeOut(outT)))
+            ClipLeaving.Spin -> AnimFrame(
+                alpha = easeOut(outT),
+                scale = 0.4f + 0.6f * easeOut(outT),
+                tilt = 90f * (1f - easeOut(outT))
+            )
+        }
+        val phase = ((elapsedMs.toDouble() / loopMs.coerceAtLeast(1L)) % 1.0).toFloat()
+        val wave = kotlin.math.sin(phase * 2.0 * Math.PI).toFloat()
+        val looping = when (loop) {
+            ClipLoop.None -> AnimFrame.STILL
+            ClipLoop.Pulse -> AnimFrame(scale = 1f + 0.05f * wave)
+            ClipLoop.Swing -> AnimFrame(tilt = 3f * wave)
+            ClipLoop.Bob -> AnimFrame(dy = 0.03f * wave)
+            // Two dips a period, never to black.
+            ClipLoop.Flicker -> AnimFrame(alpha = 0.72f + 0.28f * kotlin.math.abs(kotlin.math.sin(phase * 4.0 * Math.PI).toFloat()))
+            // A slow push in and back: one breath per period, from rest.
+            ClipLoop.Drift -> AnimFrame(scale = 1f + 0.06f * (0.5f - 0.5f * kotlin.math.cos(phase * 2.0 * Math.PI).toFloat()))
+        }
+        return AnimFrame(
+            alpha = arriving.alpha * leavingNow.alpha * looping.alpha,
+            scale = arriving.scale * leavingNow.scale * looping.scale,
+            dx = arriving.dx + leavingNow.dx + looping.dx,
+            dy = arriving.dy + leavingNow.dy + looping.dy,
+            tilt = arriving.tilt + leavingNow.tilt + looping.tilt
+        )
+    }
+
+    private fun easeOut(t: Float): Float = 1f - (1f - t) * (1f - t) * (1f - t)
+}

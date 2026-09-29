@@ -27,6 +27,7 @@ import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.ClipCropEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.MaskEffect
+import com.squish.app.media.effects.TransitionEffect
 import com.squish.app.timeline.Clip
 import java.io.File
 
@@ -286,7 +287,10 @@ object CompositionFactory {
             }
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.User)?.let { add(it) }
             addAll(speed)
-            if (clip.opacity < 1f) add(AlphaScale(clip.opacity.coerceIn(0f, 1f)))
+            // Its opacity, keyed or not, its arrival's fade and its transition,
+            // per frame on played time (ExportPlan.ownDrawAt); nothing at all
+            // for a layer that is simply there.
+            if (ExportPlan.drawsOwn(clip)) add(TransitionEffect(clip, rolls = null))
         }
 
     /**

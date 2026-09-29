@@ -230,12 +230,12 @@ fun EditorToolSheet(
         // The clip's own level, a sound's or a picture's; the camera's sound for
         // the whole edit is on Sound.
         Tool.Volume -> clip?.let { c ->
-            if (c.kind == ClipKind.Audio) { { viewModel.audio.setAudioClipVolume(c.id, 1f) } }
+            if (c.kind == ClipKind.Audio) { { viewModel.audio.resetAudioClipVolume(c.id) } }
             else { { viewModel.clips.resetClipVolume(c.id) } }
         }
         Tool.Animation -> when {
             item != null -> { { viewModel.text.restyleCaption(item.id, { it.withoutMotion() }) } }
-            clip != null -> { { viewModel.clips.clearKeyframes(clip.id) } }
+            clip != null -> { { viewModel.clips.clearAnimation(clip.id) } }
             else -> null
         }
         Tool.Placement -> when {
@@ -254,7 +254,7 @@ fun EditorToolSheet(
         }
         Tool.Opacity -> when {
             item != null -> { { viewModel.text.setOpacity(item.id, 1f) } }
-            clip != null -> { { viewModel.layers.setOpacity(clip.id, 1f) } }
+            clip != null -> { { viewModel.layers.resetOpacity(clip.id) } }
             else -> null
         }
         Tool.Edit -> item?.let { i ->
@@ -341,10 +341,10 @@ fun EditorToolSheet(
                 item != null -> StickerPlacementPanel(item, viewModel)
                 clip != null -> PlacementPanel(state, clip, viewModel, accent)
             }
-            Tool.Transition -> clip?.let { TransitionPanel(it, viewModel) }
+            Tool.Transition -> clip?.let { TransitionPanel(state, it, viewModel) }
             Tool.Opacity -> when {
                 item != null -> TextOpacityPanel(item, viewModel)
-                clip != null -> OpacityPanel(clip, viewModel)
+                clip != null -> OpacityPanel(state, clip, viewModel)
             }
             Tool.Layer -> clip?.let { LayerPanel(state, it, viewModel) }
             Tool.Mask -> clip?.let { MaskPanel(it, viewModel) }

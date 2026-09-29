@@ -1,3 +1,6 @@
+import com.squish.app.editor.EffectKind
+import com.squish.app.editor.FxParams
+import com.squish.app.editor.TimedEffect
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.MIN_CLIP_MS
@@ -142,6 +145,22 @@ fun main() {
         check(first.durationMs + second.durationMs == c.durationMs, "1x split changed the total length")
         val trimmed = TimelineState(clips = listOf(c)).withClipTrimmed("a", 300L, 0L).clips.first()
         check(trimmed.timelineStartMs == 800L, "1x head trim put the clip at ${trimmed.timelineStartMs}, expected 800")
+    }
+
+    // --- Rainbow's knob is a rate, never off. -----------------------------------
+    run {
+        fun hueAt(amount: Float, ms: Long) = FxParams.at(listOf(TimedEffect("r", EffectKind.Rainbow, 0L, 10_000L, intensity = 1f, amount = amount)), ms).hue
+        // Half way is how it always played: one turn a second.
+        check(abs(hueAt(0.5f, 1_250L) - hueAt(0.5f, 250L)) < 1e-3f, "at half the hue does not turn once a second: ${hueAt(0.5f, 250L)} vs ${hueAt(0.5f, 1_250L)}")
+        check(abs(hueAt(0.5f, 250L) - 0.25f * 2f * Math.PI.toFloat()) < 1e-3f, "at half a quarter second is not a quarter turn: ${hueAt(0.5f, 250L)}")
+        // The left end is slow, not still.
+        val slowEarly = hueAt(0f, 500L)
+        val slowLater = hueAt(0f, 1_500L)
+        check(abs(slowLater - slowEarly) > 0.1f, "at the left end the colour stops changing")
+        check(abs(hueAt(0f, 1_500L) - hueAt(0f, 500L)) < abs(hueAt(0.5f, 800L) - hueAt(0.5f, 500L)) + 0.5f, "the left end is not slower than the middle")
+        // Strength still scales it at the left end.
+        val half = FxParams.at(listOf(TimedEffect("r", EffectKind.Rainbow, 0L, 10_000L, intensity = 0.5f, amount = 0f)), 1_500L).hue
+        check(half > 0f && half < hueAt(0f, 1_500L), "Strength does nothing at the left end")
     }
 
     println("timeline checks over ${ramps.size} ramps")

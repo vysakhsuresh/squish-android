@@ -3,6 +3,7 @@ package com.squish.app.media
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.TransitionType
+import com.squish.app.timeline.animated
 import com.squish.app.timeline.transformAt
 
 /**
@@ -237,9 +238,10 @@ object ExportPlan {
 
     /**
      * Below this a gap is rounding, not a gap: shorter than a frame at 50 fps, so
-     * a blank still for it would be one frame of nothing or none at all.
+     * a blank still for it would be one frame of nothing or none at all. The
+     * model's own number, so an overlay's join is butted by the same rule.
      */
-    const val MIN_GAP_MS = 20L
+    const val MIN_GAP_MS = com.squish.app.timeline.MIN_GAP_MS
 
     /** The rate Media3 1.11.1 draws a gap's blank frames at (SequenceAssetLoader.insertBlankFrames), not a choice. */
     const val GAP_FPS = 30
@@ -308,20 +310,80 @@ object ExportPlan {
     // ---- Transitions ---------------------------------------------------------
 
     /**
-     * How one base clip is drawn at a moment.
+     * How one clip is drawn at a moment.
      *
-     * [alpha] is its opacity. [shiftX] moves the picture right by that fraction of
-     * the frame, uncovering nothing behind it. Only the part of the frame from
-     * [keepFrom] to [keepTo] (fractions of its width) is drawn at all.
+     * [alpha] is its opacity. [shiftX] and [shiftY] move the picture right and
+     * down by that fraction of the frame, uncovering nothing behind it. [scale]
+     * grows it about its centre. Only the part of the frame from [keepFrom] to
+     * [keepTo] across, and [keepFromY] to [keepToY] down (fractions of the
+     * frame), is drawn at all. [white] mixes what is drawn towards white.
      */
     data class Draw(
         val alpha: Float = 1f,
         val shiftX: Float = 0f,
         val keepFrom: Float = 0f,
-        val keepTo: Float = 1f
+        val keepTo: Float = 1f,
+        val shiftY: Float = 0f,
+        val scale: Float = 1f,
+        val keepFromY: Float = 0f,
+        val keepToY: Float = 1f,
+        val white: Float = 0f
     ) {
-        val isPlain: Boolean get() = alpha >= 1f && shiftX == 0f && keepFrom <= 0f && keepTo >= 1f
+        val isPlain: Boolean
+            get() = alpha >= 1f && shiftX == 0f && shiftY == 0f && scale == 1f && white == 0f &&
+                keepFrom <= 0f && keepTo >= 1f && keepFromY <= 0f && keepToY >= 1f
+
+        /** This draw at [factor] of its opacity: a clip's own fade under its transition. */
+        fun faded(factor: Float): Draw = if (factor >= 1f) this else copy(alpha = alpha * factor.coerceIn(0f, 1f))
+
+        /** This draw on top of [own]: the transition's, then the clip's own laid on it - both fade, and an overlay's own arrival supplies the movement. */
+        fun over(own: Draw): Draw = Draw(
+            alpha = alpha * own.alpha,
+            shiftX = shiftX + own.shiftX,
+            shiftY = shiftY + own.shiftY,
+            scale = scale * own.scale,
+            keepFrom = maxOf(keepFrom, own.keepFrom),
+            keepTo = minOf(keepTo, own.keepTo),
+            keepFromY = maxOf(keepFromY, own.keepFromY),
+            keepToY = minOf(keepToY, own.keepToY),
+            white = maxOf(white, own.white)
+        )
+
+        /**
+         * The numbers the transition shader is given, in its own space. The
+         * draw's Y runs down the picture, as the preview's and the sheet's do;
+         * the frame texture's Y runs up it (the same NDC-is-up fact
+         * [placementMatrix] negates). So the shift is turned over and the kept
+         * band mirrored: [shiftY] is the picture moved down, and down in the
+         * texture is minus. Every vertical transition was mirrored between the
+         * preview and the file before this was one function checked against the
+         * preview's pixel (ExportPlanChecks.shaderPixel).
+         */
+        fun shaderUniforms(): ShaderUniforms = ShaderUniforms(
+            alpha = alpha.coerceIn(0f, 1f),
+            shiftX = shiftX,
+            shiftY = -shiftY,
+            scale = scale,
+            keepFromX = keepFrom,
+            keepFromY = 1f - keepToY,
+            keepToX = keepTo,
+            keepToY = 1f - keepFromY,
+            white = white.coerceIn(0f, 1f)
+        )
     }
+
+    /** [Draw.shaderUniforms]: what goes into uAlpha, uShift, uScale, uKeep and uWhite, texture-space Y. */
+    data class ShaderUniforms(
+        val alpha: Float,
+        val shiftX: Float,
+        val shiftY: Float,
+        val scale: Float,
+        val keepFromX: Float,
+        val keepFromY: Float,
+        val keepToX: Float,
+        val keepToY: Float,
+        val white: Float
+    )
 
     val PLAIN = Draw()
     private val HIDDEN = Draw(alpha = 0f)
@@ -367,7 +429,15 @@ object ExportPlan {
         return result
     }
 
-    /** (incoming, outgoing) for a transition [p] of the way through. */
+    /**
+     * (incoming, outgoing) for a transition [p] of the way through.
+     *
+     * The preview draws the incoming shot over the outgoing one and asks with
+     * [incomingOnTop] true; the export asks with whichever way its rolls fell.
+     * Every kind here composites to the same picture either way - the
+     * ExportPlanChecks hold it to that - so which roll a shot lands on, which is
+     * an accident of the edit, never shows.
+     */
     fun blend(type: TransitionType, p: Float, incomingOnTop: Boolean): Pair<Draw, Draw> = when (type) {
         // Overlapping with nothing asked for: a hard cut to the new shot.
         TransitionType.None -> PLAIN to HIDDEN
@@ -382,15 +452,162 @@ object ExportPlan {
             if (p < 0.5f) HIDDEN to Draw(alpha = 1f - 2f * p)
             else Draw(alpha = 2f * p - 1f) to HIDDEN
 
+        // The same through white: the shot showing is mixed towards white.
+        TransitionType.DipToWhite ->
+            if (p < 0.5f) HIDDEN to Draw(white = 2f * p)
+            else Draw(white = 2f - 2f * p) to HIDDEN
+
         TransitionType.SlideLeft ->
             if (incomingOnTop) Draw(shiftX = 1f - p) to PLAIN
             // The old shot stays put and is cut away where the new one has arrived.
             else Draw(shiftX = 1f - p) to Draw(keepTo = 1f - p)
 
+        TransitionType.SlideRight ->
+            if (incomingOnTop) Draw(shiftX = -(1f - p)) to PLAIN
+            else Draw(shiftX = -(1f - p)) to Draw(keepFrom = p)
+
+        // From below: shifted down by what is still to come.
+        TransitionType.SlideUp ->
+            if (incomingOnTop) Draw(shiftY = 1f - p) to PLAIN
+            else Draw(shiftY = 1f - p) to Draw(keepToY = 1f - p)
+
+        TransitionType.SlideDown ->
+            if (incomingOnTop) Draw(shiftY = -(1f - p)) to PLAIN
+            else Draw(shiftY = -(1f - p)) to Draw(keepFromY = p)
+
+        // Both move, and never overlap: the new shot takes the room the old one leaves.
+        TransitionType.Push -> Draw(shiftX = 1f - p) to Draw(shiftX = -p)
+
         TransitionType.WipeRight ->
             if (incomingOnTop) Draw(keepTo = p) to PLAIN
             else PLAIN to Draw(keepFrom = p)
+
+        TransitionType.WipeLeft ->
+            if (incomingOnTop) Draw(keepFrom = 1f - p) to PLAIN
+            else PLAIN to Draw(keepTo = 1f - p)
+
+        // The new shot lands from larger. Zoomed in it covers the whole frame,
+        // so under the old one it can be plain and the old one fades instead.
+        TransitionType.ZoomIn -> {
+            val landing = 1f + ZOOM_FROM * (1f - p)
+            if (incomingOnTop) Draw(alpha = p, scale = landing) to PLAIN
+            else Draw(scale = landing) to Draw(alpha = 1f - p)
+        }
+
+        // A hard cut, the old shot shaken harder up to it and the new one
+        // shaken less and less after it. One shot showing at a time.
+        TransitionType.Jitter ->
+            if (p < 0.5f) HIDDEN to jitter(p, strength = 2f * p)
+            else jitter(p, strength = 2f - 2f * p) to HIDDEN
+
+        // The two alternate, and the new one holds from the last swap.
+        TransitionType.Flicker ->
+            if (flickerShowsIncoming(p)) PLAIN to HIDDEN else HIDDEN to PLAIN
+
+        // White bursting on the cut and dying away after it.
+        TransitionType.Flash ->
+            if (p < 0.5f) HIDDEN to Draw(white = smoothstep(0.3f, 0.5f, p))
+            else Draw(white = 1f - smoothstep(0.5f, 0.75f, p)) to HIDDEN
+
+        // A dissolve that brightens through its middle: both shots whitened
+        // the same, so the mix reads the same whichever is on top.
+        TransitionType.Glow -> {
+            val glow = GLOW_PEAK * (1f - kotlin.math.abs(2f * p - 1f))
+            if (incomingOnTop) Draw(alpha = p, white = glow) to Draw(white = glow)
+            else Draw(white = glow) to Draw(alpha = 1f - p, white = glow)
+        }
     }
+
+    /** How much larger than the frame the Zoom transition's new shot starts. */
+    private const val ZOOM_FROM = 0.6f
+
+    /** How far towards white a Glow goes at its middle. */
+    private const val GLOW_PEAK = 0.7f
+
+    /** Whether the Flicker shows the new shot at [p]: every other beat, and always at the end. */
+    fun flickerShowsIncoming(p: Float): Boolean {
+        if (p >= 1f) return true
+        val beat = (p * FLICKER_BEATS).toInt()
+        return beat % 2 == 1
+    }
+
+    /** An even number, so the last beat before the end is the old shot and the end is a change. */
+    private const val FLICKER_BEATS = 8
+
+    /**
+     * A shake at [strength] (0..1) for the Jitter cut: a few percent of the
+     * frame either way, from sines at unrelated rates so it does not repeat,
+     * and the same for the preview and the file because it is a function of
+     * [p] alone.
+     */
+    private fun jitter(p: Float, strength: Float): Draw {
+        val s = strength.coerceIn(0f, 1f)
+        val x = kotlin.math.sin(p * 97.0).toFloat() * 0.6f + kotlin.math.sin(p * 41.0 + 1.3).toFloat() * 0.4f
+        val y = kotlin.math.sin(p * 83.0 + 0.7).toFloat() * 0.6f + kotlin.math.sin(p * 59.0 + 2.1).toFloat() * 0.4f
+        return Draw(shiftX = JITTER_REACH * s * x, shiftY = JITTER_REACH * s * y)
+    }
+
+    private const val JITTER_REACH = 0.05f
+
+    private fun smoothstep(from: Float, to: Float, x: Float): Float {
+        val t = ((x - from) / (to - from)).coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
+    }
+
+    // ---- A clip's own draw ---------------------------------------------------------
+
+    /**
+     * How a clip fades itself at [playedMs] into it, whatever the transition
+     * around it: its opacity track, its arrival's or leaving's fade, and - on
+     * an overlay with a transition set - the transition as its [arrival],
+     * drawn over the head of the clip on its own. An overlay has no shot under
+     * it on its row to blend with, so its transition is its arrival, from the
+     * same blend the main track draws.
+     */
+    fun ownDrawAt(clip: Clip, playedMs: Long): Draw {
+        val alpha = clip.alphaAt(playedMs)
+        val transition = clip.transitionIn
+        if (!clip.isOverlay || !transition.isActive) return PLAIN.faded(alpha)
+        val length = overlayTransitionMs(clip)
+        if (length <= 0L || playedMs >= length) return PLAIN.faded(alpha)
+        val p = (playedMs.toFloat() / length).coerceIn(0f, 1f)
+        return arrival(transition.type, p).faded(alpha)
+    }
+
+    /**
+     * A transition as one shot's arrival, [p] of the way in: the incoming half
+     * of [blend], over whatever is beneath. The kinds that show one shot at a
+     * time - the dips, the jitter, the flash, the flicker - hide the incoming
+     * shot for their whole first half, since the old shot has the screen then;
+     * with no old shot to hand it to, that half is a hole. Those run their
+     * second half over the whole arrival instead: a dip to black is a fade up,
+     * a dip to white opens on white and settles, a flash dies away from the
+     * first frame, a jitter shakes itself still.
+     */
+    fun arrival(type: TransitionType, p: Float): Draw {
+        val q = if (type in ONE_AT_A_TIME) 0.5f + p.coerceIn(0f, 1f) / 2f else p
+        return blend(type, q, incomingOnTop = true).first
+    }
+
+    private val ONE_AT_A_TIME = setOf(
+        TransitionType.DipToBlack, TransitionType.DipToWhite, TransitionType.Jitter,
+        TransitionType.Flash, TransitionType.Flicker
+    )
+
+    /** Whether [clip], an overlay, has another overlay on its row ending where it starts: the model's rule (Clip.hasOverlayJoin). */
+    fun hasOverlayJoin(clip: Clip, others: List<Clip>): Boolean = clip.hasOverlayJoin(others)
+
+    /** How long an overlay's transition runs over its head: what was asked for, within the clip. */
+    fun overlayTransitionMs(clip: Clip): Long =
+        if (!clip.transitionIn.isActive) 0L else clip.transitionIn.durationMs.coerceAtMost(clip.durationMs)
+
+    /**
+     * Whether a clip's own draw is ever anything but plain, so the export gives
+     * it a per-frame pass only when one is needed: a picture-in-picture at 60%,
+     * an opacity key, a fade in, a transition on an overlay.
+     */
+    fun drawsOwn(clip: Clip): Boolean =
+        clip.fadesPicture || (clip.isOverlay && clip.transitionIn.isActive)
 
     /**
      * How [clip] is drawn at [timeUs]. Outside its own span, or anywhere it is the
@@ -462,15 +679,21 @@ object ExportPlan {
             if (clip.stabilizer.isEmpty()) Transform.Identity
             else clip.stabilizer.transformAt(clip.sourceInMs + sourceElapsedMs, Transform.Identity)
         MotionPart.User -> {
-            val played = if (clip.speedRamp.isIdentity) sourceElapsedMs
-            else clip.speedRamp.outputOffsetAt(sourceElapsedMs, clip.sourceSpanMs)
-            clip.keyframes.transformAt(played, clip.staticTransform)
+            val played = playedMs(clip, sourceElapsedMs)
+            // The arrival, leaving and loop over the keys, as the preview draws
+            // them (Clip.transformAt): the same played clock, the same order.
+            clip.keyframes.transformAt(played, clip.staticTransform).animated(clip.animationFrame(played))
         }
     }
 
+    /** How far into the played clip a frame [sourceElapsedMs] into its window is. */
+    fun playedMs(clip: Clip, sourceElapsedMs: Long): Long =
+        if (clip.speedRamp.isIdentity) sourceElapsedMs
+        else clip.speedRamp.outputOffsetAt(sourceElapsedMs, clip.sourceSpanMs)
+
     fun hasMotion(clip: Clip, part: MotionPart): Boolean = when (part) {
         MotionPart.Stabilizer -> clip.stabilizer.isNotEmpty()
-        MotionPart.User -> clip.keyframes.isNotEmpty() || !clip.staticTransform.isIdentity
+        MotionPart.User -> clip.keyframes.isNotEmpty() || !clip.staticTransform.isIdentity || clip.hasAnimation
     }
 
     /**

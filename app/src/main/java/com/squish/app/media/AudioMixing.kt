@@ -48,5 +48,5 @@ object AudioMixing {
      * level is what was heard while editing. The mixer clips to the sample
      * range, as the preview's processor does.
      */
-    private const val MAX_GAIN = com.squish.app.editor.AudioRules.MAX_SOUND_GAIN
+    const val MAX_GAIN = com.squish.app.editor.AudioRules.MAX_SOUND_GAIN
 }

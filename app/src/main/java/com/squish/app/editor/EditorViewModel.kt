@@ -31,6 +31,7 @@ import com.squish.app.timeline.ZOOM_MAX
 import com.squish.app.timeline.ZOOM_MIN
 import com.squish.app.timeline.withSelectionJoined
 import com.squish.app.timeline.withSelectionToggled
+import com.squish.app.timeline.withOverlayTransitionsFitted
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -764,7 +765,12 @@ class EditorViewModel(
             // this is where its fades are kept inside it (AudioRules.withFittedFades):
             // a fade set on the whole song and left on a six-second sting of it
             // held the sting under forty percent from end to end.
-            val next = block(timeline).let { t -> t.copy(clips = t.clips.map(AudioRules::withFittedFades)) }
+            // And where an overlay's transition is kept only while its join is
+            // (withOverlayTransitionsFitted): the tool that turns it off is only
+            // offered on a join, so one left past the join could not be reached.
+            val next = block(timeline)
+                .let { t -> t.copy(clips = t.clips.map(AudioRules::withFittedFades)) }
+                .withOverlayTransitionsFitted()
             val video = next.clips.filter { it.kind == ClipKind.Video }
             // Every change to how long the picture runs comes through here -
             // trims, cuts, deletes, retimes, transitions, layer changes - so this

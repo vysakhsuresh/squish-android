@@ -151,6 +151,24 @@ fun main() {
     check(added.withoutPoint(2000L).ordered.size == 1, "removing a point did nothing")
     check(base.withPoint(99_999L, 2f, 4321L).ordered.all { it.atMs <= 4321L }, "a point escaped the clip")
 
+    // Dragging a point: it moves, keeps its place in the order, and stops a
+    // tread short of its neighbours.
+    val three = SpeedRamp(listOf(SpeedPoint(0L, 1f), SpeedPoint(2000L, 0.5f), SpeedPoint(4000L, 1f)))
+    val dragged = three.withPointMoved(2000L, 2500L, 0.25f, 4321L)
+    check(dragged.ordered.map { it.atMs } == listOf(0L, 2500L, 4000L), "the dragged point did not move: ${dragged.ordered}")
+    check(abs(dragged.ordered[1].speed - 0.25f) < 1e-3f, "the dragged point kept its old speed")
+    val pastNext = three.withPointMoved(2000L, 4500L, 0.5f, 4321L)
+    check(pastNext.ordered.map { it.atMs } == listOf(0L, 4000L - SpeedRamp.STEP_MS, 4000L), "a point dragged past the next did not stop short: ${pastNext.ordered}")
+    val pastPrev = three.withPointMoved(2000L, -100L, 0.5f, 4321L)
+    check(pastPrev.ordered.map { it.atMs } == listOf(0L, SpeedRamp.STEP_MS, 4000L), "a point dragged before the previous did not stop short: ${pastPrev.ordered}")
+    check(three.withPointMoved(2000L, 2000L, 50f, 4321L).ordered[1].speed == 50f, "a drag straight up did not take the speed")
+    check(three.withPointMoved(999L, 3000L, 2f, 4321L).ordered.size == 4, "dragging a point that is not there did not add one")
+    check(SpeedRamp.MAX_SPEED >= 100f, "the ceiling is below a hundred times")
+    check(SpeedRamp.flat(100f).outputDurationMs(60_000L) == 600L, "a minute at a hundred times is not 600 ms")
+    check(SpeedRamp.preset(RampShape.Hero, 4000L).speedAt(2000L) < 0.5f, "Hero does not hold slow in the middle")
+    check(SpeedRamp.preset(RampShape.FlashIn, 4000L).speedAt(0L) > 1f && SpeedRamp.preset(RampShape.FlashIn, 4000L).speedAt(4000L) == 1f, "Flash in")
+    check(SpeedRamp.preset(RampShape.FlashOut, 4000L).speedAt(0L) == 1f && SpeedRamp.preset(RampShape.FlashOut, 4000L).speedAt(4000L) > 1f, "Flash out")
+
     // --- 10. A ramp must actually change the duration in the expected direction.
     val slow = SpeedRamp.flat(0.5f).outputDurationMs(1000L)
     val fast = SpeedRamp.flat(2f).outputDurationMs(1000L)

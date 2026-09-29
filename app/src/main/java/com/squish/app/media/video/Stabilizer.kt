@@ -5,13 +5,10 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.squish.app.timeline.Keyframe
-import com.squish.app.timeline.KeyframeEasing
-import com.squish.app.timeline.Transform
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
-import kotlin.math.roundToInt
 
 /**
  * Measures camera shake and writes the correction that cancels it.
@@ -27,7 +24,9 @@ object Stabilizer {
         val keyframes: List<Keyframe>,
         /** How much of the frame the correction costs, 0..1. */
         val crop: Float,
-        val framesAnalysed: Int
+        val framesAnalysed: Int,
+        /** The raw motion the keys were solved from, for solving again at another strength. */
+        val measurement: StabilizerMeasurement
     )
 
     /** Beyond this the analysis strides frames rather than running forever. */
@@ -127,40 +126,16 @@ object Stabilizer {
 
             if (motions.size < 4 || analysisWidth == 0) return@withContext null
 
-            val window = (10 + (35 * strength)).roundToInt().coerceAtLeast(4)
-            val cropBudget = 0.03f + 0.12f * strength
-            // A correction of d analysis pixels is 2d/size in the half-frame units the
-            // transform speaks, so each axis's pixel budget is the crop budget halved
-            // against that axis's own length.
-            val corrections = TrajectorySmoother.smooth(
-                motions = motions,
-                windowFrames = window,
-                maxShiftX = cropBudget / 2f * analysisWidth,
-                maxShiftY = cropBudget / 2f * analysisHeight,
-                maxRotationDegrees = 1.5f
+            // The decode is done; the rest is arithmetic on what it measured,
+            // shared with the Strength slider so a new strength never decodes.
+            val measurement = StabilizerMeasurement(analysisWidth, analysisHeight, times.toList(), motions.toList())
+            val solved = StabilizerSolve.solve(measurement, strength) ?: return@withContext null
+            Result(
+                keyframes = solved.keyframes,
+                crop = solved.crop,
+                framesAnalysed = motions.size + 1,
+                measurement = measurement
             )
-
-            val crop = TrajectorySmoother.requiredCrop(
-                corrections, analysisWidth.toFloat(), analysisHeight.toFloat()
-            )
-            val scale = 1f + crop
-
-            val keys = corrections.mapIndexed { i, correction ->
-                Keyframe(
-                    atMs = times.getOrElse(i) { 0L },
-                    transform = Transform(
-                        scale = scale,
-                        offsetXFraction = 2f * correction.dx / analysisWidth,
-                        offsetYFraction = 2f * correction.dy / analysisHeight,
-                        rotationDegrees = correction.rotationDegrees
-                    ),
-                    // Linear between densely sampled keys. Smoothing already shaped
-                    // the path; easing each tiny segment again would fight it.
-                    easing = KeyframeEasing.Linear
-                )
-            }.sortedBy { it.atMs }
-
-            Result(keyframes = keys, crop = crop, framesAnalysed = motions.size + 1)
         } catch (t: Throwable) {
             null
         } finally {

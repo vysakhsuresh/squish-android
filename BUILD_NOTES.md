@@ -105,6 +105,34 @@ never a rebuilt sink; a Media3 that stops calling `queueInput` on an
 inactive-looking processor would take the boost with it (`GainProcessor` is
 always active; `FadeProcessor` is only built when a fade is set).
 
+Animation, speed and transitions (B13) lean on four more things, each read in
+the 1.11.1 bytecode. `SpeedChangingAudioProcessor.updateSpeed` calls
+`setPitch(newSpeed)` as well as `setSpeed` unless the processor was made with
+`shouldMaintainPitch`, so the one-argument constructor - which passes
+`(false, false)` - retimes like a tape: the file's sound went up an octave at
+double speed while the preview held it. The three-argument constructor is
+`(SpeedProvider, areInputTimestampsAdjusted, shouldMaintainPitch)`, and
+`VideoProcessor.buildAudioProcessors` passes `!clip.pitchFollowsSpeed` as the
+third, so the pitch is held or let go by Media3's own walk of the segments
+(a hand-rolled copy of it, `KeepPitchSpeedProcessor`, carried the held path
+until that flag was found). The preview's `ExoPlayer` is asked for the same
+choice through `PlaybackParameters` pitch, but never for more than
+`DefaultAudioSink.MAX_PLAYBACK_SPEED` (8, and the same for pitch): above it the
+sink held the sound at eight while the video renderer was asked for a hundred,
+so `PreviewRules.playerRate` caps what a player is asked for and the preview of
+a 100x clip runs at eight - the file is the clip's own rate. `FrameBlendEffect`
+is a `GlShaderProgram` written from the interface, not a `BaseGlShaderProgram`:
+it hands the chain several output frames per input, on textures it makes
+itself with `GlUtil.createTexture` and `GlObjectsProvider.createBuffersForTexture`,
+and signals `onReadyToAcceptInputFrame` only when every one of them is back -
+what it leans on is that `ChainingGlShaderProgramListener` queues any number of
+output frames and that the final program renders each at its own timestamp.
+Every per-frame fade, an overlay's transition and the arrivals go through
+`TransitionEffect` on the clip's own chain; on the one-sequence export, where
+no compositor reads an alpha, it darkens towards black instead (`uOpaque`).
+And `Effect.getDurationAfterEffectApplied` is left at its default on the blend,
+since it changes no frame's time.
+
 The sections below were written against 1.4/1.5 and are kept for the history;
 where they name a call that no longer exists (`ChannelMixingMatrix.create`,
 `HslAdjustment` for saturation), that call is no longer used.
@@ -240,9 +268,10 @@ looks correct.
 
 ## The two custom shaders
 
-`media/effects/ChromaKeyEffect.kt` and `media/effects/MaskEffect.kt` are the only
-files in the app that touch Media3's shader API — `BaseGlShaderProgram`, `GlProgram`, `GlUtil`, `Size`,
-`VideoFrameProcessingException`. It was written against the actual 1.5.1 sources
+`media/effects/ChromaKeyEffect.kt` and `media/effects/MaskEffect.kt` were the first
+files in the app to touch Media3's shader API — `BaseGlShaderProgram`, `GlProgram`, `GlUtil`, `Size`,
+`VideoFrameProcessingException` (the transition, fx, background, premultiply and frame-blend
+effects followed the same shape). It was written against the actual 1.5.1 sources
 rather than from memory, and its uniforms are cross-checked against the GLSL, but
 it is still the largest new API surface in the project.
 

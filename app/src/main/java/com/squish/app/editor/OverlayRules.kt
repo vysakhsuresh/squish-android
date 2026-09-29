@@ -278,10 +278,14 @@ object OverlayRules {
      * only - that switch is for the main track, and turning the camera off to
      * put music under a video must not silence the reaction clip over it.
      */
-    fun effectiveVolume(clip: Clip, muteOriginal: Boolean, originalVolume: Float): Float = when {
-        clip.isOverlay -> clip.volume.coerceIn(0f, 1f)
+    fun effectiveVolume(clip: Clip, muteOriginal: Boolean, originalVolume: Float): Float =
+        effectiveVolume(clip, muteOriginal, originalVolume, clip.volume)
+
+    /** The same, at [own] for the clip's level - the keyed level at one moment (Clip.volumeAt). */
+    fun effectiveVolume(clip: Clip, muteOriginal: Boolean, originalVolume: Float, own: Float): Float = when {
+        clip.isOverlay -> own.coerceIn(0f, 1f)
         muteOriginal -> 0f
-        else -> (clip.volume * originalVolume).coerceIn(0f, 1f)
+        else -> (own * originalVolume).coerceIn(0f, 1f)
     }
 
     /**

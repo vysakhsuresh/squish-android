@@ -591,6 +591,86 @@ should work through it and then delete what holds up.
   and Paste attributes carry the look, the sliders and the crop along with
   the mirror and turn (the frame is grabbed from the file plain).
 
+- **Batch B13 (animation, speed and transitions), all of it.** Built on the
+  desktop with no phone attached. The arithmetic - a number keyed over a clip
+  and the slider keying it, the arrival / leaving / loop over the placement
+  keys and through a cut and a trim, every transition compositing to the same
+  picture on either roll and to what the preview stacks, the stabilizer solved
+  again from its kept measurement, where the blended frames go - is executed
+  on the JVM (`tools/jvm/AnimationChecks.kt`, `ExportPlanChecks.kt`,
+  `StabilizerChecks.kt`, `FrameBlendChecks.kt`, `RampChecks.kt`); nothing has
+  been seen or heard. Script in `docs/ROADMAP.md` §4 under B13, plus what only
+  a device answers: the preview now draws every transition from
+  `ExportPlan.blend` (the dip to black is the outgoing shot's alpha over the
+  black canvas, no veil), so check Dissolve, Dip and Slide still look as they
+  did and the twelve new kinds (Dip to white, Slide right/up/down, Push, Wipe
+  left, Zoom, Jitter, Flicker, Flash, Glow) against a file, on both rolls of a
+  three-shot chain; a keyed opacity and a Fade in on a *main-track* shot
+  export through `TransitionEffect`'s `uOpaque` darkening on the cuts-only
+  path and as alpha over black on the composited path - the two must look the
+  same; an overlay's transition (offered when another overlay ends where it
+  starts on its row, marked on the strip like a shot's join, and dropped -
+  `withOverlayTransitionsFitted` - when that join goes) plays over its head
+  in the preview and the file as one shot's arrival (`ExportPlan.arrival`:
+  the dips, the flash, the jitter and the flicker run their second half over
+  the whole of it, since there is no old shot to hand the first half to), and
+  its tiles show that one shot arriving; the sound's pitch - Media3's
+  one-argument speed change was found to pitch with the rate, so the file
+  used to disagree with the preview on every retimed clip - is now Media3's
+  own `SpeedChangingAudioProcessor(provider, false, shouldMaintainPitch)`,
+  which must hold a voice at 0.5x and 2x and through a Hero ramp with no gap
+  or click at a tread boundary, and "Pitch follows speed" must tape-pitch
+  both the preview (`PlaybackParameters` pitch) and the file; the speed slider
+  to 100x exports at 100x and previews at eight (`PreviewRules.playerRate`,
+  the sink's ceiling: the strip and the file are the clip's rate, the preview
+  runs slower and must not stall); dragging a point on the curve moves it
+  under the finger with no sideways slide on a vertical drag, a tap adds one
+  at the curve's own rate there, and a swipe that starts off a point scrolls
+  the sheet; "Blend frames" on a 0.25x clip gives a file that
+  blurs through the steps rather than stepping, at the edit's frame rate,
+  with no dropped or reordered frames (`FrameBlendEffect` is the one shader
+  program here that emits more frames than it takes - watch for a stall in
+  the encoder or a `VideoFrameProcessingException`; its texture pool is
+  sized from the slowest stretch, `FrameBlendPlan.framesPerInput`, and gives
+  up textures rather than the export when the GPU refuses one); a Strength
+  drag on a stabilized clip re-solves that clip live with no "Measuring…"
+  and leaves every other stabilized clip as it was (the strength is the
+  clip's, `Clip.stabilizeStrength`); the effect tiles and
+  the transition tiles animate without dropping the sheet's frame rate; the
+  keyframe button on Placement, Opacity and the two Volume sheets lights up
+  under a key and the slider then keys the playhead, and every opacity and
+  level key is a diamond on the strip (violet, cyan) that parks the playhead
+  when tapped; Mute on the Clip sound sheet is a switch over the level
+  (`Clip.muted`), so a ducked shot mutes and comes back with its duck, the
+  slider moved above nothing unmutes, and a draft that wrote Mute as a level
+  of nothing still reads muted; an effect's own knob
+  (Speed on Shake, Beats on Punch…) reads in the preview and the file;
+  every vertical transition (Slide up, Slide down, and any kept band) is the
+  same way up in the file as in the preview (`Draw.shaderUniforms` turns the
+  draw over for the texture, checked in `ExportPlanChecks.shaderPixel`); a
+  Flash or Dip to white on a picture-in-picture whitens the
+  picture-in-picture alone in the preview as in the file (the white is
+  blended `SrcAtop` inside an offscreen layer - check a keyed overlay's
+  hole stays clear through a flash, and that a TextureView inside such a
+  layer still draws).
+  Not built: mask and filter keyframes - a mask already moves on its Track,
+  and per-clip filters arrive with B12, whose files they would key; the
+  `ValueKey` track built here is what they would use - and keyframes on a
+  line of words or a sticker, which are not clips and have their own
+  arrival, leaving and loop from B10.
+  From the merge over B11 and B12 (built, `ClipOpsChecks.kt` extended,
+  nothing seen): the dip to black is no longer a veil over the canvas but
+  each shot's own alpha from `ExportPlan.blend`, so on a padded canvas the
+  backdrop shows through a dip as B12 wanted; a transition's slide, zoom,
+  cut and white are drawn on the surface *outside* its turn and crop
+  (`VideoSurface`'s layer, then `ShotFrame` inside it), as the file applies
+  `TransitionEffect` after the turn, the crop and the fit - check a Slide
+  on a turned, cropped shot moves the cropped picture whole; the overlay
+  row offers Transition beside Filters, Adjust, Crop, Rotate and Mirror;
+  Paste attributes carries the arrival, leaving and loop with their
+  lengths, the frame blend and the pitch switch (the keyed opacity and
+  level tracks stay with their clip, as a mask's track does).
+
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The

@@ -22,6 +22,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import com.squish.app.media.ExportPlan
 import com.squish.app.media.StillClips
 import com.squish.app.media.audio.GainProcessor
 import com.squish.app.media.audio.VoiceProcessor
@@ -41,7 +42,11 @@ import com.squish.app.timeline.TransitionType
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 
-/** How one video surface should be drawn this frame. */
+/**
+ * How one video surface should be drawn this frame: the clip's own placement,
+ * and its part in a transition as the export draws it (ExportPlan.Draw) -
+ * the same fields, from the same function, so the two cannot disagree.
+ */
 data class SurfaceDraw(
     val visible: Boolean = false,
     val alpha: Float = 1f,
@@ -71,8 +76,35 @@ data class SurfaceDraw(
      * so a shot of another shape than the edit's sits where the file puts it
      * and its crop window is measured on its own picture.
      */
-    val aspect: Float? = null
-)
+    val aspect: Float? = null,
+    /** Slide up or down: 1 is one full height off the bottom. */
+    val translateYFraction: Float = 0f,
+    /** Zoom: how much larger than the canvas the transition draws it. */
+    val scale: Float = 1f,
+    /** Where the drawn rectangle begins across and down, and ends down (the end across is [revealFraction]). */
+    val revealFrom: Float = 0f,
+    val revealFromY: Float = 0f,
+    val revealToY: Float = 1f,
+    /** Flash, glow, dip to white: how far towards white the picture is mixed. */
+    val white: Float = 0f
+) {
+    companion object {
+        /** [draw] as the screen draws it, on top ([zIndex] 1) or under. */
+        fun of(draw: ExportPlan.Draw, onTop: Boolean): SurfaceDraw = SurfaceDraw(
+            visible = draw.alpha > 0f,
+            alpha = draw.alpha,
+            translateXFraction = draw.shiftX,
+            revealFraction = draw.keepTo,
+            zIndex = if (onTop) 1 else 0,
+            translateYFraction = draw.shiftY,
+            scale = draw.scale,
+            revealFrom = draw.keepFrom,
+            revealFromY = draw.keepFromY,
+            revealToY = draw.keepToY,
+            white = draw.white
+        )
+    }
+}
 
 /** Where an overlay layer sits this frame. */
 data class OverlayPlacement(
@@ -84,6 +116,8 @@ data class OverlayPlacement(
     /** The clip's own mirror and quarter turns, applied to the view inside its fitted box. */
     val mirrored: Boolean = false,
     val quarterTurns: Int = 0,
+    /** The clip's own draw at this moment - a transition over its head, as the export draws it. */
+    val draw: ExportPlan.Draw = ExportPlan.PLAIN,
     /**
      * The layer's picture shape, once its decoder has said. The surface is laid
      * out at this shape, fitted into the canvas, which is where the export's
@@ -109,8 +143,6 @@ data class PreviewFrame(
     val pictureEnded: Boolean = false,
     val surfaceA: SurfaceDraw = SurfaceDraw(),
     val surfaceB: SurfaceDraw = SurfaceDraw(),
-    /** Dip to black: how much black sits over the picture right now. */
-    val blackVeil: Float = 0f,
     val overlays: List<OverlayPlacement> = emptyList()
 )
 
@@ -658,8 +690,19 @@ class PreviewEngine(private val context: Context) {
      * Puts one player at the rate its clip calls for, if that has moved enough to
      * be worth the interruption.
      */
+    /**
+     * The pitch a player runs at for [clip] at [speed]: its voice's shift, and
+     * the speed's own on top when the clip lets the pitch follow the speed -
+     * the same choice the export makes (VideoProcessor.buildAudioProcessors).
+     * Held to what the player is actually asked for (PreviewRules.playerRate),
+     * since the sink resamples by it and holds pitch to the same limits.
+     */
+    private fun pitchFor(clip: Clip, speed: Float): Float =
+        if (clip.pitchFollowsSpeed) PreviewRules.playerRate(clip.voice.pitch * PreviewRules.playerRate(speed))
+        else clip.voice.pitch
+
     private fun setSpeed(player: ExoPlayer, rate: Rate, clipId: String, wanted: Float, pitch: Float) {
-        val safe = wanted.coerceIn(0.1f, 10f)
+        val safe = PreviewRules.playerRate(wanted)
         val now = SystemClock.elapsedRealtime()
         val push = PreviewRules.shouldPushSpeed(rate.speed, safe, now - rate.pushedAt, rate.clipId != clipId) ||
             rate.pitch != pitch
@@ -907,7 +950,7 @@ class PreviewEngine(private val context: Context) {
             surfaceA.forceSeek = true
             surfaceB.forceSeek = true
         }
-        val (drawA, drawB, veil) = composeBase(t, now)
+        val (drawA, drawB) = composeBase(t, now)
         // Parked on the very end, a layer or caption that runs to it is on the
         // last frame, as in the file - not gone because nothing covers the end.
         val overlays = syncOverlays(PreviewRules.lastFrameTime(t, durationMs))
@@ -928,7 +971,6 @@ class PreviewEngine(private val context: Context) {
             pictureEnded = pictureEnded,
             surfaceA = drawA,
             surfaceB = drawB,
-            blackVeil = veil,
             overlays = overlays
         )
     }
@@ -958,7 +1000,7 @@ class PreviewEngine(private val context: Context) {
 
     // ---- Base track and transitions ---------------------------------------------
 
-    private fun composeBase(t: Long, now: Long): Triple<SurfaceDraw, SurfaceDraw, Float> {
+    private fun composeBase(t: Long, now: Long): Pair<SurfaceDraw, SurfaceDraw> {
         // A clip covers up to, not including, its end - so parked exactly on the
         // end of the edit, where every play-through stops, nothing covered it and
         // the picture went to "Gap". The end shows the last frame instead - when
@@ -988,7 +1030,7 @@ class PreviewEngine(private val context: Context) {
             // shot that just ended, a park or a redraw seek on that player read
             // as a stall and held the clock still in the middle of a gap.
             clockClipId = null
-            return remember(SurfaceDraw(), SurfaceDraw(), 0f)
+            return remember(SurfaceDraw(), SurfaceDraw())
         }
         inGap = false
         pictureEnded = false
@@ -1010,8 +1052,9 @@ class PreviewEngine(private val context: Context) {
             val onA = clipA != null
             val only = (clipA ?: clipB)!!
             val ready = if (onA) readyA else readyB
+            // Its own fade - a keyed opacity, an arrival - as the file draws it.
             val own = if (onA) surfaceA else surfaceB
-            val shown = SurfaceDraw(visible = ready, transform = only.transformAt(at)).turnedAs(only, own)
+            val shown = SurfaceDraw(visible = ready, alpha = only.opacityAt(at), transform = only.transformAt(at)).turnedAs(only, own)
             val held = if (onA) surfaceB else surfaceA
             val other = if (!ready && (if (onA) holdB else holdA)) {
                 SurfaceDraw(
@@ -1022,7 +1065,7 @@ class PreviewEngine(private val context: Context) {
             } else {
                 SurfaceDraw(visible = false, transform = only.transformAt(at), crop = only.crop, clipId = only.id)
             }
-            return if (onA) remember(shown, other, 0f) else remember(other, shown, 0f)
+            return if (onA) remember(shown, other) else remember(other, shown)
         }
 
         // Both rolls have a shot here, so the two overlap: a transition.
@@ -1031,22 +1074,28 @@ class PreviewEngine(private val context: Context) {
         val overlapMs = (outgoing.timelineEndMs - incoming.timelineStartMs).coerceAtLeast(1L)
         val progress = ((at - incoming.timelineStartMs).toFloat() / overlapMs).coerceIn(0f, 1f)
 
-        val (outDraw, inDraw, veil) = blend(incoming.transitionIn.type, progress)
+        val (outDraw, inDraw) = blend(incoming.transitionIn.type, progress)
         val aIsIncoming = incoming === clipA
         val inReady = if (aIsIncoming) readyA else readyB
         val outReady = if (aIsIncoming) readyB else readyA
         // Both shots keep animating through the blend, which is the point of
         // keyframing a transition - a push-in that stalls mid-dissolve is a glitch.
         // A shot not yet decoded sits the blend out rather than blending in a
-        // stale frame.
-        val outMoved = outDraw.copy(visible = outDraw.visible && outReady, transform = outgoing.transformAt(at))
-            .turnedAs(outgoing, if (aIsIncoming) surfaceB else surfaceA)
-        val inMoved = inDraw.copy(visible = inDraw.visible && inReady, transform = incoming.transformAt(at))
-            .turnedAs(incoming, if (aIsIncoming) surfaceA else surfaceB)
+        // stale frame. Each shot's own fade multiplies its share of the blend,
+        // as the export's TransitionEffect does.
+        val outMoved = outDraw.copy(
+            visible = outDraw.visible && outReady,
+            alpha = outDraw.alpha * outgoing.opacityAt(at),
+            transform = outgoing.transformAt(at)
+        ).turnedAs(outgoing, if (aIsIncoming) surfaceB else surfaceA)
+        val inMoved = inDraw.copy(
+            visible = inDraw.visible && inReady,
+            alpha = inDraw.alpha * incoming.opacityAt(at),
+            transform = incoming.transformAt(at)
+        ).turnedAs(incoming, if (aIsIncoming) surfaceA else surfaceB)
         return remember(
             if (aIsIncoming) inMoved else outMoved,
-            if (aIsIncoming) outMoved else inMoved,
-            veil
+            if (aIsIncoming) outMoved else inMoved
         )
     }
 
@@ -1088,16 +1137,16 @@ class PreviewEngine(private val context: Context) {
     }
 
     /**
-     * Notes what each base surface showed, for the hold at the next hard cut,
-     * and stamps each draw with its surface's picture shape - whatever frame
-     * is on the surface, a held one included.
+     * Notes what each base surface showed - its placement, turn and crop, for
+     * the hold at the next hard cut. Each draw carries its surface's picture
+     * shape already (turnedAs), a held one included.
      */
-    private fun remember(a: SurfaceDraw, b: SurfaceDraw, veil: Float): Triple<SurfaceDraw, SurfaceDraw, Float> {
+    private fun remember(a: SurfaceDraw, b: SurfaceDraw): Pair<SurfaceDraw, SurfaceDraw> {
         surfaceA.wasVisible = a.visible
         surfaceB.wasVisible = b.visible
         if (a.visible) surfaceA.noteShown(a)
         if (b.visible) surfaceB.noteShown(b)
-        return Triple(a, b, veil)
+        return a to b
     }
 
     private fun Surface.noteShown(draw: SurfaceDraw) {
@@ -1139,34 +1188,15 @@ class PreviewEngine(private val context: Context) {
     }
 
     /**
-     * How a transition reads, as (outgoing, incoming, black veil). These mirror
-     * CompositionFactory.transitionAlphaAt - the preview and the render describe the
-     * same blend, one for the screen and one for the compositor.
+     * How a transition reads, as (outgoing, incoming): the export's own
+     * decision (ExportPlan.blend) with the incoming shot on top, which is how
+     * the screen stacks the two surfaces. It used to be written here a second
+     * time, and every new kind would have had to be written twice and kept the
+     * same by hand; the ExportPlanChecks hold the file to this stacking.
      */
-    private fun blend(type: TransitionType, p: Float): Triple<SurfaceDraw, SurfaceDraw, Float> {
-        val under = SurfaceDraw(visible = true, zIndex = 0)
-        val over = SurfaceDraw(visible = true, zIndex = 1)
-        return when (type) {
-            TransitionType.CrossFade ->
-                Triple(under, over.copy(alpha = p), 0f)
-
-            // Out to nothing and back up, with black deepest at the midpoint.
-            TransitionType.DipToBlack -> Triple(
-                under.copy(visible = p < 0.5f),
-                over.copy(visible = p >= 0.5f),
-                1f - abs(2f * p - 1f)
-            )
-
-            TransitionType.SlideLeft ->
-                Triple(under, over.copy(translateXFraction = 1f - p), 0f)
-
-            TransitionType.WipeRight ->
-                Triple(under, over.copy(revealFraction = p), 0f)
-
-            // Overlapping shots with no transition set: a hard cut to the new one.
-            TransitionType.None ->
-                Triple(under.copy(visible = false), over, 0f)
-        }
+    private fun blend(type: TransitionType, p: Float): Pair<SurfaceDraw, SurfaceDraw> {
+        val (incoming, outgoing) = ExportPlan.blend(type, p, incomingOnTop = true)
+        return SurfaceDraw.of(outgoing, onTop = false) to SurfaceDraw.of(incoming, onTop = true)
     }
 
     // ---- Overlay layers ----------------------------------------------------------
@@ -1195,13 +1225,17 @@ class PreviewEngine(private val context: Context) {
         if (clip == null) {
             OverlayPlacement(layer = layer, visible = false, aspect = s.videoAspect)
         } else {
+            // Its opacity track and fade, and a transition over its head, as
+            // the export draws them (TransitionEffect on the overlay's chain).
+            val own = ExportPlan.ownDrawAt(clip, t - clip.timelineStartMs)
             OverlayPlacement(
                 layer = layer,
                 visible = s.shownClipId == clip.id,
-                opacity = clip.opacity,
+                opacity = own.alpha,
                 transform = clip.transformAt(t),
                 mirrored = clip.mirrored,
                 quarterTurns = clip.quarterTurns,
+                draw = own,
                 aspect = s.videoAspect,
                 covers = true,
                 clipId = clip.id,
@@ -1233,13 +1267,11 @@ class PreviewEngine(private val context: Context) {
         val source = playbackUriFor(clip) ?: return
         applyLive(s, clip)
         // The clip's own voice: the processed ones through the sink, a pitch
-        // shift as a playback parameter.
+        // shift as a playback parameter - and the speed's own shift with it
+        // when the clip asks for that, as the file writes it.
         s.voice.set(clip.voice)
-        setSpeed(
-            player, s.rate, clip.id,
-            clip.speedAt(if (park) clip.timelineStartMs else t),
-            pitch = clip.voice.pitch
-        )
+        val speed = clip.speedAt(if (park) clip.timelineStartMs else t)
+        setSpeed(player, s.rate, clip.id, speed, pitch = pitchFor(clip, speed))
         val wanted = PreviewRules.seekTarget(clip.sourceAt(t), clip.sourceInMs, clip.sourceOutMs)
         s.lastWanted = wanted
         s.wantedIn = clip.sourceInMs
@@ -1290,7 +1322,7 @@ class PreviewEngine(private val context: Context) {
         // and through its fades, as the export plays them (FadeProcessor).
         val level = when {
             park || muted -> 0f
-            else -> OverlayRules.effectiveVolume(clip, muteOriginal, originalVolume) *
+            else -> OverlayRules.effectiveVolume(clip, muteOriginal, originalVolume, clip.volumeAtTimeline(t)) *
                 AudioRules.fadeGain(t - clip.timelineStartMs, clip.durationMs, clip.fadeInMs, clip.fadeOutMs)
         }
         if (player.volume != level) player.volume = level
@@ -1408,7 +1440,8 @@ class PreviewEngine(private val context: Context) {
                 // sample by the time it is due.
                 val untilDue = clip.timelineStartMs - t
                 if (untilDue in 1..PREROLL_MS && !primed.contains(clip.id)) {
-                    setSpeed(player, rate, clip.id, clip.speedAt(clip.timelineStartMs), pitch = clip.voice.pitch)
+                    val opening = clip.speedAt(clip.timelineStartMs)
+                    setSpeed(player, rate, clip.id, opening, pitch = pitchFor(clip, opening))
                     player.seekTo(clip.sourceInMs)
                     primed.add(clip.id)
                 }
@@ -1421,14 +1454,16 @@ class PreviewEngine(private val context: Context) {
             // The level up to the player's ceiling, through the fades; the part
             // above it and the clip's voice go to the chain in front of its
             // sink - the same split the export writes (AudioMixing, FadeProcessor).
-            val (level, boost) = AudioRules.gainSplit(clip.volume)
+            // The level at this moment: the keys over the clip, or its one number.
+            val (level, boost) = AudioRules.gainSplit(clip.volumeAtTimeline(t))
             val fade = AudioRules.fadeGain(t - clip.timelineStartMs, clip.durationMs, clip.fadeInMs, clip.fadeOutMs)
             player.volume = if (muted) 0f else level * fade
             audioChains[clip.id]?.let { chain ->
                 chain.gain.set(boost)
                 chain.voice.set(clip.voice)
             }
-            setSpeed(player, rate, clip.id, clip.speedAt(t), pitch = clip.voice.pitch)
+            val speed = clip.speedAt(t)
+            setSpeed(player, rate, clip.id, speed, pitch = pitchFor(clip, speed))
             val wanted = clip.sourceAt(t).coerceAtLeast(0L)
 
             if (!holdPosition) {

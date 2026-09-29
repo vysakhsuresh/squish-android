@@ -47,10 +47,13 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -412,8 +415,8 @@ fun TimelinePreview(
                 // themselves, as the file does, so a padded canvas shows its
                 // background through the dip rather than a black card over it.
                 Box(modifier = Modifier.fillMaxSize().zIndex(1f)) {
-                    VideoSurface(engine, engine.baseA, frame.surfaceA.plainFor(pictureTool), rotationDegrees, frame.blackVeil, pictureSize, pictureFrame)
-                    VideoSurface(engine, engine.baseB, frame.surfaceB.plainFor(pictureTool), rotationDegrees, frame.blackVeil, pictureSize, pictureFrame)
+                    VideoSurface(engine, engine.baseA, frame.surfaceA.plainFor(pictureTool), rotationDegrees, pictureSize, pictureFrame)
+                    VideoSurface(engine, engine.baseB, frame.surfaceB.plainFor(pictureTool), rotationDegrees, pictureSize, pictureFrame)
 
                     // Empty space on the base track is a real part of the edit, and
                     // the exported file goes black here - or, on a padded canvas,
@@ -463,6 +466,7 @@ fun TimelinePreview(
                             StillOverlay(
                                 clip = if (plain) clip.copy(crop = clip.crop?.copy(rect = CropRect())) else clip,
                                 transform = if (plain) Transform.Identity else clip.transformAt(layerTime),
+                                layerTime = layerTime,
                                 onAspect = { aspect -> clip.uri?.let { stillAspects[it.toString()] = aspect } }
                             )
                         }
@@ -627,8 +631,6 @@ fun TimelinePreview(
 /**
  * One base surface, drawn the way the engine asked for.
  *
- * @param veil how far a dip to black has taken the picture down: the shot's
- *   own alpha, as the file fades it, so what is behind shows through.
  * @param canvasSize the whole canvas, which a clip's own crop is fitted to.
  * @param pictureFrame where the picture sits on the canvas: the whole of it,
  *   or on a padded canvas the frame in its middle.
@@ -639,7 +641,6 @@ private fun VideoSurface(
     player: ExoPlayer,
     draw: SurfaceDraw,
     rotationDegrees: Int,
-    veil: Float,
     canvasSize: IntSize,
     pictureFrame: PreviewBox.Frame
 ) {
@@ -653,19 +654,38 @@ private fun VideoSurface(
             .fillMaxSize()
             .zIndex(draw.zIndex.toFloat())
             .graphicsLayer {
-                alpha = if (draw.visible) (draw.alpha * (1f - veil)).coerceIn(0f, 1f) else 0f
+                alpha = if (draw.visible) draw.alpha.coerceIn(0f, 1f) else 0f
                 // The clip's own animated placement, plus whatever the transition
-                // is doing to the whole surface.
-                place(draw.transform)
-                translationX += draw.translateXFraction * size.width
+                // is doing to the whole surface: a slide either way, a zoom.
+                rotationZ = draw.transform.rotationDegrees
+                scaleX = draw.transform.scale * draw.scale
+                scaleY = draw.transform.scale * draw.scale
+                translationX = draw.translateXFraction * size.width +
+                    draw.transform.offsetXFraction * size.width / 2f
+                translationY = draw.translateYFraction * size.height +
+                    draw.transform.offsetYFraction * size.height / 2f
+                // Whitened, the surface draws into its own buffer so the white
+                // lands on this shot's pixels alone (see whitened).
+                compositingStrategy = if (draw.white > 0f) CompositingStrategy.Offscreen else CompositingStrategy.Auto
             }
             .drawWithContent {
-                if (draw.revealFraction >= 1f) {
+                // A wipe, or the old shot cut away under a slide: only the
+                // kept rectangle is drawn, as the export's shader keeps it -
+                // and the white goes only where the picture is drawn, as the
+                // shader's does (by the pixel's own coverage), not over the
+                // cut-away part of the surface.
+                if (draw.revealFrom <= 0f && draw.revealFraction >= 1f && draw.revealFromY <= 0f && draw.revealToY >= 1f) {
                     drawContent()
+                    whitened(draw.white)
                 } else {
-                    // A wipe: the incoming shot is revealed from the left edge.
-                    clipRect(right = size.width * draw.revealFraction.coerceIn(0f, 1f)) {
+                    clipRect(
+                        left = size.width * draw.revealFrom.coerceIn(0f, 1f),
+                        top = size.height * draw.revealFromY.coerceIn(0f, 1f),
+                        right = size.width * draw.revealFraction.coerceIn(0f, 1f),
+                        bottom = size.height * draw.revealToY.coerceIn(0f, 1f)
+                    ) {
                         this@drawWithContent.drawContent()
+                        whitened(draw.white)
                     }
                 }
             }
@@ -947,6 +967,7 @@ private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: 
         modifier = Modifier
             .fillMaxSize()
             .zIndex(10f + placement.layer)
+            .drawnAs(placement.draw)
             .graphicsLayer {
                 alpha = if (placement.visible) placement.opacity.coerceIn(0f, 1f) else 0f
                 // Measured against the canvas, not the layer's own box, so an
@@ -984,7 +1005,7 @@ private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: 
  * through its image item (CompositionFactory.overlayEffects).
  */
 @Composable
-private fun StillOverlay(clip: Clip, transform: Transform, onAspect: (Float) -> Unit) {
+private fun StillOverlay(clip: Clip, transform: Transform, layerTime: Long, onAspect: (Float) -> Unit) {
     val uri = clip.uri ?: return
     val context = LocalContext.current
     val grade = clip.grade
@@ -998,12 +1019,15 @@ private fun StillOverlay(clip: Clip, transform: Transform, onAspect: (Float) -> 
     }
     val image = remember(picture) { picture?.asImageBitmap() } ?: return
     val aspect = if (image.height > 0) image.width.toFloat() / image.height else null
+    // Its fade and its transition over its head, as the export draws them.
+    val own = ExportPlan.ownDrawAt(clip, layerTime - clip.timelineStartMs)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(10f + clip.layer)
+            .drawnAs(own)
             .graphicsLayer {
-                alpha = clip.opacity.coerceIn(0f, 1f)
+                alpha = own.alpha.coerceIn(0f, 1f)
                 place(transform)
             }
     ) {
@@ -1167,6 +1191,53 @@ private fun Modifier.turnedInside(quarterTurns: Int, mirrored: Boolean, aspect: 
             }
         }
     }
+}
+
+/**
+ * A layer drawn as the export draws its own draw (ExportPlan.ownDrawAt): an
+ * overlay's transition over its head - slid, zoomed, cut to a rectangle,
+ * whitened - on the canvas, outside the layer's own placement. Its alpha is
+ * the caller's, folded into the layer's opacity.
+ */
+private fun Modifier.drawnAs(draw: ExportPlan.Draw): Modifier {
+    val still = draw.shiftX == 0f && draw.shiftY == 0f && draw.scale == 1f && draw.white == 0f &&
+        draw.keepFrom <= 0f && draw.keepTo >= 1f && draw.keepFromY <= 0f && draw.keepToY >= 1f
+    if (still) return this
+    return this
+        .graphicsLayer {
+            scaleX = draw.scale
+            scaleY = draw.scale
+            translationX = draw.shiftX * size.width
+            translationY = draw.shiftY * size.height
+            // Its own buffer, so the white below lands on this layer's pixels
+            // and nothing under it. The layer is the whole canvas with the
+            // picture fitted inside it; a flash painted over the layer whitened
+            // the base shot round a picture-in-picture, where the file whitens
+            // only the picture-in-picture.
+            compositingStrategy = CompositingStrategy.Offscreen
+        }
+        .drawWithContent {
+            clipRect(
+                left = size.width * draw.keepFrom.coerceIn(0f, 1f),
+                top = size.height * draw.keepFromY.coerceIn(0f, 1f),
+                right = size.width * draw.keepTo.coerceIn(0f, 1f),
+                bottom = size.height * draw.keepToY.coerceIn(0f, 1f)
+            ) {
+                this@drawWithContent.drawContent()
+                whitened(draw.white)
+            }
+        }
+}
+
+/**
+ * The picture mixed [white] of the way towards white - flash, glow, dip to
+ * white - by each pixel's own coverage, which is how the transition shader
+ * mixes it (uWhite * c.a): a keyed-out hole, the fit's transparent margin and
+ * everything outside the picture stay as they are.
+ */
+private fun DrawScope.whitened(white: Float) {
+    if (white <= 0f) return
+    drawRect(Color.White, alpha = white.coerceIn(0f, 1f), blendMode = BlendMode.SrcAtop)
 }
 
 /** The largest rectangle of [aspect] that fits, centred; all of it when the shape is not known yet. */

@@ -249,14 +249,40 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
     private fun sayIfSilencedOnMain(overlay: Clip) {
         val now = _state.value
         val moved = now.videoClips.firstOrNull { it.id == overlay.id }?.isMain == true
-        if (moved && now.muteOriginal && overlay.volume > 0f && !overlay.isStillPicture) {
+        if (moved && now.muteOriginal && overlay.isHeard && !overlay.isStillPicture) {
             _state.update { it.copy(failure = SquishError.SilentOnMainTrack()) }
         }
     }
 
-    /** The Opacity sheet's slider. Each drag, on each clip, is one step. */
+    /**
+     * The Opacity sheet's slider. Each drag, on each clip, is one step. On a
+     * clip with opacity keys the slider keys the playhead (ValueTracks).
+     */
     fun setOpacity(clipId: String, opacity: Float) = record("Opacity", gesture = "Opacity $clipId") {
         mutateTimeline { it.withOverlayGeometry(clipId, opacity = opacity) }
+    }
+
+    /** Opacity's Reset: fully there, its keys gone, as one step. */
+    fun resetOpacity(clipId: String) = record("Opacity") {
+        mutateTimeline { timeline ->
+            timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(opacity = 1f, opacityKeys = emptyList()) else it })
+        }
+    }
+
+    /**
+     * The transition on [clipId] put on every join of the main track, as one
+     * step: the same kind and length on each shot that has a shot before it.
+     * The track is laid out again for the new overlaps (withTransition).
+     */
+    fun applyTransitionToAll(clipId: String) {
+        val source = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return
+        val transition = source.transitionIn
+        record("Transition on every cut") {
+            mutateTimeline { timeline ->
+                val base = timeline.baseVideoClips
+                base.drop(1).fold(timeline) { acc, clip -> acc.withTransition(clip.id, transition) }
+            }
+        }
     }
 
     // ---- Green screen -------------------------------------------------------------

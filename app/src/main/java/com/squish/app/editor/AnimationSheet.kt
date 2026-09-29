@@ -3,11 +3,14 @@ package com.squish.app.editor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Animation
@@ -15,8 +18,8 @@ import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,17 +29,30 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ClipAnimation
+import com.squish.app.timeline.ClipArrival
+import com.squish.app.timeline.ClipLeaving
+import com.squish.app.timeline.ClipLoop
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
 import com.squish.app.timeline.TransformLimits
+import com.squish.app.timeline.hasKeyNear
 import com.squish.app.timeline.within
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.theme.SquishColors
+import kotlin.math.roundToInt
 
 /**
- * Animation: how a clip moves while it plays - a preset in one tap, and the keys
- * it lays, which can be moved between, eased or taken off.
+ * Animation: how a clip's picture arrives, leaves and behaves in between - a
+ * chip each with its length, the way a line of words is animated (TextSheet),
+ * so the two sheets read the same - and under them the moves across the whole
+ * clip: a preset in one tap, and the keys it lays, which can be moved between,
+ * eased or taken off.
+ *
+ * The arrival, leaving and loop are laid over the keys rather than written
+ * into them (ClipAnimation): a push-in drawn across the shot survives a fade
+ * in being switched on, changed and taken off again.
  *
  * The clip's own tool now, on its toolbar. It used to be the Motion tab, which
  * acted on "the first video clip" whenever the selection was anything else, and
@@ -49,19 +65,60 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
     // the move comes back with the footage; they are not this clip's to edit.
     val keys = clip.keyframes.within(clip.durationMs)
     val hidden = clip.keyframes.size - keys.size
+    val seconds = { ms: Float -> "%.1f s".format(ms / 1000f) }
+    val motion = ClipAnimation.MIN_MOTION_MS.toFloat()..ClipAnimation.MAX_MOTION_MS.toFloat()
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = accent) {
             PanelHeading(
                 clip.label,
-                if (animated) {
-                    "${keys.size} keys · moves while it plays" +
-                        if (hidden > 0) " · $hidden more in trimmed footage" else ""
-                } else "Sitting still — add a move below",
+                when {
+                    clip.hasAnimation && animated -> "Arrives, leaves and moves while it plays"
+                    clip.hasAnimation -> "Arrives and leaves as set below"
+                    animated -> "${keys.size} keys · moves while it plays" + if (hidden > 0) " · $hidden more in trimmed footage" else ""
+                    else -> "Sitting still — pick an arrival, or a move below"
+                },
                 icon = Icons.Filled.Animation,
                 accent = accent
             )
+            AnimationChips("In", ClipArrival.entries, clip.arrival, { it.label }, accent) { viewModel.clips.setArrival(clip.id, it) }
+            if (clip.arrival != ClipArrival.None) {
+                LabeledSlider("In takes", clip.arrivalMs.toFloat(), motion, readout = seconds, onFinished = viewModel::endGesture) {
+                    viewModel.clips.setArrivalMs(clip.id, it.roundToInt().toLong())
+                }
+            }
+            AnimationChips("Out", ClipLeaving.entries, clip.leaving, { it.label }, accent) { viewModel.clips.setLeaving(clip.id, it) }
+            if (clip.leaving != ClipLeaving.None) {
+                LabeledSlider("Out takes", clip.leavingMs.toFloat(), motion, readout = seconds, onFinished = viewModel::endGesture) {
+                    viewModel.clips.setLeavingMs(clip.id, it.roundToInt().toLong())
+                }
+            }
+            AnimationChips("Loop", ClipLoop.entries, clip.loop, { it.label }, accent) { viewModel.clips.setLoop(clip.id, it) }
+            if (clip.loop != ClipLoop.None) {
+                LabeledSlider(
+                    "Every", clip.loopMs.toFloat(),
+                    ClipAnimation.MIN_LOOP_MS.toFloat()..ClipAnimation.MAX_LOOP_MS.toFloat(),
+                    readout = seconds, onFinished = viewModel::endGesture
+                ) {
+                    viewModel.clips.setLoopMs(clip.id, it.roundToInt().toLong())
+                }
+            }
+            if (clip.hasAnimation && clip.durationMs < (clip.arrivalMs + clip.leavingMs)) {
+                Text(
+                    "On a clip this short the arrival and the leaving each take at most half of it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SquishColors.TextMuted
+                )
+            }
+        }
 
+        PanelSurface(accent = accent) {
+            PanelHeading(
+                "Moves",
+                "Across the whole clip, over the arrival and leaving",
+                icon = Icons.Filled.Transform,
+                accent = accent
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                 MotionPreset.entries.take(3).forEach { preset ->
                     SelectableChip(
@@ -136,6 +193,109 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
     }
 }
 
+/** A labelled row of chips that scrolls sideways: nine arrivals do not fit a phone. */
+@Composable
+private fun <T> AnimationChips(
+    label: String,
+    options: List<T>,
+    chosen: T,
+    text: (T) -> String,
+    accent: Color,
+    onPick: (T) -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextSecondary,
+            modifier = Modifier.padding(end = 10.dp)
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState())
+        ) {
+            options.forEach { option ->
+                SelectableChip(
+                    label = text(option),
+                    selected = option == chosen,
+                    accentColor = accent,
+                    onClick = { onPick(option) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The keyframe button every sheet whose number can be keyed carries: a
+ * diamond, filled while a key sits under the playhead, that adds one there or
+ * takes it off; beside it how many keys the clip has and a way to clear them.
+ * The sheet's slider then sets the number at the playhead (ValueTracks) - one
+ * control, one meaning, whether the clip is keyed or not.
+ */
+@Composable
+fun KeyframeButton(
+    /** A key sits under the playhead. */
+    keyed: Boolean,
+    /** How many keys the clip has on this number. */
+    count: Int,
+    /** The playhead is on the clip; off it there is no moment to key. */
+    onClip: Boolean,
+    accent: Color,
+    onToggle: () -> Unit,
+    onClear: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (keyed) accent.copy(alpha = 0.14f) else SquishColors.Background)
+            .border(1.dp, if (keyed) accent else SquishColors.Border, RoundedCornerShape(10.dp))
+            .clickable(enabled = onClip, onClick = onToggle)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(
+            if (keyed) "◆" else "◇",
+            style = MaterialTheme.typography.titleMedium,
+            color = if (onClip) accent else SquishColors.TextMuted
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                when {
+                    !onClip -> "Move the playhead onto the clip to key it"
+                    keyed -> "Key here · tap to remove"
+                    count > 0 -> "Add a key here"
+                    else -> "Add a key here to animate this"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (onClip) SquishColors.TextPrimary else SquishColors.TextMuted
+            )
+            if (count > 0) {
+                Text(
+                    if (count == 1) "1 key · the slider sets the value at the playhead" else "$count keys · the slider sets the value at the playhead",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.TextMuted
+                )
+            }
+        }
+        if (count > 0) {
+            // A target the size of a finger, and its own: the row round it
+            // toggles a key, so a miss here used to add one instead of clearing them.
+            Text(
+                "Clear",
+                style = MaterialTheme.typography.labelMedium,
+                color = SquishColors.Pink,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onClear)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            )
+        }
+    }
+}
+
 /**
  * Where a clip's picture sits. The sliders always edit *the moment the playhead
  * is on*: on a still clip that is simply its placement, on an animated one it
@@ -160,6 +320,8 @@ fun PlacementPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
     val turn = if (clip.isOverlay) -TransformLimits.ROTATION_MAX..TransformLimits.ROTATION_MAX else -45f..45f
 
     val onClip = state.playheadMs in clip.timelineStartMs..clip.timelineEndMs
+    val local = state.playheadMs - clip.timelineStartMs
+    val keyedHere = clip.keyframes.hasKeyNear(local, state.frameMs)
 
     PanelSurface(accent = accent) {
         PanelHeading(
@@ -171,6 +333,17 @@ fun PlacementPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
             },
             icon = Icons.Filled.Transform,
             accent = accent
+        )
+        KeyframeButton(
+            keyed = keyedHere,
+            count = clip.keyframes.size,
+            onClip = onClip,
+            accent = accent,
+            onToggle = {
+                if (keyedHere) viewModel.clips.removeKeyframe(clip.id, nearestKeyMs(clip, local, state.frameMs))
+                else viewModel.clips.addKeyframeAtPlayhead(clip.id)
+            },
+            onClear = { viewModel.clips.clearKeyframes(clip.id) }
         )
         LabeledSlider(
             "Scale", here.scale, TransformLimits.SCALE_MIN..TransformLimits.SCALE_MAX,
@@ -193,6 +366,10 @@ fun PlacementPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
         }
     }
 }
+
+/** The key within a frame of [localMs], for the button that removes it. */
+private fun nearestKeyMs(clip: Clip, localMs: Long, frameMs: Long): Long =
+    clip.keyframes.filter { kotlin.math.abs(it.atMs - localMs) <= frameMs }.minByOrNull { kotlin.math.abs(it.atMs - localMs) }?.atMs ?: localMs
 
 private fun isUnderPlayhead(clip: Clip, key: Keyframe, state: EditorUiState): Boolean {
     val at = state.playheadMs - clip.timelineStartMs
@@ -267,7 +444,9 @@ private fun KeyRow(
 /**
  * Stabilization. Analysis rather than an effect: it measures the shake and writes a
  * correction into the same transform track everything else already uses, which is
- * why it shows up live in the preview the moment it finishes.
+ * why it shows up live in the preview the moment it finishes. The measurement is
+ * kept on the clip, so Strength solves the correction again from it in a moment
+ * (StabilizerSolve) rather than reading the footage again.
  */
 @Composable
 fun StabilizePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel, accent: Color) {
@@ -276,6 +455,7 @@ fun StabilizePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
     // after it, beside a button that said this one was not stabilized.
     val status = state.stabilize.takeIf { it.clipId == clip.id } ?: StabilizeProgress()
     val busyElsewhere = state.stabilize.running && state.stabilize.clipId != clip.id
+    val measured = clip.stabilizerMeasurement != null
 
     PanelSurface(accent = accent) {
         PanelHeading(
@@ -349,13 +529,20 @@ fun StabilizePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
             )
         }
 
+        // This clip's own strength; the edit's default until it has one.
         LabeledSlider(
-            "Strength", state.stabilizeStrength, 0f..1f,
+            "Strength", viewModel.analysis.strengthFor(clip, state), 0f..1f,
             onFinished = viewModel::endGesture,
-            onChange = viewModel.analysis::setStabilizeStrength
+            onChange = { viewModel.analysis.setStabilizeStrength(clip.id, it) }
         )
         Text(
-            "Stronger holds the frame steadier and crops in further to afford it.",
+            when {
+                measured && clip.isStabilized -> "Stronger holds the frame steadier and crops in further to afford it. " +
+                    "This clip is solved again from its measurement as the slider moves; other clips keep theirs."
+                clip.isStabilized -> "Stronger holds the frame steadier and crops in further to afford it. " +
+                    "This clip was measured before measurements were kept: measure again for the slider to act on it."
+                else -> "Stronger holds the frame steadier and crops in further to afford it."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextMuted
         )
@@ -370,7 +557,7 @@ fun StabilizePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                 status.running -> "Measuring…"
                 // One measurement at a time; this one waits for the other clip's.
                 busyElsewhere -> "Measuring another clip…"
-                clip.isStabilized -> "Measure again at this strength"
+                clip.isStabilized -> "Measure again"
                 else -> "Stabilize this clip"
             },
             modifier = Modifier.fillMaxWidth(),

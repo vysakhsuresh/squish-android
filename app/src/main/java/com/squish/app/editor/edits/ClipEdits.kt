@@ -10,6 +10,10 @@ import com.squish.app.media.effects.AdjustField
 import com.squish.app.media.effects.HslBand
 import com.squish.app.media.effects.HueBand
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ClipAnimation
+import com.squish.app.timeline.ClipArrival
+import com.squish.app.timeline.ClipLeaving
+import com.squish.app.timeline.ClipLoop
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
 import com.squish.app.timeline.MIN_CLIP_MS
@@ -18,6 +22,13 @@ import com.squish.app.timeline.SlowMotion
 import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.ValueTrack
+import com.squish.app.timeline.hasValueKeyAt
+import com.squish.app.timeline.withMuted
+import com.squish.app.timeline.withValueAt
+import com.squish.app.timeline.withValueKeyAdded
+import com.squish.app.timeline.withValueKeyRemoved
+import com.squish.app.timeline.withValueKeysCleared
 import com.squish.app.timeline.rippleVideo
 import com.squish.app.timeline.withClipMoved
 import com.squish.app.timeline.withClipRemoved
@@ -229,7 +240,14 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         val clip = (current.videoClips + current.audioClips).firstOrNull { it.id == clipId } ?: return
         // The playhead is in played time; a point is anchored in source time, so
         // that editing the curve elsewhere does not drag this point along with it.
-        val at = (clip.sourceAt(current.playheadMs) - clip.sourceInMs).coerceIn(0L, clip.sourceSpanMs)
+        setSpeedPoint(clipId, clip.sourceAt(current.playheadMs) - clip.sourceInMs, speed)
+    }
+
+    /** Adds or moves a control point at [atMs] into the clip's source window - a tap on the curve. */
+    fun setSpeedPoint(clipId: String, atMs: Long, speed: Float) {
+        val current = _state.value
+        val clip = (current.videoClips + current.audioClips).firstOrNull { it.id == clipId } ?: return
+        val at = atMs.coerceIn(0L, clip.sourceSpanMs)
         val base = if (clip.speedRamp.ordered.isEmpty()) {
             SpeedRamp.flat(1f)
         } else {
@@ -245,8 +263,15 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         record("Remove speed point") { retime(clipId, clip.speedRamp.withoutPoint(atMs)) }
     }
 
+    /**
+     * Speed's Reset: the rate back to one, and the sheet's two switches off with
+     * it. Reset is the sheet's, as Animation's is: a ramp cleared with Blend
+     * frames and Pitch follows speed left on had the next slow-down blend and
+     * tape-pitch without anyone choosing it again.
+     */
     fun clearSpeed(clipId: String) = record("Reset speed") {
         retime(clipId, SpeedRamp())
+        updateClip(clipId) { it.copy(frameBlend = false, pitchFollowsSpeed = false) }
     }
 
     // ---- Colour, per clip ----------------------------------------------------------
@@ -637,17 +662,137 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         writeVolume(clipId, volume)
     }
 
-    /** Volume's Reset: full level, as one step. */
-    fun resetClipVolume(clipId: String) = record("Volume") { writeVolume(clipId, 1f) }
+    /** Volume's Reset: full level, heard, its keys gone, as one step. */
+    fun resetClipVolume(clipId: String) = record("Volume") {
+        updateClip(clipId) { if (it.kind == ClipKind.Video) it.copy(volume = 1f, volumeKeys = emptyList(), muted = false) else it }
+    }
 
-    /** Mute, or back to [restoreTo] - the level it had - as one step. */
+    /**
+     * Mute, or heard again, as one step: a switch over the level (Clip.muted),
+     * so the level and its keys are exactly as they were when it comes back.
+     * [restoreTo] is only for a clip left at nothing with no keys, the way Mute
+     * used to be written (ValueTracks.withMuted).
+     */
     fun setClipMuted(clipId: String, muted: Boolean, restoreTo: Float = 1f) =
-        record(if (muted) "Mute" else "Unmute") { writeVolume(clipId, if (muted) 0f else restoreTo.coerceIn(0.05f, 1f)) }
+        record(if (muted) "Mute" else "Unmute") {
+            updateClip(clipId) { if (it.kind == ClipKind.Video) it.withMuted(muted, restoreTo) else it }
+        }
 
     private fun writeVolume(clipId: String, volume: Float) = mutateTimeline { timeline ->
         timeline.copy(clips = timeline.clips.map {
-            if (it.id == clipId && it.kind == ClipKind.Video) it.copy(volume = volume.coerceIn(0f, 1f)) else it
+            // Through the track's rule (ValueTracks): a key at the playhead once
+            // the clip has any, the one level until then. A level set on a muted
+            // clip is meant to be heard, so the slider takes the switch with it.
+            if (it.id == clipId && it.kind == ClipKind.Video) {
+                it.withValueAt(ValueTrack.Volume, timeline.playheadMs, volume, 0f..1f).let { set -> if (volume > 0f) set.copy(muted = false) else set }
+            } else it
         })
+    }
+
+    // ---- Keyed numbers: opacity and volume over time -------------------------------
+
+    /**
+     * The keyframe button on a sheet whose number is one of the tracks: a key
+     * at the playhead, or the key there taken off. The first key pins the
+     * level the clip has; the slider then keys from there (ValueTracks).
+     */
+    fun toggleValueKey(clipId: String, track: ValueTrack) {
+        val current = _state.value
+        val clip = (current.videoClips + current.audioClips).firstOrNull { it.id == clipId } ?: return
+        val has = clip.hasValueKeyAt(track, current.playheadMs, current.frameMs)
+        record(if (has) "Remove key" else "Add key") {
+            mutateTimeline { timeline ->
+                timeline.copy(clips = timeline.clips.map {
+                    if (it.id != clipId) it
+                    else if (has) it.withValueKeyRemoved(track, timeline.playheadMs, current.frameMs)
+                    else it.withValueKeyAdded(track, timeline.playheadMs, current.frameMs)
+                })
+            }
+        }
+    }
+
+    /** Every key off one track, the clip left at the level its first frame had. */
+    fun clearValueKeys(clipId: String, track: ValueTrack) = record("Clear keys") {
+        mutateTimeline { timeline ->
+            timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.withValueKeysCleared(track) else it })
+        }
+    }
+
+    // ---- Arrival, leaving, loop ---------------------------------------------------
+
+    fun setArrival(clipId: String, arrival: ClipArrival) = record("Animation in") {
+        updateClip(clipId) { it.copy(arrival = arrival) }
+    }
+
+    fun setLeaving(clipId: String, leaving: ClipLeaving) = record("Animation out") {
+        updateClip(clipId) { it.copy(leaving = leaving) }
+    }
+
+    fun setLoop(clipId: String, loop: ClipLoop) = record("Animation loop") {
+        updateClip(clipId) { it.copy(loop = loop) }
+    }
+
+    /** The three lengths, each slider its own gesture on its own clip. */
+    fun setArrivalMs(clipId: String, ms: Long) = record("Animation in", gesture = "Arrival $clipId") {
+        updateClip(clipId) { it.copy(arrivalMs = ms.coerceIn(ClipAnimation.MIN_MOTION_MS, ClipAnimation.MAX_MOTION_MS)) }
+    }
+
+    fun setLeavingMs(clipId: String, ms: Long) = record("Animation out", gesture = "Leaving $clipId") {
+        updateClip(clipId) { it.copy(leavingMs = ms.coerceIn(ClipAnimation.MIN_MOTION_MS, ClipAnimation.MAX_MOTION_MS)) }
+    }
+
+    fun setLoopMs(clipId: String, ms: Long) = record("Animation loop", gesture = "Loop $clipId") {
+        updateClip(clipId) { it.copy(loopMs = ms.coerceIn(ClipAnimation.MIN_LOOP_MS, ClipAnimation.MAX_LOOP_MS)) }
+    }
+
+    /**
+     * Animation's Reset: the arrival, leaving and loop off, and the keys with
+     * them (as [clearKeyframes] takes them), in one step. Everything the sheet
+     * shows, since Reset is the sheet's.
+     */
+    fun clearAnimation(clipId: String) = record("Reset animation") {
+        mutateTimeline { timeline ->
+            val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+            val settled = clip.placementAt(clip.timelineStartMs)
+            val updated = clip.copy(
+                keyframes = emptyList(),
+                scale = settled.scale,
+                offsetXFraction = settled.offsetXFraction,
+                offsetYFraction = settled.offsetYFraction,
+                rotation = settled.rotationDegrees,
+                arrival = ClipArrival.None,
+                leaving = ClipLeaving.None,
+                loop = ClipLoop.None
+            )
+            timeline.copy(clips = timeline.clips.map { if (it.id == clipId) updated else it })
+        }
+    }
+
+    // ---- Speed: the file's frames and the sound's pitch ------------------------------
+
+    fun setFrameBlend(clipId: String, on: Boolean) = record(if (on) "Blend frames" else "Blend frames off") {
+        updateClip(clipId) { it.copy(frameBlend = on) }
+    }
+
+    fun setPitchFollowsSpeed(clipId: String, on: Boolean) = record(if (on) "Pitch follows speed" else "Pitch held") {
+        updateClip(clipId) { it.copy(pitchFollowsSpeed = on) }
+    }
+
+    /**
+     * A point dragged on the curve: from [fromMs] to [toMs] at [speed], both in
+     * the clip's source clock. One drag is one step.
+     */
+    fun moveSpeedPoint(clipId: String, fromMs: Long, toMs: Long, speed: Float) {
+        val clip = _state.value.let { current ->
+            (current.videoClips + current.audioClips).firstOrNull { it.id == clipId }
+        } ?: return
+        record("Speed point", gesture = "Speed point $clipId") {
+            retime(clipId, clip.speedRamp.withPointMoved(fromMs, toMs, speed, clip.sourceSpanMs))
+        }
+    }
+
+    private fun updateClip(clipId: String, change: (Clip) -> Clip) = mutateTimeline { timeline ->
+        timeline.copy(clips = timeline.clips.map { if (it.id == clipId) change(it) else it })
     }
 
     /**

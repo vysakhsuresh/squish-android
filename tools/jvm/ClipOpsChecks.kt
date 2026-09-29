@@ -8,7 +8,10 @@ import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
 import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ClipArrival
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.ClipLeaving
+import com.squish.app.timeline.ClipLoop
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
 import com.squish.app.timeline.MIN_CLIP_MS
@@ -243,7 +246,9 @@ fun main() {
         val src = video("src", 10_000, ramp = SpeedRamp(listOf(SpeedPoint(0, 1f), SpeedPoint(10_000, 0.5f))), keys = keys)
             .copy(volume = 0.4f, fadeInMs = 300, fadeOutMs = 600, voice = VoiceEffect.Robot, opacity = 0.7f,
                 mirrored = true, quarterTurns = 2, offsetXFraction = 0.2f,
-                lookId = "warm", lookIntensity = 0.6f, adjust = Adjust(exposure = 0.3f), crop = window)
+                lookId = "warm", lookIntensity = 0.6f, adjust = Adjust(exposure = 0.3f), crop = window,
+                arrival = ClipArrival.Zoom, arrivalMs = 800, leaving = ClipLeaving.Fade, leavingMs = 400, loop = ClipLoop.None,
+                frameBlend = true, pitchFollowsSpeed = true)
         val attrs = src.attributes
         val dst = video("dst", 4_000, start = src.durationMs, srcIn = 1_000)
         val after = TimelineState(clips = listOf(src, dst)).withAttributesPasted("dst", attrs)
@@ -253,6 +258,9 @@ fun main() {
         check(d.mirrored && d.quarterTurns == 2 && d.offsetXFraction == 0.2f, "paste: mirror, turn or placement not carried")
         // The look, the sliders and the crop window (B12) are settings too.
         check(d.lookId == "warm" && d.lookIntensity == 0.6f && d.adjust.exposure == 0.3f && d.crop == window, "paste: look, sliders or crop not carried")
+        // So are the arrival, the leaving and their lengths, the frame blend and the pitch switch (B13).
+        check(d.arrival == ClipArrival.Zoom && d.arrivalMs == 800L && d.leaving == ClipLeaving.Fade && d.leavingMs == 400L, "paste: arrival or leaving not carried")
+        check(d.frameBlend && d.pitchFollowsSpeed, "paste: frame blend or pitch switch not carried")
         // Shapes, refitted: the curve's end point at the new span, the keys at the
         // same share of the new played length (the source's second key sat at
         // 10 s of its played 13.8 s).
@@ -270,6 +278,7 @@ fun main() {
         check(s.timelineStartMs == 1_000L && s.uri == song.uri, "paste onto a sound moved or replaced it")
         check(s.speedRamp.ordered.last().atMs == 8_000L, "paste onto a sound: curve not refitted")
         check(s.lookId == null && s.adjust == Adjust.NONE && s.crop == null, "paste onto a sound gave it a picture's look or crop")
+        check(s.pitchFollowsSpeed && s.arrival == ClipArrival.None && !s.frameBlend, "paste onto a sound: the pitch switch travels with the curve, the picture's arrival does not")
         // Nothing to change: nothing changes.
         check(TimelineState(clips = listOf(src)).withAttributesPasted("src", attrs) == TimelineState(clips = listOf(src)), "pasting a clip's own attributes changed it")
     }

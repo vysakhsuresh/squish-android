@@ -23,11 +23,12 @@ run() {
 # What a Clip pulls in: since B12 its own look (Look.kt) and crop (ClipCrop.kt,
 # CropRect.kt) as well as the timeline's own files.
 TIMELINE="$SRC/timeline/SpeedRamp.kt $SRC/timeline/TimelineModels.kt $SRC/timeline/VoiceEffect.kt
-  $SRC/timeline/TimelineLanes.kt $SRC/timeline/Keyframe.kt $SRC/timeline/Mask.kt $SRC/timeline/ChromaKey.kt
+  $SRC/timeline/TimelineLanes.kt $SRC/timeline/Keyframe.kt $SRC/timeline/ValueTracks.kt $SRC/timeline/Mask.kt $SRC/timeline/ChromaKey.kt
   $SRC/timeline/Background.kt $SRC/editor/TimedEffect.kt
   $SRC/media/effects/Look.kt $SRC/editor/ClipCrop.kt $SRC/editor/CropRect.kt
   tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt
   $SRC/media/video/ObjectTracker.kt $SRC/media/video/MotionEstimator.kt
+  $SRC/media/video/TrajectorySmoother.kt $SRC/media/video/StabilizerSolve.kt
   tools/jvm/stub/Uri.kt"
 
 run looks      "$SRC/media/effects/Look.kt" tools/jvm/LookChecks.kt
@@ -63,6 +64,10 @@ run overlay    $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt
 run text       $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" \
                "$SRC/media/audio/SpeechSegmenter.kt" tools/jvm/stub/MonoPcm.kt "$SRC/media/ExportPlan.kt" tools/jvm/TextChecks.kt
 run clipops    $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/ClipOpsChecks.kt
+run animation  $TIMELINE tools/jvm/AnimationChecks.kt
+run stabilizer "$SRC/timeline/Keyframe.kt" "$SRC/media/video/MotionEstimator.kt" \
+               "$SRC/media/video/TrajectorySmoother.kt" "$SRC/media/video/StabilizerSolve.kt" tools/jvm/StabilizerChecks.kt
+run frameblend "$SRC/media/video/FrameBlendPlan.kt" tools/jvm/FrameBlendChecks.kt
 run timecode   $TIMELINE "$SRC/editor/Timecode.kt" tools/jvm/TimecodeChecks.kt
 run framerules $TIMELINE "$SRC/editor/PreviewBox.kt" "$SRC/media/ExportPresets.kt" tools/jvm/stub/Quality.kt \
                "$SRC/editor/FrameRules.kt" tools/jvm/FrameRulesChecks.kt

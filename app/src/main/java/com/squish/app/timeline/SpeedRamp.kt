@@ -225,9 +225,31 @@ data class SpeedRamp(val points: List<SpeedPoint> = emptyList()) {
     fun withoutPoint(atMs: Long): SpeedRamp =
         SpeedRamp(ordered.filterNot { it.atMs == atMs })
 
+    /**
+     * A point dragged: the one at [fromMs] taken to [toMs] at [speed]. What the
+     * curve editor does with a finger on a point. It stops short of its
+     * neighbours by a tread, so two points never argue over one step and the
+     * order of the points - which is the shape of the curve - is kept.
+     */
+    fun withPointMoved(fromMs: Long, toMs: Long, speed: Float, spanMs: Long): SpeedRamp {
+        val pts = ordered
+        val index = pts.indexOfFirst { it.atMs == fromMs }
+        if (index < 0) return withPoint(toMs, speed, spanMs)
+        val floor = pts.getOrNull(index - 1)?.let { it.atMs + STEP_MS } ?: 0L
+        val ceiling = pts.getOrNull(index + 1)?.let { it.atMs - STEP_MS } ?: spanMs.coerceAtLeast(0L)
+        val at = if (ceiling < floor) pts[index].atMs else toMs.coerceIn(floor, ceiling)
+        val moved = pts.toMutableList()
+        moved[index] = SpeedPoint(at, speed.coerceIn(MIN_SPEED, MAX_SPEED))
+        return SpeedRamp(moved)
+    }
+
     companion object {
         const val MIN_SPEED = 0.1f
-        const val MAX_SPEED = 10f
+        /**
+         * A hundred times: a minute of footage as a half-second flash. It was ten,
+         * which is where a time-lapse of a drive starts rather than ends.
+         */
+        const val MAX_SPEED = 100f
         const val STEP_MS = 40L
 
         val Normal = SpeedRamp()
@@ -264,6 +286,13 @@ data class SpeedRamp(val points: List<SpeedPoint> = emptyList()) {
                     SpeedPoint(at(0.7), 0.25f),
                     SpeedPoint(span, 2f)
                 )
+                // The gentler hero: normal in, a held moment in the middle, normal out.
+                RampShape.Hero -> listOf(
+                    SpeedPoint(0L, 1f),
+                    SpeedPoint(at(0.4), 0.4f),
+                    SpeedPoint(at(0.6), 0.4f),
+                    SpeedPoint(span, 1f)
+                )
                 // The opposite: rush through the middle of a long take.
                 RampShape.Jump -> listOf(
                     SpeedPoint(0L, 1f),
@@ -275,18 +304,36 @@ data class SpeedRamp(val points: List<SpeedPoint> = emptyList()) {
                     SpeedPoint(0L, 0.5f),
                     SpeedPoint(span, 3f)
                 )
+                // A rush in that lands on normal speed, and its mirror.
+                RampShape.FlashIn -> listOf(
+                    SpeedPoint(0L, 4f),
+                    SpeedPoint(at(0.3), 1f),
+                    SpeedPoint(span, 1f)
+                )
+                RampShape.FlashOut -> listOf(
+                    SpeedPoint(0L, 1f),
+                    SpeedPoint(at(0.7), 1f),
+                    SpeedPoint(span, 4f)
+                )
             }
             return SpeedRamp(points)
         }
     }
 }
 
-/** The ramp shapes offered as one tap. */
+/**
+ * The ramp shapes offered as one tap, named the way every editor names them so
+ * a curve learnt elsewhere is found here. The shape [preset] lays for each is
+ * fractions of the clip; the names are not persisted, only the points are.
+ */
 enum class RampShape(val label: String, val hint: String) {
     Normal("Normal", "One rate, no ramp"),
-    SlowStart("Slow in", "Starts slow, releases to full speed"),
-    SlowEnd("Slow out", "Full speed, settling into slow motion"),
+    Montage("Montage", "Slow to fast across the whole clip"),
+    Hero("Hero", "Normal in, held slow through the moment, normal out"),
     BulletTime("Bullet", "Fast in, slow through the middle, fast out"),
-    Jump("Jump", "Rushes the middle of a long take"),
-    Montage("Sweep", "Slow to fast across the whole clip")
+    Jump("Jump cut", "Rushes the middle of a long take"),
+    FlashIn("Flash in", "Rushes in and lands on normal speed"),
+    FlashOut("Flash out", "Normal speed, then rushes out"),
+    SlowStart("Slow in", "Starts slow, releases to full speed"),
+    SlowEnd("Slow out", "Full speed, settling into slow motion")
 }
