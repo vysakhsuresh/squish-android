@@ -4,6 +4,7 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.SplitSide
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.withSplitScreen
+import com.squish.app.timeline.withGridTile
 import kotlin.math.abs
 import kotlin.system.exitProcess
 
@@ -40,5 +41,16 @@ fun main() {
     check(p.scale == 1f && p.offsetXFraction == 0f && p.mask == SplitSide.Right.mask, "the overlay was not made the right half")
     check(TimelineState(clips = listOf(shot)).withSplitScreen("s", SplitSide.Left).clips.first().mask == null, "a main-track shot was masked")
 
+    gridChecks()
     if (problems.isEmpty()) println("SplitScreenChecks: all checks passed") else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
+}
+
+fun gridChecks() {
+    val shot = Clip(id = "s", kind = ClipKind.Video, uri = null, label = "s", sourceInMs = 0, sourceOutMs = 5_000, timelineStartMs = 0, sourceDurationMs = 5_000)
+    val t = TimelineState(clips = listOf(shot)).withGridTile("s", com.squish.app.timeline.GridTile.BottomRight).clips.first()
+    // Placement: scaled about the middle, moved by fractions of half the frame (ExportPlan.placementMatrix).
+    // A 0.5 picture centred at +0.5 half-widths spans 0.5..1.0 of the frame - the bottom-right quarter.
+    val left = 0.5f + t.offsetXFraction / 2f - t.scale / 2f
+    val right = 0.5f + t.offsetXFraction / 2f + t.scale / 2f
+    check(abs(left - 0.5f) < 1e-4f && abs(right - 1f) < 1e-4f, "the tile did not span the right quarter: $left..$right")
 }

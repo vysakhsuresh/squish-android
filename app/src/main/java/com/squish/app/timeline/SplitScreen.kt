@@ -35,3 +35,21 @@ fun TimelineState.withSplitScreen(clipId: String, side: SplitSide): TimelineStat
         )
     }
 )
+
+/**
+ * A 2x2 grid collage: a picture shrunk to half size into one quarter of the
+ * frame, whole (not cut). A picture the frame's own shape fills its tile
+ * exactly; another shape sits letterboxed inside it. Offsets are fractions of
+ * half the frame, so ±0.5 puts the centre on a quarter line.
+ */
+enum class GridTile(val label: String, val x: Float, val y: Float) {
+    TopLeft("↖", -0.5f, -0.5f), TopRight("↗", 0.5f, -0.5f), BottomLeft("↙", -0.5f, 0.5f), BottomRight("↘", 0.5f, 0.5f)
+}
+
+/** [clipId] - a shot or an overlay - placed still in [tile] of a 2x2 grid. */
+fun TimelineState.withGridTile(clipId: String, tile: GridTile): TimelineState = copy(
+    clips = clips.map {
+        if (it.id != clipId || it.kind != ClipKind.Video) it
+        else it.copy(scale = 0.5f, offsetXFraction = tile.x, offsetYFraction = tile.y, rotation = 0f, keyframes = emptyList(), mask = null)
+    }
+)

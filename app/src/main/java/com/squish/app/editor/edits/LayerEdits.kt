@@ -8,6 +8,7 @@ import com.squish.app.media.SquishError
 import com.squish.app.media.StillClips
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.timeline.withSplitScreen
+import com.squish.app.timeline.withGridTile
 import com.squish.app.timeline.SplitSide
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
@@ -328,6 +329,11 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
             )
             timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(chromaKey = next) else it })
         }
+    }
+
+    /** A shot or overlay placed whole in one quarter of a 2x2 grid (GridTile). */
+    fun gridTile(clipId: String, tile: com.squish.app.timeline.GridTile) = record("Grid") {
+        mutateTimeline { it.withGridTile(clipId, tile) }
     }
 
     /** An overlay made one half of a split screen, the shot under it the other (SplitSide). */
