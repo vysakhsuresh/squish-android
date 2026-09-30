@@ -75,6 +75,13 @@ function first; if it can, it can be checked.
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib -classpath <kotlin-stdlib> -d <dir> <the suite's files from run.sh>`
   then `java -cp "<dir>;<kotlin-stdlib>" <Suite>Kt`. Every jar is under
   `~/.gradle/caches/modules-2/files-2.1/`.
+- **No ffprobe here, but `tools/jvm/Mp4Probe.kt` answers what the device
+  checks ask of a file** - each track's sample count, length, rate and the
+  spread of its frame durations, from the MP4's own tables. Compile it alone
+  the same way and run `java -cp "<dir>;<kotlin-stdlib>" Mp4ProbeKt file.mp4`.
+  Pull a gallery file with `MSYS_NO_PATHCONV=1 adb exec-out "content read --uri
+  content://media/external/video/media/<id>" > f.mp4` (`exec-out`, not `shell`:
+  a pty turns every LF into CRLF and the file comes out bigger and broken).
 - **A worktree has no `local.properties`**, so a build there wants
   `ANDROID_HOME=C:\Users\vysak\AppData\Local\Android\Sdk` in the environment.
 - **The device is the user's own phone** (moto g84 5G, serial ZY32J8HF2S),

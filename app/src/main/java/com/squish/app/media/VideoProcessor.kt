@@ -13,7 +13,6 @@ import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.audio.SpeedChangingAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Crop
-import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.ScaleAndRotateTransformation
@@ -451,7 +450,8 @@ class VideoProcessor(private val context: Context) {
      */
     private fun frameDrop(state: EditorUiState, spedUp: Boolean = false): Effect? =
         if (state.outputFps == ExportSettings.SOURCE_FPS && !spedUp) null
-        else FrameDropEffect.createDefaultFrameDropEffect(frameRateOf(state).toFloat())
+        // On a grid, not Media3's FrameDropEffect: that one stepped a 1.5x shot to 22.5 fps (GridFrameDropEffect).
+        else com.squish.app.media.video.GridFrameDropEffect(frameRateOf(state).toFloat())
 
     /**
      * The sample rates of every sound that reaches the file, as far as the
