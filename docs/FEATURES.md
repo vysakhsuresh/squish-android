@@ -55,6 +55,8 @@ music, footage and fonts, and translate caption words.
   with blur, colour or cut out, fully on the phone.
 - Stabilize with strength; object tracking for masks and words.
 - Freeze frame, reverse, replace, extract audio.
+- Motion presets (push in, pull out, pans, rise, settle) and **Animate every
+  photo** for a moving slideshow in one tap.
 - Overlays (picture-in-picture) with a drag/pinch/turn box, snapping guides,
   layer order, blend with overlay transitions.
 - **Split screen** in one tap (left/right/top/bottom) and a **2x2 grid**
