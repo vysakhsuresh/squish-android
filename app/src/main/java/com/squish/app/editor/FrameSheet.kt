@@ -178,6 +178,10 @@ fun RatioPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 )
             }
         }
+        // Where the chosen shape is posted: the name people look for, not the ratio.
+        aspect_use(state.cropAspect)?.let {
+            Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+        }
 
         when {
             state.cropAspect == CropAspect.Custom -> Text(
@@ -409,4 +413,15 @@ fun OptionToggle(label: String, active: Boolean, modifier: Modifier = Modifier, 
             style = MaterialTheme.typography.labelLarge
         )
     }
+}
+
+/** Where a shape is posted, in the words an upload page uses. */
+private fun aspect_use(aspect: CropAspect): String? = when (aspect.label) {
+    "9:16" -> "TikTok, Reels, Shorts, Stories"
+    "1:1" -> "Instagram and Facebook feed posts"
+    "16:9" -> "YouTube, TV, a laptop screen"
+    "4:5" -> "Instagram portrait post - the most room in the feed"
+    "3:4", "4:3" -> "Classic photo shapes"
+    "2:1", "2.35:1" -> "Cinematic widescreen"
+    else -> null
 }
