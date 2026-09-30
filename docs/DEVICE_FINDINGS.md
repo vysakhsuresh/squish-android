@@ -412,3 +412,21 @@ silently with "Listening"; a take grows on a sound row; Stop lands a
 "Voiceover" clip with a mic glyph and a waveform, selected, playhead back on
 its start; the WAV is under files/voice; the phone's mic indicator goes out;
 "Record this take again" is offered.
+
+## Online features, 30 September (build bfdd154)
+
+Off by default (Settings › Online). Seen on the phone:
+- Sound › Music › "Free music online" with the switch off offers "Browse free
+  music online"; tapping it asks "Free music needs the internet" (what is sent,
+  that videos never are, that Settings turns it off); Continue turns it on.
+- The list: live Creative Commons results from the Internet Archive with
+  artist and licence (no-derivatives and non-commercial ones filtered out).
+  "+ Add" downloads the MP3 to files/music/online and lands it on the timeline
+  at the playhead, selected.
+- Text › Style › "Free fonts online…" opens sixteen Google Fonts; Lobster was
+  downloaded (TrueType, files/fonts) and applied to the title in the preview.
+- Settings › Online follows the prompt ("On · only what you ask for"); the
+  switch turns it off ("Off · Squish works fully offline", pref false).
+- MediaPipe's datatransport logger is removed from the manifest; the only
+  network use is Online.get / Online.download, which refuse while off.
+Left off at the end of testing, the owner's default.

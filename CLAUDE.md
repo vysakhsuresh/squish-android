@@ -926,6 +926,13 @@ should work through it and then delete what holds up.
 
 ## Conventions worth not rediscovering
 
+- **The network is for online features only.** Every request goes through
+  `online/Online.kt` (`Online.get`, `Online.download`), which throws while the
+  Settings switch is off; a tool that needs the internet asks first with
+  `rememberOnlineGate().request(...)`. Nothing uploads a video, photo or
+  project - Settings' privacy card promises that. Google's datatransport
+  (from MediaPipe) is removed in the manifest; keep it removed.
+
 - **A tool's `id` is a handle, not a name.** `QuickTool.id` is in the navigation
   route, in the filename of every saved draft, and in the filename of every file
   the tool writes. Display names change freely; ids do not, or drafts people are
