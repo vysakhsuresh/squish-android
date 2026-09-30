@@ -13,6 +13,8 @@ import com.squish.app.timeline.DuckRules
 import com.squish.app.media.audio.SpeechSegmenter
 import com.squish.app.timeline.SilenceRules
 import com.squish.app.timeline.withSilencesRemoved
+import com.squish.app.media.audio.Loudness
+import com.squish.app.media.audio.MonoPcm
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.ClipKind
@@ -876,6 +878,45 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 }
             }
             onDone(DuckRules.merged(speech.filter { it.last > current.timelineStartMs && it.first < current.timelineEndMs }).size)
+        }
+    }
+
+    // ---- Even out volume --------------------------------------------------------------
+
+    /**
+     * Every shot's level set so the loud ones sound as loud as the quieter ones
+     * (Loudness): each shot's own played window measured, levels only brought
+     * down. Shots with keyed levels are left, as are photos and silent shots.
+     * One undo step; [onDone] says how many shots changed.
+     */
+    fun evenOutVolume(onDone: (Int) -> Unit) {
+        viewModelScope.launch {
+            val shots = _state.value.videoClips.filter {
+                it.isHeard && it.volumeKeys.isEmpty() && it.uri != null && !com.squish.app.media.StillClips.isStill(it.uri)
+            }
+            if (shots.size < 2) return@launch onDone(0)
+            val decoded = HashMap<Uri, MonoPcm?>()
+            val loudness = shots.map { clip ->
+                val uri = clip.uri!!
+                val pcm = if (decoded.containsKey(uri)) decoded[uri] else PcmDecoder.decodeMono(
+                    app, uri, targetSampleRate = 16_000, maxDurationMs = 30 * 60_000L
+                ).also { decoded[uri] = it }
+                if (pcm == null) 0f else withContext(Dispatchers.Default) {
+                    val from = (clip.sourceInMs * pcm.sampleRate / 1000).toInt().coerceIn(0, pcm.samples.size)
+                    val to = (clip.sourceOutMs * pcm.sampleRate / 1000).toInt().coerceIn(from, pcm.samples.size)
+                    Loudness.of(pcm.samples.copyOfRange(from, to), pcm.sampleRate)
+                }
+            }
+            val levels = Loudness.levels(loudness)
+            val changes = shots.zip(levels).filter { (clip, level) -> kotlin.math.abs(clip.volume - level) > 0.02f }
+            if (changes.isEmpty()) return@launch onDone(0)
+            record("Even out volume") {
+                val byId = changes.associate { (clip, level) -> clip.id to level }
+                mutateTimeline { timeline ->
+                    timeline.copy(clips = timeline.clips.map { c -> byId[c.id]?.let { c.copy(volume = it) } ?: c })
+                }
+            }
+            onDone(changes.size)
         }
     }
 

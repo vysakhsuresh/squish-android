@@ -409,6 +409,31 @@ fun CameraSoundPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 onFinished = viewModel::endGesture,
                 onChange = viewModel.audio::setOriginalVolume
             )
+            // Even out volume: a loud shot brought down to the quieter ones.
+            if (state.videoClips.count { !it.isOverlay } > 1) {
+                var working by remember { mutableStateOf(false) }
+                var note by remember { mutableStateOf<String?>(null) }
+                SquishOutlinedButton(
+                    text = if (working) "Measuring every shot…" else "Even out volume across shots",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        if (working) return@SquishOutlinedButton
+                        working = true
+                        note = null
+                        viewModel.audio.evenOutVolume { changed ->
+                            working = false
+                            val shots = if (changed == 1) "shot" else "shots"
+                            note = if (changed == 0) "The shots are already at an even level."
+                            else "Brought $changed $shots down to match the rest. Undo takes it back."
+                        }
+                    }
+                )
+                Text(
+                    note ?: "Measures how loud each shot sounds and turns the loud ones down to match.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (note != null) SquishColors.Teal else SquishColors.TextMuted
+                )
+            }
         }
     }
 }
