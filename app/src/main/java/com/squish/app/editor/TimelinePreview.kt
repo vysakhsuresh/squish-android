@@ -63,6 +63,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -384,9 +385,12 @@ fun TimelinePreview(
         // landscape container meant most of the frame was outside it. Matching the
         // height first and letting the width follow gives the largest rectangle of
         // the footage's own shape that fits, and nothing of the frame is lost.
+        // Sized so the part the file keeps fills the preview: a 1:1 cut from a
+        // 9:16 edit was a small square in the middle of the old tall picture, half
+        // the room there was. The rest of the canvas hangs outside, clipped.
         Box(
             modifier = Modifier
-                .aspectRatio(ratio = canvas, matchHeightConstraintsFirst = true)
+                .keptFilling(canvas, clipped)
                 .onSizeChanged { pictureSize = it }
         ) {
             // Everything the export composites, clipped to the frame it keeps -
@@ -564,7 +568,7 @@ fun TimelinePreview(
                     turnedAspect(clip.uri?.let { stillAspects[it.toString()] }, clip.quarterTurns)?.let { CropRules.croppedAspect(it, clip.crop) }
                 )
             }
-            val keptFrame = keptOnArea(kept, pictureSize, areaSize)
+            val keptFrame = keptOnArea(kept, pictureSize, areaSize, canvasOrigin(areaSize, canvas, clipped))
             // Text and stickers, above every picture layer as they are drawn:
             // the box round the letters the layer painted (TextGeometry), so
             // what is grabbed is what is on screen.
@@ -1138,9 +1142,9 @@ private object StillPictures {
  * layers out inside it - rounded the same way, so the box sits on the layer to
  * the pixel.
  */
-private fun keptOnArea(frame: PreviewBox.Frame, picture: IntSize, area: IntSize): Rect {
-    val canvasLeft = (area.width - picture.width) / 2
-    val canvasTop = (area.height - picture.height) / 2
+private fun keptOnArea(frame: PreviewBox.Frame, picture: IntSize, area: IntSize, origin: IntOffset): Rect {
+    val canvasLeft = origin.x
+    val canvasTop = origin.y
     val left = canvasLeft + (frame.left * picture.width).roundToInt()
     val top = canvasTop + (frame.top * picture.height).roundToInt()
     val width = ((frame.right - frame.left) * picture.width).roundToInt().coerceIn(1, picture.width.coerceAtLeast(1))
@@ -1417,4 +1421,39 @@ private class FrameShape(private val frame: PreviewBox.Frame) : Shape {
                 frame.bottom * size.height
             )
         )
+}
+
+/**
+ * The canvas's size and where it sits in an [areaW] x [areaH] preview so that
+ * [kept] - the part of it the file keeps - is the largest rectangle of its own
+ * shape that fits, centred. With nothing cut away it is the canvas fitted
+ * whole, as the preview always was.
+ */
+private fun canvasPlacement(areaW: Int, areaH: Int, canvas: Float, kept: PreviewBox.Frame): IntArray {
+    val kw = (kept.right - kept.left).coerceIn(0.05f, 1f)
+    val kh = (kept.bottom - kept.top).coerceIn(0.05f, 1f)
+    val keptAspect = canvas * kw / kh
+    val (fitW, fitH) = if (areaW.toFloat() / areaH > keptAspect) areaH * keptAspect to areaH.toFloat() else areaW.toFloat() to areaW / keptAspect
+    val cw = (fitW / kw).roundToInt().coerceAtLeast(1)
+    val ch = (fitH / kh).roundToInt().coerceAtLeast(1)
+    val x = ((areaW - fitW) / 2f - kept.left * cw).roundToInt()
+    val y = ((areaH - fitH) / 2f - kept.top * ch).roundToInt()
+    return intArrayOf(cw, ch, x, y)
+}
+
+private fun canvasOrigin(area: IntSize, canvas: Float, kept: PreviewBox.Frame): IntOffset {
+    if (area.width <= 0 || area.height <= 0) return IntOffset.Zero
+    val p = canvasPlacement(area.width, area.height, canvas, kept)
+    return IntOffset(p[2], p[3])
+}
+
+/** Lays the canvas out by [canvasPlacement] inside the preview area it is given. */
+private fun Modifier.keptFilling(canvas: Float, kept: PreviewBox.Frame): Modifier = layout { measurable, constraints ->
+    if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+        val placeable = measurable.measure(constraints)
+        return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }
+    val p = canvasPlacement(constraints.maxWidth, constraints.maxHeight, canvas, kept)
+    val placeable = measurable.measure(Constraints.fixed(p[0], p[1]))
+    layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(p[2], p[3]) }
 }
