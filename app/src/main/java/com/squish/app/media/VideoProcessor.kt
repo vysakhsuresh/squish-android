@@ -47,6 +47,8 @@ import com.squish.app.media.effects.ClipCropEffect
 import com.squish.app.media.effects.ColorGrade
 import com.squish.app.media.effects.FxEffect
 import com.squish.app.media.effects.MaskEffect
+import com.squish.app.timeline.MaskMode
+import com.squish.app.media.effects.PremultiplyEffect
 import com.squish.app.media.effects.ReframeEffect
 import com.squish.app.media.effects.TransitionEffect
 import com.squish.app.timeline.Clip
@@ -542,6 +544,11 @@ class VideoProcessor(private val context: Context) {
             if (blends || ExportPlan.drawsOwn(clip)) {
                 add(TransitionEffect(clip, if (blends) ExportPlan.neighbourhood(rolls!!, clip) else null, opaque = rolls == null))
             }
+            // On the one-sequence path nothing composites the shot over black, and
+            // the encoder drops alpha: a Cut out mask or a keyed hole wrote the
+            // whole picture, the shape ignored. Premultiplied, what the mask or
+            // key hid is black, as the composited path and the preview show it.
+            if (rolls == null && (clip.mask?.mode == MaskMode.Cutout || clip.chromaKey != null)) add(PremultiplyEffect())
             // Last, after the retime, so the frames dropped are the played ones.
             if (rolls == null) frameDrop(state, clip.spedUp)?.let { add(it) }
         }

@@ -86,5 +86,10 @@ void main() {
   }
   if (uFlash > 0.001) c = mix(c, vec3(1.0), clamp(uFlash, 0.0, 1.0));
 
-  gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+  // Opaque out, as the file is - but what came in see-through (a mask's cut,
+  // outside its shape) goes to black first, which is what the file composites it
+  // over. Written opaque as it was, the preview showed the whole picture under a
+  // Cutout mask while the file showed the shape alone.
+  float a = texture2D(uTexSampler, vTexSamplingCoord).a;
+  gl_FragColor = vec4(clamp(c, 0.0, 1.0) * a, 1.0);
 }

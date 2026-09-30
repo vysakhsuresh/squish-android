@@ -186,7 +186,8 @@ fun EditorToolSheet(
     // The same for a shot's speed, animation and crop, each of which is seen, not read.
     val shown = when (tool) {
         Tool.Looks, Tool.Filters, Tool.Adjust -> graded
-        Tool.Speed, Tool.Animation, Tool.Crop -> clip?.takeIf { it.kind == ClipKind.Video }
+        Tool.Speed, Tool.Animation, Tool.Crop, Tool.Mask, Tool.Cutout, Tool.Stabilize, Tool.Track,
+        Tool.Placement, Tool.Opacity, Tool.Transition -> clip?.takeIf { it.kind == ClipKind.Video }
         else -> null
     }
     LaunchedEffect(tool, shown?.id) {
