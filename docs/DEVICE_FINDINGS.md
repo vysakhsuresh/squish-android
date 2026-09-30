@@ -431,21 +431,61 @@ Off by default (Settings › Online). Seen on the phone:
   network use is Online.get / Online.download, which refuse while off.
 Left off at the end of testing, the owner's default.
 
-## To check on the phone (built 30 September, day)
+## Seen on the phone, 30 September night (moto g84)
 
-Each is built and its logic executed on the JVM; none has been seen on the phone.
+What the 30 September (day) build was checked against, on the phone, with
+screenshots and the drafts read back. Items marked "fixed" found a fault that
+is fixed in the commits named, and the fix itself was seen on the phone.
 
-1. Voice › Enhance on a talking shot: hiss between words drops, words intact, in preview and file.
-2. A song under a voiceover › Volume › Duck under speech: dips under each line, keys on the strip; again = "already".
-3. A talking shot › Volume › Remove silences: pauses gone, captions after it moved with the words; Undo.
-4. Sound › Mic & camera › Even out volume across shots: a loud shot comes down; a hand-lowered one stays.
-5. Overlay › Placement › Split screen Right, then Grid tiles on shot and overlays: preview and export agree.
-6. Video track + › Free stock video: prompt, grid with thumbnails, a clip downloads and lands at the playhead.
-7. Text › Translate (English → Hindi): lines change, one undo restores.
-8. Beats › Fit shots to the beat: each cut on a dot.
-9. Done screen › Save as GIF: progress on the button, GIF in Pictures/Squish plays and loops.
-10. Settings › Read-aloud voice Deep, then Read aloud a line.
-11. Export on this phone still works (CBR asked only where supported); size near the estimate.
-12. A 9:16 edit set to 1:1 fills the preview; a tiny custom crop does not blow up memory.
-13. Looks › Adjust › Auto adjust on a dark or tinted shot: brighter, neutral; sliders show the values; Undo.
-14. Save as GIF, then leave the screen at once: the toast still says it was saved.
+1. **Enhance voice** - picked, played 6 s, no error in the log. *Not heard*:
+   nothing here could listen to the speaker. Still to check by ear.
+2. **Duck under speech** - song under a voiceover dips at 7 keys to 25%, note
+   "Turned down under 2 stretches". Pressed again it said "No talking found";
+   fixed (a5b8a02) to "Already turned down under all the talking", seen.
+3. **Remove silences** - a 20.7 s talking clip with three pauses became four
+   pieces, 10.7 s, cut at 2.84 / 6.32-8.60 / 12.14-14.20 / 17.18, no
+   transitions added; Undo put the one clip back. It was also offered on a
+   main-track photo; fixed (624e372), seen gone.
+4. **Even out volume** - two shots of one file brought to 46% and 44%, the
+   louder-measured one lower; Undo restored 100%.
+5. **Grid and Split screen** - both were wrong on a 1:1 frame over portrait
+   footage: Grid's top-left tile sat half off the frame (fixed 959b8bf) and
+   Split's half showed a strip a quarter wide beside black (fixed 74e1d99).
+   Both seen right after the fix. The file of either is not yet exported.
+6. **Free stock footage** - no prompt (online was already on from earlier), a
+   grid with thumbnails, a clip downloaded and landed at the playhead as the
+   first shot, Undo removed it. The empty search opened on bomb tests, the
+   Hindenburg and an execution; fixed (78a916a) to open on b-roll, seen.
+7. **Translate** - "BIG NEWS" to Spanish came back "¡Uups!", the service's
+   quality-0 guess; fixed (0c913ca) to take its reviewed entry, seen as
+   "¡GRANDES NOTICIAS!"; Undo restored the line.
+8. **Fit shots to the beat** - 141.4 BPM, 70 beats found; Fit every bar
+   shortened shot 1 from 17.433 to 15.775 s and nothing grew; Undo restored.
+9. **Save as GIF** - 480x480, 96 frames, exactly 8.000 s by its own delays,
+   picture clean; in Pictures/Squish.
+10. **Read aloud** - bound to Google's engine, a 0.98 s WAV landed as a sound
+    clip under the line; Undo removed it. The voice chips are in Settings; no
+    voice other than the default was listened to.
+11. **Export** - the WhatsApp preset gave 1080x1080, fit to 16 MB, 12.9 MB,
+    no failure. Its frame table (tools/jvm/Mp4Probe.kt) showed a 2.72x shot
+    written at 27.2 fps: Media3's frame dropper steps by whole frames. Fixed
+    (6fce08c) with a grid dropper; the same export went from 864 frames to
+    884, 29.93 fps.
+12. Not checked (a 9:16 edit set to 1:1, a tiny custom crop).
+13. **Auto adjust** - tapped on a shot with no error, and undone. Not judged
+    by eye on a badly lit shot.
+14. **GIF after leaving the screen** - left at once with Back; the GIF was
+    made and the toast shown.
+
+Also found and fixed: **Animate every photo** never showed on a slideshow (it
+looked for photo overlays, f4d915a - seen giving two photos their moves), and
+the Export sheet said "33% bigger than the original" on a photo project
+(266f459, seen).
+
+Still open: the Clip sound switch shows on a main-track photo, which has
+nothing to switch. Export of Grid and Split screen not yet compared with the
+preview.
+
+Test files removed by MediaStore id (audio 1001320247; video 1001320254,
+1001320269, 1001320286; image 1001320271); the two test projects are in
+Recently deleted. Online features left off.

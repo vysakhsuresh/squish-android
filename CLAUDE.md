@@ -938,8 +938,12 @@ should work through it and then delete what holds up.
   of fixes (CBR only where the encoder offers it, the preview canvas capped,
   effects alpha only over black in the preview). The logic is executed on the
   JVM (VoiceCleaner, Loudness, Duck, Silence, BeatFit, SplitScreen, Gif,
-  AutoAdjust, TranslateChunk suites in `tools/jvm/run.sh`); nothing has been
-  seen. The device checklist is the last section of `docs/DEVICE_FINDINGS.md`.
+  AutoAdjust, TranslateChunk suites in `tools/jvm/run.sh`). Most of it was
+  driven on the phone the night of 30 September and seven faults were fixed
+  and seen fixed - the last section of `docs/DEVICE_FINDINGS.md` says what
+  was seen and what was not. Still unseen: Enhance and the read-aloud voices
+  by ear, Auto adjust judged by eye, and the file of a Grid or Split screen
+  against its preview.
 
 ## Conventions worth not rediscovering
 
