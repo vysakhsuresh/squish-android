@@ -86,6 +86,6 @@ run beatfit    $TIMELINE tools/jvm/BeatFitChecks.kt
 run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScreen.kt" tools/jvm/SplitScreenChecks.kt
 run gif        "$SRC/media/gif/GifEncoder.kt" tools/jvm/GifChecks.kt
 run autoadjust "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
-run translatechunks "$SRC/online/OnlineTranslate.kt" tools/jvm/stub/translate/OnlineStub.kt tools/jvm/stub/translate/ContextStub.kt \n               tools/jvm/stub/translate/JsonStub.kt tools/jvm/TranslateChunkChecks.kt
+run translatechunks "$SRC/online/OnlineTranslate.kt" tools/jvm/stub/translate/OnlineStub.kt tools/jvm/stub/translate/ContextStub.kt tools/jvm/stub/translate/JsonStub.kt tools/jvm/TranslateChunkChecks.kt
 
 rm -rf "$OUT"
