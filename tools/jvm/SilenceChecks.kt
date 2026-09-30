@@ -35,6 +35,7 @@ fun main() {
     check(same.withSilencesRemoved("a", listOf(0L..20_000L)) == same, "keeping everything changed the edit")
 
     layeredChecks()
+    rowChecks()
     if (problems.isEmpty()) {
         println("SilenceChecks: all checks passed")
     } else {
@@ -57,4 +58,15 @@ fun layeredChecks() {
     check(cut.clips.first { it.id == "s" }.timelineStartMs == wordAt, "the sound did not move with its word")
     check(com.squish.app.timeline.shiftedPast(5_000L, listOf(1_000L..3_000L)) == 3_000L, "a moment after a removed stretch did not move back by it")
     check(com.squish.app.timeline.shiftedPast(2_000L, listOf(1_000L..3_000L)) == 1_000L, "a moment inside a removed stretch did not land at its start")
+}
+
+fun rowChecks() {
+    // Overlay A on row 1 from 0-10 s (starts before the shot, stays); B on row 1 from 10-12 s moves back into A.
+    val shot = Clip(id = "m", kind = ClipKind.Video, uri = null, label = "m", sourceInMs = 0, sourceOutMs = 20_000, timelineStartMs = 0, sourceDurationMs = 20_000)
+    val a = Clip(id = "A", kind = ClipKind.Video, uri = null, label = "A", sourceInMs = 0, sourceOutMs = 10_000, timelineStartMs = 0, sourceDurationMs = 10_000, layer = 1)
+    val b = Clip(id = "B", kind = ClipKind.Video, uri = null, label = "B", sourceInMs = 0, sourceOutMs = 2_000, timelineStartMs = 10_000, sourceDurationMs = 2_000, layer = 1)
+    val cut = TimelineState(clips = listOf(shot, a, b)).withSilencesRemoved("m", listOf(0L..2_000L, 5_000L..20_000L))
+    val ov = cut.clips.filter { it.isOverlay }
+    val clash = ov.any { x -> ov.any { y -> x.id != y.id && x.layer == y.layer && x.timelineStartMs < y.timelineEndMs && y.timelineStartMs < x.timelineEndMs } }
+    check(!clash, "two overlays share a row at once: ${ov.map { "${it.id}@${it.layer} ${it.timelineStartMs}-${it.timelineEndMs}" }}")
 }

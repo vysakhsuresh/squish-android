@@ -1970,7 +1970,17 @@ fun TimelineState.withSilencesRemoved(clipId: String, kept: List<LongRange>): Ti
         if (c.isMain || c.timelineStartMs < clip.timelineStartMs) c
         else c.copy(timelineStartMs = shiftedPast(c.timelineStartMs, removed))
     }
-    return copy(clips = moved, selectedClipId = null).relaidFrom(this, replace)
+    val laid = copy(clips = moved, selectedClipId = null).relaidFrom(this, replace)
+    // A moved overlay that now meets one left where it was, on the same row,
+    // goes up to a row with room: one overlay a row at a time.
+    var seated = laid
+    laid.clips.filter { it.isOverlay && it.timelineStartMs != (clips.firstOrNull { o -> o.id == it.id }?.timelineStartMs ?: it.timelineStartMs) }.forEach { o ->
+        if (!seated.layerIsFree(o.layer, o.timelineStartMs, o.timelineEndMs, o.id)) {
+            val row = seated.firstFreeLayer(o.timelineStartMs, o.timelineEndMs, o.id)
+            if (row != null) seated = seated.copy(clips = seated.clips.map { c -> if (c.id == o.id) c.copy(layer = row) else c })
+        }
+    }
+    return seated.withRowsCompacted()
 }
 
 /**
@@ -1987,21 +1997,33 @@ fun TimelineState.withShotsFittedToBeats(beats: List<Long>): TimelineState {
     if (sorted.isEmpty()) return this
     val shots = baseVideoClips
     if (shots.isEmpty()) return this
-    var cursor = shots.first().timelineStartMs
+    // Walked as layOutMain lays the track: each shot starts where the one before
+    // ends, less the transition into it, plus any gap an old draft kept - so
+    // the cut is chosen where the shot will actually end.
+    val spacing = mainSpacing()
+    var cursor = 0L
+    var previous: Clip? = null
     val fitted = HashMap<String, Clip>()
     for (shot in shots) {
-        val placed = shot.copy(timelineStartMs = cursor)
-        val end = cursor + shot.durationMs
-        val beat = sorted.lastOrNull { it <= end && it >= cursor + MIN_CLIP_MS }
-        val clip = if (beat == null || beat >= end - 1L) placed else {
-            val out = placed.sourceAt(beat).coerceIn(placed.sourceInMs + 1L, placed.sourceOutMs)
-            placed.copy(
-                sourceOutMs = out,
-                speedRamp = placed.speedRamp.sliced(0L, out - placed.sourceInMs)
-            )
+        // The overlap depends on the shot's new length, so the choice is made
+        // again once or twice until the start it assumed is the start it gets.
+        var clip = shot
+        repeat(3) {
+            val start = (cursor - (previous?.let { transitionOverlapMs(clip, it) } ?: 0L) + (spacing[shot.id] ?: 0L)).coerceAtLeast(0L)
+            val placed = shot.copy(timelineStartMs = start)
+            val end = start + shot.durationMs
+            val beat = sorted.lastOrNull { it <= end && it >= start + MIN_CLIP_MS }
+            clip = if (beat == null || beat >= end - 1L) placed else {
+                val out = placed.sourceAt(beat).coerceIn(placed.sourceInMs + 1L, placed.sourceOutMs)
+                placed.copy(
+                    sourceOutMs = out,
+                    speedRamp = placed.speedRamp.sliced(0L, out - placed.sourceInMs)
+                )
+            }
         }
         fitted[shot.id] = clip
-        cursor += clip.durationMs
+        cursor = clip.timelineStartMs + clip.durationMs
+        previous = clip
     }
     val replace = { c: Clip -> fitted[c.id]?.let { listOf(it) } ?: listOf(c) }
     return copy(clips = clips.flatMap(replace)).relaidFrom(this, replace)

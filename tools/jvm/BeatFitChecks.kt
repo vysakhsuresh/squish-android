@@ -31,5 +31,20 @@ fun main() {
     // No beats, nothing changes.
     check(laid.withShotsFittedToBeats(emptyList()) == laid, "no beats changed the edit")
 
+    transitionChecks()
     if (problems.isEmpty()) println("BeatFitChecks: all checks passed") else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
+}
+
+fun transitionChecks() {
+    // A (4 s) then B (4 s) with a 1 s dissolve into B, laid as the track lays them: B starts at 3 s.
+    val a = shot("a", 4_000)
+    val b = shot("b", 4_000).copy(timelineStartMs = 3_000, transitionIn = com.squish.app.timeline.Transition(com.squish.app.timeline.TransitionType.CrossFade, 1_000))
+    val c = shot("c", 4_000).copy(timelineStartMs = 7_000)
+    val beats = (1..40).map { it * 500L }
+    val fitted = TimelineState(clips = listOf(a, b, c)).withShotsFittedToBeats(beats).baseVideoClips
+    fitted.forEach { check(it.timelineEndMs % 500L == 0L, "a cut after a dissolve landed off the beat: ${it.id} ends ${it.timelineEndMs}") }
+    // A gap an old draft kept stays, and the cut after it is still on a beat.
+    val gapped = TimelineState(clips = listOf(shot("x", 3_300), shot("y", 3_300).copy(timelineStartMs = 3_600)))
+    val g = gapped.withShotsFittedToBeats(beats).baseVideoClips
+    check(g.all { it.timelineEndMs % 500L == 0L }, "a cut after a gap landed off the beat: ${g.map { it.timelineEndMs }}")
 }

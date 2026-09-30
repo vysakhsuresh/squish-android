@@ -281,8 +281,10 @@ fun ExportedFile(
     )
 
     // A copy wherever they want it, and - for a video - a GIF of its first seconds.
-    val gifScope = rememberCoroutineScope()
-    var gifProgress by remember(uri) { mutableStateOf<Float?>(null) }
+    // Made in the app's own scope (GifJobs): leaving this screen does not stop
+    // it, and a toast says when it lands.
+    val gifs by com.squish.app.media.gif.GifJobs.progress.collectAsState()
+    val gifProgress = gifs[uri]
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         SquishOutlinedButton(
             text = "Copy to Files",
@@ -295,18 +297,11 @@ fun ExportedFile(
                 modifier = Modifier.weight(1f),
                 onClick = {
                     if (gifProgress != null) return@SquishOutlinedButton
-                    gifProgress = 0f
-                    gifScope.launch {
-                        val gif = com.squish.app.media.gif.GifMaker.make(context, uri, fileName.substringBeforeLast('.')) { p ->
-                            gifScope.launch { gifProgress = p }
-                        }
-                        gifProgress = null
-                        onNotice(
-                            if (gif != null) "GIF saved to your gallery: Pictures › Squish " +
-                                "(the first ${com.squish.app.media.gif.GifMaker.MAX_SECONDS} s, looping)."
-                            else "Couldn't make a GIF of this video."
-                        )
-                    }
+                    com.squish.app.media.gif.GifJobs.start(context, uri, fileName.substringBeforeLast('.'))
+                    onNotice(
+                        "Making a GIF of the first ${com.squish.app.media.gif.GifMaker.MAX_SECONDS} s - it carries on if you leave; " +
+                            "it lands in Pictures › Squish."
+                    )
                 }
             )
         }

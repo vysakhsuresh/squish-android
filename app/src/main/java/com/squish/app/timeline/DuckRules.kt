@@ -82,8 +82,12 @@ object DuckRules {
                 music.volumeKeys.valueAt((r.first + r.last) / 2, music.volume) <= peak * DUCKED_SHARE * 1.05f
             }) return emptyList()
         val times = (dip.map { it.atMs } + music.volumeKeys.map { it.atMs }.filter { it in 0L..length }).distinct().sorted()
+        // Where it is already down - ducked before, under a line still there -
+        // it is left: a new line elsewhere does not dip the old dips again.
+        val floor = peak * DUCKED_SHARE * 1.05f
         return times.map { t ->
-            ValueKey(t, music.volumeKeys.valueAt(t, music.volume) * dip.valueAt(t, 1f), KeyframeEasing.Linear)
+            val env = music.volumeKeys.valueAt(t, music.volume)
+            ValueKey(t, if (music.volumeKeys.isNotEmpty() && env <= floor) env else env * dip.valueAt(t, 1f), KeyframeEasing.Linear)
         }
     }
 }

@@ -13,33 +13,50 @@ object OnlineTranslate {
     /** [text] from [from] into [to] (two-letter codes); null when the service refused or failed. */
     suspend fun translate(context: Context, text: String, from: String, to: String): String? {
         if (text.isBlank() || from == to) return text
-        // The service takes 500 bytes a request: a long line, or one in a script
-        // of several bytes a letter, goes in pieces at word ends, never cut short.
-        val pieces = chunks(text)
-        val out = ArrayList<String>(pieces.size)
-        for (piece in pieces) out += translatePiece(context, piece, from, to) ?: return null
-        return out.joinToString(" ")
+        // Line by line, so a two-line caption stays two lines. The service takes
+        // 500 bytes a request: a long line, or one in a script of several bytes a
+        // letter, goes in pieces at word ends, never cut short.
+        val lines = text.split('\n')
+        val out = ArrayList<String>(lines.size)
+        for (line in lines) {
+            if (line.isBlank()) { out += line; continue }
+            val translated = StringBuilder()
+            for ((piece, joined) in chunks(line)) {
+                val t = translatePiece(context, piece, from, to) ?: return null
+                if (translated.isNotEmpty() && !joined) translated.append(' ')
+                translated.append(t)
+            }
+            out += translated.toString()
+        }
+        return out.joinToString("\n")
     }
 
-    /** [text] in pieces of at most [MAX_BYTES] UTF-8 bytes, split at spaces where it can be. */
-    fun chunks(text: String): List<String> {
-        val out = ArrayList<String>()
+    /**
+     * [text] (one line) in pieces of at most [MAX_BYTES] UTF-8 bytes, split at
+     * spaces where it can be; each with whether it continues the piece before
+     * it inside one word (a word too long on its own, split between letters -
+     * never inside an emoji or any other pair of UTF-16 units).
+     */
+    fun chunks(text: String): List<Pair<String, Boolean>> {
+        val out = ArrayList<Pair<String, Boolean>>()
         val current = StringBuilder()
+        var continues = false
         for (word in text.trim().split(Regex("\\s+"))) {
             val candidate = if (current.isEmpty()) word else "$current $word"
             if (candidate.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { current.clear(); current.append(candidate); continue }
-            if (current.isNotEmpty()) { out += current.toString(); current.clear() }
-            // One word over the limit on its own is split by characters.
+            if (current.isNotEmpty()) { out += current.toString() to continues; current.clear(); continues = false }
             var rest = word
             while (rest.toByteArray(Charsets.UTF_8).size > MAX_BYTES) {
                 var n = rest.length
                 while (n > 1 && rest.substring(0, n).toByteArray(Charsets.UTF_8).size > MAX_BYTES) n--
-                out += rest.substring(0, n)
+                if (n in 1 until rest.length && Character.isLowSurrogate(rest[n])) n--
+                out += rest.substring(0, n) to continues
                 rest = rest.substring(n)
+                continues = true
             }
             current.append(rest)
         }
-        if (current.isNotEmpty()) out += current.toString()
+        if (current.isNotEmpty()) out += current.toString() to continues
         return out
     }
 

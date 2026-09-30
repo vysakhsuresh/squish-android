@@ -53,6 +53,7 @@ fun main() {
 
     envelopeChecks()
     quietSongChecks()
+    againChecks()
     if (problems.isEmpty()) {
         println("DuckChecks: all checks passed")
     } else {
@@ -80,4 +81,14 @@ fun quietSongChecks() {
         timelineStartMs = 0, sourceDurationMs = 60_000, volume = 1f,
         volumeKeys = listOf(com.squish.app.timeline.ValueKey(0L, 0.2f), com.squish.app.timeline.ValueKey(30_000L, 0.2f)))
     check(DuckRules.keys(quiet, listOf(5_000L..8_000L)).isNotEmpty(), "a quiet keyed song was taken as already ducked")
+}
+
+fun againChecks() {
+    // Ducked under a line at 5-8 s, then a second line at 20-22 s: pressed again, the old dip stays at a quarter, not a sixteenth.
+    val song = Clip(kind = ClipKind.Audio, uri = null, label = "song", sourceInMs = 0, sourceOutMs = 30_000,
+        timelineStartMs = 0, sourceDurationMs = 60_000, volume = 0.8f)
+    val once = song.copy(volumeKeys = DuckRules.keys(song, listOf(5_000L..8_000L)))
+    val twice = once.copy(volumeKeys = DuckRules.keys(once, listOf(5_000L..8_000L, 20_000L..22_000L)))
+    check(near(twice.volumeAt(6_500), 0.2f), "the old dip was dipped again: ${twice.volumeAt(6_500)}")
+    check(near(twice.volumeAt(21_000), 0.2f), "the new line was not ducked: ${twice.volumeAt(21_000)}")
 }

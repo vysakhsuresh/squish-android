@@ -19,6 +19,8 @@ import com.squish.app.timeline.withShotsFittedToBeats
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.removedOnTimeline
 import com.squish.app.timeline.shiftedPast
+import com.squish.app.timeline.withOverlayTransitionsFitted
+import com.squish.app.editor.fittedTo
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.ClipKind
@@ -875,11 +877,16 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      * gesture under way, as auto-sync and the beat finder file theirs.
      */
     private fun EditSnapshot.withTimeline(block: (TimelineState) -> TimelineState): EditSnapshot {
+        // The same fitting mutateTimeline does: fades, overlay transitions, effects.
         val next = block(TimelineState(clips = videoClips + audioClips, selectedClipId = selectedClipId))
+            .let { t -> t.copy(clips = t.clips.map(AudioRules::withFittedFades)) }
+            .withOverlayTransitionsFitted()
+        val video = next.clips.filter { it.kind == ClipKind.Video }
         return copy(
-            videoClips = next.clips.filter { it.kind == ClipKind.Video },
-            audioClips = next.clips.filter { it.kind == ClipKind.Audio }.map(AudioRules::withFittedFades),
-            selectedClipId = next.selectedClipId
+            videoClips = video,
+            audioClips = next.clips.filter { it.kind == ClipKind.Audio },
+            selectedClipId = next.selectedClipId,
+            effects = effects.fittedTo(video.maxOfOrNull { it.timelineEndMs } ?: 0L)
         )
     }
 
@@ -983,7 +990,15 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             if (removed <= 0L) return@launch onDone(0L)
             val gone = removedOnTimeline(current, kept.filter { it.last - it.first >= MIN_CLIP_MS })
             recordLate("Remove silences", edit = { snapshot ->
-                snapshot.withTimeline { it.withSilencesRemoved(clipId, kept) }.copy(
+                snapshot.copy(
+                    // Effects on the words after the shot move back with them, as the lines do.
+                    effects = snapshot.effects.map { e ->
+                        if (e.startMs < current.timelineStartMs) e else {
+                            val start = shiftedPast(e.startMs, gone)
+                            e.copy(startMs = start, endMs = start + (e.endMs - e.startMs))
+                        }
+                    }
+                ).withTimeline { it.withSilencesRemoved(clipId, kept) }.copy(
                     textOverlays = snapshot.textOverlays.map { line ->
                         if (line.startMs < current.timelineStartMs) line else {
                             val start = shiftedPast(line.startMs, gone)
@@ -992,6 +1007,8 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                     }
                 )
             })
+            // Shorter now: a playhead past the new end comes back to it.
+            _state.update { s -> if (s.playheadMs > s.timelineDurationMs) s.copy(playheadMs = s.timelineDurationMs, scrubNonce = s.scrubNonce + 1) else s }
             onDone(removed)
         }
     }

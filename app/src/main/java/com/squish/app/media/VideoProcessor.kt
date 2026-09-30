@@ -201,7 +201,7 @@ class VideoProcessor(private val context: Context) {
                         setRequestedVideoEncoderSettings(
                             VideoEncoderSettings.Builder()
                                 .setBitrate(bitrate)
-                                .apply { if (cbrSupported(videoMimeFor(state))) setBitrateMode(android.media.MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR) }
+                                .apply { if (cbrSupported(videoMimeFor(state), state.writtenResolution.width, state.writtenResolution.height)) setBitrateMode(android.media.MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR) }
                                 .build()
                         )
                     }
@@ -995,10 +995,12 @@ private val Clip.spedUp: Boolean
  * default variable mode overshot the requested rate by 80%.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private fun cbrSupported(mime: String): Boolean = runCatching {
-    androidx.media3.transformer.EncoderUtil.getSupportedEncoders(mime).any {
-        androidx.media3.transformer.EncoderUtil.isBitrateModeSupported(it, mime, android.media.MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
-    }
+private fun cbrSupported(mime: String, width: Int, height: Int): Boolean = runCatching {
+    // The encoder Media3 would take: one that writes this size, hardware first.
+    val candidates = androidx.media3.transformer.EncoderUtil.getSupportedEncoders(mime)
+        .filter { width <= 0 || height <= 0 || androidx.media3.transformer.EncoderUtil.isSizeSupported(it, mime, width, height) }
+    val chosen = candidates.firstOrNull { android.os.Build.VERSION.SDK_INT >= 29 && it.isHardwareAccelerated } ?: candidates.firstOrNull()
+    chosen != null && androidx.media3.transformer.EncoderUtil.isBitrateModeSupported(chosen, mime, android.media.MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
 }.getOrDefault(false)
 
 private fun videoMimeFor(state: com.squish.app.editor.EditorUiState): String = EncoderCeiling.mimeFor(state.exportCodecHevc)

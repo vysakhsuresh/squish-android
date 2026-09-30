@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -48,7 +49,8 @@ object GifMaker {
                     else android.graphics.Bitmap.createScaledBitmap(frame, w, h, true).also { frame.recycle() }
                     scaled.getPixels(pixels, 0, w, 0, 0, w, h)
                     scaled.recycle()
-                    encoder.addFrame(pixels, 1000 / FPS)
+                    // In hundredths spread so they add up: 12 fps is 8, 8, 9, ... not 8 every time (4% fast).
+                    encoder.addFrame(pixels, (Math.round((i + 1) * 100.0 / FPS) - Math.round(i * 100.0 / FPS)).toInt() * 10)
                     progress((i + 1f) / frames)
                 }
                 encoder.finish()
@@ -87,5 +89,31 @@ object GifMaker {
             resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
         }
         return uri
+    }
+}
+
+/**
+ * GIFs being made, kept going when the screen that started one is left: they
+ * run in the app's own scope and say when they are done with a toast. The
+ * screen reads [progress] to show how far along a file's is.
+ */
+object GifJobs {
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
+    private val running = kotlinx.coroutines.flow.MutableStateFlow<Map<Uri, Float>>(emptyMap())
+    val progress: kotlinx.coroutines.flow.StateFlow<Map<Uri, Float>> = running
+
+    fun start(context: Context, video: Uri, name: String) {
+        if (video in running.value) return
+        val app = context.applicationContext
+        running.value = running.value + (video to 0f)
+        scope.launch {
+            val gif = GifMaker.make(app, video, name) { p -> scope.launch { if (video in running.value) running.value = running.value + (video to p) } }
+            running.value = running.value - video
+            android.widget.Toast.makeText(
+                app,
+                if (gif != null) "GIF saved to Pictures › Squish" else "Couldn't make a GIF of this video",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
     }
 }
