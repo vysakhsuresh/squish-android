@@ -912,7 +912,11 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             }
             val speech = sources.flatMap { clip -> DuckRules.onTimeline(clip, found[clip.uri] ?: emptyList()) }
             val current = _state.value.audioClips.firstOrNull { it.id == clipId } ?: return@launch onDone(0)
-            if (DuckRules.keys(current, speech).isEmpty()) return@launch onDone(0)
+            if (DuckRules.keys(current, speech).isEmpty()) {
+                // Talking under it, and it is already down under all of it: say so (-1).
+                val under = speech.any { it.last > current.timelineStartMs && it.first < current.timelineEndMs }
+                return@launch onDone(if (under) -1 else 0)
+            }
             recordLate("Duck under speech", edit = { snapshot ->
                 snapshot.copy(audioClips = snapshot.audioClips.map { c ->
                     if (c.id != clipId) c

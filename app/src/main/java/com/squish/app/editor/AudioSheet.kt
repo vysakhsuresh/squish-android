@@ -525,7 +525,8 @@ fun SoundVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewMode
                 duckNote = null
                 viewModel.audio.duckUnderSpeech(clip.id) { dips ->
                     ducking = false
-                    duckNote = if (dips == 0) "No talking found under this sound - voiceovers and the shots' own sound are listened to."
+                    duckNote = if (dips < 0) "Already turned down under all the talking - nothing to change."
+                    else if (dips == 0) "No talking found under this sound - voiceovers and the shots' own sound are listened to."
                     else "Turned down under $dips ${if (dips == 1) "stretch" else "stretches"} of speech. Undo takes it back."
                 }
             }

@@ -96,7 +96,7 @@ object ProjectRules {
     private val COPY_NAME = Regex("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
     private val MADE_UP_NAME = Regex(
-        "(?i)^(vid|img|pxl|mvimg|dsc|dscn|dcim|mov|video|photo|image|picture|screenshot|screen[ _-]?record\\w*|record\\w*|wa|signal|snapchat|inshot|capcut|squish|squish_trim|overlay|voice|still)[ _-]*[0-9].*"
+        "(?i)^(vid|img|pxl|mvimg|dsc|dscn|dcim|mov|video|photo|image|picture|screenshot|screen[ _-]?record\\w*|record\\w*|wa|signal|snapchat|inshot|capcut|squish|squish_trim|overlay|voice|still|rec|take)[ _-]*[0-9].*"
     )
 
     private val COPY_SUFFIX = Regex(" copy \\d+$")
