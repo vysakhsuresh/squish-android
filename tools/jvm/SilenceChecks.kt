@@ -34,10 +34,27 @@ fun main() {
     val same = TimelineState(clips = listOf(a, b))
     check(same.withSilencesRemoved("a", listOf(0L..20_000L)) == same, "keeping everything changed the edit")
 
+    layeredChecks()
     if (problems.isEmpty()) {
         println("SilenceChecks: all checks passed")
     } else {
         problems.forEach { println("FAIL: $it") }
         exitProcess(1)
     }
+}
+
+fun layeredChecks() {
+    // A caption-like overlay and a sound over the talking at 10-12 s of the shot move back with it.
+    val a = Clip(id = "a", kind = ClipKind.Video, uri = null, label = "a", sourceInMs = 0, sourceOutMs = 20_000, timelineStartMs = 0, sourceDurationMs = 20_000)
+    val pip = Clip(id = "p", kind = ClipKind.Video, uri = null, label = "p", sourceInMs = 0, sourceOutMs = 2_000, timelineStartMs = 10_000, sourceDurationMs = 2_000, layer = 1)
+    val song = Clip(id = "s", kind = ClipKind.Audio, uri = null, label = "s", sourceInMs = 0, sourceOutMs = 5_000, timelineStartMs = 10_000, sourceDurationMs = 5_000)
+    val kept = listOf(850L..6_150L, 9_850L..12_150L)
+    val cut = TimelineState(clips = listOf(a, pip, song)).withSilencesRemoved("a", kept)
+    val piece = cut.clips.filter { it.isMain }.sortedBy { it.timelineStartMs }[1]
+    // The word at 10 s of the file is now at: piece start + (10000 - 9850).
+    val wordAt = piece.timelineStartMs + 150L
+    check(cut.clips.first { it.id == "p" }.timelineStartMs == wordAt, "the overlay did not move with its word: ${cut.clips.first { it.id == "p" }.timelineStartMs} vs $wordAt")
+    check(cut.clips.first { it.id == "s" }.timelineStartMs == wordAt, "the sound did not move with its word")
+    check(com.squish.app.timeline.shiftedPast(5_000L, listOf(1_000L..3_000L)) == 3_000L, "a moment after a removed stretch did not move back by it")
+    check(com.squish.app.timeline.shiftedPast(2_000L, listOf(1_000L..3_000L)) == 1_000L, "a moment inside a removed stretch did not land at its start")
 }

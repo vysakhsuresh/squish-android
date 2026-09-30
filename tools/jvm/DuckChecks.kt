@@ -51,10 +51,33 @@ fun main() {
     // A song ducked at 0.8 is never taken above its own level.
     check(keys.all { it.value <= 0.8f + 1e-4f }, "a key went above the song's level")
 
+    envelopeChecks()
+    quietSongChecks()
     if (problems.isEmpty()) {
         println("DuckChecks: all checks passed")
     } else {
         problems.forEach { println("FAIL: $it") }
         exitProcess(1)
     }
+}
+
+fun envelopeChecks() {
+    // A song turned down to 40% with keys: the dips come off 40%, and between them it stays at 40%.
+    val song = Clip(kind = ClipKind.Audio, uri = null, label = "song", sourceInMs = 0, sourceOutMs = 30_000,
+        timelineStartMs = 0, sourceDurationMs = 60_000, volume = 1f,
+        volumeKeys = listOf(com.squish.app.timeline.ValueKey(0L, 0.4f), com.squish.app.timeline.ValueKey(30_000L, 0.4f)))
+    val keys = DuckRules.keys(song, listOf(5_000L..8_000L))
+    val ducked = song.copy(volumeKeys = keys)
+    check(near(ducked.volumeAt(2_000), 0.4f), "a keyed song came back to its stale level: ${ducked.volumeAt(2_000)}")
+    check(near(ducked.volumeAt(6_000), 0.1f), "the dip was not taken off the keyed level: ${ducked.volumeAt(6_000)}")
+    // Pressed again: already ducked, nothing changes.
+    check(DuckRules.keys(ducked, listOf(5_000L..8_000L)).isEmpty(), "ducking twice dipped twice")
+}
+
+fun quietSongChecks() {
+    // A song keyed down to 20% and never ducked is still ducked.
+    val quiet = Clip(kind = ClipKind.Audio, uri = null, label = "q", sourceInMs = 0, sourceOutMs = 30_000,
+        timelineStartMs = 0, sourceDurationMs = 60_000, volume = 1f,
+        volumeKeys = listOf(com.squish.app.timeline.ValueKey(0L, 0.2f), com.squish.app.timeline.ValueKey(30_000L, 0.2f)))
+    check(DuckRules.keys(quiet, listOf(5_000L..8_000L)).isNotEmpty(), "a quiet keyed song was taken as already ducked")
 }

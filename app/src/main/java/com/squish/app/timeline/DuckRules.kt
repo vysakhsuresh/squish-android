@@ -51,8 +51,10 @@ object DuckRules {
      * volume keys are. Empty when no speech falls under the song.
      */
     fun keys(music: Clip, speech: List<LongRange>, fadeMs: Long = FADE_MS): List<ValueKey> {
-        val level = music.volume
-        val low = level * DUCKED_SHARE
+        // The dip as a factor over the level the song already has - its own keys
+        // when it has some, which a Level slider on a keyed song writes to.
+        val level = 1f
+        val low = DUCKED_SHARE
         val length = music.durationMs
         val under = merged(speech.mapNotNull { r ->
             val from = maxOf(r.first, music.timelineStartMs) - music.timelineStartMs
@@ -72,6 +74,16 @@ object DuckRules {
         // A key at the very start and end keeps the level outside the dips the song's own.
         if (keys.first().atMs > 0L) keys.add(0, ValueKey(0L, level, KeyframeEasing.Linear))
         if (keys.last().atMs < length) keys += ValueKey(length, level, KeyframeEasing.Linear)
-        return keys.distinctBy { it.atMs }.sortedBy { it.atMs }
+        val dip = keys.distinctBy { it.atMs }.sortedBy { it.atMs }
+        // Already down under every line - ducked before: nothing to do, rather
+        // than a dip on top of a dip.
+        val peak = music.volumeKeys.maxOfOrNull { it.value } ?: music.volume
+        if (music.volumeKeys.isNotEmpty() && under.all { r ->
+                music.volumeKeys.valueAt((r.first + r.last) / 2, music.volume) <= peak * DUCKED_SHARE * 1.05f
+            }) return emptyList()
+        val times = (dip.map { it.atMs } + music.volumeKeys.map { it.atMs }.filter { it in 0L..length }).distinct().sorted()
+        return times.map { t ->
+            ValueKey(t, music.volumeKeys.valueAt(t, music.volume) * dip.valueAt(t, 1f), KeyframeEasing.Linear)
+        }
     }
 }

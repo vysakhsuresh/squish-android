@@ -42,13 +42,21 @@ object Loudness {
     }
 
     /**
-     * The level for each shot, by its [loudness] (0 = silent, left as it is):
-     * all brought to the quietest third's loudness, and only ever down.
+     * The level for each shot, by its raw [loudness] (0 = silent or unmeasured,
+     * left as it is) and the level it already has in [current]: what it is
+     * heard at is raw x level, all are brought to the quietest third's, and a
+     * level only ever comes down from where the person put it.
      */
-    fun levels(loudness: List<Float>): List<Float> {
-        val heard = loudness.filter { it > 0f }.sorted()
-        if (heard.size < 2) return loudness.map { 1f }
-        val target = heard[(heard.size - 1) / 3]
-        return loudness.map { l -> if (l <= 0f) 1f else (target / l).coerceIn(MIN_LEVEL, 1f) }
+    fun levels(loudness: List<Float>, current: List<Float>): List<Float> {
+        val heard = loudness.indices.filter { loudness[it] > 0f && current[it] > 0f }
+        if (heard.size < 2) return current
+        val effective = heard.map { loudness[it] * current[it] }.sorted()
+        val target = effective[(effective.size - 1) / 3]
+        return loudness.indices.map { i ->
+            val l = loudness[i]
+            val c = current[i]
+            if (l <= 0f || c <= 0f) c
+            else minOf(c, c * target / (l * c)).coerceAtLeast(minOf(c, MIN_LEVEL))
+        }
     }
 }

@@ -16,6 +16,9 @@ import com.squish.app.timeline.withSilencesRemoved
 import com.squish.app.media.audio.Loudness
 import com.squish.app.media.audio.MonoPcm
 import com.squish.app.timeline.withShotsFittedToBeats
+import com.squish.app.timeline.TimelineState
+import com.squish.app.timeline.removedOnTimeline
+import com.squish.app.timeline.shiftedPast
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.ClipKind
@@ -848,56 +851,76 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         const val STOP_TICKS = 5
     }
 
-    // ---- Auto-duck -------------------------------------------------------------------
+    // ---- Listening to files: auto-duck, even out, remove silences --------------------
+
+    /**
+     * Each file among [clips] decoded once, as far as the furthest of them
+     * plays and no further, at 16 kHz mono - capped at LISTEN_MAX_MS: a shot
+     * from minute forty of an hour-long recording asked for a decode the size
+     * of the heap. A file past the cap, or that cannot be read, is handed on
+     * as null, and so are the clips on it.
+     */
+    private suspend fun listenTo(clips: List<Clip>, each: suspend (Uri, MonoPcm?) -> Unit) {
+        clips.filter { it.uri != null }.groupBy { it.uri!! }.forEach { (uri, onIt) ->
+            val until = onIt.maxOf { it.sourceOutMs } + 1_000L
+            val pcm = if (until > LISTEN_MAX_MS) null
+            else PcmDecoder.decodeMono(app, uri, targetSampleRate = LISTEN_RATE, maxDurationMs = until)
+            each(uri, pcm)
+        }
+    }
+
+    /**
+     * A timeline operation on a recorded state (recordLate), for a result
+     * landing from the background: filed as its own step without splitting a
+     * gesture under way, as auto-sync and the beat finder file theirs.
+     */
+    private fun EditSnapshot.withTimeline(block: (TimelineState) -> TimelineState): EditSnapshot {
+        val next = block(TimelineState(clips = videoClips + audioClips, selectedClipId = selectedClipId))
+        return copy(
+            videoClips = next.clips.filter { it.kind == ClipKind.Video },
+            audioClips = next.clips.filter { it.kind == ClipKind.Audio }.map(AudioRules::withFittedFades),
+            selectedClipId = next.selectedClipId
+        )
+    }
 
     /**
      * Turns the sound [clipId] down under every stretch of talking on the
      * timeline - voiceovers, lines read aloud, and the camera sound of the
-     * shots - and back up between, as volume keys (DuckRules). One undo step.
-     * [onDone] is told how many dips were made: 0 when no speech was found
-     * under it, and nothing on the clip changes then.
+     * shots - and back up between, over the level it already has (DuckRules).
+     * One undo step. [onDone] is told how many dips were made: 0 when no speech
+     * was found under it, or it is already down under all of it.
      */
     fun duckUnderSpeech(clipId: String, onDone: (Int) -> Unit) {
         val music = _state.value.audioClips.firstOrNull { it.id == clipId } ?: return onDone(0)
         viewModelScope.launch {
             val state = _state.value
-            val sources = (state.audioClips.filter { it.id != clipId && it.isVoiceover } +
-                state.audioClips.filter { it.id != clipId && it.uri?.path?.contains("/speech/") == true } +
+            val sources = (state.audioClips.filter { it.id != clipId && (it.isVoiceover || it.uri?.path?.contains("/speech/") == true) } +
                 (if (state.muteOriginal) emptyList() else state.videoClips.filter { it.isHeard && !com.squish.app.media.StillClips.isStill(it.uri) }))
                 .distinctBy { it.id }
                 .filter { it.timelineEndMs > music.timelineStartMs && it.timelineStartMs < music.timelineEndMs }
             val found = HashMap<Uri, List<LongRange>>()
-            val speech = ArrayList<LongRange>()
-            for (clip in sources) {
-                val uri = clip.uri ?: continue
-                val segments = found[uri] ?: run {
-                    val pcm = PcmDecoder.decodeMono(app, uri, targetSampleRate = 16_000, maxDurationMs = clip.sourceOutMs + 1_000L)
-                    val s = if (pcm == null) emptyList() else withContext(Dispatchers.Default) {
-                        SpeechSegmenter.segment(pcm).map { it.startMs..it.endMs }
-                    }
-                    found[uri] = s
-                    s
-                }
-                speech += DuckRules.onTimeline(clip, segments)
+            listenTo(sources) { uri, pcm ->
+                found[uri] = if (pcm == null) emptyList()
+                else withContext(Dispatchers.Default) { SpeechSegmenter.segment(pcm).map { it.startMs..it.endMs } }
             }
+            val speech = sources.flatMap { clip -> DuckRules.onTimeline(clip, found[clip.uri] ?: emptyList()) }
             val current = _state.value.audioClips.firstOrNull { it.id == clipId } ?: return@launch onDone(0)
-            val keys = DuckRules.keys(current, speech)
-            if (keys.isEmpty()) return@launch onDone(0)
-            record("Duck under speech") {
-                mutateTimeline { timeline ->
-                    timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(volumeKeys = keys) else it })
-                }
-            }
+            if (DuckRules.keys(current, speech).isEmpty()) return@launch onDone(0)
+            recordLate("Duck under speech", edit = { snapshot ->
+                snapshot.copy(audioClips = snapshot.audioClips.map { c ->
+                    if (c.id != clipId) c
+                    else DuckRules.keys(c, speech).takeIf { it.isNotEmpty() }?.let { keys -> c.copy(volumeKeys = keys) } ?: c
+                })
+            })
             onDone(DuckRules.merged(speech.filter { it.last > current.timelineStartMs && it.first < current.timelineEndMs }).size)
         }
     }
 
-    // ---- Even out volume --------------------------------------------------------------
-
     /**
      * Every shot's level set so the loud ones sound as loud as the quieter ones
-     * (Loudness): each shot's own played window measured, levels only brought
-     * down. Shots with keyed levels are left, as are photos and silent shots.
+     * (Loudness), what each is heard at measured as its raw loudness times the
+     * level it has, and levels only ever brought down. Shots with keyed levels
+     * are left, as are photos, silent shots and files that cannot be read.
      * One undo step; [onDone] says how many shots changed.
      */
     fun evenOutVolume(onDone: (Int) -> Unit) {
@@ -906,55 +929,76 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 it.isHeard && it.volumeKeys.isEmpty() && it.uri != null && !com.squish.app.media.StillClips.isStill(it.uri)
             }
             if (shots.size < 2) return@launch onDone(0)
-            val decoded = HashMap<Uri, MonoPcm?>()
-            val loudness = shots.map { clip ->
-                val uri = clip.uri!!
-                val pcm = if (decoded.containsKey(uri)) decoded[uri] else PcmDecoder.decodeMono(
-                    app, uri, targetSampleRate = 16_000, maxDurationMs = 30 * 60_000L
-                ).also { decoded[uri] = it }
-                if (pcm == null) 0f else withContext(Dispatchers.Default) {
-                    val from = (clip.sourceInMs * pcm.sampleRate / 1000).toInt().coerceIn(0, pcm.samples.size)
-                    val to = (clip.sourceOutMs * pcm.sampleRate / 1000).toInt().coerceIn(from, pcm.samples.size)
-                    Loudness.of(pcm.samples.copyOfRange(from, to), pcm.sampleRate)
+            // Per shot, not per file: each file's sound is let go before the next is read.
+            val loudness = HashMap<String, Float>()
+            listenTo(shots) { uri, pcm ->
+                if (pcm != null) withContext(Dispatchers.Default) {
+                    shots.filter { it.uri == uri }.forEach { clip ->
+                        val from = (clip.sourceInMs * pcm.sampleRate / 1000L).toInt().coerceIn(0, pcm.samples.size)
+                        val to = (clip.sourceOutMs * pcm.sampleRate / 1000L).toInt().coerceIn(from, pcm.samples.size)
+                        loudness[clip.id] = Loudness.of(pcm.samples.copyOfRange(from, to), pcm.sampleRate)
+                    }
                 }
             }
-            val levels = Loudness.levels(loudness)
-            val changes = shots.zip(levels).filter { (clip, level) -> kotlin.math.abs(clip.volume - level) > 0.02f }
-            if (changes.isEmpty()) return@launch onDone(0)
-            record("Even out volume") {
-                val byId = changes.associate { (clip, level) -> clip.id to level }
-                mutateTimeline { timeline ->
-                    timeline.copy(clips = timeline.clips.map { c -> byId[c.id]?.let { c.copy(volume = it) } ?: c })
-                }
-            }
-            onDone(changes.size)
+            val levels = Loudness.levels(shots.map { loudness[it.id] ?: 0f }, shots.map { it.volume })
+            val byId = shots.zip(levels)
+                .filter { (clip, level) -> kotlin.math.abs(clip.volume - level) > 0.02f }
+                .associate { (clip, level) -> clip.id to level }
+            if (byId.isEmpty()) return@launch onDone(0)
+            val measured = shots.associateBy { it.id }
+            recordLate("Even out volume", edit = { snapshot ->
+                snapshot.copy(videoClips = snapshot.videoClips.map { c ->
+                    // Only a shot still as it was measured: a level changed meanwhile is the person's.
+                    val level = byId[c.id]
+                    val was = measured[c.id]
+                    if (level != null && was != null && c.volume == was.volume && c.volumeKeys.isEmpty()) c.copy(volume = level) else c
+                })
+            })
+            onDone(byId.size)
         }
     }
-
-    // ---- Remove silences --------------------------------------------------------------
 
     /**
      * Takes the quiet stretches out of main-track shot [clipId]: listens to its
      * own sound, keeps what has talking in it (SilenceRules), and cuts it into
-     * those pieces back to back as one undo step. [onDone] is told how many
-     * milliseconds of the file were removed - 0 when nothing was, and then
-     * nothing changed.
+     * those pieces back to back, the words, sounds and overlays after it moving
+     * back with the footage they were over. One undo step. [onDone] is told
+     * how many milliseconds of the file were removed - 0 when nothing was,
+     * including when the shot changed while it was being listened to.
      */
     fun removeSilences(clipId: String, onDone: (Long) -> Unit) {
         val clip = _state.value.videoClips.firstOrNull { it.id == clipId && it.isMain } ?: return onDone(0L)
-        val uri = clip.uri ?: return onDone(0L)
         viewModelScope.launch {
-            val pcm = PcmDecoder.decodeMono(app, uri, targetSampleRate = 16_000, maxDurationMs = clip.sourceOutMs + 1_000L)
-                ?: return@launch onDone(0L)
-            val speech = withContext(Dispatchers.Default) { SpeechSegmenter.segment(pcm).map { it.startMs..it.endMs } }
+            var speech: List<LongRange>? = null
+            listenTo(listOf(clip)) { _, pcm ->
+                if (pcm != null) speech = withContext(Dispatchers.Default) { SpeechSegmenter.segment(pcm).map { it.startMs..it.endMs } }
+            }
+            val found = speech ?: return@launch onDone(0L)
             val current = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return@launch onDone(0L)
-            val kept = SilenceRules.keptWindows(speech, current.sourceInMs, current.sourceOutMs)
+            // Listened to for the window it had: a shot trimmed or floated
+            // meanwhile is not the one the answer is for.
+            if (!current.isMain || current.sourceInMs != clip.sourceInMs || current.sourceOutMs != clip.sourceOutMs) return@launch onDone(0L)
+            val kept = SilenceRules.keptWindows(found, current.sourceInMs, current.sourceOutMs)
             val removed = if (kept.isEmpty()) 0L else SilenceRules.removedMs(kept, current.sourceInMs, current.sourceOutMs)
             if (removed <= 0L) return@launch onDone(0L)
-            record("Remove silences") {
-                mutateTimeline { it.withSilencesRemoved(clipId, kept) }
-            }
+            val gone = removedOnTimeline(current, kept.filter { it.last - it.first >= MIN_CLIP_MS })
+            recordLate("Remove silences", edit = { snapshot ->
+                snapshot.withTimeline { it.withSilencesRemoved(clipId, kept) }.copy(
+                    textOverlays = snapshot.textOverlays.map { line ->
+                        if (line.startMs < current.timelineStartMs) line else {
+                            val start = shiftedPast(line.startMs, gone)
+                            line.copy(startMs = start, endMs = start + (line.endMs - line.startMs))
+                        }
+                    }
+                )
+            })
             onDone(removed)
         }
     }
 }
+
+/** 16 kHz mono: what the speech finder and a loudness meter need. */
+private const val LISTEN_RATE = 16_000
+
+/** Past half an hour into a file it is not listened to: that decode would be the size of the heap. */
+private const val LISTEN_MAX_MS = 30 * 60_000L

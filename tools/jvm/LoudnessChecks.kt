@@ -27,14 +27,20 @@ fun main() {
     check(Loudness.of(FloatArray(rate), rate) == 0f, "silence had a loudness")
 
     // Levels: the loud shot comes down to the quiet one, the quiet stays, silence is left.
-    val levels = Loudness.levels(listOf(quiet, loud, 0f))
+    val levels = Loudness.levels(listOf(quiet, loud, 0f), listOf(1f, 1f, 1f))
     check(abs(levels[0] - 1f) < 0.01f, "the quiet shot was changed: ${levels[0]}")
     check(abs(levels[1] - 0.25f) < 0.02f, "the loud shot was not brought down to match: ${levels[1]}")
     check(levels[2] == 1f, "a silent shot was changed")
     // Never up, never below the floor.
-    check(Loudness.levels(listOf(0.001f, 1f)).all { it in Loudness.MIN_LEVEL..1f }, "a level left the range")
+    check(Loudness.levels(listOf(0.001f, 1f), listOf(1f, 1f)).all { it in Loudness.MIN_LEVEL..1f }, "a level left the range")
     // One shot alone has nothing to be matched to.
-    check(Loudness.levels(listOf(loud)) == listOf(1f), "a single shot was changed")
+    check(Loudness.levels(listOf(loud), listOf(0.7f)) == listOf(0.7f), "a single shot was changed")
+    // A shot turned down by hand is never raised, and one turned down enough already is left.
+    val kept = Loudness.levels(listOf(quiet, loud), listOf(1f, 0.2f))
+    // (The loud shot at 20% is now heard at 0.8 of the other, so that one comes down to match.)
+    check(abs(kept[1] - 0.2f) < 0.01f && abs(kept[0] - 0.8f) < 0.02f, "a hand-lowered shot was raised, or the other not matched: $kept")
+    // An unmeasured shot (0) keeps its level, even when others change.
+    check(Loudness.levels(listOf(quiet, loud, 0f), listOf(1f, 1f, 0.5f))[2] == 0.5f, "an unmeasured shot was reset")
 
     if (problems.isEmpty()) {
         println("LoudnessChecks: all checks passed")

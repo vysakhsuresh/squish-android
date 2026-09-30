@@ -1962,8 +1962,15 @@ fun TimelineState.withSilencesRemoved(clipId: String, kept: List<LongRange>): Ti
             volumeKeys = clip.volumeKeys.shiftedBy(-played)
         )
     }
+    // Whatever sits on or after the shot on other rows moves back with the
+    // footage it was over: a caption or a sound cued to a word stays on it.
+    val removed = removedOnTimeline(clip, windows)
     val replace = { c: Clip -> if (c.id == clipId) pieces else listOf(c) }
-    return copy(clips = clips.flatMap(replace), selectedClipId = null).relaidFrom(this, replace)
+    val moved = clips.flatMap(replace).map { c ->
+        if (c.isMain || c.timelineStartMs < clip.timelineStartMs) c
+        else c.copy(timelineStartMs = shiftedPast(c.timelineStartMs, removed))
+    }
+    return copy(clips = moved, selectedClipId = null).relaidFrom(this, replace)
 }
 
 /**
@@ -1998,4 +2005,31 @@ fun TimelineState.withShotsFittedToBeats(beats: List<Long>): TimelineState {
     }
     val replace = { c: Clip -> fitted[c.id]?.let { listOf(it) } ?: listOf(c) }
     return copy(clips = clips.flatMap(replace)).relaidFrom(this, replace)
+}
+
+/**
+ * The stretches of the timeline, as it was, that cutting [clip] down to
+ * [kept] (windows of its file) takes out: before the first window, between
+ * each two, and after the last, through the clip's own clock.
+ */
+fun removedOnTimeline(clip: Clip, kept: List<LongRange>): List<LongRange> {
+    if (kept.isEmpty()) return emptyList()
+    val sorted = kept.sortedBy { it.first }
+    val gaps = ArrayList<LongRange>()
+    gaps += clip.sourceInMs..sorted.first().first
+    sorted.zipWithNext().forEach { (a, b) -> gaps += a.last..b.first }
+    gaps += sorted.last().last..clip.sourceOutMs
+    return gaps.filter { it.last > it.first }
+        .map { clip.timelineAtSource(it.first)..clip.timelineAtSource(it.last) }
+        .filter { it.last > it.first }
+}
+
+/** Where moment [t] of the timeline lands once [removed] stretches are taken out: inside one, at its start. */
+fun shiftedPast(t: Long, removed: List<LongRange>): Long {
+    var shift = 0L
+    for (r in removed) {
+        if (t >= r.last) shift += r.last - r.first
+        else if (t > r.first) shift += t - r.first
+    }
+    return (t - shift).coerceAtLeast(0L)
 }
