@@ -87,13 +87,19 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
             val fill = clip.background?.fill ?: BackgroundFill.Blur
             val colour = clip.background?.colorArgb ?: BackgroundRemoval(file).colorArgb
             val found = BackgroundRemoval(file, fill, colour)
+            // Measured on this footage, forwards: a clip reversed or replaced
+            // meanwhile plays other frames, and the mask would not line up.
+            if (!sameFootage(clip, _state.value.videoClips.firstOrNull { it.id == clip.id })) {
+                _state.update { it.copy(backgroundProgress = ReframeProgress()) }
+                return@launch
+            }
             // Beneath any gesture still moving, as Stabilize and Auto-reframe
             // land: through record() it closed a slider being dragged while
             // the person was being found, and cut the drag into two steps.
             recordLate(
                 "Background",
                 edit = { snapshot ->
-                    snapshot.copy(videoClips = snapshot.videoClips.map { if (it.id == clip.id) it.copy(background = found) else it })
+                    snapshot.copy(videoClips = snapshot.videoClips.map { if (it.id == clip.id && sameFootage(clip, it)) it.copy(background = found) else it })
                 },
                 alongside = { it.copy(backgroundProgress = ReframeProgress()) }
             )
@@ -273,11 +279,26 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
                         finished = true,
                         failed = result == null,
                         track = result,
-                        clipId = clipId
+                        clipId = clipId,
+                        // The footage it was measured on: a pin checks it still plays.
+                        trackedUri = clip.uri?.toString(),
+                        trackedReversed = clip.isReversed
                     )
                 )
             }
         }
+    }
+
+    /**
+     * Whether the held track is still on the footage it was measured on. A clip
+     * reversed or replaced since plays other frames on another clock; pinned
+     * there, a mask followed the wrong place. Such a track is let go.
+     */
+    private fun trackStillFits(current: EditorUiState): Boolean {
+        val clip = current.videoClips.firstOrNull { it.id == current.tracking.clipId }
+        val fits = clip != null && clip.uri?.toString() == current.tracking.trackedUri && clip.isReversed == current.tracking.trackedReversed
+        if (!fits) _state.update { it.copy(tracking = TrackProgress(pointX = it.tracking.pointX, pointY = it.tracking.pointY)) }
+        return fits
     }
 
     /** Source time of the tracked clip into timeline time. */
@@ -297,6 +318,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
         val current = _state.value
         val track = current.tracking.track ?: return
         if (current.tracking.clipId != clipId) return
+        if (!trackStillFits(current)) return
         record("Pin mask") {
             mutateTimeline { timeline ->
                 val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
@@ -328,6 +350,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
     fun pinCaptionToTrack(captionId: String) {
         val current = _state.value
         val track = current.tracking.track ?: return
+        if (!trackStillFits(current)) return
         val clip = current.videoClips.firstOrNull { it.id == current.tracking.clipId } ?: return
         val timed = trackInTimelineTime(track, clip)
         record("Pin text") {
@@ -359,6 +382,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
     fun pinLayerToTrack(layerClipId: String) {
         val current = _state.value
         val track = current.tracking.track ?: return
+        if (!trackStillFits(current)) return
         val source = current.videoClips.firstOrNull { it.id == current.tracking.clipId } ?: return
         val layer = current.videoClips.firstOrNull { it.id == layerClipId } ?: return
         val timed = trackInTimelineTime(track, source)
@@ -463,6 +487,12 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
                 }
                 return@launch
             }
+            // Measured on this footage: reversed or replaced meanwhile, the keys
+            // would be on another clock and fight the shake instead of taking it out.
+            if (!sameFootage(clip, _state.value.videoClips.firstOrNull { it.id == clipId })) {
+                _state.update { it.copy(stabilize = StabilizeProgress()) }
+                return@launch
+            }
 
             recordLate(
                 "Stabilize",
@@ -470,7 +500,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
                     snapshot.copy(videoClips = snapshot.videoClips.map {
                         // The measurement with the keys, so Strength re-solves from
                         // it, and the strength it was solved at, so the slider reads it.
-                        if (it.id == clipId) it.copy(stabilizer = result.keyframes, stabilizerMeasurement = result.measurement, stabilizeStrength = strength) else it
+                        if (it.id == clipId && sameFootage(clip, it)) it.copy(stabilizer = result.keyframes, stabilizerMeasurement = result.measurement, stabilizeStrength = strength) else it
                     })
                 },
                 alongside = {
@@ -506,3 +536,11 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
         }
     }
 }
+
+/**
+ * Whether [now] still plays the footage [then] was measured on - the same
+ * file, the same way round. A result measured on one (a mask, a track, a
+ * stabilizer) means nothing on the other.
+ */
+internal fun sameFootage(then: Clip, now: Clip?): Boolean =
+    now != null && now.uri == then.uri && now.isReversed == then.isReversed

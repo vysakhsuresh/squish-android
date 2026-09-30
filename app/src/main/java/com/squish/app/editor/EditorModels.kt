@@ -269,7 +269,10 @@ data class TrackProgress(
     val clipId: String? = null,
     val pointX: Float = 0.5f,
     val pointY: Float = 0.5f,
-    val boxFraction: Float = 0.14f
+    val boxFraction: Float = 0.14f,
+    /** What the track was measured on, so it is not pinned to other footage (a clip reversed or replaced since). */
+    val trackedUri: String? = null,
+    val trackedReversed: Boolean = false
 )
 
 /**

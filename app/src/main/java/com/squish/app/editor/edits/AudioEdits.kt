@@ -984,23 +984,30 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             val current = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return@launch onDone(0L)
             // Listened to for the window it had: a shot trimmed or floated
             // meanwhile is not the one the answer is for.
-            if (!current.isMain || current.sourceInMs != clip.sourceInMs || current.sourceOutMs != clip.sourceOutMs) return@launch onDone(0L)
+            fun same(c: Clip?) = c != null && c.isMain && c.sourceInMs == clip.sourceInMs && c.sourceOutMs == clip.sourceOutMs &&
+                c.uri == clip.uri && c.isReversed == clip.isReversed
+            if (!same(current)) return@launch onDone(0L)
             val kept = SilenceRules.keptWindows(found, current.sourceInMs, current.sourceOutMs)
             val removed = if (kept.isEmpty()) 0L else SilenceRules.removedMs(kept, current.sourceInMs, current.sourceOutMs)
             if (removed <= 0L) return@launch onDone(0L)
-            val gone = removedOnTimeline(current, kept.filter { it.last - it.first >= MIN_CLIP_MS })
             recordLate("Remove silences", edit = { snapshot ->
+                // Worked out on the state it lands in, not the screen: under a gesture
+                // still moving the two differ, and the shifts must be the recorded ones.
+                val here = snapshot.videoClips.firstOrNull { it.id == clipId }
+                if (!same(here)) return@recordLate snapshot
+                val at = here!!.timelineStartMs
+                val gone = removedOnTimeline(here, kept.filter { it.last - it.first >= MIN_CLIP_MS })
                 snapshot.copy(
                     // Effects on the words after the shot move back with them, as the lines do.
                     effects = snapshot.effects.map { e ->
-                        if (e.startMs < current.timelineStartMs) e else {
+                        if (e.startMs < at) e else {
                             val start = shiftedPast(e.startMs, gone)
                             e.copy(startMs = start, endMs = start + (e.endMs - e.startMs))
                         }
                     }
                 ).withTimeline { it.withSilencesRemoved(clipId, kept) }.copy(
                     textOverlays = snapshot.textOverlays.map { line ->
-                        if (line.startMs < current.timelineStartMs) line else {
+                        if (line.startMs < at) line else {
                             val start = shiftedPast(line.startMs, gone)
                             line.copy(startMs = start, endMs = start + (line.endMs - line.startMs))
                         }

@@ -342,7 +342,13 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 com.squish.app.media.effects.AutoAdjust.of(pixels, clip.adjust)
             }
             recordLate("Auto adjust", edit = { snapshot ->
-                snapshot.copy(videoClips = snapshot.videoClips.map { if (it.id == clipId) it.copy(adjust = adjusted) else it })
+                snapshot.copy(videoClips = snapshot.videoClips.map {
+                    // Only what Auto sets: a slider moved while the frame was read keeps its value.
+                    if (it.id == clipId) it.copy(adjust = it.adjust.copy(
+                        exposure = adjusted.exposure, temperature = adjusted.temperature, tint = adjusted.tint,
+                        contrast = adjusted.contrast, saturation = adjusted.saturation, brightness = adjusted.brightness
+                    )) else it
+                })
             })
             onDone(true)
         }

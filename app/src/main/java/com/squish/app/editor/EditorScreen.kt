@@ -478,7 +478,9 @@ fun EditorScreen(
                     EditorHeader(
                         state = state,
                         onBack = leave,
-                        onRename = { renaming = true },
+                        // Not while the draft is still loading: its name, landing, would
+                        // write over the one typed.
+                        onRename = if (state.isLoadingSource) null else ({ renaming = true }),
                         onUndo = viewModel::undo,
                         onRedo = viewModel::redo,
                         onExport = { exportSheetOpen = true }
