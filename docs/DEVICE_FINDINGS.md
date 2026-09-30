@@ -406,5 +406,9 @@ Open:
 - Opening Mask, Cutout, Adjust and the other shot tools on a shot the
   playhead is off brings the playhead onto it.
 
-Not tested: voiceover - the microphone has never been granted to Squish on
-this phone, and granting it is the owner's choice, not a test's.
+Voiceover (mic granted "While using the app" at the owner's word): the
+permission prompt, then the 3-2-1 count-in starts at once; the picture plays
+silently with "Listening"; a take grows on a sound row; Stop lands a
+"Voiceover" clip with a mic glyph and a waveform, selected, playhead back on
+its start; the WAV is under files/voice; the phone's mic indicator goes out;
+"Record this take again" is offered.
