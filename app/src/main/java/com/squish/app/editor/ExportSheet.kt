@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.fadeIn
@@ -313,6 +314,19 @@ private fun PictureRows(state: EditorUiState, viewModel: EditorViewModel) {
     val fps = state.exportFps
     val fpsLabel = if (fps % 1f > 0.05f) "%.2f fps".format(fps) else "%.0f fps".format(fps)
     val codecLabel = if (state.exportCodecHevc) "HEVC" else "H.264"
+    // Where it is going, in one tap: each sets the size, the limit and the
+    // quality that place wants, and every row below still shows and changes it.
+    Text("For", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+        SharePreset.entries.forEach { preset ->
+            SelectableChip(
+                label = preset.label,
+                selected = preset.matches(state),
+                accentColor = SquishColors.Orange,
+                onClick = { preset.apply(viewModel) }
+            )
+        }
+    }
     OutputSizePicker(
         outputP = state.outputP,
         fitToSize = state.fitToSize,
@@ -488,5 +502,31 @@ private fun OvershootCard(actualBytes: Long, targetBytes: Long, onKeep: () -> Un
                 onClick = onRetry
             )
         }
+    }
+}
+
+/**
+ * Where a video is going, as the settings that place wants: WhatsApp's 16 MB
+ * attachment limit and email's 10, Reels and TikTok at 1080p, YouTube at the
+ * footage's own size and higher quality.
+ */
+private enum class SharePreset(val label: String, val outputP: Int, val fitMb: Int?, val quality: ExportQuality) {
+    WhatsApp("WhatsApp", OutputSize.ORIGINAL, 16, ExportQuality.Recommended),
+    Email("Email", OutputSize.ORIGINAL, 10, ExportQuality.Recommended),
+    Reels("Reels · TikTok", 1080, null, ExportQuality.Recommended),
+    YouTube("YouTube", OutputSize.ORIGINAL, null, ExportQuality.Higher);
+
+    fun matches(state: EditorUiState): Boolean =
+        if (fitMb != null) state.fitToSize && state.targetSizeMb == fitMb
+        else !state.fitToSize && state.outputP == outputP && state.quality == quality
+
+    fun apply(viewModel: EditorViewModel) {
+        if (fitMb != null) {
+            viewModel.setTargetSizeMb(fitMb)
+            viewModel.setFitToSize(true)
+        } else {
+            viewModel.setOutputP(outputP)
+        }
+        viewModel.setQuality(quality)
     }
 }
