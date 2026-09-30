@@ -77,4 +77,15 @@ run timecode   $TIMELINE "$SRC/editor/Timecode.kt" tools/jvm/TimecodeChecks.kt
 run framerules $TIMELINE "$SRC/editor/PreviewBox.kt" "$SRC/media/ExportPresets.kt" tools/jvm/stub/Quality.kt \
                "$SRC/editor/FrameRules.kt" tools/jvm/FrameRulesChecks.kt
 
+# 30 September: the listening tools, layouts, GIF, auto adjust, translation.
+run voicecleaner "$SRC/media/audio/VoiceCleaner.kt" tools/jvm/VoiceCleanerChecks.kt
+run loudness   "$SRC/media/audio/Loudness.kt" tools/jvm/LoudnessChecks.kt
+run duck       $TIMELINE "$SRC/timeline/DuckRules.kt" tools/jvm/DuckChecks.kt
+run silence    $TIMELINE "$SRC/timeline/SilenceRules.kt" tools/jvm/SilenceChecks.kt
+run beatfit    $TIMELINE tools/jvm/BeatFitChecks.kt
+run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScreen.kt" tools/jvm/SplitScreenChecks.kt
+run gif        "$SRC/media/gif/GifEncoder.kt" tools/jvm/GifChecks.kt
+run autoadjust "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
+run translatechunks "$SRC/online/OnlineTranslate.kt" tools/jvm/stub/translate/OnlineStub.kt tools/jvm/stub/translate/ContextStub.kt \n               tools/jvm/stub/translate/JsonStub.kt tools/jvm/TranslateChunkChecks.kt
+
 rm -rf "$OUT"
