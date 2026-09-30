@@ -635,6 +635,38 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * Typing into a line just added carries the add's own step on, under its
      * name; see [addCaptionAtPlayhead].
      */
+    /**
+     * Every line of words in another language, online (OnlineTranslate), as one
+     * undo step; stickers - an emoji or two - are left. [onDone] gets how many
+     * lines were translated, or -1 when the service could not be reached.
+     */
+    fun translateCaptions(from: String, to: String, onDone: (Int) -> Unit) {
+        val lines = _state.value.textOverlays.filter { item ->
+            val t = item.text.trim()
+            t.isNotEmpty() && t.codePointCount(0, t.length) > 2
+        }
+        if (lines.isEmpty()) return onDone(0)
+        viewModelScope.launch {
+            val done = HashMap<String, String>()
+            var failed = false
+            for (line in lines) {
+                val out = runCatching { com.squish.app.online.OnlineTranslate.translate(app, line.text, from, to) }.getOrNull()
+                if (out == null) { failed = true; break }
+                done[line.id] = out
+            }
+            if (done.isEmpty()) return@launch onDone(if (failed) -1 else 0)
+            record("Translate captions") {
+                _state.update { current ->
+                    current.copy(textOverlays = current.textOverlays.map { item ->
+                        // New words are not the words the segmenter timed.
+                        done[item.id]?.let { item.copy(text = it, wordStartsMs = emptyList()) } ?: item
+                    })
+                }
+            }
+            onDone(done.size)
+        }
+    }
+
     fun updateCaptionText(id: String, text: String) =
         record(typingLabel(id), gesture = typingGesture(id), holdMs = TYPING_HOLD_MS) {
             _state.update { current ->

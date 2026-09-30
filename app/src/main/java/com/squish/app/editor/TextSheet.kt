@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Color as AndroidColor
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -338,6 +340,8 @@ fun TextPanel(
                 Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
             }
         }
+
+        if (lines.isNotEmpty()) TranslateCard(viewModel)
 
         PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
@@ -1245,4 +1249,62 @@ object UserStyles {
 
     private fun prefs(context: Context) = context.getSharedPreferences("text_styles", Context.MODE_PRIVATE)
     private const val KEY = "styles"
+}
+
+/**
+ * Every caption in another language, online. The language the lines are in,
+ * then the one wanted; one undo takes it back.
+ */
+@Composable
+private fun TranslateCard(viewModel: EditorViewModel) {
+    val gate = com.squish.app.online.rememberOnlineGate()
+    val languages = com.squish.app.online.OnlineTranslate.languages
+    var from by rememberSaveable { mutableStateOf("en") }
+    var to by rememberSaveable { mutableStateOf("es") }
+    var working by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf<String?>(null) }
+    PanelSurface(accent = SquishColors.Amber) {
+        PanelHeading(
+            "Translate",
+            "Every caption into another language · online",
+            icon = Icons.Filled.Translate,
+            accent = SquishColors.Amber
+        )
+        Text("They're in", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            languages.forEach { (code, name) ->
+                SelectableChip(label = name, selected = from == code, accentColor = SquishColors.Amber, onClick = { from = code })
+            }
+        }
+        Text("Translate into", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            languages.forEach { (code, name) ->
+                SelectableChip(label = name, selected = to == code, accentColor = SquishColors.Amber, onClick = { to = code })
+            }
+        }
+        SquishOutlinedButton(
+            text = if (working) "Translating…" else "Translate captions",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                if (working || from == to) return@SquishOutlinedButton
+                gate.request("Translation") {
+                    working = true
+                    note = null
+                    viewModel.text.translateCaptions(from, to) { n ->
+                        working = false
+                        note = when {
+                            n < 0 -> "Couldn't reach the translation service. Check the connection and try again."
+                            n == 0 -> "No lines of words to translate."
+                            else -> "Translated $n ${if (n == 1) "line" else "lines"}. Undo takes it back."
+                        }
+                    }
+                }
+            }
+        )
+        Text(
+            note ?: "Only the captions' words are sent, to MyMemory's free translator - never the video.",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (note != null) SquishColors.Teal else SquishColors.TextMuted
+        )
+    }
 }

@@ -624,7 +624,7 @@ private fun OnlineCard() {
         )
         SwitchRow(
             title = "Online features",
-            blurb = "Free music and stock footage from the Internet Archive, and free fonts from Google Fonts. Only your search and the name of " +
+            blurb = "Free music and stock footage from the Internet Archive, free fonts from Google Fonts, and caption translation. Only your search, a caption's words and the name of " +
                 "what you pick are sent - never your videos, photos or projects. Anything already downloaded stays when this is off.",
             checked = enabled == true,
             onChange = { Online.setEnabled(context, it) }
