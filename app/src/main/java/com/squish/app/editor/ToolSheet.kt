@@ -418,7 +418,7 @@ private const val LOOK_LEAD_MS = 500L
  * Until the file has answered, the edit's source shape stands in.
  */
 @Composable
-private fun rememberClipAspect(state: EditorUiState, clip: com.squish.app.timeline.Clip): Float {
+internal fun rememberClipAspect(state: EditorUiState, clip: com.squish.app.timeline.Clip): Float {
     val fallback = if (state.sourceWidth > 0 && state.sourceHeight > 0) state.sourceWidth.toFloat() / state.sourceHeight else 16f / 9f
     val context = androidx.compose.ui.platform.LocalContext.current
     val uri = clip.uri ?: state.sourceUri

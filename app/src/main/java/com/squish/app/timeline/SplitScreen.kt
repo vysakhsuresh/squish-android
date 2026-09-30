@@ -40,19 +40,63 @@ fun TimelineState.withSplitScreen(clipId: String, side: SplitSide): TimelineStat
 )
 
 /**
- * A 2x2 grid collage: a picture shrunk to half size into one quarter of the
- * frame, whole (not cut). A picture the frame's own shape fills its tile
- * exactly; another shape sits letterboxed inside it. Offsets are fractions of
- * half the frame, so ±0.5 puts the centre on a quarter line.
+ * A 2x2 grid collage: a picture shrunk into one quarter of the frame, whole
+ * (not cut). [x] and [y] are the quarter's centre in fractions of half the
+ * frame, so ±0.5 is a quarter line.
  */
 enum class GridTile(val label: String, val x: Float, val y: Float) {
-    TopLeft("↖", -0.5f, -0.5f), TopRight("↗", 0.5f, -0.5f), BottomLeft("↙", -0.5f, 0.5f), BottomRight("↘", 0.5f, 0.5f)
+    TopLeft("↖", -0.5f, -0.5f), TopRight("↗", 0.5f, -0.5f), BottomLeft("↙", -0.5f, 0.5f), BottomRight("↘", 0.5f, 0.5f);
+
+    /**
+     * The scale and offsets that put a picture whole in this quarter of the
+     * frame, in the units a placement is in: fractions of half the canvas the
+     * picture is composed on.
+     *
+     * An overlay is composed on the frame itself, so it is 0.5 and ±0.5. A
+     * base shot is composed on the picture's canvas and the frame is cut from
+     * that afterwards - a 1:1 frame over portrait footage is the middle of a
+     * 9:16 canvas - so ±0.5 of the canvas put the shot half off the frame
+     * (seen on the phone: the top-left tile sat on the frame's top edge). The
+     * quarter is measured on the kept [frameLeft]..[frameTop] window instead,
+     * and a picture of another shape than the canvas ([pictureAspect] against
+     * [canvasAspect], both wide over tall) is fitted inside it.
+     */
+    fun placement(
+        canvasAspect: Float = 1f,
+        pictureAspect: Float = canvasAspect,
+        frameLeft: Float = 0f,
+        frameTop: Float = 0f,
+        frameWidth: Float = 1f,
+        frameHeight: Float = 1f
+    ): GridPlacement {
+        val ca = canvasAspect.takeIf { it.isFinite() && it > 0f } ?: 1f
+        val pa = pictureAspect.takeIf { it.isFinite() && it > 0f } ?: ca
+        val fw = frameWidth.takeIf { it.isFinite() && it > 0f }?.coerceAtMost(1f) ?: 1f
+        val fh = frameHeight.takeIf { it.isFinite() && it > 0f }?.coerceAtMost(1f) ?: 1f
+        // The picture as the canvas fits it, in fractions of the canvas.
+        val pw = if (pa >= ca) 1f else pa / ca
+        val ph = if (pa >= ca) ca / pa else 1f
+        val scale = minOf(fw / 2f / pw, fh / 2f / ph)
+        return GridPlacement(
+            scale = scale,
+            offsetX = 2f * (frameLeft + fw / 2f - 0.5f) + x * fw,
+            offsetY = 2f * (frameTop + fh / 2f - 0.5f) + y * fh
+        )
+    }
 }
 
-/** [clipId] - a shot or an overlay - placed still in [tile] of a 2x2 grid. */
-fun TimelineState.withGridTile(clipId: String, tile: GridTile): TimelineState = copy(
+/** Where a [GridTile] puts a picture: its placement's scale and offsets. */
+data class GridPlacement(val scale: Float, val offsetX: Float, val offsetY: Float) {
+    /** Whether a clip already sits here, give or take the rounding a saved draft brings back. */
+    fun matches(scale: Float, offsetX: Float, offsetY: Float): Boolean =
+        kotlin.math.abs(scale - this.scale) < 1e-3f && kotlin.math.abs(offsetX - this.offsetX) < 1e-3f &&
+            kotlin.math.abs(offsetY - this.offsetY) < 1e-3f
+}
+
+/** [clipId] - a shot or an overlay - placed still at [at], a quarter of a 2x2 grid (GridTile.placement). */
+fun TimelineState.withGridTile(clipId: String, at: GridPlacement): TimelineState = copy(
     clips = clips.map {
         if (it.id != clipId || it.kind != ClipKind.Video) it
-        else it.copy(scale = 0.5f, offsetXFraction = tile.x, offsetYFraction = tile.y, rotation = 0f, keyframes = emptyList(), mask = null)
+        else it.copy(scale = at.scale, offsetXFraction = at.offsetX, offsetYFraction = at.offsetY, rotation = 0f, keyframes = emptyList(), mask = null)
     }
 )

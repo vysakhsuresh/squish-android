@@ -331,9 +331,9 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
         }
     }
 
-    /** A shot or overlay placed whole in one quarter of a 2x2 grid (GridTile). */
-    fun gridTile(clipId: String, tile: com.squish.app.timeline.GridTile) = record("Grid") {
-        mutateTimeline { it.withGridTile(clipId, tile) }
+    /** A shot or overlay placed whole in one quarter of a 2x2 grid, where GridTile.placement puts it. */
+    fun gridTile(clipId: String, at: com.squish.app.timeline.GridPlacement) = record("Grid") {
+        mutateTimeline { it.withGridTile(clipId, at) }
     }
 
     /** An overlay made one half of a split screen, the shot under it the other (SplitSide). */

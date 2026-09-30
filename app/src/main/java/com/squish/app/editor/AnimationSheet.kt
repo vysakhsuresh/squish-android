@@ -382,16 +382,26 @@ fun PlacementPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
         ) {
             viewModel.clips.setClipTransform(clip.id, rotation = it)
         }
-        // A 2x2 collage: this picture whole in one quarter.
+        // A 2x2 collage: this picture whole in one quarter of the frame. An
+        // overlay is laid out in the frame; a shot on the canvas the frame is
+        // cut from, fitted at its own shape (see GridTile.placement).
+        val seenAspect = rememberClipAspect(state, clip).let { a ->
+            val turned = if (clip.quarterTurns % 2 != 0) 1f / a else a
+            val cut = clip.crop?.rect?.let { r -> if (r.width > 0f && r.height > 0f) turned * r.width / r.height else turned } ?: turned
+            if (state.quarterTurned) 1f / cut else cut
+        }
+        val window = state.effectiveCrop
         Text("Grid - put this picture in a quarter", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             com.squish.app.timeline.GridTile.entries.forEach { tile ->
+                val at = if (clip.isOverlay) tile.placement()
+                else tile.placement(state.canvasAspect, seenAspect, window.left, window.top, window.width, window.height)
                 SelectableChip(
                     label = tile.label,
-                    selected = !animated && here.scale == 0.5f && here.offsetXFraction == tile.x && here.offsetYFraction == tile.y,
+                    selected = !animated && at.matches(here.scale, here.offsetXFraction, here.offsetYFraction),
                     accentColor = accent,
                     modifier = Modifier.weight(1f),
-                    onClick = { viewModel.layers.gridTile(clip.id, tile) }
+                    onClick = { viewModel.layers.gridTile(clip.id, at) }
                 )
             }
         }
