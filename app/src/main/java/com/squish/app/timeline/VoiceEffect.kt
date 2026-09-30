@@ -12,6 +12,8 @@ package com.squish.app.timeline
  */
 enum class VoiceEffect(val label: String, val pitch: Float = 1f) {
     None("None"),
+    /** Rumble out, hiss between words down, the voice brought forward (VoiceCleaner): CapCut's "Enhance voice" and "Reduce noise" in one. */
+    Enhance("Enhance"),
     Chipmunk("Chipmunk", pitch = 1.6f),
     Deep("Deep", pitch = 0.72f),
     Robot("Robot"),

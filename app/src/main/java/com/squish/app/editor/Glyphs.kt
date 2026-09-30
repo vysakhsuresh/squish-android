@@ -95,6 +95,7 @@ val EffectKind.color: Color
 val VoiceEffect.glyph: Glyph
     get() = when (this) {
         VoiceEffect.None -> glyph(SquishIcons.Mic, 0xFF8A90AE, 0xFF4A4F6E, ordinal)
+        VoiceEffect.Enhance -> glyph(SquishIcons.Mic, 0xFF3DE0C0, 0xFF2F80ED, ordinal)
         VoiceEffect.Chipmunk -> glyph(SquishIcons.Chipmunk, 0xFF3DE0C0, 0xFF1F8A70, ordinal)
         VoiceEffect.Deep -> glyph(SquishIcons.Deep, 0xFF6C7BFF, 0xFF2B2F8F, ordinal)
         VoiceEffect.Robot -> glyph(SquishIcons.Robot, 0xFF4FA8FF, 0xFF2F4FC0, ordinal)

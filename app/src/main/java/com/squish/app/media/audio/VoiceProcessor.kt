@@ -38,6 +38,9 @@ class VoiceProcessor(private val effectNow: () -> VoiceEffect) : BaseAudioProces
     private var hpPrev = FloatArray(0)
     private var lp = FloatArray(0)
 
+    // Enhance: its own state, made for the format.
+    private var cleaner: VoiceCleaner? = null
+
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
             throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
@@ -50,6 +53,7 @@ class VoiceProcessor(private val effectNow: () -> VoiceEffect) : BaseAudioProces
         hp = FloatArray(channels)
         hpPrev = FloatArray(channels)
         lp = FloatArray(channels)
+        cleaner = VoiceCleaner(sampleRate, channels)
         return inputAudioFormat
     }
 
@@ -81,6 +85,7 @@ class VoiceProcessor(private val effectNow: () -> VoiceEffect) : BaseAudioProces
                     delay[index] = s + delay[index] * ECHO_FEEDBACK
                     echoed
                 }
+                VoiceEffect.Enhance -> cleaner?.process(s, channel) ?: s
                 VoiceEffect.Radio -> {
                     val high = hpA * (hp[channel] + s - hpPrev[channel])
                     hpPrev[channel] = s
@@ -108,6 +113,7 @@ class VoiceProcessor(private val effectNow: () -> VoiceEffect) : BaseAudioProces
         hp.fill(0f)
         hpPrev.fill(0f)
         lp.fill(0f)
+        cleaner?.reset()
     }
 
     private companion object {
