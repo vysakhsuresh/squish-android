@@ -9,6 +9,8 @@ import com.squish.app.media.audio.BeatDetector
 import com.squish.app.media.audio.BeatMap
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.VoiceRecorder
+import com.squish.app.timeline.DuckRules
+import com.squish.app.media.audio.SpeechSegmenter
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.ClipKind
@@ -829,5 +831,49 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
 
         /** Ticks the picture must be stopped for before the take ends with it: half a second, past any rebuffering. */
         const val STOP_TICKS = 5
+    }
+
+    // ---- Auto-duck -------------------------------------------------------------------
+
+    /**
+     * Turns the sound [clipId] down under every stretch of talking on the
+     * timeline - voiceovers, lines read aloud, and the camera sound of the
+     * shots - and back up between, as volume keys (DuckRules). One undo step.
+     * [onDone] is told how many dips were made: 0 when no speech was found
+     * under it, and nothing on the clip changes then.
+     */
+    fun duckUnderSpeech(clipId: String, onDone: (Int) -> Unit) {
+        val music = _state.value.audioClips.firstOrNull { it.id == clipId } ?: return onDone(0)
+        viewModelScope.launch {
+            val state = _state.value
+            val sources = (state.audioClips.filter { it.id != clipId && it.isVoiceover } +
+                state.audioClips.filter { it.id != clipId && it.uri?.path?.contains("/speech/") == true } +
+                (if (state.muteOriginal) emptyList() else state.videoClips.filter { it.isHeard && !com.squish.app.media.StillClips.isStill(it.uri) }))
+                .distinctBy { it.id }
+                .filter { it.timelineEndMs > music.timelineStartMs && it.timelineStartMs < music.timelineEndMs }
+            val found = HashMap<Uri, List<LongRange>>()
+            val speech = ArrayList<LongRange>()
+            for (clip in sources) {
+                val uri = clip.uri ?: continue
+                val segments = found[uri] ?: run {
+                    val pcm = PcmDecoder.decodeMono(app, uri, targetSampleRate = 16_000, maxDurationMs = clip.sourceOutMs + 1_000L)
+                    val s = if (pcm == null) emptyList() else withContext(Dispatchers.Default) {
+                        SpeechSegmenter.segment(pcm).map { it.startMs..it.endMs }
+                    }
+                    found[uri] = s
+                    s
+                }
+                speech += DuckRules.onTimeline(clip, segments)
+            }
+            val current = _state.value.audioClips.firstOrNull { it.id == clipId } ?: return@launch onDone(0)
+            val keys = DuckRules.keys(current, speech)
+            if (keys.isEmpty()) return@launch onDone(0)
+            record("Duck under speech") {
+                mutateTimeline { timeline ->
+                    timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(volumeKeys = keys) else it })
+                }
+            }
+            onDone(DuckRules.merged(speech.filter { it.last > current.timelineStartMs && it.first < current.timelineEndMs }).size)
+        }
     }
 }

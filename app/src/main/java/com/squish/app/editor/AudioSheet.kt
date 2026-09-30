@@ -486,6 +486,30 @@ fun SoundVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewMode
                 color = SquishColors.TextMuted
             )
         }
+
+        // Auto-duck: the song down under every line spoken over it, as keys the
+        // row above then shows and the slider can still change.
+        var ducking by remember(clip.id) { mutableStateOf(false) }
+        var duckNote by remember(clip.id) { mutableStateOf<String?>(null) }
+        SquishOutlinedButton(
+            text = if (ducking) "Listening for speech…" else "Duck under speech",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                if (ducking) return@SquishOutlinedButton
+                ducking = true
+                duckNote = null
+                viewModel.audio.duckUnderSpeech(clip.id) { dips ->
+                    ducking = false
+                    duckNote = if (dips == 0) "No talking found under this sound - voiceovers and the shots' own sound are listened to."
+                    else "Turned down under $dips ${if (dips == 1) "stretch" else "stretches"} of speech. Undo takes it back."
+                }
+            }
+        )
+        Text(
+            duckNote ?: "Lowers this sound wherever someone talks over it, and brings it back up between.",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (duckNote != null) SquishColors.Teal else SquishColors.TextMuted
+        )
     }
 }
 
