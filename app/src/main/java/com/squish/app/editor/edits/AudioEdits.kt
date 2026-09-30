@@ -15,6 +15,7 @@ import com.squish.app.timeline.SilenceRules
 import com.squish.app.timeline.withSilencesRemoved
 import com.squish.app.media.audio.Loudness
 import com.squish.app.media.audio.MonoPcm
+import com.squish.app.timeline.withShotsFittedToBeats
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.ClipKind
@@ -801,6 +802,16 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                     timeline.copy(playheadMs = at).withSplitAllTracks { it.isMain }
                 }
             }
+            _state.update { it.copy(selectedClipId = null) }
+        }
+    }
+
+    /** Each main-track shot shortened to end on a beat of the chosen grid (withShotsFittedToBeats), as one step. */
+    fun fitShotsToBeats() {
+        val beats = _state.value.beatGrid
+        if (beats.isEmpty()) return
+        record("Fit to the beat") {
+            mutateTimeline { it.withShotsFittedToBeats(beats) }
             _state.update { it.copy(selectedClipId = null) }
         }
     }

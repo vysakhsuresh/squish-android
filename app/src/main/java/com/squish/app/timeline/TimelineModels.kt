@@ -1965,3 +1965,37 @@ fun TimelineState.withSilencesRemoved(clipId: String, kept: List<LongRange>): Ti
     val replace = { c: Clip -> if (c.id == clipId) pieces else listOf(c) }
     return copy(clips = clips.flatMap(replace), selectedClipId = null).relaidFrom(this, replace)
 }
+
+/**
+ * Fit to the beat: each shot on the main track shortened so its cut lands on
+ * a beat of [beats] (timeline moments) - the last beat inside it, worked
+ * through in order so each shot starts where the one before now ends. A shot
+ * with no beat inside it after [MIN_CLIP_MS] is left its length. Shots only
+ * get shorter: nothing is shown that was trimmed away. Overlays, sounds and
+ * words stay where they are, so the song under the shots is the one the cuts
+ * now fall on.
+ */
+fun TimelineState.withShotsFittedToBeats(beats: List<Long>): TimelineState {
+    val sorted = beats.filter { it > 0L }.sorted()
+    if (sorted.isEmpty()) return this
+    val shots = baseVideoClips
+    if (shots.isEmpty()) return this
+    var cursor = shots.first().timelineStartMs
+    val fitted = HashMap<String, Clip>()
+    for (shot in shots) {
+        val placed = shot.copy(timelineStartMs = cursor)
+        val end = cursor + shot.durationMs
+        val beat = sorted.lastOrNull { it <= end && it >= cursor + MIN_CLIP_MS }
+        val clip = if (beat == null || beat >= end - 1L) placed else {
+            val out = placed.sourceAt(beat).coerceIn(placed.sourceInMs + 1L, placed.sourceOutMs)
+            placed.copy(
+                sourceOutMs = out,
+                speedRamp = placed.speedRamp.sliced(0L, out - placed.sourceInMs)
+            )
+        }
+        fitted[shot.id] = clip
+        cursor += clip.durationMs
+    }
+    val replace = { c: Clip -> fitted[c.id]?.let { listOf(it) } ?: listOf(c) }
+    return copy(clips = clips.flatMap(replace)).relaidFrom(this, replace)
+}

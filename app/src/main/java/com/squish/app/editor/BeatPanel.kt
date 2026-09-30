@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.GraphicEq
@@ -197,6 +198,15 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
                     accent = SquishColors.Violet,
                     action = "Cut ${densityName(beats.every)}"
                 ) { viewModel.audio.cutOnBeats() }
+
+                BeatAction(
+                    icon = Icons.Filled.MusicNote,
+                    title = "Fit shots to the beat",
+                    body = "Shortens each shot so it ends on a dot - an edit that moves with " +
+                        "the song, the way AutoCut makes one. Shots only get shorter.",
+                    accent = SquishColors.Cyan,
+                    action = "Fit ${densityName(beats.every)}"
+                ) { viewModel.audio.fitShotsToBeats() }
             }
 
             else -> {
