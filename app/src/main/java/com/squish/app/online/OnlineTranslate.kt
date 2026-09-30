@@ -65,9 +65,50 @@ object OnlineTranslate {
             "&langpair=" + URLEncoder.encode("$from|$to", "UTF-8")
         val json = JSONObject(Online.get(context, url))
         if (json.optInt("responseStatus") != 200 || json.optBoolean("quotaFinished")) return null
-        return json.optJSONObject("responseData")?.optString("translatedText")?.takeIf { it.isNotBlank() }
-            ?.let(::unescape)
+        val top = json.optJSONObject("responseData")?.optString("translatedText")
+        val matches = json.optJSONArray("matches")
+        val candidates = (0 until (matches?.length() ?: 0)).mapNotNull { i ->
+            val m = matches!!.optJSONObject(i) ?: return@mapNotNull null
+            Candidate(
+                translation = m.optString("translation"),
+                quality = m.optString("quality").toIntOrNull() ?: 0,
+                match = m.optDouble("match", 0.0)
+            )
+        }
+        return pick(text, top, candidates)
     }
+
+    /** One of the service's translation-memory entries for a piece. */
+    data class Candidate(val translation: String, val quality: Int, val match: Double)
+
+    /**
+     * The translation to use for [source]: a reviewed entry (quality 50 and
+     * up) that matches the source closely, the best of those, else the
+     * service's own answer [top].
+     *
+     * The service answers with its closest memory entry whatever its quality,
+     * and a crowd entry of quality 0 is often wrong: "BIG NEWS" came back as
+     * "¡Uups!" on the phone, with "¡GRANDES NOTICIAS!" at quality 74 beside
+     * it. Entries also carry the line breaks and spaces of the text they were
+     * taken from, which are cut to the source's; a line all in capitals stays
+     * in capitals.
+     */
+    fun pick(source: String, top: String?, candidates: List<Candidate>): String? {
+        val reviewed = candidates
+            .filter { it.quality >= MIN_QUALITY && it.match >= MIN_MATCH && tidy(it.translation).isNotBlank() }
+            .maxWithOrNull(compareBy<Candidate> { it.match }.thenBy { it.quality })
+        val chosen = tidy(reviewed?.translation ?: top ?: return null).takeIf { it.isNotBlank() } ?: return null
+        val letters = source.filter { it.isLetter() }
+        val shouting = letters.length >= 2 && letters.all { it.isUpperCase() }
+        return if (shouting) chosen.uppercase() else chosen
+    }
+
+    /** Entities decoded, and the breaks and spaces an entry brought from its own text made one space or cut off: a piece is one line. */
+    private fun tidy(s: String): String =
+        unescape(s).replace("&#10;", " ").replace("&#13;", " ").replace(Regex("\\s+"), " ").trim()
+
+    private const val MIN_QUALITY = 50
+    private const val MIN_MATCH = 0.9
 
     /** The service returns some punctuation as entities. */
     private fun unescape(s: String): String = s
