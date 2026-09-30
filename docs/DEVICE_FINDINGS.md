@@ -482,9 +482,9 @@ looked for photo overlays, f4d915a - seen giving two photos their moves), and
 the Export sheet said "33% bigger than the original" on a photo project
 (266f459, seen).
 
-Still open: the Clip sound switch shows on a main-track photo, which has
-nothing to switch. Export of Grid and Split screen not yet compared with the
-preview.
+Still open: export of Grid and Split screen not yet compared with the
+preview. A photo's Volume sheet now says it has no sound (dfe5049) - built,
+not seen.
 
 Test files removed by MediaStore id (audio 1001320247; video 1001320254,
 1001320269, 1001320286; image 1001320271); the two test projects are in
