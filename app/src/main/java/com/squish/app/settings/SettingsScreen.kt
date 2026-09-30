@@ -495,7 +495,7 @@ private fun PrivacyCard() {
         )
         Promise("No account, ever.")
         Promise("No upload. Your videos, photos and projects never leave the phone - there is nothing in Squish that sends them.")
-        Promise("Offline until you say otherwise. Online features - free music and fonts - are off until you turn them on, and only fetch.")
+        Promise("Offline until you say otherwise. Online features - free music, stock footage and fonts - are off until you turn them on, and only fetch.")
         Promise("No watermark and no paywalled resolution.")
         Promise("Speech recognition runs on the device or not at all — it never falls back to a server.")
     }
@@ -624,7 +624,7 @@ private fun OnlineCard() {
         )
         SwitchRow(
             title = "Online features",
-            blurb = "Free music from the Internet Archive and free fonts from Google Fonts. Only your search and the name of " +
+            blurb = "Free music and stock footage from the Internet Archive, and free fonts from Google Fonts. Only your search and the name of " +
                 "what you pick are sent - never your videos, photos or projects. Anything already downloaded stays when this is off.",
             checked = enabled == true,
             onChange = { Online.setEnabled(context, it) }

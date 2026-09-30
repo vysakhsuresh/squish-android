@@ -317,6 +317,15 @@ fun EditorScreen(
         uris.forEach { context.keepReadAccess(it) }
         viewModel.layers.addOverlayClips(uris)
     }
+    // Free stock footage: asked for online first, then a grid; the pick lands at the playhead.
+    val stockGate = com.squish.app.online.rememberOnlineGate()
+    var showStock by remember { mutableStateOf(false) }
+    if (showStock) {
+        com.squish.app.online.StockVideoSheet(
+            onPicked = { uri -> showStock = false; viewModel.clips.insertSourcesAtPlayhead(listOf(uri)) },
+            onDismiss = { showStock = false }
+        )
+    }
     val addOverlay = {
         pickOverlayClips.launch(
             PickVisualMediaRequest.Builder()
@@ -531,6 +540,7 @@ fun EditorScreen(
                         onEffectTrimEdge = viewModel.clips::trimEffectTo,
                         onAddVideo = addVideos,
                         onAddBlank = viewModel.clips::insertBlankAtPlayhead,
+                        onAddStock = { stockGate.request("Free stock footage") { showStock = true } },
                         onAddOverlay = addOverlay,
                         onCloseGap = viewModel.clips::closeGap,
                         onOpenSound = { openToolName = Tool.Sound.name },

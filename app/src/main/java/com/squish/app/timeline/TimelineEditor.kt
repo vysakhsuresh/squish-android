@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.TextFields
@@ -248,6 +249,8 @@ fun TimelineEditor(
      */
     onAddVideo: (() -> Unit)? = null,
     onAddBlank: (() -> Unit)? = null,
+    /** Free stock footage from the internet (StockVideoSheet), offered beside Blank. */
+    onAddStock: (() -> Unit)? = null,
     onAddOverlay: (() -> Unit)? = null,
     onOpenSound: (() -> Unit)? = null,
     onOpenWords: (() -> Unit)? = null,
@@ -746,7 +749,7 @@ fun TimelineEditor(
                     when (row.group) {
                         Group.Overlay -> TrackHead(Concept.Overlay.icon, Concept.Overlay.accent, "Add an overlay", row, onAddOverlay)
                         Group.Main -> if (onAddVideo != null) {
-                            VideoTrackButton(onAddVideo, onAddBlank)
+                            VideoTrackButton(onAddVideo, onAddBlank, onAddStock)
                         } else {
                             TrackHead(Concept.Video.icon, Concept.Video.accent, "", row, null)
                         }
@@ -1415,7 +1418,7 @@ private fun TrackButton(
  * gallery, or a blank - the two ways a shot gets onto the main track.
  */
 @Composable
-private fun VideoTrackButton(onAddVideo: () -> Unit, onAddBlank: (() -> Unit)?) {
+private fun VideoTrackButton(onAddVideo: () -> Unit, onAddBlank: (() -> Unit)?, onAddStock: (() -> Unit)? = null) {
     var open by remember { mutableStateOf(false) }
     Box {
         TrackButton(Concept.Video.icon, Concept.Video.accent, "Add to the video track") {
@@ -1436,6 +1439,13 @@ private fun VideoTrackButton(onAddVideo: () -> Unit, onAddBlank: (() -> Unit)?) 
                     text = { Text("Blank", color = SquishColors.TextPrimary) },
                     leadingIcon = { Icon(Icons.Filled.CropSquare, contentDescription = null, tint = Concept.Video.accent) },
                     onClick = { open = false; blank() }
+                )
+            }
+            onAddStock?.let { stock ->
+                DropdownMenuItem(
+                    text = { Text("Free stock video", color = SquishColors.TextPrimary) },
+                    leadingIcon = { Icon(Icons.Filled.Public, contentDescription = null, tint = Concept.Video.accent) },
+                    onClick = { open = false; stock() }
                 )
             }
         }
