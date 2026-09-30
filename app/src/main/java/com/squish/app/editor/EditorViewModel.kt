@@ -993,6 +993,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                         ExportRecord(
                             id = UUID.randomUUID().toString(),
                             title = title,
+                            // A name the person gave is shown as it is in the library.
+                            named = current.projectName != null,
                             outputPath = file.absolutePath,
                             originalSizeBytes = current.originalSizeBytes,
                             outputSizeBytes = size,

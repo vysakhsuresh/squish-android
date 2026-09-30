@@ -97,7 +97,7 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 
     val shown = remember(records, query) {
         if (query.isBlank()) records
-        else records.filter { it.shownTitle.contains(query.trim(), ignoreCase = true) }
+        else records.filter { it.shownTitle.contains(query.trim(), ignoreCase = true) || it.title.contains(query.trim(), ignoreCase = true) }
     }
 
     Scaffold(containerColor = SquishColors.Background) { padding ->

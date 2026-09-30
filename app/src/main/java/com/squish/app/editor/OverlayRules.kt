@@ -425,7 +425,8 @@ object OverlayRules {
         return handles
             .mapIndexed { i, (hx, hy) -> i to hypot(hx - x, hy - y) }
             .filter { (i, d) -> d <= reach && (!box.contains(x, y) || handles[i] != natural[i]) }
-            .minByOrNull { it.second }
+            // Two pulled onto the same spot: the one drawn on top - the later - takes it.
+            .minWithOrNull(compareBy<Pair<Int, Float>>({ it.second }, { -it.first }))
             ?.first
     }
 

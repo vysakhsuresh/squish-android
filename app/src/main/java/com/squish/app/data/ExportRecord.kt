@@ -26,7 +26,9 @@ data class ExportRecord(
      */
     val savedToGallery: Boolean? = null,
     /** The gallery copy's content URI, when there is one. */
-    val galleryUri: String? = null
+    val galleryUri: String? = null,
+    /** Whether [title] is a name the person gave the project: shown as it is, never replaced by the moment. */
+    val named: Boolean = false
 ) {
     val isAudio: Boolean get() = outputPath.endsWith(".m4a", ignoreCase = true)
 
@@ -38,7 +40,7 @@ data class ExportRecord(
      * the moment it was made, "29 Sep, 11:47 PM" (ProjectRules.displayTitle).
      */
     val shownTitle: String
-        get() = ProjectRules.displayTitle(title, createdAtMillis, prefix = null)
+        get() = if (named) title else ProjectRules.displayTitle(title, createdAtMillis, prefix = null)
 
     /**
      * The one copy to open, play and share: the gallery's when it was made,

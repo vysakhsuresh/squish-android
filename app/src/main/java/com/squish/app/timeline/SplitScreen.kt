@@ -31,6 +31,9 @@ fun TimelineState.withSplitScreen(clipId: String, side: SplitSide): TimelineStat
         if (it.id != clipId || !it.isOverlay) it
         else it.copy(
             scale = 1f, offsetXFraction = 0f, offsetYFraction = 0f, rotation = 0f,
+            // Upright, unflipped and uncropped, so the half masked is the half seen.
+            mirrored = false, quarterTurns = 0, crop = null,
+            arrival = ClipArrival.None, leaving = ClipLeaving.None, loop = ClipLoop.None,
             keyframes = emptyList(), mask = side.mask
         )
     }

@@ -126,7 +126,8 @@ fun OutputSizePicker(
         if (editingCustom) {
             CustomSizeField(
                 initial = if (isCustom) outputP else sourceP.takeIf { it > 0 } ?: 720,
-                maxP = customMax,
+                // Squeeze never grows the frame, typed or tapped.
+                maxP = if (!allowUpscale && sourceP > 0) minOf(customMax, sourceP) else customMax,
                 accent = accent,
                 onSet = { p ->
                     editingCustom = false
