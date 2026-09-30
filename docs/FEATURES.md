@@ -94,6 +94,8 @@ music, footage and fonts, and translate caption words.
 
 ## Export
 
+- One-tap presets: WhatsApp (under 16 MB), Email (under 10 MB), Reels ·
+  TikTok (1080p), YouTube (full size, higher quality).
 - 360p to 4K (greyed above what the phone's encoder can do), custom size,
   24/25/30/50/60 fps or Auto, quality Lower/Standard/Higher, HEVC, keep HDR,
   fit to a file size (e.g. 16 MB) with a retry if missed, sound only (.m4a).
