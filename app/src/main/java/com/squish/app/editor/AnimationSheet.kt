@@ -1,5 +1,9 @@
 package com.squish.app.editor
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -144,6 +148,19 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )
+            // A slideshow in one tap: every still photo on the track given its own slow move.
+            if (state.videoClips.count { it.isMain && com.squish.app.media.StillClips.isStill(it.uri) && it.keyframes.isEmpty() } > 1) {
+                var photosNote by remember { mutableStateOf<String?>(null) }
+                com.squish.app.ui.components.SquishOutlinedButton(
+                    text = "Animate every photo",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        val n = viewModel.clips.animateAllPhotos()
+                        photosNote = "$n photos given a slow move each, in turn. Undo takes it back."
+                    }
+                )
+                photosNote?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.Teal) }
+            }
         }
 
         PanelSurface(accent = accent) {

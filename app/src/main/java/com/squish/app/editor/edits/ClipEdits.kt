@@ -1083,6 +1083,32 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     }
 
     /** The one-tap moves people actually want, as a pair of keys across the clip. */
+    /**
+     * Every photo on the main track given a slow move, the presets taken in
+     * turn - push in, pull out, pan right, pan left, rise - so a slideshow
+     * moves without every picture doing the same thing. Photos already
+     * animated are left. One step; the count of photos moved.
+     */
+    fun animateAllPhotos(): Int {
+        val photos = _state.value.videoClips.filter { it.isMain && StillClips.isStill(it.uri) && it.keyframes.isEmpty() }
+        if (photos.isEmpty()) return 0
+        val cycle = listOf(MotionPreset.PushIn, MotionPreset.PullOut, MotionPreset.PanRight, MotionPreset.PanLeft, MotionPreset.RiseUp)
+        record("Animate photos") {
+            mutateTimeline { timeline ->
+                val order = photos.sortedBy { it.timelineStartMs }.mapIndexed { i, p -> p.id to cycle[i % cycle.size] }.toMap()
+                timeline.copy(clips = timeline.clips.map { clip ->
+                    val preset = order[clip.id] ?: return@map clip
+                    val (from, to) = preset.endpoints()
+                    clip.copy(keyframes = listOf(
+                        Keyframe(0L, from, KeyframeEasing.Smooth),
+                        Keyframe(clip.durationMs.coerceAtLeast(MIN_CLIP_MS), to, KeyframeEasing.Smooth)
+                    ))
+                })
+            }
+        }
+        return photos.size
+    }
+
     fun applyMotionPreset(clipId: String, preset: MotionPreset) = record(preset.label) {
         mutateTimeline { timeline ->
             val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
