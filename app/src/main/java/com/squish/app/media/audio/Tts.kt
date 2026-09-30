@@ -26,7 +26,7 @@ object Tts {
      * Speaks [text] into [out] as a WAV. False when the phone has no engine,
      * the engine failed, or it never answered - the caller says so in a card.
      */
-    suspend fun synthesize(context: Context, text: String, languageTag: String?, out: File): Boolean {
+    suspend fun synthesize(context: Context, text: String, languageTag: String?, out: File, voice: SpeechVoice = SpeechVoice.Natural): Boolean {
         val ok = withTimeoutOrNull(TIMEOUT_MS) {
             // A Looper-bound component: made and driven on the main thread,
             // where its callbacks arrive.
@@ -52,6 +52,9 @@ object Tts {
                             val supported = tts.isLanguageAvailable(locale)
                             if (supported >= TextToSpeech.LANG_AVAILABLE) tts.language = locale
                         }
+                        // The voice chosen in Settings: the engine's own pitch and pace.
+                        tts.setPitch(voice.pitch)
+                        tts.setSpeechRate(voice.rate)
                         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                             override fun onStart(utteranceId: String?) = Unit
                             override fun onDone(utteranceId: String?) = finish(out.length() > 0L)
@@ -83,4 +86,13 @@ object Tts {
 
     /** An engine that never answers - no file, no error - must not hold the editor. */
     private const val TIMEOUT_MS = 40_000L
+}
+
+/** How a line read aloud sounds: the phone's own voice, pitched and paced (Settings). */
+enum class SpeechVoice(val label: String, val pitch: Float, val rate: Float) {
+    Natural("Natural", 1f, 1f),
+    Deep("Deep", 0.7f, 0.95f),
+    Bright("Bright", 1.35f, 1.05f),
+    Quick("Quick", 1f, 1.35f),
+    Calm("Calm", 0.9f, 0.8f)
 }

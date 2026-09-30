@@ -138,6 +138,14 @@ private fun DefaultsCard() {
             onPick = { Preferences.setDefaultTransition(context, TRANSITION_CHOICES[it]); reload() }
         )
 
+        SettingLabel("Read-aloud voice", "How a line sounds when Read aloud turns it into speech.")
+        var voice by remember { mutableStateOf(Preferences.speechVoice(context)) }
+        ChipRow(
+            options = com.squish.app.media.audio.SpeechVoice.entries.map { it.label },
+            selected = voice.ordinal,
+            onPick = { voice = com.squish.app.media.audio.SpeechVoice.entries[it]; Preferences.setSpeechVoice(context, voice) }
+        )
+
         SwitchRow(
             title = "Ticks when snapping",
             blurb = "A tap you can feel when a drag lands on a cut, a beat or the playhead.",

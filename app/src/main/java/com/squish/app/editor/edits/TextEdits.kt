@@ -321,7 +321,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         viewModelScope.launch {
             val dir = File(app.filesDir, SPEECH_DIR).apply { mkdirs() }
             val file = File(dir, "speech-${UUID.randomUUID()}.wav")
-            val ok = Tts.synthesize(app, item.text, _state.value.captionLanguage, file)
+            val ok = Tts.synthesize(app, item.text, _state.value.captionLanguage, file, com.squish.app.settings.Preferences.speechVoice(app))
             val uri = Uri.fromFile(file)
             val duration = if (ok) ThumbnailExtractor.probeDurationMs(app, uri) else 0L
             if (!ok || duration <= 0L) {

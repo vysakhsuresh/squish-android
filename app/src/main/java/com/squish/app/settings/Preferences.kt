@@ -118,6 +118,14 @@ object Preferences {
     fun setStillMs(context: Context, ms: Long) = edit(context) { putLong(KEY_STILL_MS, ms) }
     fun setDefaultTransition(context: Context, type: TransitionType) = edit(context) { putString(KEY_TRANSITION, type.name) }
     fun setKeepScreenOn(context: Context, on: Boolean) = edit(context) { putBoolean(KEY_KEEP_SCREEN_ON, on) }
+
+    /** The voice Read aloud speaks in. */
+    fun speechVoice(context: Context): com.squish.app.media.audio.SpeechVoice =
+        context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).getString(KEY_SPEECH_VOICE, null)
+            ?.let { name -> com.squish.app.media.audio.SpeechVoice.entries.firstOrNull { it.name == name } }
+            ?: com.squish.app.media.audio.SpeechVoice.Natural
+
+    fun setSpeechVoice(context: Context, voice: com.squish.app.media.audio.SpeechVoice) = edit(context) { putString(KEY_SPEECH_VOICE, voice.name) }
     fun setHaptics(context: Context, on: Boolean) {
         hapticsOn = on
         edit(context) { putBoolean(KEY_HAPTICS, on) }
@@ -168,6 +176,7 @@ object Preferences {
     private const val KEY_TRANSITION_MS = "defaultTransitionMs"
     private const val KEY_HAPTICS = "haptics"
     private const val KEY_KEEP_SCREEN_ON = "keepScreenOn"
+    private const val KEY_SPEECH_VOICE = "speechVoice"
 }
 
 /**
