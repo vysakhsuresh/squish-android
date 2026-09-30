@@ -1,40 +1,85 @@
 package com.squish.app.timeline
 
 /**
- * Split screen in one tap: an overlay laid over the whole frame and cut to one
- * half by a hard-edged rectangle mask, so the shot under it fills the other
- * half. Both pictures stay full-frame and fitted, so each half shows its own
- * shot's matching half - the side-by-side CapCut's layouts give, built from the
- * overlay, placement and mask the editor already draws and exports.
+ * Split screen in one tap: an overlay made to fill one half of the frame, cut
+ * at the seam by a hard-edged rectangle mask, so the shot under it shows in the
+ * other half - the side-by-side CapCut's layouts give, built from the overlay,
+ * placement and mask the editor already draws and exports.
  */
 enum class SplitSide(val label: String) {
     Left("Left"), Right("Right"), Top("Top"), Bottom("Bottom");
 
-    /** The mask that keeps this half of the overlay's own frame. Centres run -1..1 edge to edge. */
-    val mask: Mask
-        get() = when (this) {
-            Left -> Mask(shape = MaskShape.Rectangle, centerXFraction = -0.5f, widthFraction = 0.5f, heightFraction = 1.05f, feather = SEAM)
-            Right -> Mask(shape = MaskShape.Rectangle, centerXFraction = 0.5f, widthFraction = 0.5f, heightFraction = 1.05f, feather = SEAM)
-            Top -> Mask(shape = MaskShape.Rectangle, centerYFraction = -0.5f, widthFraction = 1.05f, heightFraction = 0.5f, feather = SEAM)
-            Bottom -> Mask(shape = MaskShape.Rectangle, centerYFraction = 0.5f, widthFraction = 1.05f, heightFraction = 0.5f, feather = SEAM)
-        }
+    private val across: Boolean get() = this == Left || this == Right
+    private val sign: Float get() = if (this == Left || this == Top) -1f else 1f
+
+    /**
+     * How an overlay of [pictureAspect] fills this half of a frame of
+     * [frameAspect] (both wide over tall): scaled to cover the half, centred
+     * in it, and masked at the seam.
+     *
+     * The overlay used to stay full frame with its own half masked off. That
+     * is right only for a picture the frame's shape: seen on the phone, a
+     * portrait clip over a square frame showed a strip a quarter wide beside
+     * black, since the half of the picture was not the half of the frame. The
+     * mask is in the picture's own coordinates (-1..1 edge to edge), so it is
+     * sized to the part of the scaled picture that lands in the half; what
+     * hangs past the frame's outer edges the frame cuts anyway.
+     */
+    fun layout(frameAspect: Float = 1f, pictureAspect: Float = frameAspect): SplitLayout {
+        val fa = frameAspect.takeIf { it.isFinite() && it > 0f } ?: 1f
+        val pa = pictureAspect.takeIf { it.isFinite() && it > 0f } ?: fa
+        // The picture as the frame fits it, in fractions of the frame.
+        val pw = if (pa >= fa) 1f else pa / fa
+        val ph = if (pa >= fa) fa / pa else 1f
+        val halfW = if (across) 0.5f else 1f
+        val halfH = if (across) 1f else 0.5f
+        // Within the placement slider's reach; a sliver of a picture then leaves a band uncovered rather than a number the sheet cannot show.
+        val scale = maxOf(halfW / pw, halfH / ph).coerceAtMost(TransformLimits.SCALE_MAX)
+        val mask = Mask(
+            shape = MaskShape.Rectangle,
+            widthFraction = if (across) (halfW / (scale * pw)).coerceAtMost(1f) else OUTER,
+            heightFraction = if (across) OUTER else (halfH / (scale * ph)).coerceAtMost(1f),
+            feather = SEAM
+        )
+        return SplitLayout(
+            scale = scale,
+            offsetX = if (across) sign * 0.5f else 0f,
+            offsetY = if (across) 0f else sign * 0.5f,
+            mask = mask
+        )
+    }
 
     private companion object {
         /** A seam, not a blend: the two halves meet on a line. */
         const val SEAM = 0.002f
+        /** Past the picture's edges, on the sides the frame cuts. */
+        const val OUTER = 1.05f
     }
 }
 
-/** [clipId] as the [side] half of a split screen: full frame, still, unturned, masked to that half. */
-fun TimelineState.withSplitScreen(clipId: String, side: SplitSide): TimelineState = copy(
+/** Where a [SplitSide] puts an overlay: its placement and the mask cutting it at the seam. */
+data class SplitLayout(val scale: Float, val offsetX: Float, val offsetY: Float, val mask: Mask) {
+    /** Whether [clip] is laid out this way, give or take the rounding a saved draft brings back. */
+    fun matches(clip: Clip): Boolean {
+        val m = clip.mask ?: return false
+        fun near(a: Float, b: Float) = kotlin.math.abs(a - b) < 1e-3f
+        return clip.keyframes.isEmpty() && near(clip.scale, scale) && near(clip.offsetXFraction, offsetX) &&
+            near(clip.offsetYFraction, offsetY) && m.shape == mask.shape && near(m.centerXFraction, mask.centerXFraction) &&
+            near(m.centerYFraction, mask.centerYFraction) && near(m.widthFraction, mask.widthFraction) &&
+            near(m.heightFraction, mask.heightFraction) && !m.inverted
+    }
+}
+
+/** [clipId] as one half of a split screen, laid out by [at] (SplitSide.layout): still, unturned, masked at the seam. */
+fun TimelineState.withSplitScreen(clipId: String, at: SplitLayout): TimelineState = copy(
     clips = clips.map {
         if (it.id != clipId || !it.isOverlay) it
         else it.copy(
-            scale = 1f, offsetXFraction = 0f, offsetYFraction = 0f, rotation = 0f,
-            // Upright, unflipped and uncropped, so the half masked is the half seen.
+            scale = at.scale, offsetXFraction = at.offsetX, offsetYFraction = at.offsetY, rotation = 0f,
+            // Upright, unflipped and uncropped, so the picture laid out is the picture seen.
             mirrored = false, quarterTurns = 0, crop = null,
             arrival = ClipArrival.None, leaving = ClipLeaving.None, loop = ClipLoop.None,
-            keyframes = emptyList(), mask = side.mask
+            keyframes = emptyList(), mask = at.mask
         )
     }
 )

@@ -9,7 +9,6 @@ import com.squish.app.media.StillClips
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.timeline.withSplitScreen
 import com.squish.app.timeline.withGridTile
-import com.squish.app.timeline.SplitSide
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Mask
@@ -336,9 +335,9 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
         mutateTimeline { it.withGridTile(clipId, at) }
     }
 
-    /** An overlay made one half of a split screen, the shot under it the other (SplitSide). */
-    fun splitScreen(clipId: String, side: SplitSide) = record("Split screen") {
-        mutateTimeline { it.withSplitScreen(clipId, side) }
+    /** An overlay made one half of a split screen, the shot under it the other, laid out by SplitSide.layout. */
+    fun splitScreen(clipId: String, at: com.squish.app.timeline.SplitLayout) = record("Split screen") {
+        mutateTimeline { it.withSplitScreen(clipId, at) }
     }
 
     // ---- Masking --------------------------------------------------------------

@@ -385,7 +385,8 @@ fun PlacementPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
         // A 2x2 collage: this picture whole in one quarter of the frame. An
         // overlay is laid out in the frame; a shot on the canvas the frame is
         // cut from, fitted at its own shape (see GridTile.placement).
-        val seenAspect = rememberClipAspect(state, clip).let { a ->
+        val fileAspect = rememberClipAspect(state, clip)
+        val seenAspect = fileAspect.let { a ->
             val turned = if (clip.quarterTurns % 2 != 0) 1f / a else a
             val cut = clip.crop?.rect?.let { r -> if (r.width > 0f && r.height > 0f) turned * r.width / r.height else turned } ?: turned
             if (state.quarterTurned) 1f / cut else cut
@@ -409,13 +410,18 @@ fun PlacementPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
         if (clip.isOverlay) {
             Text("Split screen - this clip fills", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                // Laid out in the frame the file keeps, as every overlay is, and
+                // unturned and uncropped, so it is the file's own shape.
+                val frame = state.croppedFrame
+                val frameAspect = if (frame.width > 0 && frame.height > 0) frame.width.toFloat() / frame.height else fileAspect
                 com.squish.app.timeline.SplitSide.entries.forEach { side ->
+                    val at = side.layout(frameAspect, fileAspect)
                     SelectableChip(
                         label = side.label,
-                        selected = clip.mask == side.mask,
+                        selected = at.matches(clip),
                         accentColor = accent,
                         modifier = Modifier.weight(1f),
-                        onClick = { viewModel.layers.splitScreen(clip.id, side) }
+                        onClick = { viewModel.layers.splitScreen(clip.id, at) }
                     )
                 }
             }

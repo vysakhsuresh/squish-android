@@ -1,4 +1,3 @@
-import com.squish.app.editor.MaskOutline
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.SplitSide
@@ -12,34 +11,59 @@ val problems = mutableListOf<String>()
 fun check(ok: Boolean, msg: String) { if (!ok) problems += msg }
 
 fun main() {
-    val w = 1080f
-    val h = 1920f
-    // Each half's mask edge, in the frame's own pixels, bounds exactly that half.
-    for (side in SplitSide.entries) {
-        val m = side.mask
-        val pts = MaskOutline.outline(m, m.centerXFraction to m.centerYFraction, w, h).flatten()
-        val xs = pts.map { it.first }.filter { it in 0f..w }
-        val ys = pts.map { it.second }.filter { it in 0f..h }
-        val slack = 4f
-        when (side) {
-            SplitSide.Left -> check(abs(xs.maxOrNull()!! - w / 2) < slack, "Left's edge was not at the middle: ${xs.maxOrNull()}")
-            SplitSide.Right -> check(abs(xs.minOrNull()!! - w / 2) < slack, "Right's edge was not at the middle: ${xs.minOrNull()}")
-            SplitSide.Top -> check(abs(ys.maxOrNull()!! - h / 2) < slack || abs(ys.minOrNull()!! - h / 2) < slack, "Top's edge was not at the middle")
-            SplitSide.Bottom -> check(abs(ys.minOrNull()!! - h / 2) < slack || abs(ys.maxOrNull()!! - h / 2) < slack, "Bottom's edge was not at the middle")
-        }
+    // Where the kept part of a split overlay lands on the frame, in frame
+    // fractions: the picture fitted, placed (ExportPlan.placementMatrix: scaled
+    // about the middle, moved by fractions of half the frame), then cut by its
+    // mask in its own -1..1 coordinates, then by the frame's edges.
+    fun kept(side: SplitSide, fa: Float, pa: Float): FloatArray {
+        val at = side.layout(fa, pa)
+        val pw = if (pa >= fa) 1f else pa / fa
+        val ph = if (pa >= fa) fa / pa else 1f
+        val left = 0.5f + at.offsetX / 2f - at.scale * pw / 2f
+        val top = 0.5f + at.offsetY / 2f - at.scale * ph / 2f
+        val m = at.mask
+        val u0 = 0.5f + m.centerXFraction / 2f - m.widthFraction / 2f
+        val u1 = 0.5f + m.centerXFraction / 2f + m.widthFraction / 2f
+        val v0 = 0.5f + m.centerYFraction / 2f - m.heightFraction / 2f
+        val v1 = 0.5f + m.centerYFraction / 2f + m.heightFraction / 2f
+        // The mask and the picture's own edges, then the frame's.
+        val x0 = maxOf(left + maxOf(u0, 0f) * at.scale * pw, 0f)
+        val x1 = minOf(left + minOf(u1, 1f) * at.scale * pw, 1f)
+        val y0 = maxOf(top + maxOf(v0, 0f) * at.scale * ph, 0f)
+        val y1 = minOf(top + minOf(v1, 1f) * at.scale * ph, 1f)
+        return floatArrayOf(x0, y0, x1, y1)
     }
-    // Top and Bottom are opposite halves.
-    val top = MaskOutline.outline(SplitSide.Top.mask, 0f to SplitSide.Top.mask.centerYFraction, w, h).flatten().map { it.second }.average()
-    val bottom = MaskOutline.outline(SplitSide.Bottom.mask, 0f to SplitSide.Bottom.mask.centerYFraction, w, h).flatten().map { it.second }.average()
-    check(abs(top - bottom) > h / 4, "Top and Bottom masked the same half")
+    fun near(a: Float, b: Float) = abs(a - b) < 2e-3f
 
-    // Only an overlay is made a half; it goes full frame and still.
+    // Seen on the phone: a portrait clip over a square frame. Also the frame's
+    // own shape, landscape over portrait, and the reverse.
+    val shapes = listOf(1f to 9f / 16f, 9f / 16f to 9f / 16f, 16f / 9f to 16f / 9f, 9f / 16f to 16f / 9f, 16f / 9f to 9f / 16f, 1f to 4f / 3f)
+    for ((fa, pa) in shapes) for (side in SplitSide.entries) {
+        val k = kept(side, fa, pa)
+        val want = when (side) {
+            SplitSide.Left -> floatArrayOf(0f, 0f, 0.5f, 1f)
+            SplitSide.Right -> floatArrayOf(0.5f, 0f, 1f, 1f)
+            SplitSide.Top -> floatArrayOf(0f, 0f, 1f, 0.5f)
+            SplitSide.Bottom -> floatArrayOf(0f, 0.5f, 1f, 1f)
+        }
+        check((0..3).all { near(k[it], want[it]) }, "$side of a $pa picture on a $fa frame kept ${k.toList()}, not its half ${want.toList()}")
+    }
+    // A picture the frame's shape keeps its middle, not the edge it used to keep.
+    val mid = SplitSide.Left.layout(16f / 9f, 16f / 9f)
+    check(near(mid.scale, 1f) && near(mid.mask.centerXFraction, 0f) && near(mid.mask.widthFraction, 0.5f), "a frame-shaped picture was laid out as $mid")
+
+    // Only an overlay is made a half; it goes still and upright, and matches() reads it back.
     val shot = Clip(id = "s", kind = ClipKind.Video, uri = null, label = "s", sourceInMs = 0, sourceOutMs = 5_000, timelineStartMs = 0, sourceDurationMs = 5_000)
-    val pip = shot.copy(id = "p", layer = 1, scale = 0.4f, offsetXFraction = 0.5f)
-    val split = TimelineState(clips = listOf(shot, pip)).withSplitScreen("p", SplitSide.Right)
+    val pip = shot.copy(id = "p", layer = 1, scale = 0.4f, offsetXFraction = 0.5f, quarterTurns = 1, mirrored = true)
+    val at = SplitSide.Right.layout(1f, 9f / 16f)
+    val split = TimelineState(clips = listOf(shot, pip)).withSplitScreen("p", at)
     val p = split.clips.first { it.id == "p" }
-    check(p.scale == 1f && p.offsetXFraction == 0f && p.mask == SplitSide.Right.mask, "the overlay was not made the right half")
-    check(TimelineState(clips = listOf(shot)).withSplitScreen("s", SplitSide.Left).clips.first().mask == null, "a main-track shot was masked")
+    check(at.matches(p) && p.quarterTurns == 0 && !p.mirrored, "the overlay was not made the right half: $p")
+    check(!SplitSide.Left.layout(1f, 9f / 16f).matches(p), "Left read as the Right half")
+    check(TimelineState(clips = listOf(shot)).withSplitScreen("s", at).clips.first().mask == null, "a main-track shot was masked")
+    // Nonsense in, the frame-shaped layout out.
+    val bad = SplitSide.Top.layout(Float.NaN, -1f)
+    check(bad.scale.isFinite() && near(bad.offsetY, -0.5f), "bad shapes gave $bad")
 
     gridChecks()
     if (problems.isEmpty()) println("SplitScreenChecks: all checks passed") else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
