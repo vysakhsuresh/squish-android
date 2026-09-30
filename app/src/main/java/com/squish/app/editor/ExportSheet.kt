@@ -335,7 +335,14 @@ private fun PictureRows(state: EditorUiState, viewModel: EditorViewModel) {
         asked = state.outputResolution,
         written = state.writtenResolution,
         estimatedBytes = state.estimatedOutputBytes,
-        originalBytes = state.originalSizeBytes,
+        // "Smaller than the original" only where there is one original: a
+        // cut of the source file. It is that one file's size, so beside a
+        // photo it read "33% bigger" of a 3 s picture, and beside several
+        // videos it measured against the first alone.
+        originalBytes = if (
+            state.videoClips.none { it.isOverlay } &&
+            state.videoClips.filter { it.isMain }.all { it.isFootage && (it.uri == null || it.uri == state.sourceUri) }
+        ) state.originalSizeBytes else 0L,
         accent = SquishColors.Blue,
         onPick = viewModel::setOutputP,
         ceilingP = state.encoderCeilingP,

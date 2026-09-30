@@ -219,7 +219,7 @@ private fun OutputSummary(
         Column(modifier = Modifier.weight(1f)) {
             Text(frame, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
             Text(
-                listOfNotNull(detail, change ?: "Original ${formatSize(originalBytes)}").joinToString("  ·  "),
+                listOfNotNull(detail, change ?: originalBytes.takeIf { it > 0 }?.let { "Original ${formatSize(it)}" }).joinToString("  ·  "),
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted
             )
