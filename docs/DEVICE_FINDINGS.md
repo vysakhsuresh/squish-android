@@ -447,3 +447,5 @@ Each is built and its logic executed on the JVM; none has been seen on the phone
 10. Settings › Read-aloud voice Deep, then Read aloud a line.
 11. Export on this phone still works (CBR asked only where supported); size near the estimate.
 12. A 9:16 edit set to 1:1 fills the preview; a tiny custom crop does not blow up memory.
+13. Looks › Adjust › Auto adjust on a dark or tinted shot: brighter, neutral; sliders show the values; Undo.
+14. Save as GIF, then leave the screen at once: the toast still says it was saved.

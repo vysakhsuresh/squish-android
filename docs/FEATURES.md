@@ -43,7 +43,8 @@ music, footage and fonts, and translate caption words.
 - Looks: 37 filters in five families (Essentials, Film, Mood, Cinema,
   Retro) with strength; Adjust: brightness, contrast, saturation, exposure,
   temperature, tint, highlights, shadows, sharpen, vignette, hue, fade,
-  grain, plus an 8-colour HSL wheel. Apply to all.
+  grain, plus an 8-colour HSL wheel, and **Auto adjust** (exposure, white
+  balance, contrast and colour measured off the shot). Apply to all.
 - Effects library: Shake, Zoom punch, Slow zoom, Glitch, Flash, VHS, B&W,
   Invert, Blur, Rainbow - timed on the strip, previewed on your own shot.
 - Transitions (16): Dissolve, Dip to black/white, Slide 4 ways, Push, Wipe
