@@ -882,6 +882,15 @@ fun isRenderedStill(address: String?): Boolean {
 }
 
 /**
+ * Whether [address] is a photo rendered for the main track (StillClips names
+ * those photo_...), not a blank or a freeze. "Animate every photo" asked
+ * [isStillPicture], which is the PNG a photo *overlay* is, so on a slideshow
+ * of main-track photos it never showed.
+ */
+fun isRenderedPhoto(address: String?): Boolean =
+    isRenderedStill(address) && address!!.substringBefore('?').substringBefore('#').substringAfterLast('/').startsWith("photo_")
+
+/**
  * Whether [address] is a take the editor recorded - a WAV it wrote under its
  * own files/voice/ (VoiceRecorder). From the address alone, like a still, so
  * no draft field is needed to draw the mic on it.

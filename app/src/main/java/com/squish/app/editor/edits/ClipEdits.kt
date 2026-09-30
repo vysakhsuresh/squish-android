@@ -1096,7 +1096,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * animated are left. One step; the count of photos moved.
      */
     fun animateAllPhotos(): Int {
-        val photos = _state.value.videoClips.filter { it.isMain && StillClips.isStill(it.uri) && it.keyframes.isEmpty() }
+        val photos = _state.value.videoClips.filter { it.isMain && com.squish.app.timeline.isRenderedPhoto(it.uri?.toString()) && it.keyframes.isEmpty() }
         if (photos.isEmpty()) return 0
         val cycle = listOf(MotionPreset.PushIn, MotionPreset.PullOut, MotionPreset.PanRight, MotionPreset.PanLeft, MotionPreset.RiseUp)
         record("Animate photos") {

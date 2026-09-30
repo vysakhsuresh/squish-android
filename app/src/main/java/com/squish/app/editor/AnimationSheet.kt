@@ -149,8 +149,10 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                 color = SquishColors.TextMuted
             )
             // A slideshow in one tap: every still photo on the track given its own slow move.
-            if (state.videoClips.count { it.isMain && com.squish.app.media.StillClips.isStill(it.uri) && it.keyframes.isEmpty() } > 1) {
-                var photosNote by remember { mutableStateOf<String?>(null) }
+            // The note lives outside the button's condition: once every photo
+            // moves the button goes, and it used to take its note with it.
+            var photosNote by remember { mutableStateOf<String?>(null) }
+            if (state.videoClips.count { it.isMain && com.squish.app.timeline.isRenderedPhoto(it.uri?.toString()) && it.keyframes.isEmpty() } > 1) {
                 com.squish.app.ui.components.SquishOutlinedButton(
                     text = "Animate every photo",
                     modifier = Modifier.fillMaxWidth(),
@@ -159,8 +161,8 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                         photosNote = "$n photos given a slow move each, in turn. Undo takes it back."
                     }
                 )
-                photosNote?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.Teal) }
             }
+            photosNote?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.Teal) }
         }
 
         PanelSurface(accent = accent) {

@@ -529,6 +529,10 @@ fun main() {
         check(!isRenderedStill("file:///data/user/0/com.squish.app/files/stills/overlay_1.png"), "a photo overlay is a rendered still")
         check(!isRenderedStill("file:///data/user/0/com.squish.app/files/reversed/reverse_1.mp4"), "a reversed render is a rendered still")
         check(!isRenderedStill("content://media/external/video/media/12"), "a gallery file is a rendered still")
+        // Animate every photo reads this: main-track photos, never a blank or a freeze or a photo overlay.
+        check(com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/photo_1790792006247_67c2aefc.mp4"), "a main-track photo is not a photo")
+        check(!com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/blank_1_ab.mp4") && !com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/freeze_1_ab.mp4"), "a blank or a freeze read as a photo")
+        check(!com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/overlay_1.png") && !com.squish.app.timeline.isRenderedPhoto(null), "a photo overlay or nothing read as a main-track photo")
         check(video("a", 1_000).isFootage && !still.isFootage && still.isRenderedStill, "footage and a still are confused")
         check(!audio("s", 1_000).isFootage, "a sound is footage")
     }
