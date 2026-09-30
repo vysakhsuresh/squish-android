@@ -133,6 +133,19 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
     // and a draft that wrote Mute as a level of nothing still reads off.
     val muted = clip.readsMuted
     val onClip = state.playheadMs in clip.timelineStartMs..clip.timelineEndMs
+    // A photo, blank or freeze carries a silent track: a switch and a level on
+    // it changed nothing anyone could hear.
+    if (!clip.isFootage) {
+        PanelSurface(accent = accent) {
+            PanelHeading(
+                "No sound of its own",
+                "A still picture is silent. Music and voice go under it from Sound.",
+                icon = Icons.AutoMirrored.Filled.VolumeOff,
+                accent = accent
+            )
+        }
+        return
+    }
     PanelSurface(accent = accent) {
         PanelHeading(
             if (clip.isOverlay) "Overlay sound" else "Clip sound",

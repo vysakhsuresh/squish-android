@@ -503,7 +503,7 @@ private fun PrivacyCard() {
         )
         Promise("No account, ever.")
         Promise("No upload. Your videos, photos and projects never leave the phone - there is nothing in Squish that sends them.")
-        Promise("Offline until you say otherwise. Online features - free music, stock footage and fonts - are off until you turn them on, and only fetch.")
+        Promise("Offline until you say otherwise. Online features - free music, stock footage and fonts, and caption translation - are off until you turn them on, and only fetch.")
         Promise("No watermark and no paywalled resolution.")
         Promise("Speech recognition runs on the device or not at all — it never falls back to a server.")
     }
