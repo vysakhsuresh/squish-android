@@ -1430,6 +1430,9 @@ private class FrameShape(private val frame: PreviewBox.Frame) : Shape {
  * whole, as the preview always was.
  */
 private fun canvasPlacement(areaW: Int, areaH: Int, canvas: Float, kept: PreviewBox.Frame): IntArray {
+    // No room at all - the phone on its side with the keyboard up - is no
+    // canvas: dividing by it went NaN and crashed the layout.
+    if (areaW <= 0 || areaH <= 0 || canvas <= 0f || !canvas.isFinite()) return intArrayOf(1, 1, 0, 0)
     val kw = (kept.right - kept.left).coerceIn(0.05f, 1f)
     val kh = (kept.bottom - kept.top).coerceIn(0.05f, 1f)
     val keptAspect = canvas * kw / kh

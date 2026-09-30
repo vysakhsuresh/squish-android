@@ -3,6 +3,7 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.SilenceRules
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.withSilencesRemoved
+import com.squish.app.timeline.withClipTrimmed
 import kotlin.system.exitProcess
 
 val problems = mutableListOf<String>()
@@ -36,6 +37,7 @@ fun main() {
 
     layeredChecks()
     rowChecks()
+    tinyTrimChecks()
     if (problems.isEmpty()) {
         println("SilenceChecks: all checks passed")
     } else {
@@ -69,4 +71,11 @@ fun rowChecks() {
     val ov = cut.clips.filter { it.isOverlay }
     val clash = ov.any { x -> ov.any { y -> x.id != y.id && x.layer == y.layer && x.timelineStartMs < y.timelineEndMs && y.timelineStartMs < x.timelineEndMs } }
     check(!clash, "two overlays share a row at once: ${ov.map { "${it.id}@${it.layer} ${it.timelineStartMs}-${it.timelineEndMs}" }}")
+}
+
+fun tinyTrimChecks() {
+    val tiny = Clip(id = "t", kind = ClipKind.Audio, uri = null, label = "t", sourceInMs = 0, sourceOutMs = 120, timelineStartMs = 0, sourceDurationMs = 120)
+    val s = TimelineState(clips = listOf(tiny))
+    val trimmed = runCatching { s.withClipTrimmed("t", 50, -20) }
+    check(trimmed.isSuccess && trimmed.getOrNull() == s, "trimming a 120 ms clip threw or changed it: ${trimmed.exceptionOrNull()}")
 }

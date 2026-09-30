@@ -246,18 +246,22 @@ fun ExportedFile(
     // A second copy, wherever they want it. The automatic publish puts it in the
     // gallery, which is right for most people and useless for anyone who wants it
     // on an SD card or in a folder they sync.
+    val copyScope = rememberCoroutineScope()
     val saveCopy = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(if (isAudio) "audio/mp4" else "video/mp4")
     ) { target ->
         if (target == null) return@rememberLauncherForActivityResult
-        onNotice(
-            runCatching {
+        // Off the main thread: a few hundred MB to an SD card or a cloud folder
+        // froze the screen until Android offered to close the app.
+        onNotice("Copying...")
+        copyScope.launch {
+            onNotice(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching {
                 context.contentResolver.openOutputStream(target)?.use { out ->
                     context.contentResolver.openInputStream(uri)?.use { it.copyTo(out) } ?: error("no source")
                 } ?: error("no stream")
                 "Copy saved."
-            }.getOrElse { "Could not write there — try a different folder." }
-        )
+            }.getOrElse { "Could not write there — try a different folder." } })
+        }
     }
 
     Cover(

@@ -218,6 +218,11 @@ object ThumbnailExtractor {
                         )
                     }.getOrNull()
                 }
+            } catch (t: Throwable) {
+                // A file gone or no longer readable: no tiles, as frameAt gives no
+                // frame. Thrown, it crashed the trim screen's filmstrip.
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                emptyList()
             } finally {
                 retriever.release()
             }

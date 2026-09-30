@@ -49,7 +49,9 @@ object PcmDecoder {
             framesSeen++
             written < limit
         }
-        if (!ok || written == 0) null else MonoPcm(out.copyOf(written), analysisRate)
+        // The final copy is the largest single allocation here; on a long file it
+        // can be the one the heap refuses. No sound to work with, not a crash.
+        if (!ok || written == 0) null else runCatching { MonoPcm(out.copyOf(written), analysisRate) }.getOrNull()
     }
 
     /**

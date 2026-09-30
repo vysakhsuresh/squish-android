@@ -1509,6 +1509,9 @@ fun TimelineState.withClipTrimmed(
     maxOutMs: Long? = null
 ): TimelineState {
     val clip = clips.firstOrNull { it.id == clipId } ?: return this
+    // A clip already under the shortest a clip may be (a take stopped at once)
+    // has nothing to trim: the bounds below would be inverted and throw.
+    if (clip.sourceOutMs < MIN_CLIP_MS || clip.sourceSpanMs < MIN_CLIP_MS) return this
     val ramp = clip.speedRamp
     val span = clip.sourceSpanMs
 

@@ -43,17 +43,18 @@ object MusicLibrary {
      * The track's file, composed the first time it is asked for. Kept in app
      * storage, so a project that uses it can always find it again.
      */
-    suspend fun original(context: Context, style: MusicSynth.Style): Uri = withContext(Dispatchers.Default) {
+    suspend fun original(context: Context, style: MusicSynth.Style): Uri? = withContext(Dispatchers.Default) {
         val file = File(dir(context), "${style.id}.wav")
-        if (!file.exists()) MusicSynth.render(style, file)
-        Uri.fromFile(file)
+        // A full phone can refuse the write: no track, rather than a crash in the panel.
+        runCatching { if (!file.exists()) MusicSynth.render(style, file); Uri.fromFile(file) }
+            .getOrElse { file.delete(); null }
     }
 
     /** A sound effect's file, made the first time it is asked for, like a track. */
-    suspend fun effect(context: Context, effect: MusicSynth.Effect): Uri = withContext(Dispatchers.Default) {
+    suspend fun effect(context: Context, effect: MusicSynth.Effect): Uri? = withContext(Dispatchers.Default) {
         val file = File(dir(context), "${effect.id}.wav")
-        if (!file.exists()) MusicSynth.renderEffect(effect, file)
-        Uri.fromFile(file)
+        runCatching { if (!file.exists()) MusicSynth.renderEffect(effect, file); Uri.fromFile(file) }
+            .getOrElse { file.delete(); null }
     }
 
     /**

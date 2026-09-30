@@ -190,7 +190,7 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
                                 preparing = pick.key
                                 val uri = MusicLibrary.original(context, style)
                                 preparing = null
-                                listen(pick.key, uri)
+                                uri?.let { listen(pick.key, it) }
                             }
                         },
                         onStar = { star(pick) },
@@ -199,7 +199,7 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
                                 preparing = pick.key
                                 val uri = MusicLibrary.original(context, style)
                                 preparing = null
-                                add(pick, uri)
+                                uri?.let { add(pick, it) }
                             }
                         }
                     )
@@ -223,7 +223,7 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
                                 preparing = pick.key
                                 val uri = MusicLibrary.effect(context, effect)
                                 preparing = null
-                                listen(pick.key, uri)
+                                uri?.let { listen(pick.key, it) }
                             }
                         },
                         onStar = { star(pick) },
@@ -232,7 +232,7 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
                                 preparing = pick.key
                                 val uri = MusicLibrary.effect(context, effect)
                                 preparing = null
-                                add(pick, uri)
+                                uri?.let { add(pick, it) }
                             }
                         }
                     )
