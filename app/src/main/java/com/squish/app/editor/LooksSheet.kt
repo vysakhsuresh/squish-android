@@ -173,6 +173,24 @@ fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                 icon = Icons.Filled.Tune,
                 accent = SquishColors.Blue
             )
+            // One tap: exposure, white balance, contrast and colour measured off this shot.
+            var autoWorking by remember(clip.id) { mutableStateOf(false) }
+            var autoNote by remember(clip.id) { mutableStateOf<String?>(null) }
+            com.squish.app.ui.components.SquishOutlinedButton(
+                text = if (autoWorking) "Measuring the shot…" else "Auto adjust",
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    if (autoWorking) return@SquishOutlinedButton
+                    autoWorking = true
+                    autoNote = null
+                    viewModel.clips.autoAdjust(clip.id) { ok ->
+                        autoWorking = false
+                        autoNote = if (ok) "Exposure, white balance, contrast and colour set for this shot. Undo takes it back."
+                        else "Couldn't read a frame of this shot."
+                    }
+                }
+            )
+            autoNote?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.Teal) }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,

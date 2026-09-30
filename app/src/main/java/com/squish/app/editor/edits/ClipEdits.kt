@@ -322,6 +322,32 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         updateVideoClip(clipId) { it.copy(adjust = it.adjust.withBand(band, value)) }
     }
 
+    /**
+     * Auto adjust: exposure, white balance, contrast and colour for [clipId],
+     * measured on the frame in the middle of what it plays (AutoAdjust) - the
+     * sliders Auto does not own are kept. One step; [onDone] is told whether
+     * the frame could be read.
+     */
+    fun autoAdjust(clipId: String, onDone: (Boolean) -> Unit) {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return onDone(false)
+        val uri = clip.uri ?: return onDone(false)
+        viewModelScope.launch {
+            val at = clip.sourceInMs + (clip.sourceOutMs - clip.sourceInMs) / 2
+            val frame = ThumbnailExtractor.cover(app, uri, at) ?: return@launch onDone(false)
+            val adjusted = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val small = android.graphics.Bitmap.createScaledBitmap(frame, AUTO_W, AUTO_H, true)
+                val pixels = IntArray(AUTO_W * AUTO_H)
+                small.getPixels(pixels, 0, AUTO_W, 0, 0, AUTO_W, AUTO_H)
+                if (small !== frame) small.recycle()
+                com.squish.app.media.effects.AutoAdjust.of(pixels, clip.adjust)
+            }
+            recordLate("Auto adjust", edit = { snapshot ->
+                snapshot.copy(videoClips = snapshot.videoClips.map { if (it.id == clipId) it.copy(adjust = adjusted) else it })
+            })
+            onDone(true)
+        }
+    }
+
     /** Adjust's Reset: every slider back to where it started, as one step. */
     fun resetAdjust(clipId: String) = record("Adjust") {
         updateVideoClip(clipId) { it.copy(adjust = Adjust.NONE) }
@@ -1670,3 +1696,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         const val REVERSED_DIR = "reversed"
     }
 }
+
+/** The frame Auto adjust measures: small, the frame's own 16:9-ish shape is enough for averages. */
+private const val AUTO_W = 96
+private const val AUTO_H = 54
