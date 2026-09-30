@@ -64,6 +64,7 @@ fun StockVideoSheet(onPicked: (Uri) -> Unit, onDismiss: () -> Unit) {
     var videos by remember { mutableStateOf<List<OnlineStock.Video>?>(null) }
     var failed by remember { mutableStateOf(false) }
     var fetching by remember { mutableStateOf<String?>(null) }
+    var rowNote by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(query) {
         delay(if (query.isEmpty()) 0L else 500L)
         videos = null
@@ -109,6 +110,7 @@ fun StockVideoSheet(onPicked: (Uri) -> Unit, onDismiss: () -> Unit) {
                     )
                 }
             }
+            rowNote?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.Yellow) }
             val list = videos
             when {
                 failed -> Text("Couldn't reach the Internet Archive. Check the connection and try again.", style = MaterialTheme.typography.bodySmall, color = SquishColors.Yellow)
@@ -130,7 +132,7 @@ fun StockVideoSheet(onPicked: (Uri) -> Unit, onDismiss: () -> Unit) {
                                 scope.launch {
                                     val uri = runCatching { OnlineStock.download(context, video) }.getOrNull()
                                     fetching = null
-                                    if (uri == null) failed = true else onPicked(uri)
+                                    if (uri == null) rowNote = "\"${video.title}\" couldn't be downloaded - try another." else onPicked(uri)
                                 }
                             }
                         )

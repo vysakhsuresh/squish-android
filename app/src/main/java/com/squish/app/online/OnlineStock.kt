@@ -29,8 +29,9 @@ object OnlineStock {
 
     suspend fun search(context: Context, query: String, rows: Int = 24): List<Video> {
         val q = buildString {
-            append("collection:stock_footage AND NOT licenseurl:*-nd* AND NOT licenseurl:*-nc* AND item_size:[* TO $MAX_ITEM_BYTES]")
-            query.trim().takeIf { it.isNotEmpty() }?.let { append(" AND (").append(it).append(")") }
+            append("collection:stock_footage AND (licenseurl:*creativecommons* OR licenseurl:*publicdomain*)")
+            append(" AND NOT licenseurl:*-nd* AND NOT licenseurl:*-nc* AND item_size:[* TO $MAX_ITEM_BYTES]")
+            Online.searchTerms(query)?.let { append(" AND (").append(it).append(")") }
         }
         val url = "https://archive.org/advancedsearch.php?q=" + enc(q) +
             "&fl[]=identifier&fl[]=title&fl[]=licenseurl&fl[]=item_size&sort[]=downloads+desc&rows=$rows&page=1&output=json"
@@ -44,7 +45,7 @@ object OnlineStock {
                 licenseUrl = d.optString("licenseurl").takeIf { it.isNotBlank() },
                 sizeBytes = d.optLong("item_size")
             )
-        }
+        }.filter { it.licenseUrl != null }
     }
 
     /** The item's picture, kept in the cache. */

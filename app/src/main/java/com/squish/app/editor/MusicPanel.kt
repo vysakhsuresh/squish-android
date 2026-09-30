@@ -533,6 +533,8 @@ private fun OnlineMusicList(
 
     var query by rememberSaveable { mutableStateOf("") }
     var tracks by remember { mutableStateOf<List<OnlineMusic.Track>?>(null) }
+    // One track that will not play is said about that track, not as the list failing.
+    var rowNote by remember { mutableStateOf<String?>(null) }
     var failed by remember { mutableStateOf(false) }
     LaunchedEffect(query) {
         delay(if (query.isEmpty()) 0L else 500L)
@@ -570,6 +572,7 @@ private fun OnlineMusicList(
         style = MaterialTheme.typography.labelSmall,
         color = SquishColors.TextMuted
     )
+    rowNote?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.Yellow) }
 
     val list = tracks
     when {
@@ -587,13 +590,14 @@ private fun OnlineMusicList(
                 pick = pick,
                 playing = playingKey == key,
                 busy = preparing == key,
-                starred = isStarred(key),
+                // Starred under its downloaded file, which is what the starred list plays.
+                starred = isStarred(key) || isStarred(Uri.fromFile(OnlineMusic.localFile(context, track)).toString()),
                 onListen = {
                     scope.launch {
                         onBusy(key)
                         val url = runCatching { OnlineMusic.streamUrl(context, track) }.getOrNull()
                         onBusy(null)
-                        if (url != null) onListen(key, Uri.parse(url)) else failed = true
+                        if (url != null) onListen(key, Uri.parse(url)) else rowNote = "\"${track.title}\" couldn't be played - try another."
                     }
                 },
                 // Kept by its downloaded file, so the starred list plays it offline.
@@ -602,7 +606,7 @@ private fun OnlineMusicList(
                         onBusy(key)
                         val uri = runCatching { OnlineMusic.download(context, track) }.getOrNull()
                         onBusy(null)
-                        if (uri != null) onStar(MusicPick(uri.toString(), pick.title, pick.subtitle)) else failed = true
+                        if (uri != null) onStar(MusicPick(uri.toString(), pick.title, pick.subtitle)) else rowNote = "\"${track.title}\" couldn't be downloaded - try another."
                     }
                 },
                 onAdd = {
@@ -610,7 +614,7 @@ private fun OnlineMusicList(
                         onBusy(key)
                         val uri = runCatching { OnlineMusic.download(context, track) }.getOrNull()
                         onBusy(null)
-                        if (uri != null) onAdd(MusicPick(uri.toString(), pick.title, pick.subtitle), uri) else failed = true
+                        if (uri != null) onAdd(MusicPick(uri.toString(), pick.title, pick.subtitle), uri) else rowNote = "\"${track.title}\" couldn't be downloaded - try another."
                     }
                 }
             )

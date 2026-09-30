@@ -640,30 +640,30 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * undo step; stickers - an emoji or two - are left. [onDone] gets how many
      * lines were translated, or -1 when the service could not be reached.
      */
-    fun translateCaptions(from: String, to: String, onDone: (Int) -> Unit) {
+    fun translateCaptions(from: String, to: String, onDone: (translated: Int, of: Int) -> Unit) {
         val lines = _state.value.textOverlays.filter { item ->
             val t = item.text.trim()
             t.isNotEmpty() && t.codePointCount(0, t.length) > 2
         }
-        if (lines.isEmpty()) return onDone(0)
+        if (lines.isEmpty()) return onDone(0, 0)
         viewModelScope.launch {
-            val done = HashMap<String, String>()
-            var failed = false
+            // Line by line; one the service refuses is left in its own words and
+            // the rest still go, and the sheet says how many did.
+            val done = HashMap<String, Pair<String, String>>()
             for (line in lines) {
                 val out = runCatching { com.squish.app.online.OnlineTranslate.translate(app, line.text, from, to) }.getOrNull()
-                if (out == null) { failed = true; break }
-                done[line.id] = out
+                if (out != null) done[line.id] = line.text to out
             }
-            if (done.isEmpty()) return@launch onDone(if (failed) -1 else 0)
-            record("Translate captions") {
-                _state.update { current ->
-                    current.copy(textOverlays = current.textOverlays.map { item ->
-                        // New words are not the words the segmenter timed.
-                        done[item.id]?.let { item.copy(text = it, wordStartsMs = emptyList()) } ?: item
-                    })
-                }
-            }
-            onDone(done.size)
+            if (done.isEmpty()) return@launch onDone(0, lines.size)
+            recordLate("Translate captions", edit = { snapshot ->
+                snapshot.copy(textOverlays = snapshot.textOverlays.map { item ->
+                    val (sent, got) = done[item.id] ?: return@map item
+                    // Only a line still saying what was sent: one retyped meanwhile is the person's.
+                    // New words are not the words the segmenter timed.
+                    if (item.text == sent) item.copy(text = got, wordStartsMs = emptyList()) else item
+                })
+            })
+            onDone(done.size, lines.size)
         }
     }
 

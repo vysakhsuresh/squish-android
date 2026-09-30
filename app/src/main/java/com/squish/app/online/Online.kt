@@ -98,6 +98,15 @@ object Online {
         return connection
     }
 
+    /**
+     * What a person typed, safe inside a Lucene query: letters, digits and
+     * spaces only, the words joined by AND - so a search can narrow a query
+     * but never escape its licence filter.
+     */
+    fun searchTerms(typed: String): String? =
+        typed.replace(Regex("[^\\p{L}\\p{N} ]"), " ").trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+            .take(8).joinToString(" AND ").ifEmpty { null }
+
     private const val PREFS = "settings"
     private const val KEY = "online_enabled"
     private const val TIMEOUT_MS = 15_000

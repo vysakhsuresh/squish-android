@@ -42,7 +42,7 @@ object OnlineMusic {
             append("(collection:netlabels OR collection:opensource_audio) AND mediatype:audio AND licenseurl:*creativecommons*")
             // Opened with nothing typed, music worth putting under a video rather
             // than whatever was downloaded most.
-            append(" AND (").append(terms.ifEmpty { DEFAULT_QUERY }).append(")")
+            append(" AND (").append(Online.searchTerms(terms) ?: DEFAULT_QUERY).append(")")
         }
         val url = "https://archive.org/advancedsearch.php?q=" + enc(q) +
             "&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=licenseurl&sort[]=downloads+desc" +
@@ -69,11 +69,13 @@ object OnlineMusic {
         return "https://archive.org/download/${enc(track.id)}/" + name.split('/').joinToString("/") { enc(it) }
     }
 
+    /** Where the track is kept once downloaded - the key it is starred under. */
+    fun localFile(context: Context, track: Track): File =
+        File(File(context.filesDir, DIR), track.id.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".mp3")
+
     /** The track kept on the phone (files/music/online), for the timeline. */
     suspend fun download(context: Context, track: Track): Uri? {
-        val dir = File(context.filesDir, DIR).apply { mkdirs() }
-        val safe = track.id.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        val file = File(dir, "$safe.mp3")
+        val file = localFile(context, track).apply { parentFile?.mkdirs() }
         if (file.length() > 0L) return Uri.fromFile(file)
         val url = streamUrl(context, track) ?: return null
         return Uri.fromFile(Online.download(context, url, file))

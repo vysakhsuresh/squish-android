@@ -849,6 +849,12 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
                             onClick = {
                                 if (fetchingFont != null) return@SelectableChip
                                 onlineGate.request("Free fonts") {
+                                    // Already downloaded: put on at once, not fetched and added again.
+                                    val have = CustomFonts.names().firstOrNull { CustomFonts.label(it).equals(family, ignoreCase = true) }
+                                    if (have != null) {
+                                        restyle { it.copy(fontFile = have) }
+                                        return@request
+                                    }
                                     fetchingFont = family
                                     fontScope.launch {
                                         val uri = runCatching { OnlineFonts.fetch(context, family) }.getOrNull()
@@ -1290,11 +1296,12 @@ private fun TranslateCard(viewModel: EditorViewModel) {
                 gate.request("Translation") {
                     working = true
                     note = null
-                    viewModel.text.translateCaptions(from, to) { n ->
+                    viewModel.text.translateCaptions(from, to) { n, of ->
                         working = false
                         note = when {
-                            n < 0 -> "Couldn't reach the translation service. Check the connection and try again."
-                            n == 0 -> "No lines of words to translate."
+                            of == 0 -> "No lines of words to translate."
+                            n == 0 -> "Couldn't reach the translation service. Check the connection and try again."
+                            n < of -> "Translated $n of $of lines - the service refused the rest, which keep their words. Undo takes it back."
                             else -> "Translated $n ${if (n == 1) "line" else "lines"}. Undo takes it back."
                         }
                     }

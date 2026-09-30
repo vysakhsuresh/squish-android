@@ -113,6 +113,9 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
             else -> null
         } ?: return null
+        // A file on the phone only. An https link handed over would have been
+        // fetched by the player - going online with online features off.
+        if (uri.scheme != "content" && uri.scheme != "file") return null
         // Kept past this session when the sender allows it, so a draft of the
         // video can still reopen it tomorrow. Most share only for now; those
         // are copied into the app's storage when the project opens
