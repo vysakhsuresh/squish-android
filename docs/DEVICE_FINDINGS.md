@@ -430,3 +430,20 @@ Off by default (Settings › Online). Seen on the phone:
 - MediaPipe's datatransport logger is removed from the manifest; the only
   network use is Online.get / Online.download, which refuse while off.
 Left off at the end of testing, the owner's default.
+
+## To check on the phone (built 30 September, day)
+
+Each is built and its logic executed on the JVM; none has been seen on the phone.
+
+1. Voice › Enhance on a talking shot: hiss between words drops, words intact, in preview and file.
+2. A song under a voiceover › Volume › Duck under speech: dips under each line, keys on the strip; again = "already".
+3. A talking shot › Volume › Remove silences: pauses gone, captions after it moved with the words; Undo.
+4. Sound › Mic & camera › Even out volume across shots: a loud shot comes down; a hand-lowered one stays.
+5. Overlay › Placement › Split screen Right, then Grid tiles on shot and overlays: preview and export agree.
+6. Video track + › Free stock video: prompt, grid with thumbnails, a clip downloads and lands at the playhead.
+7. Text › Translate (English → Hindi): lines change, one undo restores.
+8. Beats › Fit shots to the beat: each cut on a dot.
+9. Done screen › Save as GIF: progress on the button, GIF in Pictures/Squish plays and loops.
+10. Settings › Read-aloud voice Deep, then Read aloud a line.
+11. Export on this phone still works (CBR asked only where supported); size near the estimate.
+12. A 9:16 edit set to 1:1 fills the preview; a tiny custom crop does not blow up memory.
