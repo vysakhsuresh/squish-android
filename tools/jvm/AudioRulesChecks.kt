@@ -24,6 +24,7 @@ fun sound(
 )
 
 fun main() {
+    loopCapCheck()
     val minMs = 200L
 
     // --- A fade is a level at a moment. ---------------------------------------
@@ -186,4 +187,12 @@ fun main() {
     } else {
         println("FAIL (${problems.size})"); problems.forEach { println("  - $it") }; exitProcess(1)
     }
+}
+
+fun loopCapCheck() {
+    val sting = com.squish.app.timeline.Clip(kind = com.squish.app.timeline.ClipKind.Audio, uri = null, label = "s",
+        sourceInMs = 0, sourceOutMs = 1_000, timelineStartMs = 0, sourceDurationMs = 1_000)
+    var n = 0
+    val loop = AudioRules.loopToFit(sting, 300_000, 200) { "c${n++}" }
+    if (loop.copies.size > AudioRules.MAX_LOOP_COPIES) { println("FAIL: a 1 s sound over 5 minutes laid ${loop.copies.size} copies"); kotlin.system.exitProcess(1) }
 }

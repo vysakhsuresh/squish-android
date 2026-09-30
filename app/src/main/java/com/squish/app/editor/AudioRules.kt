@@ -27,6 +27,9 @@ object AudioRules {
      */
     const val MAX_SOUND_GAIN = 4f
 
+    /** The most copies Loop to end lays: each is a player in the preview, and a phone opens about forty sounds at once. */
+    const val MAX_LOOP_COPIES = 30
+
     /** Two beats closer than this are one beat: a tap that lands on a found beat does not double it. */
     const val BEAT_TOLERANCE_MS = 60L
 
@@ -178,12 +181,14 @@ object AudioRules {
      * the whole run - the fade out moves from the clip to the last copy - so
      * the loop plays as one long song rather than dipping at every join.
      */
-    fun loopToFit(clip: Clip, endMs: Long, minMs: Long, newId: () -> String): Loop {
+    fun loopToFit(clip: Clip, endMs: Long, minMs: Long, maxCopies: Int = MAX_LOOP_COPIES, newId: () -> String): Loop {
         val played = clip.durationMs
         if (played <= 0L) return Loop(clip, emptyList())
         val copies = ArrayList<Clip>()
         var cursor = clip.timelineEndMs
-        while (endMs - cursor >= minMs) {
+        // Each copy is a player in the preview; a 1 s sting looped over a long
+        // edit made hundreds, past what the phone's audio can open at once.
+        while (endMs - cursor >= minMs && copies.size < maxCopies) {
             val room = endMs - cursor
             val copy = clip.copy(
                 id = newId(),
