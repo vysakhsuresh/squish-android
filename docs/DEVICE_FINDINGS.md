@@ -389,3 +389,22 @@ Open:
 - Squeeze and Snip show a picked file by the picker's number ("1001319364.mp4").
 - Squeeze offers 1080p/1440p/4K for a 940x718 source (an upscale in a tool
   for making files smaller).
+
+## Verified on device, 30 September morning (builds 7e22c56 - 001ae99)
+
+- Privacy: the installed app no longer holds INTERNET (it came in with
+  MediaPipe's datatransport); Cutout's background removal works without it.
+- Frame 1:1 on a 9:16 edit: the kept square now fills the preview (it was a
+  small square in the old tall frame); the file is 720x720 / 1080x1080, 29 fps.
+- Mask, Ellipse, Cut out, on a main-track shot: was ignored in the preview
+  and in the file (alpha dropped at both ends); now the ellipse over black in
+  both, seen at 25.4 s of the file.
+- Stop mid-export: asks "Stop exporting?", Stop leaves no file and the sheet
+  ready to export again.
+- A split followed by Home and a real process kill (`am kill`, pid gone) is
+  in the draft when the project is reopened.
+- Opening Mask, Cutout, Adjust and the other shot tools on a shot the
+  playhead is off brings the playhead onto it.
+
+Not tested: voiceover - the microphone has never been granted to Squish on
+this phone, and granting it is the owner's choice, not a test's.
