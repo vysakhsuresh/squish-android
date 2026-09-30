@@ -365,6 +365,21 @@ fun PlacementPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
         ) {
             viewModel.clips.setClipTransform(clip.id, rotation = it)
         }
+        // Split screen in one tap: this overlay one half, the shot under it the other.
+        if (clip.isOverlay) {
+            Text("Split screen - this clip fills", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                com.squish.app.timeline.SplitSide.entries.forEach { side ->
+                    SelectableChip(
+                        label = side.label,
+                        selected = clip.mask == side.mask,
+                        accentColor = accent,
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.layers.splitScreen(clip.id, side) }
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -7,6 +7,8 @@ import com.squish.app.editor.OverlayRules.withOverlayOnMain
 import com.squish.app.media.SquishError
 import com.squish.app.media.StillClips
 import com.squish.app.media.ThumbnailExtractor
+import com.squish.app.timeline.withSplitScreen
+import com.squish.app.timeline.SplitSide
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Mask
@@ -326,6 +328,11 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
             )
             timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(chromaKey = next) else it })
         }
+    }
+
+    /** An overlay made one half of a split screen, the shot under it the other (SplitSide). */
+    fun splitScreen(clipId: String, side: SplitSide) = record("Split screen") {
+        mutateTimeline { it.withSplitScreen(clipId, side) }
     }
 
     // ---- Masking --------------------------------------------------------------
