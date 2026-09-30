@@ -7,6 +7,8 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
@@ -278,11 +280,37 @@ fun ExportedFile(
         inGallery = inGallery
     )
 
-    SquishOutlinedButton(
-        text = "Save a copy to Files",
-        modifier = Modifier.fillMaxWidth(),
-        onClick = { saveCopy.launch(fileName) }
-    )
+    // A copy wherever they want it, and - for a video - a GIF of its first seconds.
+    val gifScope = rememberCoroutineScope()
+    var gifProgress by remember(uri) { mutableStateOf<Float?>(null) }
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        SquishOutlinedButton(
+            text = "Copy to Files",
+            modifier = Modifier.weight(1f),
+            onClick = { saveCopy.launch(fileName) }
+        )
+        if (!isAudio) {
+            SquishOutlinedButton(
+                text = gifProgress?.let { "GIF ${(it * 100).toInt()}%" } ?: "Save as GIF",
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    if (gifProgress != null) return@SquishOutlinedButton
+                    gifProgress = 0f
+                    gifScope.launch {
+                        val gif = com.squish.app.media.gif.GifMaker.make(context, uri, fileName.substringBeforeLast('.')) { p ->
+                            gifScope.launch { gifProgress = p }
+                        }
+                        gifProgress = null
+                        onNotice(
+                            if (gif != null) "GIF saved to your gallery: Pictures › Squish " +
+                                "(the first ${com.squish.app.media.gif.GifMaker.MAX_SECONDS} s, looping)."
+                            else "Couldn't make a GIF of this video."
+                        )
+                    }
+                }
+            )
+        }
+    }
 
     notice?.let {
         Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.Cyan)
