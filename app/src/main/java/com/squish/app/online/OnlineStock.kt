@@ -31,7 +31,13 @@ object OnlineStock {
         val q = buildString {
             append("collection:stock_footage AND (licenseurl:*creativecommons* OR licenseurl:*publicdomain*)")
             append(" AND NOT licenseurl:*-nd* AND NOT licenseurl:*-nc* AND item_size:[* TO $MAX_ITEM_BYTES]")
-            Online.searchTerms(query)?.let { append(" AND (").append(it).append(")") }
+            val terms = Online.searchTerms(query)
+            if (terms != null) append(" AND (").append(terms).append(")")
+            // Nothing typed: b-roll people cut into their own videos. The
+            // collection's most downloaded are newsreels - bomb tests, the
+            // Hindenburg, an execution - which is what the sheet opened on.
+            else append(" AND (subject:($DEFAULT_SUBJECTS) OR title:($DEFAULT_SUBJECTS))")
+                .append(" AND NOT subject:($GRIM) AND NOT title:($GRIM)")
         }
         val url = "https://archive.org/advancedsearch.php?q=" + enc(q) +
             "&fl[]=identifier&fl[]=title&fl[]=licenseurl&fl[]=item_size&sort[]=downloads+desc&rows=$rows&page=1&output=json"
@@ -76,4 +82,9 @@ object OnlineStock {
     private const val MAX_ITEM_BYTES = 80_000_000L
 
     const val DIR = "imports/stock"
+
+    private const val DEFAULT_SUBJECTS = "nature OR ocean OR sea OR beach OR sky OR clouds OR sunset OR sunrise OR " +
+        "timelapse OR forest OR water OR waves OR rain OR snow OR flowers OR city OR mountains OR fireplace OR stars"
+    private const val GRIM = "war OR military OR bomb* OR rocket* OR atomic OR nuclear OR execution OR disaster OR " +
+        "nazi OR propaganda OR crash OR death OR battle* OR soldier* OR weapon* OR mussolini OR hitler OR hindenburg"
 }
