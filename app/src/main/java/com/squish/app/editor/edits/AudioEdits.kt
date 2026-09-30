@@ -11,6 +11,8 @@ import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.VoiceRecorder
 import com.squish.app.timeline.DuckRules
 import com.squish.app.media.audio.SpeechSegmenter
+import com.squish.app.timeline.SilenceRules
+import com.squish.app.timeline.withSilencesRemoved
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.ClipKind
@@ -874,6 +876,33 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 }
             }
             onDone(DuckRules.merged(speech.filter { it.last > current.timelineStartMs && it.first < current.timelineEndMs }).size)
+        }
+    }
+
+    // ---- Remove silences --------------------------------------------------------------
+
+    /**
+     * Takes the quiet stretches out of main-track shot [clipId]: listens to its
+     * own sound, keeps what has talking in it (SilenceRules), and cuts it into
+     * those pieces back to back as one undo step. [onDone] is told how many
+     * milliseconds of the file were removed - 0 when nothing was, and then
+     * nothing changed.
+     */
+    fun removeSilences(clipId: String, onDone: (Long) -> Unit) {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId && it.isMain } ?: return onDone(0L)
+        val uri = clip.uri ?: return onDone(0L)
+        viewModelScope.launch {
+            val pcm = PcmDecoder.decodeMono(app, uri, targetSampleRate = 16_000, maxDurationMs = clip.sourceOutMs + 1_000L)
+                ?: return@launch onDone(0L)
+            val speech = withContext(Dispatchers.Default) { SpeechSegmenter.segment(pcm).map { it.startMs..it.endMs } }
+            val current = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return@launch onDone(0L)
+            val kept = SilenceRules.keptWindows(speech, current.sourceInMs, current.sourceOutMs)
+            val removed = if (kept.isEmpty()) 0L else SilenceRules.removedMs(kept, current.sourceInMs, current.sourceOutMs)
+            if (removed <= 0L) return@launch onDone(0L)
+            record("Remove silences") {
+                mutateTimeline { it.withSilencesRemoved(clipId, kept) }
+            }
+            onDone(removed)
         }
     }
 }

@@ -1926,3 +1926,42 @@ fun TimelineState.groupMoveDelta(ids: Set<String>, deltaMs: Long): Long {
     }
     return delta
 }
+
+/**
+ * A main-track shot with its quiet stretches taken out: [kept] - windows of its
+ * file, from SilenceRules.keptWindows - become shots of their own, back to back,
+ * the track closing up behind them. The first keeps the shot's id, its
+ * transition in, fade in and arrival; the last its fade out and leaving; the
+ * keys move with the footage, as a cut moves them. Nothing changes for a shot
+ * that is not on the main track, or when [kept] is the whole of it.
+ */
+fun TimelineState.withSilencesRemoved(clipId: String, kept: List<LongRange>): TimelineState {
+    val clip = clips.firstOrNull { it.id == clipId } ?: return this
+    if (!clip.isMain) return this
+    val windows = kept
+        .map { maxOf(it.first, clip.sourceInMs)..minOf(it.last, clip.sourceOutMs) }
+        .filter { it.last - it.first >= MIN_CLIP_MS }
+    if (windows.isEmpty() || (windows.size == 1 && windows[0].first == clip.sourceInMs && windows[0].last == clip.sourceOutMs)) return this
+    val span = clip.sourceSpanMs
+    val pieces = windows.mapIndexed { i, w ->
+        val first = i == 0
+        val last = i == windows.lastIndex
+        val played = clip.speedRamp.outputOffsetAt(w.first - clip.sourceInMs, span)
+        clip.copy(
+            id = if (first) clip.id else UUID.randomUUID().toString(),
+            sourceInMs = w.first,
+            sourceOutMs = w.last,
+            speedRamp = clip.speedRamp.sliced(w.first - clip.sourceInMs, w.last - clip.sourceInMs),
+            transitionIn = if (first) clip.transitionIn else Transition(),
+            fadeInMs = if (first) clip.fadeInMs else 0L,
+            fadeOutMs = if (last) clip.fadeOutMs else 0L,
+            arrival = if (first) clip.arrival else ClipArrival.None,
+            leaving = if (last) clip.leaving else ClipLeaving.None,
+            keyframes = clip.keyframes.shiftedBy(-played),
+            opacityKeys = clip.opacityKeys.shiftedBy(-played),
+            volumeKeys = clip.volumeKeys.shiftedBy(-played)
+        )
+    }
+    val replace = { c: Clip -> if (c.id == clipId) pieces else listOf(c) }
+    return copy(clips = clips.flatMap(replace), selectedClipId = null).relaidFrom(this, replace)
+}

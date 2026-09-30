@@ -189,5 +189,30 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
                 color = SquishColors.TextMuted
             )
         }
+
+        // Remove silences: the pauses cut out of a talking shot, as jump cuts.
+        if (clip.isMain && !com.squish.app.media.StillClips.isStill(clip.uri)) {
+            var working by remember(clip.id) { mutableStateOf(false) }
+            var note by remember(clip.id) { mutableStateOf<String?>(null) }
+            SquishOutlinedButton(
+                text = if (working) "Listening for pauses…" else "Remove silences",
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    if (working) return@SquishOutlinedButton
+                    working = true
+                    note = null
+                    viewModel.audio.removeSilences(clip.id) { removed ->
+                        working = false
+                        note = if (removed <= 0L) "No pauses long enough to cut - or no talking found in this shot."
+                        else "Cut ${"%.1f".format(removed / 1000f)} s of pauses. Undo puts them back."
+                    }
+                }
+            )
+            Text(
+                note ?: "Cuts the pauses longer than 0.7 s out of this shot, keeping a little air round every word.",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (note != null) SquishColors.Teal else SquishColors.TextMuted
+            )
+        }
     }
 }
