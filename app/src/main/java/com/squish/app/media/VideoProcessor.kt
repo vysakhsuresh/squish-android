@@ -201,7 +201,7 @@ class VideoProcessor(private val context: Context) {
                         setRequestedVideoEncoderSettings(
                             VideoEncoderSettings.Builder()
                                 .setBitrate(bitrate)
-                                .setBitrateMode(android.media.MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+                                .apply { if (cbrSupported(videoMimeFor(state))) setBitrateMode(android.media.MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR) }
                                 .build()
                         )
                     }
@@ -404,7 +404,7 @@ class VideoProcessor(private val context: Context) {
         // the picture and leaves the words readable on top.
         if (state.effects.isNotEmpty()) {
             val timed = state.effects
-            effects.add(FxEffect { timed })
+            effects.add(FxEffect({ timed }))
         }
         if (state.textOverlays.isNotEmpty()) {
             // Widened at the declaration: OverlayEffect takes List<TextureOverlay>.
@@ -548,7 +548,7 @@ class VideoProcessor(private val context: Context) {
             // the encoder drops alpha: a Cut out mask or a keyed hole wrote the
             // whole picture, the shape ignored. Premultiplied, what the mask or
             // key hid is black, as the composited path and the preview show it.
-            if (rolls == null && (clip.mask?.mode == MaskMode.Cutout || clip.chromaKey != null)) add(PremultiplyEffect())
+            if (rolls == null && (clip.mask?.mode == MaskMode.Cutout || clip.chromaKey != null || clip.background?.fill == com.squish.app.timeline.BackgroundFill.Remove)) add(PremultiplyEffect())
             // Last, after the retime, so the frames dropped are the played ones.
             if (rolls == null) frameDrop(state, clip.spedUp)?.let { add(it) }
         }
@@ -986,3 +986,19 @@ class VideoProcessor(private val context: Context) {
 /** Whether any part of a clip plays faster than it was shot, so more frames a second than the file keeps. */
 private val Clip.spedUp: Boolean
     get() = speedRamp.ordered.any { it.speed > 1.001f }
+
+/**
+ * Whether an encoder for [mime] on this phone takes a constant bitrate. Asked
+ * because Media3 filters encoders by the mode requested: with CBR asked of a
+ * phone none of whose encoders offers it, no encoder is left and the export
+ * fails. Where it is offered it is used - Qualcomm's AVC encoder in its
+ * default variable mode overshot the requested rate by 80%.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+private fun cbrSupported(mime: String): Boolean = runCatching {
+    androidx.media3.transformer.EncoderUtil.getSupportedEncoders(mime).any {
+        androidx.media3.transformer.EncoderUtil.isBitrateModeSupported(it, mime, android.media.MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+    }
+}.getOrDefault(false)
+
+private fun videoMimeFor(state: com.squish.app.editor.EditorUiState): String = EncoderCeiling.mimeFor(state.exportCodecHevc)

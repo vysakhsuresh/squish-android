@@ -19,6 +19,8 @@ uniform float uNoise;
 uniform float uBlur;
 uniform float uHue;
 uniform float uTime;
+// 1 in the preview's surfaces: straight alpha in (a mask's cut), put over black here. 0 in the export.
+uniform float uOverBlack;
 
 varying vec2 vTexSamplingCoord;
 
@@ -90,6 +92,7 @@ void main() {
   // outside its shape) goes to black first, which is what the file composites it
   // over. Written opaque as it was, the preview showed the whole picture under a
   // Cutout mask while the file showed the shape alone.
-  float a = texture2D(uTexSampler, vTexSamplingCoord).a;
+  // Read where the colour was read, so a cut-out hole moves with a shake or a zoom.
+  float a = mix(1.0, texture2D(uTexSampler, uv).a, uOverBlack);
   gl_FragColor = vec4(clamp(c, 0.0, 1.0) * a, 1.0);
 }

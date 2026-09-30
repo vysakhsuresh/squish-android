@@ -1434,10 +1434,17 @@ private fun canvasPlacement(areaW: Int, areaH: Int, canvas: Float, kept: Preview
     val kh = (kept.bottom - kept.top).coerceIn(0.05f, 1f)
     val keptAspect = canvas * kw / kh
     val (fitW, fitH) = if (areaW.toFloat() / areaH > keptAspect) areaH * keptAspect to areaH.toFloat() else areaW.toFloat() to areaW / keptAspect
-    val cw = (fitW / kw).roundToInt().coerceAtLeast(1)
-    val ch = (fitH / kh).roundToInt().coerceAtLeast(1)
-    val x = ((areaW - fitW) / 2f - kept.left * cw).roundToInt()
-    val y = ((areaH - fitH) / 2f - kept.top * ch).roundToInt()
+    // Never more than MAX_CANVAS_ZOOM times the area: a small hand-drawn crop
+    // asked for a canvas many screens wide, and every surface on it with it -
+    // a texture that size is memory the phone does not have. Past that the
+    // kept part shows smaller than the room, centred.
+    val limit = minOf(1f, MAX_CANVAS_ZOOM * areaW / (fitW / kw), MAX_CANVAS_ZOOM * areaH / (fitH / kh))
+    val cwF = fitW / kw * limit
+    val chF = fitH / kh * limit
+    val cw = cwF.roundToInt().coerceAtLeast(1)
+    val ch = chF.roundToInt().coerceAtLeast(1)
+    val x = ((areaW - kw * cwF) / 2f - kept.left * cwF).roundToInt()
+    val y = ((areaH - kh * chF) / 2f - kept.top * chF).roundToInt()
     return intArrayOf(cw, ch, x, y)
 }
 
@@ -1457,3 +1464,6 @@ private fun Modifier.keptFilling(canvas: Float, kept: PreviewBox.Frame): Modifie
     val placeable = measurable.measure(Constraints.fixed(p[0], p[1]))
     layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(p[2], p[3]) }
 }
+
+/** How far past the preview area the canvas may be laid out to fill it with the kept part. */
+private const val MAX_CANVAS_ZOOM = 2f

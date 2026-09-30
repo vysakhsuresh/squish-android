@@ -379,7 +379,7 @@ class PreviewEngine(private val context: Context) {
                 add(LiveLookEffect(grade))
                 if (isBase) {
                     // Writes alpha 1, so a base frame reaches its view opaque.
-                    add(FxEffect { effects.get() })
+                    add(FxEffect({ effects.get() }, overBlack = true))
                 } else {
                     // A layer keeps its transparency all the way to the screen,
                     // where its view blends it premultiplied; see PremultiplyEffect.

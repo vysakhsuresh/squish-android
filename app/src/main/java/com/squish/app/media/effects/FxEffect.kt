@@ -24,16 +24,26 @@ import java.io.IOException
  * built, so in the preview adding, moving or removing an effect is a value
  * change and never a rebuild. The export hands it a fixed list.
  */
-class FxEffect(private val effectsNow: () -> List<TimedEffect>) : GlEffect {
+class FxEffect(
+    private val effectsNow: () -> List<TimedEffect>,
+    /**
+     * Whether what comes in carries straight alpha to be put over black here:
+     * a preview surface's picture, where a mask's cut is alpha and this pass
+     * writes the frame opaque. The export's pass runs on the finished,
+     * composited frame and leaves it as it is.
+     */
+    private val overBlack: Boolean = false
+) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        FxShaderProgram(context, useHdr, effectsNow)
+        FxShaderProgram(context, useHdr, effectsNow, overBlack)
 }
 
 private class FxShaderProgram(
     context: Context,
     useHdr: Boolean,
-    private val effectsNow: () -> List<TimedEffect>
+    private val effectsNow: () -> List<TimedEffect>,
+    private val overBlack: Boolean
 ) : BaseGlShaderProgram(useHdr, /* texturePoolCapacity= */ 1) {
 
     private val glProgram: GlProgram = try {
@@ -71,6 +81,7 @@ private class FxShaderProgram(
             glProgram.setFloatsUniform("uBlur", floatArrayOf(p.blur))
             glProgram.setFloatsUniform("uHue", floatArrayOf(p.hue))
             glProgram.setFloatsUniform("uTime", floatArrayOf(p.timeSec))
+            glProgram.setFloatsUniform("uOverBlack", floatArrayOf(if (overBlack) 1f else 0f))
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         } catch (e: GlUtil.GlException) {
