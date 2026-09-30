@@ -78,6 +78,10 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.squish.app.online.rememberOnlineGate
+import com.squish.app.online.OnlineFonts
 import com.squish.app.data.TextStyleJson
 import com.squish.app.media.CustomFonts
 import com.squish.app.media.typeface
@@ -700,6 +704,11 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
         }
     }
     var fonts by remember { mutableStateOf(CustomFonts.names()) }
+    val onlineGate = rememberOnlineGate()
+    val fontScope = rememberCoroutineScope()
+    var showOnlineFonts by remember { mutableStateOf(false) }
+    var fetchingFont by remember { mutableStateOf<String?>(null) }
+    var fontError by remember { mutableStateOf<String?>(null) }
     var pickingColour by remember(item.id) { mutableStateOf(false) }
     var pickingStroke by remember(item.id) { mutableStateOf(false) }
     var pickingShadow by remember(item.id) { mutableStateOf(false) }
@@ -814,6 +823,41 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
                     // Font files carry no dependable type across providers; the importer checks.
                     onClick = { importFont.launch(arrayOf("*/*")) }
                 )
+            }
+            // Free fonts from Google Fonts, fetched once and kept like an imported
+            // one. Online features are asked for first; only the font's name is sent.
+            SelectableChip(
+                label = if (fetchingFont != null) "Getting $fetchingFont…" else if (showOnlineFonts) "Hide free fonts" else "Free fonts online…",
+                selected = showOnlineFonts,
+                accentColor = SquishColors.Amber,
+                onClick = { onlineGate.request("Free fonts") { showOnlineFonts = !showOnlineFonts } }
+            )
+            if (showOnlineFonts) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                ) {
+                    OnlineFonts.families.forEach { family ->
+                        SelectableChip(
+                            label = family,
+                            selected = false,
+                            accentColor = SquishColors.Amber,
+                            onClick = {
+                                if (fetchingFont != null) return@SelectableChip
+                                onlineGate.request("Free fonts") {
+                                    fetchingFont = family
+                                    fontScope.launch {
+                                        val uri = runCatching { OnlineFonts.fetch(context, family) }.getOrNull()
+                                        fetchingFont = null
+                                        if (uri == null) fontError = "Couldn't download $family. Check the connection."
+                                        else viewModel.text.importFont(uri, onto = item.id) { fonts = CustomFonts.names() }
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+                fontError?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.Yellow) }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {

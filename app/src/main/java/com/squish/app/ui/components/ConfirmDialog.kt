@@ -52,7 +52,8 @@ fun ConfirmDialog(
     onDismiss: () -> Unit,
     dismissLabel: String = "Keep",
     icon: ImageVector = Icons.Filled.DeleteForever,
-    accent: Color = SquishColors.Pink
+    accent: Color = SquishColors.Pink,
+    destructive: Boolean = true
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -117,11 +118,9 @@ fun ConfirmDialog(
                     onClick = onDismiss
                 )
                 if (confirmLabel != null) {
-                    SquishDangerButton(
-                        text = confirmLabel,
-                        modifier = Modifier.weight(1f),
-                        onClick = onConfirm
-                    )
+                    // Red for what destroys; a question that only asks leave to go ahead is not that.
+                    if (destructive) SquishDangerButton(text = confirmLabel, modifier = Modifier.weight(1f), onClick = onConfirm)
+                    else SquishPrimaryButton(text = confirmLabel, modifier = Modifier.weight(1f), onClick = onConfirm)
                 }
             }
         }

@@ -54,6 +54,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.squish.app.online.Online
+import com.squish.app.online.OnlineMusic
+import com.squish.app.online.rememberOnlineGate
+import androidx.compose.runtime.collectAsState
 import com.squish.app.media.audio.MusicLibrary
 import com.squish.app.media.audio.MusicPick
 import com.squish.app.media.audio.MusicSynth
@@ -157,7 +161,8 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
         // a phone. In one scrolling row the fourth sat off screen with nothing
         // to say so, and the starred list was never found; and a scrolling
         // chip row straight under the sheet's own read as one muddled control.
-        listOf("Squish originals", "Sound effects", "On this phone", "Starred & recent").chunked(2).forEachIndexed { r, pair ->
+        // The fifth, free music online, has the last row to itself.
+        listOf("Squish originals", "Sound effects", "On this phone", "Starred & recent", "Free music online").chunked(2).forEachIndexed { r, pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 pair.forEachIndexed { c, label ->
                     val i = r * 2 + c
@@ -233,6 +238,15 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
                     )
                 }
             }
+            4 -> OnlineMusicList(
+                playingKey = playingKey,
+                preparing = preparing,
+                onBusy = { preparing = it },
+                isStarred = ::isStarred,
+                onListen = { key, uri -> listen(key, uri) },
+                onStar = { pick -> star(pick) },
+                onAdd = { pick, uri -> add(pick, uri) }
+            )
             2 -> PhoneMusic(
                 playingKey = playingKey,
                 isStarred = ::isStarred,
@@ -477,6 +491,129 @@ private fun MusicRow(
         ) {
             Icon(Icons.Filled.Add, contentDescription = null, tint = SquishColors.Cyan, modifier = Modifier.size(16.dp))
             Text("Add", style = MaterialTheme.typography.labelLarge, color = SquishColors.Cyan)
+        }
+    }
+}
+
+/**
+ * Free, Creative Commons music from the Internet Archive, searched and heard
+ * streamed, and downloaded onto the phone when it is added. Online features
+ * are asked for first (OnlineGate); nothing of the edit is sent - only the
+ * search typed and the track picked.
+ */
+@Composable
+private fun OnlineMusicList(
+    playingKey: String?,
+    preparing: String?,
+    onBusy: (String?) -> Unit,
+    isStarred: (String) -> Boolean,
+    onListen: (String, Uri) -> Unit,
+    onStar: (MusicPick) -> Unit,
+    onAdd: (MusicPick, Uri) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val gate = rememberOnlineGate()
+    val enabled by Online.enabledFlow(context).collectAsState()
+
+    if (enabled != true) {
+        Text(
+            "Thousands of free tracks, Creative Commons licensed, from the Internet Archive. " +
+                "Searching them needs the internet - your videos are never sent.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextMuted
+        )
+        SquishOutlinedButton(
+            text = "Browse free music online",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { gate.request("Free music") {} }
+        )
+        return
+    }
+
+    var query by rememberSaveable { mutableStateOf("") }
+    var tracks by remember { mutableStateOf<List<OnlineMusic.Track>?>(null) }
+    var failed by remember { mutableStateOf(false) }
+    LaunchedEffect(query) {
+        delay(if (query.isEmpty()) 0L else 500L)
+        tracks = null
+        failed = false
+        tracks = runCatching { OnlineMusic.search(context, query) }.getOrElse { failed = true; emptyList() }
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SquishColors.Background)
+            .border(1.dp, SquishColors.Border, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Icon(Icons.Filled.Search, contentDescription = null, tint = SquishColors.TextMuted, modifier = Modifier.size(18.dp))
+        Box(modifier = Modifier.padding(start = 8.dp).fillMaxWidth()) {
+            if (query.isEmpty()) {
+                Text("Search free music: lofi, piano, happy…", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextMuted)
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = SquishColors.TextPrimary),
+                cursorBrush = SolidColor(SquishColors.Cyan),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+    Text(
+        "Creative Commons: credit the artist where the licence is CC BY.",
+        style = MaterialTheme.typography.labelSmall,
+        color = SquishColors.TextMuted
+    )
+
+    val list = tracks
+    when {
+        failed -> Text(
+            "Couldn't reach the Internet Archive. Check the connection and try again.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.Yellow
+        )
+        list == null -> CircularProgressIndicator(color = SquishColors.Cyan, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+        list.isEmpty() -> Text("Nothing matches \"$query\".", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
+        else -> list.forEach { track ->
+            val key = "online:${track.id}"
+            val pick = MusicPick(key, track.title, listOfNotNull(track.artist, track.licenseLabel).joinToString(" · "))
+            MusicRow(
+                pick = pick,
+                playing = playingKey == key,
+                busy = preparing == key,
+                starred = isStarred(key),
+                onListen = {
+                    scope.launch {
+                        onBusy(key)
+                        val url = runCatching { OnlineMusic.streamUrl(context, track) }.getOrNull()
+                        onBusy(null)
+                        if (url != null) onListen(key, Uri.parse(url)) else failed = true
+                    }
+                },
+                // Kept by its downloaded file, so the starred list plays it offline.
+                onStar = {
+                    scope.launch {
+                        onBusy(key)
+                        val uri = runCatching { OnlineMusic.download(context, track) }.getOrNull()
+                        onBusy(null)
+                        if (uri != null) onStar(MusicPick(uri.toString(), pick.title, pick.subtitle)) else failed = true
+                    }
+                },
+                onAdd = {
+                    scope.launch {
+                        onBusy(key)
+                        val uri = runCatching { OnlineMusic.download(context, track) }.getOrNull()
+                        onBusy(null)
+                        if (uri != null) onAdd(MusicPick(uri.toString(), pick.title, pick.subtitle), uri) else failed = true
+                    }
+                }
+            )
         }
     }
 }

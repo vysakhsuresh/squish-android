@@ -48,6 +48,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material.icons.filled.Public
+import com.squish.app.online.Online
 import com.squish.app.BuildConfig
 import com.squish.app.editor.CropAspect
 import com.squish.app.editor.OutputSize
@@ -81,6 +84,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     ) {
         DefaultsCard()
         ExportDefaultsCard()
+        OnlineCard()
         StorageCard(
             entries = storage,
             onClear = { kind -> scope.launch { storage = StorageCleaner.clear(context, kind) } }
@@ -490,7 +494,8 @@ private fun PrivacyCard() {
             accent = SquishColors.Cyan
         )
         Promise("No account, ever.")
-        Promise("No upload. Squish requests no network permission at all, so there is nowhere for your video to go.")
+        Promise("No upload. Your videos, photos and projects never leave the phone - there is nothing in Squish that sends them.")
+        Promise("Offline until you say otherwise. Online features - free music and fonts - are off until you turn them on, and only fetch.")
         Promise("No watermark and no paywalled resolution.")
         Promise("Speech recognition runs on the device or not at all — it never falls back to a server.")
     }
@@ -599,3 +604,30 @@ private const val MAKER_PHONE_E164 = "916282595823"
  * to a 404 is worse than no support link.
  */
 private const val SUPPORT_URL = "https://buymeacoffee.com/layerbit"
+
+/**
+ * Online features, off until turned on here or from the question an internet
+ * tool asks first. What goes out is said plainly: a search and a name, never
+ * the video. Turning it off stops every request (Online.get refuses), and
+ * keeps what was already downloaded.
+ */
+@Composable
+private fun OnlineCard() {
+    val context = LocalContext.current
+    val enabled by Online.enabledFlow(context).collectAsState()
+    SquishCard(accent = SquishColors.Cyan) {
+        SectionHeading(
+            title = "Online",
+            subtitle = if (enabled == true) "On · only what you ask for" else "Off · Squish works fully offline",
+            icon = Icons.Filled.Public,
+            accent = SquishColors.Cyan
+        )
+        SwitchRow(
+            title = "Online features",
+            blurb = "Free music from the Internet Archive and free fonts from Google Fonts. Only your search and the name of " +
+                "what you pick are sent - never your videos, photos or projects. Anything already downloaded stays when this is off.",
+            checked = enabled == true,
+            onChange = { Online.setEnabled(context, it) }
+        )
+    }
+}
