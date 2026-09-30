@@ -924,6 +924,16 @@ should work through it and then delete what holds up.
   crossing the stretch after the last shot (`PreviewRules.baseTime`) and
   stopping at the true end.
 
+- **30 September (day), all of it.** Built on the desktop with no phone
+  attached: Enhance voice, Duck under speech, Remove silences, Even out volume,
+  Fit shots to the beat, Split screen and Grid, Free stock footage, Translate
+  captions, Save as GIF, Read-aloud voices, Auto adjust, and two review rounds
+  of fixes (CBR only where the encoder offers it, the preview canvas capped,
+  effects alpha only over black in the preview). The logic is executed on the
+  JVM (VoiceCleaner, Loudness, Duck, Silence, BeatFit, SplitScreen, Gif,
+  AutoAdjust, TranslateChunk suites in `tools/jvm/run.sh`); nothing has been
+  seen. The device checklist is the last section of `docs/DEVICE_FINDINGS.md`.
+
 ## Conventions worth not rediscovering
 
 - **The network is for online features only.** Every request goes through
