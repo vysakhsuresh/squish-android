@@ -902,7 +902,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         viewModelScope.launch {
             val state = _state.value
             val sources = (state.audioClips.filter { it.id != clipId && (it.isVoiceover || it.uri?.path?.contains("/speech/") == true) } +
-                (if (state.muteOriginal) emptyList() else state.videoClips.filter { it.isHeard && !com.squish.app.media.StillClips.isStill(it.uri) }))
+                (if (state.muteOriginal) emptyList() else state.videoClips.filter { it.isHeard && it.isFootage }))
                 .distinctBy { it.id }
                 .filter { it.timelineEndMs > music.timelineStartMs && it.timelineStartMs < music.timelineEndMs }
             val found = HashMap<Uri, List<LongRange>>()
@@ -937,7 +937,8 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     fun evenOutVolume(onDone: (Int) -> Unit) {
         viewModelScope.launch {
             val shots = _state.value.videoClips.filter {
-                it.isHeard && it.volumeKeys.isEmpty() && it.uri != null && !com.squish.app.media.StillClips.isStill(it.uri)
+                // Footage only: a photo on the main track is a rendered MP4 with a silent track, not the PNG isStill reads.
+                it.isHeard && it.volumeKeys.isEmpty() && it.uri != null && it.isFootage
             }
             if (shots.size < 2) return@launch onDone(0)
             // Per shot, not per file: each file's sound is let go before the next is read.
@@ -978,7 +979,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      * including when the shot changed while it was being listened to.
      */
     fun removeSilences(clipId: String, onDone: (Long) -> Unit) {
-        val clip = _state.value.videoClips.firstOrNull { it.id == clipId && it.isMain } ?: return onDone(0L)
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId && it.isMain && it.isFootage } ?: return onDone(0L)
         viewModelScope.launch {
             var speech: List<LongRange>? = null
             listenTo(listOf(clip)) { _, pcm ->

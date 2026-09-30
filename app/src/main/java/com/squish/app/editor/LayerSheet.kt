@@ -191,7 +191,8 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
         }
 
         // Remove silences: the pauses cut out of a talking shot, as jump cuts.
-        if (clip.isMain && !com.squish.app.media.StillClips.isStill(clip.uri)) {
+        // Footage only: a main-track photo is a rendered MP4 whose track is all silence.
+        if (clip.isMain && clip.isFootage) {
             var working by remember(clip.id) { mutableStateOf(false) }
             var note by remember(clip.id) { mutableStateOf<String?>(null) }
             SquishOutlinedButton(
