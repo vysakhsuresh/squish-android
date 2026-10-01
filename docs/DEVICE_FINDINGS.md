@@ -544,3 +544,15 @@ New options
     Free music online (turn online on through the prompt): 15 genre chips,
     each fills, Load more adds new tracks; no lectures or marches; switching
     genre mid "Load more" does not mix lists. Online off again at the end.
+21. Voices: 14 - Helium, Giant, Telephone, Megaphone, Cave, Wobble, Alien
+    heard in the preview and the same in the file (Alien's ring was missing
+    from the file before the fix); None leaves the sound exactly as it was.
+22. Filters: 50, a Social family (Bright, Insta, Glow, Food, Portrait, Beach,
+    Sunset, Matte, Cherry, City, Pastel) and Cyberpunk, Forest, Desert; the
+    family chips scroll; the same grade in the file.
+23. Templates: 14 - Travel, Birthday, Food, Fitness, Gaming, Love, News,
+    Sale each set a frame, look, title and effects in one undo.
+24. A new arrival (Pop, Bounce, Swing in, Twirl, Blink) on a PiP fades in the
+    file as on screen (it did not before the fix).
+25. Grid/Split chip: lit after the tap, dark again once the clip is turned or
+    mirrored.
