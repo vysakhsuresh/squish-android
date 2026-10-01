@@ -557,9 +557,20 @@ private fun OnlineMusicList(
         tracks = null
         failed = false
         page = 1
-        val first = runCatching { OnlineMusic.search(context, query, genre = genre) }.getOrElse { failed = true; emptyList() }
-        more = first.size >= 12
-        tracks = first
+        // A cancelled search (a chip tapped while the last was loading) is not a
+        // failure: caught as one, it set the error after the new search had
+        // cleared it, and the list read "Couldn't reach" over good results.
+        val first = try {
+            OnlineMusic.search(context, query, genre = genre)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        failed = first == null
+        more = (first?.size ?: 0) >= 12
+        tracks = first.orEmpty()
+        loadingMore = false
     }
 
     Row(
@@ -656,8 +667,14 @@ private fun OnlineMusicList(
             onClick = {
                 if (loadingMore) return@SquishOutlinedButton
                 loadingMore = true
+                // The search this page belongs to: a chip tapped or a word typed while
+                // it loads makes it another search's page, and it is dropped.
+                val forQuery = query
+                val forGenre = genre
+                val forPage = page
                 scope.launch {
-                    val next = runCatching { OnlineMusic.search(context, query, genre = genre, page = page + 1) }.getOrNull()
+                    val next = runCatching { OnlineMusic.search(context, forQuery, genre = forGenre, page = forPage + 1) }.getOrNull()
+                    if (query != forQuery || genre != forGenre || page != forPage) return@launch
                     loadingMore = false
                     if (next == null) {
                         rowNote = "Couldn't load more - check the connection."

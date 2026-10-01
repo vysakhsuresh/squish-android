@@ -42,7 +42,14 @@ data class TimelineWindow(
     /** Screen density, because the drawing side speaks dp and gestures speak pixels. */
     val density: Float,
     /** How wide the strip is on screen, in pixels. */
-    val viewportPx: Int
+    val viewportPx: Int,
+    /**
+     * How far past the view to build, when not the default half screen: the
+     * strip's drawing window (TimelineEditor's drawWindow) is already half a
+     * screen wider each side than the strip, and building another half beyond
+     * that stretched a long clip's filmstrip over twice the width.
+     */
+    val marginOverridePx: Float? = null
 ) {
 
     /**
@@ -53,7 +60,7 @@ data class TimelineWindow(
      * at the boundary would pop at every edge. Half a screen each way is cheap and
      * nothing is ever seen arriving.
      */
-    private val marginPx: Float get() = (viewportPx / 2f).coerceAtLeast(240f)
+    private val marginPx: Float get() = marginOverridePx ?: (viewportPx / 2f).coerceAtLeast(240f)
 
     private val pxPerMs: Double get() = pixelsPerSecond.toDouble() * density / 1000.0
 
@@ -170,9 +177,34 @@ data class TimelineWindow(
          * screen after any scroll. The scroll can be negative: at the start of the
          * edit, the half of the strip left of the playhead shows nothing.
          */
-        fun centredOn(atMs: Double, pixelsPerSecond: Float, density: Float, viewportPx: Int): TimelineWindow {
-            val at = TimelineWindow(pixelsPerSecond, 0.0, density, viewportPx)
+        /**
+         * How the strip is drawn under the live window [live], centred on
+         * [centreMs]: from [Slide.drawn] - the same scale, a centre that moves
+         * in quarter-screen steps, half a screen wider each side and built no
+         * further than that - laid [Slide.padPx] to the left and slid
+         * [Slide.shiftPx] whole pixels. Between steps only the slide changes,
+         * so the rows are moved on the GPU rather than rebuilt every frame.
+         * A moment drawn this way lands within half a pixel of where [live]
+         * puts it, which is where a finger finds it (checked in WindowChecks).
+         */
+        fun slideFor(live: TimelineWindow, centreMs: Double): Slide {
+            val pad = live.viewportPx / 2
+            val step = live.msForPx(live.viewportPx / 4f).coerceAtLeast(1.0)
+            val drawnCentre = Math.round(centreMs / step) * step
+            val drawn = centredOn(drawnCentre, live.pixelsPerSecond, live.density, live.viewportPx + 2 * pad, marginOverridePx = 0f)
+            val msPerPx = live.msForPx(1f)
+            // Whole pixels: a fractional slide blurred the marks inside the rows
+            // and set them up to half a pixel off the lines drawn outside them.
+            val shift = if (msPerPx > 0.0) Math.round((drawnCentre - centreMs) / msPerPx).toFloat() else 0f
+            return Slide(drawn, pad, shift)
+        }
+
+        fun centredOn(atMs: Double, pixelsPerSecond: Float, density: Float, viewportPx: Int, marginOverridePx: Float? = null): TimelineWindow {
+            val at = TimelineWindow(pixelsPerSecond, 0.0, density, viewportPx, marginOverridePx)
             return at.copy(scrollMs = atMs - at.msForPx(viewportPx / 2f))
         }
     }
 }
+
+/** The strip as drawn: see [TimelineWindow.slideFor]. */
+data class Slide(val drawn: TimelineWindow, val padPx: Int, val shiftPx: Float)

@@ -220,11 +220,11 @@ private fun OutputSummary(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(frame, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
-            Text(
-                listOfNotNull(detail, change ?: originalBytes.takeIf { it > 0 }?.let { "Original ${formatSize(it)}" }).joinToString("  ·  "),
-                style = MaterialTheme.typography.labelSmall,
-                color = SquishColors.TextMuted
-            )
+            val second = listOfNotNull(detail, change ?: originalBytes.takeIf { it > 0 }?.let { "Original ${formatSize(it)}" }).joinToString("  ·  ")
+            // No second line at all rather than an empty one under the size.
+            if (second.isNotEmpty()) {
+                Text(second, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+            }
         }
         Column(horizontalAlignment = Alignment.End) {
             Text("≈ ${formatSize(estimatedBytes)}", style = MaterialTheme.typography.titleSmall, color = SquishColors.Cyan)

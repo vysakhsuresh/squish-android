@@ -360,19 +360,12 @@ fun TimelineEditor(
      * frame and every lane took it (a scrub ran at 20 ms a frame on a phone).
      * Gestures and the layout keep [window]: what a finger lands on is exact.
      */
-    val drawPadPx = viewportPx / 2
-    val drawStepMs = window.msForPx(viewportPx / 4f).coerceAtLeast(1.0)
-    val drawCentre = Math.round(centre / drawStepMs) * drawStepMs
-    val drawWindow = remember(drawCentre, window.pixelsPerSecond, density.density, viewportPx) {
-        TimelineWindow.centredOn(
-            atMs = drawCentre,
-            pixelsPerSecond = window.pixelsPerSecond,
-            density = density.density,
-            viewportPx = viewportPx + 2 * drawPadPx
-        )
-    }
-    // How far the live centre is past the drawn one, in pixels: the slide.
-    val drawShiftPx = window.msForPx(1f).let { msPerPx -> if (msPerPx > 0.0) ((drawCentre - centre) / msPerPx).toFloat() else 0f }
+    val slide = remember(centre, window) { TimelineWindow.slideFor(window, centre) }
+    val drawPadPx = slide.padPx
+    val drawWindow = slide.drawn
+    val drawShiftPx = slide.shiftPx
+    val drawShiftState = rememberUpdatedState(drawShiftPx)
+    val counterShift: () -> Float = remember { { -drawShiftState.value } }
 
     // Read fresh inside gestures: the pointerInput blocks are keyed on Unit so
     // they survive a zoom, and a captured value would go stale on the first pinch.
@@ -912,7 +905,8 @@ fun TimelineEditor(
                                     onTransitionTap = onTransitionTap,
                                     gaps = remember(state.baseVideoClips) { state.mainGaps() },
                                     onCloseGap = onCloseGap,
-                                    onAddMedia = onAddVideo
+                                    onAddMedia = onAddVideo,
+                                    counterShiftPx = counterShift
                                 )
                                 Group.Sound -> Lane(
                                     clips = remember(state.audioClips, soundRows, row.index) { state.audioClips.filter { soundRows[it.id] == row.index } },
@@ -1587,6 +1581,12 @@ private fun Lane(
     /** The main track, empty: a way to put something on it where the playhead is. */
     onAddMedia: (() -> Unit)? = null,
     /**
+     * Undoes the drawn strip's slide (drawShiftPx) for the one thing that must sit
+     * on the live playhead, not ride with the strip: [onAddMedia]'s button. Read in
+     * a graphics layer, so the lane does not recompose for it.
+     */
+    counterShiftPx: () -> Float = { 0f },
+    /**
      * Each clip's own colour, where a lane holds several things worth telling
      * apart at a glance - two songs, a title and a caption. Otherwise every clip
      * wears the lane's [accent].
@@ -1681,7 +1681,7 @@ private fun Lane(
             if (clips.isEmpty() && onAddMedia != null) {
                 // Beside the playhead, where the eye is: at zero it was off screen whenever
                 // sound or words ran on past where the picture had been.
-                AddMedia(x = window.xDp(window.centreMs.roundToLong()).dp, onClick = onAddMedia)
+                AddMedia(x = window.xDp(window.centreMs.roundToLong()).dp, counterShiftPx = counterShiftPx, onClick = onAddMedia)
             }
         }
     }
@@ -1731,10 +1731,11 @@ private fun BoxScope.GapMark(gap: MainGap, window: TimelineWindow, onClose: ((St
 
 /** The main track with nothing on it: the one thing to do next, where the playhead is. */
 @Composable
-private fun BoxScope.AddMedia(x: Dp, onClick: () -> Unit) {
+private fun BoxScope.AddMedia(x: Dp, counterShiftPx: () -> Float, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .offset(x = x + 6.dp)
+            .graphicsLayer { translationX = counterShiftPx() }
             .align(Alignment.CenterStart)
             .clip(RoundedCornerShape(9.dp))
             .background(Concept.Video.accent.copy(alpha = 0.16f))

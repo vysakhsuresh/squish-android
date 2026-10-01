@@ -101,10 +101,12 @@ object Online {
     /**
      * What a person typed, safe inside a Lucene query: letters, digits and
      * spaces only, the words joined by AND - so a search can narrow a query
-     * but never escape its licence filter.
+     * but never escape its licence filter. Lower case, too: a typed "rock OR
+     * jazz" sent the operator as a bare word between two ANDs, a syntax error
+     * the Archive answers with no list, read as "couldn't reach".
      */
     fun searchTerms(typed: String): String? =
-        typed.replace(Regex("[^\\p{L}\\p{N} ]"), " ").trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        typed.lowercase().replace(Regex("[^\\p{L}\\p{N} ]"), " ").trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
             .take(8).joinToString(" AND ").ifEmpty { null }
 
     private const val PREFS = "settings"

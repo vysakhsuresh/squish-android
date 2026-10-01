@@ -344,7 +344,7 @@ private fun PictureRows(state: EditorUiState, viewModel: EditorViewModel) {
         // videos it measured against the first alone.
         originalBytes = if (
             state.videoClips.none { it.isOverlay } &&
-            state.videoClips.filter { it.isMain }.all { it.isFootage && (it.uri == null || it.uri == state.sourceUri) }
+            state.videoClips.filter { it.isMain }.let { shots -> shots.isNotEmpty() && shots.all { it.isFootage && (it.uri == null || it.uri == state.sourceUri) } }
         ) state.originalSizeBytes else 0L,
         accent = SquishColors.Blue,
         onPick = viewModel::setOutputP,

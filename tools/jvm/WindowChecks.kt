@@ -122,6 +122,37 @@ fun main() {
         }
     }
 
+    // The strip as drawn (slideFor): every moment within a pixel of where the
+    // live window - and so a finger - puts it, at any zoom, length and centre;
+    // the slide never more than an eighth of a screen and always whole pixels;
+    // and the drawn window the same between steps, so the rows are not rebuilt.
+    for (pps in floatArrayOf(2f, 42f, 400f, 4_000f)) {
+        for (viewport in intArrayOf(1080, 1079, 2400)) {
+            var last: TimelineWindow? = null
+            var rebuilds = 0
+            var frames = 0
+            var centre = 0.0
+            val live0 = TimelineWindow.centredOn(0.0, pps, 2.75f, viewport)
+            val stepMs = live0.msForPx(3f)
+            while (centre < 3 * 60 * 60_000.0 && frames < 4_000) {
+                val live = TimelineWindow.centredOn(centre, pps, 2.75f, viewport)
+                val s = TimelineWindow.slideFor(live, centre)
+                for (t in longArrayOf(centre.toLong(), centre.toLong() + 777, centre.toLong() - 4_321, 0L)) {
+                    val drawnAt = Math.round(s.drawn.xPx(t)) - s.padPx + s.shiftPx
+                    val liveAt = live.xPx(t)
+                    if (abs(liveAt) < 3 * viewport) check("pps $pps vp $viewport at $centre: $t drawn at $drawnAt, live $liveAt", abs(drawnAt - liveAt) <= 1f)
+                }
+                check("the slide is whole pixels", s.shiftPx == Math.round(s.shiftPx).toFloat())
+                check("the slide stays within an eighth of a screen (${s.shiftPx})", abs(s.shiftPx) <= viewport / 8f + 1f)
+                if (last != s.drawn) rebuilds++
+                last = s.drawn
+                frames++
+                centre += stepMs
+            }
+            check("pps $pps vp $viewport: the rows were rebuilt $rebuilds times in $frames frames", rebuilds <= frames / 60 + 2)
+        }
+    }
+
     println("three hours at 400 px/s now scrolls %.0f ms of content, laid out one screen at a time".format(cap))
     if (failures.isEmpty()) {
         println("PASS - the window maps time to screen both ways and never lays out more than a screenful")
