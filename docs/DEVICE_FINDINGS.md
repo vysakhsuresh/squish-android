@@ -489,3 +489,58 @@ not seen.
 Test files removed by MediaStore id (audio 1001320247; video 1001320254,
 1001320269, 1001320286; image 1001320271); the two test projects are in
 Recently deleted. Online features left off.
+
+## To check on the phone (built 1 October, day)
+
+Built on the desktop with the phone away; the arithmetic is executed on the
+JVM (all suites in `tools/jvm/run.sh`), nothing below has been seen. Test on a
+**duplicate** of a project, never the owner's own. Measure speed on the
+release build (`./gradlew assemblePerf`), behaviour on either.
+
+Performance (release build, the busiest project: 3 rows, music, voiceover, titles)
+1. Play 15 s: `dumpsys gfxinfo` janky (legacy) under 2%, 99th percentile under 25 ms.
+2. Scrub the strip back and forth: median frame under 17 ms; clips, ruler,
+   waveforms and filmstrips stay exactly under the finger and the playhead -
+   no 1 px wobble, no jump every quarter screen (the strip now slides a
+   pre-drawn window and redraws it in quarter-screen steps).
+3. Zoom in to the frame and out to the whole edit, then scrub: the same.
+4. Long-press and carry a clip, trim both ends, tap a keyframe diamond, a
+   transition badge, the "close gap" and "Add media" buttons: each lands on
+   what is under the finger.
+5. Release build launches, opens a draft, exports (R8 was failing before).
+
+Export
+6. The 2.72x edit at 30 fps: Mp4Probe says ~888 frames, 30.0 per second.
+7. A 1.5x shot at 30: 30 fps, not 22.5. A 0.5x shot: no frames dropped.
+8. Grid and Split screen export match the preview (seen once: they did).
+
+Look and feel
+9. Text and Sound sheets: Add text / Add from your files are tinted in the
+   tool's colour; Done is the only solid orange; Play is white.
+10. Every chip is finger-sized and nothing reads "Au…" or cuts a letter: the
+    frame-rate rows are 3+3, Speed presets read 0.25x 0.5x 1x 2x.
+11. Clear, Remove, Unpin, Turn off, Loop to end, Cancel, Set: easy to hit,
+    and nothing beside them pushed off or overlapping.
+12. The editor header, transport, Export sheet close and the clip preview's
+    scrub bar are easy to hit and nothing overflows on the narrow phone.
+13. A duplicated unnamed project is named "Edit · 29 Sep copy".
+
+New options
+14. Animation: 16 ins (Pop, Bounce, Drop in, Whip, Swing in, Twirl, Blink…),
+    15 outs, 11 loops (Shake, Heartbeat, Sway, Orbit, Rotate) on a PiP and on
+    a shot - the same in the file. Camera moves: Sink, Push close, Diagonal,
+    Tilt in, Pull wide stay full-frame.
+15. Text: Zoom, Drop, Spin, Blink in; Pop, Float up, Zoom, Spin, Blink out;
+    Shake, Heartbeat, Swing loops - Spin turns in the file as on screen.
+16. Titles: 17 on two rows; Fonts: Light, Thin, Medium, Script, Caps, Typed
+    render the same face in the file.
+17. Stickers: Travel, Animals, Nature, Sports, Signs, Flags tabs.
+18. Effects: 21 - RGB split, Strobe, Earthquake, Heartbeat, TV static, Old
+    film, Dream, Negative pulse, Trippy, Sway, Slow zoom out; Slow zoom and
+    Blur now act with their knob at the left.
+19. Transitions: 25 - Push right/up/down, Whip, Wipe up/down, Zoom out,
+    Pop in, Blackout - preview and file agree on a three-shot chain.
+20. Music: Squish Originals 22 with mood chips; sound effects 16 (each plays);
+    Free music online (turn online on through the prompt): 15 genre chips,
+    each fills, Load more adds new tracks; no lectures or marches; switching
+    genre mid "Load more" does not mix lists. Online off again at the end.

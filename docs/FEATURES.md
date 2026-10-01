@@ -35,7 +35,9 @@ music, footage and fonts, and translate caption words.
 - Speed: constant 0.1x-100x, speed curves (ramps) with presets, pitch
   follows speed or not, frame blending for smooth slow motion.
 - Placement with keyframes (position, scale, rotation) and easing; opacity
-  keyframes; arrival, leaving and loop animations.
+  keyframes; 16 arrivals (Pop, Bounce, Drop, Whip, Swing, Twirl, Blink…), 15
+  leavings and 11 loops (Pulse, Swing, Bob, Shake, Heartbeat, Sway, Orbit,
+  Rotate…).
 - Crop per clip (any window, straighten, flip), rotate, mirror.
 - Frame: ratios Original, 9:16, 1:1, 16:9, 3:4, 4:3, 4:5, 2:1, 2.35:1;
   auto-reframe that follows the subject; padded canvas with colour, picture
@@ -45,17 +47,21 @@ music, footage and fonts, and translate caption words.
   temperature, tint, highlights, shadows, sharpen, vignette, hue, fade,
   grain, plus an 8-colour HSL wheel, and **Auto adjust** (exposure, white
   balance, contrast and colour measured off the shot). Apply to all.
-- Effects library: Shake, Zoom punch, Slow zoom, Glitch, Flash, VHS, B&W,
-  Invert, Blur, Rainbow - timed on the strip, previewed on your own shot.
-- Transitions (16): Dissolve, Dip to black/white, Slide 4 ways, Push, Wipe
-  both ways, Zoom, Jitter, Flicker, Flash, Glow - previewed on your shots.
+- Effects library (21): Shake, Zoom punch, Slow zoom, Slow zoom out, Glitch, Flash,
+  VHS, B&W, Invert, Blur, Rainbow, RGB split, Strobe, Earthquake, Heartbeat,
+  TV static, Old film, Dream, Negative pulse, Trippy, Sway -
+  timed on the strip, previewed on your own shot.
+- Transitions (25): Dissolve, Dip to black/white, Blackout, Slide 4 ways, Push 4
+  ways, Whip, Wipe 4 ways, Zoom in, Zoom out, Pop in, Jitter, Flicker, Flash,
+  Glow - previewed on your shots.
 - Masks: rectangle, ellipse, linear, mirror, heart, star - cut out,
   pixelate or blur (face privacy), feather, invert, motion-tracked.
 - Chroma key (green screen) with eyedropper; background removal (Cutout)
   with blur, colour or cut out, fully on the phone.
 - Stabilize with strength; object tracking for masks and words.
 - Freeze frame, reverse, replace, extract audio.
-- Motion presets (push in, pull out, pans, rise, settle) and **Animate every
+- 11 camera moves (push in, push close, pull out, pull wide, pans, diagonal,
+  rise, sink, settle, tilt in) and **Animate every
   photo** for a moving slideshow in one tap.
 - Overlays (picture-in-picture) with a drag/pinch/turn box, snapping guides,
   layer order, blend with overlay transitions.
@@ -64,9 +70,10 @@ music, footage and fonts, and translate caption words.
 
 ## Sound
 
-- Squish Originals (music composed on the phone), sound effects, songs on
+- 22 Squish Originals (music composed on the phone) by mood, 16 sound effects,
+  songs on
   the phone, starred and recent; audition before adding.
-- **Free music online** (Internet Archive, Creative Commons, video-safe
+- **Free music online**: 15 genres, thousands of tracks each, Load more (Internet Archive, Creative Commons, video-safe
   licences only).
 - Voiceover recording with count-in, silent picture, live meter, retakes.
 - Per-clip volume up to 400%, volume keyframes, fades in/out, mute.
@@ -82,14 +89,15 @@ music, footage and fonts, and translate caption words.
 
 ## Words
 
-- Add text, six title presets (Headline, Subtitle, Name tag, Neon,
-  Typewriter, Bounce), stickers (emoji), templates (Reel, Vlog, Cinematic,
+- Add text, 17 title styles (Headline, Subtitle, Name tag, Neon, Breaking,
+  Quote, Sale, Big number, Chapter, Vlog, Gaming, Love, Follow, Cinema, Spin,
+  Typewriter, Bounce), 12 sticker sets, templates (Reel, Vlog, Cinematic,
   Retro, Party, Memories).
-- Style: fonts (built-in, imported .ttf/.otf, **free Google Fonts online**),
+- Style: 12 built-in fonts, imported .ttf/.otf, **free Google Fonts online**,
   bold/italic/underline, alignment, colour with eyedropper, size, letter and
   line spacing, outline, shadow, bubbles (Box, Pill, Band, Speech), saved
   styles, apply to all.
-- Animation: arrivals, leavings, loops, word-by-word and letter reveals.
+- Animation: 11 arrivals, 10 leavings, 8 loops, word-by-word and letter reveals.
 - Auto-captions (on-device speech recognition where the phone has it; the
   timing always), SRT import/export, **translate captions** online into 18
   languages, read aloud with 5 voices.
