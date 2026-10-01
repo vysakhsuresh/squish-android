@@ -652,8 +652,7 @@ data class Clip(
      */
     val fadesPicture: Boolean
         get() = opacity < 1f || opacityKeys.isNotEmpty() ||
-            arrival == ClipArrival.Fade || arrival == ClipArrival.Zoom || arrival == ClipArrival.Shrink || arrival == ClipArrival.Spin ||
-            leaving != ClipLeaving.None || loop == ClipLoop.Flicker
+            arrival.fades || leaving != ClipLeaving.None || loop.fades
 
     /**
      * The level at [localMs] into the played clip: nothing while [muted], else

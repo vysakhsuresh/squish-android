@@ -61,7 +61,9 @@ fun SelectableChip(
             )
             .border(1.5.dp, border, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 12.dp),
+            // 8 at the sides: at 12, four to a row on a 360dp phone cut "Camera"
+            // and "Bottom" short.
+            .padding(vertical = 8.dp, horizontal = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         // Ellipsis rather than the default clip: a label a few pixels too

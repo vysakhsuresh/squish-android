@@ -568,8 +568,8 @@ private fun OnlineMusicList(
             null
         }
         failed = first == null
-        more = (first?.size ?: 0) >= 12
-        tracks = first.orEmpty()
+        more = first?.full == true
+        tracks = first?.tracks.orEmpty()
         loadingMore = false
     }
 
@@ -681,8 +681,8 @@ private fun OnlineMusicList(
                     } else {
                         page += 1
                         val seen = tracks.orEmpty().map { it.id }.toSet()
-                        tracks = tracks.orEmpty() + next.filter { it.id !in seen }
-                        more = next.size >= 12
+                        tracks = tracks.orEmpty() + next.tracks.filter { it.id !in seen }
+                        more = next.full
                     }
                 }
             }

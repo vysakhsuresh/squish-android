@@ -331,6 +331,29 @@ enum class ClipLoop(val label: String) {
 }
 
 /**
+ * Whether the arrival changes the picture's opacity - what makes the export
+ * draw the clip through its per-frame alpha pass (Clip.fadesPicture). A `when`
+ * with every case, so a new arrival must be decided here: five added at once
+ * (Pop, Bounce, Swing in, Twirl, Blink) faded in the preview and not in the
+ * file, because a hand-kept list beside them was not extended.
+ */
+val ClipArrival.fades: Boolean
+    get() = when (this) {
+        ClipArrival.None, ClipArrival.SlideLeft, ClipArrival.SlideRight, ClipArrival.SlideUp, ClipArrival.SlideDown,
+        ClipArrival.Drop, ClipArrival.Whip -> false
+        ClipArrival.Fade, ClipArrival.Zoom, ClipArrival.Shrink, ClipArrival.Spin, ClipArrival.Pop, ClipArrival.Bounce,
+        ClipArrival.SwingIn, ClipArrival.Twirl, ClipArrival.Blink -> true
+    }
+
+/** The same for a loop: only one changes the opacity. */
+val ClipLoop.fades: Boolean
+    get() = when (this) {
+        ClipLoop.Flicker -> true
+        ClipLoop.None, ClipLoop.Pulse, ClipLoop.Swing, ClipLoop.Bob, ClipLoop.Drift, ClipLoop.Shake,
+        ClipLoop.Heartbeat, ClipLoop.Sway, ClipLoop.Orbit, ClipLoop.Rotate -> false
+    }
+
+/**
  * One moment of a clip's arrival, leaving and loop, as changes to lay over its
  * placement: [scale] multiplies, [dx] and [dy] add in fractions of half the
  * canvas (the offset's own units; +y is down, as on screen), [tilt] adds

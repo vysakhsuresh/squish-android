@@ -62,7 +62,10 @@ object OnlineMusic {
      * empty query gives the genre's most played. Each page is its own slice
      * of the Archive's list, so "Load more" never repeats a track.
      */
-    suspend fun search(context: Context, query: String, rows: Int = 24, genre: Genre = Genre.Popular, page: Int = 1): List<Track> {
+    /** One page of a search: the tracks fit for a video, and whether the Archive had a full page, so there may be more. */
+    data class Page(val tracks: List<Track>, val full: Boolean)
+
+    suspend fun search(context: Context, query: String, rows: Int = 24, genre: Genre = Genre.Popular, page: Int = 1): Page {
         val terms = query.trim()
         val q = buildString {
             append("(collection:netlabels OR collection:opensource_audio) AND mediatype:audio AND licenseurl:*creativecommons*")
@@ -77,7 +80,7 @@ object OnlineMusic {
             "&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=licenseurl&sort[]=downloads+desc" +
             "&rows=$rows&page=${page.coerceAtLeast(1)}&output=json"
         val docs = JSONObject(Online.get(context, url)).getJSONObject("response").getJSONArray("docs")
-        return (0 until docs.length()).mapNotNull { i ->
+        val tracks = (0 until docs.length()).mapNotNull { i ->
             val d = docs.getJSONObject(i)
             val id = d.optString("identifier").takeIf { it.isNotBlank() } ?: return@mapNotNull null
             Track(
@@ -87,6 +90,10 @@ object OnlineMusic {
                 licenseUrl = d.optString("licenseurl").takeIf { it.isNotBlank() }
             )
         }.filter { it.usableInAVideo }
+        // Whether more pages may follow, from what the Archive sent before the
+        // licence filter: judged after it, a page that lost half its rows hid
+        // Load more with more to come.
+        return Page(tracks, full = docs.length() >= rows)
     }
 
     /** The URL of the item's first MP3 - enough to listen to it streamed. */

@@ -250,7 +250,8 @@ data class FxParams(
                         offsetX = p.offsetX + sin(t * (0.6f + 2.4f * amount) * 2.0 * PI).toFloat() * 0.03f * k,
                         zoom = p.zoom * (1f + 0.07f * k)
                     )
-                    EffectKind.ZoomOut -> p.copy(zoom = p.zoom * (1f + 0.3f * twice * a * (1f - (t / span).coerceIn(0f, 1f))))
+                    // k, not a: from a, it opened on a jump straight to its widest.
+                    EffectKind.ZoomOut -> p.copy(zoom = p.zoom * (1f + 0.3f * twice * k * (1f - (t / span).coerceIn(0f, 1f))))
                 }
             }
             return p

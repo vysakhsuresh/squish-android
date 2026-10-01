@@ -63,7 +63,11 @@ data class SplitLayout(val scale: Float, val offsetX: Float, val offsetY: Float,
     fun matches(clip: Clip): Boolean {
         val m = clip.mask ?: return false
         fun near(a: Float, b: Float) = kotlin.math.abs(a - b) < 1e-3f
-        return clip.keyframes.isEmpty() && near(clip.scale, scale) && near(clip.offsetXFraction, offsetX) &&
+        // All of what a tap would set, so a lit chip is one a tap leaves alone:
+        // a mirror or a turn added after the split left it lit.
+        return clip.keyframes.isEmpty() && !clip.mirrored && clip.quarterTurns == 0 && clip.crop == null &&
+            clip.arrival == ClipArrival.None && clip.leaving == ClipLeaving.None && clip.loop == ClipLoop.None &&
+            near(clip.rotation, 0f) && near(clip.scale, scale) && near(clip.offsetXFraction, offsetX) &&
             near(clip.offsetYFraction, offsetY) && m.shape == mask.shape && near(m.centerXFraction, mask.centerXFraction) &&
             near(m.centerYFraction, mask.centerYFraction) && near(m.widthFraction, mask.widthFraction) &&
             near(m.heightFraction, mask.heightFraction) && !m.inverted

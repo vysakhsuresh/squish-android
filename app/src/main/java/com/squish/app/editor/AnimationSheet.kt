@@ -388,7 +388,10 @@ fun PlacementPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                 else tile.placement(state.canvasAspect, seenAspect, window.left, window.top, window.width, window.height)
                 SelectableChip(
                     label = tile.label,
-                    selected = !animated && at.matches(here.scale, here.offsetXFraction, here.offsetYFraction),
+                    // Lit only when a tap would change nothing: a turn or a mask added
+                    // since, which the tap clears, leaves it dark.
+                    selected = !animated && here.rotationDegrees == 0f && clip.mask == null &&
+                        at.matches(here.scale, here.offsetXFraction, here.offsetYFraction),
                     accentColor = accent,
                     modifier = Modifier.weight(1f),
                     onClick = { viewModel.layers.gridTile(clip.id, at) }

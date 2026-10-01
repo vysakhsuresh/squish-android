@@ -6,6 +6,7 @@ import com.squish.app.timeline.ClipAnimation
 import com.squish.app.timeline.ClipArrival
 import com.squish.app.timeline.ClipLeaving
 import com.squish.app.timeline.ClipLoop
+import com.squish.app.timeline.fades
 import kotlin.math.abs
 import kotlin.system.exitProcess
 
@@ -49,6 +50,18 @@ fun main() {
         val later = (0L until 1200L step 50).map { ClipAnimation.frameAt(ClipArrival.None, ClipLeaving.None, p, 500, 500, 1200, it, total) }
         if (p != ClipLoop.None) check(later.any { !it.isStill }, "clip loop $p never moves")
         check(later.all { it.alpha in 0f..1f && it.scale in 0.8f..1.2f && abs(it.dx) < 0.1f && abs(it.dy) < 0.1f }, "clip loop $p moves too far")
+    }
+
+    // What the export reads to give a clip its alpha pass agrees with the
+    // animation itself: an arrival or loop that ever dims the picture fades,
+    // and one that never does is not sent through the pass for nothing.
+    for (a in ClipArrival.entries) {
+        val dims = (0L..500L step 10).any { ClipAnimation.frameAt(a, ClipLeaving.None, ClipLoop.None, 500, 500, 1200, it, total).alpha < 0.999f }
+        check(a.fades == dims, "clip arrival $a: fades says ${a.fades}, its frames say $dims")
+    }
+    for (p in ClipLoop.entries) {
+        val dims = (0L..2400L step 10).any { ClipAnimation.frameAt(ClipArrival.None, ClipLeaving.None, p, 500, 500, 1200, it, total).alpha < 0.999f }
+        check(p.fades == dims, "clip loop $p: fades says ${p.fades}, its frames say $dims")
     }
 
     for (m in TextMotion.entries) {
