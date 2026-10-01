@@ -20,7 +20,15 @@ enum class TextFont(val label: String, val family: String, val bold: Boolean) {
     Serif("Serif", "serif", false),
     Condensed("Tall", "sans-serif-condensed", true),
     Mono("Mono", "monospace", false),
-    Hand("Hand", "casual", false)
+    Hand("Hand", "casual", false),
+    // More of the faces every Android phone carries - by family name, so the
+    // preview and the file (CaptionRenderer) find the same one.
+    Light("Light", "sans-serif-light", false),
+    Thin("Thin", "sans-serif-thin", false),
+    Medium("Medium", "sans-serif-medium", false),
+    Script("Script", "cursive", false),
+    SmallCaps("Caps", "sans-serif-smallcaps", false),
+    SerifMono("Typed", "serif-monospace", false)
 }
 
 /** Which way the lines of a caption line up. */

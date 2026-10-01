@@ -516,7 +516,59 @@ object ExportPlan {
             if (incomingOnTop) Draw(alpha = p, white = glow) to Draw(white = glow)
             else Draw(white = glow) to Draw(alpha = 1f - p, white = glow)
         }
+
+        TransitionType.PushRight -> Draw(shiftX = -(1f - p)) to Draw(shiftX = p)
+        TransitionType.PushUp -> Draw(shiftY = 1f - p) to Draw(shiftY = -p)
+        TransitionType.PushDown -> Draw(shiftY = -(1f - p)) to Draw(shiftY = p)
+
+        // A push on a steep curve: most of the travel in the middle third.
+        TransitionType.Whip -> {
+            val e = whip(p)
+            Draw(shiftX = 1f - e) to Draw(shiftX = -e)
+        }
+
+        // The new shot rises into view from the bottom edge.
+        TransitionType.WipeUp ->
+            if (incomingOnTop) Draw(keepFromY = 1f - p) to PLAIN
+            else PLAIN to Draw(keepToY = 1f - p)
+
+        TransitionType.WipeDown ->
+            if (incomingOnTop) Draw(keepToY = p) to PLAIN
+            else PLAIN to Draw(keepFromY = p)
+
+        // The old shot grows past the frame and fades off the new one under it.
+        TransitionType.ZoomOut -> {
+            val growing = 1f + ZOOM_FROM * p
+            if (incomingOnTop) Draw(alpha = p) to Draw(scale = growing)
+            else PLAIN to Draw(alpha = 1f - p, scale = growing)
+        }
+
+        // The old shot fades out, then the new one grows out of the middle.
+        // One shot at a time, like the dips: grown over the old one, the
+        // picture depended on which roll it was on (a shrunk shot under the
+        // old one cannot be cut a hole for), and the preview stacks one way.
+        TransitionType.PopIn ->
+            if (p < 0.5f) HIDDEN to Draw(alpha = 1f - 2f * p)
+            else {
+                val q = 2f * p - 1f
+                Draw(alpha = minOf(1f, 3f * q), scale = POP_FROM + (1f - POP_FROM) * smoothstep(0f, 1f, q)) to HIDDEN
+            }
+
+        // Black for the moments either side of the cut, hard in and out.
+        TransitionType.Blackout ->
+            if (p < 0.5f) HIDDEN to Draw(alpha = 1f - smoothstep(0.3f, 0.45f, p))
+            else Draw(alpha = smoothstep(0.55f, 0.7f, p)) to HIDDEN
     }
+
+    /** 0 to 1, slow at both ends and fast through the middle: a whip pan's travel. */
+    private fun whip(p: Float): Float {
+        val x = p.coerceIn(0f, 1f)
+        return if (x < 0.5f) 0.5f * Math.pow((2f * x).toDouble(), 3.0).toFloat()
+        else 1f - 0.5f * Math.pow((2f - 2f * x).toDouble(), 3.0).toFloat()
+    }
+
+    /** How small the Pop in transition's new shot starts. */
+    private const val POP_FROM = 0.3f
 
     /** How much larger than the frame the Zoom transition's new shot starts. */
     private const val ZOOM_FROM = 0.6f
@@ -591,7 +643,7 @@ object ExportPlan {
 
     private val ONE_AT_A_TIME = setOf(
         TransitionType.DipToBlack, TransitionType.DipToWhite, TransitionType.Jitter,
-        TransitionType.Flash, TransitionType.Flicker
+        TransitionType.Flash, TransitionType.Flicker, TransitionType.PopIn, TransitionType.Blackout
     )
 
     /** Whether [clip], an overlay, has another overlay on its row ending where it starts: the model's rule (Clip.hasOverlayJoin). */

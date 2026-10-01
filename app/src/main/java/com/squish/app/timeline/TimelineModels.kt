@@ -47,7 +47,22 @@ enum class TransitionType(val label: String, val category: TransitionCategory) {
     /** A burst of white on the cut. */
     Flash("Flash", TransitionCategory.Light),
     /** A dissolve that brightens through its middle. */
-    Glow("Glow", TransitionCategory.Light)
+    Glow("Glow", TransitionCategory.Light),
+    // More from the same draws - nothing new for the shader or the preview.
+    /** The new shot pushes the old one off to the right. */
+    PushRight("Push right", TransitionCategory.Camera),
+    PushUp("Push up", TransitionCategory.Camera),
+    PushDown("Push down", TransitionCategory.Camera),
+    /** A push that snaps across, fast in the middle: a whip pan. */
+    Whip("Whip", TransitionCategory.Camera),
+    WipeUp("Wipe up", TransitionCategory.Camera),
+    WipeDown("Wipe down", TransitionCategory.Camera),
+    /** The old shot grows past the frame as it fades. */
+    ZoomOut("Zoom out", TransitionCategory.Camera),
+    /** The new shot grows out of the middle. */
+    PopIn("Pop in", TransitionCategory.Camera),
+    /** A short, hard black on the cut. */
+    Blackout("Blackout", TransitionCategory.Light)
 }
 
 /**
