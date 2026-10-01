@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -61,6 +62,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -347,6 +349,30 @@ fun TimelineEditor(
         density = density.density,
         viewportPx = viewportPx
     )
+
+    /**
+     * The window the ruler and the rows are *drawn* from: the same scale, a
+     * centre that moves in quarter-screen steps, and half a screen wider each
+     * side. Between steps the drawn strip is slid on the GPU by what the live
+     * centre is past the drawn one (the graphicsLayer on the rows' column), so
+     * playing and scrubbing move pixels instead of rebuilding every clip, tile
+     * and wave on every frame - which they did, since [window] is new each
+     * frame and every lane took it (a scrub ran at 20 ms a frame on a phone).
+     * Gestures and the layout keep [window]: what a finger lands on is exact.
+     */
+    val drawPadPx = viewportPx / 2
+    val drawStepMs = window.msForPx(viewportPx / 4f).coerceAtLeast(1.0)
+    val drawCentre = Math.round(centre / drawStepMs) * drawStepMs
+    val drawWindow = remember(drawCentre, window.pixelsPerSecond, density.density, viewportPx) {
+        TimelineWindow.centredOn(
+            atMs = drawCentre,
+            pixelsPerSecond = window.pixelsPerSecond,
+            density = density.density,
+            viewportPx = viewportPx + 2 * drawPadPx
+        )
+    }
+    // How far the live centre is past the drawn one, in pixels: the slide.
+    val drawShiftPx = window.msForPx(1f).let { msPerPx -> if (msPerPx > 0.0) ((drawCentre - centre) / msPerPx).toFloat() else 0f }
 
     // Read fresh inside gestures: the pointerInput blocks are keyed on Unit so
     // they survive a zoom, and a captured value would go stale on the first pinch.
@@ -706,14 +732,16 @@ fun TimelineEditor(
      * while the finger went on without it.
      */
     val headTrim = trimming?.mainHead
-    val mainShown = if (headTrim == null) state.baseVideoClips else {
+    // Kept while the clips are the same: built fresh each frame it was a new
+    // list to the main lane every frame, and the lane rebuilt with it.
+    val mainShown = remember(state.clips, headTrim) { if (headTrim == null) state.baseVideoClips else {
         val now = state.baseVideoClips.firstOrNull { it.id == headTrim.id }
         val shift = if (now == null) 0L else headTrim.durationMs - now.durationMs
         if (shift == 0L) state.baseVideoClips else {
             val moving = TimelineLanes.movingWithTail(state, headTrim.id)
             state.baseVideoClips.map { if (it.id in moving) it.copy(timelineStartMs = it.timelineStartMs + shift) else it }
         }
-    }
+    } }
 
     val bareTap: () -> Unit = remember { { guardedSelect(null) } }
     val keyTap: (String, Long) -> Unit = remember {
@@ -817,10 +845,18 @@ fun TimelineEditor(
                 // without this the overhang would paint over the gutter.
                 .clipToBounds()
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            // Wider than the strip by half a screen each side and slid by drawShiftPx:
+            // see drawWindow. The strip clips what hangs past its edges.
+            Column(
+                modifier = Modifier
+                    .wrapContentWidth(align = Alignment.Start, unbounded = true)
+                    .requiredWidth(with(density) { (viewportPx + 2 * drawPadPx).toDp() })
+                    .offset { IntOffset(-drawPadPx, 0) }
+                    .graphicsLayer { translationX = drawShiftPx }
+            ) {
                 Ruler(
                     durationMs = state.durationMs,
-                    window = window,
+                    window = drawWindow,
                     markers = markers,
                     barMarkers = barMarkers,
                     onJump = { ms -> if (!guard.blocking) rawScrub(ms) },
@@ -840,11 +876,11 @@ fun TimelineEditor(
                         key(row.group, row.index) {
                             when (row.group) {
                                 Group.Overlay -> Lane(
-                                    clips = state.clips.filter { it.kind == ClipKind.Video && it.layer == row.index },
+                                    clips = remember(state.clips, row.index) { state.clips.filter { it.kind == ClipKind.Video && it.layer == row.index } },
                                     row = row,
                                     selectedId = state.selectedClipId,
                                     alsoSelected = state.selectedIds,
-                                    window = window,
+                                    window = drawWindow,
                                     accent = Concept.Overlay.accent,
                                     waveforms = state.waveforms,
                                     missingUris = state.missingUris,
@@ -863,7 +899,7 @@ fun TimelineEditor(
                                     row = row,
                                     selectedId = state.selectedClipId,
                                     alsoSelected = state.selectedIds,
-                                    window = window,
+                                    window = drawWindow,
                                     accent = Concept.Video.accent,
                                     waveforms = state.waveforms,
                                     missingUris = state.missingUris,
@@ -879,11 +915,11 @@ fun TimelineEditor(
                                     onAddMedia = onAddVideo
                                 )
                                 Group.Sound -> Lane(
-                                    clips = state.audioClips.filter { soundRows[it.id] == row.index },
+                                    clips = remember(state.audioClips, soundRows, row.index) { state.audioClips.filter { soundRows[it.id] == row.index } },
                                     row = row,
                                     selectedId = state.selectedClipId,
                                     alsoSelected = state.selectedIds,
-                                    window = window,
+                                    window = drawWindow,
                                     accent = Concept.Sound.accent,
                                     waveforms = state.waveforms,
                                     missingUris = state.missingUris,
@@ -899,11 +935,11 @@ fun TimelineEditor(
                                     soundBeats = soundBeats
                                 )
                                 Group.Words -> Lane(
-                                    clips = state.textClips.filter { wordRows[it.id] == row.index },
+                                    clips = remember(state.textClips, wordRows, row.index) { state.textClips.filter { wordRows[it.id] == row.index } },
                                     row = row,
                                     selectedId = state.selectedClipId,
                                     alsoSelected = state.selectedIds,
-                                    window = window,
+                                    window = drawWindow,
                                     accent = Concept.Text.accent,
                                     waveforms = state.waveforms,
                                     missingUris = state.missingUris,
@@ -918,11 +954,11 @@ fun TimelineEditor(
                                     }
                                 )
                                 Group.Effects -> EffectsRow(
-                                    effects = state.effects.filter { effectRows[it.id] == row.index },
+                                    effects = remember(state.effects, effectRows, row.index) { state.effects.filter { effectRows[it.id] == row.index } },
                                     row = row,
                                     selectedId = state.selectedClipId,
                                     alsoSelected = state.selectedIds,
-                                    window = window,
+                                    window = drawWindow,
                                     onSelect = guardedSelect,
                                     onBareTap = bareTap,
                                     trims = trims,

@@ -22,6 +22,14 @@ android {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        // The release build, signed with the debug key so it installs over a
+        // debug one: for measuring frame times on a phone. A debuggable build
+        // runs Compose several times slower, so its jank says little.
+        create("perf") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
     }
 
     compileOptions {

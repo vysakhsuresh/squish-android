@@ -42,14 +42,22 @@ data class SpeedSegment(val startMs: Long, val endMs: Long, val speed: Float) {
  */
 data class SpeedRamp(val points: List<SpeedPoint> = emptyList()) {
 
+    // Not part of equals or copy: it is in the body, and a cache.
+    @Volatile private var lastDuration: Pair<Long, Long>? = null
+
     /** Sorted and clamped. The editor keeps this true; evaluation relies on it. */
-    val ordered: List<SpeedPoint>
-        get() = points
+    // Worked out once: a ramp never changes once made, and these were read
+    // thousands of times a frame - Clip.durationMs goes through them - each
+    // read sorting the points again (a scrub ran at 20 ms a frame).
+    val ordered: List<SpeedPoint> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        points
             .map { it.copy(speed = it.speed.coerceIn(MIN_SPEED, MAX_SPEED)) }
             .sortedBy { it.atMs }
+    }
 
-    val isRamped: Boolean
-        get() = ordered.size >= 2 && ordered.any { abs(it.speed - ordered.first().speed) > 1e-3f }
+    val isRamped: Boolean by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        ordered.size >= 2 && ordered.any { abs(it.speed - ordered.first().speed) > 1e-3f }
+    }
 
     /** The single rate this clip plays at, when it is not ramped. */
     /**
@@ -62,8 +70,9 @@ data class SpeedRamp(val points: List<SpeedPoint> = emptyList()) {
     val slowestSpeed: Float
         get() = ordered.minOfOrNull { it.speed }?.coerceIn(MIN_SPEED, MAX_SPEED) ?: flatSpeed
 
-    val flatSpeed: Float
-        get() = ordered.firstOrNull()?.speed?.coerceIn(MIN_SPEED, MAX_SPEED) ?: 1f
+    val flatSpeed: Float by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        ordered.firstOrNull()?.speed?.coerceIn(MIN_SPEED, MAX_SPEED) ?: 1f
+    }
 
     val isIdentity: Boolean get() = !isRamped && abs(flatSpeed - 1f) < 1e-3f
 
@@ -119,11 +128,20 @@ data class SpeedRamp(val points: List<SpeedPoint> = emptyList()) {
      * millisecond per step, which over a long ramp is a visible gap on the strip.
      */
     fun outputDurationMs(spanMs: Long): Long {
+        // One rate: the one segment segments() would make, without making it.
+        if (!isRamped) {
+            val span = spanMs.coerceAtLeast(0L)
+            return if (span == 0L) 0L else (span / flatSpeed.toDouble()).roundToLong().coerceAtLeast(0L)
+        }
+        lastDuration?.let { (span, out) -> if (span == spanMs) return out }
         val segs = segments(spanMs)
         if (segs.isEmpty()) return 0L
         var total = 0.0
         for (s in segs) total += s.sourceLengthMs / s.speed.toDouble()
-        return total.roundToLong().coerceAtLeast(0L)
+        val out = total.roundToLong().coerceAtLeast(0L)
+        // A ramped clip is asked the same span over and over; one answer kept.
+        lastDuration = spanMs to out
+        return out
     }
 
     /**
