@@ -1328,8 +1328,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         textOverlays = snapshot.textOverlays,
         effects = snapshot.effects,
         markers = snapshot.markers,
-        // Saved at the very end, it would reopen on "no clip here"; the start is more useful.
-        playheadMs = snapshot.playheadMs.takeIf { it < snapshot.totalDurationMs } ?: 0L,
+        // Always the start, as CapCut opens a project: reopened where it was left -
+        // usually the end, after playing it through - the strip showed every clip
+        // off to the left of an empty playhead, and read as the timeline starting
+        // part way along.
+        playheadMs = 0L,
         outputP = snapshot.outputP,
         fitToSize = snapshot.fitToSize,
         targetSizeMb = snapshot.targetSizeMb,

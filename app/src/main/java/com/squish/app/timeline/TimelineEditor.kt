@@ -2561,7 +2561,13 @@ fun TimelineActionBar(
                     selected != null -> "${hintName(selected, state)} · hold to move, drag its ends to trim"
                     effectSelected -> "Effect selected · hold to move, drag its ends to retime"
                     splittable -> "Split cuts the clip under the playhead"
-                    nearEdge -> "Too close to the end of the clip to split here"
+                    // Whichever end it is: at half a second into a shot it said "end".
+                    nearEdge -> cuttable.mainClipAt(state.playheadMs)?.let { clip ->
+                        val toStart = state.playheadMs - clip.timelineStartMs
+                        val toEnd = clip.timelineEndMs - state.playheadMs
+                        if (toStart < toEnd) "Too close to the start of the clip to split here"
+                        else "Too close to the end of the clip to split here"
+                    } ?: "Too close to the edge of the clip to split here"
                     else -> "Drag the timeline to find a moment · tap a clip to edit it"
                 },
                 style = MaterialTheme.typography.labelSmall,
