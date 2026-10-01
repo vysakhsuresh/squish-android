@@ -322,7 +322,7 @@ private fun PictureRows(state: EditorUiState, viewModel: EditorViewModel) {
             SelectableChip(
                 label = preset.label,
                 selected = preset.matches(state),
-                accentColor = SquishColors.Orange,
+                accentColor = SquishColors.Blue,
                 onClick = { preset.apply(viewModel) }
             )
         }
@@ -433,15 +433,19 @@ private fun <T> ChoiceRow(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-            options.forEach { (name, value) ->
-                SelectableChip(
-                    label = name,
-                    selected = value == selected,
-                    accentColor = accent,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onPick(value) }
-                )
+        // Rows of three past four: six in one row (the frame rates) left
+        // "Auto" about 28dp of room on a 360dp phone.
+        options.chunked(if (options.size > 4) 3 else options.size.coerceAtLeast(1)).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                row.forEach { (name, value) ->
+                    SelectableChip(
+                        label = name,
+                        selected = value == selected,
+                        accentColor = accent,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onPick(value) }
+                    )
+                }
             }
         }
         if (hint != null) {
@@ -497,18 +501,17 @@ private fun OvershootCard(actualBytes: Long, targetBytes: Long, onKeep: () -> Un
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextSecondary
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SquishOutlinedButton(
-                text = "Keep this one",
-                modifier = Modifier.weight(1f),
-                onClick = onKeep
-            )
-            SquishPrimaryButton(
-                text = "Try again, tighter",
-                modifier = Modifier.weight(1f),
-                onClick = onRetry
-            )
-        }
+        // Stacked: side by side at half width "Try again, tighter" was cut short.
+        SquishPrimaryButton(
+            text = "Try again, tighter",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onRetry
+        )
+        SquishOutlinedButton(
+            text = "Keep this one",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onKeep
+        )
     }
 }
 

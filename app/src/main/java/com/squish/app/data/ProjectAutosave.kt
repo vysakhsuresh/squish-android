@@ -323,7 +323,15 @@ class ProjectAutosave(context: Context) {
         val json = runCatching { JSONObject(live.readText()) }.getOrNull() ?: return null
         val meta = readMetaJson(metaFile(slot)) ?: return null
         val copy = ProjectRules.newId()
-        val name = ProjectRules.copyName(json.optString("name").takeIf { it.isNotBlank() } ?: meta.optString("title", "Untitled edit"), taken)
+        // After the name on its card: an unnamed project's title is its first
+        // file's, and a copy named after that read "1001319364.mp4 copy".
+        val shown = json.optString("name").takeIf { it.isNotBlank() }
+            ?: meta.optString("name").takeIf { it.isNotBlank() }
+            ?: ProjectRules.displayTitle(
+                meta.optString("title"),
+                meta.optLong("createdAtMillis").takeIf { it > 0L } ?: meta.optLong("savedAtMillis")
+            )
+        val name = ProjectRules.copyName(shown, taken)
         json.put("name", name)
         val now = System.currentTimeMillis()
         json.put("savedAtMillis", now)

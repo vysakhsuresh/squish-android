@@ -70,12 +70,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
             icon = Icons.Filled.GraphicEq,
             accent = SquishColors.Cyan,
             trailing = if (!showClear || !hasGrid) null else ({
-                Text(
-                    "Clear",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.Pink,
-                    modifier = Modifier.clickable { viewModel.audio.clearBeats() }
-                )
+                com.squish.app.ui.components.TextAction("Clear", color = SquishColors.Pink) { viewModel.audio.clearBeats() }
             })
         )
 

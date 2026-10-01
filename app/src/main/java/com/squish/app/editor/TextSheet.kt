@@ -358,12 +358,7 @@ fun TextPanel(
                 accent = SquishColors.Amber,
                 trailing = {
                     if (lines.isNotEmpty()) {
-                        Text(
-                            "Clear all",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = SquishColors.Pink,
-                            modifier = Modifier.clickable { confirmClear = true }
-                        )
+                        com.squish.app.ui.components.TextAction("Clear all", color = SquishColors.Pink) { confirmClear = true }
                     }
                 }
             )
@@ -445,18 +440,8 @@ private fun LinesList(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Text(
-                    "Edit",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.Amber,
-                    modifier = Modifier.clickable { onEdit(line) }
-                )
-                Text(
-                    "Remove",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.Pink,
-                    modifier = Modifier.clickable { onRemove(line) }
-                )
+                com.squish.app.ui.components.TextAction("Edit", color = SquishColors.Amber) { onEdit(line) }
+                com.squish.app.ui.components.TextAction("Remove", color = SquishColors.Pink) { onRemove(line) }
             }
         }
     }

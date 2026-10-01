@@ -115,12 +115,7 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                         color = SquishColors.Teal
                     )
-                    Text(
-                        "Unpin",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.analysis.unpinMask(clip.id) }
-                    )
+                    com.squish.app.ui.components.TextAction("Unpin", color = SquishColors.Pink) { viewModel.analysis.unpinMask(clip.id) }
                 }
             }
         }

@@ -1339,19 +1339,22 @@ private fun Transport(
             // A frame at a time, the unit a cut is placed in. Five-second skips
             // were a player's controls, and the strip does long moves better.
             TransportButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Back one frame") { onStep(-1) }
+            // White, not orange: with a sheet up the editor showed Export, Play
+            // and Done all solid orange at once. Orange is the action that ends
+            // something - Export, Done; play is the picture's own control.
             Box(
                 modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(SquishColors.Primary)
-                    .clickable(onClick = onToggle),
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(SquishColors.TextPrimary)
+                    .clickable(onClickLabel = if (frame.isPlaying) "Pause" else "Play", onClick = onToggle),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     if (frame.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (frame.isPlaying) "Pause" else "Play",
                     tint = SquishColors.Background,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
             TransportButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Forward one frame") { onStep(1) }

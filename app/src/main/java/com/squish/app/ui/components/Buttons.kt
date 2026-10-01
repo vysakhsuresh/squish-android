@@ -15,6 +15,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.squish.app.ui.theme.SquishColors
@@ -29,7 +33,7 @@ fun SquishPrimaryButton(
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = SquishColors.Primary,
@@ -37,9 +41,9 @@ fun SquishPrimaryButton(
             disabledContainerColor = SquishColors.Primary.copy(alpha = 0.4f),
             disabledContentColor = SquishColors.Background.copy(alpha = 0.7f)
         ),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp)
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
     ) {
-        Text(text, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -49,21 +53,23 @@ fun SquishOutlinedButton(
     modifier: Modifier = Modifier,
     /** A mark before the words, where one says it better than a glyph in the text would. */
     icon: ImageVector? = null,
+    /** Narrow side padding, for four or more in a row: "0.25x" clipped at the full padding. */
+    compact: Boolean = false,
     onClick: () -> Unit
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.5.dp, SquishColors.Border),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = SquishColors.TextSecondary),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
+        contentPadding = PaddingValues(horizontal = if (compact) 6.dp else 20.dp, vertical = 14.dp)
     ) {
         if (icon != null) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
         }
-        Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -82,7 +88,7 @@ fun SquishDangerButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = SquishColors.Pink,
@@ -90,7 +96,7 @@ fun SquishDangerButton(
         ),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
     ) {
-        Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -116,7 +122,7 @@ fun SheetActionButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.heightIn(min = 52.dp),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
         colors = ButtonDefaults.buttonColors(
             containerColor = accent.copy(alpha = 0.16f),
@@ -128,6 +134,39 @@ fun SheetActionButton(
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(10.dp))
-        Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
+
+/**
+ * A word that does something - Clear, Remove, Unpin, Turn off - set as text
+ * rather than a button, but with a button's reach: 48dp tall, padded either
+ * side, a ripple and a role. These were bare 11sp labels about 14dp tall,
+ * some of them 10dp from the next one.
+ */
+@Composable
+fun TextAction(
+    label: String,
+    color: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    androidx.compose.foundation.layout.Box(
+        contentAlignment = androidx.compose.ui.Alignment.Center,
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp)
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (enabled) color else color.copy(alpha = 0.4f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+

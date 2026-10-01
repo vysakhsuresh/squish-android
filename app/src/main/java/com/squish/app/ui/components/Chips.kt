@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -29,7 +30,9 @@ fun SelectableChip(
     label: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
-    accentColor: Color = SquishColors.Primary,
+    // Blue, not the orange of the primary action: a chip left on its default
+    // was a second orange in a sheet whose Done is the orange one.
+    accentColor: Color = SquishColors.Blue,
     onClick: () -> Unit
 ) {
     // A flat fill reads as a button that happens to be on; a sweep reads as the
@@ -45,15 +48,18 @@ fun SelectableChip(
 
     Box(
         modifier = modifier
+            // Finger-sized: the chips are most of the editor's controls, and at
+            // 37dp they were the most-missed.
+            .heightIn(min = 44.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(RoundedCornerShape(13.dp))
+            .clip(RoundedCornerShape(12.dp))
             .then(
                 if (selected) Modifier.background(accentSweep(accentColor))
                 else Modifier.background(SquishColors.Background)
             )
-            .border(1.5.dp, border, RoundedCornerShape(13.dp))
+            .border(1.5.dp, border, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 10.dp),
+            .padding(vertical = 8.dp, horizontal = 12.dp),
         contentAlignment = Alignment.Center
     ) {
         // Ellipsis rather than the default clip: a label a few pixels too

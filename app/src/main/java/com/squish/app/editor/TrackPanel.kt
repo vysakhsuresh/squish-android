@@ -72,12 +72,7 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel, acc
             accent = accent,
             trailing = {
                 if (tracking.track != null) {
-                    Text(
-                        "Discard",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.analysis.clearTrack() }
-                    )
+                    com.squish.app.ui.components.TextAction("Discard", color = SquishColors.Pink) { viewModel.analysis.clearTrack() }
                 }
             }
         )
@@ -250,12 +245,7 @@ private fun PinTargets(state: EditorUiState, clip: Clip, viewModel: EditorViewMo
                     onClick = { viewModel.analysis.pinCaptionToTrack(caption.id) }
                 )
                 if (caption.track != null) {
-                    Text(
-                        "Unpin",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.analysis.unpinCaption(caption.id) }
-                    )
+                    com.squish.app.ui.components.TextAction("Unpin", color = SquishColors.Pink) { viewModel.analysis.unpinCaption(caption.id) }
                 }
             }
         }

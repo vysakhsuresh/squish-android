@@ -173,12 +173,7 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                 accent = accent,
                 trailing = {
                     if (animated) {
-                        Text(
-                            "Clear",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = SquishColors.Pink,
-                            modifier = Modifier.clickable { viewModel.clips.clearKeyframes(clip.id) }
-                        )
+                        com.squish.app.ui.components.TextAction("Clear", color = SquishColors.Pink) { viewModel.clips.clearKeyframes(clip.id) }
                     }
                 }
             )
@@ -490,12 +485,7 @@ private fun KeyRow(
                     color = SquishColors.TextMuted
                 )
             }
-            Text(
-                "Remove",
-                style = MaterialTheme.typography.labelSmall,
-                color = SquishColors.Pink,
-                modifier = Modifier.clickable(onClick = onRemove)
-            )
+            com.squish.app.ui.components.TextAction("Remove", color = SquishColors.Pink, onClick = onRemove)
         }
 
         // Easing on the last key would describe a segment that does not exist.
@@ -539,12 +529,7 @@ fun StabilizePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
             accent = accent,
             trailing = {
                 if (clip.isStabilized) {
-                    Text(
-                        "Remove",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SquishColors.Pink,
-                        modifier = Modifier.clickable { viewModel.analysis.clearStabilization(clip.id) }
-                    )
+                    com.squish.app.ui.components.TextAction("Remove", color = SquishColors.Pink) { viewModel.analysis.clearStabilization(clip.id) }
                 }
             }
         )

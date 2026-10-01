@@ -392,12 +392,7 @@ private fun PlacedEffect(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).clickable(onClick = onJump)
             )
-            Text(
-                "Remove",
-                style = MaterialTheme.typography.labelSmall,
-                color = SquishColors.Pink,
-                modifier = Modifier.clickable(onClick = onRemove)
-            )
+            com.squish.app.ui.components.TextAction("Remove", color = SquishColors.Pink, onClick = onRemove)
         }
         EffectSliders(effect, onChange, onGestureEnd)
         // Its ends are retimed on the strip, where the effect is a clip with

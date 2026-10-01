@@ -223,6 +223,7 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
                 listOf(0.25f, 0.5f, 1f, 2f).forEach { speed ->
                     SquishOutlinedButton(
                         text = rateLabel(speed),
+                        compact = true,
                         modifier = Modifier.weight(1f),
                         onClick = { viewModel.clips.setSpeedPointAtPlayhead(clip.id, speed) }
                     )

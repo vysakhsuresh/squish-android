@@ -758,19 +758,9 @@ private fun TrackRow(clip: Clip, selected: Boolean, onSelect: () -> Unit, onRemo
             )
         }
         if (onLoop != null) {
-            Text(
-                "Loop to end",
-                style = MaterialTheme.typography.labelSmall,
-                color = SquishColors.Cyan,
-                modifier = Modifier.clickable(onClick = onLoop)
-            )
+            com.squish.app.ui.components.TextAction("Loop to end", color = SquishColors.Cyan, onClick = onLoop)
         }
-        Text(
-            "Remove",
-            style = MaterialTheme.typography.labelSmall,
-            color = SquishColors.Pink,
-            modifier = Modifier.clickable(onClick = onRemove)
-        )
+        com.squish.app.ui.components.TextAction("Remove", color = SquishColors.Pink, onClick = onRemove)
     }
 }
 
