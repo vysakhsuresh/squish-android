@@ -556,3 +556,26 @@ New options
     file as on screen (it did not before the fix).
 25. Grid/Split chip: lit after the tap, dark again once the clip is turned or
     mirrored.
+
+## Seen on the phone, 2 October
+
+- Opening a project: it reopened where its playhead was left (usually the
+  end), so every clip sat off to the left of the playhead and the timeline
+  read as starting part way along. Fixed (c6d7a94): projects open at 0:00.
+  New projects, and photos added with the video track's +, start at 0:00.
+- Export of a 4-photo edit with a Twirl arrival, a Whip join and a Spin
+  title, read frame by frame in the file: Twirl half-turned at 0.27 s and
+  landed by 0.53 s; Whip mid-flight at 2.9 s; the title tilted at 3.6 s,
+  near-level at 3.7 s, upright after. 345 frames, 11.5 s, 30 fps.
+- Titles on two rows (17); effects grid with the 11 new effects previewed on
+  the shot (Dream blurs, Trippy splits the colour).
+- Music: mood chips on Squish originals filter (Beats); online genres load,
+  a fast Lo-fi then Cinematic tap shows Cinematic with no false error, and
+  Load more appends a second page. 'CC PUBLICDOMAIN' fixed to 'Public
+  domain' (ed8b157).
+- Settings and every other page: the floating back button covered the
+  bottom card at rest; it has its own strip now (ed8b157).
+- The split hint said 'end' at the start of a clip; fixed (c6d7a94).
+- No crash in the log; the editor at about 280 MB.
+Not yet seen: the voices by ear, the new filters and templates on a file,
+Grid and Split chip lighting, 48dp targets on every sheet.
