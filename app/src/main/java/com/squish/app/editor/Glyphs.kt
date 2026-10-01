@@ -65,6 +65,14 @@ val Template.glyph: Glyph
         Template.Retro -> glyph(SquishIcons.Retro, 0xFFFF9A62, 0xFFB5476E, ordinal)
         Template.Party -> glyph(SquishIcons.Party, 0xFF22E3C4, 0xFFB14DFF, ordinal)
         Template.Memories -> glyph(SquishIcons.Memories, 0xFFB8BCCB, 0xFF4A4E63, ordinal)
+        Template.Travel -> glyph(SquishIcons.Vlog, 0xFF3DD6E0, 0xFF1F8AC0, ordinal)
+        Template.Birthday -> glyph(SquishIcons.Party, 0xFFFFD166, 0xFFFF5FA2, ordinal)
+        Template.Food -> glyph(SquishIcons.Vlog, 0xFFFF9A3D, 0xFFC0392B, ordinal)
+        Template.Fitness -> glyph(SquishIcons.Reel, 0xFFFF5B5B, 0xFF2B2F8F, ordinal)
+        Template.Gaming -> glyph(SquishIcons.Retro, 0xFF7CFF6B, 0xFF5B2DB0, ordinal)
+        Template.Love -> glyph(SquishIcons.Memories, 0xFFFF8FB1, 0xFFB14DFF, ordinal)
+        Template.News -> glyph(SquishIcons.Cinematic, 0xFFE0E4F0, 0xFFC0392B, ordinal)
+        Template.Sale -> glyph(SquishIcons.Party, 0xFFFFC53D, 0xFFFF6A3D, ordinal)
     }
 
 /**
