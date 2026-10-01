@@ -42,7 +42,7 @@ music, footage and fonts, and translate caption words.
 - Frame: ratios Original, 9:16, 1:1, 16:9, 3:4, 4:3, 4:5, 2:1, 2.35:1;
   auto-reframe that follows the subject; padded canvas with colour, picture
   or blurred background.
-- Looks: 37 filters in five families (Essentials, Film, Mood, Cinema,
+- Looks: 50 filters in six families (Essentials, Film, Mood, Cinema, Social,
   Retro) with strength; Adjust: brightness, contrast, saturation, exposure,
   temperature, tint, highlights, shadows, sharpen, vignette, hue, fade,
   grain, plus an 8-colour HSL wheel, and **Auto adjust** (exposure, white
@@ -77,8 +77,9 @@ music, footage and fonts, and translate caption words.
   licences only).
 - Voiceover recording with count-in, silent picture, live meter, retakes.
 - Per-clip volume up to 400%, volume keyframes, fades in/out, mute.
-- Voice effects: **Enhance** (rumble out, hiss down, voice forward),
-  Chipmunk, Deep, Robot, Echo, Radio.
+- 14 voice effects: **Enhance** (rumble out, hiss down, voice forward),
+  Chipmunk, Helium, Deep, Giant, Robot, Alien, Echo, Cave, Radio, Telephone,
+  Megaphone, Wobble.
 - **Duck under speech**: music dips automatically wherever someone talks.
 - **Remove silences**: pauses cut out of a talking shot as jump cuts, with
   captions and sounds moving along.
@@ -89,6 +90,8 @@ music, footage and fonts, and translate caption words.
 
 ## Words
 
+- 14 one-tap templates (Reel, Vlog, Cinematic, Retro, Party, Memories, Travel,
+  Birthday, Food, Fitness, Gaming, Love, News, Sale).
 - Add text, 17 title styles (Headline, Subtitle, Name tag, Neon, Breaking,
   Quote, Sale, Big number, Chapter, Vlog, Gaming, Love, Follow, Cinema, Spin,
   Typewriter, Bounce), 12 sticker sets, templates (Reel, Vlog, Cinematic,
