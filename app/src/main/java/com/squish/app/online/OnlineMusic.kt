@@ -29,9 +29,11 @@ object OnlineMusic {
             get() = licenseUrl?.let { "-nd" !in it && "-nc" !in it && "/nd" !in it && "/nc" !in it } ?: false
 
         val licenseLabel: String
+            // Public domain first: its URL is creativecommons.org/licenses/publicdomain/,
+            // which the licence pattern read as "CC PUBLICDOMAIN".
             get() = licenseUrl?.let { url ->
-                Regex("licenses/([a-z-]+)/").find(url)?.groupValues?.get(1)?.let { "CC ${it.uppercase()}" }
-                    ?: if ("publicdomain" in url) "Public domain" else null
+                if ("publicdomain" in url || "/zero/" in url) "Public domain"
+                else Regex("licenses/([a-z-]+)/").find(url)?.groupValues?.get(1)?.let { "CC ${it.uppercase()}" }
             } ?: "Creative Commons"
     }
 

@@ -24,6 +24,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -51,7 +59,23 @@ fun SquishPage(
     accent: Color = SquishColors.Primary,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Scaffold(containerColor = SquishColors.Background) { padding ->
+    // The back button sits in its own strip at the bottom, the page's colour,
+    // and the page scrolls above it: floating over the page it covered what
+    // was under it (Settings' storage rows) whenever the page came to rest there.
+    Scaffold(
+        containerColor = SquishColors.Background,
+        bottomBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(SquishColors.Background)
+                    .navigationBarsPadding()
+                    .padding(start = 20.dp, top = 8.dp, bottom = 12.dp)
+            ) {
+                BackOrb(accent = accent, onClick = onBack)
+            }
+        }
+    ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             Column(
                 modifier = Modifier
@@ -74,16 +98,9 @@ fun SquishPage(
                     )
                 }
                 content()
-                // Clearance for the floating button, so the last card is never stuck
-                // underneath it.
-                Spacer(modifier = Modifier.height(96.dp))
+                Spacer(modifier = Modifier.height(16.dp))
             }
 
-            BackOrb(
-                accent = accent,
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 24.dp)
-            )
         }
     }
 }

@@ -21,7 +21,7 @@ object OnlineStock {
     data class Video(val id: String, val title: String, val licenseUrl: String?, val sizeBytes: Long) {
         val licenseLabel: String
             get() = licenseUrl?.let { url ->
-                if ("publicdomain" in url) "Public domain"
+                if ("publicdomain" in url || "/zero/" in url) "Public domain"
                 else Regex("licenses/([a-z-]+)/").find(url)?.groupValues?.get(1)?.let { "CC ${it.uppercase()}" }
             } ?: "Creative Commons"
         val thumbnailUrl: String get() = "https://archive.org/services/img/${enc(id)}"
