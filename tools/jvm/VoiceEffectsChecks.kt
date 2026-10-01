@@ -67,6 +67,26 @@ fun main() {
     val echoAt = (rate * 0.5).toInt()
     val tail = (echoAt - 200 until echoAt + 400).maxOf { abs(cave[it * channels].toInt()) }
     check(tail > 3_000, "Cave's repeat is missing at half a second (peak $tail)")
+    // Echo, then a switch to Cave over silence with no seek between: nothing of
+    // Echo's tail may come out (the two share one delay line).
+    run {
+        var current = VoiceEffect.Echo
+        val p = VoiceProcessor { current }
+        p.configure(AudioProcessor.AudioFormat(rate, channels, C.ENCODING_PCM_16BIT))
+        p.flush(AudioProcessor.StreamMetadata.DEFAULT)
+        fun feed(samples: ShortArray): ShortArray {
+            val buf = ByteBuffer.allocateDirect(samples.size * 2).order(ByteOrder.nativeOrder())
+            samples.forEach { buf.putShort(it) }
+            buf.flip()
+            p.queueInput(buf)
+            val o = p.output
+            return ShortArray(o.remaining() / 2) { o.short }
+        }
+        feed(voice.copyOfRange(0, 8_192))
+        current = VoiceEffect.Cave
+        val after = feed(ShortArray(8_192))
+        check(after.all { it.toInt() == 0 }, "Echo's tail came out after a switch to Cave (peak ${after.maxOf { abs(it.toInt()) }})")
+    }
     if (problems.isEmpty()) println("VoiceEffectsChecks: all checks passed (${VoiceEffect.entries.size} voices)")
     else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
 }

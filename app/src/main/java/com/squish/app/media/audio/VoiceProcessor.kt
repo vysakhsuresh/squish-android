@@ -32,6 +32,7 @@ class VoiceProcessor(private val effectNow: () -> VoiceEffect) : BaseAudioProces
 
     // Robot: the carrier's phase.
     private var phase = 0.0
+    private var lastEffect: VoiceEffect? = null
     private var alienPhase = 0.0
     private var wobblePhase = 0.0
 
@@ -66,6 +67,12 @@ class VoiceProcessor(private val effectNow: () -> VoiceEffect) : BaseAudioProces
         val out = replaceOutputBuffer(remaining).order(ByteOrder.nativeOrder())
         val input = inputBuffer.order(ByteOrder.nativeOrder())
         val effect = effectNow()
+        // A new effect starts from silence: Echo and Cave share one delay line,
+        // and a switch with no seek between played the last one's tail.
+        if (effect != lastEffect) {
+            onFlush()
+            lastEffect = effect
+        }
         val carrierStep = 2.0 * PI * ROBOT_HZ / sampleRate
         // One-pole coefficients for a 400 Hz high-pass and a 3 kHz low-pass: a phone
         // speaker's range, which is what "radio" means to an ear.

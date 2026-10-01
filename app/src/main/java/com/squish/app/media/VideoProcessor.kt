@@ -944,6 +944,11 @@ class VideoProcessor(private val context: Context) {
         curve: GainCurveProcessor? = null
     ): ImmutableList<AudioProcessor> {
         val processors = mutableListOf<AudioProcessor>(AudioMixing.processor(volume))
+        // The voice's processing first, on the file's own time, and its pitch last:
+        // the order the preview runs them (its sink's processors, then its speed
+        // and pitch). After the speed change, a 2x clip's Wobble ran at half the
+        // rate in the file, and Alien's ring was pitched in the preview only.
+        if (voice != VoiceEffect.None) processors.add(VoiceProcessor { voice })
         if (!ramp.isIdentity && spanMs > 0L) {
             val segments = ramp.segments(spanMs)
             if (segments.isNotEmpty()) {
@@ -958,22 +963,10 @@ class VideoProcessor(private val context: Context) {
         }
         fade?.let { processors.add(it) }
         curve?.let { processors.add(it) }
-        processors.addAll(voiceProcessors(voice))
+        if (voice.pitch != 1f) processors.add(SonicAudioProcessor().apply { setPitch(voice.pitch) })
         return ImmutableList.copyOf(processors)
     }
 
-    /**
-     * A voice effect: a pitch shift that keeps timing, or one of the processed
-     * sounds, or nothing. Sonic shifts pitch without touching duration, which is
-     * the only way a voice effect can sit on footage without drifting out of sync.
-     */
-    private fun voiceProcessors(voice: VoiceEffect): List<AudioProcessor> = when {
-        voice == VoiceEffect.None -> emptyList()
-        // The processor too: Alien is a pitch and a ring, as the preview plays it;
-        // for the pitch-only voices it passes the sound through untouched.
-        voice.pitch != 1f -> listOf(SonicAudioProcessor().apply { setPitch(voice.pitch) }, VoiceProcessor { voice })
-        else -> listOf(VoiceProcessor { voice })
-    }
 
     private companion object {
         /** Often enough to feel live, rare enough not to compete with the encoder. */

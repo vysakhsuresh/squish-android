@@ -660,7 +660,8 @@ private fun OnlineMusicList(
             )
         }
     }
-    if (!failed && !list.isNullOrEmpty() && more) {
+    // Offered on an empty page too: a page the licence filter emptied is not the end.
+    if (!failed && list != null && more) {
         SquishOutlinedButton(
             text = if (loadingMore) "Loading…" else "Load more",
             modifier = Modifier.fillMaxWidth(),
