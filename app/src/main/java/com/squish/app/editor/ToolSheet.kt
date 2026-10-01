@@ -101,10 +101,10 @@ fun ToolSheet(
                 style = MaterialTheme.typography.labelLarge,
                 color = SquishColors.Background,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(9.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(SquishColors.Primary)
                     .clickable(onClickLabel = "Close $title", onClick = onDone)
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .padding(horizontal = 18.dp, vertical = 10.dp)
             )
         }
         if (chips.isNotEmpty()) {

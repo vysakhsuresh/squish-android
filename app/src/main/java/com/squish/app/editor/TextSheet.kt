@@ -31,6 +31,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.ClosedCaption
@@ -182,7 +183,13 @@ fun TextPanel(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SquishPrimaryButton(text = "Add text", modifier = Modifier.fillMaxWidth(), onClick = onAddText)
+        com.squish.app.ui.components.SheetActionButton(
+            text = "Add text",
+            icon = Icons.Filled.Add,
+            accent = SquishColors.Amber,
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onAddText
+        )
 
         PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(

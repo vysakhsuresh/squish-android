@@ -3,6 +3,7 @@ package com.squish.app.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -90,5 +91,43 @@ fun SquishDangerButton(
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    }
+}
+
+/**
+ * The main action inside a tool sheet - Add text, Add from your files.
+ *
+ * Not [SquishPrimaryButton]: the sheet's Done is the one solid orange there,
+ * and a full-width orange bar under it read as two primaries of two sizes
+ * fighting (seen on the Text and Sound sheets). This is the tool's own
+ * colour, tinted, with a mark: plainly the thing to press in the sheet, and
+ * plainly not the way out of it.
+ */
+@Composable
+fun SheetActionButton(
+    text: String,
+    icon: ImageVector,
+    accent: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.heightIn(min = 52.dp),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = accent.copy(alpha = 0.16f),
+            contentColor = accent,
+            disabledContainerColor = accent.copy(alpha = 0.06f),
+            disabledContentColor = accent.copy(alpha = 0.4f)
+        ),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1)
     }
 }

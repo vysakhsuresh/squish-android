@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
@@ -90,8 +91,10 @@ fun SoundMusicPanel(
     onSelectSound: (String) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SquishPrimaryButton(
+        com.squish.app.ui.components.SheetActionButton(
             text = "Add from your files",
+            icon = Icons.Filled.Add,
+            accent = SquishColors.Cyan,
             modifier = Modifier.fillMaxWidth(),
             onClick = onPickAudio
         )
