@@ -1,4 +1,6 @@
 SRC=app/src/main/java/com/squish/app
+# Desktop (Windows, Git Bash) runner for every suite in run.sh, with the Kotlin
+# compiler from the Gradle cache: sh tools/jvm/run_desktop.sh. See CLAUDE.md.
 S=$(cd "$(dirname "$0")" && pwd)  # jc.sh lives beside this file
 run() {
   name=$1; shift

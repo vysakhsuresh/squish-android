@@ -74,7 +74,19 @@ function first; if it can, it can be checked.
   `java -cp <kotlin-compiler-embeddable;kotlin-stdlib;kotlin-reflect;kotlin-script-runtime;kotlin-daemon-embeddable;trove4j;annotations-13.0;kotlinx-coroutines-core-jvm>
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib -classpath <kotlin-stdlib> -d <dir> <the suite's files from run.sh>`
   then `java -cp "<dir>;<kotlin-stdlib>" <Suite>Kt`. Every jar is under
-  `~/.gradle/caches/modules-2/files-2.1/`.
+  `~/.gradle/caches/modules-2/files-2.1/`. `sh tools/jvm/run_desktop.sh` does
+  that for every suite in `run.sh` (about 50 minutes, one line each), and
+  `sh tools/jvm/jc.sh <Suite> <files...>` runs one.
+- **Measure speed on a release build, never a debug one.** `./gradlew
+  assemblePerf` is the release build signed with the debug key; it installs
+  over a debug build and keeps the drafts (but `run-as` stops working until a
+  debug build goes back on). A debuggable Compose build ran the editor at 48 ms
+  a frame where the release ran 14. Then `adb shell dumpsys gfxinfo
+  com.squish.app reset`, play or scrub, and `dumpsys gfxinfo com.squish.app`.
+  To see *where* main-thread time goes, on a debug build: `am profile start
+  --sampling 1000 com.squish.app /data/local/tmp/sq.trace`, act, `am profile
+  stop com.squish.app`, pull it, and `tools/jvm/TraceTop.kt` lists the
+  heaviest methods (`TraceTopKt sq.trace main 40 "~"` for the app's own).
 - **No ffprobe here, but `tools/jvm/Mp4Probe.kt` answers what the device
   checks ask of a file** - each track's sample count, length, rate and the
   spread of its frame durations, from the MP4's own tables. Compile it alone
