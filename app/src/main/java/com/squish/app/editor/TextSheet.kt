@@ -198,12 +198,20 @@ fun TextPanel(
                 icon = Icons.Filled.Title,
                 accent = SquishColors.Amber
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            // Two rows scrolling together: with seventeen styles one row showed
+            // four and hid the rest off to the side.
+            val titleScroll = rememberScrollState()
+            val half = (TitlePreset.entries.size + 1) / 2
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(titleScroll)
             ) {
-                TitlePreset.entries.forEach { preset ->
-                    StyleTile(label = preset.label, sample = preset.sample, style = preset.style, onClick = { onAddTitle(preset) })
+                TitlePreset.entries.chunked(half).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { preset ->
+                            StyleTile(label = preset.label, sample = preset.sample, style = preset.style, onClick = { onAddTitle(preset) })
+                        }
+                    }
                 }
             }
         }

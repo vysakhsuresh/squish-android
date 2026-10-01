@@ -9,6 +9,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BlurOn
+import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Exposure
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Waves
+import androidx.compose.material.icons.filled.FlashAuto
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Contrast
@@ -73,6 +84,17 @@ val EffectKind.icon: ImageVector
         EffectKind.Invert -> Icons.Filled.InvertColors
         EffectKind.Blur -> Icons.Filled.BlurOn
         EffectKind.Rainbow -> Icons.Filled.Gradient
+        EffectKind.RgbSplit -> Icons.Filled.Layers
+        EffectKind.Strobe -> Icons.Filled.FlashAuto
+        EffectKind.Earthquake -> Icons.Filled.Waves
+        EffectKind.Heartbeat -> Icons.Filled.Favorite
+        EffectKind.Static -> Icons.Filled.Tv
+        EffectKind.OldFilm -> Icons.Filled.Movie
+        EffectKind.Dream -> Icons.Filled.Cloud
+        EffectKind.NegativePulse -> Icons.Filled.Exposure
+        EffectKind.Trippy -> Icons.Filled.AutoAwesome
+        EffectKind.Sway -> Icons.Filled.SwapHoriz
+        EffectKind.ZoomOut -> Icons.Filled.ZoomOut
     }
 
 /** Each effect's colour on the timeline, so neighbours on the one lane can be told apart. */
@@ -89,6 +111,17 @@ val EffectKind.color: Color
             EffectKind.Invert -> 0xFFFF7AC6
             EffectKind.Blur -> 0xFF9AB6FF
             EffectKind.Rainbow -> 0xFFB14DFF
+            EffectKind.RgbSplit -> 0xFFFF4F9A
+            EffectKind.Strobe -> 0xFFFFF27A
+            EffectKind.Earthquake -> 0xFFC9864A
+            EffectKind.Heartbeat -> 0xFFFF4F6A
+            EffectKind.Static -> 0xFF9AA3B8
+            EffectKind.OldFilm -> 0xFFD9B37A
+            EffectKind.Dream -> 0xFFC9B8FF
+            EffectKind.NegativePulse -> 0xFF7AF0FF
+            EffectKind.Trippy -> 0xFF7CFF6B
+            EffectKind.Sway -> 0xFF6BC4FF
+            EffectKind.ZoomOut -> 0xFF4FA8FF
         }
     )
 

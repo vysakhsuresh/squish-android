@@ -574,7 +574,18 @@ enum class TitlePreset(
     LowerThird("Name tag", "Your name", TextFont.Condensed, TextLook.Box, TextMotion.Slide, 0xFFFFD166.toInt(), 28, 0.76f),
     Neon("Neon", "Tonight", TextFont.Hand, TextLook.Neon, TextMotion.Fade, 0xFFFF4FD8.toInt(), 40, 0.4f),
     Typewriter("Typewriter", "Once upon a time…", TextFont.Mono, TextLook.Shadow, TextMotion.Typewriter, WHITE, 26, 0.5f),
-    Bounce("Bounce", "Wow!", TextFont.Bold, TextLook.Outline, TextMotion.Bounce, 0xFF5CE1E6.toInt(), 48, 0.35f);
+    Bounce("Bounce", "Wow!", TextFont.Bold, TextLook.Outline, TextMotion.Bounce, 0xFF5CE1E6.toInt(), 48, 0.35f),
+    Breaking("Breaking", "BREAKING", TextFont.Bold, TextLook.Box, TextMotion.Slide, WHITE, 34, 0.2f),
+    Quote("Quote", "“Say less.”", TextFont.Serif, TextLook.Shadow, TextMotion.Fade, WHITE, 34, 0.5f),
+    Sale("Sale", "50% OFF", TextFont.Bold, TextLook.Outline, TextMotion.Pop, 0xFFFFD166.toInt(), 52, 0.4f, TextExit.Pop),
+    BigNumber("Big number", "3", TextFont.Bold, TextLook.Outline, TextMotion.Zoom, WHITE, 80, 0.45f, TextExit.Zoom),
+    Chapter("Chapter", "Chapter one", TextFont.Serif, TextLook.Plain, TextMotion.Fade, WHITE, 32, 0.5f),
+    Vlog("Vlog", "Day 1 in Goa", TextFont.Hand, TextLook.Shadow, TextMotion.Drop, WHITE, 38, 0.3f, TextExit.Rise),
+    Gaming("Gaming", "GG!", TextFont.Condensed, TextLook.Neon, TextMotion.Blink, 0xFF7CFF6B.toInt(), 52, 0.4f, TextExit.Blink),
+    Love("Love", "Forever", TextFont.Hand, TextLook.Neon, TextMotion.Pop, 0xFFFF6B8B.toInt(), 46, 0.45f),
+    Follow("Follow", "Follow for more", TextFont.Bold, TextLook.Box, TextMotion.Slide, 0xFFFFD166.toInt(), 28, 0.8f, TextExit.Slide),
+    Cinema("Cinema", "A FILM BY YOU", TextFont.Condensed, TextLook.Plain, TextMotion.Fade, WHITE, 26, 0.5f),
+    Spin("Spin", "Let's go!", TextFont.Bold, TextLook.Outline, TextMotion.Spin, 0xFF5CE1E6.toInt(), 46, 0.4f, TextExit.Spin);
 
     /** This title's style, on its own. */
     val style: TextStyleSpec

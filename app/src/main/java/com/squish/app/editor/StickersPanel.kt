@@ -237,6 +237,48 @@ private enum class StickerSet(val label: String, val stickers: List<Sticker>) {
         s("🍫", "chocolate"), s("🍿", "popcorn movie"), s("☕", "coffee"), s("🧋", "bubble tea boba"),
         s("🍺", "beer"), s("🥭", "mango"), s("🍉", "watermelon"), s("🍓", "strawberry"),
         s("🌶️", "chilli pepper hot"), s("🥑", "avocado")
+    )),
+    Travel("Travel", listOf(
+        s("✈️", "plane flight travel"), s("🏖️", "beach holiday"), s("🏝️", "island"), s("🏔️", "mountain"),
+        s("🗺️", "map trip"), s("🧳", "luggage suitcase"), s("🚗", "car road trip"), s("🚆", "train"),
+        s("🛵", "scooter bike"), s("⛺", "tent camping"), s("🌅", "sunrise sunset"), s("🌃", "city night"),
+        s("🗽", "statue liberty new york"), s("🕌", "mosque"), s("🛕", "temple india"), s("🏰", "castle"),
+        s("🎡", "ferris wheel fair"), s("📷", "camera")
+    )),
+    Animals("Animals", listOf(
+        s("🐶", "dog puppy"), s("🐱", "cat kitten"), s("🐼", "panda"), s("🦁", "lion"),
+        s("🐯", "tiger"), s("🐵", "monkey"), s("🙈", "see no evil monkey"), s("🦊", "fox"),
+        s("🐰", "rabbit bunny"), s("🐻", "bear"), s("🐨", "koala"), s("🐸", "frog"),
+        s("🦄", "unicorn"), s("🐝", "bee"), s("🦋", "butterfly"), s("🐬", "dolphin"),
+        s("🦜", "parrot bird"), s("🐘", "elephant")
+    )),
+    Nature("Nature", listOf(
+        s("🌸", "cherry blossom flower"), s("🌹", "rose"), s("🌻", "sunflower"), s("🌷", "tulip"),
+        s("🍀", "four leaf clover luck"), s("🌴", "palm tree"), s("🌵", "cactus"), s("🍁", "maple leaf autumn"),
+        s("🌊", "wave ocean sea"), s("🌧️", "rain"), s("⛈️", "storm thunder"), s("🌪️", "tornado"),
+        s("☁️", "cloud"), s("🌍", "earth world globe"), s("🌋", "volcano"), s("❄️", "snow"),
+        s("🔆", "bright"), s("🌺", "hibiscus")
+    )),
+    Sports("Sports", listOf(
+        s("⚽", "football soccer"), s("🏏", "cricket"), s("🏀", "basketball"), s("🏈", "american football"),
+        s("🎾", "tennis"), s("🏸", "badminton"), s("🏐", "volleyball"), s("🏓", "table tennis ping pong"),
+        s("🥊", "boxing glove"), s("🏋️", "gym weights lifting"), s("🚴", "cycling bike"), s("🏃", "running run"),
+        s("🧘", "yoga"), s("🏊", "swimming"), s("⛳", "golf"), s("🏁", "chequered flag finish race"),
+        s("🎮", "game controller gaming"), s("🎲", "dice game")
+    )),
+    Signs("Signs", listOf(
+        s("🆕", "new"), s("🆓", "free"), s("🔝", "top"), s("🆗", "ok"),
+        s("🔞", "eighteen"), s("💬", "speech bubble chat"), s("💭", "thought bubble"), s("🗯️", "anger bubble shout"),
+        s("🔔", "bell notification subscribe"), s("📌", "pushpin"), s("🔗", "link"), s("⏰", "alarm clock time"),
+        s("⏳", "hourglass wait"), s("🔴", "red circle live record"), s("🟢", "green circle"), s("▶️", "play"),
+        s("⏸️", "pause"), s("🔁", "repeat loop")
+    )),
+    Flags("Flags", listOf(
+        s("🇮🇳", "india flag"), s("🇦🇪", "uae flag emirates"), s("🇺🇸", "usa america flag"), s("🇬🇧", "uk britain flag"),
+        s("🇸🇦", "saudi flag"), s("🇶🇦", "qatar flag"), s("🇴🇲", "oman flag"), s("🇰🇼", "kuwait flag"),
+        s("🇧🇭", "bahrain flag"), s("🇵🇰", "pakistan flag"), s("🇧🇩", "bangladesh flag"), s("🇱🇰", "sri lanka flag"),
+        s("🇳🇵", "nepal flag"), s("🇵🇭", "philippines flag"), s("🇨🇦", "canada flag"), s("🇦🇺", "australia flag"),
+        s("🇫🇷", "france flag"), s("🇩🇪", "germany flag")
     ))
 }
 

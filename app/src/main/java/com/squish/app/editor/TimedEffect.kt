@@ -22,7 +22,20 @@ enum class EffectKind(val label: String, val parameter: String? = null) {
     Mono("B&W"),
     Invert("Invert"),
     Blur("Blur", "Radius"),
-    Rainbow("Rainbow", "Speed")
+    Rainbow("Rainbow", "Speed"),
+    // Recipes over the same shader controls as the ten above: nothing new on
+    // the GPU, so the preview and the file agree by construction.
+    RgbSplit("RGB split", "Width"),
+    Strobe("Strobe", "Speed"),
+    Earthquake("Earthquake", "Speed"),
+    Heartbeat("Heartbeat", "Beats per second"),
+    Static("TV static", "Grain"),
+    OldFilm("Old film", "Grain"),
+    Dream("Dream", "Glow"),
+    NegativePulse("Negative pulse", "Speed"),
+    Trippy("Trippy", "Speed"),
+    Sway("Sway", "Speed"),
+    ZoomOut("Slow zoom out", "Reach")
 }
 
 /**
@@ -144,7 +157,10 @@ data class FxParams(
                 // half way is one, so a draft from before it had the knob plays
                 // exactly as it did.
                 val amount = e.amount.coerceIn(0f, 1f)
-                val twice = amount * 2f
+                // A quarter at the left end, one in the middle, one and three quarters at
+                // the right - never nothing. It was amount * 2, so Slow zoom and Blur with
+                // the knob at the left did nothing at all and Strength did nothing either.
+                val twice = 0.25f + 1.5f * amount
                 p = when (e.kind) {
                     EffectKind.Shake -> p.copy(
                         offsetX = p.offsetX + wobble(t, 17.3f * (0.5f + amount)) * 0.028f * k,
@@ -178,6 +194,63 @@ data class FxParams(
                         val rate = 2.0.pow(((amount - 0.5f) * 4f).toDouble()).toFloat()
                         p.copy(hue = p.hue + (t * rate % 1f) * 2f * PI.toFloat() * k)
                     }
+                    EffectKind.RgbSplit -> p.copy(split = p.split + 0.014f * k * twice)
+                    EffectKind.Strobe -> {
+                        val rate = 3f + 12f * amount
+                        p.copy(flash = maxOf(p.flash, if ((t * rate) % 1f < 0.5f) 0.85f * k else 0f))
+                    }
+                    EffectKind.Earthquake -> p.copy(
+                        offsetX = p.offsetX + wobble(t, 31f * (0.5f + amount)) * 0.06f * k,
+                        offsetY = p.offsetY + wobble(t, 43f * (0.5f + amount)) * 0.05f * k,
+                        zoom = p.zoom * (1f + 0.14f * k)
+                    )
+                    EffectKind.Heartbeat -> {
+                        val perSecond = 0.5f + 2f * amount
+                        val phase = (t * perSecond) % 1f
+                        val beat = exp(-((phase - 0.08f) * (phase - 0.08f)) / 0.0025f) +
+                            0.7f * exp(-((phase - 0.3f) * (phase - 0.3f)) / 0.0025f)
+                        p.copy(zoom = p.zoom * (1f + 0.12f * k * beat))
+                    }
+                    EffectKind.Static -> p.copy(
+                        noise = p.noise + 0.35f * k * twice,
+                        scan = p.scan + 0.6f * k,
+                        mono = maxOf(p.mono, 0.5f * k)
+                    )
+                    EffectKind.OldFilm -> {
+                        // Grain, a little flicker and the odd jump of the frame in the gate.
+                        val flicker = if (sin(t * 23.0 + sin(t * 5.1) * 3.0) > 0.75) 1f else 0f
+                        val jump = if (sin(t * 2.3 + sin(t * 0.7) * 5.0) > 0.92) 0.01f else 0f
+                        p.copy(
+                            mono = maxOf(p.mono, 0.85f * k),
+                            noise = p.noise + 0.09f * k * twice,
+                            flash = maxOf(p.flash, 0.07f * k * flicker),
+                            offsetY = p.offsetY + jump * k,
+                            zoom = p.zoom * (1f + 0.03f * k)
+                        )
+                    }
+                    EffectKind.Dream -> p.copy(
+                        blur = p.blur + 0.004f * k * twice,
+                        flash = maxOf(p.flash, 0.14f * k * twice.coerceAtMost(1.5f)),
+                        hue = p.hue + 0.25f * k * sin(t * 0.8).toFloat()
+                    )
+                    EffectKind.NegativePulse -> {
+                        val perSecond = 0.5f + 3f * amount
+                        val phase = (t * perSecond) % 1f
+                        p.copy(invert = maxOf(p.invert, k * exp(-phase * 6f)))
+                    }
+                    EffectKind.Trippy -> {
+                        val rate = 2.0.pow(((amount - 0.5f) * 4f).toDouble()).toFloat()
+                        p.copy(
+                            hue = p.hue + (t * rate * 1.5f % 1f) * 2f * PI.toFloat() * k,
+                            split = p.split + 0.01f * k * (0.5f + 0.5f * sin(t * rate * 6.0).toFloat()),
+                            zoom = p.zoom * (1f + 0.05f * k * (0.5f + 0.5f * sin(t * rate * 3.0).toFloat()))
+                        )
+                    }
+                    EffectKind.Sway -> p.copy(
+                        offsetX = p.offsetX + sin(t * (0.6f + 2.4f * amount) * 2.0 * PI).toFloat() * 0.03f * k,
+                        zoom = p.zoom * (1f + 0.07f * k)
+                    )
+                    EffectKind.ZoomOut -> p.copy(zoom = p.zoom * (1f + 0.3f * twice * a * (1f - (t / span).coerceIn(0f, 1f))))
                 }
             }
             return p
