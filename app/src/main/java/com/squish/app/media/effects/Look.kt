@@ -9,7 +9,8 @@ enum class LookFamily(val label: String) {
     Film("Film"),
     Mood("Mood"),
     Cinema("Cinema"),
-    Retro("Retro")
+    Retro("Retro"),
+    Social("Social")
 }
 
 /**
@@ -517,6 +518,8 @@ object Looks {
     private const val TEAL = 0xFF4E7F86.toInt()
     private const val AMBER = 0xFFA8794E.toInt()
     private const val ROSE = 0xFFA36775.toInt()
+    private const val MAGENTA = 0xFF9A5A93.toInt()
+    private const val FOREST = 0xFF5E7A5A.toInt()
     private const val STEEL = 0xFF5F6E8C.toInt()
     private const val CREAM = 0xFF9C9079.toInt()
     private const val INK = 0xFF56607F.toInt()
@@ -646,7 +649,68 @@ object Looks {
             "y2k", "Y2K", LookFamily.Retro,
             redScale = 1.04f, greenScale = 1.0f, blueScale = 1.1f, contrast = 0.12f, saturation = 0.3f,
             shadowTint = INK, highlightTint = ROSE, split = 0.34f, bloom = 0.3f
-        )
+        ),
+
+        // ---- Cinema, more: the other graded looks people ask for by name --------
+        Look(
+            "cyberpunk", "Cyberpunk", LookFamily.Cinema,
+            redScale = 1.04f, greenScale = 0.9f, blueScale = 1.14f, contrast = 0.22f, saturation = 0.2f,
+            shadowTint = TEAL, highlightTint = MAGENTA, split = 0.6f, bloom = 0.3f, vignette = 0.24f
+        ),
+        Look(
+            "forest", "Forest", LookFamily.Cinema,
+            redScale = 0.95f, greenScale = 1.06f, blueScale = 0.94f, contrast = 0.12f, saturation = -0.08f,
+            shadowTint = FOREST, highlightTint = CREAM, split = 0.36f, vignette = 0.22f
+        ),
+        Look(
+            "desert", "Desert", LookFamily.Cinema,
+            redScale = 1.16f, greenScale = 1.05f, blueScale = 0.8f, contrast = 0.18f, saturation = -0.16f,
+            fade = 0.12f, highlightTint = AMBER, shadowTint = AMBER, split = 0.32f
+        ),
+
+        // ---- Social: the looks a feed is made of --------------------------------
+        Look("bright", "Bright", LookFamily.Social, redScale = 1.05f, greenScale = 1.05f, blueScale = 1.07f, contrast = 0.12f, saturation = 0.12f),
+        Look(
+            "insta", "Insta", LookFamily.Social,
+            redScale = 1.08f, greenScale = 1.02f, blueScale = 0.96f, contrast = 0.08f, saturation = 0.04f,
+            fade = 0.22f, vignette = 0.16f
+        ),
+        Look(
+            "glow", "Glow", LookFamily.Social,
+            redScale = 1.07f, greenScale = 1.02f, blueScale = 0.98f, contrast = -0.1f, saturation = 0.06f,
+            bloom = 0.45f, fade = 0.1f
+        ),
+        Look("food", "Food", LookFamily.Social, redScale = 1.1f, greenScale = 1.03f, blueScale = 0.9f, contrast = 0.16f, saturation = 0.24f),
+        Look(
+            "portrait", "Portrait", LookFamily.Social,
+            redScale = 1.06f, greenScale = 1.01f, blueScale = 0.97f, contrast = -0.05f, saturation = -0.06f,
+            shadowTint = ROSE, highlightTint = CREAM, split = 0.22f, bloom = 0.18f
+        ),
+        Look(
+            "beach", "Beach", LookFamily.Social,
+            redScale = 0.98f, greenScale = 1.05f, blueScale = 1.12f, contrast = 0.1f, saturation = 0.22f,
+            highlightTint = AMBER, shadowTint = TEAL, split = 0.3f
+        ),
+        Look(
+            "sunset", "Sunset", LookFamily.Social,
+            redScale = 1.18f, greenScale = 0.98f, blueScale = 0.92f, contrast = 0.1f, saturation = 0.16f,
+            shadowTint = MAGENTA, highlightTint = AMBER, split = 0.42f, bloom = 0.2f
+        ),
+        Look(
+            "matte", "Matte", LookFamily.Social,
+            contrast = -0.16f, saturation = -0.18f, fade = 0.36f, shadowTint = INK, highlightTint = CREAM, split = 0.2f
+        ),
+        Look(
+            "cherry", "Cherry", LookFamily.Social,
+            redScale = 1.12f, greenScale = 0.95f, blueScale = 1.02f, contrast = 0.14f, saturation = 0.18f,
+            highlightTint = ROSE, split = 0.3f
+        ),
+        Look(
+            "city", "City", LookFamily.Social,
+            redScale = 0.97f, blueScale = 1.06f, contrast = 0.24f, saturation = -0.2f,
+            shadowTint = STEEL, highlightTint = CREAM, split = 0.26f, grain = 0.12f, vignette = 0.2f
+        ),
+        Look("pastel", "Pastel", LookFamily.Social, redScale = 1.04f, greenScale = 1.02f, blueScale = 1.06f, contrast = -0.22f, saturation = -0.12f, fade = 0.3f)
     )
 
     fun byId(id: String?): Look = catalog.firstOrNull { it.id == id } ?: None
