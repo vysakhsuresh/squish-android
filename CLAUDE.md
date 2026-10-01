@@ -960,6 +960,19 @@ should work through it and then delete what holds up.
   by ear, Auto adjust judged by eye, and the file of a Grid or Split screen
   against its preview.
 
+- **1 October, all of it after the phone left at about 07:30.** Seen on the
+  phone before that: the Text and Sound sheets' single orange, the white
+  Play, the frame-rate rows, Grid and Split exported matching the preview, the
+  release build launching and playing at 0.3% janky frames. Built without
+  the phone and executed on the JVM: the sliding strip (`TimelineWindow.slideFor`,
+  WindowChecks), every new animation, effect, transition, look, track, sound
+  effect and voice (AnimationOptionsChecks, EffectRecipeChecks,
+  ExportPlanChecks, LookChecks, MusicSynthChecks, VoiceEffectsChecks via
+  `tools/jvm/run_media3.sh`), and three review rounds' fixes. Not seen: any
+  of the new options on screen or in a file, the 48dp targets, online genres
+  and Load more, the strip under a finger. The script is the last section
+  of `docs/DEVICE_FINDINGS.md`.
+
 ## Conventions worth not rediscovering
 
 - **The network is for online features only.** Every request goes through
