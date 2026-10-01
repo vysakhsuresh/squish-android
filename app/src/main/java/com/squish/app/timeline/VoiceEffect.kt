@@ -18,5 +18,17 @@ enum class VoiceEffect(val label: String, val pitch: Float = 1f) {
     Deep("Deep", pitch = 0.72f),
     Robot("Robot"),
     Echo("Echo"),
-    Radio("Radio")
+    Radio("Radio"),
+    Helium("Helium", pitch = 1.3f),
+    Giant("Giant", pitch = 0.55f),
+    /** A narrow phone line: less bass and treble than Radio, and crunchier. */
+    Telephone("Telephone"),
+    /** A loud-hailer: a honky middle, driven hard. */
+    Megaphone("Megaphone"),
+    /** A long, dark echo, several repeats. */
+    Cave("Cave"),
+    /** The level wavering six times a second. */
+    Wobble("Wobble"),
+    /** Higher, with a ring under it. */
+    Alien("Alien", pitch = 1.18f)
 }

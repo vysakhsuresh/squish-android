@@ -969,7 +969,9 @@ class VideoProcessor(private val context: Context) {
      */
     private fun voiceProcessors(voice: VoiceEffect): List<AudioProcessor> = when {
         voice == VoiceEffect.None -> emptyList()
-        voice.pitch != 1f -> listOf(SonicAudioProcessor().apply { setPitch(voice.pitch) })
+        // The processor too: Alien is a pitch and a ring, as the preview plays it;
+        // for the pitch-only voices it passes the sound through untouched.
+        voice.pitch != 1f -> listOf(SonicAudioProcessor().apply { setPitch(voice.pitch) }, VoiceProcessor { voice })
         else -> listOf(VoiceProcessor { voice })
     }
 

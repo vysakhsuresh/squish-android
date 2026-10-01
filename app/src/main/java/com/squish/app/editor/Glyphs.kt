@@ -134,6 +134,13 @@ val VoiceEffect.glyph: Glyph
         VoiceEffect.Robot -> glyph(SquishIcons.Robot, 0xFF4FA8FF, 0xFF2F4FC0, ordinal)
         VoiceEffect.Echo -> glyph(SquishIcons.Echo, 0xFFB14DFF, 0xFF5B2DB0, ordinal)
         VoiceEffect.Radio -> glyph(SquishIcons.Radio, 0xFFFF8FB1, 0xFFB14DFF, ordinal)
+        VoiceEffect.Helium -> glyph(SquishIcons.Chipmunk, 0xFFFFD166, 0xFFFF8F3D, ordinal)
+        VoiceEffect.Giant -> glyph(SquishIcons.Deep, 0xFF3DE0A0, 0xFF1F6A50, ordinal)
+        VoiceEffect.Telephone -> glyph(SquishIcons.Radio, 0xFFB8BCCB, 0xFF4A4E63, ordinal)
+        VoiceEffect.Megaphone -> glyph(SquishIcons.Radio, 0xFFFF7A59, 0xFFC0392B, ordinal)
+        VoiceEffect.Cave -> glyph(SquishIcons.Echo, 0xFF6C7BFF, 0xFF1B1F5F, ordinal)
+        VoiceEffect.Wobble -> glyph(SquishIcons.Echo, 0xFF5CE1E6, 0xFF2F80ED, ordinal)
+        VoiceEffect.Alien -> glyph(SquishIcons.Robot, 0xFF7CFF6B, 0xFF2F8F3D, ordinal)
     }
 
 val QuickTool.glyph: Glyph

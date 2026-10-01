@@ -76,7 +76,10 @@ function first; if it can, it can be checked.
   then `java -cp "<dir>;<kotlin-stdlib>" <Suite>Kt`. Every jar is under
   `~/.gradle/caches/modules-2/files-2.1/`. `sh tools/jvm/run_desktop.sh` does
   that for every suite in `run.sh` (about 50 minutes, one line each), and
-  `sh tools/jvm/jc.sh <Suite> <files...>` runs one.
+  `sh tools/jvm/jc.sh <Suite> <files...>` runs one. Suites that run app code against Media3
+  itself (the voice effects through its real `BaseAudioProcessor`) are in
+  `sh tools/jvm/run_media3.sh`, which puts media3-common, guava and the SDK's
+  android.jar on the class path through `EXTRA_CP`.
 - **Measure speed on a release build, never a debug one.** `./gradlew
   assemblePerf` is the release build signed with the debug key; it installs
   over a debug build and keeps the drafts (but `run-as` stops working until a

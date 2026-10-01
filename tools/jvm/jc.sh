@@ -18,5 +18,8 @@ SUITE=$1; shift
 OUTW="$(cygpath -m "${TMPDIR:-/tmp}")/squish-jvm/out-$SUITE"
 rm -rf "$OUTW"; mkdir -p "$OUTW"
 CP="$COMPILER;$STD;$REFLECT;$SCRIPT;$DAEMON;$TROVE;$ANNOT;$COROUTINES"
-"$JAVA" -cp "$CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib -classpath "$STD" -d "$OUTW" "$@" 2>&1 | grep -v "^Picked up" || true
-"$JAVA" -cp "$OUTW;$STD" "${SUITE}Kt" | grep -v "^Picked up"
+# EXTRA_CP: more jars, ;-separated, for a suite that runs app code against a
+# library (VoiceEffectsChecks against media3-common).
+LIB="$STD${EXTRA_CP:+;$EXTRA_CP}"
+"$JAVA" -cp "$CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib -classpath "$LIB" -d "$OUTW" "$@" 2>&1 | grep -v "^Picked up" || true
+"$JAVA" -cp "$OUTW;$LIB" "${SUITE}Kt" | grep -v "^Picked up"
