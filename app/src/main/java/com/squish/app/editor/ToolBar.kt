@@ -332,7 +332,7 @@ private fun ToolItem(
             color = if (enabled) SquishColors.TextSecondary else SquishColors.TextMuted.copy(alpha = 0.5f),
             maxLines = 1,
             softWrap = false,
-            overflow = TextOverflow.Visible
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

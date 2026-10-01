@@ -99,7 +99,12 @@ fun MarkersPanel(state: EditorUiState, viewModel: EditorViewModel) {
         ) {
             // Beats too: the dots are marks as far as a drag is concerned, and
             // this is the way off them without clearing the grid.
-            Text("Snap to markers and beats", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+            Text(
+                "Snap to markers and beats",
+                style = MaterialTheme.typography.bodyMedium,
+                color = SquishColors.TextPrimary,
+                modifier = Modifier.weight(1f)
+            )
             SquishToggleSwitch(checked = state.snapToMarkers, onCheckedChange = viewModel.clips::setSnapToMarkers)
         }
     }

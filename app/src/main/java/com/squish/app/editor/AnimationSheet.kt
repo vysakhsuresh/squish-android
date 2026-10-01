@@ -298,15 +298,7 @@ fun KeyframeButton(
         if (count > 0) {
             // A target the size of a finger, and its own: the row round it
             // toggles a key, so a miss here used to add one instead of clearing them.
-            Text(
-                "Clear",
-                style = MaterialTheme.typography.labelMedium,
-                color = SquishColors.Pink,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onClear)
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-            )
+            com.squish.app.ui.components.TextAction("Clear", color = SquishColors.Pink, onClick = onClear)
         }
     }
 }

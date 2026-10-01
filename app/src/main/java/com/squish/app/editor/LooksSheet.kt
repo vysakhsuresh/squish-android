@@ -9,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -284,19 +285,18 @@ private fun AdjustSlider(
         Row(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+            // Held at Reset's height whether it shows or not: it appears the
+            // moment a drag leaves zero, and a row that grew then would slide
+            // the slider out from under the finger.
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
         ) {
             Text(label, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (value != 0f) {
-                    Text(
+                    com.squish.app.ui.components.TextAction(
                         "Reset",
-                        style = MaterialTheme.typography.labelSmall,
                         color = SquishColors.TextMuted,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable(onClickLabel = "Reset $label", onClick = onReset)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                        onClick = onReset
                     )
                 }
                 Text(readout(value), style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)

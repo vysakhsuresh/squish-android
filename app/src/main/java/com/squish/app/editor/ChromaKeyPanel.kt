@@ -2,7 +2,6 @@ package com.squish.app.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -19,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
@@ -62,17 +60,9 @@ fun ChromaKeyPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
             accent = SquishColors.Magenta,
             trailing = {
                 if (key != null) {
-                    Text(
-                        "Turn off",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SquishColors.Pink,
-                        modifier = Modifier.clip(RoundedCornerShape(6.dp))
-                            .background(SquishColors.Background)
-                            .pointerInput(clip.id) {
-                                detectTapGestures { viewModel.layers.setChromaKey(clip.id, null) }
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                    com.squish.app.ui.components.TextAction("Turn off", color = SquishColors.Pink) {
+                        viewModel.layers.setChromaKey(clip.id, null)
+                    }
                 }
             }
         )

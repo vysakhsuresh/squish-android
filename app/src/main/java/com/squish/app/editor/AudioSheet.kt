@@ -237,15 +237,11 @@ fun RecordPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     style = MaterialTheme.typography.displayMedium,
                     color = SquishColors.Cyan
                 )
-                Text(
+                com.squish.app.ui.components.TextAction(
                     "Cancel",
-                    style = MaterialTheme.typography.labelLarge,
                     color = SquishColors.TextSecondary,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .clip(RoundedCornerShape(9.dp))
-                        .clickable { viewModel.audio.stopVoiceover() }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    onClick = { viewModel.audio.stopVoiceover() }
                 )
             }
             RecordingState.Phase.Recording -> Row(

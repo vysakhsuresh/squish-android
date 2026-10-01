@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -166,7 +167,7 @@ fun ExportSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(if (settings) Modifier.height(cap) else Modifier.heightIn(max = cap))
-                    .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                     .background(SquishColors.Surface)
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -207,12 +208,14 @@ fun ExportSheet(
                     icon = Icons.Filled.FileUpload,
                     accent = SquishColors.Blue,
                     trailing = {
-                        Icon(
-                            Icons.Filled.Close,
-                            contentDescription = "Close",
-                            tint = SquishColors.TextMuted,
-                            modifier = Modifier.size(20.dp).clickable(onClick = onDismiss)
-                        )
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Close",
+                                tint = SquishColors.TextMuted,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 )
 

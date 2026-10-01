@@ -2,7 +2,6 @@ package com.squish.app.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -18,7 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Mask
@@ -49,18 +47,9 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
             accent = SquishColors.Magenta,
             trailing = {
                 if (mask != null) {
-                    Text(
-                        "Turn off",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SquishColors.Pink,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(SquishColors.Background)
-                            .pointerInput(clip.id) {
-                                detectTapGestures { viewModel.layers.setMask(clip.id, null) }
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                    com.squish.app.ui.components.TextAction("Turn off", color = SquishColors.Pink) {
+                        viewModel.layers.setMask(clip.id, null)
+                    }
                 }
             }
         )
@@ -113,7 +102,8 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
                     Text(
                         "Following a track · ${(mask.track.heldFraction * 100).toInt()}% held",
                         style = MaterialTheme.typography.bodySmall,
-                        color = SquishColors.Teal
+                        color = SquishColors.Teal,
+                        modifier = Modifier.weight(1f)
                     )
                     com.squish.app.ui.components.TextAction("Unpin", color = SquishColors.Pink) { viewModel.analysis.unpinMask(clip.id) }
                 }

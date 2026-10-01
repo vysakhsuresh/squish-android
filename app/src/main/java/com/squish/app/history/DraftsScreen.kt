@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -387,9 +388,10 @@ private fun DraftCard(
             draft.earlierSavedAtMillis?.let { earlier ->
                 Row(
                     modifier = Modifier
+                        .heightIn(min = 48.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .clickable(role = Role.Button, onClick = onEarlier)
-                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                        .padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {

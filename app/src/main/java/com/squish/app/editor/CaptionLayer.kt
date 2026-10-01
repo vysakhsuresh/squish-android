@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -250,6 +251,7 @@ fun EyedropperLayer(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 8.dp)
+                .minimumInteractiveComponentSize()
                 .clip(RoundedCornerShape(10.dp))
                 .background(Color.Black.copy(alpha = 0.6f))
                 .clickable { latestPick(null) }

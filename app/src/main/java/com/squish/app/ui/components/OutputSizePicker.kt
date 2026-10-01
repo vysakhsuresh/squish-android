@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -281,9 +283,11 @@ private fun CustomSizeField(initial: Int, maxP: Int, accent: Color, onSet: (Int)
             style = MaterialTheme.typography.labelLarge,
             color = if (valid) accent else SquishColors.Pink,
             modifier = Modifier
+                .heightIn(min = 48.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .clickable(enabled = valid) { commit() }
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(horizontal = 8.dp)
+                .wrapContentHeight()
         )
     }
 }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.HistoryToggleOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -1109,17 +1111,23 @@ private fun EditorHeader(
         // minutes-long action in the app, and it used to be the only one with
         // no confirmation. The only way to export: the Finish tab that also did
         // it, with other size chips, is gone.
-        Text(
-            if (state.isExporting) "Exporting…" else "Export",
-            style = MaterialTheme.typography.labelLarge,
-            color = if (state.isExporting) SquishColors.TextMuted else SquishColors.Background,
-            maxLines = 1,
+        Box(
+            contentAlignment = Alignment.Center,
             modifier = Modifier
-                .clip(RoundedCornerShape(9.dp))
+                .minimumInteractiveComponentSize()
+                .heightIn(min = 44.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(if (state.isExporting) SquishColors.Surface else SquishColors.Primary)
-                .clickable(enabled = !state.isExporting && !state.isLoadingSource, onClick = onExport)
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-        )
+                .clickable(enabled = !state.isExporting && !state.isLoadingSource, role = Role.Button, onClick = onExport)
+                .padding(horizontal = 14.dp)
+        ) {
+            Text(
+                if (state.isExporting) "Exporting…" else "Export",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (state.isExporting) SquishColors.TextMuted else SquishColors.Background,
+                maxLines = 1
+            )
+        }
     }
 }
 
@@ -1127,6 +1135,7 @@ private fun EditorHeader(
 private fun HeaderIcon(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
+            .minimumInteractiveComponentSize()
             .size(40.dp)
             .clip(RoundedCornerShape(20.dp))
             .clickable(enabled = enabled, onClickLabel = label, onClick = onClick),

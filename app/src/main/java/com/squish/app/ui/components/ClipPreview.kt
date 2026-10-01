@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,6 +28,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay5
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -289,6 +289,7 @@ fun ClipPreview(
             SkipButton(Icons.Filled.Replay5, "Back 5 seconds") { skip(-SKIP_MS) }
             Box(
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .size(36.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(accent.copy(alpha = 0.16f))
@@ -351,12 +352,13 @@ private fun ScrubBar(
     Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(28f)
+            // A finger-high band to grab, the bar drawn as thin as it was through its middle.
+            .height(32.dp)
             .clip(RoundedCornerShape(999.dp))
             .pointerScrub(totalMs, onScrub)
     ) {
-        val h = size.height
-        val midY = h / 2f
+        val h = 12.dp.toPx()
+        val midY = size.height / 2f
 
         drawLine(
             color = SquishColors.Border,
@@ -403,6 +405,7 @@ private fun Modifier.pointerScrub(totalMs: Long, onScrub: (Long) -> Unit): Modif
 private fun SkipButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
+            .minimumInteractiveComponentSize()
             .size(32.dp)
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),

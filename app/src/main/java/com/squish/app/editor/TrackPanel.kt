@@ -122,7 +122,8 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel, acc
                 Text(
                     "Tap the frame to aim",
                     style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.TextMuted
+                    color = SquishColors.TextMuted,
+                    modifier = Modifier.weight(1f)
                 )
                 SquishOutlinedButton(text = "Refresh") { stale = true }
             }

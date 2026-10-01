@@ -260,7 +260,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
             )
         }
         if (query.isNotEmpty()) {
-            IconButton(onClick = { onQuery("") }, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = { onQuery("") }) {
                 Icon(
                     Icons.Filled.Close,
                     contentDescription = "Clear the search",

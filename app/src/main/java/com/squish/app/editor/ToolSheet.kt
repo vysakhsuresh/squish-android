@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -68,7 +70,7 @@ fun ToolSheet(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             .background(SquishColors.Surface)
     ) {
         Row(
@@ -79,7 +81,7 @@ fun ToolSheet(
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 title,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 color = SquishColors.TextPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -91,9 +93,11 @@ fun ToolSheet(
                     style = MaterialTheme.typography.labelLarge,
                     color = SquishColors.TextSecondary,
                     modifier = Modifier
+                        .heightIn(min = 44.dp)
                         .clip(RoundedCornerShape(9.dp))
                         .clickable(onClickLabel = "Reset $title", onClick = onReset)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .padding(horizontal = 12.dp)
+                        .wrapContentHeight()
                 )
             }
             Text(
@@ -101,10 +105,12 @@ fun ToolSheet(
                 style = MaterialTheme.typography.labelLarge,
                 color = SquishColors.Background,
                 modifier = Modifier
+                    .heightIn(min = 44.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(SquishColors.Primary)
                     .clickable(onClickLabel = "Close $title", onClick = onDone)
-                    .padding(horizontal = 18.dp, vertical = 10.dp)
+                    .padding(horizontal = 18.dp)
+                    .wrapContentHeight()
             )
         }
         if (chips.isNotEmpty()) {

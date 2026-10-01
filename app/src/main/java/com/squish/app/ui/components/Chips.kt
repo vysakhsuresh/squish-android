@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.squish.app.ui.theme.SquishColors
@@ -72,15 +74,19 @@ fun SelectableChip(
 fun SquishToggleSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** The track when on: a switch inside a tool takes that tool's colour. */
+    accent: Color = SquishColors.Primary
 ) {
-    val trackColor by animateColorAsState(if (checked) SquishColors.Primary else SquishColors.Border, label = "switchTrack")
+    val trackColor by animateColorAsState(if (checked) accent else SquishColors.Border, label = "switchTrack")
     Box(
         modifier = modifier
+            // Drawn 44x26, pressed anywhere in a 48dp square round it.
+            .minimumInteractiveComponentSize()
             .size(width = 44.dp, height = 26.dp)
             .clip(CircleShape)
             .background(trackColor)
-            .clickable { onCheckedChange(!checked) }
+            .clickable(role = Role.Switch) { onCheckedChange(!checked) }
             .padding(3.dp),
         contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
     ) {

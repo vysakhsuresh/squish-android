@@ -285,7 +285,7 @@ private fun TempoReadout(state: EditorUiState) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 if (beats.bpm > 0f) "${"%.1f".format(beats.bpm)} BPM" else "${state.allBeats.size} beats",
                 style = MaterialTheme.typography.headlineSmall,

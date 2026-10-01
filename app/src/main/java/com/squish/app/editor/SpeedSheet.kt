@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -242,7 +243,8 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
                         .background(SquishColors.Background)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(start = 12.dp),
+                    // No end or vertical padding: the remove button brings its own 48dp.
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -257,14 +259,14 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
                         style = MaterialTheme.typography.bodyMedium,
                         color = accent
                     )
-                    Icon(
-                        Icons.Filled.Close,
-                        contentDescription = "Remove this point",
-                        tint = SquishColors.Pink,
-                        modifier = Modifier
-                            .size(16.dp)
-                            .clickable { viewModel.clips.removeSpeedPoint(clip.id, point.atMs) }
-                    )
+                    IconButton(onClick = { viewModel.clips.removeSpeedPoint(clip.id, point.atMs) }) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Remove this point",
+                            tint = SquishColors.Pink,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }

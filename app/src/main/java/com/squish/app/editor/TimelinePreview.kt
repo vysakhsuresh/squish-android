@@ -28,6 +28,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -1391,6 +1392,7 @@ private fun Transport(
 private fun TransportButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
+            .minimumInteractiveComponentSize()
             .size(40.dp)
             .clip(RoundedCornerShape(20.dp))
             .clickable(onClickLabel = label, onClick = onClick),

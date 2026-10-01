@@ -152,15 +152,7 @@ fun ReversingIndicator(
                     color = SquishColors.Violet,
                     modifier = Modifier.weight(1f)
                 )
-                Text(
-                    "Cancel",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.TextSecondary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable(onClickLabel = "Stop reversing ${nameOf(id)}") { onCancel(id) }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+                com.squish.app.ui.components.TextAction("Cancel", color = SquishColors.TextSecondary) { onCancel(id) }
             }
         }
     }

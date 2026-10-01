@@ -3,7 +3,6 @@ package com.squish.app.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 
 private val SquishColorScheme = darkColorScheme(
     primary = SquishColors.Primary,
@@ -17,7 +16,7 @@ private val SquishColorScheme = darkColorScheme(
     onSurface = SquishColors.TextPrimary,
     surfaceVariant = SquishColors.SurfaceElevated,
     outline = SquishColors.Border,
-    error = Color(0xFFFF5C5C)
+    error = SquishColors.Danger
 )
 
 @Composable
