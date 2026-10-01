@@ -243,7 +243,19 @@ enum class TextMotion(val label: String) {
     Bounce("Bounce"),
 
     /** Words appear one after another - on the beat of the speech, for a caption with its words timed. */
-    Words("Words");
+    Words("Words"),
+
+    /** Shrinks down from big. */
+    Zoom("Zoom"),
+
+    /** Falls in from above and bounces. */
+    Drop("Drop"),
+
+    /** Spins into place, growing. */
+    Spin("Spin"),
+
+    /** Flickers on. */
+    Blink("Blink");
 
     /** Whether the letters are revealed rather than the whole line moved. */
     val reveals: Boolean get() = this == Typewriter || this == Words
@@ -261,7 +273,22 @@ enum class TextExit(val label: String) {
     Slide("Slide"),
 
     /** Falls off the bottom. */
-    Drop("Drop")
+    Drop("Drop"),
+
+    /** Swells a little, then is gone. */
+    Pop("Pop"),
+
+    /** Floats up and away. */
+    Rise("Float up"),
+
+    /** Grows past full size as it fades. */
+    Zoom("Zoom"),
+
+    /** Spins away, shrinking. */
+    Spin("Spin"),
+
+    /** Flickers off. */
+    Blink("Blink")
 }
 
 /** What a caption does while it is on screen. */
@@ -278,7 +305,16 @@ enum class TextLoop(val label: String) {
     Bob("Bob"),
 
     /** A tube with a loose contact. */
-    Flicker("Flicker")
+    Flicker("Flicker"),
+
+    /** A small, quick tremble. */
+    Shake("Shake"),
+
+    /** Two quick beats and a rest. */
+    Heartbeat("Heartbeat"),
+
+    /** Swings wide either way, like a sign on a chain. */
+    Swing("Swing")
 }
 
 /**
@@ -340,6 +376,10 @@ object TextAnimation {
             TextMotion.Typewriter -> TextFrame(reveal = inT)
             TextMotion.Bounce -> TextFrame(alpha = minOf(1f, inT * 3f), rise = -bounce(inT) * 0.1f)
             TextMotion.Words -> TextFrame(reveal = wordsReveal(elapsedMs, inWindow, wordStartsMs))
+            TextMotion.Zoom -> TextFrame(alpha = easeOut(inT), scale = 2.2f - 1.2f * easeOut(inT))
+            TextMotion.Drop -> TextFrame(alpha = minOf(1f, inT * 3f), rise = bounce(inT) * 0.12f)
+            TextMotion.Spin -> TextFrame(alpha = minOf(1f, inT * 2.5f), scale = 0.3f + 0.7f * easeOut(inT), tilt = -180f * (1f - easeOut(inT)))
+            TextMotion.Blink -> TextFrame(alpha = blink(inT))
         }
         val leaving = when (exit) {
             TextExit.None -> TextFrame()
@@ -350,6 +390,13 @@ object TextAnimation {
                 val gone = 1f - easeOut(outT)
                 TextFrame(alpha = easeOut(outT), rise = -gone * gone * 0.2f)
             }
+            TextExit.Pop -> (1f - outT).let { g ->
+                TextFrame(alpha = if (g < 0.6f) 1f else (1f - g) / 0.4f, scale = 1f + 0.2f * sin(g * PI * 0.8).toFloat() - 0.6f * g * g)
+            }
+            TextExit.Rise -> TextFrame(alpha = easeOut(outT), rise = (1f - easeOut(outT)) * 0.1f)
+            TextExit.Zoom -> TextFrame(alpha = easeOut(outT), scale = 1f + 0.8f * (1f - easeOut(outT)))
+            TextExit.Spin -> TextFrame(alpha = easeOut(outT), scale = 0.3f + 0.7f * easeOut(outT), tilt = 180f * (1f - easeOut(outT)))
+            TextExit.Blink -> TextFrame(alpha = blink(outT))
         }
         val phase = ((elapsedMs.toDouble() / loopMs.coerceAtLeast(1L)) % 1.0).toFloat()
         val wave = sin(phase * 2.0 * PI).toFloat()
@@ -360,13 +407,20 @@ object TextAnimation {
             TextLoop.Bob -> TextFrame(rise = 0.012f * wave)
             // Two dips a period, never to black: a tube with a loose contact, not a strobe.
             TextLoop.Flicker -> TextFrame(alpha = 0.72f + 0.28f * abs(sin(phase * 4.0 * PI).toFloat()))
+            TextLoop.Shake -> TextFrame(
+                rise = 0.004f * sin(phase * 2.0 * PI * 11).toFloat(),
+                tilt = 1.5f * sin(phase * 2.0 * PI * 7).toFloat()
+            )
+            TextLoop.Heartbeat -> TextFrame(scale = 1f + 0.08f * heartbeat(phase))
+            TextLoop.Swing -> TextFrame(tilt = 9f * wave)
         }
         return TextFrame(
             alpha = arriving.alpha * leaving.alpha * looping.alpha,
             scale = arriving.scale * leaving.scale * looping.scale,
             rise = arriving.rise + leaving.rise + looping.rise,
             reveal = arriving.reveal,
-            tilt = looping.tilt
+            // The arrival's and leaving's turn too: Spin turns in and out.
+            tilt = arriving.tilt + leaving.tilt + looping.tilt
         )
     }
 
@@ -409,6 +463,20 @@ object TextAnimation {
         if (t >= 1f) return 0f
         val fall = 1f - t
         return abs(kotlin.math.cos(t * PI * 2.5).toFloat()) * fall * fall
+    }
+
+    /** On and off a few times, getting steadier: 0 at the start, 1 at the end. */
+    private fun blink(t: Float): Float {
+        if (t >= 1f) return 1f
+        if (t <= 0f) return 0f
+        val on = (t * 7).toInt() % 2 == 1 || t > 0.75f
+        return if (on) 0.4f + 0.6f * t else 0.1f * t
+    }
+
+    /** Two quick beats then a rest, over one period; 0 at rest. */
+    private fun heartbeat(phase: Float): Float {
+        fun beat(at: Float) = kotlin.math.exp(-((phase - at) * (phase - at)) / 0.0018f)
+        return beat(0.12f) + 0.7f * beat(0.32f)
     }
 }
 

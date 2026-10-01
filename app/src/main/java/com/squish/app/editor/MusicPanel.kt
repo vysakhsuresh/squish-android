@@ -63,6 +63,8 @@ import com.squish.app.media.audio.MusicPick
 import com.squish.app.media.audio.MusicSynth
 import com.squish.app.media.audio.PhoneTrack
 import com.squish.app.ui.components.SelectableChip
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.theme.SquishColors
 import kotlinx.coroutines.delay
@@ -85,6 +87,7 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var vibe by rememberSaveable { mutableStateOf("All") }
 
     // One small player for listening before adding, released with the panel.
     var playingKey by remember { mutableStateOf<String?>(null) }
@@ -178,7 +181,15 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextMuted
                 )
-                MusicSynth.styles.forEach { style ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                ) {
+                    MusicSynth.vibes.forEach { v ->
+                        SelectableChip(v, vibe == v, accentColor = SquishColors.Cyan, onClick = { vibe = v })
+                    }
+                }
+                MusicSynth.styles.filter { vibe == "All" || MusicSynth.vibeOf(it) == vibe }.forEach { style ->
                     val pick = MusicPick("orig:${style.id}", style.title, "${style.mood} · ${style.seconds}s")
                     MusicRow(
                         pick = pick,
@@ -532,15 +543,23 @@ private fun OnlineMusicList(
     }
 
     var query by rememberSaveable { mutableStateOf("") }
+    var genre by rememberSaveable { mutableStateOf(OnlineMusic.Genre.Popular) }
     var tracks by remember { mutableStateOf<List<OnlineMusic.Track>?>(null) }
+    // Pages fetched so far for this search, and whether the last came back full.
+    var page by remember { mutableStateOf(1) }
+    var more by remember { mutableStateOf(false) }
+    var loadingMore by remember { mutableStateOf(false) }
     // One track that will not play is said about that track, not as the list failing.
     var rowNote by remember { mutableStateOf<String?>(null) }
     var failed by remember { mutableStateOf(false) }
-    LaunchedEffect(query) {
+    LaunchedEffect(query, genre) {
         delay(if (query.isEmpty()) 0L else 500L)
         tracks = null
         failed = false
-        tracks = runCatching { OnlineMusic.search(context, query) }.getOrElse { failed = true; emptyList() }
+        page = 1
+        val first = runCatching { OnlineMusic.search(context, query, genre = genre) }.getOrElse { failed = true; emptyList() }
+        more = first.size >= 12
+        tracks = first
     }
 
     Row(
@@ -565,6 +584,16 @@ private fun OnlineMusicList(
                 cursorBrush = SolidColor(SquishColors.Cyan),
                 modifier = Modifier.fillMaxWidth()
             )
+        }
+    }
+    // Browse by style: thousands of tracks each, where an empty search showed
+    // the same twenty.
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+    ) {
+        OnlineMusic.Genre.entries.forEach { g ->
+            SelectableChip(g.label, genre == g, accentColor = SquishColors.Cyan, onClick = { genre = g })
         }
     }
     Text(
@@ -619,5 +648,27 @@ private fun OnlineMusicList(
                 }
             )
         }
+    }
+    if (!failed && !list.isNullOrEmpty() && more) {
+        SquishOutlinedButton(
+            text = if (loadingMore) "Loading…" else "Load more",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                if (loadingMore) return@SquishOutlinedButton
+                loadingMore = true
+                scope.launch {
+                    val next = runCatching { OnlineMusic.search(context, query, genre = genre, page = page + 1) }.getOrNull()
+                    loadingMore = false
+                    if (next == null) {
+                        rowNote = "Couldn't load more - check the connection."
+                    } else {
+                        page += 1
+                        val seen = tracks.orEmpty().map { it.id }.toSet()
+                        tracks = tracks.orEmpty() + next.filter { it.id !in seen }
+                        more = next.size >= 12
+                    }
+                }
+            }
+        )
     }
 }

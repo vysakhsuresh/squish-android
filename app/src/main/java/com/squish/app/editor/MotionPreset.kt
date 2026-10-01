@@ -16,7 +16,15 @@ enum class MotionPreset(val label: String, val hint: String) {
     PanRight("Pan right", "Drifts across, left to right"),
     PanLeft("Pan left", "Drifts across, right to left"),
     RiseUp("Rise", "Lifts gently up the frame"),
-    Settle("Settle", "Lands from a slight tilt");
+    Settle("Settle", "Lands from a slight tilt"),
+    Sink("Sink", "Lowers gently down the frame"),
+    PushClose("Push close", "A strong, dramatic push"),
+    Diagonal("Diagonal", "Drifts corner to corner"),
+    TiltIn("Tilt in", "Closes in with a slow turn"),
+    PullWide("Pull wide", "Starts close, ends on the whole frame");
+
+    // Every move's endpoints keep the picture covering the frame: scale at
+    // least 1, and a pan's offset inside the headroom its scale gives.
 
     fun endpoints(): Pair<Transform, Transform> = when (this) {
         PushIn -> Transform(scale = 1f) to Transform(scale = 1.18f)
@@ -28,5 +36,12 @@ enum class MotionPreset(val label: String, val hint: String) {
         RiseUp -> Transform(scale = 1.12f, offsetYFraction = 0.08f) to
             Transform(scale = 1.12f, offsetYFraction = -0.08f)
         Settle -> Transform(scale = 1.1f, rotationDegrees = -2.5f) to Transform(scale = 1f)
+        Sink -> Transform(scale = 1.12f, offsetYFraction = -0.08f) to
+            Transform(scale = 1.12f, offsetYFraction = 0.08f)
+        PushClose -> Transform(scale = 1f) to Transform(scale = 1.4f)
+        Diagonal -> Transform(scale = 1.2f, offsetXFraction = -0.1f, offsetYFraction = -0.1f) to
+            Transform(scale = 1.2f, offsetXFraction = 0.1f, offsetYFraction = 0.1f)
+        TiltIn -> Transform(scale = 1.08f, rotationDegrees = 0f) to Transform(scale = 1.25f, rotationDegrees = 3f)
+        PullWide -> Transform(scale = 1.4f) to Transform(scale = 1f)
     }
 }

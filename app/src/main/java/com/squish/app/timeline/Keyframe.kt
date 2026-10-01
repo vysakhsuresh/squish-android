@@ -260,7 +260,21 @@ enum class ClipArrival(val label: String) {
     SlideUp("Slide up"),
     SlideDown("Slide down"),
     /** Turns a quarter turn into place, growing. */
-    Spin("Spin")
+    Spin("Spin"),
+    /** Grows in past full size and settles, like a sticker landing. */
+    Pop("Pop"),
+    /** Drops from above and bounces to rest. */
+    Bounce("Bounce"),
+    /** Falls in from above the frame and overshoots a little. */
+    Drop("Drop in"),
+    /** A fast slide in from the left that brakes hard. */
+    Whip("Whip"),
+    /** Swings in on a hinge and settles. */
+    SwingIn("Swing in"),
+    /** A whole turn, growing out of a point. */
+    Twirl("Twirl"),
+    /** Flickers on like a screen catching. */
+    Blink("Blink")
 }
 
 /** How a clip's picture leaves. */
@@ -276,7 +290,19 @@ enum class ClipLeaving(val label: String) {
     /** Goes out over the top. */
     SlideUp("Slide up"),
     SlideDown("Slide down"),
-    Spin("Spin")
+    Spin("Spin"),
+    /** Swells a little, then is gone. */
+    Pop("Pop"),
+    /** Falls out of the bottom, faster as it goes. */
+    Drop("Drop out"),
+    /** A fast slide out to the right. */
+    Whip("Whip"),
+    /** A whole turn, shrinking to a point. */
+    Twirl("Twirl"),
+    /** Shrinks and sinks as it fades. */
+    Sink("Sink"),
+    /** Flickers off. */
+    Blink("Blink")
 }
 
 /** What a clip's picture does the whole time it is on screen. */
@@ -291,7 +317,17 @@ enum class ClipLoop(val label: String) {
     /** Flickers between full and part brightness, never to black. */
     Flicker("Flicker"),
     /** Creeps in and back out, slowly. */
-    Drift("Drift")
+    Drift("Drift"),
+    /** A small, quick tremble. */
+    Shake("Shake"),
+    /** Two quick beats and a rest. */
+    Heartbeat("Heartbeat"),
+    /** Sways side to side. */
+    Sway("Sway"),
+    /** Circles slowly round its place. */
+    Orbit("Orbit"),
+    /** Turns right round, over and over. */
+    Rotate("Rotate")
 }
 
 /**
@@ -378,6 +414,20 @@ object ClipAnimation {
                 scale = 0.4f + 0.6f * easeOut(inT),
                 tilt = -90f * (1f - easeOut(inT))
             )
+            ClipArrival.Pop -> AnimFrame(alpha = minOf(1f, inT * 3f), scale = overshoot(inT))
+            ClipArrival.Bounce -> AnimFrame(alpha = minOf(1f, inT * 4f), dy = -0.7f * bounce(inT))
+            ClipArrival.Drop -> AnimFrame(dy = -OFF_CANVAS * (1f - backOut(inT)))
+            ClipArrival.Whip -> AnimFrame(dx = -OFF_CANVAS * (1f - expoOut(inT)), scale = 1f + 0.08f * (1f - expoOut(inT)))
+            ClipArrival.SwingIn -> AnimFrame(
+                alpha = minOf(1f, inT * 3f),
+                tilt = if (inT >= 1f) 0f else 28f * (1f - inT) * kotlin.math.cos(inT * 3.0 * Math.PI).toFloat()
+            )
+            ClipArrival.Twirl -> AnimFrame(
+                alpha = minOf(1f, inT * 2.5f),
+                scale = 0.2f + 0.8f * easeOut(inT),
+                tilt = -360f * (1f - easeOut(inT))
+            )
+            ClipArrival.Blink -> AnimFrame(alpha = blink(inT))
         }
         val leavingNow = when (leaving) {
             ClipLeaving.None -> AnimFrame.STILL
@@ -393,6 +443,15 @@ object ClipAnimation {
                 scale = 0.4f + 0.6f * easeOut(outT),
                 tilt = 90f * (1f - easeOut(outT))
             )
+            // outT runs 1 to 0 over the leaving; g is how far gone it is.
+            ClipLeaving.Pop -> (1f - outT).let { g ->
+                AnimFrame(alpha = if (g < 0.6f) 1f else (1f - g) / 0.4f, scale = 1f + 0.18f * kotlin.math.sin(g * Math.PI * 0.8).toFloat() - 0.6f * g * g)
+            }
+            ClipLeaving.Drop -> (1f - outT).let { g -> AnimFrame(dy = OFF_CANVAS * g * g) }
+            ClipLeaving.Whip -> (1f - outT).let { g -> AnimFrame(dx = OFF_CANVAS * g * g * g, scale = 1f + 0.08f * g) }
+            ClipLeaving.Twirl -> AnimFrame(alpha = easeOut(outT), scale = 0.2f + 0.8f * easeOut(outT), tilt = 360f * (1f - easeOut(outT)))
+            ClipLeaving.Sink -> (1f - easeOut(outT)).let { g -> AnimFrame(alpha = easeOut(outT), scale = 1f - 0.35f * g, dy = 0.35f * g) }
+            ClipLeaving.Blink -> AnimFrame(alpha = blink(outT))
         }
         val phase = ((elapsedMs.toDouble() / loopMs.coerceAtLeast(1L)) % 1.0).toFloat()
         val wave = kotlin.math.sin(phase * 2.0 * Math.PI).toFloat()
@@ -405,6 +464,19 @@ object ClipAnimation {
             ClipLoop.Flicker -> AnimFrame(alpha = 0.72f + 0.28f * kotlin.math.abs(kotlin.math.sin(phase * 4.0 * Math.PI).toFloat()))
             // A slow push in and back: one breath per period, from rest.
             ClipLoop.Drift -> AnimFrame(scale = 1f + 0.06f * (0.5f - 0.5f * kotlin.math.cos(phase * 2.0 * Math.PI).toFloat()))
+            // Three unrelated frequencies a period: a tremble, not a wobble; 0 at rest.
+            ClipLoop.Shake -> AnimFrame(
+                dx = 0.012f * kotlin.math.sin(phase * 2.0 * Math.PI * 7).toFloat(),
+                dy = 0.009f * kotlin.math.sin(phase * 2.0 * Math.PI * 11).toFloat(),
+                tilt = 0.8f * kotlin.math.sin(phase * 2.0 * Math.PI * 5).toFloat()
+            )
+            ClipLoop.Heartbeat -> AnimFrame(scale = 1f + 0.07f * heartbeat(phase))
+            ClipLoop.Sway -> AnimFrame(dx = 0.04f * wave)
+            ClipLoop.Orbit -> AnimFrame(
+                dx = 0.025f * kotlin.math.sin(phase * 2.0 * Math.PI).toFloat(),
+                dy = 0.025f * (1f - kotlin.math.cos(phase * 2.0 * Math.PI).toFloat())
+            )
+            ClipLoop.Rotate -> AnimFrame(tilt = 360f * phase)
         }
         return AnimFrame(
             alpha = arriving.alpha * leavingNow.alpha * looping.alpha,
@@ -416,4 +488,44 @@ object ClipAnimation {
     }
 
     private fun easeOut(t: Float): Float = 1f - (1f - t) * (1f - t) * (1f - t)
+
+    /** Past 1 and back, ending exactly on 1: a landing. */
+    internal fun overshoot(t: Float): Float {
+        if (t >= 1f) return 1f
+        val s = 1.70158f * 1.3f
+        val u = t - 1f
+        return (1f + (s + 1f) * u * u * u + s * u * u).coerceAtLeast(0.01f)
+    }
+
+    /** Like [overshoot] but from 0 to 1 for a distance: lands a little past and comes back. */
+    private fun backOut(t: Float): Float {
+        if (t >= 1f) return 1f
+        val s = 1.70158f
+        val u = t - 1f
+        return 1f + (s + 1f) * u * u * u + s * u * u
+    }
+
+    /** Most of the way at once, then the last of it slowly: a whip. */
+    private fun expoOut(t: Float): Float = if (t >= 1f) 1f else 1f - Math.pow(2.0, -10.0 * t).toFloat()
+
+    /** Falls and settles with two shrinking bounces: 1 at the start, 0 at rest. */
+    private fun bounce(t: Float): Float {
+        if (t >= 1f) return 0f
+        val fall = 1f - t
+        return kotlin.math.abs(kotlin.math.cos(t * Math.PI * 2.5).toFloat()) * fall * fall
+    }
+
+    /** On and off a few times, getting steadier: 0 at the start, 1 at the end. */
+    private fun blink(t: Float): Float {
+        if (t >= 1f) return 1f
+        if (t <= 0f) return 0f
+        val on = (t * 7).toInt() % 2 == 1 || t > 0.75f
+        return if (on) 0.4f + 0.6f * t else 0.1f * t
+    }
+
+    /** Two quick beats then a rest, over one period; 0 at rest. */
+    private fun heartbeat(phase: Float): Float {
+        fun beat(at: Float) = kotlin.math.exp(-((phase - at) * (phase - at)) / 0.0018f)
+        return beat(0.12f) + 0.7f * beat(0.32f)
+    }
 }

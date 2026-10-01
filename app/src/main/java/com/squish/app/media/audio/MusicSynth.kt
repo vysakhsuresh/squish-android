@@ -107,10 +107,105 @@ object MusicSynth {
             listOf(60 to false, 57 to true, 53 to false, 55 to false), 12,
             kickPattern = "----------------", snarePattern = "----------------", hatPattern = "----------------",
             lead = BELL, echo = 0.45f
+        ),
+        Style(
+            "romantic-piano", "Romantic Piano", "Love · 76 BPM", 76,
+            listOf(53 to false, 57 to true, 58 to false, 60 to false), 16,
+            kickPattern = "----------------", snarePattern = "----------------", hatPattern = "----------------",
+            lead = BELL, echo = 0.4f
+        ),
+        Style(
+            "trap-energy", "Trap Energy", "Trap · 140 BPM", 140,
+            listOf(52 to true, 52 to true, 48 to false, 50 to false), 32,
+            kickPattern = "x-----x---x--x--", snarePattern = "--------x-------", hatPattern = "xxxxxxxxxxxxxxxx",
+            pad = false, lead = SQUARE, bassEighths = true, echo = 0.2f
+        ),
+        Style(
+            "funky-groove", "Funky Groove", "Funk · 104 BPM", 104,
+            listOf(57 to true, 62 to false, 57 to true, 64 to false), 24,
+            kickPattern = "x--x--x---x--x--", snarePattern = "----x--x----x---", hatPattern = "xxxxxxxxxxxxxxxx",
+            swing = 0.1f, pad = false, lead = PLUCK, bassEighths = true
+        ),
+        Style(
+            "dreamy-ambient", "Dreamy", "Ambient · 60 BPM", 60,
+            listOf(53 to false, 60 to false, 57 to true, 55 to false), 12,
+            kickPattern = "----------------", snarePattern = "----------------", hatPattern = "----------------",
+            lead = BELL, echo = 0.55f
+        ),
+        Style(
+            "summer-pop", "Summer Pop", "Pop · 124 BPM", 124,
+            listOf(60 to false, 55 to false, 57 to true, 53 to false), 32,
+            kickPattern = "x---x---x---x---", snarePattern = "----x-------x---", hatPattern = "--x---x---x---x-",
+            lead = PLUCK, bassEighths = true
+        ),
+        Style(
+            "dark-tension", "Dark Tension", "Thriller · 85 BPM", 85,
+            listOf(50 to true, 51 to false, 50 to true, 49 to false), 16,
+            kickPattern = "x-------x-------", snarePattern = "----------------", hatPattern = "--x---x---x---x-",
+            lead = NONE, echo = 0.3f
+        ),
+        Style(
+            "acoustic-morning", "Acoustic Morning", "Acoustic · 96 BPM", 96,
+            listOf(55 to false, 60 to false, 52 to true, 62 to false), 20,
+            kickPattern = "x-------x-------", snarePattern = "----x-------x---", hatPattern = "x-x-x-x-x-x-x-x-",
+            pad = false, lead = PLUCK, echo = 0.2f
+        ),
+        Style(
+            "retro-arcade", "Retro Arcade", "8-bit · 132 BPM", 132,
+            listOf(60 to false, 57 to true, 53 to false, 55 to false), 32,
+            kickPattern = "x---x---x---x---", snarePattern = "----x-------x---", hatPattern = "x-x-x-x-x-x-x-x-",
+            pad = false, lead = SQUARE, bassEighths = true, echo = 0.15f
+        ),
+        Style(
+            "jazz-cafe", "Jazz Café", "Jazz · 92 BPM", 92,
+            listOf(50 to true, 55 to false, 60 to false, 57 to true), 16,
+            kickPattern = "x-------x-------", snarePattern = "------x-------x-", hatPattern = "x--x-xx--x-xx--x",
+            swing = 0.3f, lead = BELL, crackle = true, echo = 0.25f
+        ),
+        Style(
+            "travel-vlog", "Travel Vlog", "Travel · 108 BPM", 108,
+            listOf(62 to false, 57 to false, 59 to true, 55 to false), 24,
+            kickPattern = "x---x---x---x---", snarePattern = "----x-------x---", hatPattern = "--x---x---x---x-",
+            lead = PLUCK, bassEighths = true, echo = 0.3f
+        ),
+        Style(
+            "inspiring", "Inspiring", "Uplifting · 96 BPM", 96,
+            listOf(60 to false, 55 to false, 57 to true, 53 to false), 20,
+            kickPattern = "x-------x-------", snarePattern = "----x-------x---", hatPattern = "--x---x---x---x-",
+            lead = BELL, echo = 0.4f
+        ),
+        Style(
+            "lofi-rain", "Rainy Study", "Study · 72 BPM", 72,
+            listOf(62 to true, 55 to false, 60 to false, 57 to true), 16,
+            kickPattern = "x-----x---x-----", snarePattern = "----x-------x---", hatPattern = "x-x-x-x-x-x-x-x-",
+            swing = 0.2f, lead = BELL, crackle = true, echo = 0.35f
+        ),
+        Style(
+            "party-bounce", "Party Bounce", "Party · 128 BPM", 128,
+            listOf(57 to true, 53 to false, 60 to false, 55 to false), 32,
+            kickPattern = "x---x---x---x---", snarePattern = "----x-------x---", hatPattern = "--x---x---x---x-",
+            lead = SQUARE, bassEighths = true, echo = 0.25f
+        ),
+        Style(
+            "heartfelt", "Heartfelt", "Emotional · 68 BPM", 68,
+            listOf(57 to true, 53 to false, 60 to false, 55 to false), 12,
+            kickPattern = "----------------", snarePattern = "----------------", hatPattern = "----------------",
+            lead = PLUCK, echo = 0.45f
         )
     )
 
     fun byId(id: String): Style? = styles.firstOrNull { it.id == id }
+
+    /** What the originals are browsed by: a mood, coarser than each track's own. */
+    val vibes = listOf("All", "Chill", "Upbeat", "Beats", "Cinematic", "Emotional")
+
+    fun vibeOf(style: Style): String = when (style.id) {
+        "lofi-sunset", "calm-keys", "dreamy-ambient", "lofi-rain", "jazz-cafe", "acoustic-morning" -> "Chill"
+        "street-beat", "trap-energy", "funky-groove", "retro-arcade" -> "Beats"
+        "epic-rise", "night-drive", "dark-tension", "inspiring" -> "Cinematic"
+        "romantic-piano", "heartfelt" -> "Emotional"
+        else -> "Upbeat"
+    }
 
     /** One sound effect: a moment of sound, made from nothing like the music. */
     class Effect(val id: String, val title: String, val hint: String, val seconds: Float)
@@ -125,7 +220,18 @@ object MusicSynth {
         Effect("sfx-pop", "Pop", "Funny · 0.3s", 0.3f),
         Effect("sfx-click", "Click", "UI · 0.15s", 0.15f),
         Effect("sfx-riser", "Riser", "Build-up · 2.5s", 2.5f),
-        Effect("sfx-ding", "Ding", "Notice · 1.5s", 1.5f)
+        Effect("sfx-ding", "Ding", "Notice · 1.5s", 1.5f),
+        Effect("sfx-swipe", "Swipe", "Transition · 0.4s", 0.4f),
+        Effect("sfx-boom", "Boom", "Impact · 1.4s", 1.4f),
+        Effect("sfx-glitch", "Glitch", "Digital · 0.6s", 0.6f),
+        Effect("sfx-shutter", "Camera shutter", "Photo · 0.35s", 0.35f),
+        Effect("sfx-boing", "Boing", "Funny · 0.7s", 0.7f),
+        Effect("sfx-chime", "Chime", "Notice · 1.2s", 1.2f),
+        Effect("sfx-heartbeat", "Heartbeat", "Tension · 1.1s", 1.1f),
+        Effect("sfx-typewriter", "Typewriter", "Text · 1.2s", 1.2f),
+        Effect("sfx-drumroll", "Drum roll", "Build-up · 1.8s", 1.8f),
+        Effect("sfx-tada", "Ta-da", "Reveal · 1.6s", 1.6f),
+        Effect("sfx-zap", "Zap", "Game · 0.4s", 0.4f)
     )
 
     fun effectById(id: String): Effect? = effects.firstOrNull { it.id == id }
@@ -141,9 +247,193 @@ object MusicSynth {
             "sfx-pop" -> pop(left, right)
             "sfx-click" -> click(left, right, rng)
             "sfx-riser" -> riser(left, right, rng)
+            "sfx-swipe" -> whoosh(left, right, rng)
+            "sfx-boom" -> boom(left, right, rng)
+            "sfx-glitch" -> glitch(left, right, rng)
+            "sfx-shutter" -> shutter(left, right, rng)
+            "sfx-boing" -> boing(left, right)
+            "sfx-chime" -> chime(left, right)
+            "sfx-heartbeat" -> heartbeatThumps(left, right)
+            "sfx-typewriter" -> typewriter(left, right, rng)
+            "sfx-drumroll" -> drumroll(left, right, rng)
+            "sfx-tada" -> tada(left, right)
+            "sfx-zap" -> zap(left, right)
             else -> ding(left, right)
         }
         write(out, left, right)
+    }
+
+    /** A deep hit: a sub tone dropping in pitch, a burst of low noise on top. */
+    private fun boom(l: FloatArray, r: FloatArray, rng: Random) {
+        var phase = 0.0
+        var lp = 0.0
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            val f = 38 + 90 * exp(-x * 12)
+            phase += 2 * PI * f / SAMPLE_RATE
+            lp += ((rng.nextFloat() * 2 - 1) - lp) * 0.05
+            val v = sin(phase) * exp(-x * 2.6) + lp * 1.6 * exp(-x * 9)
+            l[i] = (v * minOf(1.0, x * 500)).toFloat()
+            r[i] = l[i]
+        }
+    }
+
+    /** Short bursts of crushed tone and noise, jumping between pitches. */
+    private fun glitch(l: FloatArray, r: FloatArray, rng: Random) {
+        val chunk = SAMPLE_RATE / 25
+        var hz = 400.0
+        var hold = 0f
+        for (i in l.indices) {
+            if (i % chunk == 0) hz = 150.0 + rng.nextInt(1400)
+            val on = (i / chunk) % 3 != 2
+            if (i % 6 == 0) hold = if (rng.nextInt(4) == 0) rng.nextFloat() * 2 - 1 else (if ((i * hz / SAMPLE_RATE) % 1.0 < 0.5) 0.8f else -0.8f)
+            val v = if (on) hold * 0.6f else 0f
+            l[i] = v
+            r[i] = if ((i / chunk) % 2 == 0) v else -v
+        }
+    }
+
+    /** Two clicks a breath apart with a slap of noise: a mirror flipping. */
+    private fun shutter(l: FloatArray, r: FloatArray, rng: Random) {
+        var prev = 0f
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            val noise = rng.nextFloat() * 2 - 1
+            val hp = noise - prev
+            prev = noise
+            val first = if (x < 0.06) exp(-x * 90) else 0.0
+            val second = if (x >= 0.14) exp(-(x - 0.14) * 70) else 0.0
+            val v = hp * (first * 0.9 + second * 0.7) + (if (x < 0.002 || (x >= 0.14 && x < 0.142)) 0.6 else 0.0)
+            l[i] = v.toFloat()
+            r[i] = v.toFloat()
+        }
+    }
+
+    /** A spring: a tone wobbling in pitch as it dies away. */
+    private fun boing(l: FloatArray, r: FloatArray) {
+        var phase = 0.0
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            val f = 180 + 120 * sin(2 * PI * 9 * x) * exp(-x * 3) + 60 * exp(-x * 8)
+            phase += 2 * PI * f / SAMPLE_RATE
+            l[i] = (sin(phase) * exp(-x * 4.5) * minOf(1.0, x * 300) * 0.8).toFloat()
+            r[i] = l[i]
+        }
+    }
+
+    /** Two bell notes a fifth apart, the second answering the first. */
+    private fun chime(l: FloatArray, r: FloatArray) {
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            fun note(hz: Double, at: Double): Double {
+                if (x < at) return 0.0
+                val t = x - at
+                return (sin(2 * PI * hz * t) + 0.3 * sin(2 * PI * hz * 2.76 * t) * exp(-t * 6)) * exp(-t * 3.5) * minOf(1.0, t * 600)
+            }
+            val v = note(1046.5, 0.0) + note(1568.0, 0.16)
+            l[i] = (v * 0.4).toFloat()
+            r[i] = (v * 0.4).toFloat()
+        }
+    }
+
+    /** Lub-dub: two soft, low thumps. */
+    private fun heartbeatThumps(l: FloatArray, r: FloatArray) {
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            fun thump(at: Double, level: Double): Double {
+                if (x < at) return 0.0
+                val t = x - at
+                return sin(2 * PI * (55 + 30 * exp(-t * 30)) * t) * exp(-t * 18) * level
+            }
+            val v = thump(0.0, 1.0) + thump(0.22, 0.75)
+            l[i] = v.toFloat()
+            r[i] = v.toFloat()
+        }
+    }
+
+    /** Keys struck unevenly, and the bell at the end of the line. */
+    private fun typewriter(l: FloatArray, r: FloatArray, rng: Random) {
+        val n = l.size
+        var t = 0.03
+        while (t < 0.9) {
+            val start = (t * SAMPLE_RATE).toInt()
+            var prev = 0f
+            for (k in 0 until (0.03 * SAMPLE_RATE).toInt()) {
+                if (start + k >= n) break
+                val x = k.toDouble() / SAMPLE_RATE
+                val noise = rng.nextFloat() * 2 - 1
+                val hp = noise - prev
+                prev = noise
+                val v = (hp * 0.6 + sin(2 * PI * 1800 * x) * 0.3) * exp(-x * 160)
+                l[start + k] += v.toFloat()
+                r[start + k] += (v * 0.8).toFloat()
+            }
+            t += 0.07 + rng.nextDouble() * 0.06
+        }
+        val bellAt = (0.95 * SAMPLE_RATE).toInt()
+        for (k in 0 until n - bellAt) {
+            val x = k.toDouble() / SAMPLE_RATE
+            val v = sin(2 * PI * 2100 * x) * exp(-x * 9) * 0.35
+            l[bellAt + k] += v.toFloat()
+            r[bellAt + k] += v.toFloat()
+        }
+    }
+
+    /** A snare rolling faster and louder, then a crash on the last moment. */
+    private fun drumroll(l: FloatArray, r: FloatArray, rng: Random) {
+        val n = l.size
+        val total = n.toDouble() / SAMPLE_RATE
+        var t = 0.0
+        while (t < total - 0.25) {
+            val progress = t / total
+            snare(l, r, t, rng)
+            t += 0.07 - 0.035 * progress
+        }
+        val crashAt = ((total - 0.25) * SAMPLE_RATE).toInt()
+        var prev = 0f
+        for (k in 0 until n - crashAt) {
+            val x = k.toDouble() / SAMPLE_RATE
+            val noise = rng.nextFloat() * 2 - 1
+            val hp = noise - prev
+            prev = noise
+            l[crashAt + k] += (hp * exp(-x * 6) * 0.8).toFloat()
+            r[crashAt + k] += (hp * exp(-x * 6) * 0.8).toFloat()
+        }
+        // A crescendo: the roll's early hits brought down.
+        for (i in 0 until crashAt.coerceAtMost(n)) {
+            val g = (0.35 + 0.65 * i.toDouble() / crashAt).toFloat()
+            l[i] *= g
+            r[i] *= g
+        }
+    }
+
+    /** Two quick notes, then a bright major chord held. */
+    private fun tada(l: FloatArray, r: FloatArray) {
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            fun tone(hz: Double, at: Double, decay: Double): Double {
+                if (x < at) return 0.0
+                val t = x - at
+                val saw = 2 * ((t * hz) % 1.0) - 1
+                return (sin(2 * PI * hz * t) * 0.7 + saw * 0.15) * exp(-t * decay) * minOf(1.0, t * 400)
+            }
+            val v = tone(392.0, 0.0, 9.0) + tone(523.25, 0.12, 2.2) + tone(659.25, 0.12, 2.2) + tone(783.99, 0.12, 2.2)
+            l[i] = (v * 0.3).toFloat()
+            r[i] = (v * 0.3).toFloat()
+        }
+    }
+
+    /** A laser: a bright tone diving down in pitch. */
+    private fun zap(l: FloatArray, r: FloatArray) {
+        var phase = 0.0
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            val f = 200 + 2200 * exp(-x * 14)
+            phase += 2 * PI * f / SAMPLE_RATE
+            val sq = if (sin(phase) >= 0) 1.0 else -1.0
+            l[i] = (sq * 0.35 * exp(-x * 7)).toFloat()
+            r[i] = l[i]
+        }
     }
 
     /** Noise through a low-pass whose cutoff sweeps up and back: air moving past. */

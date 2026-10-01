@@ -35,18 +35,47 @@ object OnlineMusic {
             } ?: "Creative Commons"
     }
 
-    /** Up to [rows] tracks for [query]; an empty query gives popular ones. */
-    suspend fun search(context: Context, query: String, rows: Int = 20): List<Track> {
+    /**
+     * A style to browse by: the subjects the Archive files that kind of music
+     * under. Ours, not typed, so they go into the query as they are.
+     */
+    enum class Genre(val label: String, val subjects: String) {
+        Popular("Popular", DEFAULT_SUBJECTS),
+        LoFi("Lo-fi", "lofi OR \"lo-fi\" OR chillhop"),
+        Chill("Chill", "chill OR chillout OR downtempo"),
+        Happy("Happy", "happy OR upbeat OR cheerful OR fun"),
+        Cinematic("Cinematic", "cinematic OR soundtrack OR orchestral OR epic"),
+        Piano("Piano", "piano"),
+        Acoustic("Acoustic", "acoustic OR guitar OR folk"),
+        Electronic("Electronic", "electronic OR electronica OR synth OR edm"),
+        HipHop("Hip-hop", "\"hip hop\" OR hiphop OR beats"),
+        Rock("Rock", "rock OR indie"),
+        Jazz("Jazz", "jazz OR swing OR bossa"),
+        Ambient("Ambient", "ambient OR atmospheric OR drone"),
+        Classical("Classical", "classical OR baroque OR strings"),
+        Funk("Funk", "funk OR soul OR disco"),
+        World("World", "world OR latin OR reggae OR african OR indian")
+    }
+
+    /**
+     * Up to [rows] tracks for [query] in [genre], page [page] (from 1); an
+     * empty query gives the genre's most played. Each page is its own slice
+     * of the Archive's list, so "Load more" never repeats a track.
+     */
+    suspend fun search(context: Context, query: String, rows: Int = 24, genre: Genre = Genre.Popular, page: Int = 1): List<Track> {
         val terms = query.trim()
         val q = buildString {
             append("(collection:netlabels OR collection:opensource_audio) AND mediatype:audio AND licenseurl:*creativecommons*")
-            // Opened with nothing typed, music worth putting under a video rather
-            // than whatever was downloaded most.
-            append(" AND (").append(Online.searchTerms(terms) ?: DEFAULT_QUERY).append(")")
+            append(" AND NOT licenseurl:*-nd* AND NOT licenseurl:*-nc*")
+            append(" AND subject:(").append(genre.subjects).append(")")
+            // Music to cut to: no talks, sample packs or wartime marches, which the
+            // same subjects also find (a "world" search led with a lecture series).
+            append(" AND NOT subject:($NOT_MUSIC) AND NOT title:($NOT_MUSIC)")
+            Online.searchTerms(terms)?.let { append(" AND (").append(it).append(")") }
         }
         val url = "https://archive.org/advancedsearch.php?q=" + enc(q) +
             "&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=licenseurl&sort[]=downloads+desc" +
-            "&rows=${rows * 3}&page=1&output=json"
+            "&rows=$rows&page=${page.coerceAtLeast(1)}&output=json"
         val docs = JSONObject(Online.get(context, url)).getJSONObject("response").getJSONArray("docs")
         return (0 until docs.length()).mapNotNull { i ->
             val d = docs.getJSONObject(i)
@@ -57,7 +86,7 @@ object OnlineMusic {
                 artist = d.opt("creator")?.let { c -> if (c is org.json.JSONArray) c.optString(0) else c.toString() }?.takeIf { it.isNotBlank() },
                 licenseUrl = d.optString("licenseurl").takeIf { it.isNotBlank() }
             )
-        }.filter { it.usableInAVideo }.take(rows)
+        }.filter { it.usableInAVideo }
     }
 
     /** The URL of the item's first MP3 - enough to listen to it streamed. */
@@ -83,7 +112,11 @@ object OnlineMusic {
 
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
-    private const val DEFAULT_QUERY = "subject:(instrumental OR ambient OR lofi OR piano OR acoustic OR electronic)"
+    private const val DEFAULT_SUBJECTS = "instrumental OR ambient OR lofi OR piano OR acoustic OR electronic"
+    private const val NOT_MUSIC = "lecture OR lectures OR sermon OR speech OR podcast OR audiobook OR interview OR " +
+        // Single words or quoted phrases only: two bare words here (hindi audios)
+        // quietly turned the whole exclusion off on the Archive's side.
+        "samples OR \"sample pack\" OR notes OR nazi OR propaganda OR military OR war OR discourse OR osho OR rajneesh"
 
     const val DIR = "music/online"
 }
