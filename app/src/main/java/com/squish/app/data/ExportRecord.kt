@@ -40,7 +40,13 @@ data class ExportRecord(
      * the moment it was made, "29 Sep, 11:47 PM" (ProjectRules.displayTitle).
      */
     val shownTitle: String
-        get() = if (named) title else ProjectRules.displayTitle(title, createdAtMillis, prefix = null)
+        get() = when {
+            // Extract audio keeps the video's own title ("Video · 26 Sep"),
+            // which read as a video in a list where it plays as a wave.
+            isAudio && title.startsWith(VIDEO_PREFIX) -> "Sound · " + title.removePrefix(VIDEO_PREFIX)
+            named -> title
+            else -> ProjectRules.displayTitle(title, createdAtMillis, prefix = null)
+        }
 
     /**
      * The one copy to open, play and share: the gallery's when it was made,
@@ -53,3 +59,5 @@ data class ExportRecord(
     /** Whether the private copy is the one to open. */
     val onPrivateCopy: Boolean get() = galleryUri == null
 }
+
+private const val VIDEO_PREFIX = "Video · "

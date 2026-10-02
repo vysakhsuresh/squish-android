@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -376,10 +377,11 @@ private fun LibraryRow(
                     )
                 }
             } else {
+                // A sound export has no picture: a note, not a film that never loads.
                 Icon(
-                    Icons.Filled.Movie,
+                    if (record.isAudio) Icons.Filled.MusicNote else Icons.Filled.Movie,
                     contentDescription = null,
-                    tint = SquishColors.TextMuted,
+                    tint = if (record.isAudio) SquishColors.Cyan else SquishColors.TextMuted,
                     modifier = Modifier.size(20.dp)
                 )
             }
