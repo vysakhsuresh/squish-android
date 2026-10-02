@@ -92,7 +92,7 @@ fun SquishNavHost(
         // was already running - which stays underneath, its draft saved as any
         // edit's is on leaving.
         val id = ProjectRules.newId()
-        withContext(Dispatchers.IO) { autosave.stageStart(id, listOf(open.uri), copyIn = !open.persisted) }
+        withContext(Dispatchers.IO) { autosave.stageStart(id, listOf(open.uri), copyIn = !open.persisted, openedFromOutside = true) }
         navController.navigate(Destination.Editor.buildRoute(id))
     }
 

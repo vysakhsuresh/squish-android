@@ -136,7 +136,9 @@ fun HomeScreen(
     val undoOffer by viewModel.undoOffer.collectAsState()
     // Re-read on every return to the dashboard, so an edit left five minutes ago
     // is here rather than whatever the list happened to hold at launch.
-    LaunchedEffect(Unit) { viewModel.refreshDrafts() }
+    // And when an editor closing changed the list after that (ProjectsChanged).
+    val projectsChanged by com.squish.app.data.ProjectsChanged.count.collectAsState()
+    LaunchedEffect(projectsChanged) { viewModel.refreshDrafts() }
     val context = LocalContext.current
 
     // What is picked lands as one project, the picker's order kept.

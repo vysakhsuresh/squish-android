@@ -268,11 +268,12 @@ class ProjectAutosave(context: Context) {
      * [copyIn] says they were handed over with a grant that ends with this
      * process, so the editor copies them into its own storage first.
      */
-    fun stageStart(slot: String, uris: List<Uri>, copyIn: Boolean = false) {
+    fun stageStart(slot: String, uris: List<Uri>, copyIn: Boolean = false, openedFromOutside: Boolean = false) {
         synchronized(lock) {
             val json = JSONObject().apply {
                 put("uris", JSONArray().apply { uris.forEach { put(it.toString()) } })
                 put("copyIn", copyIn)
+                put("openedFromOutside", openedFromOutside)
             }
             runCatching { DraftFiles.writeAtomically(File(dir, "$slot.start.tmp"), startFile(slot), json.toString().toByteArray()) }
         }
@@ -287,7 +288,8 @@ class ProjectAutosave(context: Context) {
             val array = json.optJSONArray("uris") ?: return null
             ProjectStart(
                 uris = (0 until array.length()).mapNotNull { array.optString(it).takeIf { s -> s.isNotBlank() } }.map(Uri::parse),
-                copyIn = json.optBoolean("copyIn", false)
+                copyIn = json.optBoolean("copyIn", false),
+                openedFromOutside = json.optBoolean("openedFromOutside", false)
             )
         }.getOrNull()
     }
@@ -1612,7 +1614,12 @@ data class ProjectSnapshot(
  * What a project not yet saved is to be made from: the files picked for it,
  * in order, and whether they must be copied in first (ProjectAutosave.stageStart).
  */
-data class ProjectStart(val uris: List<Uri>, val copyIn: Boolean = false)
+/**
+ * The files a new project starts from. [openedFromOutside]: handed over by
+ * "Open with" or a share rather than made on the dashboard - left without a
+ * single edit, such a project is not kept (EditorViewModel.onCleared).
+ */
+data class ProjectStart(val uris: List<Uri>, val copyIn: Boolean = false, val openedFromOutside: Boolean = false)
 
 /**
  * A line's style as JSON: the fields of [TextStyleSpec], flat, beside the

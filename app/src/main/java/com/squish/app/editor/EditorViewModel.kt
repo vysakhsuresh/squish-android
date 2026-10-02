@@ -77,6 +77,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     /** The project this editor is open on, once [open] has been called. */
     private var openedId: String? = null
+
+    /** Opened by "Open with" or a share (ProjectStart.openedFromOutside); see onCleared. */
+    private var openedJustToLook = false
     private var proxyJob: Job? = null
 
     /**
@@ -224,6 +227,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 _state.update { it.copy(isLoadingSource = false, failure = SquishError.FileUnreadable()) }
                 return@launch
             }
+            openedJustToLook = start.openedFromOutside
             loadFresh(start)
         }
     }
@@ -1435,6 +1439,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         // write handed to another thread has no guarantee of running before the
         // process that asked for it is killed.
         saveNow()
+        // Opened from another app or a file and left without one edit: a look,
+        // not a project. Kept, every video opened to check it - an export, a
+        // clip from the gallery - stayed on the grid as a project nobody made.
+        // To the bin, not deleted, so it can still be brought back.
+        if (openedJustToLook && !history.canUndo && _state.value.projectName == null) {
+            runCatching { autosave.delete(_state.value.projectId) }
+            com.squish.app.data.ProjectsChanged.bump()
+        }
         // The encode died with the scope; the notification must not outlive it.
         if (_state.value.isExporting) ExportService.end(getApplication())
         // The collector above is cancelled with the scope, so a screen cleared
