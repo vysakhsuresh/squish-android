@@ -22,4 +22,4 @@ CP="$COMPILER;$STD;$REFLECT;$SCRIPT;$DAEMON;$TROVE;$ANNOT;$COROUTINES"
 # library (VoiceEffectsChecks against media3-common).
 LIB="$STD${EXTRA_CP:+;$EXTRA_CP}"
 "$JAVA" -cp "$CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib -classpath "$LIB" -d "$OUTW" "$@" 2>&1 | grep -v "^Picked up" || true
-"$JAVA" -cp "$OUTW;$LIB" "${SUITE}Kt" | grep -v "^Picked up"
+"$JAVA" -cp "$OUTW;$LIB" "${SUITE}Kt" $SUITE_ARGS | grep -v "^Picked up"
