@@ -446,6 +446,18 @@ private fun SoundWave(
     }
 
     val shown = wave
+    // Decoded and silent throughout - a photo's rendered track, a muted export:
+    // said in words. A row of floor-height bars read as a wave still loading.
+    if (shown != null && shown.peaks.isNotEmpty() && shown.peaks.all { it == 0f }) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text(
+                "This video is silent - there is no sound to keep.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = SquishColors.TextSecondary
+            )
+        }
+        return
+    }
     if (shown == null || shown.peaks.isEmpty()) {
         // Still decoding, or there is no sound to draw.
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
