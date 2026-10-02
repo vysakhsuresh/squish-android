@@ -694,3 +694,12 @@ Not yet seen: the voices by ear, the new filters and templates on a file,
 - Delete, Undo (back, selected) and Redo on a sticker.
 - Tool sessions: a dashboard tool tile reopens its last session on purpose;
   four test Stitch sessions left from the picker were removed by name.
+- Freeze cut a 3 s still in at the playhead and selected it; Reverse showed
+  "Reversing … 9%" with Cancel and landed the backwards shot (277 frames,
+  even 33.33 ms); Reverse again put the original back at once. Copy and
+  Paste attributes carried a Polaroid look from a video shot to a photo.
+- **Every base shot was measured as the edit's shape.** With an effect chain
+  the player reports 0x0, so a portrait photo in a 4:3 edit had its Crop
+  window over the black bars beside it. The engine now reads each file's
+  shape (`PreviewEngine.fileAspect`). Seen: the window hugs the photo, 1:1
+  is a square inside it, and an export with that crop matches the preview.
