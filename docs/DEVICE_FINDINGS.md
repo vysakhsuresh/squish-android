@@ -626,3 +626,21 @@ Not yet seen: the voices by ear, the new filters and templates on a file,
   "On the video" with its sliders.
 - Built, not seen (the phone left): a line or sticker picked on the strip
   away from the playhead brings the playhead to it, past its arrival.
+
+## Seen on the phone, 3 October (after midnight)
+
+- A photo overlay landed at the playhead, selected with its box; dragged,
+  resized by its corner (which scales and turns, as CapCut's does), and one
+  Undo took the resize back. Opacity 52% shows live and in the file.
+- Exported with the overlay at 52% bottom-left: the file has it at the same
+  place and size as the preview, to within a percent of the frame.
+- **Rotate on an overlay, against an export** (B11's open question): a quarter
+  clockwise on screen and the same way in the file, at the same place.
+- An edit of three files with a cut, a delete, a Dissolve then Dip to black,
+  and a Shake: 444 evenly spaced frames at 30 fps, 14.8 s, sound throughout.
+- Fixed and seen: two join badges lay on top of each other across a narrow
+  shot (one shows now); a title tile clipped "Day 1 in Goa" (samples now
+  shrink to fit, FitText); picking a transition or adding an effect now plays
+  it once; the transition panel's icon was the crop glyph; an effect added
+  from the library landed on a fifth row out of sight - the strip now
+  scrolls a just-added effect, sound or line into view.
