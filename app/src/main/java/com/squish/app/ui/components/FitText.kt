@@ -24,7 +24,8 @@ fun FitText(
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
     textAlign: TextAlign = TextAlign.Center,
-    minScale: Float = 0.6f
+    minScale: Float = 0.6f,
+    overflow: androidx.compose.ui.text.style.TextOverflow = androidx.compose.ui.text.style.TextOverflow.Clip
 ) {
     var scale by remember(text, style) { mutableFloatStateOf(1f) }
     Text(
@@ -34,7 +35,8 @@ fun FitText(
         color = color,
         maxLines = 1,
         softWrap = false,
+        overflow = overflow,
         textAlign = textAlign,
-        onTextLayout = { if (it.hasVisualOverflow && scale > minScale) scale = (scale - 0.06f).coerceAtLeast(minScale) }
+        onTextLayout = { if ((it.hasVisualOverflow || (it.lineCount > 0 && it.isLineEllipsized(0))) && scale > minScale) scale = (scale - 0.06f).coerceAtLeast(minScale) }
     )
 }

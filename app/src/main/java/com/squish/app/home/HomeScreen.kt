@@ -649,11 +649,14 @@ private fun ProjectCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
+                // Shrunk a little before it is cut: "Edit · 2 Oct copy 1" read
+                // "Edit · 2 Oct co…", losing the one word that told the copy apart.
+                com.squish.app.ui.components.FitText(
                     project.title,
                     style = MaterialTheme.typography.bodyMedium,
                     color = SquishColors.TextPrimary,
-                    maxLines = 1,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+                    minScale = 0.75f,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
