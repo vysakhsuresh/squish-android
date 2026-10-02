@@ -680,3 +680,17 @@ Not yet seen: the voices by ear, the new filters and templates on a file,
 - Tool sessions screen: headed "Unfinished" over sessions marked Exported
   (now "Tool sessions"); deleted projects had blank thumbnails (covers now);
   "deleted … ago" was cut off (the save time dropped, and two lines).
+- The phone on its side: two panes, the picture carried across, plays with
+  no "Detaching surface" stall; back upright the same. (Rotation settings
+  were restored afterwards.)
+- Settings' "What's inside" said sixteen looks; it now counts the app's own
+  lists (49 filters, 21 effects, 24 transitions, 14 templates).
+- Stitch rows were the same name twice ("Video · 29 Sep"); each now shows a
+  frame with its number on the corner, and "0:08 · at 0:00".
+- Extract audio on a video with no sound (a GIF-made WhatsApp clip, and
+  exports of it) drew floor-height bars that read as loading; it now says
+  the video is silent. A video with sound still draws its wave. The done
+  and library screens of a sound export show its wave, not a lone note.
+- Delete, Undo (back, selected) and Redo on a sticker.
+- Tool sessions: a dashboard tool tile reopens its last session on purpose;
+  four test Stitch sessions left from the picker were removed by name.
