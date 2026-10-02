@@ -144,7 +144,11 @@ fun SoundMusicPanel(
 fun SoundVoicePanel(state: EditorUiState, viewModel: EditorViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         RecordPanel(state, viewModel)
-        CameraSoundPanel(state, viewModel)
+        // Only with footage on the main track: a photo is rendered to a video
+        // file with a silent track, so an edit of photos read as having camera
+        // sound and offered a switch, a level and "Even out volume" for a
+        // sound that is not there (seen on the phone).
+        if (state.videoClips.any { it.isMain && it.isFootage }) CameraSoundPanel(state, viewModel)
     }
 }
 

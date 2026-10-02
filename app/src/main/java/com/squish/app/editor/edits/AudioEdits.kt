@@ -558,12 +558,20 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     /** The take onto the sound rows, at the moment it started, as one step. */
     private fun landTake(take: VoiceRecorder.Take, rec: RecordingState) {
         val uri = Uri.fromFile(take.file)
+        // No further than the end of the picture: the take is stopped a few
+        // ticks after the picture is, and the file closed after that, so one
+        // left to run to the end came out over a second longer than the edit and
+        // stretched it (seen on the phone: 11.5 s became 12.9 s). The rest of the
+        // file is kept - the end handle brings it back.
+        val pictureEnd = _state.value.videoClips.filter { it.isMain }.maxOfOrNull { it.timelineEndMs } ?: 0L
+        val room = (pictureEnd - rec.startMs).takeIf { pictureEnd > rec.startMs }
+        val kept = if (room != null && room < take.durationMs) room else take.durationMs
         val clip = Clip(
             kind = ClipKind.Audio,
             uri = uri,
             label = "Voiceover",
             sourceInMs = 0L,
-            sourceOutMs = take.durationMs,
+            sourceOutMs = kept,
             timelineStartMs = rec.startMs,
             sourceDurationMs = take.durationMs
         )
