@@ -577,5 +577,27 @@ New options
   bottom card at rest; it has its own strip now (ed8b157).
 - The split hint said 'end' at the start of a clip; fixed (c6d7a94).
 - No crash in the log; the editor at about 280 MB.
+- The timeline started half a screen in: the strip was always centred on the
+  playhead, so at 0:00 the first clip began in the middle. The window now
+  clamps at the start (`TimelineWindow.startClamped`, checked in
+  `WindowChecks.kt`): 0:00 sits at the left edge and the playhead walks right
+  until it reaches the middle. Seen on a 3 s photo, a 4-clip edit and at deep
+  zoom.
+- Purple filmstrip blocks after a split or a zoom: a tile not yet decoded drew
+  as the clip's colour. It now borrows the nearest decoded frame
+  (`FilmstripLoader.nearest`); not reproduced over several splits since.
+- Effects switched off for the session after two player errors; only a frame
+  processor fault drops the chain now, and it is re-armed after 15 s.
+- A new line of text or a sticker lands clear of the lines showing with it
+  (`TextPlacementRules.freeY`), and the strip scrolls its row into view.
+- Opening a video with "Open with" just to look no longer leaves a project
+  behind when nothing was changed.
+- A voiceover stops at the picture's end; the camera sound panel is hidden
+  when the main track holds only photos.
+- The transition sheet's Camera tab shows the new tiles (Push right/up/down,
+  Whip, Wipe up/down, Zoom out, Pop in) previewed on the shot.
+- Mask kept after a heavy session; a mask added while paused shows at once.
+  Grid chip lighting correct.
 Not yet seen: the voices by ear, the new filters and templates on a file,
-Grid and Split chip lighting, 48dp targets on every sheet.
+48dp targets on every sheet. Left on the phone: the test project
+"Edit · 2 Oct" (5 clips) - delete it at the next session.
