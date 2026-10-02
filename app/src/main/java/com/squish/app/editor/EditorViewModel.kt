@@ -47,6 +47,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -431,8 +433,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
         val mine = _state.value.transportRequest?.nonce
         showJob?.cancel()
+        val endMs = _state.value.playheadMs + forMs.coerceAtLeast(0L)
         showJob = viewModelScope.launch {
-            delay(forMs.coerceAtLeast(0L))
+            // Stopped by where the playhead is, not by a timer: the seek and the
+            // start take half a second of their own, and timed from the tap a
+            // 0.4 s arrival was stopped a quarter of the way through.
+            withTimeoutOrNull(forMs + SHOW_START_SLACK_MS) {
+                // Just past the end, not anywhere past it: until the seek lands the
+                // preview still reports where the playhead was, which may be later.
+                _state.first { it.playheadMs in endMs..endMs + 1_500L || it.transportRequest?.nonce != mine }
+            }
             _state.update {
                 if (it.transportRequest?.nonce != mine) it
                 else it.copy(transportRequest = TransportRequest(play = false, nonce = (mine ?: 0L) + 1))
@@ -1493,5 +1503,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private companion object {
         val AUTOSAVE_INTERVAL = 1_500.milliseconds
+        /** Allowed on top of a shown moment for the seek and the start. */
+        const val SHOW_START_SLACK_MS = 2_500L
     }
 }

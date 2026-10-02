@@ -1165,21 +1165,32 @@ fun TextAnimationPanel(item: TextOverlayItem, viewModel: EditorViewModel) {
     val seconds = { ms: Float -> "%.1f s".format(ms / 1000f) }
     PanelSurface(accent = SquishColors.Amber) {
         PanelHeading("Animation", "In, out, and while it is there", icon = Icons.Filled.Animation, accent = SquishColors.Amber)
-        ChipRow("In", motions, item.motion, { it.label }) { m -> restyle { it.copy(motion = m) } }
+        ChipRow("In", motions, item.motion, { it.label }) { m ->
+            restyle { it.copy(motion = m) }
+            // Shown once: a paused line is drawn at rest, so a picked arrival was never seen.
+            if (m != TextMotion.None) viewModel.showMoment(item.startMs, minOf(item.motionInMs, (item.endMs - item.startMs) / 2) + 400L)
+        }
         if (item.motion != TextMotion.None) {
             TextSlider(
                 "In takes", item.motionInMs.toFloat(),
                 TextAnimation.MIN_MOTION_MS.toFloat()..TextAnimation.MAX_MOTION_MS.toFloat(), seconds, done
             ) { v -> drag { it.copy(motionInMs = v.roundToInt().toLong()) } }
         }
-        ChipRow("Out", TextExit.entries, item.motionOut, { it.label }) { m -> restyle { it.copy(motionOut = m) } }
+        ChipRow("Out", TextExit.entries, item.motionOut, { it.label }) { m ->
+            restyle { it.copy(motionOut = m) }
+            val from = (item.endMs - minOf(item.motionOutMs, (item.endMs - item.startMs) / 2) - 400L).coerceAtLeast(item.startMs)
+            if (m != TextExit.None) viewModel.showMoment(from, (item.endMs - 40L - from).coerceAtLeast(0L))
+        }
         if (item.motionOut != TextExit.None) {
             TextSlider(
                 "Out takes", item.motionOutMs.toFloat(),
                 TextAnimation.MIN_MOTION_MS.toFloat()..TextAnimation.MAX_MOTION_MS.toFloat(), seconds, done
             ) { v -> drag { it.copy(motionOutMs = v.roundToInt().toLong()) } }
         }
-        ChipRow("Loop", TextLoop.entries, item.loop, { it.label }) { m -> restyle { it.copy(loop = m) } }
+        ChipRow("Loop", TextLoop.entries, item.loop, { it.label }) { m ->
+            restyle { it.copy(loop = m) }
+            if (m != TextLoop.None) viewModel.showMoment(item.startMs, minOf(item.loopMs * 2, item.endMs - item.startMs - 40L))
+        }
         if (item.loop != TextLoop.None) {
             TextSlider(
                 "Every", item.loopMs.toFloat(),
