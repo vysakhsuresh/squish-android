@@ -51,7 +51,8 @@ internal fun Filmstrip(
     // redraws it again as the missing tiles land.
     val arrived = FilmstripLoader.arrivals.intValue
     val frames = remember(uri, times, arrived) {
-        times.map { FilmstripLoader.cached(uri, it) }
+        // A tile still on its way shows its nearest neighbour rather than nothing.
+        times.map { FilmstripLoader.cached(uri, it) ?: FilmstripLoader.nearest(uri, it) }
     }
 
     LaunchedEffect(uri, times) {

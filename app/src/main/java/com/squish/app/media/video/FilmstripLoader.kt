@@ -52,10 +52,48 @@ object FilmstripLoader {
         cache.get(FilmstripPlan.key(uri.toString(), tileTime(uri, timeMs)))
 
     /**
+     * The frame of [uri] decoded nearest [timeMs], for a tile whose own frame is
+     * still on its way. Drawn empty, a tile showed the lane's colour, and zoomed
+     * in - where every quarter screen of scrolling asks for a fresh set of
+     * times - a clip read as a bare purple block until the decoder caught up.
+     */
+    fun nearest(uri: Uri, timeMs: Long): Bitmap? {
+        val times = synchronized(decoded) { decoded[uri.toString()]?.let { java.util.TreeSet(it) } } ?: return null
+        val t = tileTime(uri, timeMs)
+        val below = times.headSet(t, true).descendingIterator()
+        val above = times.tailSet(t, false).iterator()
+        var lo = if (below.hasNext()) below.next() else null
+        var hi = if (above.hasNext()) above.next() else null
+        while (lo != null || hi != null) {
+            val pick = when {
+                lo == null -> hi!!
+                hi == null -> lo
+                t - lo <= hi - t -> lo
+                else -> hi
+            }
+            cache.get(FilmstripPlan.key(uri.toString(), pick))?.let { return it }
+            // Evicted since: the next nearest.
+            if (pick == lo) lo = if (below.hasNext()) below.next() else null
+            else hi = if (above.hasNext()) above.next() else null
+        }
+        return null
+    }
+
+    /** The times decoded for each file, so [nearest] can find a neighbour. */
+    private val decoded = HashMap<String, java.util.TreeSet<Long>>()
+
+    private fun noteDecoded(uri: Uri, timeMs: Long) {
+        synchronized(decoded) { decoded.getOrPut(uri.toString()) { java.util.TreeSet() }.add(timeMs) }
+    }
+
+    /**
      * A photo on an overlay row is one picture however long it runs, so every
      * tile of it is the same one, decoded once.
      */
-    private fun tileTime(uri: Uri, timeMs: Long): Long = if (StillClips.isStill(uri)) 0L else timeMs
+    // A photo on the main track too: it is rendered to a video file whose every
+    // frame is the same picture, and a tile per moment decoded it again and again.
+    private fun tileTime(uri: Uri, timeMs: Long): Long =
+        if (StillClips.isStill(uri) || com.squish.app.timeline.isRenderedStill(uri.toString())) 0L else timeMs
 
     /** Bumped on the main thread each time a thumbnail lands, so strips waiting on one redraw. */
     val arrivals = mutableIntStateOf(0)
@@ -120,6 +158,7 @@ object FilmstripLoader {
                 if (StillClips.isStill(uri)) {
                     StillClips.previewBitmap(context, uri, TILE_PX)?.let { picture ->
                         cache.put(key, picture)
+                        noteDecoded(uri, timeMs)
                         withContext(Dispatchers.Main) { arrivals.intValue++ }
                     }
                     continue
@@ -140,6 +179,7 @@ object FilmstripLoader {
                     )
                 }.getOrNull() ?: continue
                 cache.put(key, frame)
+                noteDecoded(uri, timeMs)
                 withContext(Dispatchers.Main) { arrivals.intValue++ }
             }
         } finally {
@@ -153,5 +193,8 @@ object FilmstripLoader {
     }
 
     /** Drops every thumbnail. Called when the editor lets go of its project. */
-    fun evictAll() = cache.clear()
+    fun evictAll() {
+        cache.clear()
+        synchronized(decoded) { decoded.clear() }
+    }
 }
