@@ -271,6 +271,7 @@ fun ExportedFile(
         cover = cover,
         meta = meta,
         isAudio = isAudio,
+        uri = uri,
         onPlay = { previewing = true }
     )
 
@@ -371,7 +372,15 @@ fun ExportedFile(
  * and not after a trip to the gallery.
  */
 @Composable
-private fun Cover(cover: Bitmap?, meta: VideoMeta?, isAudio: Boolean, onPlay: () -> Unit) {
+private fun Cover(cover: Bitmap?, meta: VideoMeta?, isAudio: Boolean, uri: Uri, onPlay: () -> Unit) {
+    // A sound's own shape where a picture would be, as Extract audio shows it
+    // before the cut: a note alone said nothing about what was saved.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var wave by remember(uri) { mutableStateOf<FloatArray?>(null) }
+    if (isAudio) LaunchedEffect(uri) {
+        val pcm = com.squish.app.media.audio.PcmDecoder.decodeMono(context, uri, maxDurationMs = 10 * 60_000L)
+        wave = pcm?.let { com.squish.app.media.audio.WaveformBuilder.buildBars(it, buckets = 90).peaks }
+    }
     val shape = when {
         isAudio -> 3.2f
         meta != null && meta.displayWidth > 0 && meta.displayHeight > 0 -> (meta.displayWidth.toFloat() / meta.displayHeight).coerceIn(0.5f, 2.2f)
@@ -399,6 +408,23 @@ private fun Cover(cover: Bitmap?, meta: VideoMeta?, isAudio: Boolean, onPlay: ()
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
+        } else if (isAudio && wave?.any { it > 0f } == true) {
+            val peaks = wave!!
+            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 16.dp)) {
+                val step = size.width / peaks.size
+                val mid = size.height / 2f
+                peaks.forEachIndexed { i, p ->
+                    val x = i * step + step / 2f
+                    val half = p.coerceIn(0.04f, 1f) * size.height * 0.46f
+                    drawLine(
+                        SquishColors.Cyan.copy(alpha = 0.55f),
+                        androidx.compose.ui.geometry.Offset(x, mid - half),
+                        androidx.compose.ui.geometry.Offset(x, mid + half),
+                        strokeWidth = step * 0.6f,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+                }
+            }
         } else if (isAudio) {
             Icon(
                 Icons.Filled.MusicNote,
