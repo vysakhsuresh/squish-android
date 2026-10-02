@@ -418,6 +418,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var showJob: Job? = null
 
     /**
+     * A join's transition, played once with a little either side. Read after
+     * the change: the incoming shot starts earlier by the overlap it brings.
+     */
+    fun showJoin(clipId: String) {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return
+        val length = if (clip.transitionIn.isActive) clip.transitionIn.durationMs else 0L
+        if (length <= 0L) return
+        val from = (clip.timelineStartMs - SHOW_AROUND_MS).coerceAtLeast(0L)
+        showMoment(from, clip.timelineStartMs + length + SHOW_AROUND_MS - from)
+    }
+
+    /**
      * Plays [forMs] from [fromMs] and stops: what a picked arrival, leaving or
      * loop looks like, shown once as CapCut shows it. Picked with the playhead
      * past the arrival, the picture did not change and the tap seemed to do
@@ -1505,5 +1517,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val AUTOSAVE_INTERVAL = 1_500.milliseconds
         /** Allowed on top of a shown moment for the seek and the start. */
         const val SHOW_START_SLACK_MS = 2_500L
+        /** Played before and after a shown transition, so the cut it smooths is seen. */
+        const val SHOW_AROUND_MS = 400L
     }
 }

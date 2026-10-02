@@ -102,7 +102,7 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
             PanelHeading(
                 if (clip.isOverlay) "Transition" else "Transition in",
                 if (current.isActive) "${current.type.label} · how $shotName arrives" else "How $shotName arrives",
-                icon = Icons.Filled.Transform,
+                icon = TransitionGlyph,
                 accent = accent
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
@@ -127,7 +127,11 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
                             outgoingFrame = outgoingFrame,
                             incomingFrame = incomingFrame,
                             modifier = Modifier.weight(1f),
-                            onClick = { viewModel.layers.setTransition(clip.id, type, current.durationMs) }
+                            onClick = {
+                                viewModel.layers.setTransition(clip.id, type, current.durationMs)
+                                // Shown once, as an arrival is: picked away from the join it changed nothing on screen.
+                                viewModel.showJoin(clip.id)
+                            }
                         )
                     }
                     repeat(4 - row.size) { Box(modifier = Modifier.weight(1f)) }
