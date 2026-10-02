@@ -403,6 +403,15 @@ fun EditorScreen(
             // With Select more on, a tap adds to the set or takes from it.
             if (state.selectingMore) viewModel.toggleSelected(id) else viewModel.selectClip(id)
             if (id != null && id != before && openTool?.levelZero == true) openToolName = null
+            // A line or sticker is edited on the picture, by its box: picked on the
+            // strip away from the playhead it was on no frame shown, and its box,
+            // its Edit and its Delete were nowhere. The playhead goes to it, past
+            // its arrival, so it stands there whole.
+            state.textOverlays.firstOrNull { it.id == id }?.let { line ->
+                if (!state.selectingMore && state.playheadMs !in line.startMs until line.endMs) {
+                    viewModel.seekTo((line.startMs + line.motionInMs).coerceAtMost(line.endMs - 1L).coerceAtLeast(line.startMs))
+                }
+            }
         }
     }
     // A clip taken hold of to be carried: selected without ever leaving the
