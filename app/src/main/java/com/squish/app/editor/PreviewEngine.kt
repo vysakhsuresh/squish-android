@@ -1196,7 +1196,32 @@ class PreviewEngine(private val context: Context) {
 
     /** The draw with [clip]'s own mirror, turn and crop, which clip it is, and the shape [s] has decoded. */
     private fun SurfaceDraw.turnedAs(clip: Clip, s: Surface): SurfaceDraw =
-        copy(mirrored = clip.mirrored, quarterTurns = clip.quarterTurns, crop = clip.crop, clipId = clip.id, aspect = s.videoAspect)
+        copy(mirrored = clip.mirrored, quarterTurns = clip.quarterTurns, crop = clip.crop, clipId = clip.id, aspect = s.videoAspect ?: fileAspect(clip.uri))
+
+    /**
+     * A file's picture shape as seen (rotation tag applied), read once off the
+     * file. A player with an effect chain reports its video size as 0x0 on this
+     * phone, so [Surface.videoAspect] stayed unset and every shot was taken to be
+     * the edit's own shape: a portrait photo in a 4:3 edit had its Crop window
+     * drawn over the black bars beside it, and a crop was cut from the canvas
+     * rather than the picture the export cuts it from. Null until read.
+     */
+    private fun fileAspect(uri: android.net.Uri?): Float? {
+        val key = uri?.toString() ?: return null
+        fileAspects[key]?.let { return it }
+        if (aspectsAsked.add(key)) {
+            Thread {
+                val meta = runCatching { kotlinx.coroutines.runBlocking { com.squish.app.media.ThumbnailExtractor.probe(context, uri) } }.getOrNull()
+                if (meta != null && meta.displayWidth > 0 && meta.displayHeight > 0) {
+                    fileAspects[key] = meta.displayWidth.toFloat() / meta.displayHeight
+                }
+            }.apply { name = "squish-aspect"; isDaemon = true }.start()
+        }
+        return null
+    }
+
+    private val fileAspects = java.util.concurrent.ConcurrentHashMap<String, Float>()
+    private val aspectsAsked: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
      * Gives one roll's player its work for this tick: the clip under the playhead
@@ -1275,7 +1300,7 @@ class PreviewEngine(private val context: Context) {
                 mirrored = clip.mirrored,
                 quarterTurns = clip.quarterTurns,
                 draw = own,
-                aspect = s.videoAspect,
+                aspect = s.videoAspect ?: fileAspect(clip.uri),
                 covers = true,
                 clipId = clip.id,
                 crop = clip.crop
