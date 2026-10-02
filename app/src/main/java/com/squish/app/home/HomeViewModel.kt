@@ -138,7 +138,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val trashId = withContext(Dispatchers.IO) { binOne(draft) }
             if (trashId != null) {
                 _undoOffer.value = UndoOffer(
-                    message = "Deleted \"${draft.title}\"",
+                    message = "Deleted “${draft.title}”",
                     entry = TrashedDraft(trashId, draft, System.currentTimeMillis())
                 )
             }
@@ -160,7 +160,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (binned.isNotEmpty()) {
                 _undoOffer.value = UndoOffer(
-                    message = if (binned.size == 1) "Deleted \"${binned.first().draft.title}\"" else "Deleted ${binned.size} projects",
+                    message = if (binned.size == 1) "Deleted “${binned.first().draft.title}”" else "Deleted ${binned.size} projects",
                     entries = binned
                 )
             }

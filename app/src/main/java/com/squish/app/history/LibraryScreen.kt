@@ -203,7 +203,7 @@ internal fun DeleteExportDialog(record: ExportRecord, onConfirm: () -> Unit, onD
     var stillHere by remember(record.id) { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(record.id) { stillHere = withContext(Dispatchers.IO) { context.canReadMedia(record.mediaUri) } }
     ConfirmDialog(
-        title = "Delete \"${record.shownTitle}\"?",
+        title = "Delete “${record.shownTitle}”?",
         body = when {
             stillHere == false ->
                 "The file behind this one is already gone from this phone. " +

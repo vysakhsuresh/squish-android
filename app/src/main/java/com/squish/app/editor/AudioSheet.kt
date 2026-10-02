@@ -225,7 +225,7 @@ fun RecordPanel(state: EditorUiState, viewModel: EditorViewModel) {
                             onClick = { if (mic.granted) viewModel.audio.startVoiceover(replaceSelected = true) else mic.ask() }
                         )
                         Text(
-                            "The new take lands where \"${replacing.label}\" starts, and that one goes.",
+                            "The new take lands where “${replacing.label}” starts, and that one goes.",
                             style = MaterialTheme.typography.labelSmall,
                             color = SquishColors.TextMuted
                         )

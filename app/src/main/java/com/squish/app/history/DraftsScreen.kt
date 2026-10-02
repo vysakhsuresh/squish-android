@@ -242,7 +242,7 @@ fun DraftsScreen(
         val earlier = draft.earlierSavedAtMillis
         ConfirmDialog(
             title = "Go back to the earlier version?",
-            body = "The version of \"${draft.title}\" saved " +
+            body = "The version of “${draft.title}” saved " +
                 "${earlier?.let(::agoOf) ?: "earlier"} takes the place of the one saved ${agoOf(draft.savedAtMillis)}.",
             caution = "The version you have now moves to Recently deleted, below, for 30 days, " +
                 "so this can be undone.",
@@ -260,7 +260,7 @@ fun DraftsScreen(
 
     pendingDiscard?.let { draft ->
         ConfirmDialog(
-            title = "Delete \"${draft.title}\"?",
+            title = "Delete “${draft.title}”?",
             body = draft.toolId?.let { id ->
                 "This sets aside the ${QuickTool.fromId(id).title.lowercase()} you had " +
                     "set up — ${draft.clipCount} " +
@@ -283,7 +283,7 @@ fun DraftsScreen(
 
     pendingPurge?.let { entry ->
         ConfirmDialog(
-            title = "Delete \"${entry.draft.title}\" for good?",
+            title = "Delete “${entry.draft.title}” for good?",
             body = "This takes it out of Recently deleted before its 30 days are up.",
             caution = "There is no undo and nowhere to fetch it back from. " +
                 "Your original video is untouched; the work built on it is not.",

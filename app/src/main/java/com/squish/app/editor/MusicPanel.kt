@@ -637,7 +637,7 @@ private fun OnlineMusicList(
                         onBusy(key)
                         val url = runCatching { OnlineMusic.streamUrl(context, track) }.getOrNull()
                         onBusy(null)
-                        if (url != null) onListen(key, Uri.parse(url)) else rowNote = "\"${track.title}\" couldn't be played - try another."
+                        if (url != null) onListen(key, Uri.parse(url)) else rowNote = "“${track.title}” couldn't be played - try another."
                     }
                 },
                 // Kept by its downloaded file, so the starred list plays it offline.
@@ -646,7 +646,7 @@ private fun OnlineMusicList(
                         onBusy(key)
                         val uri = runCatching { OnlineMusic.download(context, track) }.getOrNull()
                         onBusy(null)
-                        if (uri != null) onStar(MusicPick(uri.toString(), pick.title, pick.subtitle)) else rowNote = "\"${track.title}\" couldn't be downloaded - try another."
+                        if (uri != null) onStar(MusicPick(uri.toString(), pick.title, pick.subtitle)) else rowNote = "“${track.title}” couldn't be downloaded - try another."
                     }
                 },
                 onAdd = {
@@ -654,7 +654,7 @@ private fun OnlineMusicList(
                         onBusy(key)
                         val uri = runCatching { OnlineMusic.download(context, track) }.getOrNull()
                         onBusy(null)
-                        if (uri != null) onAdd(MusicPick(uri.toString(), pick.title, pick.subtitle), uri) else rowNote = "\"${track.title}\" couldn't be downloaded - try another."
+                        if (uri != null) onAdd(MusicPick(uri.toString(), pick.title, pick.subtitle), uri) else rowNote = "“${track.title}” couldn't be downloaded - try another."
                     }
                 }
             )

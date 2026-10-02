@@ -132,7 +132,7 @@ fun StockVideoSheet(onPicked: (Uri) -> Unit, onDismiss: () -> Unit) {
                                 scope.launch {
                                     val uri = runCatching { OnlineStock.download(context, video) }.getOrNull()
                                     fetching = null
-                                    if (uri == null) rowNote = "\"${video.title}\" couldn't be downloaded - try another." else onPicked(uri)
+                                    if (uri == null) rowNote = "“${video.title}” couldn't be downloaded - try another." else onPicked(uri)
                                 }
                             }
                         )

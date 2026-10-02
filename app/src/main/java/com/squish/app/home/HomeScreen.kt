@@ -397,7 +397,7 @@ fun HomeScreen(
         val earlier = project.earlierSavedAtMillis
         ConfirmDialog(
             title = "Go back to the earlier version?",
-            body = "The version of \"${project.title}\" saved " +
+            body = "The version of “${project.title}” saved " +
                 "${earlier?.let(::agoOf) ?: "earlier"} takes the place of the one saved ${agoOf(project.savedAtMillis)}.",
             caution = "The version you have now moves to Recently deleted for 30 days, so this can be undone.",
             confirmLabel = "Go back",
@@ -417,7 +417,7 @@ fun HomeScreen(
         // A staged project has no edit to keep, so it is not offered a way back.
         val onlyStaged = deleting.all { it.staged }
         ConfirmDialog(
-            title = if (many) "Delete ${deleting.size} projects?" else "Delete \"${deleting.first().title}\"?",
+            title = if (many) "Delete ${deleting.size} projects?" else "Delete “${deleting.first().title}”?",
             body = when {
                 onlyStaged -> "Nothing has been edited yet, so there is nothing to keep."
                 many -> "This sets aside every project selected, with every cut, look and caption on each."
