@@ -291,4 +291,24 @@ object TextPlacementRules {
         }
         return preferred
     }
+
+    /**
+     * Where a sticker lands among [taken] (x, y) centres: the middle, else the
+     * nearest clear spot down the middle column, then the left and right thirds,
+     * and with every spot taken the one furthest from its nearest neighbour.
+     * Heights alone ran out at five things showing - seen on the phone, a
+     * sixth sticker landed exactly on the fifth.
+     */
+    fun freeSpot(taken: List<Pair<Float, Float>>, gap: Float = 0.16f): Pair<Float, Float> {
+        val heights = buildList {
+            add(0.5f)
+            var d = gap / 2f
+            while (d <= 0.4f + 1e-4f) { add(0.5f + d); add(0.5f - d); d += gap / 2f }
+        }
+        val spots = listOf(0.5f, 0.25f, 0.75f).flatMap { x -> heights.map { y -> x to y } }
+        fun clear(s: Pair<Float, Float>) = taken.none { kotlin.math.abs(it.first - s.first) < gap && kotlin.math.abs(it.second - s.second) < gap }
+        spots.firstOrNull(::clear)?.let { return it }
+        fun room(s: Pair<Float, Float>) = taken.minOf { maxOf(kotlin.math.abs(it.first - s.first), kotlin.math.abs(it.second - s.second)) }
+        return spots.maxBy(::room)
+    }
 }

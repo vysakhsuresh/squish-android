@@ -157,19 +157,19 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      */
     fun addSticker(emoji: String) = record("Add sticker") {
         val span = placeNewText(_state.value, DEFAULT_TITLE_MS)
+        // Clear of every line and sticker showing then: seen on the phone, a flag
+        // dropped straight onto a title, and a sixth sticker onto the fifth.
+        val spot = com.squish.app.editor.TextPlacementRules.freeSpot(
+            _state.value.textOverlays.filter { it.startMs < span.endMs && it.endMs > span.startMs }.map { it.xFraction to it.yFraction }
+        )
         val item = TextOverlayItem(
             id = UUID.randomUUID().toString(),
             text = emoji,
             startMs = span.startMs,
             endMs = span.endMs,
             colorArgb = android.graphics.Color.WHITE,
-            xFraction = 0.5f,
-            yFraction = com.squish.app.editor.TextPlacementRules.freeY(
-                // Clear of every line and sticker showing then: seen on the phone,
-                // a flag dropped straight onto a title.
-                _state.value.textOverlays.filter { it.startMs < span.endMs && it.endMs > span.startMs }.map { it.yFraction },
-                gap = 0.16f
-            ),
+            xFraction = spot.first,
+            yFraction = spot.second,
             sizeSp = STICKER_SIZE_SP,
             stroke = TextStroke.NONE,
             motion = TextMotion.Pop,

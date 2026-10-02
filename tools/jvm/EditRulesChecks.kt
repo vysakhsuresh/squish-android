@@ -303,6 +303,18 @@ fun main() {
         val busy = listOf(0.45f, 0.5f, 0.56f, 0.62f)
         val z = r.freeY(busy)
         if (busy.any { kotlin.math.abs(it - z) < 0.12f } || z !in 0.1f..0.9f) problems += "a crowded middle gave $z"
+        // Stickers: each of twenty lands clear of the others until the picture
+        // is full, and never on top of another even then.
+        val placed = mutableListOf<Pair<Float, Float>>()
+        repeat(20) { i ->
+            val s = r.freeSpot(placed)
+            if (s.first !in 0.1f..0.9f || s.second !in 0.1f..0.9f) problems += "sticker $i off the picture at $s"
+            if (placed.any { it == s }) problems += "sticker $i landed exactly on another at $s"
+            if (i < 12 && placed.any { kotlin.math.abs(it.first - s.first) < 0.16f && kotlin.math.abs(it.second - s.second) < 0.16f })
+                problems += "sticker $i overlaps with room to spare at $s"
+            placed += s
+        }
+        if (r.freeSpot(emptyList()) != (0.5f to 0.5f)) problems += "the first sticker is not in the middle"
     }
     println("edit rules: shift, resize, place, split, beat markers, smooth, sync, reorder, captions, retime, sound landing")
     if (problems.isEmpty()) println("PASS - edits keep items whole, inside the picture, and on the frames they belong to")
