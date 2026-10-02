@@ -520,7 +520,11 @@ private fun WhatItDoesCard() {
         )
         Promise("Multi-track timeline with frame-accurate trim, split and transitions.")
         Promise("Automatic sync for separately recorded sound.")
-        Promise("Sixteen graded looks, chroma key, shape masks and motion tracking.")
+        // Counted, not written: it said sixteen looks long after there were fifty.
+        val looks = com.squish.app.media.effects.Looks.catalog.count { it.id != "none" }
+        val transitions = com.squish.app.timeline.TransitionType.entries.count { it != com.squish.app.timeline.TransitionType.None }
+        Promise("$looks filters, ${com.squish.app.editor.EffectKind.entries.size} effects, $transitions transitions and ${com.squish.app.editor.Template.entries.size} templates.")
+        Promise("Chroma key, shape masks, cut-outs and motion tracking.")
         Promise("Stabilization, keyframed motion and auto-captions.")
     }
 }
