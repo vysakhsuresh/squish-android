@@ -482,23 +482,26 @@ private fun StyleTile(label: String, sample: String, style: TextStyleSpec, selec
                 ),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                sample.take(10),
+            // The whole sample, shrunk to fit: cut at ten letters "Day 1 in Goa"
+            // read "Day 1 in G", and wider letters were clipped by the box.
+            com.squish.app.ui.components.FitText(
+                sample,
                 color = Color(style.colorArgb),
-                fontFamily = FontFamily(style.font.typeface()),
-                fontWeight = if (style.bold || style.font.bold) FontWeight.Bold else null,
-                fontStyle = if (style.italic) FontStyle.Italic else null,
-                fontSize = 15.sp,
-                maxLines = 1,
+                minScale = 0.4f,
                 style = when {
                     style.glow -> TextStyle(shadow = Shadow(Color(style.colorArgb), blurRadius = 18f))
                     style.shadow.isOn -> TextStyle(shadow = Shadow(Color.Black, offset = Offset(2f, 3f), blurRadius = 6f))
                     style.stroke.isOn -> TextStyle(shadow = Shadow(Color(style.stroke.colorArgb), blurRadius = 3f))
                     else -> TextStyle()
-                }
+                }.copy(
+                    fontFamily = FontFamily(style.font.typeface()),
+                    fontWeight = if (style.bold || style.font.bold) FontWeight.Bold else null,
+                    fontStyle = if (style.italic) FontStyle.Italic else null,
+                    fontSize = 15.sp
+                )
             )
         }
-        Text(label, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted, maxLines = 1)
+        com.squish.app.ui.components.FitText(label, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
     }
 }
 
