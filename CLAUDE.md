@@ -133,19 +133,6 @@ function first; if it can, it can be checked.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
-- **Rotate 90° then export.** Two places computed the output size and only one
-  knew about the rotation, so the chain asked a 1920x1080 frame to fit a
-  720x1280 box. The arithmetic is fixed and checked (`tools/jvm/FramingChecks.kt`);
-  what nobody has seen is the resulting file.
-- **Rotate 90° freezing the editor.** Seen on the phone: the picture shrank to a
-  corner, the clock stuck at zero, and logcat repeated "Detaching surface timed
-  out" from `clearVideoTextureView` on the main thread every two seconds. The
-  rotation was an effect in every player's chain, so rotating stopped,
-  re-chained and reloaded each player; the pipeline wedged, and the stall reload
-  then let go of the surface on the main thread, which waits on the stuck
-  playback thread. Batch B4 took rotation, crop and captions out of the players
-  (the view is turned on screen; no chain is ever changed after a player is
-  made) and the reload no longer touches the surface. Built, not yet seen.
 - **Batch B4 of the roadmap (preview engine), all of it.** Built with no phone
   attached; `docs/ROADMAP.md` §4 has the script. The decisions are executed on
   the JVM (`tools/jvm/PreviewRulesChecks.kt`, `PreviewChecks.kt`); what only a

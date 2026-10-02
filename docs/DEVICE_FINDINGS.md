@@ -644,3 +644,8 @@ Not yet seen: the voices by ear, the new filters and templates on a file,
   it once; the transition panel's icon was the crop glyph; an effect added
   from the library landed on a fifth row out of sight - the strip now
   scrolls a just-added effect, sound or line into view.
+- **Rotate 90° then export** and **Rotate 90° freezing the editor** (the two
+  oldest items in CLAUDE.md) hold up: Rotate all 90° turned the preview
+  clockwise, played straight after with no "Detaching surface timed out",
+  and exported at 720x960 undistorted, turned the same way. Taken off the
+  unverified list.
