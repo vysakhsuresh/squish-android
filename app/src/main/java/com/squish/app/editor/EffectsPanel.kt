@@ -85,7 +85,11 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             EffectKind.entries.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     row.forEach { kind ->
-                        EffectTile(kind = kind, frame = frame, modifier = Modifier.weight(1f)) { viewModel.clips.addEffect(kind) }
+                        EffectTile(kind = kind, frame = frame, modifier = Modifier.weight(1f)) {
+                            viewModel.clips.addEffect(kind)
+                            // Played once from where it lands: paused, a Shake or a Glitch added showed a still frame.
+                            viewModel.state.value.effects.lastOrNull()?.let { e -> viewModel.showMoment(e.startMs, minOf(e.endMs - e.startMs, 2_000L)) }
+                        }
                     }
                     repeat(3 - row.size) { Box(modifier = Modifier.weight(1f)) }
                 }
