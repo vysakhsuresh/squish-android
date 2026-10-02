@@ -457,11 +457,12 @@ private fun TrashedCard(
             Text(
                 // When it was deleted, not also when it was saved: with both, the line
                 // was cut before the one time that matters here.
+                // Two lines: a tool session adds its tool's name, and on one line
+                // "deleted just now" was still cut.
                 "${draft.describe(saved = false)} · deleted ${agoOf(entry.discardedAtMillis)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted,
-                maxLines = 1,
-                softWrap = false,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         }
