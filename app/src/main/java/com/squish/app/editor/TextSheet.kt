@@ -511,18 +511,13 @@ private fun <T> ChipRow(
     onPick: (T) -> Unit
 ) {
     Text(title, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-    ) {
-        options.forEach { option ->
-            SelectableChip(
-                label = label(option),
-                selected = option == selected,
-                accentColor = SquishColors.Amber,
-                onClick = { onPick(option) }
-            )
-        }
+    SideScrollChips(options, { it == selected }, Modifier.fillMaxWidth()) { option ->
+        SelectableChip(
+            label = label(option),
+            selected = option == selected,
+            accentColor = SquishColors.Amber,
+            onClick = { onPick(option) }
+        )
     }
 }
 

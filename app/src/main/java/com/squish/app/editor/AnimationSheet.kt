@@ -236,18 +236,13 @@ private fun <T> AnimationChips(
             color = SquishColors.TextSecondary,
             modifier = Modifier.padding(end = 10.dp)
         )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState())
-        ) {
-            options.forEach { option ->
-                SelectableChip(
-                    label = text(option),
-                    selected = option == chosen,
-                    accentColor = accent,
-                    onClick = { onPick(option) }
-                )
-            }
+        SideScrollChips(options, { it == chosen }, Modifier.weight(1f)) { option ->
+            SelectableChip(
+                label = text(option),
+                selected = option == chosen,
+                accentColor = accent,
+                onClick = { onPick(option) }
+            )
         }
     }
 }
