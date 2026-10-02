@@ -199,6 +199,19 @@ data class TimelineWindow(
             return Slide(drawn, pad, shift)
         }
 
+        /**
+         * The strip's window: centred on [atMs], except that it never scrolls to
+         * more than [leadPx] before 0:00. Near the start the edit begins at the
+         * strip's left edge and [atMs] sits left of the middle - the playhead
+         * walks right until it reaches the middle and the strip scrolls from
+         * there. Centred always, the first clip began half a screen in.
+         */
+        fun startClamped(atMs: Double, pixelsPerSecond: Float, density: Float, viewportPx: Int, leadPx: Float): TimelineWindow {
+            val centred = centredOn(atMs, pixelsPerSecond, density, viewportPx)
+            val floor = -centred.msForPx(leadPx.coerceAtLeast(0f))
+            return if (centred.scrollMs >= floor) centred else centred.copy(scrollMs = floor)
+        }
+
         fun centredOn(atMs: Double, pixelsPerSecond: Float, density: Float, viewportPx: Int, marginOverridePx: Float? = null): TimelineWindow {
             val at = TimelineWindow(pixelsPerSecond, 0.0, density, viewportPx, marginOverridePx)
             return at.copy(scrollMs = atMs - at.msForPx(viewportPx / 2f))

@@ -122,6 +122,29 @@ fun main() {
         }
     }
 
+    // The start of the edit sits at the strip's left edge (plus the lead), never
+    // half a screen in; past half a screen the playhead is in the middle again.
+    run {
+        val lead = 14f * 2.75f
+        val atStart = TimelineWindow.startClamped(0.0, 42f, 2.75f, 1080, lead)
+        check("0:00 is at the left edge at the start (${atStart.xPx(0)} px)", abs(atStart.xPx(0) - lead) < 1f)
+        val early = TimelineWindow.startClamped(1_000.0, 42f, 2.75f, 1080, lead)
+        check("one second in, the edit still starts at the left edge", abs(early.xPx(0) - lead) < 1f)
+        check("one second in, the playhead is left of the middle", early.xPx(1_000) < 540f)
+        val later = TimelineWindow.startClamped(60_000.0, 42f, 2.75f, 1080, lead)
+        check("a minute in, the playhead is in the middle", abs(later.xPx(60_000) - 540f) < 1f)
+        // Continuous: the playhead's line never jumps as time passes the switch.
+        var last = atStart.xPx(0)
+        var t = 0.0
+        while (t < 30_000.0) {
+            val w = TimelineWindow.startClamped(t, 42f, 2.75f, 1080, lead)
+            val x = w.xPx(t.toLong())
+            check("the playhead line moves smoothly at $t ms ($last -> $x)", x >= last - 1f && x - last < 5f)
+            last = x
+            t += 10.0
+        }
+    }
+
     // The strip as drawn (slideFor): every moment within a pixel of where the
     // live window - and so a finger - puts it, at any zoom, length and centre;
     // the slide never more than an eighth of a screen and always whole pixels;

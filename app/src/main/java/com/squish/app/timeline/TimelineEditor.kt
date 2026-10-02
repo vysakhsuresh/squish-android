@@ -122,6 +122,8 @@ private val ROWS_MAX = LANE_HEIGHT * 4
 
 /** How far from an edge counts as an edge, for snapping: a third of a fingertip. */
 private val SNAP_DP = 10.dp
+/** Room left of 0:00 at the start of the edit, so the first clip's head handle is whole. */
+private val START_LEAD = 14.dp
 
 /** How close to the strip's side a carried clip starts scrolling it. */
 private val EDGE_ZONE = 48.dp
@@ -343,12 +345,22 @@ fun TimelineEditor(
      * costs to lay out does not depend on how long the video is, and a three-hour
      * clip zooms to the frame exactly like a three-second one.
      */
-    val window = TimelineWindow.centredOn(
+    // Centred on the playhead, but never scrolled to before the start: near
+    // 0:00 the edit begins at the strip's left edge and the playhead line walks
+    // right from there until it reaches the middle, where the strip takes over
+    // and scrolls under it. Always centred, the first clip began half a screen
+    // in, the left half empty, which read as the timeline starting part way
+    // along (reported three times; TimelineWindow.startClamped).
+    val window = TimelineWindow.startClamped(
         atMs = centre,
         pixelsPerSecond = state.pixelsPerSecond.coerceIn(MIN_PPS, MAX_PPS),
         density = density.density,
-        viewportPx = viewportPx
+        viewportPx = viewportPx,
+        leadPx = with(density) { START_LEAD.toPx() }
     )
+    // Where the playhead line is drawn: the middle once the strip scrolls, left
+    // of it near the start.
+    val playheadPx = window.pxForMs(centre - window.scrollMs)
 
     /**
      * The window the ruler and the rows are *drawn* from: the same scale, a
@@ -360,12 +372,14 @@ fun TimelineEditor(
      * frame and every lane took it (a scrub ran at 20 ms a frame on a phone).
      * Gestures and the layout keep [window]: what a finger lands on is exact.
      */
-    val slide = remember(centre, window) { TimelineWindow.slideFor(window, centre) }
+    val slide = remember(window) { TimelineWindow.slideFor(window, window.centreMs) }
     val drawPadPx = slide.padPx
     val drawWindow = slide.drawn
     val drawShiftPx = slide.shiftPx
     val drawShiftState = rememberUpdatedState(drawShiftPx)
-    val counterShift: () -> Float = remember { { -drawShiftState.value } }
+    // The add button sits on the playhead, which is off the middle near the start.
+    val playheadOffState = rememberUpdatedState(playheadPx - viewportPx / 2f)
+    val counterShift: () -> Float = remember { { -drawShiftState.value + playheadOffState.value } }
 
     // Read fresh inside gestures: the pointerInput blocks are keyed on Unit so
     // they survive a zoom, and a captured value would go stale on the first pinch.
@@ -1011,7 +1025,7 @@ fun TimelineEditor(
             }
 
             // The fixed playhead: never a target, so every touch reaches the strip.
-            Playhead(x = with(density) { (viewportPx / 2f).toDp() }, height = stripHeight)
+            Playhead(x = with(density) { playheadPx.toDp() }, height = stripHeight)
 
             // The carried clip, under the finger, over everything.
             lift?.let { held ->
