@@ -232,13 +232,15 @@ fun main() {
             val stillRow = toolsFor(kind, canTransition = true, footage = false)
             check(NEEDS_MOTION.none { it in stillRow }, "$kind as a still offers a tool that needs motion: $stillRow")
             check(FOOTAGE_TOOLS.all { it in NEEDS_MOTION } && Tool.Stabilize in NEEDS_MOTION && Tool.Track in NEEDS_MOTION, "a still is offered Stabilize or Track")
-            check(stillRow == toolsFor(kind, canTransition = true).filterNot { it in NEEDS_MOTION }, "$kind as a still reorders the row")
+            check(stillRow.filterNot { it == Tool.Delete } == toolsFor(kind, canTransition = true).filterNot { it in NEEDS_MOTION || it in com.squish.app.editor.NEEDS_SOUND || it == Tool.Delete }, "$kind as a still reorders the row")
+            check(stillRow.indexOf(Tool.Delete) == DELETE_POSITION - 1, "$kind as a still moved Delete: $stillRow")
+            check(com.squish.app.editor.NEEDS_SOUND.none { it in stillRow }, "$kind as a still offers Speed or a sound tool: $stillRow")
             check(Tool.Delete in stillRow && Tool.Rotate in stillRow && Tool.Duplicate in stillRow, "$kind as a still lost a tool it has")
         }
         // A caption still follows a subject: Track is about the footage under it.
         check(Tool.Track in toolsFor(SelectionKind.Text) && Tool.Track in toolsFor(SelectionKind.Sticker), "words lost Track")
         check(!sheetSurvives(Tool.Stabilize, SelectionKind.MainVideo, true, footage = false), "Stabilize stayed open over a freeze")
-        check(sheetSurvives(Tool.Speed, SelectionKind.MainVideo, true, footage = false), "Speed closed over a freeze")
+        check(!sheetSurvives(Tool.Speed, SelectionKind.MainVideo, true, footage = false), "Speed stayed open over a freeze")
         // One name per concept: a sticker's mirror and a clip's read the same.
         check(Tool.Flip.label == Tool.Mirror.label, "a sticker mirrors as '${Tool.Flip.label}' and a clip as '${Tool.Mirror.label}'")
     }

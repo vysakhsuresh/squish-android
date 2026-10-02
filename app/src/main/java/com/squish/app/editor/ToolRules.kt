@@ -195,8 +195,17 @@ fun toolsFor(kind: SelectionKind, canTransition: Boolean = false, multi: Boolean
         )
         else -> listOf(Tool.Strength, Tool.Split, Tool.Duplicate, Tool.SelectMore, Tool.Delete)
     }
-    return if (footage) row else row.filterNot { it in NEEDS_MOTION }
+    if (footage) return row
+    // A still has no motion to retime and no sound of its own: Speed drew a
+    // curve over one picture, and Volume, Voice and Extract audio worked on
+    // the silent track a photo is rendered with. Delete stays fifth.
+    val kept = row.filterNot { it in NEEDS_MOTION || it in NEEDS_SOUND }
+    val at = minOf(DELETE_POSITION, kept.size) - 1
+    return kept.filterNot { it == Tool.Delete }.toMutableList().apply { if (Tool.Delete in kept) add(at, Tool.Delete) }
 }
+
+/** The tools that act on a clip's own sound or its timing, offered on footage only. */
+val NEEDS_SOUND: Set<Tool> = setOf(Tool.Speed, Tool.Volume, Tool.Voice, Tool.ExtractAudio)
 
 /** Where Delete sits on every clip's row (see [toolsFor]), counted from one. */
 const val DELETE_POSITION = 5
