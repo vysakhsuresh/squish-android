@@ -649,3 +649,34 @@ Not yet seen: the voices by ear, the new filters and templates on a file,
   clockwise, played straight after with no "Detaching surface timed out",
   and exported at 720x960 undistorted, turned the same way. Taken off the
   unverified list.
+- 9:16 at 1080p: the sheet greyed everything above 864p, because the
+  encoder ceiling was measured on the cropped pixels (404 wide, asked
+  3848x2160). Now one function sizes both (`EditorUiState.resolutionAt`);
+  1080p is offered and the file is 1080x1920 (1920x1080 with a 90° tag).
+- A music track lands cut to the picture's length; its fades draw on the
+  clip, and the file has sound for its whole 14.86 s. The fade's loudness in
+  the file was not measured (no AAC decoder here) - still by ear.
+- Typing a title updates the picture as each key lands; the box grows with
+  the words.
+- Stickers: search matches every word typed and more names ("fire" found
+  only the flame; now also fireworks, sparkler, boom, chilli; "diwali" finds
+  the diya). Picking from a search closes the keyboard (it held the picture
+  shrunk to a corner). A sixth sticker landed exactly on the fifth; stickers
+  now spread to the left and right thirds (`TextPlacementRules.freeSpot`,
+  EditRulesChecks).
+- A photo on the main track was offered Speed (a curve over one picture),
+  Volume, Voice and Extract audio; no longer (ToolRulesChecks).
+- Leaving and reopening the project kept every overlay, sticker, effect,
+  title and the song.
+- Dashboard: a duplicate's name read "Edit · 2 Oct co…"; card titles shrink
+  a little first. Dialogs quoted names with straight quotes drawn as ”…”;
+  curly quotes now.
+- Library: 21 of 55 rows were exports deleted from the gallery, greyed and
+  counted for good; forgotten now (`HistoryRepository.forgetDeleted`, only
+  when the gallery row is gone). Extract-audio files read "Video · 26 Sep"
+  with a film icon; now "Sound · 26 Sep" with a note.
+- Squeeze 940x718 → 480p: 628x480, 70% smaller, 22.5 s; 720p and up greyed
+  (never bigger than the source). Snip 7.75–25.70 s: 18.0 s, 720x1280.
+- Tool sessions screen: headed "Unfinished" over sessions marked Exported
+  (now "Tool sessions"); deleted projects had blank thumbnails (covers now);
+  "deleted … ago" was cut off (the save time dropped, and two lines).
