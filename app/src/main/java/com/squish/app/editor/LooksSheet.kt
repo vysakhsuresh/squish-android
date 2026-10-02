@@ -430,12 +430,18 @@ private fun LookChip(
                 }
             }
         }
+        // Shrunk to fit rather than cut: at the phone's larger font sizes a
+        // ten-letter name ("Disposable", "Blockbuster") read "Disposabl".
+        val base = MaterialTheme.typography.labelSmall
+        var scale by remember(look.label) { mutableStateOf(1f) }
         Text(
             look.label,
-            style = MaterialTheme.typography.labelSmall,
+            style = base.copy(fontSize = base.fontSize * scale),
             color = if (selected) SquishColors.TextPrimary else SquishColors.TextSecondary,
             maxLines = 1,
-            textAlign = TextAlign.Center
+            softWrap = false,
+            textAlign = TextAlign.Center,
+            onTextLayout = { if (it.hasVisualOverflow && scale > 0.7f) scale -= 0.06f }
         )
     }
 }
