@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -133,8 +134,10 @@ fun DraftsScreen(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    // Not "Unfinished": most sessions here are marked Exported, and the
+                    // heading said the opposite of the badge under it.
                     Text(
-                        "Unfinished",
+                        "Tool sessions",
                         style = MaterialTheme.typography.displayLarge,
                         color = SquishColors.TextPrimary
                     )
@@ -299,14 +302,14 @@ fun DraftsScreen(
 }
 
 /** "Merge · 4 files · 2 hours ago" — what it is, how big, and how stale. */
-private fun DraftSummary.describe(): String = buildString {
+private fun DraftSummary.describe(saved: Boolean = true): String = buildString {
     toolId?.let {
         append(QuickTool.fromId(it).title)
         append(" · ")
     }
     append(clipCount)
-    append(if (clipCount == 1) " clip · " else " clips · ")
-    append(agoOf(savedAtMillis))
+    append(if (clipCount == 1) " clip" else " clips")
+    if (saved) append(" · ").append(agoOf(savedAtMillis))
 }
 
 @Composable
@@ -423,6 +426,14 @@ private fun TrashedCard(
     onPurge: () -> Unit
 ) {
     val draft = entry.draft
+    val context = LocalContext.current
+    // Its cover, as a live card has: twenty blank squares said nothing about
+    // which project was which, and the cover is how one is recognised.
+    var thumb by remember(draft.coverUri, draft.sourceUri) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(draft.coverUri, draft.sourceUri) {
+        val uri = draft.coverUri ?: draft.sourceUri
+        if (withContext(Dispatchers.IO) { context.canReadMedia(uri) }) thumb = ThumbnailCache.frame(context, uri, draft.coverAtMs)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -433,7 +444,7 @@ private fun TrashedCard(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Thumb(thumb = null, toolDraft = draft.toolId != null)
+        Box(modifier = Modifier.graphicsLayer { alpha = 0.6f }) { Thumb(thumb = thumb, toolDraft = draft.toolId != null) }
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
@@ -444,7 +455,9 @@ private fun TrashedCard(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                "${draft.describe()} · deleted ${agoOf(entry.discardedAtMillis)}",
+                // When it was deleted, not also when it was saved: with both, the line
+                // was cut before the one time that matters here.
+                "${draft.describe(saved = false)} · deleted ${agoOf(entry.discardedAtMillis)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted,
                 maxLines = 1,

@@ -792,7 +792,7 @@ private fun DraftsDoor(tools: Int, binned: Int, onClick: () -> Unit, modifier: M
     Door(
         icon = Icons.Filled.Edit,
         accent = SquishColors.Cyan,
-        title = "Unfinished tools and recently deleted",
+        title = "Tool sessions and recently deleted",
         subtitle = buildList {
             if (tools > 0) add(if (tools == 1) "1 tool session" else "$tools tool sessions")
             if (binned > 0) add(if (binned == 1) "1 recently deleted" else "$binned recently deleted")
