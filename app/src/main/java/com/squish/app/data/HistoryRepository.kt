@@ -92,6 +92,26 @@ class HistoryRepository(context: Context) {
      * record's own delete would also remove a gallery copy, and these have
      * none. A row that opens nothing is what this prevents.
      */
+    /**
+     * Forgets the exports whose file was deleted from the gallery: the row
+     * opened nothing and was counted on the dashboard for good. Only when the
+     * gallery row itself is gone - a refused read (a reinstall's files) proves
+     * nothing, and those stay. Touches no file. Off the main thread.
+     */
+    suspend fun forgetDeleted() {
+        val gone = withContext(Dispatchers.IO) {
+            _records.value.filter { record ->
+                val gallery = record.galleryUri
+                if (gallery == null) !File(record.outputPath).exists()
+                else runCatching {
+                    appContext.contentResolver.query(Uri.parse(gallery), arrayOf(android.provider.MediaStore.MediaColumns._ID), null, null, null)
+                        ?.use { it.count == 0 } ?: false
+                }.getOrDefault(false)
+            }.map { it.id }
+        }
+        forget(gone)
+    }
+
     fun forget(ids: Collection<String>) {
         if (ids.isEmpty()) return
         val gone = ids.toSet()

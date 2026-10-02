@@ -66,6 +66,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * small files.
      */
     fun refreshDrafts() {
+        // The Library door's count leaves out exports deleted from the gallery.
+        viewModelScope.launch { historyRepository.forgetDeleted() }
         viewModelScope.launch {
             val (edits, tools, binned) = withContext(Dispatchers.IO) {
                 val edits = autosave.drafts()
