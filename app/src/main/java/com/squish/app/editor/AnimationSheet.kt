@@ -89,19 +89,31 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                 icon = Icons.Filled.Animation,
                 accent = accent
             )
-            AnimationChips("In", ClipArrival.entries, clip.arrival, { it.label }, accent) { viewModel.clips.setArrival(clip.id, it) }
+            AnimationChips("In", ClipArrival.entries, clip.arrival, { it.label }, accent) {
+                viewModel.clips.setArrival(clip.id, it)
+                if (it != ClipArrival.None) viewModel.showMoment(clip.timelineStartMs, minOf(clip.arrivalMs, clip.durationMs / 2) + SHOW_AFTER_MS)
+            }
             if (clip.arrival != ClipArrival.None) {
                 LabeledSlider("In takes", clip.arrivalMs.toFloat(), motion, readout = seconds, onFinished = viewModel::endGesture) {
                     viewModel.clips.setArrivalMs(clip.id, it.roundToInt().toLong())
                 }
             }
-            AnimationChips("Out", ClipLeaving.entries, clip.leaving, { it.label }, accent) { viewModel.clips.setLeaving(clip.id, it) }
+            AnimationChips("Out", ClipLeaving.entries, clip.leaving, { it.label }, accent) {
+                viewModel.clips.setLeaving(clip.id, it)
+                // Stopped a frame short of the end, on the last of this shot rather than the next one.
+                val out = minOf(clip.leavingMs, clip.durationMs / 2)
+                val from = (clip.timelineEndMs - out - SHOW_AFTER_MS).coerceAtLeast(clip.timelineStartMs)
+                if (it != ClipLeaving.None) viewModel.showMoment(from, (clip.timelineEndMs - 40L - from).coerceAtLeast(0L))
+            }
             if (clip.leaving != ClipLeaving.None) {
                 LabeledSlider("Out takes", clip.leavingMs.toFloat(), motion, readout = seconds, onFinished = viewModel::endGesture) {
                     viewModel.clips.setLeavingMs(clip.id, it.roundToInt().toLong())
                 }
             }
-            AnimationChips("Loop", ClipLoop.entries, clip.loop, { it.label }, accent) { viewModel.clips.setLoop(clip.id, it) }
+            AnimationChips("Loop", ClipLoop.entries, clip.loop, { it.label }, accent) {
+                viewModel.clips.setLoop(clip.id, it)
+                if (it != ClipLoop.None) viewModel.showMoment(clip.timelineStartMs, minOf(clip.loopMs * 2, clip.durationMs - 40L))
+            }
             if (clip.loop != ClipLoop.None) {
                 LabeledSlider(
                     "Every", clip.loopMs.toFloat(),
@@ -642,3 +654,6 @@ val KeyframeOutlineGlyph: ImageVector by lazy {
         }
     }.build()
 }
+
+/** How long a shown arrival plays on past its end, so it is seen to land. */
+private const val SHOW_AFTER_MS = 400L

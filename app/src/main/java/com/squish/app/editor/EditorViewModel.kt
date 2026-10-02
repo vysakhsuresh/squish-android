@@ -413,6 +413,33 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         it.copy(playheadMs = ms.coerceIn(0L, it.timelineDurationMs), scrubNonce = it.scrubNonce + 1)
     }
 
+    private var showJob: Job? = null
+
+    /**
+     * Plays [forMs] from [fromMs] and stops: what a picked arrival, leaving or
+     * loop looks like, shown once as CapCut shows it. Picked with the playhead
+     * past the arrival, the picture did not change and the tap seemed to do
+     * nothing. Left playing if anything else asked for play or pause meanwhile.
+     */
+    fun showMoment(fromMs: Long, forMs: Long) {
+        _state.update {
+            it.copy(
+                playheadMs = fromMs.coerceIn(0L, it.timelineDurationMs),
+                scrubNonce = it.scrubNonce + 1,
+                transportRequest = TransportRequest(play = true, nonce = (it.transportRequest?.nonce ?: 0L) + 1)
+            )
+        }
+        val mine = _state.value.transportRequest?.nonce
+        showJob?.cancel()
+        showJob = viewModelScope.launch {
+            delay(forMs.coerceAtLeast(0L))
+            _state.update {
+                if (it.transportRequest?.nonce != mine) it
+                else it.copy(transportRequest = TransportRequest(play = false, nonce = (mine ?: 0L) + 1))
+            }
+        }
+    }
+
     /**
      * The nearest thing worth landing on: a clip edge, a marker, or the start.
      *
