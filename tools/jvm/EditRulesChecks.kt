@@ -294,6 +294,16 @@ fun main() {
         }
     }
 
+    // A new line keeps clear of the lines showing with it.
+    run {
+        val r = com.squish.app.editor.TextPlacementRules
+        if (r.freeY(emptyList()) != 0.5f) problems += "an empty picture did not get the middle"
+        val y = r.freeY(listOf(0.5f))
+        if (kotlin.math.abs(y - 0.5f) < 0.12f) problems += "a new line landed on a line in the middle: $y"
+        val busy = listOf(0.45f, 0.5f, 0.56f, 0.62f)
+        val z = r.freeY(busy)
+        if (busy.any { kotlin.math.abs(it - z) < 0.12f } || z !in 0.1f..0.9f) problems += "a crowded middle gave $z"
+    }
     println("edit rules: shift, resize, place, split, beat markers, smooth, sync, reorder, captions, retime, sound landing")
     if (problems.isEmpty()) println("PASS - edits keep items whole, inside the picture, and on the frames they belong to")
     else { println("FAIL (${problems.size})"); problems.take(30).forEach { println("  - $it") }; exitProcess(1) }

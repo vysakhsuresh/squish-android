@@ -599,6 +599,33 @@ fun TimelineEditor(
     val rowsBox = if (compactShown) LANE_HEIGHT else rowsHeight.coerceAtLeast(LANE_HEIGHT)
     val stripHeight = RULER_HEIGHT + rowsBox
 
+    // The selection's row brought into view. A new line of words that
+    // overlapped another went onto a fourth row below the ones showing, and was
+    // selected with nothing on the strip to say where it went - seen on the
+    // phone. Scrolled only as far as it takes, and only when it changes.
+    val selectedRowIndex = when (selectedGroup) {
+        Group.Overlay -> rows.indexOfFirst { it.group == Group.Overlay && it.index == selected?.layer }
+        Group.Main -> rows.indexOfFirst { it.group == Group.Main }
+        Group.Sound -> rows.indexOfFirst { it.group == Group.Sound && it.index == soundRows[selected?.id] }
+        Group.Words -> rows.indexOfFirst { it.group == Group.Words && it.index == wordRows[selected?.id] }
+        Group.Effects -> rows.indexOfFirst { it.group == Group.Effects && it.index == effectRows[selectedEffect?.id] }
+        else -> -1
+    }
+    val rowsBoxPx = with(density) { rowsBox.toPx() }
+    LaunchedEffect(selected?.id ?: selectedEffect?.id, selectedRowIndex, compactShown) {
+        if (compactShown || selectedRowIndex < 0) return@LaunchedEffect
+        val heights = rows.map { with(density) { it.height.toPx() } }
+        val top = heights.take(selectedRowIndex).sum()
+        val bottom = top + heights.getOrElse(selectedRowIndex) { 0f }
+        val from = rowScroll.value.toFloat()
+        val to = when {
+            top < from -> top
+            bottom > from + rowsBoxPx -> bottom - rowsBoxPx
+            else -> return@LaunchedEffect
+        }
+        rowScroll.animateScrollTo(to.toInt().coerceAtLeast(0))
+    }
+
     val layout = StripLayout(
         state = state,
         window = window,

@@ -98,7 +98,9 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             endMs = span.endMs,
             colorArgb = android.graphics.Color.WHITE,
             xFraction = 0.5f,
-            yFraction = 0.5f
+            yFraction = com.squish.app.editor.TextPlacementRules.freeY(
+                _state.value.textOverlays.filter { !it.sticker && it.startMs < span.endMs && it.endMs > span.startMs }.map { it.yFraction }
+            )
         )
         // Selected, so the toolbar is the line's own and Edit has something to open on.
         _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id).stilled() }

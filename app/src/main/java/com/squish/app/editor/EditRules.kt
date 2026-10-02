@@ -264,3 +264,31 @@ object EditRules {
             if (end - start < minMs) null else Span(start, end)
         }
 }
+
+/**
+ * Where a new line of words goes up and down the picture: the middle, unless a
+ * line already showing over the same stretch sits there - then the nearest
+ * height clear of every such line, trying just below and just above the
+ * middle in turn and moving outwards. A new line used to land in the middle
+ * whatever was there, straight over a title it would then hide (seen on the
+ * phone: "Hello Dubai" on "Let's go!").
+ *
+ * [taken] are the heights (fractions of the frame, 0 top to 1 bottom) of the
+ * lines showing during the new one; [gap] is how far apart two lines' centres
+ * must be not to overlap - about a line's height.
+ */
+object TextPlacementRules {
+    fun freeY(taken: List<Float>, preferred: Float = 0.5f, gap: Float = 0.12f): Float {
+        fun clear(y: Float) = taken.none { kotlin.math.abs(it - y) < gap }
+        if (clear(preferred)) return preferred
+        var step = 1
+        while (step < 20) {
+            val below = preferred + step * gap / 2f
+            val above = preferred - step * gap / 2f
+            if (below <= 0.9f && clear(below)) return below
+            if (above >= 0.1f && clear(above)) return above
+            step++
+        }
+        return preferred
+    }
+}
