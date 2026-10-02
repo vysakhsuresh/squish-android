@@ -1713,8 +1713,16 @@ private fun Lane(
             // goes when the join does, as the transition itself does.
             onTransitionTap?.let { tap ->
                 val joined = if (clips.any { it.isMain }) clips.drop(1) else clips.filter { it.hasOverlayJoin(clips) }
-                joined.forEach { clip ->
+                // One badge where two would overlap: across a shot narrower than
+                // a badge at this zoom the two joins' marks lay one on the other,
+                // and a tap went to whichever was drawn last. The next one shows
+                // again on zooming in.
+                var lastDp = Float.NEGATIVE_INFINITY
+                joined.sortedBy { it.timelineStartMs }.forEach { clip ->
                     if (!window.intersects(clip.timelineStartMs, clip.timelineStartMs)) return@forEach
+                    val atDp = window.xDp(clip.timelineStartMs)
+                    if (atDp - lastDp < BADGE_SPACING_DP) return@forEach
+                    lastDp = atDp
                     TransitionBadge(clip = clip, window = window, accent = accent, onTap = { tap(clip.id) })
                 }
             }
@@ -2700,3 +2708,6 @@ class StripMemory : ViewModel() {
     /** The last fit request carried out; requests are numbers that only go up. */
     var fittedNonce: Long = 0L
 }
+
+/** How far apart two join badges must be to both show: the 20 dp badge and a little air. */
+private const val BADGE_SPACING_DP = 24f
