@@ -601,3 +601,28 @@ New options
 Not yet seen: the voices by ear, the new filters and templates on a file,
 48dp targets on every sheet. Left on the phone: the test project
 "Edit · 2 Oct" (5 clips) - delete it at the next session.
+
+## Seen on the phone, 2 October (evening)
+
+- Filters: Polaroid and VHS reach the shot at once; a ten-letter name read
+  "Disposabl" at the phone's 1.15 font - names now shrink to fit their tile.
+- Template Vlog: the warm look, the Slow zoom and the "Today's vlog" lower
+  third land together, replacing the previous template's title. The title
+  sits on the 4:3 canvas below a wide photo, so its 66% black box vanishes
+  over the letterbox - the letters are whole, in the preview and the file
+  alike (exported 960x720, 11.5 s, 30 fps). Not a fault.
+- The done screen's cover was the file's first frame: black for an edit that
+  twirls or fades in. Now a third of the way in, as the library takes it.
+- A project opened through "Open with" lost its dashboard cover once the
+  grant lapsed (the app holds no video permission); the card now falls back
+  to the first clip it can still read. Seen: the 29 Sep two-clip project
+  shows its photo.
+- Picking an arrival, leaving or loop - on a shot or on a line - plays it once
+  and stops, by the playhead rather than a timer (the seek and start ate half
+  of a 0.4 s arrival). Seen on Zoom out (shot) and Type (line).
+- Chip rows open with the lit chip in sight (a line's Spin exit was off the
+  row's end, so nothing looked chosen). Seen.
+- Effects sheet labels fit at 1.15; the template's Slow zoom is listed under
+  "On the video" with its sliders.
+- Built, not seen (the phone left): a line or sticker picked on the strip
+  away from the playhead brings the playhead to it, past its arrival.
