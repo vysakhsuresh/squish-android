@@ -603,6 +603,19 @@ fun TimelineEditor(
     // overlapped another went onto a fourth row below the ones showing, and was
     // selected with nothing on the strip to say where it went - seen on the
     // phone. Scrolled only as far as it takes, and only when it changes.
+    // Something just added - an effect from the library, a sound, a line - is
+    // brought into sight too, though adding does not select it: an effect went
+    // onto a fifth row below the four showing and the strip gave no sign of it.
+    val knownIds = remember { HashSet<String>() }
+    // By id, not row: under a sheet the strip is folded and its rows are not laid out.
+    var addedId by remember { mutableStateOf<String?>(null) }
+    run {
+        val now = effectRows.keys + soundRows.keys + wordRows.keys
+        val fresh = now.filter { it !in knownIds }
+        if (knownIds.isNotEmpty() && fresh.isNotEmpty()) addedId = fresh.last()
+        knownIds.clear(); knownIds.addAll(now)
+        if (knownIds.isEmpty()) knownIds.add("")
+    }
     val selectedRowIndex = when (selectedGroup) {
         Group.Overlay -> rows.indexOfFirst { it.group == Group.Overlay && it.index == selected?.layer }
         Group.Main -> rows.indexOfFirst { it.group == Group.Main }
@@ -612,18 +625,30 @@ fun TimelineEditor(
         else -> -1
     }
     val rowsBoxPx = with(density) { rowsBox.toPx() }
-    LaunchedEffect(selected?.id ?: selectedEffect?.id, selectedRowIndex, compactShown) {
-        if (compactShown || selectedRowIndex < 0) return@LaunchedEffect
+    val addedRowIndex = when (val id = addedId) {
+        null -> -1
+        in effectRows -> rows.indexOfFirst { it.group == Group.Effects && it.index == effectRows[id] }
+        in soundRows -> rows.indexOfFirst { it.group == Group.Sound && it.index == soundRows[id] }
+        in wordRows -> rows.indexOfFirst { it.group == Group.Words && it.index == wordRows[id] }
+        else -> -1
+    }
+    LaunchedEffect(selected?.id ?: selectedEffect?.id, selectedRowIndex, addedRowIndex, compactShown) {
+        val target = if (addedRowIndex >= 0) addedRowIndex else selectedRowIndex
+        if (compactShown || target < 0) return@LaunchedEffect
         val heights = rows.map { with(density) { it.height.toPx() } }
-        val top = heights.take(selectedRowIndex).sum()
-        val bottom = top + heights.getOrElse(selectedRowIndex) { 0f }
+        val top = heights.take(target).sum()
+        val bottom = top + heights.getOrElse(target) { 0f }
         val from = rowScroll.value.toFloat()
         val to = when {
             top < from -> top
             bottom > from + rowsBoxPx -> bottom - rowsBoxPx
-            else -> return@LaunchedEffect
+            else -> null
         }
-        rowScroll.animateScrollTo(to.toInt().coerceAtLeast(0))
+        if (to != null) rowScroll.animateScrollTo(to.toInt().coerceAtLeast(0))
+        // Let go of only after the scroll: kept while the strip is folded under a
+        // sheet, where effects are added, and cleared first it is one of this
+        // effect's keys - the relaunch cancelled the scroll it had just begun.
+        addedId = null
     }
 
     val layout = StripLayout(
