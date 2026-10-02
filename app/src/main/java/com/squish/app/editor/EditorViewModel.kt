@@ -570,7 +570,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val current = _state.value
         if (current.hevcAvailable == null) probeCodecs()
         val mime = EncoderCeiling.mimeFor(current.exportCodecHevc)
-        val shape = current.croppedFrame
+        val shape = current.resolutionAt(OutputSize.MAX_P)
         if (shape.width > 0 && shape.height > 0 && ceilingFor != shape to mime) {
             ceilingFor = shape to mime
             viewModelScope.launch {

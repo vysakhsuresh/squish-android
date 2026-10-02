@@ -5,7 +5,6 @@ package com.squish.app.media
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.EncoderUtil
-import com.squish.app.editor.OutputSize
 import kotlin.math.abs
 
 /**
@@ -53,14 +52,13 @@ object EncoderCeiling {
     }
 
     /**
-     * The largest short edge the encoder writes for a frame of [frame]'s shape:
-     * what it gives for the 4K size of that shape. The sheet greys every named
+     * The largest short edge the encoder writes for the edit's shape:
+     * what it gives for [asked], the edit's 4K frame (EditorUiState.resolutionAt). The sheet greys every named
      * size above it (ExportSettings.aboveCeiling) rather than offering a size
      * that fails at the start of a render, or quietly halves. Blocking.
      */
-    fun ceilingShortEdge(frame: ExportPresets.Resolution, mime: String): Int {
-        if (frame.width <= 0 || frame.height <= 0) return 0
-        val asked = ExportPresets.resolutionFor(OutputSize.MAX_P, frame.width, frame.height)
+    fun ceilingShortEdge(asked: ExportPresets.Resolution, mime: String): Int {
+        if (asked.width <= 0 || asked.height <= 0) return 0
         val got = written(asked, mime)
         return minOf(got.width, got.height).coerceAtLeast(0)
     }

@@ -975,10 +975,19 @@ data class EditorUiState(
         // letterboxed, wrong-shaped file that pressing Rotate produced. And the
         // cropped one: see ExportPresets.croppedFrame.
         get() {
-            val p = if (fitToSize) fittedOutputP else outputP
-            if (paddedCanvas) return FrameRules.paddedCanvas(p, framedWidth, framedHeight, canvasAspect)
-            return effectiveCrop.let { ExportPresets.canvasFor(p, framedWidth, framedHeight, it.width, it.height) }
+            return resolutionAt(if (fitToSize) fittedOutputP else outputP)
         }
+
+    /**
+     * The frame written at short edge [p], the one way every size is worked out:
+     * the encoder ceiling is measured on it too. Measured on the cropped pixels
+     * instead, a 9:16 cut of a 960x720 picture (404 wide) asked for 3848x2160,
+     * whose half is 4 pixels past the encoder's 1920, and every size above 864p
+     * was greyed on a phone that writes 1080x1920.
+     */
+    fun resolutionAt(p: Int): ExportPresets.Resolution =
+        if (paddedCanvas) FrameRules.paddedCanvas(p, framedWidth, framedHeight, canvasAspect)
+        else effectiveCrop.let { ExportPresets.canvasFor(p, framedWidth, framedHeight, it.width, it.height) }
 
     /**
      * The canvas a base shot is composed on before the frame's crop is cut
