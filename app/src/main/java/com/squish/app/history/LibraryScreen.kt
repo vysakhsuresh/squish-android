@@ -95,6 +95,24 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     // the sheet, and the list is still scrolled exactly where it was.
     var previewing by remember { mutableStateOf<ExportRecord?>(null) }
 
+    // A row whose file was deleted in the gallery opens nothing: it is
+    // forgotten rather than listed, greyed, under the count, for good. Only
+    // when the gallery row itself is gone - a refused read (a reinstall's
+    // files) proves nothing, and those stay.
+    LaunchedEffect(records.size) {
+        val gone = withContext(Dispatchers.IO) {
+            records.filter { record ->
+                val gallery = record.galleryUri
+                if (gallery == null) !java.io.File(record.outputPath).exists()
+                else runCatching {
+                    context.contentResolver.query(android.net.Uri.parse(gallery), arrayOf(android.provider.MediaStore.MediaColumns._ID), null, null, null)
+                        ?.use { it.count == 0 } ?: false
+                }.getOrDefault(false)
+            }.map { it.id }
+        }
+        repository.forget(gone)
+    }
+
     val shown = remember(records, query) {
         if (query.isBlank()) records
         else records.filter { it.shownTitle.contains(query.trim(), ignoreCase = true) || it.title.contains(query.trim(), ignoreCase = true) }
