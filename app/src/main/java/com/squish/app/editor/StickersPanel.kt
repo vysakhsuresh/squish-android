@@ -59,7 +59,13 @@ fun StickersPanel(viewModel: EditorViewModel) {
         uris.forEach { context.keepReadAccess(it) }
         viewModel.layers.addOverlayClips(uris)
     }
+    // The keyboard goes once a sticker is picked from a search: left up, it kept
+    // the picture shrunk to a corner just when the sticker was to be placed.
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val add = { emoji: String ->
+        focus.clearFocus(force = true)
+        keyboard?.hide()
         viewModel.text.addSticker(emoji)
         StickerRecents.remember(context, emoji)
         recents = StickerRecents.list(context)
@@ -108,7 +114,10 @@ fun StickersPanel(viewModel: EditorViewModel) {
             val shown: List<Sticker> = when {
                 searching -> {
                     val q = query.trim().lowercase()
-                    StickerSet.entries.flatMap { it.stickers }.filter { q in it.name }
+                    // Every word typed, anywhere in the name, and each sticker once: "heart
+                    // red" finds the red heart, and the snowflake in two sets showed twice.
+                    val words = q.split(' ').filter { it.isNotBlank() }
+                    StickerSet.entries.flatMap { it.stickers }.distinctBy { it.emoji }.filter { s -> words.all { it in s.name } }
                 }
                 category == RECENT -> recents.mapNotNull { emoji -> StickerSet.entries.flatMap { it.stickers }.firstOrNull { it.emoji == emoji } }
                 else -> StickerSet.entries.firstOrNull { it.name == category }?.stickers ?: StickerSet.entries.first().stickers
@@ -220,9 +229,9 @@ private enum class StickerSet(val label: String, val stickers: List<Sticker>) {
     Party("Party", listOf(
         s("🎉", "party popper celebrate"), s("🎊", "confetti"), s("🎂", "birthday cake"), s("🎁", "gift present"),
         s("🎈", "balloon"), s("🥂", "cheers clink glasses"), s("🍾", "champagne bottle"), s("🏆", "trophy winner"),
-        s("🥇", "gold medal first"), s("🎯", "target bullseye"), s("🔥", "fire lit hot"), s("💥", "boom explosion"),
+        s("🥇", "gold medal first"), s("🎯", "target bullseye"), s("🔥", "fire flame lit hot trending"), s("💥", "boom explosion bang fire"),
         s("⚡", "lightning bolt"), s("🚀", "rocket launch"), s("🌈", "rainbow"), s("☀️", "sun sunny"),
-        s("🌙", "moon night"), s("❄️", "snowflake cold")
+        s("🌙", "moon night"), s("❄️", "snowflake cold"), s("🎆", "fireworks firework diwali new year"), s("🎇", "sparkler fireworks diwali"), s("🪔", "diya lamp diwali festival")
     )),
     Things("Things", listOf(
         s("📍", "pin location"), s("📸", "camera photo"), s("🎬", "clapper action movie"), s("🎵", "music note"),
@@ -236,7 +245,7 @@ private enum class StickerSet(val label: String, val stickers: List<Sticker>) {
         s("🍜", "noodles ramen"), s("🍣", "sushi"), s("🍩", "donut doughnut"), s("🍰", "cake slice"),
         s("🍫", "chocolate"), s("🍿", "popcorn movie"), s("☕", "coffee"), s("🧋", "bubble tea boba"),
         s("🍺", "beer"), s("🥭", "mango"), s("🍉", "watermelon"), s("🍓", "strawberry"),
-        s("🌶️", "chilli pepper hot"), s("🥑", "avocado")
+        s("🌶️", "chilli pepper hot spicy fire"), s("🥑", "avocado")
     )),
     Travel("Travel", listOf(
         s("✈️", "plane flight travel"), s("🏖️", "beach holiday"), s("🏝️", "island"), s("🏔️", "mountain"),
