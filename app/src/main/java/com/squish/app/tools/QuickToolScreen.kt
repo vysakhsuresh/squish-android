@@ -1,5 +1,7 @@
 package com.squish.app.tools
 
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.asImageBitmap
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -625,9 +627,29 @@ private fun MergeRow(
             .border(1.dp, SquishColors.Border, RoundedCornerShape(12.dp))
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        OrderBadge(number = position, accent = SquishColors.Magenta)
+        // A frame of each: clips from one day are all "Video · 29 Sep", and the
+        // order was a list of the same name twice.
+        val context = androidx.compose.ui.platform.LocalContext.current
+        var thumb by remember(clip.uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
+        LaunchedEffect(clip.uri) {
+            clip.uri?.let { thumb = com.squish.app.media.ThumbnailCache.frame(context, it, clip.sourceInMs + clip.durationMs / 3) }
+        }
+        Box(
+            modifier = Modifier.size(width = 56.dp, height = 40.dp).clip(RoundedCornerShape(8.dp)).background(SquishColors.Surface)
+        ) {
+            thumb?.let {
+                androidx.compose.foundation.Image(
+                    bitmap = it.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            // The number on the picture's corner: beside it, the name had no room left.
+            OrderBadge(number = position, accent = SquishColors.Magenta, modifier = Modifier.align(Alignment.TopStart).scale(0.75f))
+        }
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
@@ -640,7 +662,7 @@ private fun MergeRow(
             )
             Text(
                 // Whole seconds and one line: to the millisecond it broke over two.
-                "${Timecode.format(clip.durationMs).substringBefore('.')} long  ·  from ${Timecode.format(clip.timelineStartMs).substringBefore('.')}",
+                "${Timecode.format(clip.durationMs).substringBefore('.')} · at ${Timecode.format(clip.timelineStartMs).substringBefore('.')}",
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
