@@ -198,14 +198,16 @@ object ThumbnailExtractor {
             }.getOrNull()
         }
 
-    suspend fun extractFrames(context: Context, uri: Uri, count: Int, durationMs: Long): List<Bitmap> =
+    suspend fun extractFrames(context: Context, uri: Uri, count: Int, durationMs: Long): List<Bitmap?> =
         withContext(Dispatchers.IO) {
             if (durationMs <= 0 || count <= 0) return@withContext emptyList()
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(context, uri)
                 val step = durationMs / count
-                (0 until count).mapNotNull { i ->
+                // One per slot, null where a frame would not decode: dropped, every
+                // later frame slid a tile left and the strip stopped matching its time.
+                (0 until count).map { i ->
                     val timeUs = (i * step + step / 2) * 1000
                     runCatching {
                         // Scaled decode: full-resolution frames for a 4K clip would be

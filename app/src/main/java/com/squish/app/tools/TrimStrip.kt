@@ -84,7 +84,7 @@ fun TrimStrip(
             val widthPx = with(density) { maxWidth.toPx() }
             val targetPx = with(density) { TARGET_WIDTH.toPx() }
             val tiles = TrimRules.tileCount(maxWidth.value)
-            var frames by remember(uri, tiles) { mutableStateOf<List<Bitmap>>(emptyList()) }
+            var frames by remember(uri, tiles) { mutableStateOf<List<Bitmap?>>(emptyList()) }
             LaunchedEffect(uri, tiles, durationMs) {
                 if (durationMs > 0L) frames = ThumbnailExtractor.extractFrames(context, uri, tiles, durationMs)
             }
@@ -96,7 +96,11 @@ fun TrimStrip(
                     .background(SquishColors.Background)
             ) {
                 repeat(tiles) { i ->
+                    // A frame that would not decode borrows the one before it
+                    // (then after), as the editor's filmstrip does: not a black hole.
                     val frame = frames.getOrNull(i)
+                        ?: (i - 1 downTo 0).firstNotNullOfOrNull { frames.getOrNull(it) }
+                        ?: (i + 1 until frames.size).firstNotNullOfOrNull { frames.getOrNull(it) }
                     Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         if (frame != null) {
                             Image(
