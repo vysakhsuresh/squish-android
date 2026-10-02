@@ -1,5 +1,8 @@
 package com.squish.app.home
 
+import com.squish.app.data.ProjectAutosave
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -570,6 +573,9 @@ private fun ProjectCard(
     LaunchedEffect(project.coverUri, project.coverAtMs) {
         val uri = project.coverUri ?: return@LaunchedEffect
         cover = ThumbnailCache.frame(context, uri, project.coverAtMs)
+            ?: withContext(Dispatchers.IO) { ProjectAutosave(context).readableCover(project.id) }
+                ?.takeIf { it.first != uri }
+                ?.let { (other, at) -> ThumbnailCache.frame(context, other, at) }
     }
     var menu by remember { mutableStateOf(false) }
     val edge = if (selected) SquishColors.Primary else SquishColors.Cyan.copy(alpha = 0.22f)

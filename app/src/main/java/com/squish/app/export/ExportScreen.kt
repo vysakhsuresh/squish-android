@@ -240,7 +240,10 @@ fun ExportedFile(
             runCatching { context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L }.getOrDefault(0L)
         }
         meta = ThumbnailExtractor.probe(context, uri)
-        if (!isAudio) cover = ThumbnailCache.frame(context, uri, 0L)
+        // A third of the way in, as the library takes it: the first frame of an
+        // edit that fades or twirls in is black, and the card read as empty.
+        val lengthMs = meta?.durationMs?.takeIf { it > 0L } ?: fallbackDurationMs
+        if (!isAudio) cover = ThumbnailCache.frame(context, uri, (lengthMs / 3).coerceAtLeast(0L))
     }
 
     // A second copy, wherever they want it. The automatic publish puts it in the

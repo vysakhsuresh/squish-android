@@ -695,6 +695,25 @@ class ProjectAutosave(context: Context) {
         return Triple(coverUri, coverAt, owned)
     }
 
+    /**
+     * A cover the app can still read, when the one the sidecar names cannot be:
+     * a gallery video opened through "Open with" is read on that grant alone
+     * (the app holds no video permission), and once it lapses the card was a
+     * blank clapper although the project's own photos, freezes and other shots
+     * were all there. The first readable shot on the main track, then any clip.
+     */
+    fun readableCover(slot: String): Pair<Uri, Long>? = runCatching {
+        val snapshot = decode(JSONObject(liveFile(slot).readText())) ?: return null
+        val shots = snapshot.clips.sortedWith(compareBy({ !it.isMain }, { it.timelineStartMs }))
+        shots.firstNotNullOfOrNull { clip ->
+            val uri = clip.uri ?: return@firstNotNullOfOrNull null
+            val readable = runCatching {
+                appContext.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+            }.getOrDefault(false)
+            if (readable) uri to ProjectRules.coverTimeMs(clip.sourceInMs, clip.sourceOutMs) else null
+        }
+    }.getOrNull()
+
     private fun JSONObject.putCover(coverUri: Uri, coverAtMs: Long, sizeBytes: Long) {
         put("coverUri", coverUri.toString())
         put("coverAtMs", coverAtMs)
