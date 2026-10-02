@@ -99,7 +99,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             colorArgb = android.graphics.Color.WHITE,
             xFraction = 0.5f,
             yFraction = com.squish.app.editor.TextPlacementRules.freeY(
-                _state.value.textOverlays.filter { !it.sticker && it.startMs < span.endMs && it.endMs > span.startMs }.map { it.yFraction }
+                _state.value.textOverlays.filter { it.startMs < span.endMs && it.endMs > span.startMs }.map { it.yFraction }
             )
         )
         // Selected, so the toolbar is the line's own and Edit has something to open on.
@@ -164,7 +164,12 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             endMs = span.endMs,
             colorArgb = android.graphics.Color.WHITE,
             xFraction = 0.5f,
-            yFraction = 0.5f,
+            yFraction = com.squish.app.editor.TextPlacementRules.freeY(
+                // Clear of every line and sticker showing then: seen on the phone,
+                // a flag dropped straight onto a title.
+                _state.value.textOverlays.filter { it.startMs < span.endMs && it.endMs > span.startMs }.map { it.yFraction },
+                gap = 0.16f
+            ),
             sizeSp = STICKER_SIZE_SP,
             stroke = TextStroke.NONE,
             motion = TextMotion.Pop,
