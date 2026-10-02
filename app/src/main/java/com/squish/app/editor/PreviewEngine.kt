@@ -266,6 +266,10 @@ class PreviewEngine(private val context: Context) {
 
         /** False once the chain has failed and been taken off; see the error listener. */
         var effectsOn = false
+        /** The chain this surface was built with, so a dropped one can go back on. */
+        var chain: List<Effect> = emptyList()
+        /** When the chain was last taken off; it is tried again after [CHAIN_RETRY_MS]. */
+        var chainDroppedAt = 0L
 
         var loadedUri: String? = null
         /** The clip the player has been positioned for. */
@@ -325,11 +329,15 @@ class PreviewEngine(private val context: Context) {
                     // off and the surface plays plain. Anything else (a decoder, a
                     // file, a timeout) is not the chain's fault and keeps it,
                     // unless the same surface fails twice in quick succession.
+                    // Only the chain's own faults. Any two errors in a row used to count,
+                    // so two decoder hiccups during a fast scroll took the mask, the
+                    // look and the key off this surface for the rest of the session -
+                    // seen on the phone as a Cut out mask that cut nothing.
                     val chainFault = error.errorCode == PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSOR_INIT_FAILED ||
-                        error.errorCode == PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED ||
-                        recentErrors >= 2
+                        error.errorCode == PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED
                     if (effectsOn && chainFault) {
                         effectsOn = false
+                        chainDroppedAt = at
                         Log.w(TAG, "dropping effects on $key after ${error.errorCodeName}")
                         runCatching { player.setVideoEffects(emptyList()) }
                     }
@@ -366,7 +374,7 @@ class PreviewEngine(private val context: Context) {
                 }
             })
 
-            val chain = buildList<Effect> {
+            chain = buildList<Effect> {
                 // Keyed first, then background, then masked - the export's order.
                 add(ChromaKeyEffect { chroma.get() })
                 add(BackgroundEffect({ background.get().first }, { background.get().second }, timesAreSourceTime = true))
@@ -1315,6 +1323,13 @@ class PreviewEngine(private val context: Context) {
                     if (player.playWhenReady) player.pause()
                     return
                 }
+                // A chain taken off after a fault goes back on with the next load, once
+                // it has had time to be something passing (a driver hiccup, a file):
+                // off for good, every mask, look and key on the surface stopped showing.
+                if (!s.effectsOn && s.chain.isNotEmpty() && now - s.chainDroppedAt >= CHAIN_RETRY_MS) {
+                    s.effectsOn = runCatching { player.setVideoEffects(s.chain) }.isSuccess
+                    if (s.effectsOn) Log.i(TAG, "effects back on ${s.key}")
+                }
                 player.setMediaItem(MediaItem.fromUri(source))
                 player.prepare()
                 s.loadedUri = source.toString()
@@ -1632,6 +1647,8 @@ class PreviewEngine(private val context: Context) {
 
         /** Two failures on one surface within this are one problem, not two; see the error listener. */
         const val ERROR_MEMORY_MS = 30_000L
+        /** How long a chain taken off after a fault waits before it is put back on with a load. */
+        const val CHAIN_RETRY_MS = 15_000L
 
         /** Generous on purpose: correction is for a jump, not for playback. */
         const val AUDIO_RESYNC_MS = 400L
