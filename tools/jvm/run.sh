@@ -81,6 +81,7 @@ run chromakey "$SRC/timeline/ChromaKey.kt" tools/jvm/ChromaKeyChecks.kt
 run tonecurve "$SRC/media/effects/ToneCurve.kt" tools/jvm/ToneCurveChecks.kt
 run transcript "$SRC/editor/Transcript.kt" tools/jvm/TranscriptChecks.kt
 run lut "$SRC/media/effects/Lut.kt" tools/jvm/LutChecks.kt
+run safearea "$SRC/editor/SafeArea.kt" tools/jvm/SafeAreaChecks.kt
 run musicsynth "$SRC/media/audio/MusicSynth.kt" tools/jvm/MusicSynthChecks.kt
 run synthtempo "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SynthTempoChecks.kt
 run effectrecipes $TIMELINE tools/jvm/EffectRecipeChecks.kt

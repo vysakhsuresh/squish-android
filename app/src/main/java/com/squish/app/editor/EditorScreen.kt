@@ -1017,6 +1017,12 @@ private fun EditorPreview(
                 // preview is clipped to what the file keeps, and nothing is
                 // drawn over it. They used to stay up in every tool once a
                 // ratio was chosen.
+                // The platform guide sits under whatever tool layer is up: it is
+                // a thing to work against, not a thing to work on, so it never
+                // takes a touch and never hides the crop's own handles.
+                if (!fullscreen) {
+                    state.safeArea?.let { SafeAreaLayer(it, modifier = Modifier.fillMaxSize()) }
+                }
                 when {
                     fullscreen -> Unit
                     eyedropper != null -> EyedropperLayer(

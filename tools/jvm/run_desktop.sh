@@ -65,6 +65,7 @@ run chromakey "$SRC/timeline/ChromaKey.kt" tools/jvm/ChromaKeyChecks.kt
 run tonecurve "$SRC/media/effects/ToneCurve.kt" tools/jvm/ToneCurveChecks.kt
 run transcript "$SRC/editor/Transcript.kt" tools/jvm/TranscriptChecks.kt
 run lut "$SRC/media/effects/Lut.kt" tools/jvm/LutChecks.kt
+run safearea "$SRC/editor/SafeArea.kt" tools/jvm/SafeAreaChecks.kt
 run stillrules $TIMELINE "$SRC/editor/StillRules.kt" tools/jvm/StillRulesChecks.kt
 run timecode   $TIMELINE "$SRC/editor/Timecode.kt" tools/jvm/TimecodeChecks.kt
 run framerules $TIMELINE "$SRC/editor/PreviewBox.kt" "$SRC/media/ExportPresets.kt" tools/jvm/stub/Quality.kt \

@@ -688,6 +688,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
+     * The platform guide drawn over the picture. A view setting: no undo step,
+     * nothing in the draft, nothing in the file - tapping it twice is free.
+     */
+    fun setSafeArea(area: SafeArea?) = _state.update { it.copy(safeArea = area) }
+
+    /**
      * The Replace sheet is a question about one clip; it goes when that clip is
      * no longer the selection. It stayed up over the next shot tapped, and Done
      * then replaced the shot the sheet had been opened on, out of sight.

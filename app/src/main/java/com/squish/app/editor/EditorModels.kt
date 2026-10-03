@@ -540,6 +540,12 @@ data class EditorUiState(
     val muteOriginal: Boolean = false,
     val originalVolume: Float = 1f,
     val rotationDegrees: Int = 0,
+    /**
+     * The platform furniture drawn over the picture as a guide, or null for
+     * none. A view setting, not an edit: it is never written into the file and
+     * never costs an undo step, so it is not in the draft either.
+     */
+    val safeArea: SafeArea? = null,
     val cropAspect: CropAspect = CropAspect.Original,
     /**
      * What fills a ratio's canvas round the picture, when the picture is fitted

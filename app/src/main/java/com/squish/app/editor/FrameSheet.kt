@@ -188,6 +188,41 @@ fun RatioPanel(state: EditorUiState, viewModel: EditorViewModel) {
             Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
         }
 
+        // What the platform puts on top of your picture. Beside the ratio
+        // because they are the same question - what shape is this for, and what
+        // of it will actually be seen.
+        Text(
+            "Show where the app's buttons will be",
+            style = MaterialTheme.typography.bodyMedium,
+            color = SquishColors.TextPrimary
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
+            SelectableChip(
+                label = "Off",
+                selected = state.safeArea == null,
+                accentColor = SquishColors.Teal,
+                onClick = { viewModel.setSafeArea(null) }
+            )
+            SafeArea.entries.forEach { area ->
+                SelectableChip(
+                    label = area.label,
+                    selected = state.safeArea == area,
+                    accentColor = SquishColors.Teal,
+                    onClick = { viewModel.setSafeArea(area) }
+                )
+            }
+        }
+        if (state.safeArea != null) {
+            Text(
+                "A guide only - it is never in the file. The apps move their buttons about, so treat it as near enough rather than exact.",
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.TextMuted
+            )
+        }
+
         when {
             state.cropAspect == CropAspect.Custom -> Text(
                 "Drag any edge or corner on the picture, or the middle to move it. The dimmed part is what goes.",
