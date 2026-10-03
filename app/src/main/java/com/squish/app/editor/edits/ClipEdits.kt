@@ -1650,7 +1650,16 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 // auto-captions replaces its own lines, not ones made from them.
                 val copy = text.copy(id = UUID.randomUUID().toString(), startMs = span.startMs, endMs = span.endMs)
                 record("Duplicate") {
-                    _state.update { it.copy(textOverlays = it.textOverlays + copy, selectedClipId = copy.id) }
+                    // The playhead goes onto the copy, past its arrival: left on the
+                    // original, the copy was selected with no frame showing it, so its
+                    // box and its tools were nowhere on the picture.
+                    val at = (copy.startMs + copy.motionInMs).coerceAtMost(copy.endMs - 1L).coerceAtLeast(copy.startMs)
+                    _state.update {
+                        it.copy(
+                            textOverlays = it.textOverlays + copy, selectedClipId = copy.id,
+                            playheadMs = at, scrubNonce = it.scrubNonce + 1
+                        )
+                    }
                 }
             }
             effect != null -> {
