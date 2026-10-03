@@ -20,7 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Transform
+import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -136,7 +136,7 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
             PanelHeading(
                 "Moves",
                 "Across the whole clip, over the arrival and leaving",
-                icon = Icons.Filled.Transform,
+                icon = Icons.Filled.OpenWith,
                 accent = accent
             )
             // Read back off the keys, since a move is not stored by name: the
@@ -345,7 +345,7 @@ fun PlacementPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                 onClip -> "Changing these sets a key at the playhead"
                 else -> "The playhead is off this clip, so these move the whole animation"
             },
-            icon = Icons.Filled.Transform,
+            icon = Icons.Filled.OpenWith,
             accent = accent
         )
         KeyframeButton(
