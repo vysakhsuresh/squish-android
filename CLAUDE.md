@@ -149,6 +149,28 @@ should work through it and then delete what holds up.
   seek no longer opens the gate (it relies on ExoPlayer masking the state to
   BUFFERING on seek); and that a playhead drag settles exactly the moment the
   finger lifts.
+- **Editing by transcript, LUT import, safe-area guides and keyed filter
+  strength (3-4 October), all of it.** Built on the desktop with no phone
+  attached; the arithmetic of each is executed on the JVM
+  (`tools/jvm/TranscriptChecks.kt`, `SpanRemovalChecks.kt`, `LutChecks.kt`,
+  `SafeAreaChecks.kt`, `LookKeysChecks.kt`). What only a device answers:
+  - **Transcript.** Auto-caption a talking head, open Text → "Edit by
+    transcript", tap two words and Delete: the picture, the sound and the
+    captions all lose that stretch and the rest closes up, as one undo step.
+    "Take out every um and uh" does the same over every run at once. A line
+    typed by hand shows underlined and takes its whole line.
+  - **LUT.** Import a .cube (any grading tool writes one): the picture changes,
+    Strength mixes it back, and **a photo overlay graded with the same LUT must
+    match the video beside it** - the CPU copy and the atlas lookup meeting.
+    Check a 33-cube as well as a 17, since the atlas row length changes with it,
+    and that a draft reopened still has its LUT by name.
+  - **Safe areas.** The Frame sheet's new chips dim the covered bands over the
+    picture and nothing reaches the file.
+  - **Keyed filter strength.** The one with a real risk: the keys are read off
+    the frame's presentation time, which in the preview counts from the clip's
+    start. **If the export's item clock does not, a faded look will be right on
+    screen and wrong in the file.** Fade a look in across one shot and compare
+    the export against the preview before trusting it.
 - **The Curves tool (3 October), all of it.** Built on the desktop with no phone
   attached. The arithmetic is executed on the JVM (`tools/jvm/ToneCurveChecks.kt`
   and the curve part of `GradeChecks.kt`): monotone, in range, the table is the

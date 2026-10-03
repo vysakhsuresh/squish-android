@@ -48,8 +48,14 @@ import com.squish.app.ui.theme.SquishColors
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TranscriptPanel(state: EditorUiState, viewModel: EditorViewModel, onClose: () -> Unit) {
+    // Words only. A sticker lives in the same list and its "text" is an emoji,
+    // which is not something anybody wants to read a transcript of.
     val words = remember(state.textOverlays) {
-        Transcript.words(state.textOverlays.map { Transcript.Line(it.id, it.text, it.startMs, it.endMs, it.wordStartsMs) })
+        Transcript.words(
+            state.textOverlays
+                .filterNot { it.sticker }
+                .map { Transcript.Line(it.id, it.text, it.startMs, it.endMs, it.wordStartsMs) }
+        )
     }
     var anchor by remember { mutableStateOf<Int?>(null) }
     var head by remember { mutableStateOf<Int?>(null) }

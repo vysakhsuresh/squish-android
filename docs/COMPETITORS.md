@@ -1,4 +1,4 @@
-# Beating InShot, CapCut and Filmora
+﻿# Beating InShot, CapCut and Filmora
 
 Written 3 October 2026.
 
@@ -105,7 +105,7 @@ money or a promise).
 
 ### 2.1 BUILD NEXT - cheap, visible, and they all have it
 
-**G1. Blend modes on overlays** — **BLOCKED, 3 October.** CapCut, InShot and
+**G1. Blend modes on overlays** â€” **BLOCKED, 3 October.** CapCut, InShot and
 Filmora all have them and we have opacity only, so this is still the biggest
 hole: light leaks, dust, bokeh, smoke and film-burn overlays are all sold on the
 assumption of Screen or Add.
@@ -140,49 +140,33 @@ Minutest level:
 - Risk: medium. The preview/file agreement is the thing to check, and it is
   checkable.
 
-**G2. LUT import (.cube)** — CapCut and Filmora both take LUTs; InShot does not.
-We have 49 looks and no way to bring one in. For the product-video audience this
-is the difference between "nice filters" and "my brand's grade".
-Minutest level:
-- A `.cube` parser (1D and 3D, sizes 17/25/33/64), in `media/effects/Lut.kt`,
-  pure and JVM-checkable against a known identity cube.
-- Store under `files/luts/`, named in the draft by file as fonts already are.
-- A 3D texture sampled in the look shader - ES2 has no `sampler3D`, so pack the
-  cube into a 2D atlas and interpolate, which is the standard trick and must be
-  checked against the CPU copy on a dozen colours.
-- `Grade.applyTo` gains the same LUT path so photo overlays and swatches agree.
-- UI: "Import a LUT" at the end of the Filters row, with Strength.
-- Risk: medium-high (the atlas interpolation), but entirely checkable on the JVM.
+**G2. LUT import (.cube)** â€” **BUILT, 3 October**, unseen on a device. 3D and 1D
+cubes, comments, commas, odd case and a DOMAIN other than 0..1; a bad file says
+what is wrong in a sentence. Flattened into a tile atlas for ES2 and sampled
+with two reads and a mix, which is the same trilinear `Lut3D.sample` does on the
+CPU over the same eight-bit numbers. Under `files/luts/`, named in the draft as
+fonts are. It goes on last, after the sliders and the curve.
 
-**G3. Edit by transcript** — CapCut and Filmora both ship text-based editing. We
-are *most of the way there already and do not expose it*: auto-captions give word
-timings (`wordStartsMs`), `TextTiming` maps them through trims and cuts. The
-missing piece is a screen that shows the transcript and deletes the footage under
-a deleted word.
-Minutest level:
-- A transcript sheet listing words with their times for the selected shot or the
-  whole edit.
-- Select a word range → a Delete that cuts the clip at those times and closes the
-  gap (the magnetic model already does the cut and close).
-- Strike-through rather than removal, with an undo step per edit.
-- A "remove filler words" pass (um, uh, like) on top of the same machinery -
-  CapCut sells this and ours would run on the phone.
-- Risk: low-medium. All the arithmetic already exists and is checked.
+**G3. Edit by transcript** â€” **BUILT, 3 October**, unseen on a device. Text â†’
+"Edit by transcript": tap two words, Delete takes that stretch out of the
+picture, the sound and the captions at once, as one undo step. "Take out every
+um and uh" does every run in a pass. `withSpanRemoved` and
+`Transcript.afterRemoval` are both executed (`SpanRemovalChecks`,
+`TranscriptChecks`). A word with no moment of its own is drawn underlined and
+takes its whole line, rather than pretending to a precision the data lacks.
 
-**G4. Audio stickers** — InShot shipped these recently; cheap and fun.
+**G4. Audio stickers** â€” InShot shipped these recently; cheap and fun.
 - A sticker carries an optional sound that lands as a sound clip at its start.
 - Reuse the sticker picker and the sound-clip landing from Read aloud.
 - Risk: low.
 
-**G5. Masks and filters keyframed** — Filmora advertises keyframing "colour and
-effect"; CapCut keyframes filters. The roadmap already names this as the natural
-next use of `ValueKey` and says it is not built.
-- A `ValueKey` track on a clip's filter strength, and on each Adjust slider worth
-  animating (exposure, saturation, temperature at minimum).
-- A mask's shape keyed, not just tracked.
-- Risk: low-medium. The track type and the strip's diamonds exist.
+**G5. Filters keyframed** â€” **BUILT, 3 October**, unseen. `ValueTrack.Look` is
+the third keyed number beside opacity and level, with the same button, the same
+playhead rule, diamonds on the strip and the keys in the draft. Only the
+strength: thirteen keyable sliders would be a second timeline nobody asked for.
+Still open: **a mask's shape keyed** rather than only tracked.
 
-**G6. Curves (tone curve)** — **BUILT, 3 October**, unseen on a device.
+**G6. Curves (tone curve)** â€” **BUILT, 3 October**, unseen on a device.
 Master + per-channel, monotone rather than Catmull-Rom (a plain spline
 overshoots, and an overshoot in a tone curve is a band that gets darker as the
 footage gets brighter). Folded into one 256-entry table that the shader looks up
@@ -192,7 +176,7 @@ version 14.
 Still open from this item: **lift/gamma/gain wheels**, which would fold into the
 same grade pass and are the other half of what a colourist expects.
 
-**G7. A "quick fix" row on import** — CapCut's AutoCut and Filmora's AI Reel
+**G7. A "quick fix" row on import** â€” CapCut's AutoCut and Filmora's AI Reel
 Maker both answer "I have 30 clips and no time". We have Fit shots to the beat
 and auto-reframe; we do not have the one button that puts them together.
 - One action: trim each clip to its liveliest N seconds (we already measure
@@ -202,33 +186,34 @@ and auto-reframe; we do not have the one button that puts them together.
 
 ### 2.2 LATER - worth it, not next
 
-**G8. True frame interpolation (optical flow)** — Filmora advertises AI Frame
+**G8. True frame interpolation (optical flow)** â€” Filmora advertises AI Frame
 Interpolation. We have frame blending, and `CLAUDE.md` is honest that blending is
 not smoothing. A GPU optical-flow pass (block matching, then warp) is feasible
 and would make slow motion genuinely smooth. Expensive; do it when the slow
 motion is otherwise finished.
 
-**G9. Skin smoothing / retouch** — CapCut and InShot both have it and this
+**G9. Skin smoothing / retouch** â€” CapCut and InShot both have it and this
 audience (product video, vlogs, reels) uses it. MediaPipe's face mesh is already
 a dependency. A bilateral blur inside the face mask with one Strength slider is
 the whole feature. Deliberately *one* slider - the moment it becomes a beauty
 suite we are InShot.
 
-**G10. Vocal / music separation** — Filmora has AI Vocal Remover. On-device
+**G10. Vocal / music separation** â€” Filmora has AI Vocal Remover. On-device
 separation (a small Demucs-style model) is possible but heavy. Only worth it if
 users ask.
 
-**G11. More templates, local** — 14 against CapCut's thousands. We will never win
+**G11. More templates, local** â€” 14 against CapCut's thousands. We will never win
 on count, and should not try, but 40 good ones made from our own looks and
 animations is a weekend and raises the floor for a new user.
 
-**G12. Shape and arrow annotations** — all three have basic shapes. We have text
+**G12. Shape and arrow annotations** â€” all three have basic shapes. We have text
 and stickers; a line, arrow, rectangle and circle with the same box controls is
 small and often asked for in product video.
 
-**G13. Export presets per platform with safe areas** — we have WhatsApp / Email /
-Reels / YouTube chips. Adding the *safe-area overlay* (where TikTok's UI covers
-the frame) is a small drawing job and a real differentiator for reels.
+**G13. Safe-area guides** â€” **BUILT, 3 October**, unseen. Chips on the Frame
+sheet dim where TikTok, Reels or Shorts put their own buttons and caption, with
+an "Anywhere" that is worked out as the worst edge of the three. A guide only;
+nothing reaches the file. None of the three show you this.
 
 ### 2.3 SKIP - on purpose
 
@@ -281,23 +266,26 @@ matters more than the item.
 
 ## 3. If you want an order
 
-~~1. **G1 blend modes**~~ - blocked by Media3's compositor; see the item.
-~~3. **G6 curves**~~ - **done on 3 October**, waiting on a device.
+Done on 3-4 October, all of it unseen on a device: **G6 curves**, **G2 LUT
+import**, **G3 edit by transcript**, **G5 filter keyframes**, **G13 safe-area
+guides**. **G1 blend modes** is blocked by Media3's compositor - see the item.
 
-1. **G3 edit by transcript** - most of it is already built and unexposed; the
-   biggest win per hour in the list.
-2. **G2 LUT import** - the same table the curve now uploads, read from a .cube,
-   which makes it markedly cheaper than it was before the curve existed.
-5. **G5 filter and mask keyframes** - closes the roadmap's own loose end.
-6. **G7 quick assemble** - the answer to AutoCut, entirely local.
-7. **G4 audio stickers, G12 annotations, G13 safe areas** - small, in any order.
-8. Then revisit **G8 optical flow** and **G9 skin smoothing** with D2 answered.
+What is left, in the order it is worth doing:
 
-Everything above is reasoned from the repository and from the three apps'
-published material. None of it has been tried; each item's real cost will move
-once someone starts. The first one to start is G1, and the thing that will
-decide whether it is right is a JVM check that the Compose blend and the GL
-blend agree on a grey.
+1. **G7 quick assemble** - the answer to AutoCut, entirely local, and every
+   piece of it already exists (beat fit, auto-reframe, loudness).
+2. **G12 shape and arrow annotations** - small, and asked for in product video.
+3. **G4 audio stickers** - small.
+4. **G11 more templates** - a weekend, and it raises the floor for a new user.
+5. **G5's other half: a mask's shape keyed.**
+6. Then **G8 optical flow** and **G9 skin smoothing**, the two expensive ones.
+7. **G1 blend modes**, if the week of compositor work is judged worth it.
+
+The five built on 3-4 October were all reasoned and executed, and **none of them
+has been seen on a phone**. `CLAUDE.md` lists what the device has to answer for
+each; the one with a real risk is the keyed filter strength, where the export's
+item clock could put a faded look at the wrong moment while the preview looks
+right.
 
 **Sources for the competitor claims** (read 3 October 2026):
 [Filmora Android features](https://filmora.wondershare.com/filmora-ai-video-editing-app-android/),

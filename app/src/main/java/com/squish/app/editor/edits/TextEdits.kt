@@ -815,7 +815,10 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
 
     /** The edit read as words, for the transcript sheet and the filler pass. */
     fun transcriptWords(): List<com.squish.app.editor.TranscriptWord> =
-        com.squish.app.editor.Transcript.words(_state.value.textOverlays.map { it.asTranscriptLine() })
+        // Words only: a sticker shares this list and its "text" is an emoji.
+        com.squish.app.editor.Transcript.words(
+            _state.value.textOverlays.filterNot { it.sticker }.map { it.asTranscriptLine() }
+        )
 
     /**
      * Stretches taken out, back to front.
