@@ -844,3 +844,34 @@ Rendered again on the phone after the fix, same project, same settings:
   same length, sound untouched at 21.502 s.
 - **60 fps: 642 frames, 30.000 fps, byte-for-byte the same size as before** -
   the path that was already right is untouched.
+
+### The rest of the export sheet (B14), on an 11.5 s clip
+
+- **HEVC.** The toggle wrote `video=c2.qti.hevc.encoder mime=video/hevc`. At
+  720p it asked 771,028 bps against H.264's 1,186,197 - exactly the 0.65 of
+  `HEVC_BITRATE_SCALE` - and the files were 1.61 MB against 2.18 MB: 35% off
+  the picture, 26% off the whole file, since the sound is the same in both.
+  "About a third smaller" is fair for the picture. **At 360p the toggle changes
+  nothing** and both files came out 1.0 MB, because the recommended bitrate
+  times 0.65 is already under `MIN_VIDEO_BPS` (300 kbps) and both clamp to the
+  floor. That is the arithmetic working, not a fault - worth knowing before
+  someone tests the toggle at a small size and reports it broken.
+- **Fit to a size.** Chips 16 / 25 / 50 / 100 MB. At 16 MB the sheet solved the
+  clip up to "960 × 720 · sized to fit" and promised ≈ 16.0 MB; the render asked
+  10,976,363 bps, the encoder spent 5,753,960 on this very flat footage, and the
+  file landed at **8.8 MB, under the cap**. No overshoot, so the "Keep this one /
+  Try again, tighter" card rightly did not show (still unseen).
+- While Fit is on the HEVC row changes its words to **"Sharper file (HEVC) - The
+  same size, with a better picture in it"**, and back to "Smaller file (HEVC) -
+  About a third smaller at the same quality" when it is off. Under a size cap
+  the codec buys quality rather than size, and the sheet says so.
+- **Sound only** wrote `squish_….m4a` to **Music > Squish** (590 KB, the log
+  `video=null mime=null frames=0`); the done screen is a waveform with Length
+  and Size only - no Frame or Rate columns, Copy to Files but no Save as GIF.
+- **The last export's settings are the next new project's defaults**: a fresh
+  project opened on 360p and 60 fps, which is what the run before it used.
+- The fps hint reads "The footage runs at 30 fps. A higher rate can't add
+  frames; the file keeps the ones it has" on 50 and 60, and "Frames are dropped
+  to reach it. 24 or 25 for a film look; 30 for a smaller file" on 24.
+- The done screen reports the **file's** rate, not the chip's: 60 asked of 30 fps
+  footage says 30 fps on it, which is what the file has.
