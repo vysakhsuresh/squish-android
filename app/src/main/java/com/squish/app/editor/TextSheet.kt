@@ -801,7 +801,14 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
             }
 
             ChipRow("Look", TextLook.entries, TextLook.of(style), { it.label }) { look ->
-                restyle { it.withStyle(look.applied(it.style)) }
+                restyle {
+                    val styled = look.applied(it.style)
+                    // Neon on white letters glowed white, and over a light picture
+                    // the line all but vanished: white goes to a neon pink, as the
+                    // Neon title does. Any colour already chosen is kept.
+                    val neon = look == TextLook.Neon && (styled.colorArgb or 0xFF000000.toInt()) == android.graphics.Color.WHITE
+                    it.withStyle(if (neon) styled.copy(colorArgb = NEON_PINK) else styled)
+                }
             }
 
             Text("Font", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
@@ -1331,3 +1338,6 @@ private fun TranslateCard(viewModel: EditorViewModel) {
         )
     }
 }
+
+/** The colour Neon takes on white letters: the Neon title preset's pink. */
+private const val NEON_PINK = 0xFFFF4FD8.toInt()
