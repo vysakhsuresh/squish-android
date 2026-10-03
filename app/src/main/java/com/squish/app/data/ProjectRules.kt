@@ -92,6 +92,32 @@ object ProjectRules {
         return if (prefix == null) day else "$prefix · $day"
     }
 
+    /**
+     * Titles told apart. Two projects started the same day with no name were
+     * both "Edit · 2 Oct" on the dashboard, and which was which took opening
+     * them. An unnamed project whose title another shares gets the time it
+     * was started ("Edit · 2 Oct, 1:24 PM"), and a number after that if even
+     * the minute is shared. A name someone gave is never changed. [entries]
+     * are (title, named, createdAtMillis); the result is in the same order.
+     */
+    fun distinctTitles(entries: List<Triple<String, Boolean, Long>>, zone: TimeZone = TimeZone.getDefault()): List<String> {
+        val counts = entries.groupingBy { it.first }.eachCount()
+        val clock = SimpleDateFormat("h:mm a", Locale.getDefault()).apply { timeZone = zone }
+        val timed = entries.map { (title, named, created) ->
+            if (named || (counts[title] ?: 0) < 2 || created <= 0L) title else "$title, ${clock.format(Date(created))}"
+        }
+        val seen = HashMap<String, Int>()
+        val again = timed.groupingBy { it }.eachCount()
+        return timed.mapIndexed { i, t ->
+            if ((again[t] ?: 0) < 2 || entries[i].second) t
+            else {
+                val n = (seen[t] ?: 0) + 1
+                seen[t] = n
+                if (n == 1) t else "$t ($n)"
+            }
+        }
+    }
+
     // The name a shared file's copy is kept under (MediaAccess.importCopy): a UUID.
     private val COPY_NAME = Regex("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 

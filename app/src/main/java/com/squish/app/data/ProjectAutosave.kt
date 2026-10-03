@@ -142,7 +142,9 @@ data class DraftSummary(
      */
     val staged: Boolean = false,
     /** What the project keeps under the app's own storage; see [ProjectRules.ownedFile]. */
-    val sizeBytes: Long = 0L
+    val sizeBytes: Long = 0L,
+    /** When it was started, which tells two same-day projects apart (ProjectRules.distinctTitles). */
+    val createdAtMillis: Long = 0L
 ) {
     val editedSinceExport: Boolean
         get() = DraftHousekeeping.editedSinceExport(savedAtMillis, exportedAtMillis, editFingerprint, exportedFingerprint)
@@ -493,7 +495,9 @@ class ProjectAutosave(context: Context) {
                     staged = true
                 )
             }
-            (saved + staged).sortedByDescending { it.savedAtMillis }
+            val all = (saved + staged).sortedByDescending { it.savedAtMillis }
+            val titles = ProjectRules.distinctTitles(all.map { Triple(it.title, it.name != null, it.createdAtMillis) })
+            all.mapIndexed { i, d -> if (titles[i] == d.title) d else d.copy(title = titles[i]) }
         }.getOrDefault(emptyList())
     }
 
@@ -788,6 +792,7 @@ class ProjectAutosave(context: Context) {
             coverUri = json.optString("coverUri").takeIf { it.isNotBlank() }?.let(Uri::parse) ?: Uri.parse(uri),
             coverAtMs = json.optLong("coverAtMs", 0L),
             name = json.optString("name").takeIf { it.isNotBlank() },
+            createdAtMillis = json.optLong("createdAtMillis").takeIf { it > 0L } ?: json.optLong("savedAtMillis"),
             sizeBytes = json.optLong("sizeBytes", 0L)
         )
     }.getOrNull()

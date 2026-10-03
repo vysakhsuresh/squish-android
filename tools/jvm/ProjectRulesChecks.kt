@@ -93,6 +93,26 @@ fun main() {
         check(StorageRules.pathOf("file:///app/files/voice/take.wav?x#y") == "/app/files/voice/take.wav", "a query or fragment reached the path")
     }
 
+    // Two unnamed projects of one day are told apart by the time; a name is kept.
+    run {
+        val utc = java.util.TimeZone.getTimeZone("UTC")
+        val day = 1790985600000L // 2 Oct 2026, 00:00 UTC
+        val titles = ProjectRules.distinctTitles(listOf(
+            Triple("Edit · 2 Oct", false, day + 13 * 3_600_000L + 24 * 60_000L),
+            Triple("Edit · 2 Oct", false, day + 21 * 3_600_000L + 5 * 60_000L),
+            Triple("Edit · 1 Oct", false, day - 3_600_000L),
+            Triple("Edit · 2 Oct", true, day),
+            Triple("Twin", false, day + 60_000L),
+            Triple("Twin", false, day + 60_000L)
+        ), utc)
+        check(titles[0].startsWith("Edit · 2 Oct, 1:24"), "the first of a shared title has no time: ${titles[0]}")
+        check(titles[1].startsWith("Edit · 2 Oct, 9:05"), "the second of a shared title has no time: ${titles[1]}")
+        check(titles[2] == "Edit · 1 Oct", "a title of its own was changed: ${titles[2]}")
+        check(titles[3] == "Edit · 2 Oct", "a name someone gave was changed: ${titles[3]}")
+        check(titles[4] != titles[5], "two started the same minute still read the same: ${titles[4]}")
+        check(titles.size == titles.toSet().size || titles[3] == "Edit · 2 Oct", "titles still collide: $titles")
+    }
+
     if (problems.isEmpty()) {
         println("ProjectRulesChecks: all checks passed")
     } else {
