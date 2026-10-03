@@ -274,6 +274,9 @@ class PreviewEngine(private val context: Context) {
 
         /** The blended-still list this surface last read, so an unchanged one costs nothing. */
         var blendFrom: List<Clip>? = null
+
+        /** Which still, on which shot, the surface is holding - null for none. */
+        var blendKey: Pair<String?, String>? = null
         var effectsClip: Clip? = null
         var effectsFrom: List<TimedEffect>? = null
 
@@ -834,11 +837,17 @@ class PreviewEngine(private val context: Context) {
         // Worked out again only when the clip changed - an edit makes a new
         // Clip - and written only when it came out different.
         if (clip !== s.gradedClip || clip.lookAnimated) {
+            val sameClip = clip === s.gradedClip
             s.gradedClip = clip
             val grade = if (clip.lookAnimated) clip.gradeAt(timelineMs - clip.timelineStartMs) else clip.grade
             if (grade != s.grade.get()) {
                 s.grade.set(grade)
-                changed = true
+                // A keyed look's grade changes with the clock, and the clock
+                // moving is already drawing a new frame. Asking for another on
+                // every tick of a scrub swamped the decoder: the picture went
+                // black and the engine logged "no progress" until it gave up.
+                // Only a real change - an edit, a new clip - asks for a frame.
+                if (!(clip.lookAnimated && sameClip)) changed = true
             }
         }
         if (s.isBase) {
@@ -850,8 +859,13 @@ class PreviewEngine(private val context: Context) {
             val still = blendStills.firstOrNull {
                 it.timelineEndMs > clip.timelineStartMs && it.timelineStartMs < clip.timelineEndMs
             }
-            val was = s.blendStill.get()
-            if (was?.clipId != still?.id || was?.underId != clip.id) {
+            // Compared as one key, because the obvious test - "the held still's
+            // clip and shot still match" - is true every tick when there is no
+            // still at all (null never equals this shot's id), which asked for a
+            // fresh frame on every tick of a scrub and stalled the decoder.
+            val key = still?.id to clip.id
+            if (s.blendKey != key) {
+                s.blendKey = key
                 s.blendStill.set(still?.let { blendedStillFor(it, clip) })
                 changed = true
             }
