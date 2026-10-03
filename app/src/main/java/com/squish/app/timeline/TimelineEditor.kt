@@ -109,7 +109,9 @@ private val FX_LANE_HEIGHT = 32.dp
  * worked on.
  */
 private val THIN_LANE_HEIGHT = 20.dp
-private val GUTTER = 42.dp
+/** The track heads' column. 48 dp, not 42: the head is the whole width of it, so
+ *  anything narrower is a button under the 48 dp a finger is measured against. */
+private val GUTTER = 48.dp
 private val RULER_HEIGHT = 26.dp
 private val HANDLE_WIDTH = 20.dp
 
@@ -2601,7 +2603,9 @@ fun TimelineActionBar(
             // As tall with the buttons gone as with them, so the strip does not jump
             // when a clip is selected.
             modifier = Modifier.fillMaxWidth().heightIn(min = MINI_ACTION_SIZE).padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // 10 dp, not 8: the tiles are drawn 38 dp and the press spreads into
+            // the gap between them, so the gap is what takes each target to 48.
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (!toolbarHasThem) {

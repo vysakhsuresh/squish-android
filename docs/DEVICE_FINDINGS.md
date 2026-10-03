@@ -875,3 +875,32 @@ Rendered again on the phone after the fix, same project, same settings:
   to reach it. 24 or 25 for a film look; 30 for a smaller file" on 24.
 - The done screen reports the **file's** rate, not the chip's: 60 asked of 30 fps
   footage says 30 fps on it, which is what the file has.
+
+### The 48 dp targets, measured rather than eyed
+
+"The 48dp targets" had sat unseen since 1 October because looking at a
+screenshot cannot settle them. `uiautomator dump` can: every node with
+`clickable="true"`, its bounds in pixels, against 120 px (48 dp at this
+phone's density of 400). The script is in the session scratch, and the method
+is worth keeping - it is a few seconds per screen and it does not guess.
+
+Two real misses, both now fixed:
+
+- **The strip's track heads were 42 dp wide.** The heads fill their column and
+  the column (`GUTTER`) was 42 dp. Now 48; the only other thing that reads
+  `GUTTER` is the column itself, and the strip lays out as before.
+- **The strip's Split / Duplicate / Delete tiles were 46 dp wide.** They are
+  drawn 38 dp and the press spreads into the gap between them, so the 8 dp gap
+  left each target 2 dp short. The gap is 10 dp now.
+
+Everything else measured clean: the dashboard (19 nodes), the editor at level 0
+and with a clip selected, the Volume sheet (20 nodes) and the Export sheet (23).
+
+**A warning for anyone repeating this:** a node clipped by the edge of a
+scrolling container reports its *visible* bounds, so it reads as undersized.
+Three of the first readings were that - a card half off the bottom of the
+dashboard, the toolbar chip cut by the right edge of the screen, the last
+switch under the Render button. Scroll it into view and measure again before
+believing it. One change was written against such a false reading (the toggle
+switch) and taken out again once a scrolled dump showed the switches were
+always 48 dp.
