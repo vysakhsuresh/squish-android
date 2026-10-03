@@ -183,20 +183,33 @@ fun main() {
     // changed on one side only would grade a photo overlay differently from the
     // video beside it - the one place in the app where the two paths show the
     // same picture - and nothing would say so.
-    val shader = java.io.File("app/src/main/assets/squish_look_es2.glsl")
+    val assets = java.io.File("app/src/main/assets")
+    val shader = java.io.File(assets, "squish_look_es2.glsl")
     check(shader.isFile, "squish_look_es2.glsl is not there - did it move?")
-    if (shader.isFile) {
-        val text = shader.readText()
-        val lumaLine = Regex("const\\s+vec3\\s+LUMA\\s*=\\s*vec3\\(([^)]*)\\)").find(text)
-        check(lumaLine != null, "the shader has no `const vec3 LUMA` any more")
-        lumaLine?.let { m ->
-            val w = m.groupValues[1].split(',').map { it.trim().toFloat() }
-            check(w.size == 3, "the shader's LUMA is not three numbers")
-            if (w.size == 3) {
+
+    // Every shader that weighs a pixel's brightness carries its own copy of the
+    // Rec. 709 weights - the look shader and the effects shader as a named LUMA,
+    // the chroma key's spill suppression spelled into a dot(). Rather than
+    // listing the ones that happen to exist today, every vec3 of three weights
+    // that sums to 1 with green the largest is taken to be a luma vector and
+    // has to be the one the Kotlin uses.
+    var lumaSites = 0
+    assets.listFiles { f -> f.extension == "glsl" }?.sortedBy { it.name }?.forEach { f ->
+        Regex("vec3\\(\\s*([\\d.]+)\\s*,\\s*([\\d.]+)\\s*,\\s*([\\d.]+)\\s*\\)").findAll(f.readText()).forEach { m ->
+            val w = (1..3).map { m.groupValues[it].toFloat() }
+            val weights = near(w.sum(), 1f, 1e-3f) && w[1] > w[0] && w[1] > w[2]
+            if (weights) {
+                lumaSites++
                 check(near(w[0], Grade.LUMA_R) && near(w[1], Grade.LUMA_G) && near(w[2], Grade.LUMA_B),
-                    "LUMA disagrees: the shader has $w, the Kotlin ${listOf(Grade.LUMA_R, Grade.LUMA_G, Grade.LUMA_B)}")
+                    "${f.name} weighs brightness as $w, the Kotlin as ${listOf(Grade.LUMA_R, Grade.LUMA_G, Grade.LUMA_B)}")
             }
         }
+    }
+    check(lumaSites >= 3, "only $lumaSites luma vectors found in the shaders - the pattern that finds them has stopped matching")
+
+    if (shader.isFile) {
+        val text = shader.readText()
+        check(Regex("const\\s+vec3\\s+LUMA\\s*=").containsMatchIn(text), "the look shader has no `const vec3 LUMA` any more")
         for ((name, kotlinValue) in listOf("HSL_LUMA_REACH" to Grade.HSL_LUMA_REACH, "TONE_REACH" to Grade.TONE_REACH)) {
             val m = Regex("const\\s+float\\s+$name\\s*=\\s*([-\\d.]+)").find(text)
             // TONE_REACH may be spelled into the shader's arithmetic rather than
