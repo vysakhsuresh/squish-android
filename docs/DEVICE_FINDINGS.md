@@ -760,3 +760,47 @@ not yet seen on the phone", have now been seen on it.
   shell on moving sunglasses - a fair verdict, not a fault); Track adds no
   undo step of its own; the Replace sheet's back dismisses it without
   applying.
+
+### Blend frames, rendered and probed - the first time
+
+B13's riskiest unseen thing: `FrameBlendEffect` is the one shader program in
+the app that emits more frames than it takes, and nothing had ever run it on a
+GPU. A one-clip project (11.527 s of 30 fps footage) at 0.25x, exported twice
+at 360p, settles it. `tools/jvm/Mp4Probe.kt` on both files:
+
+| | frames | rate | durations |
+|---|---|---|---|
+| Blend frames **on** | 1377 | 30.001 fps | 33.33 ms x1376, 32.00 ms x1 |
+| Blend frames **off** | 345 | 7.500 fps | 133.33 ms x344, 132.00 ms x1 |
+
+So the blend emits four frames per input, at the edit's own rate, with nothing
+dropped and nothing out of order; off, the file keeps only the frames the
+footage has. Neither run stalled and no `VideoFrameProcessingException` was
+logged - the whole 46 s render took under twelve seconds either way
+(`SquishExport: done … frames=1377 … bitrate=297245 asked=300000`, and
+`frames=345 … bitrate=279920`). The done screen read the rate off the file
+itself: **30 fps** for the blended one, **8 fps** for the stepped one.
+
+The Speed sheet's own warning showed with it and is right: "7.5 fps out - too
+few frames to read as motion. 96 fps footage would carry it", with "Keep it
+smooth - nothing slower than 0.8x, the slowest this footage carries" under it.
+That retires CLAUDE.md's "slow motion below about 24fps out" entry, which had
+also said frame blending was not built; it is, and now it is seen.
+
+Not judged by eye: whether the blended frames *look* like motion blur rather
+than a cross-fade. The frame counts prove the mechanism, not the picture.
+
+### Seen around that export, and right
+
+- The export sheet: "Sizes above 1188p are beyond this phone's encoder", with
+  1440p and 4K greyed and 1080p offered; the Quality chips read
+  Lower · Standard · Higher; the frame-rate row's Auto says "Auto keeps the
+  footage's 30 fps"; the estimate read "≈ 2.5 MB, was 1.9 MB".
+- Back from the done screen lands on the bare editor (B14).
+- The Library's Delete asks first, says the gallery copy is the only one Squish
+  keeps and that there is no undo; the count went 37 → 35 and both files were
+  gone from `Movies/Squish` afterwards.
+- A project card's menu: Rename, Duplicate, Preview, "Earlier version · 15 min
+  ago", Select, Delete, and "Uses 1 KB on this phone" under them; its Delete
+  says the project moves to Recently deleted for 30 days and the original
+  videos are untouched.

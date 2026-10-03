@@ -149,9 +149,6 @@ should work through it and then delete what holds up.
   seek no longer opens the gate (it relies on ExoPlayer masking the state to
   BUFFERING on seek); and that a playhead drag settles exactly the moment the
   finger lifts.
-- **Slow motion below about 24fps out.** Stepping is arithmetic, not a fault:
-  slowing footage does not create frames. The panel now says so with the number.
-  True smoothing needs frame blending or optical flow and has not been built.
 - **A hand-drawn crop in the preview.** It reached the export before it reached
   the preview; now it does both, unseen.
 - **Batch B1 of the roadmap (data safety and exit paths), all of it.** Built and
@@ -640,13 +637,11 @@ should work through it and then delete what holds up.
   runs slower and must not stall); dragging a point on the curve moves it
   under the finger with no sideways slide on a vertical drag, a tap adds one
   at the curve's own rate there, and a swipe that starts off a point scrolls
-  the sheet; "Blend frames" on a 0.25x clip gives a file that
-  blurs through the steps rather than stepping, at the edit's frame rate,
-  with no dropped or reordered frames (`FrameBlendEffect` is the one shader
-  program here that emits more frames than it takes - watch for a stall in
-  the encoder or a `VideoFrameProcessingException`; its texture pool is
-  sized from the slowest stretch, `FrameBlendPlan.framesPerInput`, and gives
-  up textures rather than the export when the GPU refuses one); a Strength
+  the sheet; "Blend frames" on a 0.25x clip has now been rendered and probed
+  (3 October evening in `docs/DEVICE_FINDINGS.md`): 1377 even frames at
+  30.001 fps against 345 at 7.500 fps with it off, no stall and no
+  `VideoFrameProcessingException` - what is still unjudged is whether the
+  blended frames *look* like motion blur rather than a cross-fade; a Strength
   drag on a stabilized clip re-solves that clip live with no "Measuring…"
   and leaves every other stabilized clip as it was (the strength is the
   clip's, `Clip.stabilizeStrength`); the effect tiles and
