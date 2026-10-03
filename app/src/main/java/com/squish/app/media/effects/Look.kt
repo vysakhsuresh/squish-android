@@ -156,13 +156,15 @@ data class Adjust(
     val fade: Float = 0f,
     val grain: Float = 0f,
     /** One entry per [HueBand], in its order. */
-    val hsl: List<HslBand> = NO_HSL
+    val hsl: List<HslBand> = NO_HSL,
+    /** The Curves tool: a master curve and one per channel. */
+    val curve: ToneCurve = ToneCurve.NONE
 ) {
     val isIdentity: Boolean
         get() = abs(brightness) < EPS && abs(contrast) < EPS && abs(saturation) < EPS && abs(exposure) < EPS &&
             abs(temperature) < EPS && abs(tint) < EPS && abs(highlights) < EPS && abs(shadows) < EPS &&
             abs(sharpen) < EPS && abs(vignette) < EPS && abs(hue) < EPS && abs(fade) < EPS && abs(grain) < EPS &&
-            hsl.all { it.isIdentity }
+            hsl.all { it.isIdentity } && curve.isIdentity
 
     /** This with one band's sliders replaced. */
     fun withBand(band: HueBand, value: HslBand): Adjust {
@@ -284,8 +286,20 @@ data class Grade(
     val sharpen: Float = 0f,
     /** Degrees round the wheel. */
     val hueDegrees: Float = 0f,
-    val hsl: List<HslBand> = Adjust.NO_HSL
+    val hsl: List<HslBand> = Adjust.NO_HSL,
+    /** The Curves tool. Folded into one table per channel; see [curveLut]. */
+    val curve: ToneCurve = ToneCurve.NONE
 ) {
+    val hasCurve: Boolean get() = !curve.isIdentity
+
+    /**
+     * The curve's table, built once per grade rather than per pixel: [applyTo]
+     * runs over every pixel of a photo overlay, and the shader uploads this as
+     * its texture. Both read the same numbers, which is the whole point of
+     * there being a table at all.
+     */
+    val curveLut: FloatArray by lazy(LazyThreadSafetyMode.NONE) { curve.lut() }
+
     val hasChannelGain: Boolean
         get() = abs(redScale - 1f) > 1e-4f || abs(greenScale - 1f) > 1e-4f || abs(blueScale - 1f) > 1e-4f
     val hasContrast: Boolean get() = abs(contrast) > 1e-4f
@@ -307,7 +321,7 @@ data class Grade(
 
     val isIdentity: Boolean
         get() = !hasChannelGain && !hasContrast && !hasSaturation && !needsShader &&
-            !hasBrightness && !hasTone && !hasHue && !hasHsl
+            !hasBrightness && !hasTone && !hasHue && !hasHsl && !hasCurve
 
     /**
      * The same maths the shader does, on one color, in the same order.
@@ -341,6 +355,17 @@ data class Grade(
             val lift = highlights * TONE_REACH * smoothstep(0.45f, 1f, l) +
                 shadows * TONE_REACH * (1f - smoothstep(0f, 0.55f, l))
             r += lift; g += lift; b += lift
+        }
+
+        if (hasCurve) {
+            // After the tonal sliders and before saturation, which is where a
+            // curve sits in every tool that has one: it is a tonal move, and
+            // putting it after saturation would undo the saturation's own lift.
+            // Sampled from the table rather than evaluated, so this lands on
+            // exactly what the shader's texture lookup lands on.
+            r = ToneCurve.sample(curveLut, 0, r)
+            g = ToneCurve.sample(curveLut, 1, g)
+            b = ToneCurve.sample(curveLut, 2, b)
         }
 
         if (hasSaturation) {
@@ -760,7 +785,10 @@ object Looks {
             shadows = adjust.shadows,
             sharpen = adjust.sharpen,
             hueDegrees = adjust.hue * Adjust.HUE_TURN_DEGREES,
-            hsl = adjust.hsl
+            hsl = adjust.hsl,
+            // The curve is the user's own and a look never carries one, so it
+            // passes through rather than folding with anything.
+            curve = adjust.curve
         )
     }
 

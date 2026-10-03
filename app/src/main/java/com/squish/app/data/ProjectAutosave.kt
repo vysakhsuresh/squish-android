@@ -1044,6 +1044,18 @@ class ProjectAutosave(context: Context) {
             val v = field.of(adjust)
             if (v != 0f) put(field.name, v.toDouble())
         }
+        // Only the channels that were drawn on, and only their points: a curve
+        // is four straight lines until someone moves one.
+        if (!adjust.curve.isIdentity) {
+            put("curve", JSONObject().apply {
+                listOf("m" to adjust.curve.master, "r" to adjust.curve.red, "g" to adjust.curve.green, "b" to adjust.curve.blue)
+                    .forEach { (key, curve) ->
+                        if (!curve.isIdentity) put(key, JSONArray().apply {
+                            curve.points.forEach { p -> put(JSONArray().apply { put(p.x.toDouble()); put(p.y.toDouble()) }) }
+                        })
+                    }
+            })
+        }
         if (adjust.hsl.any { !it.isIdentity }) {
             put("hsl", JSONArray().apply {
                 adjust.hsl.forEach { band ->
@@ -1062,6 +1074,25 @@ class ProjectAutosave(context: Context) {
         var adjust = Adjust()
         AdjustField.entries.forEach { field ->
             if (json.has(field.name)) adjust = field.set(adjust, json.optDouble(field.name, 0.0).toFloat())
+        }
+        json.optJSONObject("curve")?.let { c ->
+            fun curveOf(key: String): com.squish.app.media.effects.Curve {
+                val array = c.optJSONArray(key) ?: return com.squish.app.media.effects.Curve()
+                val points = (0 until array.length()).mapNotNull { i ->
+                    array.optJSONArray(i)?.let { p ->
+                        com.squish.app.media.effects.CurvePoint(
+                            p.optDouble(0, 0.0).toFloat().coerceIn(0f, 1f),
+                            p.optDouble(1, 0.0).toFloat().coerceIn(0f, 1f)
+                        )
+                    }
+                }
+                // A curve written with fewer than two points cannot be drawn;
+                // a straight one is the honest reading of it.
+                return if (points.size >= 2) com.squish.app.media.effects.Curve(points) else com.squish.app.media.effects.Curve()
+            }
+            adjust = adjust.copy(curve = com.squish.app.media.effects.ToneCurve(
+                master = curveOf("m"), red = curveOf("r"), green = curveOf("g"), blue = curveOf("b")
+            ))
         }
         val bands = json.optJSONArray("hsl")?.let { array ->
             List(HueBand.entries.size) { i ->
@@ -1584,7 +1615,8 @@ class ProjectAutosave(context: Context) {
          * set and told by the fields, like the voice was, so a 12 reads as
          * before.
          */
-        const val FORMAT_VERSION = 13
+        /** 14 writes a clip's tone curve; 13 and older simply have none. */
+        const val FORMAT_VERSION = 14
         const val OLDEST_READABLE_VERSION = 9
 
         /** A clip's "maskFile" entry, as encodeClip writes it. */

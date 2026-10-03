@@ -177,6 +177,45 @@ fun main() {
         check(untouched.all { it == skin }, "an identity grade changed a picture")
     }
 
+    // --- The Curves tool, where it sits in the order. ----------------------------
+    run {
+        val none = com.squish.app.media.effects.ToneCurve.NONE
+        check(Looks.grade(null, 1f, Adjust(curve = none)).isIdentity, "an identity curve is not an identity grade")
+        check(Looks.grade(null, 1f, Adjust(curve = none)).applyTo(skin) == skin, "an identity curve changed a pixel")
+
+        // A black point lifted lifts black and leaves white where it is.
+        val lift = com.squish.app.media.effects.ToneCurve(
+            master = com.squish.app.media.effects.Curve(
+                listOf(com.squish.app.media.effects.CurvePoint(0f, 0.2f), com.squish.app.media.effects.CurvePoint(1f, 1f))
+            )
+        )
+        val lifted = Looks.grade(null, 1f, Adjust(curve = lift))
+        check(!lifted.isIdentity, "a curve with a lifted black read as identity")
+        check(rgb(lifted.applyTo(px(0, 0, 0))).first in 48..54, "black was not lifted to about 0.2: ${rgb(lifted.applyTo(px(0, 0, 0)))}")
+        check(rgb(lifted.applyTo(px(255, 255, 255))).first == 255, "white moved when only black was lifted")
+        // A swatch can show it: a curve is a per-pixel move, not a spatial one.
+        check(!lifted.needsShader, "a curve was counted as needing the shader")
+
+        // One channel alone tints, which is what a per-channel curve is for.
+        val warmer = Looks.grade(null, 1f, Adjust(curve = com.squish.app.media.effects.ToneCurve(
+            red = com.squish.app.media.effects.Curve(
+                listOf(com.squish.app.media.effects.CurvePoint(0f, 0f), com.squish.app.media.effects.CurvePoint(0.5f, 0.7f), com.squish.app.media.effects.CurvePoint(1f, 1f))
+            )
+        )))
+        val (wr, wg, wb) = rgb(warmer.applyTo(grey))
+        check(wr > 128 && wg == 128 && wb == 128, "a red curve did not move red alone: ${Triple(wr, wg, wb)}")
+
+        // Before saturation, not after: with the curve crushing everything to
+        // grey, a saturation lift afterwards has nothing left to lift.
+        val flatten = com.squish.app.media.effects.ToneCurve(
+            master = com.squish.app.media.effects.Curve(
+                listOf(com.squish.app.media.effects.CurvePoint(0f, 0.5f), com.squish.app.media.effects.CurvePoint(1f, 0.5f))
+            )
+        )
+        val (fr, fg, fb) = rgb(Looks.grade(null, 1f, Adjust(curve = flatten, saturation = 1f)).applyTo(skin))
+        check(fr == fg && fg == fb, "the curve ran after saturation, so a flattened pixel came out coloured: ${Triple(fr, fg, fb)}")
+    }
+
     // --- The CPU copy and the shader agree about their shared constants. ---------
     // applyTo is the CPU copy of squish_look_es2.glsl, and check_shaders.py
     // compares uniform names, not the numbers inside either file. A constant
