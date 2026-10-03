@@ -177,6 +177,37 @@ fun main() {
         check(untouched.all { it == skin }, "an identity grade changed a picture")
     }
 
+    // --- The CPU copy and the shader agree about their shared constants. ---------
+    // applyTo is the CPU copy of squish_look_es2.glsl, and check_shaders.py
+    // compares uniform names, not the numbers inside either file. A constant
+    // changed on one side only would grade a photo overlay differently from the
+    // video beside it - the one place in the app where the two paths show the
+    // same picture - and nothing would say so.
+    val shader = java.io.File("app/src/main/assets/squish_look_es2.glsl")
+    check(shader.isFile, "squish_look_es2.glsl is not there - did it move?")
+    if (shader.isFile) {
+        val text = shader.readText()
+        val lumaLine = Regex("const\\s+vec3\\s+LUMA\\s*=\\s*vec3\\(([^)]*)\\)").find(text)
+        check(lumaLine != null, "the shader has no `const vec3 LUMA` any more")
+        lumaLine?.let { m ->
+            val w = m.groupValues[1].split(',').map { it.trim().toFloat() }
+            check(w.size == 3, "the shader's LUMA is not three numbers")
+            if (w.size == 3) {
+                check(near(w[0], Grade.LUMA_R) && near(w[1], Grade.LUMA_G) && near(w[2], Grade.LUMA_B),
+                    "LUMA disagrees: the shader has $w, the Kotlin ${listOf(Grade.LUMA_R, Grade.LUMA_G, Grade.LUMA_B)}")
+            }
+        }
+        for ((name, kotlinValue) in listOf("HSL_LUMA_REACH" to Grade.HSL_LUMA_REACH, "TONE_REACH" to Grade.TONE_REACH)) {
+            val m = Regex("const\\s+float\\s+$name\\s*=\\s*([-\\d.]+)").find(text)
+            // TONE_REACH may be spelled into the shader's arithmetic rather than
+            // named; only a named one is compared, and its absence is said here
+            // rather than passing quietly.
+            if (m == null) check(name == "TONE_REACH", "the shader has no `const float $name` any more")
+            else check(near(m.groupValues[1].toFloat(), kotlinValue),
+                "$name disagrees: the shader has ${m.groupValues[1]}, the Kotlin $kotlinValue")
+        }
+    }
+
     // --- The swatch maths still holds for every catalogue look with the sliders on. ---
     for (look in Looks.catalog) {
         val g = Looks.grade(look.id, 1f, Adjust(exposure = 0.3f, highlights = 0.5f, hue = 0.2f))

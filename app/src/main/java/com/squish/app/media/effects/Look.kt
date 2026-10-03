@@ -1,4 +1,4 @@
-package com.squish.app.media.effects
+﻿package com.squish.app.media.effects
 
 import kotlin.math.abs
 import kotlin.math.max
@@ -337,14 +337,14 @@ data class Grade(
             // Lifted or crushed by how bright the pixel already is, so the two
             // sliders reach different parts of the picture rather than the whole
             // of it: the sky for one, the shadow under the chin for the other.
-            val l = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 1f)
+            val l = luma(r, g, b).coerceIn(0f, 1f)
             val lift = highlights * TONE_REACH * smoothstep(0.45f, 1f, l) +
                 shadows * TONE_REACH * (1f - smoothstep(0f, 0.55f, l))
             r += lift; g += lift; b += lift
         }
 
         if (hasSaturation) {
-            val lum = 0.2126f * r + 0.7152f * g + 0.0722f * b
+            val lum = luma(r, g, b)
             val s = (1f + saturation).coerceAtLeast(0f)
             r = lum + (r - lum) * s
             g = lum + (g - lum) * s
@@ -385,7 +385,7 @@ data class Grade(
         // moves - vignette, grain, bloom, sharpening - have no meaning for one
         // colour and are simply absent here; a swatch shows the grade, not the texture.
         if (abs(split) > 1e-4f) {
-            val l = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 1f)
+            val l = luma(r, g, b).coerceIn(0f, 1f)
             r += (channel(shadowTint, 16, highlightTint, l) - 0.5f) * split * 0.55f
             g += (channel(shadowTint, 8, highlightTint, l) - 0.5f) * split * 0.55f
             b += (channel(shadowTint, 0, highlightTint, l) - 0.5f) * split * 0.55f
@@ -461,6 +461,19 @@ data class Grade(
     }
 
     companion object {
+        /**
+         * The weights a pixel's brightness is measured with - Rec. 709, the
+         * shader's `LUMA`. Written out at four sites here before they had a
+         * name, which is four places for them to drift from the shader's one;
+         * GradeChecks now reads both and compares.
+         */
+        const val LUMA_R = 0.2126f
+        const val LUMA_G = 0.7152f
+        const val LUMA_B = 0.0722f
+
+        /** A pixel's brightness, as both the shader and the CPU copy measure it. */
+        fun luma(r: Float, g: Float, b: Float): Float = LUMA_R * r + LUMA_G * g + LUMA_B * b
+
         /** How far Highlights or Shadows at full moves the pixels it reaches. */
         const val TONE_REACH = 0.3f
 
