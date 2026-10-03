@@ -158,13 +158,17 @@ data class Adjust(
     /** One entry per [HueBand], in its order. */
     val hsl: List<HslBand> = NO_HSL,
     /** The Curves tool: a master curve and one per channel. */
-    val curve: ToneCurve = ToneCurve.NONE
+    val curve: ToneCurve = ToneCurve.NONE,
+    /** An imported .cube, by its file name under `files/luts/`; see [LutStore]. */
+    val lutFile: String? = null,
+    /** How much of the imported LUT is mixed in. */
+    val lutStrength: Float = 1f
 ) {
     val isIdentity: Boolean
         get() = abs(brightness) < EPS && abs(contrast) < EPS && abs(saturation) < EPS && abs(exposure) < EPS &&
             abs(temperature) < EPS && abs(tint) < EPS && abs(highlights) < EPS && abs(shadows) < EPS &&
             abs(sharpen) < EPS && abs(vignette) < EPS && abs(hue) < EPS && abs(fade) < EPS && abs(grain) < EPS &&
-            hsl.all { it.isIdentity } && curve.isIdentity
+            hsl.all { it.isIdentity } && curve.isIdentity && (lutFile == null || lutStrength < EPS)
 
     /** This with one band's sliders replaced. */
     fun withBand(band: HueBand, value: HslBand): Adjust {
@@ -288,9 +292,13 @@ data class Grade(
     val hueDegrees: Float = 0f,
     val hsl: List<HslBand> = Adjust.NO_HSL,
     /** The Curves tool. Folded into one table per channel; see [curveLut]. */
-    val curve: ToneCurve = ToneCurve.NONE
+    val curve: ToneCurve = ToneCurve.NONE,
+    /** An imported .cube, already read; null when none or when its file has gone. */
+    val lut: Lut3D? = null,
+    val lutStrength: Float = 1f
 ) {
     val hasCurve: Boolean get() = !curve.isIdentity
+    val hasLut: Boolean get() = lut != null && lutStrength > 1e-4f
 
     /**
      * The curve's table, built once per grade rather than per pixel: [applyTo]
@@ -321,7 +329,7 @@ data class Grade(
 
     val isIdentity: Boolean
         get() = !hasChannelGain && !hasContrast && !hasSaturation && !needsShader &&
-            !hasBrightness && !hasTone && !hasHue && !hasHsl && !hasCurve
+            !hasBrightness && !hasTone && !hasHue && !hasHsl && !hasCurve && !hasLut
 
     /**
      * The same maths the shader does, on one color, in the same order.
@@ -420,6 +428,16 @@ data class Grade(
             r = r * (1f - fade * 0.55f) + fade * 0.16f
             g = g * (1f - fade * 0.55f) + fade * 0.16f
             b = b * (1f - fade * 0.55f) + fade * 0.16f
+        }
+
+        // Last of all, as a grading LUT is meant to be: it is a finished look,
+        // not another slider, and the sliders are what you reach for to fix a
+        // shot before the look goes over it.
+        lut?.takeIf { hasLut }?.let { cube ->
+            val out = cube.sample(r.coerceIn(0f, 1f), g.coerceIn(0f, 1f), b.coerceIn(0f, 1f))
+            r += (out[0] - r) * lutStrength
+            g += (out[1] - g) * lutStrength
+            b += (out[2] - b) * lutStrength
         }
 
         fun byte(v: Float) = (min(1f, max(0f, v)) * 255f + 0.5f).toInt()
@@ -788,7 +806,13 @@ object Looks {
             hsl = adjust.hsl,
             // The curve is the user's own and a look never carries one, so it
             // passes through rather than folding with anything.
-            curve = adjust.curve
+            curve = adjust.curve,
+            // Read once and held by name, because a cube is a megabyte and a
+            // draft is a small file. A name with no cube against it - its file
+            // deleted, or a draft opened before the LUT was read back - leaves
+            // the picture alone rather than failing.
+            lut = LutStore.get(adjust.lutFile),
+            lutStrength = adjust.lutStrength
         )
     }
 

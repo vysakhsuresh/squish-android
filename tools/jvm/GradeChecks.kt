@@ -216,6 +216,41 @@ fun main() {
         check(fr == fg && fg == fb, "the curve ran after saturation, so a flattened pixel came out coloured: ${Triple(fr, fg, fb)}")
     }
 
+    // --- An imported LUT, last of the colour. ------------------------------------
+    run {
+        val identity = com.squish.app.media.effects.Lut3D.identity(17)
+        check(Looks.grade(null, 1f).copy(lut = identity).applyTo(skin) == skin, "an identity LUT changed a pixel")
+        check(!Looks.grade(null, 1f).copy(lut = identity).isIdentity, "a LUT was not counted as doing something")
+        check(Looks.grade(null, 1f).copy(lut = identity, lutStrength = 0f).isIdentity, "a LUT at no strength still counted")
+
+        // A cube that swaps red and blue, so the answer is known everywhere.
+        val n = 9
+        val swap = com.squish.app.media.effects.Lut3D(
+            n,
+            FloatArray(n * n * n * 3).also { d ->
+                for (z in 0 until n) for (y in 0 until n) for (x in 0 until n) {
+                    val i = ((z * n + y) * n + x) * 3
+                    d[i] = com.squish.app.media.effects.Lut3D.byte(z.toFloat() / (n - 1))
+                    d[i + 1] = com.squish.app.media.effects.Lut3D.byte(y.toFloat() / (n - 1))
+                    d[i + 2] = com.squish.app.media.effects.Lut3D.byte(x.toFloat() / (n - 1))
+                }
+            }
+        )
+        val full = Looks.grade(null, 1f).copy(lut = swap)
+        val (r, g, b) = rgb(full.applyTo(px(255, 0, 0)))
+        check(r < 6 && g < 6 && b > 249, "the swap LUT turned red into ${Triple(r, g, b)}")
+        // Half strength is half way there, which is what the slider promises.
+        val half = Looks.grade(null, 1f).copy(lut = swap, lutStrength = 0.5f)
+        val (hr, _, hb) = rgb(half.applyTo(px(255, 0, 0)))
+        check(hr in 120..136 && hb in 120..136, "the LUT at half strength gave ${Triple(hr, 0, hb)}")
+
+        // After the sliders: a LUT that forces everything to black leaves
+        // nothing for an earlier brightness lift to show.
+        val black = com.squish.app.media.effects.Lut3D(2, FloatArray(2 * 2 * 2 * 3))
+        val lifted = Looks.grade(null, 1f, Adjust(brightness = 1f)).copy(lut = black)
+        check(rgb(lifted.applyTo(skin)) == Triple(0, 0, 0), "the LUT ran before the sliders: ${rgb(lifted.applyTo(skin))}")
+    }
+
     // --- The CPU copy and the shader agree about their shared constants. ---------
     // applyTo is the CPU copy of squish_look_es2.glsl, and check_shaders.py
     // compares uniform names, not the numbers inside either file. A constant
@@ -266,6 +301,12 @@ fun main() {
                 "LUT_OFFSET is ${it.groupValues[1]}/${it.groupValues[2]}, not 0.5/$size")
         }
         check(Regex("uniform\\s+sampler2D\\s+uCurve").containsMatchIn(text), "the look shader no longer samples a curve")
+        check(Regex("uniform\\s+sampler2D\\s+uLut").containsMatchIn(text), "the look shader no longer samples a LUT")
+        check(Regex("vec3\\s+lutLookup").containsMatchIn(text), "the look shader has no lutLookup")
+        // The atlas is size*size across and size tall, and the lookup divides by
+        // exactly that. A mismatch reads as a look that is subtly wrong at one
+        // blue level, which is the hardest kind of fault to see on purpose.
+        check(Regex("\\(n \\* n\\)").containsMatchIn(text), "the LUT lookup no longer divides by the atlas width")
 
         for ((name, kotlinValue) in listOf("HSL_LUMA_REACH" to Grade.HSL_LUMA_REACH, "TONE_REACH" to Grade.TONE_REACH)) {
             val m = Regex("const\\s+float\\s+$name\\s*=\\s*([-\\d.]+)").find(text)

@@ -39,6 +39,10 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         // has no context of its own, finds them here - in the export too, which
         // runs in this process.
         CustomFonts.install(File(app.filesDir, FONTS_DIR))
+        // The cubes brought in, read back off disk: a draft stores a LUT by
+        // name and the grade needs the numbers behind it. Cheap - a handful of
+        // files - and done once for the process, like the fonts above.
+        com.squish.app.media.effects.LutFiles.loadAll(app)
     }
 
     /**

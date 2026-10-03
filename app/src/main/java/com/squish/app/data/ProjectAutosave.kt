@@ -1044,6 +1044,12 @@ class ProjectAutosave(context: Context) {
             val v = field.of(adjust)
             if (v != 0f) put(field.name, v.toDouble())
         }
+        // The LUT by name only - the cube itself is a megabyte and lives under
+        // files/luts/, read back by LutStore when the project opens.
+        adjust.lutFile?.let {
+            put("lut", it)
+            put("lutStrength", adjust.lutStrength.toDouble())
+        }
         // Only the channels that were drawn on, and only their points: a curve
         // is four straight lines until someone moves one.
         if (!adjust.curve.isIdentity) {
@@ -1074,6 +1080,12 @@ class ProjectAutosave(context: Context) {
         var adjust = Adjust()
         AdjustField.entries.forEach { field ->
             if (json.has(field.name)) adjust = field.set(adjust, json.optDouble(field.name, 0.0).toFloat())
+        }
+        json.optString("lut").takeIf { it.isNotEmpty() }?.let { name ->
+            adjust = adjust.copy(
+                lutFile = name,
+                lutStrength = json.optDouble("lutStrength", 1.0).toFloat().coerceIn(0f, 1f)
+            )
         }
         json.optJSONObject("curve")?.let { c ->
             fun curveOf(key: String): com.squish.app.media.effects.Curve {

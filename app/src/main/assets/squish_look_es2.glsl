@@ -64,6 +64,13 @@ uniform vec2 uTexel;
 uniform sampler2D uCurve;
 uniform float uCurveOn;
 
+// An imported .cube, flattened into one row of tiles - ES2 has no 3D texture.
+// uLutSize is the cube's side; the atlas is that squared across and that tall.
+uniform sampler2D uLut;
+uniform float uLutOn;
+uniform float uLutSize;
+uniform float uLutStrength;
+
 varying vec2 vTexSamplingCoord;
 
 // A value 0..1 to the middle of its texel in a 256-wide table. Without the half
@@ -93,6 +100,26 @@ float hash(vec2 p) {
 }
 
 /** Eight taps on a ring, for the glow. Cheap, and blur quality hardly matters here. */
+// One colour through the flattened cube.
+//
+// Two reads and a mix: the blue axis picks a pair of tiles and the hardware's
+// own bilinear does red and green inside each, which together is the trilinear
+// Lut3D.sample does on the CPU over the same eight-bit numbers. The half-texel
+// inset on red is what stops a read at the edge of one tile bleeding into the
+// tile beside it, which would show as a seam at one blue level.
+vec3 lutLookup(vec3 c) {
+  float n = uLutSize;
+  vec3 v = clamp(c, 0.0, 1.0);
+  float blue = v.b * (n - 1.0);
+  float slice0 = floor(blue);
+  float slice1 = min(slice0 + 1.0, n - 1.0);
+  float red = v.r * (n - 1.0) + 0.5;
+  float green = (v.g * (n - 1.0) + 0.5) / n;
+  vec3 a = texture2D(uLut, vec2((slice0 * n + red) / (n * n), green)).rgb;
+  vec3 b = texture2D(uLut, vec2((slice1 * n + red) / (n * n), green)).rgb;
+  return mix(a, b, blue - slice0);
+}
+
 vec3 ringBlur(vec2 uv, float r) {
   vec3 sum = texture2D(uTexSampler, uv).rgb;
   for (int i = 0; i < 8; i++) {
@@ -211,6 +238,14 @@ void main() {
   // Compressing toward a raised floor rather than adding a flat offset: adding
   // would wash the highlights out too and the picture would just look faint.
   c = c * (1.0 - uFade * 0.55) + vec3(uFade * 0.16);
+
+  // Last of the colour, before the spatial moves - the same place Grade.applyTo
+  // puts it, so a swatch and a photo overlay show what the video shows. The
+  // vignette and the grain come after because they are texture, not colour,
+  // and a LUT has nothing to say about them.
+  if (uLutOn > 0.5) {
+    c = mix(c, lutLookup(c), uLutStrength);
+  }
 
   if (uVignette > 0.001) {
     vec2 p = (vTexSamplingCoord - 0.5) * vec2(uAspect, 1.0);

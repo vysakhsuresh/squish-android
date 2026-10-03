@@ -326,6 +326,36 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             updateVideoClip(clipId) { it.copy(adjust = it.adjust.copy(curve = curve)) }
         }
 
+    /**
+     * A `.cube` picked from the file browser, copied in, read, and put on this
+     * clip. The sheet says what was wrong rather than "failed" - a LUT that is
+     * the wrong size or a file that is not a cube at all are different problems.
+     */
+    fun importLut(clipId: String, uri: Uri, onDone: (String?) -> Unit = {}) {
+        viewModelScope.launch {
+            var why: String? = null
+            val name = withContext(Dispatchers.IO) {
+                com.squish.app.media.effects.LutFiles.import(app, uri) { why = it }
+            }
+            if (name != null) {
+                record("LUT") {
+                    updateVideoClip(clipId) { it.copy(adjust = it.adjust.copy(lutFile = name, lutStrength = 1f)) }
+                }
+            }
+            onDone(why)
+        }
+    }
+
+    /** One already read this session, put on this clip. */
+    fun setLut(clipId: String, name: String?) = record(if (name == null) "No LUT" else "LUT") {
+        updateVideoClip(clipId) { it.copy(adjust = it.adjust.copy(lutFile = name, lutStrength = if (name == null) 1f else it.adjust.lutStrength)) }
+    }
+
+    fun setLutStrength(clipId: String, value: Float) =
+        record("LUT strength", gesture = "LUT $clipId") {
+            updateVideoClip(clipId) { it.copy(adjust = it.adjust.copy(lutStrength = value.coerceIn(0f, 1f))) }
+        }
+
     /** Every channel back to a straight line, one step. */
     fun resetCurve(clipId: String) = record("Reset curves") {
         updateVideoClip(clipId) { it.copy(adjust = it.adjust.copy(curve = com.squish.app.media.effects.ToneCurve.NONE)) }

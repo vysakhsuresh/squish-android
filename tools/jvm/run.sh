@@ -25,15 +25,15 @@ run() {
 TIMELINE="$SRC/timeline/SpeedRamp.kt $SRC/timeline/TimelineModels.kt $SRC/timeline/VoiceEffect.kt
   $SRC/timeline/TimelineLanes.kt $SRC/timeline/Keyframe.kt $SRC/timeline/ValueTracks.kt $SRC/timeline/Mask.kt $SRC/timeline/ChromaKey.kt
   $SRC/timeline/Background.kt $SRC/editor/TimedEffect.kt
-  $SRC/media/effects/ToneCurve.kt $SRC/media/effects/Look.kt $SRC/editor/ClipCrop.kt $SRC/editor/CropRect.kt
+  $SRC/media/effects/ToneCurve.kt $SRC/media/effects/Lut.kt $SRC/media/effects/Look.kt $SRC/editor/ClipCrop.kt $SRC/editor/CropRect.kt
   tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt
   $SRC/media/video/ObjectTracker.kt $SRC/media/video/MotionEstimator.kt
   $SRC/media/video/TrajectorySmoother.kt $SRC/media/video/StabilizerSolve.kt
   tools/jvm/stub/Uri.kt"
 
-run looks      "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Look.kt" tools/jvm/LookChecks.kt
-run grade      "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Look.kt" tools/jvm/GradeChecks.kt
-run lookpreview "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/LookPreview.kt" tools/jvm/LookPreviewChecks.kt
+run looks      "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/Look.kt" tools/jvm/LookChecks.kt
+run grade      "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/Look.kt" tools/jvm/GradeChecks.kt
+run lookpreview "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/LookPreview.kt" tools/jvm/LookPreviewChecks.kt
 run framing    "$SRC/media/ExportPresets.kt" "$SRC/editor/CropRect.kt" tools/jvm/stub/Quality.kt tools/jvm/FramingChecks.kt
 run exportsettings "$SRC/media/ExportPresets.kt" "$SRC/media/ExportSettings.kt" tools/jvm/stub/Quality.kt tools/jvm/ExportSettingsChecks.kt
 run crop       "$SRC/editor/CropRect.kt" tools/jvm/CropChecks.kt
@@ -80,6 +80,7 @@ run framegrid "$SRC/media/video/FrameGrid.kt" tools/jvm/FrameGridChecks.kt
 run chromakey "$SRC/timeline/ChromaKey.kt" tools/jvm/ChromaKeyChecks.kt
 run tonecurve "$SRC/media/effects/ToneCurve.kt" tools/jvm/ToneCurveChecks.kt
 run transcript "$SRC/editor/Transcript.kt" tools/jvm/TranscriptChecks.kt
+run lut "$SRC/media/effects/Lut.kt" tools/jvm/LutChecks.kt
 run musicsynth "$SRC/media/audio/MusicSynth.kt" tools/jvm/MusicSynthChecks.kt
 run synthtempo "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SynthTempoChecks.kt
 run effectrecipes $TIMELINE tools/jvm/EffectRecipeChecks.kt
@@ -96,7 +97,7 @@ run silence    $TIMELINE "$SRC/timeline/SilenceRules.kt" tools/jvm/SilenceChecks
 run beatfit    $TIMELINE tools/jvm/BeatFitChecks.kt
 run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScreen.kt" tools/jvm/SplitScreenChecks.kt
 run gif        "$SRC/media/gif/GifEncoder.kt" tools/jvm/GifChecks.kt
-run autoadjust "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
+run autoadjust "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
 run translatechunks "$SRC/online/OnlineTranslate.kt" tools/jvm/stub/translate/OnlineStub.kt tools/jvm/stub/translate/ContextStub.kt tools/jvm/stub/translate/JsonStub.kt tools/jvm/TranslateChunkChecks.kt
 
 rm -rf "$OUT"

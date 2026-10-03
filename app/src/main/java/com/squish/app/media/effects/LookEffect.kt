@@ -65,6 +65,10 @@ private class LookShaderProgram(
     /** The Curves tool's 256-entry table. Made on the first load and reused. */
     private var curveTexId = UNSET
 
+    /** The imported cube's atlas, and which cube is in it. */
+    private var lutTexId = UNSET
+    private var loadedLut: Lut3D? = null
+
     private fun load(grade: Grade) {
         if (grade == loaded) return
         loaded = grade
@@ -93,6 +97,49 @@ private class LookShaderProgram(
         glProgram.setFloatsUniform("uSharpen", floatArrayOf(grade.sharpen))
         glProgram.setFloatsUniform("uCurveOn", floatArrayOf(if (grade.hasCurve) 1f else 0f))
         uploadCurve(grade.curveLut)
+        glProgram.setFloatsUniform("uLutOn", floatArrayOf(if (grade.hasLut) 1f else 0f))
+        glProgram.setFloatsUniform("uLutStrength", floatArrayOf(grade.lutStrength))
+        glProgram.setFloatsUniform("uLutSize", floatArrayOf((grade.lut?.size ?: 2).toFloat()))
+        uploadLut(grade.lut)
+    }
+
+    /**
+     * The imported cube into its texture, flattened as the shader reads it.
+     *
+     * Only when the cube itself changed: a strength drag loads the same cube
+     * every frame otherwise, and a 33-cube is 107 KB a go.
+     */
+    private fun uploadLut(lut: Lut3D?) {
+        if (lut == null || lut === loadedLut) return
+        loadedLut = lut
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE2)
+        if (lutTexId == UNSET) {
+            val ids = IntArray(1)
+            GLES20.glGenTextures(1, ids, 0)
+            lutTexId = ids[0]
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, lutTexId)
+            // LINEAR is doing the red and green of the trilinear read; clamped,
+            // so the edge of the atlas holds rather than wrapping to the far side.
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        } else {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, lutTexId)
+        }
+        val atlas = lut.atlas()
+        val bytes = ByteBuffer.allocateDirect(atlas.size).order(ByteOrder.nativeOrder())
+        for (v in atlas) bytes.put((Math.round(v.coerceIn(0f, 1f) * 255f)).toByte())
+        bytes.position(0)
+        // size*size wide by size tall. A row is size*size*3 bytes, which is not
+        // always a multiple of four - a 17-cube's row is 867 - so the unpack
+        // alignment is set to 1 rather than letting the driver pad it.
+        GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 1)
+        GLES20.glTexImage2D(
+            GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGB,
+            lut.size * lut.size, lut.size, 0, GLES20.GL_RGB, GLES20.GL_UNSIGNED_BYTE, bytes
+        )
+        GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 4)
     }
 
     /**
@@ -179,6 +226,10 @@ private class LookShaderProgram(
             // at nothing is undefined, and on some drivers that is a black frame
             // rather than the ignored read the branch promises.
             glProgram.setSamplerTexIdUniform("uCurve", curveTexId, /* texUnitIndex= */ 1)
+            // Bound even with no cube loaded, for the same reason: a sampler
+            // pointing at nothing is undefined, and the branch past it is not a
+            // promise the driver will not read it.
+            glProgram.setSamplerTexIdUniform("uLut", if (lutTexId == UNSET) curveTexId else lutTexId, /* texUnitIndex= */ 2)
 
             // Only when there is grain to move. Still grain does not read as film,
             // it reads as a dirty lens - but an unused uniform write every frame is
@@ -202,6 +253,11 @@ private class LookShaderProgram(
             if (curveTexId != UNSET) {
                 GLES20.glDeleteTextures(1, intArrayOf(curveTexId), 0)
                 curveTexId = UNSET
+            }
+            if (lutTexId != UNSET) {
+                GLES20.glDeleteTextures(1, intArrayOf(lutTexId), 0)
+                lutTexId = UNSET
+                loadedLut = null
             }
             glProgram.delete()
         } catch (e: GlUtil.GlException) {

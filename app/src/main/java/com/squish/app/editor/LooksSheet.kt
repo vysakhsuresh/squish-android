@@ -1,5 +1,7 @@
 package com.squish.app.editor
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -143,7 +145,79 @@ fun FiltersPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
             }
         }
 
+        LutCard(clip, viewModel)
+
         ApplyToAllRow(clip, what = "look") { viewModel.clips.applyLookToAll(clip.id) }
+    }
+}
+
+/**
+ * An imported `.cube`, which is how a brand's own grade actually arrives.
+ *
+ * Under the filters rather than among them: a LUT is somebody else's finished
+ * look, and the fifty here are ours. It goes on last of all, after the sliders
+ * and the curve, which is what a grading LUT expects of the picture it is
+ * handed.
+ */
+@Composable
+private fun LutCard(clip: Clip, viewModel: EditorViewModel) {
+    var problem by remember { mutableStateOf<String?>(null) }
+    val known = remember(clip.adjust.lutFile) { com.squish.app.media.effects.LutStore.names() }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.clips.importLut(clip.id, it) { why -> problem = why } }
+    }
+    PanelSurface(accent = SquishColors.Blue) {
+        PanelHeading(
+            "Your own LUT",
+            "A .cube from any grading tool, on top of everything else",
+            icon = Icons.Filled.Palette,
+            accent = SquishColors.Blue
+        )
+        if (known.isNotEmpty()) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
+                SelectableChip(
+                    label = "None",
+                    selected = clip.adjust.lutFile == null,
+                    accentColor = SquishColors.Blue,
+                    onClick = { viewModel.clips.setLut(clip.id, null) }
+                )
+                known.forEach { name ->
+                    SelectableChip(
+                        label = name.removeSuffix(".cube"),
+                        selected = clip.adjust.lutFile == name,
+                        accentColor = SquishColors.Blue,
+                        onClick = { viewModel.clips.setLut(clip.id, name) }
+                    )
+                }
+            }
+        }
+        com.squish.app.ui.components.SquishOutlinedButton(
+            text = "Import a .cube",
+            modifier = Modifier.fillMaxWidth(),
+            // Any type: a .cube is text, and plenty of file browsers hand it
+            // over as octet-stream or refuse to show it under a narrower filter.
+            onClick = { problem = null; pick.launch(arrayOf("*/*")) }
+        )
+        problem?.let {
+            Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.Pink)
+        }
+        if (clip.adjust.lutFile != null) {
+            LabeledSlider(
+                "Strength", clip.adjust.lutStrength, 0f..1f,
+                onFinished = viewModel::endGesture,
+                onChange = { viewModel.clips.setLutStrength(clip.id, it) }
+            )
+            if (com.squish.app.media.effects.LutStore.get(clip.adjust.lutFile) == null) {
+                Text(
+                    "“${clip.adjust.lutFile}” is not on this phone any more, so nothing is applied.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Amber
+                )
+            }
+        }
     }
 }
 
