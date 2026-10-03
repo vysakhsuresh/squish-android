@@ -74,7 +74,10 @@ void main() {
     return;
   }
 
-  vec4 layer = texture2D(uLayer, uv);
+  // v flipped: GLUtils.texImage2D uploads a bitmap with its first row at the
+  // top, and GL's v runs from the bottom - without this the still is a water
+  // reflection of itself.
+  vec4 layer = texture2D(uLayer, vec2(uv.x, 1.0 - uv.y));
   // The still is kept premultiplied nowhere in this app, so its own alpha is
   // straight - a transparent PNG blends by how opaque it is at that pixel.
   float a = layer.a * uLayerAlpha;

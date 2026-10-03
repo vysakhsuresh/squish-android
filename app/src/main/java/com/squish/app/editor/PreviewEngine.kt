@@ -271,6 +271,9 @@ class PreviewEngine(private val context: Context) {
          * second branch in the shader, and nobody stacks two light leaks.
          */
         val blendStill = AtomicReference<BlendedStill?>(null)
+
+        /** The blended-still list this surface last read, so an unchanged one costs nothing. */
+        var blendFrom: List<Clip>? = null
         var effectsClip: Clip? = null
         var effectsFrom: List<TimedEffect>? = null
 
@@ -473,7 +476,11 @@ class PreviewEngine(private val context: Context) {
             runCatching {
                 context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
             }.getOrNull()
-        } ?: return null
+        }
+        if (bitmap == null) {
+            Log.w(TAG, "could not read the blended still $uri")
+            return null
+        }
         return BlendedStill(still.id, under.id, bitmap, still.blend) { sourceMs ->
             // Source time of the shot under it, back to the edit's own clock.
             val atMs = under.timelineAtSource(sourceMs)
@@ -809,9 +816,13 @@ class PreviewEngine(private val context: Context) {
         // to find "nothing changed" were the churn the playback audit named.
         // A keyed filter strength is read every tick: its grade is a function of
         // where the playhead is, so "the clip has not changed" is not enough.
+        // Nor is it enough for a blended still: that is a *different* clip, and
+        // setting a blend mode on it leaves this shot's own Clip untouched.
         if (!clip.lookAnimated &&
-            clip === s.liveClip && keyPreview == s.liveKeyPreview && (!s.isBase || effects === s.effectsFrom)
+            clip === s.liveClip && keyPreview == s.liveKeyPreview &&
+            (!s.isBase || (effects === s.effectsFrom && blendStills === s.blendFrom))
         ) return
+        s.blendFrom = blendStills
         s.liveClip = clip
         s.liveKeyPreview = keyPreview
         var changed = false
