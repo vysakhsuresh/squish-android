@@ -1,5 +1,6 @@
 package com.squish.app.editor
 
+import androidx.compose.ui.text.drawText
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -366,6 +367,8 @@ private fun RampCurve(clip: Clip, playheadMs: Long, accent: Color, viewModel: Ed
     val hitRadius = with(LocalDensity.current) { 24.dp.toPx() }
     // The point under the finger, by its index in the ordered list.
     var held by remember(clip.id) { mutableStateOf<Int?>(null) }
+    val labels = androidx.compose.ui.text.rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = SquishColors.TextMuted)
 
     Canvas(
         modifier = Modifier
@@ -419,6 +422,14 @@ private fun RampCurve(clip: Clip, playheadMs: Long, accent: Color, viewModel: Ed
             end = Offset(w, normalY),
             strokeWidth = 1.5f
         )
+        // The scale, faint at the left: an unlabelled line read the same at
+        // 0.5x as at 2x, so a curve could not be read without the slider.
+        for (rate in GRAPH_RATES) {
+            val y = yForSpeed(rate, h)
+            val label = labels.measure(if (rate < 1f) "${rate}x" else "${rate.toInt()}x", labelStyle)
+            if (rate != 1f) drawLine(SquishColors.Border.copy(alpha = 0.45f), Offset(0f, y), Offset(w, y), strokeWidth = 1f)
+            drawText(label, topLeft = Offset(6f, (y - label.size.height - 2f).coerceAtLeast(0f)))
+        }
 
         val path = Path()
         val steps = 96
@@ -589,3 +600,6 @@ private fun SmoothToggle(sourceFps: Float, speed: Float, onHold: () -> Unit) {
         }
     }
 }
+
+/** The rates the curve graph is marked at. */
+private val GRAPH_RATES = floatArrayOf(0.1f, 1f, 10f, 100f)
