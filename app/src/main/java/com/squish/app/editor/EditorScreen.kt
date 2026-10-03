@@ -801,7 +801,9 @@ fun EditorScreen(
     if (renaming) {
         RenameDialog(
             current = state.projectName.orEmpty(),
-            placeholder = state.videoClips.firstOrNull()?.label ?: "Untitled edit",
+            // The title the header shows, not the file's: a gallery clip's label
+            // is "1001323287.mp4", which the header itself never shows.
+            placeholder = ProjectRules.displayTitle(state.videoClips.firstOrNull()?.label, state.startedAtMillis),
             onSave = { name ->
                 viewModel.renameProject(name)
                 renaming = false
