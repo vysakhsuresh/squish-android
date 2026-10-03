@@ -450,11 +450,21 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             // Stopped by where the playhead is, not by a timer: the seek and the
             // start take half a second of their own, and timed from the tap a
             // 0.4 s arrival was stopped a quarter of the way through.
+            var started = false
+            var stoppedEarly = false
             withTimeoutOrNull(forMs + SHOW_START_SLACK_MS) {
                 // Just past the end, not anywhere past it: until the seek lands the
                 // preview still reports where the playhead was, which may be later.
-                _state.first { it.playheadMs in endMs..endMs + 1_500L || it.transportRequest?.nonce != mine }
+                _state.first {
+                    if (it.isPlaying) started = true
+                    // Paused before the end - by a tap on the picture or the
+                    // button - lets the moment go: left waiting, it paused a
+                    // play pressed afterwards when that reached the old end.
+                    if (started && !it.isPlaying && it.playheadMs < endMs) stoppedEarly = true
+                    stoppedEarly || it.playheadMs in endMs..endMs + 1_500L || it.transportRequest?.nonce != mine
+                }
             }
+            if (stoppedEarly) return@launch
             _state.update {
                 if (it.transportRequest?.nonce != mine) it
                 else it.copy(transportRequest = TransportRequest(play = false, nonce = (mine ?: 0L) + 1))
