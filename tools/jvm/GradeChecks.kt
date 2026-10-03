@@ -249,6 +249,24 @@ fun main() {
     if (shader.isFile) {
         val text = shader.readText()
         check(Regex("const\\s+vec3\\s+LUMA\\s*=").containsMatchIn(text), "the look shader has no `const vec3 LUMA` any more")
+        // The curve's table is read with a half-texel offset, and those two
+        // numbers are the size of the table: get them wrong and every level is
+        // read half a step along, which looks like a slightly wrong curve
+        // rather than a broken one - the worst kind.
+        val size = com.squish.app.media.effects.ToneCurve.LUT_SIZE
+        val scale = Regex("const\\s+float\\s+LUT_SCALE\\s*=\\s*([\\d.]+)\\s*/\\s*([\\d.]+)").find(text)
+        val offset = Regex("const\\s+float\\s+LUT_OFFSET\\s*=\\s*([\\d.]+)\\s*/\\s*([\\d.]+)").find(text)
+        check(scale != null && offset != null, "the look shader has no LUT_SCALE/LUT_OFFSET any more")
+        scale?.let {
+            check(near(it.groupValues[1].toFloat(), (size - 1).toFloat()) && near(it.groupValues[2].toFloat(), size.toFloat()),
+                "LUT_SCALE is ${it.groupValues[1]}/${it.groupValues[2]}, not ${size - 1}/$size")
+        }
+        offset?.let {
+            check(near(it.groupValues[1].toFloat(), 0.5f) && near(it.groupValues[2].toFloat(), size.toFloat()),
+                "LUT_OFFSET is ${it.groupValues[1]}/${it.groupValues[2]}, not 0.5/$size")
+        }
+        check(Regex("uniform\\s+sampler2D\\s+uCurve").containsMatchIn(text), "the look shader no longer samples a curve")
+
         for ((name, kotlinValue) in listOf("HSL_LUMA_REACH" to Grade.HSL_LUMA_REACH, "TONE_REACH" to Grade.TONE_REACH)) {
             val m = Regex("const\\s+float\\s+$name\\s*=\\s*([-\\d.]+)").find(text)
             // TONE_REACH may be spelled into the shader's arithmetic rather than

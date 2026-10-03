@@ -13,6 +13,8 @@ import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -60,6 +62,9 @@ private class LookShaderProgram(
     /** What the uniforms currently hold, so an unchanged grade costs no writes. */
     private var loaded: Grade? = null
 
+    /** The Curves tool's 256-entry table. Made on the first load and reused. */
+    private var curveTexId = UNSET
+
     private fun load(grade: Grade) {
         if (grade == loaded) return
         loaded = grade
@@ -86,6 +91,43 @@ private class LookShaderProgram(
         glProgram.setFloatsUniform("uVignette", floatArrayOf(grade.vignette))
         glProgram.setFloatsUniform("uGrain", floatArrayOf(grade.grain))
         glProgram.setFloatsUniform("uSharpen", floatArrayOf(grade.sharpen))
+        glProgram.setFloatsUniform("uCurveOn", floatArrayOf(if (grade.hasCurve) 1f else 0f))
+        uploadCurve(grade.curveLut)
+    }
+
+    /**
+     * The curve's table into its texture. Only on a grade that is not the one
+     * already loaded - [load] returns early otherwise - so dragging a point
+     * costs one 768-byte upload a frame and nothing else.
+     */
+    private fun uploadCurve(lut: FloatArray) {
+        // The unit this texture is read on, said out loud: otherwise the upload
+        // binds to whichever unit the last draw happened to leave active.
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
+        if (curveTexId == UNSET) {
+            val ids = IntArray(1)
+            GLES20.glGenTextures(1, ids, 0)
+            curveTexId = ids[0]
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, curveTexId)
+            // LINEAR between entries, which is what ToneCurve.sample copies on
+            // the CPU; clamped, so black and white read the ends of the table
+            // rather than wrapping round to the other one.
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        } else {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, curveTexId)
+        }
+        val bytes = ByteBuffer.allocateDirect(lut.size).order(ByteOrder.nativeOrder())
+        for (v in lut) bytes.put((Math.round(v.coerceIn(0f, 1f) * 255f)).toByte())
+        bytes.position(0)
+        // 256 x 1 RGB: a row of 768 bytes, which the default unpack alignment
+        // of 4 divides evenly, so no padding is needed.
+        GLES20.glTexImage2D(
+            GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGB,
+            ToneCurve.LUT_SIZE, 1, 0, GLES20.GL_RGB, GLES20.GL_UNSIGNED_BYTE, bytes
+        )
     }
 
     init {
@@ -133,6 +175,10 @@ private class LookShaderProgram(
             val grade = gradeNow()
             load(grade)
             glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
+            // Bound on every frame, curve or no curve: a sampler left pointing
+            // at nothing is undefined, and on some drivers that is a black frame
+            // rather than the ignored read the branch promises.
+            glProgram.setSamplerTexIdUniform("uCurve", curveTexId, /* texUnitIndex= */ 1)
 
             // Only when there is grain to move. Still grain does not read as film,
             // it reads as a dirty lens - but an unused uniform write every frame is
@@ -153,6 +199,10 @@ private class LookShaderProgram(
     override fun release() {
         super.release()
         try {
+            if (curveTexId != UNSET) {
+                GLES20.glDeleteTextures(1, intArrayOf(curveTexId), 0)
+                curveTexId = UNSET
+            }
             glProgram.delete()
         } catch (e: GlUtil.GlException) {
             throw VideoFrameProcessingException(e)
@@ -162,6 +212,9 @@ private class LookShaderProgram(
     private companion object {
         const val VERTEX_SHADER_PATH = "squish_vertex_copy_es2.glsl"
         const val FRAGMENT_SHADER_PATH = "squish_look_es2.glsl"
+
+        /** No texture made yet. GL names start at 1, so 0 is free to mean this. */
+        const val UNSET = 0
 
         /** The uHsl0..7 uniforms: one per [HueBand]. */
         val HUE_BANDS = HueBand.entries.size

@@ -166,6 +166,10 @@ fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
     val fields = AdjustField.entries
     val field = fields.getOrNull(chosen)
     val band = HueBand.entries.getOrNull(chosen - fields.size)
+    // Past the sliders and the wheel: the Curves tool, which is a square to
+    // draw in rather than a slider, so it gets the control's whole room.
+    val curveIndex = fields.size + HueBand.entries.size
+    val onCurve = chosen == curveIndex
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = SquishColors.Blue) {
             PanelHeading(
@@ -228,8 +232,20 @@ fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                             .clickable(onClickLabel = entry.label) { chosen = index }
                     )
                 }
+                SelectableChip(
+                    label = if (clip.adjust.curve.isIdentity) "Curves" else "Curves •",
+                    selected = onCurve,
+                    accentColor = SquishColors.Blue,
+                    onClick = { chosen = curveIndex }
+                )
             }
             when {
+                onCurve -> CurveEditor(
+                    curve = clip.adjust.curve,
+                    onChange = { viewModel.clips.setCurve(clip.id, it) },
+                    onFinished = done,
+                    onReset = { viewModel.clips.resetCurve(clip.id) }
+                )
                 field != null -> AdjustSlider(
                     label = field.label,
                     value = field.of(clip.adjust),

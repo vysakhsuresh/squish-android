@@ -57,7 +57,20 @@ uniform float uAspect;
 // The step the sharpening taps take, as a fraction of the frame each way.
 uniform vec2 uTexel;
 
+// The Curves tool, as a table rather than a formula. The curve is evaluated in
+// Kotlin (ToneCurve) and folded - per channel, then master - into 256 entries
+// uploaded here, so this shader never knows what a curve is and there is no
+// second copy of the interpolation to drift from the first.
+uniform sampler2D uCurve;
+uniform float uCurveOn;
+
 varying vec2 vTexSamplingCoord;
+
+// A value 0..1 to the middle of its texel in a 256-wide table. Without the half
+// texel a GL_LINEAR read lands between two entries everywhere and the table
+// comes back blurred by half a step.
+const float LUT_SCALE = 255.0 / 256.0;
+const float LUT_OFFSET = 0.5 / 256.0;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 const float TONE_REACH = 0.3;
@@ -155,6 +168,17 @@ void main() {
     float lift = uHighlights * TONE_REACH * smoothstep(0.45, 1.0, l) +
       uShadows * TONE_REACH * (1.0 - smoothstep(0.0, 0.55, l));
     c += vec3(lift);
+  }
+
+  // After the tonal sliders, before saturation - where a curve belongs, and
+  // where Grade.applyTo puts it too.
+  if (uCurveOn > 0.5) {
+    vec3 t = clamp(c, 0.0, 1.0) * LUT_SCALE + LUT_OFFSET;
+    c = vec3(
+      texture2D(uCurve, vec2(t.r, 0.5)).r,
+      texture2D(uCurve, vec2(t.g, 0.5)).g,
+      texture2D(uCurve, vec2(t.b, 0.5)).b
+    );
   }
 
   float lum = dot(c, LUMA);

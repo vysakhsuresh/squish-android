@@ -317,6 +317,20 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         updateVideoClip(clipId) { it.copy(adjust = field.set(it.adjust, 0f)) }
     }
 
+    /**
+     * The Curves tool on one clip. One gesture is one step however many times a
+     * dragged point moves, as a slider's drag is.
+     */
+    fun setCurve(clipId: String, curve: com.squish.app.media.effects.ToneCurve) =
+        record("Curves", gesture = "Curve $clipId") {
+            updateVideoClip(clipId) { it.copy(adjust = it.adjust.copy(curve = curve)) }
+        }
+
+    /** Every channel back to a straight line, one step. */
+    fun resetCurve(clipId: String) = record("Reset curves") {
+        updateVideoClip(clipId) { it.copy(adjust = it.adjust.copy(curve = com.squish.app.media.effects.ToneCurve.NONE)) }
+    }
+
     /** One band of the HSL sliders, on one clip. */
     fun setHsl(clipId: String, band: HueBand, value: HslBand) = record("HSL", gesture = "HSL ${band.name} $clipId") {
         updateVideoClip(clipId) { it.copy(adjust = it.adjust.withBand(band, value)) }

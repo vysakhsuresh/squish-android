@@ -127,12 +127,20 @@ data class ToneCurve(
         val out = FloatArray(size * 3)
         for (i in 0 until size) {
             val x = i.toFloat() / (size - 1)
-            out[i * 3] = master.valueAt(red.valueAt(x))
-            out[i * 3 + 1] = master.valueAt(green.valueAt(x))
-            out[i * 3 + 2] = master.valueAt(blue.valueAt(x))
+            out[i * 3] = byte(master.valueAt(red.valueAt(x)))
+            out[i * 3 + 1] = byte(master.valueAt(green.valueAt(x)))
+            out[i * 3 + 2] = byte(master.valueAt(blue.valueAt(x)))
         }
         return out
     }
+
+    /**
+     * Held to what a byte can say, because the texture the shader reads is one:
+     * if the table kept full precision the CPU copy would land a fraction away
+     * from the GPU on every pixel, and a swatch would not quite be the frame.
+     * The output is eight bits either way, so nothing is lost by rounding here.
+     */
+    private fun byte(v: Float): Float = Math.round(v.coerceIn(0f, 1f) * 255f) / 255f
 
     companion object {
         /** 256 entries, the size of the texture the shader samples. */

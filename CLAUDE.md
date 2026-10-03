@@ -149,6 +149,19 @@ should work through it and then delete what holds up.
   seek no longer opens the gate (it relies on ExoPlayer masking the state to
   BUFFERING on seek); and that a playhead drag settles exactly the moment the
   finger lifts.
+- **The Curves tool (3 October), all of it.** Built on the desktop with no phone
+  attached. The arithmetic is executed on the JVM (`tools/jvm/ToneCurveChecks.kt`
+  and the curve part of `GradeChecks.kt`): monotone, in range, the table is the
+  curve, and it runs after the tonal sliders and before saturation in both the
+  CPU copy and the shader. What only a device answers: that the 256x1 RGB
+  texture `LookEffect` uploads is read the same way by this phone's ES2 driver
+  as `ToneCurve.sample` reads it on the CPU - so **a graded photo overlay and
+  the video beside it must agree on the same curve**, which is the one screen
+  where the two paths show the same picture; that an S-curve on screen is the
+  S-curve in the exported file; that dragging a point is smooth (one 768-byte
+  upload a frame) and does not stall the preview; that a point dragged onto its
+  neighbour comes off and the two ends cannot be dragged sideways; and that a
+  draft written at version 14 reads its curve back.
 - **A hand-drawn crop in the preview.** It reached the export before it reached
   the preview; now it does both, unseen.
 - **Batch B1 of the roadmap (data safety and exit paths), all of it.** Built and
