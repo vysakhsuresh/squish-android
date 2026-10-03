@@ -732,3 +732,31 @@ Not yet seen: the voices by ear, the new filters and templates on a file,
 - Checked and right: Read aloud lands a speech clip; Speech bubble with its
   tail; Auto adjust lifts a dark photo; full-screen scrub bar; frame steps
   (+3 then -1); Fit shots to the beat; GIF 360x640 from a 360p export.
+
+## Seen on the phone, 3 October (evening)
+
+The four fixes written after the afternoon round, each of which said "built;
+not yet seen on the phone", have now been seen on it.
+
+- **A project opened and left unchanged keeps its saved time and its place.**
+  Opened the top card ("Edit · 2 Oct, 11:36 PM · 4 clips · 1 h ago"), changed
+  nothing, pressed back: the card still reads the same time, the same "1 h
+  ago", in the same slot, with its "Exported · edited" badge.
+- **A shown moment lets go when playback is paused before its end.** Picked
+  Zoom in on Shot 1, dragged "In takes" to 2.1 s, picked the chip again to
+  replay it, paused at 0:01.538 - before the 2.1 s end - then pressed Play:
+  the playhead ran on to 0:07.672 and past, still playing. Before the fix the
+  waiting moment would have paused it at 2.1 s.
+- **Extract audio names the sound after the shot.** The sound landed as
+  "Shot 1 sound" on the strip and in the row's hint, not
+  "1001323287.mp4 sound", with the shot muted under it.
+- **Replace and Track name a clip only when its file name says something.**
+  Replace with a gallery file headed "Replace with the clip you picked"
+  (with "Start at 0:02.294", the old clip's own in-point); Track's pin list
+  read "Pin the overlay at 0:04 to it", with the stickers below it named by
+  their own letters.
+- Also seen in passing, and right: the tracker followed 277 frames and said
+  "held on for 4% of them" in yellow with the advice to tighten the box (a
+  shell on moving sunglasses - a fair verdict, not a fault); Track adds no
+  undo step of its own; the Replace sheet's back dismisses it without
+  applying.
