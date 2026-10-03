@@ -1,5 +1,7 @@
 package com.squish.app.history
 
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,7 +53,22 @@ fun LibraryDetailScreen(recordId: String, onBack: () -> Unit) {
     // Deleted from here: the row is gone from the list, and so is this screen.
     LaunchedEffect(record, records) { if (record == null && records.isNotEmpty()) onBack() }
 
-    Scaffold(containerColor = SquishColors.Background) { padding ->
+    // The back button in its own strip, as SquishPage has it: floating, it sat
+    // on the red Delete button until the page was scrolled.
+    Scaffold(
+        containerColor = SquishColors.Background,
+        bottomBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(SquishColors.Background)
+                    .navigationBarsPadding()
+                    .padding(start = 20.dp, top = 8.dp, bottom = 12.dp)
+            ) {
+                BackOrb(accent = SquishColors.Violet, onClick = onBack)
+            }
+        }
+    ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             Column(
                 modifier = Modifier
@@ -95,14 +112,8 @@ fun LibraryDetailScreen(recordId: String, onBack: () -> Unit) {
                         color = SquishColors.TextMuted
                     )
                 }
-                Spacer(modifier = Modifier.height(96.dp))
+                Spacer(modifier = Modifier.height(16.dp))
             }
-
-            BackOrb(
-                accent = SquishColors.Violet,
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 24.dp)
-            )
         }
     }
 
