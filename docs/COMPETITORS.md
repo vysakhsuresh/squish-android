@@ -105,10 +105,26 @@ money or a promise).
 
 ### 2.1 BUILD NEXT - cheap, visible, and they all have it
 
-**G1. Blend modes on overlays** — CapCut, InShot, Filmora all have them. We have
-opacity only. This is the single biggest "why does my overlay look wrong"
-complaint in this bracket: light leaks, dust, bokeh, smoke and film-burn
-overlays are all sold on the assumption of Screen or Add.
+**G1. Blend modes on overlays** — **BLOCKED, 3 October.** CapCut, InShot and
+Filmora all have them and we have opacity only, so this is still the biggest
+hole: light leaks, dust, bokeh, smoke and film-burn overlays are all sold on the
+assumption of Screen or Add.
+
+It cannot be done honestly on Media3 1.11.1. Read out of the bytecode:
+`androidx.media3.common.OverlaySettings` offers alpha, the two frame anchors,
+scale, rotation and an HDR luminance multiplier - and no blend mode;
+`VideoCompositorSettings` offers an output size and those settings per input;
+and `Transformer.Builder` has no hook to put a different compositor in. Media3
+blends the layers source-over and that is the end of it. We could make a blend
+mode look right in the *preview* in an afternoon, and it would be wrong in the
+file - which is the one thing this codebase does not do.
+
+The way through, when it is worth the work: stop using the compositor for a
+blended overlay and put the overlay on the *base* clip's own chain as a second
+texture, fed by a decoder we drive ourselves (the machinery `ReverseRenderer`
+already has) so one shader sees both pictures and can blend them with any
+formula. That is a week, not an afternoon, and it should be costed against
+G3/G2/G6 rather than assumed.
 Minutest level:
 - `Clip.blendMode` enum: Normal, Multiply, Screen, Overlay, Soft light, Lighten,
   Darken, Add, Difference. Nine is the set every competitor ships.
@@ -166,14 +182,15 @@ next use of `ValueKey` and says it is not built.
 - A mask's shape keyed, not just tracked.
 - Risk: low-medium. The track type and the strip's diamonds exist.
 
-**G6. Curves (tone curve) and a colour wheel pair** — Filmora and CapCut both
-have a curve. We have thirteen sliders and no curve, which is the one colour tool
-a serious user looks for first.
-- RGB + per-channel tone curve, four control points, Catmull-Rom.
-- Lift/Gamma/Gain wheels, or fold into the existing HSL card if the room is not
-  there.
-- Both fold into the same single grade pass.
-- Risk: low; it is arithmetic, and `GradeChecks` is the harness.
+**G6. Curves (tone curve)** — **BUILT, 3 October**, unseen on a device.
+Master + per-channel, monotone rather than Catmull-Rom (a plain spline
+overshoots, and an overshoot in a tone curve is a band that gets darker as the
+footage gets brighter). Folded into one 256-entry table that the shader looks up
+and `Grade.applyTo` samples, so there is no second copy of the maths.
+`ToneCurveChecks` and the curve part of `GradeChecks` execute it. Drafts write
+version 14.
+Still open from this item: **lift/gamma/gain wheels**, which would fold into the
+same grade pass and are the other half of what a colourist expects.
 
 **G7. A "quick fix" row on import** — CapCut's AutoCut and Filmora's AI Reel
 Maker both answer "I have 30 clips and no time". We have Fit shots to the beat
@@ -245,16 +262,16 @@ matters more than the item.
 
 ### 2.4 DECIDE - your call, not mine
 
-- **D1. Do we ever ship a server?** Everything in 2.3's first half turns on this
-  one answer. My recommendation is no, and that we say so loudly as the product
-  position. But it caps us: we will never have text-to-video, and some reviewers
-  will mark us down for it. Worth deciding once, deliberately, rather than
-  drifting into it one feature at a time.
-- **D2. Who is the user?** The footage in the test projects is jewellery product
-  video and vlogs. If that is the audience, G2 (LUTs), G13 (safe areas), G12
-  (annotations) and G7 (quick assemble) matter far more than anything in 2.3. If
-  the audience is teenagers making reels, invert that and G9/AR matter more. The
-  list cannot be ordered properly until this is answered.
+- ~~**D1. Do we ever ship a server?**~~ **Answered, 3 October: no.** There is no
+  server business. The internet is for *fetching* things - music, stock footage,
+  templates when they exist, and LUT or sound packs if they are added - and
+  nothing is ever sent. That is a content library behind `online/Online.kt`, not
+  a server, and 2.3's first half stays skipped on that basis. It is worth saying
+  in the Settings privacy card in those words.
+- ~~**D2. Who is the user?**~~ **Answered, 3 October: everyone editing video** -
+  reels, short films, films. So the ordering is the serious-tool one: colour
+  (curves, LUTs), transcript editing, annotations and safe areas before anything
+  cosmetic, and the AR/beauty cluster stays skipped.
 - **D3. Is 60 fps preview worth the work?** None of the three manage it reliably
   on mid-range phones. We run the editor at 14 ms a frame on a release build.
   Pushing to a locked 60 fps preview with four surfaces is a real differentiator
@@ -264,11 +281,13 @@ matters more than the item.
 
 ## 3. If you want an order
 
-1. **G1 blend modes** - the most-missed thing we lack, and self-contained.
-2. **G3 edit by transcript** - most of it is already built and unexposed; the
+~~1. **G1 blend modes**~~ - blocked by Media3's compositor; see the item.
+~~3. **G6 curves**~~ - **done on 3 October**, waiting on a device.
+
+1. **G3 edit by transcript** - most of it is already built and unexposed; the
    biggest win per hour in the list.
-3. **G6 curves** - arithmetic, harnessed, finishes the colour story.
-4. **G2 LUT import** - finishes it properly and reaches a different user.
+2. **G2 LUT import** - the same table the curve now uploads, read from a .cube,
+   which makes it markedly cheaper than it was before the curve existed.
 5. **G5 filter and mask keyframes** - closes the roadmap's own loose end.
 6. **G7 quick assemble** - the answer to AutoCut, entirely local.
 7. **G4 audio stickers, G12 annotations, G13 safe areas** - small, in any order.
