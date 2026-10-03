@@ -347,7 +347,11 @@ fun OverlayHandles(
             }
         }
 
-        box?.let { b ->
+        // Not on a picture too small for them - with the keyboard up it is a
+        // third of its height, and the four buttons covered the very words
+        // being typed. The outline stays, so the line is still marked.
+        val roomy = with(density) { layer.height.toDp() } >= MIN_HEIGHT_FOR_BUTTONS
+        box?.takeIf { roomy }?.let { b ->
             OverlayRules.reachableHandles(b, outset, -ox, -oy, layer.width - ox, layer.height - oy, margin).forEachIndexed { i, (cx, cy) ->
                 val corner = Corner.entries[i]
                 CornerButton(
@@ -434,3 +438,6 @@ private const val TURN_START = 3f
 
 /** Two taps on the same thing this close together are one double tap. */
 private const val DOUBLE_TAP_MS = 350L
+
+/** Below this the picture has no room for the box's corner buttons (OverlayHandles). */
+private val MIN_HEIGHT_FOR_BUTTONS = 240.dp
