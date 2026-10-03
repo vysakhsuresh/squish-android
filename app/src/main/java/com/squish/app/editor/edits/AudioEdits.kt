@@ -1,5 +1,6 @@
 package com.squish.app.editor.edits
 
+import com.squish.app.editor.clipTitle
 import android.net.Uri
 import com.squish.app.media.MediaCompat
 import com.squish.app.media.SquishError
@@ -246,14 +247,14 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             MediaCompat.cached(uri)?.hasAudio == false ||
             (uri == current.sourceUri && !current.sourceHasAudio)
         if (silent) {
-            _state.update { it.copy(failure = SquishError.NoSoundToExtract(clip.label)) }
+            _state.update { it.copy(failure = SquishError.NoSoundToExtract(current.clipTitle(clip))) }
             return
         }
         // At the level the shot was heard at a moment ago - under the camera
         // level for a main-track shot - not its raw slider, which at a camera
         // level of 30% gave a sound three times louder than the shot had been.
         val heard = OverlayRules.effectiveVolume(clip, current.muteOriginal, current.originalVolume)
-        val extraction = AudioRules.extracted(clip.copy(uri = uri), UUID.randomUUID().toString(), heardAt = heard)
+        val extraction = AudioRules.extracted(clip.copy(uri = uri), UUID.randomUUID().toString(), heardAt = heard, name = current.clipTitle(clip))
         record("Extract audio") {
             _state.update { s ->
                 s.copy(

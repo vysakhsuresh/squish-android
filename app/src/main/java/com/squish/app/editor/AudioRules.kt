@@ -235,12 +235,14 @@ object AudioRules {
      * audio" on a shot or an overlay does; from there the sound can be slid,
      * trimmed or cut apart from the picture.
      */
-    fun extracted(clip: Clip, id: String, heardAt: Float = clip.volume): Extraction {
+    fun extracted(clip: Clip, id: String, heardAt: Float = clip.volume, name: String = clip.label): Extraction {
         val sound = Clip(
             id = id,
             kind = ClipKind.Audio,
             uri = clip.uri,
-            label = "${clip.label} sound",
+            // Named after the shot as the editor calls it ("Shot 2 sound"):
+            // the file's own name was "1001323287.mp4 sound" on the strip.
+            label = "$name sound",
             sourceInMs = clip.sourceInMs,
             sourceOutMs = clip.sourceOutMs,
             timelineStartMs = clip.timelineStartMs,
