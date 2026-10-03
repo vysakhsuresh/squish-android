@@ -93,6 +93,13 @@ fun main() {
         check(StorageRules.pathOf("file:///app/files/voice/take.wav?x#y") == "/app/files/voice/take.wav", "a query or fragment reached the path")
     }
 
+    // A file name is shown only when it says something.
+    check(ProjectRules.readableName("Beach day.mp4") == "Beach day", "a real name was dropped")
+    check(ProjectRules.readableName("1001323287.mp4") == null, "a gallery number was shown as a name")
+    check(ProjectRules.readableName("VID-20260926-WA0104.mp4") == null, "a WhatsApp name was shown")
+    check(ProjectRules.readableName("PXL_20260901_101112.jpg") == null, "a camera name was shown")
+    check(ProjectRules.readableName(null) == null && ProjectRules.readableName("") == null, "nothing gave a name")
+
     // Two unnamed projects of one day are told apart by the time; a name is kept.
     run {
         val utc = java.util.TimeZone.getTimeZone("UTC")

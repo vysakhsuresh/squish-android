@@ -93,6 +93,17 @@ object ProjectRules {
     }
 
     /**
+     * A file's name fit to show a person - "Beach day" from "Beach day.mp4" -
+     * or null when the name was made up by a camera or the gallery
+     * ("1001323287.mp4", "VID-20260926-WA0104") and says nothing.
+     */
+    fun readableName(label: String?): String? {
+        val stem = label?.trim()?.substringBeforeLast('.')?.trim().orEmpty()
+        val letters = stem.count { it.isLetter() }
+        return stem.takeIf { letters >= 3 && !MADE_UP_NAME.matches(it) && !COPY_NAME.matches(it) }
+    }
+
+    /**
      * Titles told apart. Two projects started the same day with no name were
      * both "Edit · 2 Oct" on the dashboard, and which was which took opening
      * them. An unnamed project whose title another shares gets the time it

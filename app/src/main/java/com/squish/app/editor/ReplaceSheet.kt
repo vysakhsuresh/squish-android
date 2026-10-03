@@ -59,7 +59,8 @@ fun ReplacePanel(request: ReplaceRequest, viewModel: EditorViewModel) {
     }
     PanelSurface(accent = SquishColors.Violet) {
         PanelHeading(
-            "Replace with “${request.label}”",
+            // The file's name only when it says something: "1001323287.mp4" did not.
+            com.squish.app.data.ProjectRules.readableName(request.label)?.let { "Replace with “$it”" } ?: "Replace with the clip you picked",
             "Keeps the clip's length, place, speed and everything set on it",
             icon = Icons.Filled.SwapHoriz,
             accent = SquishColors.Violet

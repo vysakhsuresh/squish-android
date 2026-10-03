@@ -218,7 +218,9 @@ private fun PinTargets(state: EditorUiState, clip: Clip, viewModel: EditorViewMo
     } else {
         state.videoClips.filter { it.isOverlay }.forEach { overlay ->
             SquishOutlinedButton(
-                text = "Pin ${overlay.label} to it",
+                // By where it starts when its file's name says nothing ("1000713180.jpg").
+                text = "Pin " + (com.squish.app.data.ProjectRules.readableName(overlay.label)?.let { "“$it”" }
+                    ?: "the overlay at ${Timecode.format(overlay.timelineStartMs).substringBefore('.')}") + " to it",
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { viewModel.analysis.pinLayerToTrack(overlay.id) }
             )
