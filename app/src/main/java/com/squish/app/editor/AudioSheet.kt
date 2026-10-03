@@ -609,7 +609,14 @@ fun VoicePanel(clip: Clip, viewModel: EditorViewModel) {
                                 if (on) accent else SquishColors.Border,
                                 RoundedCornerShape(14.dp)
                             )
-                            .clickable { viewModel.audio.setClipVoice(clip.id, effect) }
+                            .clickable {
+                                viewModel.audio.setClipVoice(clip.id, effect)
+                                // Heard once, two seconds of it: a voice is chosen by ear,
+                                // and the tap otherwise changed nothing that could be told.
+                                val at = viewModel.state.value.playheadMs
+                                val from = if (at in clip.timelineStartMs until clip.timelineEndMs - 500L) at else clip.timelineStartMs
+                                viewModel.showMoment(from, minOf(VOICE_SAMPLE_MS, clip.timelineEndMs - from - 40L))
+                            }
                             .padding(vertical = 10.dp)
                     ) {
                         GlyphTile(effect.glyph, size = 36.dp)
@@ -804,3 +811,6 @@ fun NudgeButton(label: String, modifier: Modifier = Modifier, onClick: () -> Uni
         Text(label, style = MaterialTheme.typography.labelLarge, color = SquishColors.TextPrimary)
     }
 }
+
+/** How much of a clip plays when a voice is picked for it. */
+private const val VOICE_SAMPLE_MS = 2_000L
