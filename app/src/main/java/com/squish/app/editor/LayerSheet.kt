@@ -1,5 +1,7 @@
 package com.squish.app.editor
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,6 +30,7 @@ import com.squish.app.timeline.ValueTrack
 import com.squish.app.timeline.hasValueKeyAt
 import com.squish.app.timeline.readsMuted
 import com.squish.app.timeline.valueAt
+import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
 import com.squish.app.ui.theme.SquishColors
@@ -60,6 +63,38 @@ fun OpacityPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
         )
         LabeledSlider("Opacity", clip.valueAt(ValueTrack.Opacity, state.playheadMs), 0f..1f, onFinished = viewModel::endGesture) {
             viewModel.layers.setOpacity(clip.id, it)
+        }
+
+        // Blend modes, on a still only. A video overlay's layers meet inside
+        // Media3's compositor, which blends one way and offers no way in, so a
+        // blend set on one would show here and not in the file.
+        if (com.squish.app.media.StillClips.isStill(clip.uri)) {
+            Text(
+                "Blend",
+                style = MaterialTheme.typography.bodyMedium,
+                color = SquishColors.TextPrimary
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
+                com.squish.app.timeline.LayerBlend.entries.forEach { blend ->
+                    SelectableChip(
+                        label = blend.label,
+                        selected = clip.blend == blend,
+                        accentColor = SquishColors.Magenta,
+                        onClick = { viewModel.layers.setBlend(clip.id, blend) }
+                    )
+                }
+            }
+            if (!clip.blend.isPlain) {
+                Text(
+                    "A blended picture covers the whole frame - that is what a light leak or a dust overlay is for. " +
+                        "Place it, or turn it, with Blend off.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.TextMuted
+                )
+            }
         }
     }
 }

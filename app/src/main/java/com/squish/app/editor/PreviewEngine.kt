@@ -29,6 +29,8 @@ import com.squish.app.media.audio.VoiceProcessor
 import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.FxEffect
+import com.squish.app.media.effects.LayerBlendEffect
+import com.squish.app.media.effects.LiveLayerBlendEffect
 import com.squish.app.media.effects.LiveLookEffect
 import com.squish.app.media.effects.Looks
 import com.squish.app.media.effects.MaskEffect
@@ -36,6 +38,7 @@ import com.squish.app.media.effects.PremultiplyEffect
 import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.LayerBlend
 import com.squish.app.timeline.Mask
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.TransitionType
@@ -261,6 +264,13 @@ class PreviewEngine(private val context: Context) {
         var liveClip: Clip? = null
         var liveKeyPreview = true
         val effects = AtomicReference<List<TimedEffect>>(emptyList())
+
+        /**
+         * The blended still this surface draws under, in this surface's own
+         * clock. One at a time: a second would need a second sampler and a
+         * second branch in the shader, and nobody stacks two light leaks.
+         */
+        val blendStill = AtomicReference<BlendedStill?>(null)
         var effectsClip: Clip? = null
         var effectsFrom: List<TimedEffect>? = null
 
@@ -386,6 +396,13 @@ class PreviewEngine(private val context: Context) {
                 // carries it.
                 add(LiveLookEffect(grade))
                 if (isBase) {
+                    // A blended still, through the file's own shader rather than
+                    // a Compose layer: Compose cannot blend against a TextureView,
+                    // and this way the preview and the export are the same program
+                    // on the same numbers.
+                    add(LiveLayerBlendEffect({ blendStill.get()?.bitmap }, { blendStill.get()?.mode ?: LayerBlend.Normal }) { atMs ->
+                        blendStill.get()?.placementAt?.invoke(atMs)
+                    })
                     // Writes alpha 1, so a base frame reaches its view opaque.
                     add(FxEffect({ effects.get() }, overBlack = true))
                 } else {
@@ -431,6 +448,42 @@ class PreviewEngine(private val context: Context) {
     private var layers: List<Int> = emptyList()
     private var audioClips: List<Clip> = emptyList()
     private var effects: List<TimedEffect> = emptyList()
+
+    /** The blended stills of the edit, their pictures decoded once and kept. */
+    private var blendStills: List<Clip> = emptyList()
+    private val blendBitmaps = mutableMapOf<String, android.graphics.Bitmap?>()
+
+    /**
+     * One blended still as a base surface reads it: its picture, its mode, and
+     * where it sits at a moment of *that surface's* clock, which is the shot's
+     * source time.
+     */
+    class BlendedStill(
+        val clipId: String,
+        val underId: String,
+        val bitmap: android.graphics.Bitmap?,
+        val mode: LayerBlend,
+        val placementAt: (Long) -> LayerBlendEffect.Placement?
+    )
+
+    private fun blendedStillFor(still: Clip, under: Clip): BlendedStill? {
+        val uri = still.uri ?: return null
+        val key = uri.toString()
+        val bitmap = blendBitmaps.getOrPut(key) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+            }.getOrNull()
+        } ?: return null
+        return BlendedStill(still.id, under.id, bitmap, still.blend) { sourceMs ->
+            // Source time of the shot under it, back to the edit's own clock.
+            val atMs = under.timelineAtSource(sourceMs)
+            if (atMs < still.timelineStartMs || atMs > still.timelineEndMs) null
+            else LayerBlendEffect.Placement(
+                lookup = LayerBlendEffect.WHOLE_FRAME,
+                alpha = still.opacityAt(atMs).coerceIn(0f, 1f)
+            )
+        }
+    }
 
     private var fallbackUri: Uri? = null
     /** Each heavy file's light stand-in, by the file. */
@@ -630,6 +683,14 @@ class PreviewEngine(private val context: Context) {
         // show until play. The next tick asks for a fresh frame. A clip's own
         // grade, mask or key is noticed per surface, in applyLive.
         if (effects != this.effects) requestRedraw()
+        // Blended stills are not surfaces of their own - they are drawn into the
+        // shot under them, as the file draws them.
+        val stills = videoClips.filter { it.isOverlay && !it.blend.isPlain && StillClips.isStill(it.uri) }
+        if (stills != blendStills) {
+            blendStills = stills
+            blendBitmaps.keys.retainAll(stills.mapNotNull { it.uri?.toString() }.toSet())
+            requestRedraw()
+        }
         this.effects = effects
         val base = videoClips.filter { !it.isOverlay }.sortedBy { it.timelineStartMs }
 
@@ -766,6 +827,21 @@ class PreviewEngine(private val context: Context) {
             val grade = if (clip.lookAnimated) clip.gradeAt(timelineMs - clip.timelineStartMs) else clip.grade
             if (grade != s.grade.get()) {
                 s.grade.set(grade)
+                changed = true
+            }
+        }
+        if (s.isBase) {
+            // The still that covers this shot, if any, with its placement read
+            // in this surface's clock. The player holds the whole source file,
+            // so that clock is source time: source -> timeline through the
+            // clip's own trim and speed, the way the effects library is mapped
+            // a few lines down.
+            val still = blendStills.firstOrNull {
+                it.timelineEndMs > clip.timelineStartMs && it.timelineStartMs < clip.timelineEndMs
+            }
+            val was = s.blendStill.get()
+            if (was?.clipId != still?.id || was?.underId != clip.id) {
+                s.blendStill.set(still?.let { blendedStillFor(it, clip) })
                 changed = true
             }
         }

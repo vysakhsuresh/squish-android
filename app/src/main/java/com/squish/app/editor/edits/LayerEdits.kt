@@ -268,10 +268,21 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
         mutateTimeline { it.withOverlayGeometry(clipId, opacity = opacity) }
     }
 
+    /**
+     * How a still's colour meets the picture under it. Offered on photos and
+     * stickers only - see LayerBlend for why a video overlay cannot have one.
+     */
+    fun setBlend(clipId: String, blend: com.squish.app.timeline.LayerBlend) = record("Blend") {
+        mutateTimeline { timeline ->
+            timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(blend = blend) else it })
+        }
+    }
+
     /** Opacity's Reset: fully there, its keys gone, as one step. */
     fun resetOpacity(clipId: String) = record("Opacity") {
         mutateTimeline { timeline ->
             timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(opacity = 1f, opacityKeys = emptyList()) else it })
+
         }
     }
 

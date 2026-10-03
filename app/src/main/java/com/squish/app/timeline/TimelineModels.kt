@@ -236,6 +236,16 @@ data class Clip(
      */
     val opacityKeys: List<ValueKey> = emptyList(),
 
+    /**
+     * How this layer's colour meets the picture under it.
+     *
+     * Only honoured on a photo overlay or a sticker. A video overlay's layers
+     * only meet inside Media3's compositor, which blends source-over and offers
+     * no way in, so a blend set on one would show on screen and not in the file
+     * - see docs/COMPETITORS.md, G1.
+     */
+    val blend: LayerBlend = LayerBlend.Normal,
+
     /** Level over the clip, over [volume] when there are none: a bed ducked under a line, by hand. */
     val volumeKeys: List<ValueKey> = emptyList(),
 

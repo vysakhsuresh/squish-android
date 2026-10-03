@@ -1038,6 +1038,10 @@ private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: 
  */
 @Composable
 private fun StillOverlay(clip: Clip, transform: Transform, layerTime: Long, onAspect: (Float) -> Unit) {
+    // A blended still is not drawn here at all: a Compose layer cannot blend
+    // against a TextureView, so it goes through the base surfaces' own shader
+    // instead - the same shader the file uses (PreviewEngine, LayerBlendEffect).
+    if (!clip.blend.isPlain) return
     val uri = clip.uri ?: return
     val context = LocalContext.current
     val grade = clip.grade

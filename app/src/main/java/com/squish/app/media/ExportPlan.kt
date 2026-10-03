@@ -777,6 +777,65 @@ object ExportPlan {
         )
     }
 
+    /**
+     * The other way round: a point of the finished frame to the point of the
+     * layer that lands on it, both in 0..1 with y down - which is what a shader
+     * sampling the layer needs, and the inverse of what [placementMatrix] draws.
+     *
+     * Returned as a 3x3 in **column-major** order, the way GLSL reads a `mat3`.
+     * A point outside 0..1 came from outside the layer, so the shader leaves the
+     * picture alone there.
+     *
+     * Checked by round trip: a point put through the placement and back through
+     * this comes out where it started (LayerBlendChecks), which ties it to the
+     * placement the overlay box on screen is already known to agree with.
+     */
+    fun layerLookup(t: Transform, layerAspect: Float?, frameW: Float, frameH: Float): FloatArray {
+        val m = placementMatrix(t, if (frameH > 0f) frameW / frameH else 1f)
+        // The layer fitted to the frame, as half-extents in NDC.
+        val fw = fittedHalfWidth(layerAspect, frameW, frameH)
+        val fh = fittedHalfHeight(layerAspect, frameW, frameH)
+
+        // frame uv -> frame ndc
+        // ndc = (2u - 1, 1 - 2v)
+        // layer ndc = inverse(A) * (ndc - translation), A = [[m0, m1], [m2, m3]]
+        val det = m[0] * m[3] - m[1] * m[2]
+        val d = if (kotlin.math.abs(det) < 1e-9f) 1e-9f else det
+        val i0 = m[3] / d
+        val i1 = -m[1] / d
+        val i2 = -m[2] / d
+        val i3 = m[0] / d
+        val tx = m[4]
+        val ty = m[5]
+
+        // layer ndc -> layer uv: lu = (lx + fw) / (2 fw), lv = (fh - ly) / (2 fh)
+        val su = 1f / (2f * fw)
+        val sv = -1f / (2f * fh)
+
+        // Folded: uv -> ndc -> layer ndc -> layer uv, as one affine map.
+        // ndc.x = 2u - 1, ndc.y = -2v + 1
+        val a00 = su * i0 * 2f
+        val a01 = su * i1 * -2f
+        val a02 = su * (i0 * (-1f - tx) + i1 * (1f - ty)) + 0.5f
+        val a10 = sv * i2 * 2f
+        val a11 = sv * i3 * -2f
+        val a12 = sv * (i2 * (-1f - tx) + i3 * (1f - ty)) + 0.5f
+
+        // Column-major for GLSL: columns are (a00, a10, 0), (a01, a11, 0), (a02, a12, 1).
+        return floatArrayOf(a00, a10, 0f, a01, a11, 0f, a02, a12, 1f)
+    }
+
+    /** Half the width the layer takes in NDC once fitted - see OverlayRules.fitted. */
+    private fun fittedHalfWidth(layerAspect: Float?, frameW: Float, frameH: Float): Float {
+        if (layerAspect == null || !layerAspect.isFinite() || layerAspect <= 0f) return 1f
+        return if (layerAspect > frameW / frameH) 1f else (frameH * layerAspect) / frameW
+    }
+
+    private fun fittedHalfHeight(layerAspect: Float?, frameW: Float, frameH: Float): Float {
+        if (layerAspect == null || !layerAspect.isFinite() || layerAspect <= 0f) return 1f
+        return if (layerAspect > frameW / frameH) (frameW / layerAspect) / frameH else 1f
+    }
+
     // ---- Sound -----------------------------------------------------------------
 
     /** What a composited export mixes at when nothing in it says: the rate every phone records at. */

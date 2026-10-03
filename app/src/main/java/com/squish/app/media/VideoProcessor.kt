@@ -51,6 +51,7 @@ import com.squish.app.media.effects.PremultiplyEffect
 import com.squish.app.media.effects.ReframeEffect
 import com.squish.app.media.effects.TransitionEffect
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.LayerBlend
 import com.squish.app.timeline.SpeedRamp
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
@@ -268,7 +269,14 @@ class VideoProcessor(private val context: Context) {
         backdrop: List<Clip>,
         aspects: Map<android.net.Uri, Float>
     ): Composition {
-        val track = state.videoClips
+        // A blended still is not a layer. Media3's compositor is the only place
+        // a layer meets the picture under it and it blends source-over with no
+        // way in, so a still asked for Multiply or Screen is taken out of the
+        // layers and put back on the composition's own output instead, where
+        // the finished picture is a texture a shader of ours can read. Video
+        // overlays cannot be blended at all; the sheet only offers it on stills.
+        val blended = state.videoClips.filter { it.isOverlay && it.blend != LayerBlend.Normal && StillClips.isStill(it.uri) }
+        val track = state.videoClips - blended.toSet()
         val videoOut = !state.audioOnly
         // A sound-only export keeps the camera's sound even when the picture's
         // mute is on - sound is all it was asked for.
@@ -312,7 +320,7 @@ class VideoProcessor(private val context: Context) {
                             ExportPlan.Role.Overlay -> editedOverlay(state, clip, canvas, rate)
                             ExportPlan.Role.Backdrop ->
                                 CompositionFactory.backdropItem(checkNotNull(clip.uri), clip.durationMs, rate, canvas)
-                            else -> editedClip(state, clip, canvas, layers.baseRolls, aspects)
+                            else -> editedClip(state, clip, canvas, layers.baseRolls, aspects, blended)
                         }
                     }
                 )
@@ -324,7 +332,7 @@ class VideoProcessor(private val context: Context) {
             // empty window.
             else -> CompositionFactory.buildCutsOnly(
                 track.filter { it.durationMs > 0 }.sortedBy { it.timelineStartMs }
-                    .map { editedClip(state, it, canvas, rolls = null, aspects) },
+                    .map { editedClip(state, it, canvas, rolls = null, aspects, blended) },
                 trackTypesFor(videoOut, baseAudio)
             )
         }
@@ -412,6 +420,42 @@ class VideoProcessor(private val context: Context) {
         }
         if (effects.isEmpty()) return Effects.EMPTY
         return Effects(ImmutableList.of(), ImmutableList.copyOf(effects))
+    }
+
+    /**
+     * One blended still as an effect on the finished picture.
+     *
+     * The clock here is the composition's, which is the edit's own - so the
+     * stretch the still shows for, and the placement keys over it, are read
+     * straight off the timeline with no per-item offset to get wrong.
+     */
+    private fun blendEffectFor(
+        state: EditorUiState,
+        clip: Clip,
+        canvas: ExportPresets.Resolution?,
+        under: Clip
+    ): Effect? {
+        // Only on the shots it actually covers, so a still near the end costs
+        // nothing on the shots before it.
+        if (clip.timelineEndMs <= under.timelineStartMs || clip.timelineStartMs >= under.timelineEndMs) return null
+        val uri = clip.uri ?: return null
+        val bitmap = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+        }.getOrNull() ?: return null
+        val startMs = clip.timelineStartMs
+        val endMs = clip.timelineEndMs
+        // The item's clock starts at 0 on this shot, so the edit's own time is
+        // that plus where the shot sits - the same reading a keyed filter
+        // strength makes, and the same thing a device has to confirm.
+        val offsetMs = under.timelineStartMs
+        return com.squish.app.media.effects.LayerBlendEffect(bitmap, clip.blend) { itemMs: Long ->
+            val atMs = offsetMs + itemMs
+            if (atMs < startMs || atMs > endMs) null
+            else com.squish.app.media.effects.LayerBlendEffect.Placement(
+                lookup = com.squish.app.media.effects.LayerBlendEffect.WHOLE_FRAME,
+                alpha = clip.opacityAt(atMs).coerceIn(0f, 1f)
+            )
+        }
     }
 
     /**
@@ -514,7 +558,9 @@ class VideoProcessor(private val context: Context) {
         clip: Clip,
         canvas: ExportPresets.Resolution?,
         rolls: List<List<Clip>>?,
-        aspects: Map<android.net.Uri, Float>
+        aspects: Map<android.net.Uri, Float>,
+        /** Stills with a blend mode: not layers, drawn into each shot they cover. */
+        blendedStills: List<Clip> = emptyList()
     ): EditedMediaItem {
         val uri = clip.uri ?: state.sourceUri
         val effects: List<Effect> = if (state.audioOnly) emptyList() else buildList {
@@ -547,6 +593,14 @@ class VideoProcessor(private val context: Context) {
                 add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT))
             }
             addAll(speedEffects(clip, state, frameRateOf(state)))
+            // Blended stills, onto the finished frame of this shot. On the base
+            // clip rather than on the composition, because that is the only
+            // place the preview can put them too - a Compose layer cannot blend
+            // against a TextureView - and the two agreeing matters more than a
+            // blended still sitting above a picture-in-picture as well.
+            blendedStills.forEach { still ->
+                blendEffectFor(state, still, canvas, under = clip)?.let { add(it) }
+            }
             // Its share of a transition, and its own fade, in one pass; on the
             // one-sequence path there is no compositor to read an alpha, so the
             // fade is drawn towards black there (TransitionEffect).
