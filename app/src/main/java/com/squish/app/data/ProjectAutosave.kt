@@ -237,10 +237,16 @@ class ProjectAutosave(context: Context) {
         val signature = document.toString()
         if (signature == lastSignature[slot]) return false
 
-        val now = System.currentTimeMillis()
         val fingerprint = DraftHousekeeping.fingerprint(editKey(state))
-        document.put("savedAtMillis", now)
         val previous = readMetaJson(metaFile(slot))
+        // Only the playhead, the zoom or the like moved - opening a project
+        // puts the playhead at 0:00 - and the edit is the one on disk: saved
+        // with its old time, so a project looked at and left is not taken for
+        // one just edited and moved to the top of the dashboard.
+        val untouched = previous?.optString("editFingerprint") == fingerprint
+        val now = if (untouched) previous?.optLong("savedAtMillis")?.takeIf { it > 0L } ?: System.currentTimeMillis()
+        else System.currentTimeMillis()
+        document.put("savedAtMillis", now)
 
         val ok = runCatching {
             // Nothing below touches the live file until the new version is safely
@@ -250,7 +256,9 @@ class ProjectAutosave(context: Context) {
                 out.flush()
                 out.fd.sync()          // on the platter, not just in the page cache
             }
-            val snapshots = rotateSnapshots(slot, previous, now)
+            // The clock, not the kept save time: the rotation is about when it runs.
+            val snapshots = if (untouched) SnapshotInfo(versionIn(previous, "snapshot"), versionIn(previous, "pending"))
+            else rotateSnapshots(slot, previous, System.currentTimeMillis())
             if (live.exists()) live.copyTo(backupFile(slot), overwrite = true)
             // The sidecar goes first, atomically. It used to be a plain truncating
             // write after the rename, so a kill in the gap left a draft that was
