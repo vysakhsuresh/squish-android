@@ -896,6 +896,21 @@ Two real misses, both now fixed:
 Everything else measured clean: the dashboard (19 nodes), the editor at level 0
 and with a clip selected, the Volume sheet (20 nodes) and the Export sheet (23).
 
+**Next on the phone**, when it comes back (3 October evening, the phone left at
+about 17:30). Nothing built today is waiting on it - the frame-rate fix and both
+48 dp fixes were driven and measured before it went - so this is the older list,
+in the order it is worth spending a charge on:
+
+1. The "Keep this one / Try again, tighter" card (B14). Today's fit landed under
+   its limit on flat footage, so the overshoot path has still never run. Busy
+   footage, a tight limit - 16 MB on a minute of something moving.
+2. Whether a blended slow-motion file *looks* like motion blur rather than a
+   cross-fade. The frame counts are settled; the picture is not.
+3. The read-aloud voices and Enhance voice by ear, and Auto adjust by eye - the
+   three things left that no measurement can answer.
+4. A Grid or Split screen file against its preview.
+5. Keep HDR, which needs an HLG clip, and a 4K export, which needs the S23.
+
 **A warning for anyone repeating this:** a node clipped by the edge of a
 scrolling container reports its *visible* bounds, so it reads as undersized.
 Three of the first readings were that - a card half off the bottom of the
