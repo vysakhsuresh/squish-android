@@ -692,10 +692,9 @@ should work through it and then delete what holds up.
   data sync before) - lock the screen during a long 4K export and the
   notification must show the percentage and the file must complete; the
   first Render asks for notifications on Android 13+ and a refusal still
-  renders; the fps row writes the file at 24/25/30/50/60 (cuts-only and
-  single-file exports carry a `FrameDropEffect` per item, a layered export
-  takes its rate from the clock still, so check both kinds with `ffprobe`) and
-  60 asked of 30 fps footage passes every frame; the HEVC toggle appears only
+  renders; the fps row has now been probed on both kinds (3 October evening in
+  `docs/DEVICE_FINDINGS.md`): 24 and 25 come out exactly even and 60 asked of
+  30 fps footage passes every frame; the HEVC toggle appears only
   where `EncoderUtil` finds an encoder, the file is HEVC (`SquishExport: done
   … mime=video/hevc` in logcat) and about a third smaller; sizes above the
   encoder's ceiling are greyed on the sheet (the S23 for the 4K test);

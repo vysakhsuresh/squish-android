@@ -16,15 +16,17 @@ import androidx.media3.effect.PassthroughShaderProgram
  * untouched - nothing is drawn - and the ones between slots are given straight
  * back to the chain.
  */
-class GridFrameDropEffect(private val fps: Float) : GlEffect {
-    override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram = GridFrameDropProgram(FrameGrid(fps))
+class GridFrameDropEffect(private val fps: Float, private val onGrid: Boolean = false) : GlEffect {
+    override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram = GridFrameDropProgram(FrameGrid(fps, onGrid))
 }
 
 private class GridFrameDropProgram(private val grid: FrameGrid) : PassthroughShaderProgram() {
 
     override fun queueInputFrame(glObjectsProvider: GlObjectsProvider, inputTexture: GlTextureInfo, presentationTimeUs: Long) {
         if (grid.keep(presentationTimeUs)) {
-            super.queueInputFrame(glObjectsProvider, inputTexture, presentationTimeUs)
+            // On its slot, not its own stamp: dropping alone left the file at the
+            // right average rate with uneven frames (33/67 ms for 24 from 30).
+            super.queueInputFrame(glObjectsProvider, inputTexture, grid.slotUs)
         } else {
             // Dropped: back to the chain at once, and the next one asked for,
             // as the pass-through does when a kept frame is released.

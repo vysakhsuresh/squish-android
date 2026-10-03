@@ -804,3 +804,43 @@ than a cross-fade. The frame counts prove the mechanism, not the picture.
   ago", Select, Delete, and "Uses 1 KB on this phone" under them; its Delete
   says the project moves to Recently deleted for 30 days and the original
   videos are untouched.
+
+### The frame-rate rows, probed - and a fault in them
+
+B14 asked for the fps row to be checked on both export kinds with a probe.
+One clip of 21.442 s of 30 fps footage, exported at 360p, measured with
+`tools/jvm/Mp4Probe.kt`:
+
+| asked | path | frames | measured | frame durations |
+|---|---|---|---|---|
+| 24 | cuts-only | 514 | 24.019 fps | **33.33 ms x385, 66.67 ms x128** |
+| 50 | cuts-only | 642 | 30.000 fps | 33.33 ms, even |
+| 60 | cuts-only | 642 | 30.000 fps | 33.33 ms, even |
+| 25 | layered (a photo overlay) | 536 | 25.008 fps | 40.00 ms, even |
+
+50 and 60 are right: asking above the footage's rate passes every frame and
+declares the rate it really has, as the code's own comment promises.
+
+**24 was not.** The file was the right rate *on average* and the right length,
+but no frame in it lasted a 24th of a second: it alternated 33 ms and 67 ms,
+because `FrameGrid` chose which frames to keep on an even grid and then let
+them into the file carrying the footage's own stamps. The layered path came
+out exactly even in the same edit, because the compositor draws its own
+frames - so the two halves of one chip disagreed, and the "24 or 25 for a
+film look" the sheet offers was variable-rate.
+
+Fixed: a kept frame now goes in on its slot (`FrameGrid.slotUs`). A first
+attempt at this was wrong and `FrameGridChecks` caught it before the phone
+did - footage *slower* than the rate asked for keeps every frame, and pulling
+those onto a faster grid runs the shot quicker than it was cut, so 24 fps
+footage asked at 30 came out sped up. The grid is only used where the footage
+has frames to spare, which the export knows (`spedUp || state.fps >= rate`);
+everything else keeps its own stamps.
+
+Rendered again on the phone after the fix, same project, same settings:
+
+- **24 fps: 514 frames, 24.000 fps, 41.67 ms x483 and 41.66 ms x31** (the
+  split is the 90 kHz timescale, 3750 ticks against 3749). Same frame count,
+  same length, sound untouched at 21.502 s.
+- **60 fps: 642 frames, 30.000 fps, byte-for-byte the same size as before** -
+  the path that was already right is untouched.

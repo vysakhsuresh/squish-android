@@ -7,6 +7,12 @@ fun check(ok: Boolean, msg: String) { if (!ok) problems += msg }
 /** The frames kept from [times] (microseconds) at [fps]. */
 fun kept(fps: Float, times: List<Long>): List<Long> { val g = FrameGrid(fps); return times.filter { g.keep(it) } }
 
+/** The times the kept frames go into the file at. [onGrid] as the export decides it. */
+fun slots(fps: Float, times: List<Long>, onGrid: Boolean = true): List<Long> {
+    val g = FrameGrid(fps, onGrid)
+    return times.mapNotNull { if (g.keep(it)) g.slotUs else null }
+}
+
 /** A steady input: [seconds] of frames at [inFps]. */
 fun steady(inFps: Double, seconds: Double, startUs: Long = 0L): List<Long> =
     (0 until (inFps * seconds).toInt()).map { startUs + Math.round(it * 1_000_000.0 / inFps) }
@@ -35,6 +41,42 @@ fun main() {
     val fast = kept(30f, mixed).filter { it >= 5_000_000L }
     check(Math.abs(rate(fast) - 30.0) < 0.5, "the fast stretch after a slow one wrote ${"%.2f".format(rate(fast))} fps")
     check(fast.zipWithNext { a, b -> b - a }.min() >= 1_000_000 / 90, "frames closer than the input's own gap")
+    // The file is evenly spaced, not merely the right rate on average: 30 fps
+    // footage written at 24 alternated 33 ms and 67 ms until the kept frames
+    // were stamped with their slots (found by probing an export's frame table).
+    for (out in listOf(24f, 25f, 30f)) {
+        val s = slots(out, steady(30.0, 10.0))
+        val gaps = s.zipWithNext { a, b -> b - a }.distinct()
+        check(gaps.size == 1, "30 fps at ${out.toInt()} wrote gaps $gaps, not one even step")
+        check(s.first() == 0L, "30 fps at ${out.toInt()} moved the first frame to ${s.first()}")
+        // The grid never drifts: every slot is counted from the first frame.
+        val period = (1_000_000.0 / out).toLong()
+        check(s.withIndex().all { (i, t) -> t == i * period }, "30 fps at ${out.toInt()} drifted off its grid")
+    }
+    // Nothing is moved by as much as half a period, so sound stays with picture.
+    for (out in listOf(24f, 25f)) {
+        val times = steady(30.0, 10.0)
+        val gg = FrameGrid(out, true)
+        val shift = times.mapNotNull { if (gg.keep(it)) gg.slotUs - it else null }
+        check(shift.all { Math.abs(it) <= 1_000_000L / out.toLong() / 2 + 1 }, "${out.toInt()} moved a frame by ${shift.maxOf { Math.abs(it) }} us")
+    }
+    // Footage no faster than the rate asked for is left alone (the export passes
+    // onGrid false): every frame is kept there, and pulling them onto a faster
+    // grid would run the shot quicker than it was cut. 60 asked of 30 fps
+    // footage is the case the sheet offers.
+    check(slots(60f, steady(30.0, 5.0), onGrid = false) == steady(30.0, 5.0), "30 fps footage at 60 was pulled onto the grid")
+    check(slots(30f, steady(24.0, 5.0), onGrid = false) == steady(24.0, 5.0), "24 fps footage at 30 was pulled onto the grid")
+    // A slow stretch then a fast one: still in order, and the slow part untouched.
+    val mix = steady(10.0, 5.0) + steady(90.0, 5.0, 5_000_000L)
+    val mixSlots = slots(30f, mix)
+    check(mixSlots == mixSlots.sorted() && mixSlots.distinct() == mixSlots, "slots went backwards or repeated")
+    check(mixSlots.filter { it < 5_000_000L } == steady(10.0, 5.0), "the slow stretch was moved")
+    // Which frames are kept is unchanged by the stamping.
+    for (out in listOf(24f, 25f, 30f, 60f)) {
+        val times = steady(30.0, 10.0)
+        check(slots(out, times, onGrid = false) == kept(out, times), "stamping changed which frames ${out.toInt()} keeps")
+    }
+
     // A new stream starts again; the first frame is always kept.
     val g = FrameGrid(30f)
     check(g.keep(0L) && !g.keep(10_000L), "the grid did not start on the first frame")

@@ -451,7 +451,15 @@ class VideoProcessor(private val context: Context) {
     private fun frameDrop(state: EditorUiState, spedUp: Boolean = false): Effect? =
         if (state.outputFps == ExportSettings.SOURCE_FPS && !spedUp) null
         // On a grid, not Media3's FrameDropEffect: that one stepped a 1.5x shot to 22.5 fps (GridFrameDropEffect).
-        else com.squish.app.media.video.GridFrameDropEffect(frameRateOf(state).toFloat())
+        // The kept frames take their slots only where the footage has frames to
+        // spare - a sped shot always has - so the file is evenly spaced rather
+        // than merely the right rate on average. A probe of a 24 fps export
+        // found 33 ms and 67 ms frames alternating where the composited path,
+        // which draws its own, was exactly even.
+        else com.squish.app.media.video.GridFrameDropEffect(
+            frameRateOf(state).toFloat(),
+            onGrid = spedUp || state.fps >= frameRateOf(state) - 0.5f
+        )
 
     /**
      * The sample rates of every sound that reaches the file, as far as the
