@@ -71,6 +71,23 @@ fun main() {
     val mixSlots = slots(30f, mix)
     check(mixSlots == mixSlots.sorted() && mixSlots.distinct() == mixSlots, "slots went backwards or repeated")
     check(mixSlots.filter { it < 5_000_000L } == steady(10.0, 5.0), "the slow stretch was moved")
+    // A clip slower than the project's own rate, in a project whose rate says
+    // the grid is safe (the export reads one rate for the edit, not one per
+    // file): the grid must not run it fast. The catch-up branch is what holds
+    // it - every frame is kept, and a slot more than half a period off the
+    // frame re-anchors the grid to the frame. So a frame moves by less than one
+    // period and the clip ends where it would have ended.
+    for (inFps in listOf(24.0, 25.0, 15.0)) {
+        val times = steady(inFps, 8.0)
+        val s = slots(30f, times, onGrid = true)
+        check(s.size == times.size, "a ${inFps.toInt()} fps clip lost frames at 30")
+        val drift = s.zip(times) { out, own -> out - own }
+        check(drift.all { Math.abs(it) < 1_000_000L / 30 }, "a ${inFps.toInt()} fps clip moved a frame by ${drift.maxOf { Math.abs(it) }} us")
+        check(s == s.sorted() && s.distinct() == s, "a ${inFps.toInt()} fps clip got slots out of order")
+        // No creep: the end is where the footage puts it, not where a 30 fps grid would.
+        check(Math.abs(s.last() - times.last()) < 1_000_000L / 30, "a ${inFps.toInt()} fps clip drifted by its end")
+    }
+
     // Which frames are kept is unchanged by the stamping.
     for (out in listOf(24f, 25f, 30f, 60f)) {
         val times = steady(30.0, 10.0)

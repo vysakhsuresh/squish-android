@@ -65,6 +65,13 @@ class FrameGrid(fps: Float, private val onGrid: Boolean = false) {
      * stamps: there every frame is kept anyway, and pulling them onto a faster
      * grid would run the shot quicker than it was cut.
      *
+     * The export decides [onGrid] from the edit's rate, which is one rate for
+     * the whole project, so a clip from a slower file can be told the grid is
+     * safe when it is not. The catch-up above is what holds that case: the slot
+     * falls behind the frame, the grid re-anchors to the frame, and the clip
+     * ends where the footage ends. A frame moves by less than one period and
+     * nothing creeps - executed over 24, 25 and 15 fps clips in FrameGridChecks.
+     *
      * Only meaningful after [keep] has returned true.
      */
     val slotUs: Long get() = slot
