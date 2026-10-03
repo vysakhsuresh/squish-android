@@ -304,6 +304,21 @@ fun OverlayHandles(
                             latestEmptyTap()
                         } else {
                             latestTouch()
+                            // Several stacked under the finger: a tap on the selected one
+                            // goes to the next one down, and round again, as CapCut does.
+                            // The one beneath a sticker could not be reached at all.
+                            val stack = items.filter { boxes[it.clipId]?.contains(x, y, grace) == true }
+                            // Not the second of a double tap, which opens the one selected.
+                            val quickRepeat = lastTap?.let { (id, at) -> id == hit.clipId && System.currentTimeMillis() - at <= DOUBLE_TAP_MS } == true
+                            val cycled = if (hit.clipId == latestSelected && stack.size > 1 && !quickRepeat) {
+                                val i = stack.indexOfFirst { it.clipId == hit.clipId }
+                                stack[(i + 1) % stack.size]
+                            } else null
+                            if (cycled != null) {
+                                lastTap = null
+                                latestActions.onSelect(cycled.clipId)
+                                return@awaitEachGesture
+                            }
                             if (hit.clipId != latestSelected) latestActions.onSelect(hit.clipId)
                             // A second tap on the same thing soon after the first opens it.
                             val now = System.currentTimeMillis()
