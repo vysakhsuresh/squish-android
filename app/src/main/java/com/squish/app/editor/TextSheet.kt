@@ -298,6 +298,13 @@ fun TextPanel(
                     color = SquishColors.Teal
                 )
 
+                status.finished && status.noWords -> Text(
+                    "There is sound, but no words in it - music or background noise, by the sound of it. " +
+                        "No captions were added. Pick “Added sounds” if the talking is on a voiceover.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SquishColors.Yellow
+                )
+
                 status.finished && status.total == 0 -> Text(
                     "No speech found. If there is talking in it, the recording may be " +
                         "too quiet or too noisy for the detector to separate from the background.",

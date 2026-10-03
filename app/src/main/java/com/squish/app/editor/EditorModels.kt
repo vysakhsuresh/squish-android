@@ -410,7 +410,9 @@ data class CaptionProgress(
      * Lines brought in from a subtitle file. Nothing was listened to or
      * transcribed, and saying "N lines timed, N transcribed" claimed it had.
      */
-    val imported: Int = 0
+    val imported: Int = 0,
+    /** Sound was found but no line held words: music or noise, and nothing was added. */
+    val noWords: Boolean = false
 )
 
 /**

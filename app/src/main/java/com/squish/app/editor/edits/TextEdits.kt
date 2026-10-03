@@ -480,6 +480,13 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         // Each line lands on the timeline as soon as it is done, rather than all
         // of them at the end. So stopping part-way keeps what was already made,
         // and a long clip shows its captions arriving instead of a spinner.
+        // Lines the recogniser heard no words in, held back. On a song or a
+        // street the loudness detector finds "speech" everywhere, and every
+        // such stretch used to land as an empty card - seen on the phone,
+        // three blank captions on a clip with music under it. Kept only if
+        // the run found words somewhere, when they are more likely speech it
+        // missed than not speech at all.
+        val wordless = ArrayList<PlannedCaption>()
         planned.forEachIndexed { index, plan ->
             val words = if (canTranscribe) {
                 Transcriber.transcribe(app, plan.pcm, plan.segment, language)
@@ -489,12 +496,17 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             currentCoroutineContext().ensureActive()
             val text = words?.takeIf { it.isNotBlank() } ?: ""
             if (text.isNotEmpty()) transcribed++
-            // Where each word begins, from the sound, so the Words arrival lands them on the speech.
-            val count = text.split(' ').count { it.isNotBlank() }
-            val starts = if (count > 1) withContext(Dispatchers.Default) { SpeechSegmenter.wordStarts(plan.pcm, plan.segment, count) } else emptyList()
-            if (landAutoCaption(run, plan, text, starts)) made++
+            if (canTranscribe && text.isEmpty()) {
+                wordless += plan
+            } else {
+                // Where each word begins, from the sound, so the Words arrival lands them on the speech.
+                val count = text.split(' ').count { it.isNotBlank() }
+                val starts = if (count > 1) withContext(Dispatchers.Default) { SpeechSegmenter.wordStarts(plan.pcm, plan.segment, count) } else emptyList()
+                if (landAutoCaption(run, plan, text, starts)) made++
+            }
             _state.update { it.copy(captions = it.captions.copy(transcribed = transcribed, done = index + 1)) }
         }
+        if (transcribed > 0) wordless.forEach { if (landAutoCaption(run, it, "", emptyList())) made++ }
 
         _state.update {
             it.copy(
@@ -503,7 +515,8 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                     total = made,
                     transcribed = transcribed,
                     done = planned.size,
-                    recognitionAvailable = canTranscribe
+                    recognitionAvailable = canTranscribe,
+                    noWords = canTranscribe && transcribed == 0
                 )
             )
         }
