@@ -16,6 +16,7 @@ import com.squish.app.media.audio.WaveformBuilder
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.MIN_CLIP_MS
+import com.squish.app.timeline.withSpanRemoved
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -780,6 +781,77 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * panel may be showing a dozen rows, and a row that never had the cursor has
      * no business closing a drag or a run of typing somewhere else.
      */
+    // ---- Editing by transcript ---------------------------------------------
+
+    /**
+     * A run of words chosen in the transcript, taken out of the edit: the
+     * footage under them, the sound with it, and the words themselves.
+     *
+     * One step, so one undo puts the sentence back.
+     */
+    fun removeTranscriptSpan(fromMs: Long, toMs: Long) =
+        removeSpans(listOf(fromMs..toMs), "Delete words")
+
+    /**
+     * Every "um" and "uh" the captions timed, taken out in one step.
+     *
+     * Only words that have a moment of their own: without one, the smallest
+     * thing we know the position of is the whole line, and taking that out
+     * would take the sentence round the "um" with it.
+     */
+    fun removeFillerWords(onDone: (Int) -> Unit = {}) {
+        val runs = com.squish.app.editor.Transcript.fillerRuns(transcriptWords())
+        if (runs.isEmpty()) {
+            onDone(0)
+            return
+        }
+        removeSpans(runs, if (runs.size == 1) "Remove a filler word" else "Remove ${runs.size} filler words")
+        onDone(runs.size)
+    }
+
+    /** The edit read as words, for the transcript sheet and the filler pass. */
+    fun transcriptWords(): List<com.squish.app.editor.TranscriptWord> =
+        com.squish.app.editor.Transcript.words(_state.value.textOverlays.map { it.asTranscriptLine() })
+
+    /**
+     * Stretches taken out, back to front.
+     *
+     * Back to front because each removal moves everything after it, so taken in
+     * the order they were found the second stretch's times would already be
+     * wrong by the length of the first. The timeline and the lines of words are
+     * moved by the same stretch in the same order, or the captions would end up
+     * somewhere the footage is not.
+     */
+    private fun removeSpans(spans: List<LongRange>, label: String) {
+        val merged = com.squish.app.timeline.merge(spans).sortedByDescending { it.first }
+        if (merged.isEmpty()) return
+        record(label) {
+            merged.forEach { span ->
+                mutateTimeline { it.withSpanRemoved(span.first, span.last) }
+                _state.update { s ->
+                    s.copy(
+                        textOverlays = s.textOverlays.mapNotNull { item ->
+                            com.squish.app.editor.Transcript
+                                .afterRemoval(item.asTranscriptLine(), span.first, span.last)
+                                ?.let { line ->
+                                    item.copy(
+                                        text = line.text,
+                                        startMs = line.startMs,
+                                        endMs = line.endMs,
+                                        wordStartsMs = line.wordStartsMs
+                                    )
+                                }
+                        },
+                        selectedClipId = null
+                    )
+                }
+            }
+        }
+    }
+
+    private fun TextOverlayItem.asTranscriptLine() =
+        com.squish.app.editor.Transcript.Line(id, text, startMs, endMs, wordStartsMs)
+
     fun endCaptionTyping(id: String) = history.endGesture(typingGesture(id))
 
     private fun typingGesture(id: String) = "Text $id"

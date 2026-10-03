@@ -182,6 +182,15 @@ fun TextPanel(
         }
     }
 
+    // The transcript takes the sheet's whole room while it is open: it is a
+    // list of every word in the edit, and sharing the panel with the title
+    // tiles would leave neither enough space to be usable.
+    var transcript by remember { mutableStateOf(false) }
+    if (transcript) {
+        TranscriptPanel(state = state, viewModel = viewModel, onClose = { transcript = false })
+        return
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         com.squish.app.ui.components.SheetActionButton(
             text = "Add text",
@@ -190,6 +199,18 @@ fun TextPanel(
             modifier = Modifier.fillMaxWidth(),
             onClick = onAddText
         )
+
+        // Offered only once there are words to read: an empty transcript is a
+        // button that does nothing, which is worse than no button.
+        if (lines.any { it.wordStartsMs.isNotEmpty() }) {
+            com.squish.app.ui.components.SheetActionButton(
+                text = "Edit by transcript",
+                icon = Icons.Filled.Subtitles,
+                accent = SquishColors.Blue,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { transcript = true }
+            )
+        }
 
         PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
