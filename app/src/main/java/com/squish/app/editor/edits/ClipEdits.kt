@@ -1683,6 +1683,17 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 }
             }
         }
+        // Whatever was copied, the playhead goes onto the copy when it is not
+        // there already, as for a line: a copy selected off screen is a copy
+        // whose box, picture and tools are nowhere to be seen.
+        val now = _state.value
+        val copied = now.selectedClipId?.takeIf { it != selected } ?: return
+        val span = (now.videoClips + now.audioClips).firstOrNull { it.id == copied }?.let { it.timelineStartMs to it.timelineEndMs }
+            ?: now.effects.firstOrNull { it.id == copied }?.let { it.startMs to it.endMs }
+            ?: return
+        if (now.playheadMs !in span.first until span.second) {
+            _state.update { it.copy(playheadMs = span.first.coerceAtLeast(0L), scrubNonce = it.scrubNonce + 1) }
+        }
     }
 
     private val TOUCHING_MS = TimelineLanes.TOUCHING_MS
