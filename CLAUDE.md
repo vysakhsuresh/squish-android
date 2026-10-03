@@ -380,8 +380,11 @@ should work through it and then delete what holds up.
   refused permission offers Settings; the camera switch is gone on a silent
   clip; a long song's
   waveform is drawn to its end (`PcmDecoder.decodePeaks`, one float per 50 ms
-  rather than a ten-minute decode held in memory). Not built, by the plan's
-  own "if budget remains": volume keyframes and ducking under speech.
+  rather than a ten-minute decode held in memory). B9 left volume keyframes and
+  ducking under speech unbuilt "if budget remains"; both were built later and
+  this line used to say they were not - volume keys are `Clip.volumeKeys`, keyed
+  from the two Volume sheets and drawn on the strip (B13), and Duck under speech
+  is `timeline/DuckRules.kt` (30 September).
 
 - **Batch B10 (text and stickers), all of it.** Built on the desktop with no
   phone attached. The decisions - the looks as presets over the explicit

@@ -75,6 +75,8 @@ run stabilizer "$SRC/timeline/Keyframe.kt" "$SRC/media/video/MotionEstimator.kt"
                "$SRC/media/video/TrajectorySmoother.kt" "$SRC/media/video/StabilizerSolve.kt" tools/jvm/StabilizerChecks.kt
 run frameblend "$SRC/media/video/FrameBlendPlan.kt" tools/jvm/FrameBlendChecks.kt
 run framegrid "$SRC/media/video/FrameGrid.kt" tools/jvm/FrameGridChecks.kt
+# Reads squish_chroma_key_es2.glsl, so it runs from the repo root like the rest.
+run chromakey "$SRC/timeline/ChromaKey.kt" tools/jvm/ChromaKeyChecks.kt
 run musicsynth "$SRC/media/audio/MusicSynth.kt" tools/jvm/MusicSynthChecks.kt
 run synthtempo "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SynthTempoChecks.kt
 run effectrecipes $TIMELINE tools/jvm/EffectRecipeChecks.kt
