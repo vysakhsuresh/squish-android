@@ -196,6 +196,24 @@ object MusicSynth {
 
     fun byId(id: String): Style? = styles.firstOrNull { it.id == id }
 
+    /**
+     * Where every beat of [style] is, exactly as [render] writes it: beat n at
+     * n x 60/bpm seconds, each bar starting on a fourth. Listening for them
+     * found only 7 of 22 originals on their tempo - an octave off on 8, and
+     * at 4/3 of it on others (SynthTempoChecks) - when the answer was never
+     * in doubt. Full confidence: it is not a guess.
+     */
+    fun beatMap(style: Style): BeatMap {
+        val beatMs = 60_000.0 / style.bpm
+        val count = style.bars * 4
+        return BeatMap(
+            beatsMs = List(count) { (it * beatMs).toLong() },
+            bpm = style.bpm.toFloat(),
+            confidence = 1f,
+            downbeatOffset = 0
+        )
+    }
+
     /** What the originals are browsed by: a mood, coarser than each track's own. */
     val vibes = listOf("All", "Chill", "Upbeat", "Beats", "Cinematic", "Emotional")
 

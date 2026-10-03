@@ -654,20 +654,14 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 return@launch
             }
 
-            val heard = withContext(Dispatchers.Default) {
-                BeatDetector.detect(pcm.samples, pcm.sampleRate)
-            }
-            // A Squish original is written at a tempo the app knows, and the
-            // detector, hearing busy hi-hats, can land an octave off it - seen
-            // on the phone, Lo-fi Sunset (78 BPM) found at 156. Brought to the
-            // written tempo when it is a doubling or halving of it.
-            val written = uri.lastPathSegment?.substringBeforeLast('.')?.let { com.squish.app.media.audio.MusicSynth.byId(it) }?.bpm?.toFloat()
-            val map = when {
-                written == null || heard.isEmpty -> heard
-                kotlin.math.abs(heard.bpm / 2f - written) / written < OCTAVE_SLACK -> heard.halved()
-                kotlin.math.abs(heard.bpm * 2f - written) / written < OCTAVE_SLACK -> heard.doubled()
-                else -> heard
-            }
+            // A Squish original's beats are known exactly (MusicSynth.beatMap):
+            // listening found only 7 of the 22 on their tempo - Lo-fi Sunset,
+            // written at 78, was heard at 156 on the phone. Everything else is
+            // listened to.
+            val original = uri.takeIf { it.scheme == "file" && it.path?.contains("/files/music/") == true }
+                ?.lastPathSegment?.substringBeforeLast('.')?.let { com.squish.app.media.audio.MusicSynth.byId(it) }
+            val map = original?.let { com.squish.app.media.audio.MusicSynth.beatMap(it) }
+                ?: withContext(Dispatchers.Default) { BeatDetector.detect(pcm.samples, pcm.sampleRate) }
             if (map.isEmpty) {
                 _state.update { it.copy(beats = it.beats.copy(running = false, failed = true, listeningTo = label)) }
                 return@launch
@@ -1051,5 +1045,3 @@ private const val LISTEN_RATE = 16_000
 /** Past half an hour into a file it is not listened to: that decode would be the size of the heap. */
 private const val LISTEN_MAX_MS = 30 * 60_000L
 
-/** How near a halved or doubled tempo must come to a track's written one to be taken for it. */
-private const val OCTAVE_SLACK = 0.06f
