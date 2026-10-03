@@ -293,6 +293,20 @@ fun ExportedFile(
     // it, and a toast says when it lands.
     val gifs by com.squish.app.media.gif.GifJobs.progress.collectAsState()
     val gifProgress = gifs[uri]
+    // The note said "Making a GIF…" long after it was made. It says so when
+    // the job lets go of this file.
+    var gifRunning by remember(uri) { mutableStateOf(false) }
+    LaunchedEffect(gifProgress) {
+        if (gifProgress != null) gifRunning = true
+        else if (gifRunning) {
+            gifRunning = false
+            val made = com.squish.app.media.gif.GifJobs.finished.value[uri] == true
+            onNotice(
+                if (made) "GIF saved to Pictures › Squish - the first ${com.squish.app.media.gif.GifMaker.MAX_SECONDS} s."
+                else "Couldn't make a GIF of this video."
+            )
+        }
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         SquishOutlinedButton(
             text = "Copy to Files",

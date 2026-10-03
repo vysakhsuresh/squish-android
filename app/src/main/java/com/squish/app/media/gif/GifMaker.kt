@@ -102,12 +102,17 @@ object GifJobs {
     private val running = kotlinx.coroutines.flow.MutableStateFlow<Map<Uri, Float>>(emptyMap())
     val progress: kotlinx.coroutines.flow.StateFlow<Map<Uri, Float>> = running
 
+    /** How each finished one went: true when the GIF reached the gallery. */
+    val finished: kotlinx.coroutines.flow.StateFlow<Map<Uri, Boolean>> get() = done
+    private val done = kotlinx.coroutines.flow.MutableStateFlow<Map<Uri, Boolean>>(emptyMap())
+
     fun start(context: Context, video: Uri, name: String) {
         if (video in running.value) return
         val app = context.applicationContext
         running.value = running.value + (video to 0f)
         scope.launch {
             val gif = GifMaker.make(app, video, name) { p -> scope.launch { if (video in running.value) running.value = running.value + (video to p) } }
+            done.value = done.value + (video to (gif != null))
             running.value = running.value - video
             android.widget.Toast.makeText(
                 app,
