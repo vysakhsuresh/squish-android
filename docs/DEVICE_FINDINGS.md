@@ -703,3 +703,32 @@ Not yet seen: the voices by ear, the new filters and templates on a file,
   window over the black bars beside it. The engine now reads each file's
   shape (`PreviewEngine.fileAspect`). Seen: the window hugs the photo, 1:1
   is a square inside it, and an export with that crop matches the preview.
+
+## Seen on the phone, 3 October (afternoon)
+
+- Hero speed curve exports cleanly: 642 even frames at 30 fps, 21.4 s, as
+  the timeline says. The curve graph now has a 0.1x / 1x / 10x / 100x scale.
+- Keyframed overlay: a key at 5.5 s and one at 6.3 s, the picture moving
+  between them, kept through leaving and reopening.
+- Fixed and seen: two same-day projects both read "Edit · 2 Oct" (the start
+  time is added, `ProjectRules.distinctTitles`); Placement's heading showed
+  a crop-like icon; auto-captions on music made blank cards (held back, and
+  "no words in it - music or noise" said); a duplicated line, sticker,
+  overlay or effect was selected off screen (the playhead goes to the copy);
+  white letters under Neon glowed white and vanished on a light picture
+  (Neon pink now); the box's four buttons covered the words while typing
+  (they stand aside on a small picture); stickers stacked on one spot could
+  not be reached (a second tap goes down the stack); picking a voice gave
+  no sign (two seconds play); a GIF note said "Making…" after it was made;
+  the export detail's back button sat on the red Delete; the rename hint was
+  the gallery file name.
+- **Find the beat on a Squish original was wrong on 15 of 22 tracks**
+  (SynthTempoChecks, which renders each and runs the real detector):
+  Lo-fi Sunset at 156 for 78, others at 4/3 of their tempo. The originals'
+  beats now come from the track itself (`MusicSynth.beatMap`). The detector
+  itself was not changed - an attempt to prefer the plain beat over a
+  triplet reading changed nothing, and the octave/4:3 confusion on other
+  music is still there; ÷2 and ×2 on the Beats card are the way out.
+- Checked and right: Read aloud lands a speech clip; Speech bubble with its
+  tail; Auto adjust lifts a dark photo; full-screen scrub bar; frame steps
+  (+3 then -1); Fit shots to the beat; GIF 360x640 from a 360p export.
