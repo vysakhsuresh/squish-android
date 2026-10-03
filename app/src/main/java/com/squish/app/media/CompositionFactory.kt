@@ -248,7 +248,9 @@ object CompositionFactory {
             // before the view's crop - so a vignette falls off to the corners
             // of the picture, not of the window; then the clip's own crop, on
             // its own picture, before the fit, where the preview's layers cut it.
-            addAll(ColorGrade.effects(clip.grade))
+            // A keyed filter strength is read off the clock; everything else is fixed
+            // when the chain is built, as it was.
+            if (clip.lookAnimated) addAll(ColorGrade.animated(clip::gradeAt)) else addAll(ColorGrade.effects(clip.grade))
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
             // Mirrored and turned as footage, before it is fitted: a turned
             // landscape layer is then fitted standing, as the preview lays its

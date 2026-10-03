@@ -240,6 +240,15 @@ data class Clip(
     val volumeKeys: List<ValueKey> = emptyList(),
 
     /**
+     * The filter's strength over the clip, over [lookIntensity] when there are
+     * none - a look brought up as a scene turns, or pulled off before a cut.
+     * The sliders and the curve are not keyed: a look has one number and that
+     * is the one worth animating, and thirteen keyable sliders would be a
+     * second timeline nobody asked for.
+     */
+    val lookKeys: List<ValueKey> = emptyList(),
+
+    /**
      * How the picture arrives, leaves and behaves in between, each with its
      * length in played milliseconds. Laid over the keyframes ([ClipAnimation]):
      * a move drawn across the clip survives an arrival being switched on.
@@ -268,6 +277,18 @@ data class Clip(
 ) {
     /** The look and the sliders folded together: what the GPU is asked for on this clip. */
     val grade: Grade get() = Looks.grade(lookId, lookIntensity, adjust)
+
+    /**
+     * The grade at a moment of the clip, which is the same thing unless the
+     * filter's strength is keyed. [localMs] is time into the clip, as the
+     * shader's own presentation time is.
+     */
+    fun gradeAt(localMs: Long): Grade =
+        if (lookKeys.isEmpty()) grade
+        else Looks.grade(lookId, lookKeys.valueAt(localMs.coerceIn(0L, durationMs), lookIntensity), adjust)
+
+    /** Whether the filter's strength moves over this clip. */
+    val lookAnimated: Boolean get() = lookKeys.isNotEmpty()
 
     /** Whether anything about this clip's colour has been touched. */
     val isGraded: Boolean get() = lookId != null || !adjust.isIdentity
@@ -415,6 +436,7 @@ data class Clip(
             transitionIn = Transition(),
             keyframes = keyframes.shiftedBy(-head.durationMs),
             opacityKeys = opacityKeys.shiftedBy(-head.durationMs),
+            lookKeys = lookKeys.shiftedBy(-head.durationMs),
             volumeKeys = volumeKeys.shiftedBy(-head.durationMs),
             fadeInMs = 0L,
             arrival = ClipArrival.None
@@ -1576,6 +1598,7 @@ fun TimelineState.withClipTrimmed(
         timelineStartMs = (clip.timelineStartMs + playedShift).coerceAtLeast(0L),
         keyframes = clip.keyframes.shiftedBy(-playedShift),
         opacityKeys = clip.opacityKeys.shiftedBy(-playedShift),
+        lookKeys = clip.lookKeys.shiftedBy(-playedShift),
         volumeKeys = clip.volumeKeys.shiftedBy(-playedShift)
     )
     val next = copy(clips = clips.map { if (it.id == clipId) trimmed else it })
@@ -1985,6 +2008,7 @@ fun TimelineState.withSilencesRemoved(clipId: String, kept: List<LongRange>): Ti
             leaving = if (last) clip.leaving else ClipLeaving.None,
             keyframes = clip.keyframes.shiftedBy(-played),
             opacityKeys = clip.opacityKeys.shiftedBy(-played),
+            lookKeys = clip.lookKeys.shiftedBy(-played),
             volumeKeys = clip.volumeKeys.shiftedBy(-played)
         )
     }

@@ -1,4 +1,4 @@
-@file:androidx.annotation.OptIn(UnstableApi::class)
+﻿@file:androidx.annotation.OptIn(UnstableApi::class)
 
 package com.squish.app.editor
 
@@ -741,12 +741,16 @@ class PreviewEngine(private val context: Context) {
      * and paused, a change asks for a fresh frame, since a paused pipeline draws
      * nothing new by itself.
      */
-    private fun applyLive(s: Surface, clip: Clip) {
+    private fun applyLive(s: Surface, clip: Clip, timelineMs: Long) {
         // Only when something read here has changed: an edit makes a new Clip,
         // the loupe flips keyPreview, the library makes a new effects list.
         // This runs per surface per tick, and the pairs and lists built below
         // to find "nothing changed" were the churn the playback audit named.
-        if (clip === s.liveClip && keyPreview == s.liveKeyPreview && (!s.isBase || effects === s.effectsFrom)) return
+        // A keyed filter strength is read every tick: its grade is a function of
+        // where the playhead is, so "the clip has not changed" is not enough.
+        if (!clip.lookAnimated &&
+            clip === s.liveClip && keyPreview == s.liveKeyPreview && (!s.isBase || effects === s.effectsFrom)
+        ) return
         s.liveClip = clip
         s.liveKeyPreview = keyPreview
         var changed = false
@@ -757,9 +761,9 @@ class PreviewEngine(private val context: Context) {
         }
         // Worked out again only when the clip changed - an edit makes a new
         // Clip - and written only when it came out different.
-        if (clip !== s.gradedClip) {
+        if (clip !== s.gradedClip || clip.lookAnimated) {
             s.gradedClip = clip
-            val grade = clip.grade
+            val grade = if (clip.lookAnimated) clip.gradeAt(timelineMs - clip.timelineStartMs) else clip.grade
             if (grade != s.grade.get()) {
                 s.grade.set(grade)
                 changed = true
@@ -1329,7 +1333,7 @@ class PreviewEngine(private val context: Context) {
         }
 
         val source = playbackUriFor(clip) ?: return
-        applyLive(s, clip)
+        applyLive(s, clip, t)
         // The clip's own voice: the processed ones through the sink, a pitch
         // shift as a playback parameter - and the speed's own shift with it
         // when the clip asks for that, as the file writes it.

@@ -943,6 +943,7 @@ class ProjectAutosave(context: Context) {
         }
         clip.stabilizeStrength?.let { put("stabilizeStrength", it.toDouble()) }
         if (clip.opacityKeys.isNotEmpty()) put("opacityKeys", JSONArray().apply { clip.opacityKeys.forEach { put(encodeValueKey(it)) } })
+        if (clip.lookKeys.isNotEmpty()) put("lookKeys", JSONArray().apply { clip.lookKeys.forEach { put(encodeValueKey(it)) } })
         if (clip.volumeKeys.isNotEmpty()) put("volumeKeys", JSONArray().apply { clip.volumeKeys.forEach { put(encodeValueKey(it)) } })
         if (clip.arrival != ClipArrival.None) put("arrival", clip.arrival.name)
         if (clip.leaving != ClipLeaving.None) put("leaving", clip.leaving.name)
@@ -1446,6 +1447,7 @@ class ProjectAutosave(context: Context) {
             // edit's one strength then, which the sheet falls back to.
             stabilizeStrength = if (json.has("stabilizeStrength")) json.optDouble("stabilizeStrength", 0.5).toFloat().coerceIn(0f, 1f) else null,
             opacityKeys = decodeValueKeys(json.optJSONArray("opacityKeys")),
+            lookKeys = decodeValueKeys(json.optJSONArray("lookKeys")),
             volumeKeys = decodeValueKeys(json.optJSONArray("volumeKeys")),
             arrival = enumOrNull<ClipArrival>(json.optString("arrival")) ?: ClipArrival.None,
             leaving = enumOrNull<ClipLeaving>(json.optString("leaving")) ?: ClipLeaving.None,

@@ -2187,6 +2187,9 @@ private fun ClipView(
         clip.keyframes.forEach { frame -> KeyDiamond(clip, frame.atMs, SquishColors.Amber, 7.dp, drawnStartMs, drawnEndMs, window, latestClip, onKeyTap) }
         clip.opacityKeys.forEach { key -> KeyDiamond(clip, key.atMs, SquishColors.Violet, 6.dp, drawnStartMs, drawnEndMs, window, latestClip, onKeyTap) }
         clip.volumeKeys.forEach { key -> KeyDiamond(clip, key.atMs, SquishColors.Cyan, 6.dp, drawnStartMs, drawnEndMs, window, latestClip, onKeyTap) }
+        // Blue, the colour the filter sheets wear, so the three keyed numbers
+        // are told apart on the strip by the tool they belong to.
+        clip.lookKeys.forEach { key -> KeyDiamond(clip, key.atMs, SquishColors.Blue, 6.dp, drawnStartMs, drawnEndMs, window, latestClip, onKeyTap) }
 
         // Only on an edge that is really there. A handle at the side of a clip
         // that carries on past the screen would trim from a point the user never

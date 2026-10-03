@@ -37,6 +37,21 @@ class LookEffect(private val grade: Grade) : GlEffect {
 }
 
 /**
+ * The same shader with the grade read off the clock, for a filter whose
+ * strength is keyed.
+ *
+ * The shader already reloads its uniforms every frame, so animating costs
+ * nothing extra. [gradeAt] is handed the frame's presentation time in
+ * microseconds, which inside one item's effect chain counts from that item's
+ * own start - so the keys, which are clip-local, line up without an offset.
+ */
+class AnimatedLookEffect(private val gradeAt: (Long) -> Grade) : GlEffect {
+
+    override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
+        LookShaderProgram(context, useHdr, timed = gradeAt) { gradeAt(0L) }
+}
+
+/**
  * The same shader, reading its grade fresh on every frame.
  *
  * For the preview. Handing a player a new effect list tears down and rebuilds its
@@ -54,6 +69,8 @@ class LiveLookEffect(private val grade: AtomicReference<Grade>) : GlEffect {
 private class LookShaderProgram(
     context: Context,
     useHdr: Boolean,
+    /** Set for a keyed filter strength: the grade at a moment, by presentation time. */
+    private val timed: ((Long) -> Grade)? = null,
     private val gradeNow: () -> Grade
 ) : BaseGlShaderProgram(/* useHighPrecisionColorComponents= */ useHdr, /* texturePoolCapacity= */ 1) {
 
@@ -219,7 +236,7 @@ private class LookShaderProgram(
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
         try {
             glProgram.use()
-            val grade = gradeNow()
+            val grade = timed?.invoke(presentationTimeUs / 1_000L) ?: gradeNow()
             load(grade)
             glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
             // Bound on every frame, curve or no curve: a sampler left pointing

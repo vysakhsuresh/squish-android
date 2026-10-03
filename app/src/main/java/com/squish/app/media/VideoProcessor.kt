@@ -521,7 +521,9 @@ class VideoProcessor(private val context: Context) {
             clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
             clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
             clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
-            addAll(ColorGrade.effects(clip.grade))
+            // A keyed filter strength is read off the clock; everything else is fixed
+            // when the chain is built, as it was.
+            if (clip.lookAnimated) addAll(ColorGrade.animated(clip::gradeAt)) else addAll(ColorGrade.effects(clip.grade))
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
             // The clip's own mirror and turn belong to its footage, so they go
             // on before its crop (a window on the footage as seen, where the

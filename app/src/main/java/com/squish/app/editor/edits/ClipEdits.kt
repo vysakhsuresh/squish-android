@@ -303,7 +303,12 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     }
 
     fun setLookIntensity(clipId: String, value: Float) = record("Look strength", gesture = "Look strength $clipId") {
-        updateVideoClip(clipId) { it.copy(lookIntensity = value.coerceIn(0f, 1f)) }
+        // On a keyed clip the slider sets the strength *at the playhead* - the
+        // one rule ValueTracks writes once for every keyed number, because
+        // writing the static field on a keyed clip moves the slider and not the
+        // picture.
+        val at = _state.value.playheadMs
+        updateVideoClip(clipId) { it.withValueAt(ValueTrack.Look, at, value, 0f..1f) }
     }
 
     /** One of the Adjust sliders, on one clip: each slider on each clip is its own gesture. */

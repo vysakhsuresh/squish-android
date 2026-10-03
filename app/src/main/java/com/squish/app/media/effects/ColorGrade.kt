@@ -22,4 +22,11 @@ object ColorGrade {
 
     fun effects(grade: Grade): List<Effect> =
         if (grade.isIdentity) emptyList() else listOf(LookEffect(grade))
+
+    /**
+     * A clip whose filter strength is keyed: the grade is read off the clock
+     * rather than fixed when the chain is built. Kept as a separate call so the
+     * ordinary case stays one object with nothing to evaluate per frame.
+     */
+    fun animated(gradeAt: (Long) -> Grade): List<Effect> = listOf(AnimatedLookEffect(gradeAt))
 }

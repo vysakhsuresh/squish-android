@@ -48,6 +48,7 @@ run slice      "$SRC/timeline/SpeedRamp.kt" tools/jvm/SliceChecks.kt
 run timeline   $TIMELINE tools/jvm/TimelineChecks.kt
 run magnetic   $TIMELINE tools/jvm/MagneticChecks.kt
 run spanremoval $TIMELINE $SRC/timeline/SpanRemoval.kt tools/jvm/SpanRemovalChecks.kt
+run lookkeys $TIMELINE tools/jvm/LookKeysChecks.kt
 run editrules  $TIMELINE "$SRC/editor/EditRules.kt" tools/jvm/EditRulesChecks.kt
 run audiorules $TIMELINE "$SRC/editor/AudioRules.kt" tools/jvm/AudioRulesChecks.kt
 run exportplan $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/ExportPlanChecks.kt

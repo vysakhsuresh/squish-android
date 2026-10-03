@@ -53,6 +53,9 @@ import com.squish.app.media.effects.Look
 import com.squish.app.media.effects.LookFamily
 import com.squish.app.media.effects.Looks
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ValueTrack
+import com.squish.app.timeline.hasValueKeyAt
+import com.squish.app.timeline.valueAt
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.theme.SquishColors
@@ -130,15 +133,28 @@ fun FiltersPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
         }
 
         if (clip.lookId != null) {
+            val onClip = state.playheadMs in clip.timelineStartMs..clip.timelineEndMs
             PanelSurface(accent = SquishColors.Blue) {
                 PanelHeading(
-                    active.label,
+                    if (clip.lookKeys.isNotEmpty() && onClip) "${active.label} at ${Timecode.format(state.playheadMs)}" else active.label,
                     "How far the look is dialled in",
                     icon = Icons.Filled.FilterVintage,
                     accent = SquishColors.Blue
                 )
+                // Keyed over the clip, like opacity and level: a look brought up
+                // as a scene turns, or pulled off before a cut. The slider then
+                // sets the strength at the playhead and both the preview and the
+                // file read the keys off the clock.
+                KeyframeButton(
+                    keyed = clip.hasValueKeyAt(ValueTrack.Look, state.playheadMs, state.frameMs),
+                    count = clip.lookKeys.size,
+                    onClip = onClip,
+                    accent = SquishColors.Blue,
+                    onToggle = { viewModel.clips.toggleValueKey(clip.id, ValueTrack.Look) },
+                    onClear = { viewModel.clips.clearValueKeys(clip.id, ValueTrack.Look) }
+                )
                 LabeledSlider(
-                    "Strength", clip.lookIntensity, 0f..1f,
+                    "Strength", clip.valueAt(ValueTrack.Look, state.playheadMs), 0f..1f,
                     onFinished = viewModel::endGesture,
                     onChange = { viewModel.clips.setLookIntensity(clip.id, it) }
                 )

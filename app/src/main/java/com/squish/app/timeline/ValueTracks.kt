@@ -13,13 +13,19 @@ package com.squish.app.timeline
  */
 
 /** Which of a clip's two tracks an edit is about. */
-enum class ValueTrack { Opacity, Volume }
+enum class ValueTrack { Opacity, Volume, Look }
 
-fun Clip.valueKeys(track: ValueTrack): List<ValueKey> =
-    if (track == ValueTrack.Opacity) opacityKeys else volumeKeys
+fun Clip.valueKeys(track: ValueTrack): List<ValueKey> = when (track) {
+    ValueTrack.Opacity -> opacityKeys
+    ValueTrack.Volume -> volumeKeys
+    ValueTrack.Look -> lookKeys
+}
 
-fun Clip.staticValue(track: ValueTrack): Float =
-    if (track == ValueTrack.Opacity) opacity else volume
+fun Clip.staticValue(track: ValueTrack): Float = when (track) {
+    ValueTrack.Opacity -> opacity
+    ValueTrack.Volume -> volume
+    ValueTrack.Look -> lookIntensity
+}
 
 /** The track's value at a moment of the timeline; off the clip, the nearer end. */
 fun Clip.valueAt(track: ValueTrack, timelineMs: Long): Float {
@@ -27,11 +33,17 @@ fun Clip.valueAt(track: ValueTrack, timelineMs: Long): Float {
     return valueKeys(track).valueAt(local, staticValue(track))
 }
 
-private fun Clip.withKeys(track: ValueTrack, keys: List<ValueKey>): Clip =
-    if (track == ValueTrack.Opacity) copy(opacityKeys = keys) else copy(volumeKeys = keys)
+private fun Clip.withKeys(track: ValueTrack, keys: List<ValueKey>): Clip = when (track) {
+    ValueTrack.Opacity -> copy(opacityKeys = keys)
+    ValueTrack.Volume -> copy(volumeKeys = keys)
+    ValueTrack.Look -> copy(lookKeys = keys)
+}
 
-private fun Clip.withStatic(track: ValueTrack, value: Float): Clip =
-    if (track == ValueTrack.Opacity) copy(opacity = value) else copy(volume = value)
+private fun Clip.withStatic(track: ValueTrack, value: Float): Clip = when (track) {
+    ValueTrack.Opacity -> copy(opacity = value)
+    ValueTrack.Volume -> copy(volume = value)
+    ValueTrack.Look -> copy(lookIntensity = value)
+}
 
 /**
  * The clip with [track] set to [value] at [playheadMs]: the one level with no
