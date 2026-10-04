@@ -185,6 +185,77 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
     }
 
     /**
+     * A shape at the playhead: a rectangle, a circle, an arrow, in the middle of
+     * the picture, outlined rather than solid - which is what an annotation is,
+     * and the only one that leaves the thing it points at visible.
+     *
+     * It is carried as a sticker so everything that treats stickers as not-words
+     * - subtitle files, the transcript, Read aloud - leaves it out without being
+     * told about shapes at all.
+     */
+    fun addShape(shape: AnnotationShape) = record("Add ${shape.label.lowercase()}") {
+        val span = placeNewText(_state.value, DEFAULT_TITLE_MS)
+        val spot = com.squish.app.editor.TextPlacementRules.freeSpot(
+            _state.value.textOverlays.filter { it.startMs < span.endMs && it.endMs > span.startMs }.map { it.xFraction to it.yFraction }
+        )
+        val item = TextOverlayItem(
+            id = UUID.randomUUID().toString(),
+            text = "",
+            startMs = span.startMs,
+            endMs = span.endMs,
+            colorArgb = SHAPE_COLOR,
+            xFraction = spot.first,
+            yFraction = spot.second,
+            sizeSp = ShapeGeometry.DEFAULT_SIZE_SP,
+            // The outline's thickness lives on the stroke, where a line's edge
+            // lives, so one slider and one draft field serve both.
+            stroke = TextStroke(SHAPE_COLOR, ShapeGeometry.DEFAULT_THICKNESS),
+            motion = TextMotion.Pop,
+            motionOut = TextExit.Fade,
+            sticker = true,
+            shape = shape,
+            shapeAspect = shape.defaultAspect,
+            shapeFilled = false
+        )
+        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id).stilled() }
+    }
+
+    /** One shape turned into another, keeping where it is, its colour and its line. */
+    fun setShape(id: String, shape: AnnotationShape) = record("Shape") {
+        _state.update { current ->
+            current.copy(
+                textOverlays = current.textOverlays.map {
+                    // The shape it came from decided how wide it was; the new one
+                    // decides for itself, unless a finger has since said otherwise.
+                    if (it.id != id || !it.isShape) it
+                    else it.copy(
+                        shape = shape,
+                        shapeAspect = if (it.shapeAspect == it.shape.defaultAspect) shape.defaultAspect else it.shapeAspect
+                    )
+                }
+            )
+        }
+    }
+
+    /** How much wider than tall a shape is. One gesture, one step. */
+    fun setShapeAspect(id: String, aspect: Float) = record("Shape width", gesture = "Aspect $id") {
+        _state.update { current ->
+            current.copy(
+                textOverlays = current.textOverlays.map {
+                    if (it.id == id) it.copy(shapeAspect = aspect.coerceIn(ShapeGeometry.MIN_ASPECT, ShapeGeometry.MAX_ASPECT)) else it
+                }
+            )
+        }
+    }
+
+    /** Solid or outlined. */
+    fun setShapeFilled(id: String, filled: Boolean) = record(if (filled) "Solid" else "Outline") {
+        _state.update { current ->
+            current.copy(textOverlays = current.textOverlays.map { if (it.id == id) it.copy(shapeFilled = filled) else it })
+        }
+    }
+
+    /**
      * Changes how one caption looks or moves. The text and timing are left alone.
      * [dragging] is a slider - size, position - whose frames are one step; a tap
      * on a chip is a step of its own.
@@ -259,7 +330,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             _state.update { current ->
                 current.copy(
                     textOverlays = current.textOverlays.map { line ->
-                        if (line.id == id || line.sticker != from.sticker) line else line.withStyle(from.style)
+                        if (line.id == id || line.kindOfOverlay != from.kindOfOverlay) line else line.withStyle(from.style)
                     }
                 )
             }
@@ -277,7 +348,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             _state.update { current ->
                 current.copy(
                     textOverlays = current.textOverlays.map { line ->
-                        if (line.id == id || line.sticker != from.sticker) line else line.withMotion(from.motionSpec)
+                        if (line.id == id || line.kindOfOverlay != from.kindOfOverlay) line else line.withMotion(from.motionSpec)
                     }
                 )
             }
@@ -904,6 +975,12 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
 
         /** The size a sticker lands at, which Placement's Reset goes back to. */
         const val STICKER_SIZE_SP = 64
+
+        /**
+         * The colour a new shape lands in: the red every reviewer's circle is
+         * drawn in, and the one colour that reads on footage of any brightness.
+         */
+        const val SHAPE_COLOR = 0xFFFF3B30.toInt()
 
         /** Under the app's files: fonts brought in, and lines read aloud. */
         const val FONTS_DIR = "fonts"

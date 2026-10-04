@@ -106,9 +106,10 @@ fun CaptionLayer(
             val moving = CaptionRenderer.frameAt(item, timeMs) ?: continue
             val look = if (atRest) TextFrame() else moving
             val shown = CaptionRenderer.shownText(item, look)
-            if (shown.isBlank()) continue
+            if (shown.isBlank() && !item.isShape) continue
 
             val key = "${item.id}/${item.style}/${item.flipped}/${item.align}/${item.motion}/" +
+                "${item.shape}/${item.shapeAspect}/${item.shapeFilled}/" +
                 "${item.text}/$shown@${boxWidth}x$boxHeight"
             live.add(key)
             val (glyph, grab) = glyphs.getOrPut(key) {

@@ -49,7 +49,8 @@ class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
     override fun getBitmap(presentationTimeUs: Long): Bitmap {
         val frame = CaptionRenderer.frameAt(item, presentationTimeUs / 1000L) ?: return blank
         val shown = CaptionRenderer.shownText(item, frame)
-        if (shown.isBlank()) return blank
+        // A shape has no letters: it shows whenever its window does.
+        if (shown.isBlank() && !item.isShape) return blank
         if (shown == cachedText) cached?.let { return it }
         val bitmap = CaptionRenderer.render(item, shown, frameWidth, frameHeight)
         cached = bitmap

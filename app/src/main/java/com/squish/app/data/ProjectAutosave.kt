@@ -2,6 +2,8 @@ package com.squish.app.data
 
 import android.content.Context
 import android.net.Uri
+import com.squish.app.editor.AnnotationShape
+import com.squish.app.editor.ShapeGeometry
 import com.squish.app.editor.BeatProgress
 import com.squish.app.editor.CanvasBackground
 import com.squish.app.editor.CanvasFill
@@ -1220,6 +1222,13 @@ class ProjectAutosave(context: Context) {
         put("loopMs", item.loopMs)
         if (item.wordStartsMs.isNotEmpty()) put("wordStarts", JSONArray(item.wordStartsMs))
         put("sticker", item.sticker)
+        // Written only when it is one, so a draft of words is the shape it
+        // always was and an older build reading this one simply finds no shape.
+        if (item.isShape) {
+            put("shape", item.shape.name)
+            put("shapeAspect", item.shapeAspect.toDouble())
+            put("shapeFilled", item.shapeFilled)
+        }
         put("stripRow", item.stripRow)
         item.track?.let { t ->
             put("track", JSONArray().apply {
@@ -1578,6 +1587,10 @@ class ProjectAutosave(context: Context) {
             loopMs = json.optLong("loopMs", TextAnimation.DEFAULT_LOOP_MS),
             wordStartsMs = json.optJSONArray("wordStarts")?.let { a -> (0 until a.length()).map { a.optLong(it) } }.orEmpty(),
             sticker = json.optBoolean("sticker", false),
+            shape = AnnotationShape.named(json.optString("shape").takeIf { it.isNotEmpty() }),
+            shapeAspect = json.optDouble("shapeAspect", 1.0).toFloat()
+                .coerceIn(ShapeGeometry.MIN_ASPECT, ShapeGeometry.MAX_ASPECT),
+            shapeFilled = json.optBoolean("shapeFilled", false),
             stripRow = json.optInt("stripRow", 0).coerceAtLeast(0),
             track = json.optJSONArray("track")?.let { array ->
                 MotionTrack(

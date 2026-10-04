@@ -1002,7 +1002,7 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
  * picture itself: a title in the colour of the shirt in the shot.
  */
 @Composable
-private fun ColourRow(
+internal fun ColourRow(
     title: String,
     argb: Int,
     open: Boolean,

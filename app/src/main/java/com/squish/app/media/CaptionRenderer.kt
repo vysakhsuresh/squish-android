@@ -16,6 +16,8 @@ import android.provider.OpenableColumns
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import com.squish.app.editor.ShapeGeometry
+import com.squish.app.editor.ShapeRole
 import com.squish.app.editor.TextAlign
 import com.squish.app.editor.TextAnimation
 import com.squish.app.editor.TextBubble
@@ -116,7 +118,7 @@ object CaptionRenderer {
     fun frameAt(item: TextOverlayItem, timeMs: Long): TextFrame? = item.frameAt(timeMs)
 
     /** The letters showing at [frame] - all of them, unless they are being revealed. */
-    fun shownText(item: TextOverlayItem, frame: TextFrame): String = when (item.motion) {
+    fun shownText(item: TextOverlayItem, frame: TextFrame): String = if (item.isShape) "" else when (item.motion) {
         TextMotion.Typewriter -> TextAnimation.shownLetters(item.text, frame.reveal)
         TextMotion.Words -> TextAnimation.shownWords(item.text, frame.reveal)
         else -> item.text
@@ -149,6 +151,7 @@ object CaptionRenderer {
 
     /** [render], with the part of the picture that is the letters and their own decoration. */
     fun paint(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int): Painted {
+        if (item.isShape) return paintShape(item, frameWidth, frameHeight)
         val shortEdge = minOf(frameWidth, frameHeight).toFloat().coerceAtLeast(1f)
         val textSize = (item.sizeSp / 360f * shortEdge).coerceAtLeast(6f)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -232,6 +235,96 @@ object CaptionRenderer {
         // places a bitmap and cannot flip one - show the same sticker.
         val mirror = Matrix().apply { preScale(-1f, 1f) }
         return Painted(Bitmap.createBitmap(bitmap, 0, 0, width, height, mirror, true), minOf(grabWidth, width), height)
+    }
+
+    /**
+     * A shape drawn: a rectangle, a circle, an arrow.
+     *
+     * The points come from [ShapeGeometry], which knows nothing about Android,
+     * so the preview and the file are drawing the same shape rather than two
+     * that happen to agree. [TextOverlayItem.sizeSp] is the shape's height on
+     * the same 1/360-of-the-short-edge scale a caption's letters use, so a
+     * shape placed on the preview lands in the same place and at the same
+     * weight on a 4K export.
+     */
+    private fun paintShape(item: TextOverlayItem, frameWidth: Int, frameHeight: Int): Painted {
+        val shortEdge = minOf(frameWidth, frameHeight).toFloat().coerceAtLeast(1f)
+        val height = (item.sizeSp / 360f * shortEdge).coerceAtLeast(4f)
+        val aspect = item.shapeAspect.coerceIn(ShapeGeometry.MIN_ASPECT, ShapeGeometry.MAX_ASPECT)
+        val width = (height * aspect).coerceAtLeast(4f)
+
+        val share = item.stroke.width.takeIf { it > 0f } ?: ShapeGeometry.DEFAULT_THICKNESS
+        val thickness = ShapeGeometry.thicknessPx(width, height, share)
+        // Room for half the line, for a sharp corner's join, and for the shadow
+        // to fall outside the shape - a star's spikes were shaved off without it.
+        val shadow = item.shadow
+        val reach = if (shadow.isOn) height * (shadow.blur + shadow.offset) else 0f
+        val pad = ShapeGeometry.padPx(width, height, share) + reach
+
+        val bitmapWidth = ceil(width + pad * 2).toInt().coerceAtLeast(1)
+        val bitmapHeight = ceil(height + pad * 2).toInt().coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val polys = ShapeGeometry.polys(item.shape, width, height)
+        val body = Path()
+        val head = Path()
+        polys.forEach { poly ->
+            val into = if (poly.role == ShapeRole.Head) head else body
+            poly.points.forEachIndexed { i, point ->
+                val x = point.x + pad
+                val y = point.y + pad
+                if (i == 0) into.moveTo(x, y) else into.lineTo(x, y)
+            }
+            if (poly.closed) into.close()
+        }
+
+        val solid = item.shapeFilled && item.shape.hasInside
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = item.colorArgb
+        }
+        val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = thickness
+            strokeJoin = Paint.Join.ROUND
+            strokeCap = Paint.Cap.ROUND
+            color = item.colorArgb
+        }
+
+        if (shadow.isOn) {
+            // The whole silhouette blurred and moved where the shadow falls -
+            // the same two numbers a caption's shadow uses, on the shape's height.
+            val cast = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = withOpacity(shadow.colorArgb, shadow.opacity)
+                maskFilter = if (shadow.blur > 0f) BlurMaskFilter(height * shadow.blur, BlurMaskFilter.Blur.NORMAL) else null
+            }
+            val radians = Math.toRadians(shadow.angleDegrees.toDouble())
+            canvas.save()
+            canvas.translate((cos(radians) * shadow.offset * height).toFloat(), (sin(radians) * shadow.offset * height).toFloat())
+            if (solid) canvas.drawPath(body, cast)
+            else canvas.drawPath(body, Paint(cast).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = thickness
+                strokeJoin = Paint.Join.ROUND
+                strokeCap = Paint.Cap.ROUND
+            })
+            if (!head.isEmpty) canvas.drawPath(head, cast)
+            canvas.restore()
+        }
+
+        if (solid) canvas.drawPath(body, fill) else canvas.drawPath(body, edge)
+        // An arrow's head is solid whatever the body is: a hollow arrowhead
+        // reads as a chevron, which is a different mark.
+        if (!head.isEmpty) canvas.drawPath(head, fill)
+
+        if (!item.flipped) return Painted(bitmap, bitmapWidth, bitmapHeight)
+        val mirror = Matrix().apply { preScale(-1f, 1f) }
+        return Painted(
+            Bitmap.createBitmap(bitmap, 0, 0, bitmapWidth, bitmapHeight, mirror, true),
+            bitmapWidth,
+            bitmapHeight
+        )
     }
 
     /** How much room round the letters, as a share of the text size: the widest of what is drawn past them. */

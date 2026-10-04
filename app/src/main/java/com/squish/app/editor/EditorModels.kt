@@ -92,6 +92,9 @@ enum class CropAspect(val label: String, val ratio: Float?) {
     Custom("Custom", null)
 }
 
+/** The three things that share the text track: words, a sticker, a shape. */
+enum class TextOverlayKind { Words, Sticker, Shape }
+
 data class TextOverlayItem(
     val id: String,
     val text: String,
@@ -143,6 +146,21 @@ data class TextOverlayItem(
      * panel and left out of anything that treats captions as words, like .srt.
      */
     val sticker: Boolean = false,
+
+    /**
+     * A shape rather than words: a rectangle, a circle, an arrow. Drawn by the
+     * same renderer, on the same track, through the same export, and carried as
+     * a sticker is - so everything that leaves stickers out of words (subtitle
+     * files, the transcript, Read aloud) leaves shapes out too.
+     *
+     * [sizeSp] is a shape's height, as it is a line's letter size; [shapeAspect]
+     * is how much wider than tall it is.
+     */
+    val shape: AnnotationShape = AnnotationShape.None,
+    val shapeAspect: Float = 1f,
+
+    /** A shape's inside filled with its colour, rather than only its edge drawn. */
+    val shapeFilled: Boolean = false,
 
     /**
      * Pins this caption to something moving. Stored in timeline time, matching
@@ -205,9 +223,27 @@ data class TextOverlayItem(
         motionOut = preset.exit
     )
 
+    /** A shape rather than words. */
+    val isShape: Boolean get() = shape.isShape
+
+    /** What the strip and the lists call it: its words, or - a shape having none - the shape's name. */
+    val stripLabel: String get() = if (isShape) shape.label else text
+
+    /**
+     * What this is, for the places that treat the three differently - Apply to
+     * all carries a style between lines, not from a sticker onto a shape.
+     */
+    val kindOfOverlay: TextOverlayKind
+        get() = when {
+            isShape -> TextOverlayKind.Shape
+            sticker -> TextOverlayKind.Sticker
+            else -> TextOverlayKind.Words
+        }
+
     /** The caption's state at [timeMs] of the timeline, or null when it is not on screen. */
     fun frameAt(timeMs: Long): TextFrame? {
-        if (timeMs < startMs || timeMs >= endMs || text.isBlank()) return null
+        // A shape has no words to be blank: it is on screen whenever its window is.
+        if (timeMs < startMs || timeMs >= endMs || (text.isBlank() && !isShape)) return null
         val total = (endMs - startMs).coerceAtLeast(1L)
         return TextAnimation.frameAt(motion, motionOut, loop, motionInMs, motionOutMs, loopMs, timeMs - startMs, total, wordStartsMs)
     }
@@ -1134,12 +1170,12 @@ fun EditorUiState.toTimeline(): TimelineState {
         Clip(
             id = overlay.id,
             kind = ClipKind.Text,
-            label = overlay.text,
+            label = overlay.stripLabel,
             sourceInMs = 0,
             sourceOutMs = (overlay.endMs - overlay.startMs).coerceAtLeast(MIN_CLIP_MS),
             timelineStartMs = overlay.startMs,
             sourceDurationMs = durationMs,
-            text = overlay.text,
+            text = overlay.stripLabel,
             // The strip reads a line's preferred row where it reads a sound's.
             layer = overlay.stripRow
         )

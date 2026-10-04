@@ -72,6 +72,11 @@ fun StickersPanel(viewModel: EditorViewModel) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // First, because a shape is what someone marking up a shot is after and
+        // an emoji is what someone decorating one is after - and the first is
+        // the harder thing to find elsewhere.
+        ShapesCard(viewModel)
+
         PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
                 "Stickers",

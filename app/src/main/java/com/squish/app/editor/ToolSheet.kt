@@ -370,7 +370,10 @@ fun EditorToolSheet(
                 clip != null -> AnimationPanel(state, clip, viewModel, accent)
             }
             Tool.Placement -> when {
-                item != null -> StickerPlacementPanel(item, viewModel)
+                // A shape is placed as a sticker is, and has four things besides
+                // - which shape, solid or outlined, its line and its width.
+                item != null -> if (item.isShape) ShapePlacementPanel(item, viewModel, onEyedropper)
+                else StickerPlacementPanel(item, viewModel)
                 clip != null -> PlacementPanel(state, clip, viewModel, accent)
             }
             Tool.Transition -> clip?.let { TransitionPanel(state, it, viewModel) }
