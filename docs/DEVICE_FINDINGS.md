@@ -896,6 +896,51 @@ Two real misses, both now fixed:
 Everything else measured clean: the dashboard (19 nodes), the editor at level 0
 and with a clip selected, the Volume sheet (20 nodes) and the Export sheet (23).
 
+## Seen on the phone, 4 October (early morning)
+
+Six things built since the afternoon, driven on the phone. **Three faults found
+and fixed and seen fixed**; everything else holds.
+
+- **The Curves tool works.** A point tapped above the diagonal lifted the
+  midtones and the picture brightened at once - so the 256-entry table, its
+  texture upload and the shader's lookup are all right on this phone's ES2
+  driver. Undone afterwards, and the draft confirmed clean, writing version 14.
+- **LUT import works, in the preview and in the file.** A `.cube` that swaps red
+  and blue, pushed to Downloads and imported through the file browser: the food
+  turned blue on screen while the strip's own plain tiles stayed warm - the
+  control that shows it is the grade and not the decode - and the exported file
+  was blue too. The LUT survived leaving and reopening the project, and the
+  card's chips read None / RedBlueSwap.
+- **Blend modes work, after two faults.** A photo overlay set to Screen lightens
+  the shot, and **the exported file is the same picture**.
+  - *Fault 1:* setting a blend did nothing. `applyLive` short-circuits on "this
+    surface's clip has not changed", and a blend set on an *overlay* leaves the
+    shot under it untouched. It compares the blended-still list now.
+  - *Fault 2:* the still came out upside down - `GLUtils.texImage2D` uploads a
+    bitmap first-row-at-the-top and GL's v runs from the bottom.
+- **A keyed filter strength is read at the right moment in the file.** Noir keyed
+  from nothing at the start to full at the end: the exported file begins in
+  colour and ends black and white. That settles the one real risk in it - the
+  export's item clock counting from the item's own start, as the preview's does.
+  - *Fault 3, and the worst of the three:* scrubbing with a keyed look left the
+    picture **black**, with `reloading base-a: no progress` repeating until the
+    engine dropped the effect chain and the shot played plain. The blended-still
+    check beside it asked `was?.underId != clip.id`, and with no blended still
+    `was` is null, so that is true on **every tick** - it asked for a fresh frame
+    thirty times a second and swamped the decoder. It had never shown because
+    `applyLive` used to return early; a keyed look is the first thing that makes
+    it run every tick. Compared as one key now: the picture holds and not one
+    "no progress" line.
+- **Safe-area guides work.** TikTok's bands dim all four edges with a dashed
+  teal rectangle round the clear part and the label inside it.
+- Not driven: **editing by transcript**, which wants a clip with speech on it -
+  the test footage was a canteen. Its two pure pieces are executed
+  (`SpanRemovalChecks`, `TranscriptChecks`); the panel has not been seen.
+
+Everything made for the test was removed: three exports, the scratch project,
+and the test `.cube` from both Downloads and `files/luts/`. The dashboard is
+back to 14 projects and 35 exports.
+
 **Next on the phone**, when it comes back (3 October evening, the phone left at
 about 17:30). Nothing built today is waiting on it - the frame-rate fix and both
 48 dp fixes were driven and measured before it went - so this is the older list,
