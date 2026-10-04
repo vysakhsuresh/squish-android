@@ -998,3 +998,50 @@ is the one transform that shows a transposed atlas immediately.
 Everything made for it was removed: the scratch project (binned by name through
 the card's own Delete), and the `.cube` from both `/sdcard/Download` and
 `files/luts/`, which is empty again.
+
+## Seen on the phone, 4 October (morning) - the last five of COMPETITORS
+
+Everything built between 05:00 and 06:20 driven on the moto g84, in the preview
+and - for the two that could disagree - in an exported file.
+
+- **Shapes and arrows.** The Shapes card sits above the stickers and draws its
+  eight tiles from `ShapeGeometry` itself, so a tile is the shape that lands: the
+  star fills its box and points up, the arrow's head is solid and points the way
+  the tile shows. An arrow landed on the picture outlined in red with the
+  sticker's own box and its four corner buttons; its sheet is the Placement slot
+  with the shape chips, Outline/Solid (absent on an arrow, which has no inside),
+  Line and Width above the usual sliders. Changing Arrow to Ellipse kept the
+  place and took the new shape's own width.
+  **In the file:** the red ellipse is there at 1.4 s, over the finished frame -
+  over the black bars as well as the picture - at the size and place the preview
+  had it, with the rocket sticker beside it. The frame at 0 is *blank* of it,
+  which is the Pop arrival starting at alpha 0 and not a fault; reading that
+  frame first cost twenty minutes of chasing a bug that was not there.
+- **Sound stickers.** Riser: the rocket landed on the picture and a 2.5 s sound
+  clip on a sound row at the same moment, and **one undo took both off**. Redo
+  put both back. The export sheet counted "1 sound" and the file carries it.
+  Not judged by ear.
+- **A mask's shape keyed.** The Mask sheet's keyframe button reads "Add a key
+  here to animate this", then "Key here · tap to remove · 1 key" with a Clear
+  link. A small ellipse keyed at 0, the Width slider dragged to 128% at 7.3 s
+  made a second key - and the sliders from then on read the shape *at the
+  playhead*. Scrubbing between them grows the shape smoothly; the magenta
+  diamonds sit on the strip at the frames they belong to.
+  **In the file:** small at 0, wide at 8.1 s, growing between. The preview and
+  the file agree.
+- **Use the liveliest bit.** Watched a 22 s file, finished in about ten seconds,
+  and the draft says exactly what it should: shot 1 (17.9 s of a 22.1 s file)
+  moved from `sourceInMs` 0 to 1659 with its length unchanged to the
+  millisecond; shot 2, which is its whole file and has no room, was left alone.
+  - *Fixed while testing:* it was only drawn inside the branch that shows once a
+    beat grid exists, so nobody who had not already tapped "Find the beat" could
+    see it at all. It is below the branch now, on the Sync chip, always.
+- **Templates.** Five shelves - Social, Film, Life, Retro, Work - each with its
+  own tiles; the Film shelf's four read apart by colour (Trailer grey, Thriller
+  teal, Western tan, Noir silver).
+
+A draft written by this build reopened with all of it: the shape, the sticker,
+the keyed mask with its diamonds, and the sound.
+
+Everything made for the test was removed: the scratch project (binned by name),
+its export (by MediaStore id), and the screen-on override.

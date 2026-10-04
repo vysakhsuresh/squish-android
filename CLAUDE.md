@@ -161,37 +161,21 @@ should work through it and then delete what holds up.
 - **Fit the shots to the song (4 October).** Built on the desktop; the joins are
   executed (`tools/jvm/BeatSpreadChecks.kt`). Not seen: twenty clips and a
   thirty-second song, every join on a dot and the edit ending with the music.
-- **The last five items of `docs/COMPETITORS.md` (4 October, dawn to morning),
-  all of them.** Built on the desktop with the phone attached but not used; each
-  one's arithmetic is executed on the JVM and **nothing has been seen on a
-  screen or in a file**:
-  - **Shapes and arrows** (`editor/Annotation.kt`, `ShapeChecks`). Eight shapes
-    on the Stickers sheet, above the emoji. A shape is a caption with no words,
-    carried as a sticker, painted by `CaptionRenderer` - which the preview
-    already uses, so one description is one drawing in the preview and the file.
-    What a device has to answer: that a shape lands in the middle of the picture
-    outlined in red with its box on it; that the box's four corners work on it as
-    on a sticker; that Outline/Solid, Line, Width and Colour all read on the
-    picture; that an arrow's head is solid and points the way the tile shows;
-    that a star fills its box; and - the one that matters - **that an exported
-    file has the shape where the preview had it, at the same weight**, which is
-    the whole claim of painting it once.
-  - **Twenty-eight more templates** on five shelves (`TemplateChecks`). Not
-    seen: that each shelf's chip shows its own tiles, that a tile's colours read
-    on a dark sheet, and that applying one is still a single undo.
-  - **A mask's shape keyed** (`MaskKeyChecks`). Not seen: the keyframe button on
-    the Mask sheet, magenta diamonds on the strip at the right frames on a
-    *retimed* clip (they go through `Clip.playedAt`), a circle growing smoothly
-    in the preview, **and the same growth in the exported file** - the export and
-    the preview share `MaskEffect`, which now reloads its uniforms per frame
-    when the shape is keyed, so watch for a cost on four surfaces.
-  - **"Use the liveliest bit"** on the Beats sheet (`LivelinessChecks`). Not
-    seen: the percentage climbing while it watches the footage, Stop working,
-    a shot of a settling hand *not* being chosen, and that a timeline of photos
-    and stills comes through untouched.
-  - **Sound stickers** (`SoundStickerChecks`). Not seen: that the emoji and its
-    noise land together, that one undo takes both off, and that the effect is
-    heard in the preview and is in the file.
+- **The last five items of `docs/COMPETITORS.md` (4 October, dawn to morning) -
+  shapes and arrows, twenty-eight more templates, a mask's shape keyed, "Use the
+  liveliest bit" and sound stickers - were built and then driven on the phone**;
+  `docs/DEVICE_FINDINGS.md`'s last section says what was seen, including the
+  shape and the keyed mask in an exported file. The arithmetic of all five is
+  executed on the JVM (`ShapeChecks`, `TemplateChecks`, `MaskKeyChecks`,
+  `LivelinessChecks`, `SoundStickerChecks`). What is still unseen from them:
+  - a sound sticker's noise **by ear**, in the preview or the file;
+  - a **Solid** shape, and a shape turned or on a 9:16 crop;
+  - a keyed mask on a **retimed** clip - the strip puts its diamonds through
+    `Clip.playedAt`, and only a 2x shot shows whether that is right;
+  - what the per-frame uniform reload of a keyed mask costs on four surfaces;
+  - "Use the liveliest bit" on a *handheld* shot whose first seconds are a hand
+    settling, which is the case the discounted ends exist for;
+  - applying one of the twenty-eight new templates.
 - **Curves, LUT import, blend modes, keyed filter strength and the safe-area
   guides were all driven on the phone on 4 October** and work in the preview and
   in the file - see `docs/DEVICE_FINDINGS.md`, which also records the three

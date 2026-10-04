@@ -335,7 +335,10 @@ phone yet:
 
 What is left, in the order it is worth doing:
 
-1. **Drive all five on a phone.** Nothing above has been seen.
+1. ~~**Drive all five on a phone.**~~ **Done, 4 October morning** - see
+   `docs/DEVICE_FINDINGS.md`. The shape and the keyed mask were checked in an
+   exported file as well as on screen; what is still unseen of them is listed
+   in `CLAUDE.md`.
 2. Then **G8 optical flow** and **G9 skin smoothing**, the two expensive ones.
 3. **G1 for video overlays**, if the week of compositor work is judged worth it.
 4. **G6's other half**: lift/gamma/gain wheels, which fold into the same grade

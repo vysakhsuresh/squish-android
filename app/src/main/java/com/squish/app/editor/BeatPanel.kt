@@ -219,23 +219,6 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
                     ) { viewModel.audio.spreadShotsOverSong() }
                 }
 
-                // The last piece of AutoCut: the two fits above keep each
-                // shot's head, which is the safe answer and the wrong one for a
-                // pile of holiday clips. Run this after one of them.
-                val best = state.bestBitsProgress
-                BeatAction(
-                    icon = Icons.Filled.AutoAwesome,
-                    title = "Use the liveliest bit",
-                    body = when {
-                        best.running && best.total > 0 -> "Watching the footage — ${best.done * 100 / best.total}%"
-                        best.running -> "Watching the footage…"
-                        best.failed -> "Could not read the footage to measure it."
-                        else -> "Every shot keeps the length it has, and slides to the part where most " +
-                            "is happening — movement and sound, measured on the phone. Nothing is uploaded."
-                    },
-                    accent = if (best.failed) SquishColors.Pink else SquishColors.Violet,
-                    action = if (best.running) "Stop" else "Use the liveliest bit"
-                ) { if (best.running) viewModel.analysis.cancelBestBits() else viewModel.analysis.keepBestBits() }
             }
 
             else -> {
@@ -262,6 +245,27 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
                 }
             }
         }
+
+        // The last piece of AutoCut, and the only thing on this sheet that is
+        // not about beats: the fits above keep each shot's head, which is the
+        // safe answer and the wrong one for a pile of holiday clips. Outside
+        // the branch, because it has nothing to do with a grid having been
+        // found - inside it, nobody who had not already found the beat could
+        // see it at all.
+        val best = state.bestBitsProgress
+        BeatAction(
+            icon = Icons.Filled.AutoAwesome,
+            title = "Use the liveliest bit",
+            body = when {
+                best.running && best.total > 0 -> "Watching the footage — ${best.done * 100 / best.total}%"
+                best.running -> "Watching the footage…"
+                best.failed -> "Could not read the footage to measure it."
+                else -> "Every shot keeps the length it has, and slides to the part where most " +
+                    "is happening — movement and sound, measured on the phone. Nothing is uploaded."
+            },
+            accent = if (best.failed) SquishColors.Pink else SquishColors.Violet,
+            action = if (best.running) "Stop" else "Use the liveliest bit"
+        ) { if (best.running) viewModel.analysis.cancelBestBits() else viewModel.analysis.keepBestBits() }
     }
 }
 
