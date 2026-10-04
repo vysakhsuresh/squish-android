@@ -185,6 +185,58 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
     }
 
     /**
+     * A sound sticker: the emoji on the picture and its noise on a sound row,
+     * both at the playhead, as one undo step.
+     *
+     * The sound arrives as a URI rather than being fetched here, because
+     * rendering it is a suspend call and the two have to land in the same step
+     * - an emoji that appears now and a boom that appears a moment later is two
+     * things to undo. [soundMs] is the effect's own length, so nothing has to
+     * be probed. A sound that could not be made (a full phone) lands the
+     * sticker alone rather than nothing.
+     */
+    fun addStickerWithSound(pair: SoundSticker, sound: Uri?, soundMs: Long) = record("Add ${pair.label}") {
+        val span = placeNewText(_state.value, DEFAULT_TITLE_MS)
+        val spot = com.squish.app.editor.TextPlacementRules.freeSpot(
+            _state.value.textOverlays.filter { it.startMs < span.endMs && it.endMs > span.startMs }.map { it.xFraction to it.yFraction }
+        )
+        val item = TextOverlayItem(
+            id = UUID.randomUUID().toString(),
+            text = pair.emoji,
+            startMs = span.startMs,
+            endMs = span.endMs,
+            colorArgb = android.graphics.Color.WHITE,
+            xFraction = spot.first,
+            yFraction = spot.second,
+            sizeSp = STICKER_SIZE_SP,
+            stroke = TextStroke.NONE,
+            motion = TextMotion.Pop,
+            motionOut = TextExit.Fade,
+            sticker = true
+        )
+        val clip = if (sound == null || soundMs <= 0L) null else Clip(
+            kind = ClipKind.Audio,
+            uri = sound,
+            label = pair.label,
+            sourceInMs = 0,
+            sourceOutMs = soundMs,
+            // On the sticker's own first frame: the noise is what the sticker
+            // is doing, so it starts when the sticker does, not at the playhead
+            // - which is the same moment today and would not be if the landing
+            // rule ever moved a sticker along.
+            timelineStartMs = span.startMs,
+            sourceDurationMs = soundMs
+        )
+        _state.update {
+            it.copy(
+                textOverlays = it.textOverlays + item,
+                audioClips = if (clip == null) it.audioClips else it.audioClips + clip,
+                selectedClipId = item.id
+            ).stilled()
+        }
+    }
+
+    /**
      * A shape at the playhead: a rectangle, a circle, an arrow, in the middle of
      * the picture, outlined rather than solid - which is what an annotation is,
      * and the only one that leaves the thing it points at visible.

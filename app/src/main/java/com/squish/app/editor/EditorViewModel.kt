@@ -31,6 +31,8 @@ import com.squish.app.media.StillClips
 import com.squish.app.media.GallerySaver
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.VideoProcessor
+import com.squish.app.media.audio.MusicLibrary
+import com.squish.app.media.audio.MusicSynth
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.video.FilmstripLoader
 import com.squish.app.media.video.Segmenter
@@ -802,6 +804,24 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * thing is a new step, however soon it comes.
      */
     fun endGesture() = history.endGesture()
+
+    /**
+     * A sound sticker: the emoji and its noise, both at the playhead, as one
+     * step. The effect is synthesised the first time it is asked for, like a
+     * Squish original, and its length is the synth's own, so nothing is probed.
+     *
+     * It lives here rather than in one area of edits because it is two areas -
+     * the sticker is text, the noise is sound - and this is the only place that
+     * can reach both.
+     */
+    fun addSoundSticker(pair: SoundSticker) {
+        viewModelScope.launch {
+            val effect = MusicSynth.effectById(pair.effectId)
+            val uri = effect?.let { MusicLibrary.effect(getApplication(), it) }
+            text.addStickerWithSound(pair, uri, ((effect?.seconds ?: 0f) * 1000f).toLong())
+            uri?.let { audio.ensureWaveform(it) }
+        }
+    }
 
     private fun publishHistory() = _state.update {
         it.copy(undoLabel = history.undoLabel?.let(::shownLabel), redoLabel = history.redoLabel?.let(::shownLabel))

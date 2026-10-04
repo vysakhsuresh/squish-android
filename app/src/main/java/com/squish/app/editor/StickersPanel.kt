@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -147,6 +148,44 @@ fun StickersPanel(viewModel: EditorViewModel) {
                         }
                     }
                     repeat(6 - row.size) { Box(modifier = Modifier.weight(1f)) }
+                }
+            }
+        }
+
+        PanelSurface(accent = SquishColors.Amber) {
+            PanelHeading(
+                "Sound stickers",
+                "The sticker and its noise, both at the playhead, in one step",
+                icon = Icons.Filled.VolumeUp,
+                accent = SquishColors.Amber
+            )
+            SoundStickers.all.chunked(4).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    row.forEach { pair ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(SquishColors.Background)
+                                .clickable(onClickLabel = pair.label) {
+                                    focus.clearFocus(force = true)
+                                    keyboard?.hide()
+                                    viewModel.addSoundSticker(pair)
+                                }
+                                .padding(vertical = 8.dp, horizontal = 4.dp)
+                        ) {
+                            Text(pair.emoji, fontSize = 24.sp)
+                            Text(
+                                pair.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SquishColors.TextMuted,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                    repeat(4 - row.size) { Box(modifier = Modifier.weight(1f)) }
                 }
             }
         }
