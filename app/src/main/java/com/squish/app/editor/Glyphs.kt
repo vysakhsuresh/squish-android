@@ -73,6 +73,39 @@ val Template.glyph: Glyph
         Template.Love -> glyph(SquishIcons.Memories, 0xFFFF8FB1, 0xFFB14DFF, ordinal)
         Template.News -> glyph(SquishIcons.Cinematic, 0xFFE0E4F0, 0xFFC0392B, ordinal)
         Template.Sale -> glyph(SquishIcons.Party, 0xFFFFC53D, 0xFFFF6A3D, ordinal)
+
+        // The twenty-eight added on 4 October. Six marks between forty-two
+        // tiles, so the colours are what tell them apart - each pair taken from
+        // the look the template applies, so the tile is roughly the colour the
+        // picture will come out.
+        Template.Trailer -> glyph(SquishIcons.Cinematic, 0xFF9AA7C7, 0xFF11162E, ordinal)
+        Template.Thriller -> glyph(SquishIcons.Cinematic, 0xFF5EC8D8, 0xFF16213A, ordinal)
+        Template.Western -> glyph(SquishIcons.Cinematic, 0xFFE0A765, 0xFF8A4A22, ordinal)
+        Template.Noir -> glyph(SquishIcons.Cinematic, 0xFFD6D9E3, 0xFF2A2C36, ordinal)
+        Template.Documentary -> glyph(SquishIcons.Cinematic, 0xFFBFC6D4, 0xFF4C5468, ordinal)
+        Template.Wedding -> glyph(SquishIcons.Memories, 0xFFF6D7C4, 0xFFC98D8D, ordinal)
+        Template.Baby -> glyph(SquishIcons.Memories, 0xFFFFD9E8, 0xFFA5C8F0, ordinal)
+        Template.Pets -> glyph(SquishIcons.Memories, 0xFFFFC46B, 0xFFE2605B, ordinal)
+        Template.Sunset -> glyph(SquishIcons.Vlog, 0xFFFFB05C, 0xFFD2456B, ordinal)
+        Template.Beach -> glyph(SquishIcons.Vlog, 0xFF6FE3E1, 0xFF2A7FD4, ordinal)
+        Template.Nature -> glyph(SquishIcons.Vlog, 0xFF7ED98A, 0xFF1F6B4A, ordinal)
+        Template.Desert -> glyph(SquishIcons.Vlog, 0xFFF0C987, 0xFFB06B3C, ordinal)
+        Template.Night -> glyph(SquishIcons.Reel, 0xFF6C7BFF, 0xFF11143A, ordinal)
+        Template.City -> glyph(SquishIcons.Reel, 0xFF8FA8C8, 0xFF2B3550, ordinal)
+        Template.Y2k -> glyph(SquishIcons.Retro, 0xFF9CFFEB, 0xFFFF6BD6, ordinal)
+        Template.Vhs -> glyph(SquishIcons.Retro, 0xFFB8A0FF, 0xFF4A2D7A, ordinal)
+        Template.Super8 -> glyph(SquishIcons.Retro, 0xFFE8B071, 0xFF8C5A2B, ordinal)
+        Template.Polaroid -> glyph(SquishIcons.Retro, 0xFFF2E9D8, 0xFFA8A090, ordinal)
+        Template.Crt -> glyph(SquishIcons.Retro, 0xFF77FF9E, 0xFF14321F, ordinal)
+        Template.Trippy -> glyph(SquishIcons.Party, 0xFFFF7BE5, 0xFF5BE1FF, ordinal)
+        Template.Workout -> glyph(SquishIcons.Reel, 0xFF9EE6FF, 0xFF1E3A5F, ordinal)
+        Template.Sport -> glyph(SquishIcons.Reel, 0xFFFFE066, 0xFF1F7A4C, ordinal)
+        Template.Recipe -> glyph(SquishIcons.Vlog, 0xFFFFC078, 0xFFB03A2E, ordinal)
+        Template.Product -> glyph(SquishIcons.Memories, 0xFFE9EEF7, 0xFF7B869C, ordinal)
+        Template.Tutorial -> glyph(SquishIcons.Memories, 0xFFFFE066, 0xFF7A6A1F, ordinal)
+        Template.Podcast -> glyph(SquishIcons.Vlog, 0xFFFFD2A1, 0xFF8A5A3C, ordinal)
+        Template.Quote -> glyph(SquishIcons.Memories, 0xFFD8D4CC, 0xFF5A564E, ordinal)
+        Template.Follow -> glyph(SquishIcons.Party, 0xFFFF6BA8, 0xFFFFC46B, ordinal)
     }
 
 /**

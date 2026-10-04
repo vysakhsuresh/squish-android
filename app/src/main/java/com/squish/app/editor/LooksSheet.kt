@@ -443,7 +443,24 @@ fun TemplatesPanel(viewModel: EditorViewModel) {
             icon = Icons.Filled.AutoAwesome,
             accent = SquishColors.Blue
         )
-        Template.entries.chunked(2).forEach { row ->
+        // Five shelves rather than one list of forty-two: a new person opens
+        // this looking for the one that is near enough, and near enough is a
+        // glance, not a scroll.
+        var shelf by rememberSaveable { mutableStateOf(TemplateFamily.entries.first().name) }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
+            TemplateFamily.entries.forEach {
+                SelectableChip(
+                    label = it.label,
+                    selected = it.name == shelf,
+                    accentColor = SquishColors.Blue,
+                    onClick = { shelf = it.name }
+                )
+            }
+        }
+        Template.entries.filter { it.family.name == shelf }.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 row.forEach { template ->
                     Column(
