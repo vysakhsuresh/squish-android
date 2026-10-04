@@ -202,6 +202,21 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
                     accent = SquishColors.Cyan,
                     action = "Fit ${densityName(beats.every)}"
                 ) { viewModel.audio.fitShotsToBeats() }
+
+                // The other half of fitting to the beat, and the one people
+                // arrive with: a pile of clips and a song. Offered only with a
+                // sound to fit to, since the song's length is the whole input.
+                if (state.audioClips.isNotEmpty()) {
+                    BeatAction(
+                        icon = Icons.Filled.MusicNote,
+                        title = "Fit the shots to the song",
+                        body = "Gives every shot an equal share of the song and puts each join on a " +
+                            "dot, so the edit ends with the music. A shot with less footage than its " +
+                            "share keeps what it has.",
+                        accent = SquishColors.Teal,
+                        action = "Fit to the song"
+                    ) { viewModel.audio.spreadShotsOverSong() }
+                }
             }
 
             else -> {

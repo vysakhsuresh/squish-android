@@ -17,6 +17,7 @@ import com.squish.app.timeline.withSilencesRemoved
 import com.squish.app.media.audio.Loudness
 import com.squish.app.media.audio.MonoPcm
 import com.squish.app.timeline.withShotsFittedToBeats
+import com.squish.app.timeline.withShotsSpreadOver
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.removedOnTimeline
 import com.squish.app.timeline.shiftedPast
@@ -831,6 +832,23 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         if (beats.isEmpty()) return
         record("Fit to the beat") {
             mutateTimeline { it.withShotsFittedToBeats(beats) }
+            _state.update { it.copy(selectedClipId = null) }
+        }
+    }
+
+    /**
+     * Every main-track shot given its share of the longest sound in the edit,
+     * with the joins on the beat (withShotsSpreadOver), as one step.
+     *
+     * The other half of fitting to the beat, and the one people arrive with:
+     * a pile of clips and a song, make it fit.
+     */
+    fun spreadShotsOverSong() {
+        val current = _state.value
+        val song = current.audioClips.maxOfOrNull { it.timelineEndMs } ?: 0L
+        if (song <= 0L || current.videoClips.none { !it.isOverlay }) return
+        record("Fit to the song") {
+            mutateTimeline { it.withShotsSpreadOver(song, current.beatGrid) }
             _state.update { it.copy(selectedClipId = null) }
         }
     }
