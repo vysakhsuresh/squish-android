@@ -371,10 +371,22 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
 
     // ---- Captions ---------------------------------------------------------------
 
-    /** Settings for the next run, kept with the edit. Not undo steps: nothing on the picture changes. */
-    fun setCaptionSource(source: CaptionSource) = _state.update { it.copy(captionSource = source) }
+    /**
+     * Settings for the next run, kept with the edit. Not undo steps: nothing on
+     * the picture changes.
+     *
+     * The last run's answer goes with the change. "No speech found" is the
+     * answer for the sound it listened to, and left standing under a new
+     * choice it reads as the answer for that one - which is how you conclude
+     * your voiceover has no words in it without ever having captioned it.
+     */
+    fun setCaptionSource(source: CaptionSource) = _state.update {
+        if (it.captionSource == source) it else it.copy(captionSource = source, captions = CaptionProgress())
+    }
 
-    fun setCaptionLanguage(tag: String?) = _state.update { it.copy(captionLanguage = tag) }
+    fun setCaptionLanguage(tag: String?) = _state.update {
+        if (it.captionLanguage == tag) it else it.copy(captionLanguage = tag, captions = CaptionProgress())
+    }
 
     /**
      * Finds every stretch of speech and makes a caption for each, transcribing where
