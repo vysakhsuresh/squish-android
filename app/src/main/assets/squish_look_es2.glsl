@@ -18,6 +18,15 @@ uniform float uBrightness;
 uniform float uContrast;
 uniform float uSaturation;
 
+// Lift, gamma and gain - the three wheels. uWheelGamma is the exponent's
+// denominator and is never zero (ColorWheels.gammaOf holds it off), so no
+// branch is needed to divide by it. uWheelsOn is 0 when they are all neutral,
+// which is the usual case and skips a pow per channel.
+uniform float uWheelsOn;
+uniform vec3 uWheelLift;
+uniform vec3 uWheelGamma;
+uniform vec3 uWheelGain;
+
 // Lifting the bright part of the picture and the dark part separately.
 uniform float uHighlights;
 uniform float uShadows;
@@ -184,6 +193,16 @@ void main() {
 
   c *= uGain;
   c += vec3(uBrightness);
+
+  // The three wheels, in the order ColorWheels.applyChannel does them: lift
+  // raises black and leaves white, gamma bends what is between, gain scales
+  // towards white. pow of a negative is undefined, so the floor here is the
+  // floor Kotlin's side puts in too.
+  if (uWheelsOn > 0.5) {
+    c = c + uWheelLift * (vec3(1.0) - c);
+    c = pow(max(c, vec3(0.0)), vec3(1.0) / uWheelGamma);
+    c *= uWheelGain;
+  }
 
   // Media3's Contrast curve, so a look built on the built-in path and the same
   // look built here land on the same picture.

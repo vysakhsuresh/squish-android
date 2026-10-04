@@ -1070,6 +1070,18 @@ class ProjectAutosave(context: Context) {
                     }
             })
         }
+        // The three wheels, written only when one has been moved - so a draft
+        // of a graded shot that never touched them reads exactly as it did.
+        if (!adjust.wheels.isIdentity) {
+            put("wheels", JSONObject().apply {
+                listOf("lift" to adjust.wheels.lift, "gamma" to adjust.wheels.gamma, "gain" to adjust.wheels.gain)
+                    .forEach { (key, wheel) ->
+                        if (!wheel.isIdentity) put(key, JSONArray().apply {
+                            put(wheel.r.toDouble()); put(wheel.g.toDouble()); put(wheel.b.toDouble())
+                        })
+                    }
+            })
+        }
         if (adjust.hsl.any { !it.isIdentity }) {
             put("hsl", JSONArray().apply {
                 adjust.hsl.forEach { band ->
@@ -1113,6 +1125,21 @@ class ProjectAutosave(context: Context) {
             adjust = adjust.copy(curve = com.squish.app.media.effects.ToneCurve(
                 master = curveOf("m"), red = curveOf("r"), green = curveOf("g"), blue = curveOf("b")
             ))
+        }
+        json.optJSONObject("wheels")?.let { w ->
+            fun wheelOf(key: String): com.squish.app.media.effects.Wheel {
+                val a = w.optJSONArray(key) ?: return com.squish.app.media.effects.Wheel.NONE
+                return com.squish.app.media.effects.Wheel(
+                    a.optDouble(0, 0.0).toFloat().coerceIn(-1f, 1f),
+                    a.optDouble(1, 0.0).toFloat().coerceIn(-1f, 1f),
+                    a.optDouble(2, 0.0).toFloat().coerceIn(-1f, 1f)
+                )
+            }
+            adjust = adjust.copy(
+                wheels = com.squish.app.media.effects.ColorWheels(
+                    lift = wheelOf("lift"), gamma = wheelOf("gamma"), gain = wheelOf("gain")
+                )
+            )
         }
         val bands = json.optJSONArray("hsl")?.let { array ->
             List(HueBand.entries.size) { i ->

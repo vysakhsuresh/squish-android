@@ -159,6 +159,8 @@ data class Adjust(
     val hsl: List<HslBand> = NO_HSL,
     /** The Curves tool: a master curve and one per channel. */
     val curve: ToneCurve = ToneCurve.NONE,
+    /** Lift, gamma and gain: the three wheels, the other half of what a colourist expects. */
+    val wheels: ColorWheels = ColorWheels.NONE,
     /** An imported .cube, by its file name under `files/luts/`; see [LutStore]. */
     val lutFile: String? = null,
     /** How much of the imported LUT is mixed in. */
@@ -168,7 +170,8 @@ data class Adjust(
         get() = abs(brightness) < EPS && abs(contrast) < EPS && abs(saturation) < EPS && abs(exposure) < EPS &&
             abs(temperature) < EPS && abs(tint) < EPS && abs(highlights) < EPS && abs(shadows) < EPS &&
             abs(sharpen) < EPS && abs(vignette) < EPS && abs(hue) < EPS && abs(fade) < EPS && abs(grain) < EPS &&
-            hsl.all { it.isIdentity } && curve.isIdentity && (lutFile == null || lutStrength < EPS)
+            hsl.all { it.isIdentity } && curve.isIdentity && wheels.isIdentity &&
+            (lutFile == null || lutStrength < EPS)
 
     /** This with one band's sliders replaced. */
     fun withBand(band: HueBand, value: HslBand): Adjust {
@@ -293,11 +296,14 @@ data class Grade(
     val hsl: List<HslBand> = Adjust.NO_HSL,
     /** The Curves tool. Folded into one table per channel; see [curveLut]. */
     val curve: ToneCurve = ToneCurve.NONE,
+    /** Lift, gamma and gain, as the wheels were set: the user's own, so nothing folds into them. */
+    val wheels: ColorWheels = ColorWheels.NONE,
     /** An imported .cube, already read; null when none or when its file has gone. */
     val lut: Lut3D? = null,
     val lutStrength: Float = 1f
 ) {
     val hasCurve: Boolean get() = !curve.isIdentity
+    val hasWheels: Boolean get() = !wheels.isIdentity
     val hasLut: Boolean get() = lut != null && lutStrength > 1e-4f
 
     /**
@@ -329,7 +335,7 @@ data class Grade(
 
     val isIdentity: Boolean
         get() = !hasChannelGain && !hasContrast && !hasSaturation && !needsShader &&
-            !hasBrightness && !hasTone && !hasHue && !hasHsl && !hasCurve && !hasLut
+            !hasBrightness && !hasTone && !hasHue && !hasHsl && !hasCurve && !hasWheels && !hasLut
 
     /**
      * The same maths the shader does, on one color, in the same order.
@@ -345,6 +351,18 @@ data class Grade(
 
         r *= redScale; g *= greenScale; b *= blueScale
         r += brightness; g += brightness; b += brightness
+
+        if (hasWheels) {
+            // Lift, gamma, gain - the primary correction, before the contrast
+            // and the tonal sliders refine it, which is the order a colourist
+            // works in and the order the shader applies them.
+            val lift = wheels.liftRgb()
+            val gamma = wheels.gammaRgb()
+            val gain = wheels.gainRgb()
+            r = wheels.applyChannel(r, lift[0], gamma[0], gain[0])
+            g = wheels.applyChannel(g, lift[1], gamma[1], gain[1])
+            b = wheels.applyChannel(b, lift[2], gamma[2], gain[2])
+        }
 
         if (hasContrast) {
             // Media3's Contrast: a factor either side of mid-gray, steepening as the
@@ -804,9 +822,10 @@ object Looks {
             sharpen = adjust.sharpen,
             hueDegrees = adjust.hue * Adjust.HUE_TURN_DEGREES,
             hsl = adjust.hsl,
-            // The curve is the user's own and a look never carries one, so it
-            // passes through rather than folding with anything.
+            // The curve and the wheels are the user's own and a look never
+            // carries either, so they pass through rather than folding.
             curve = adjust.curve,
+            wheels = adjust.wheels,
             // Read once and held by name, because a cube is a megabyte and a
             // draft is a small file. A name with no cube against it - its file
             // deleted, or a draft opened before the LUT was read back - leaves

@@ -187,8 +187,13 @@ footage gets brighter). Folded into one 256-entry table that the shader looks up
 and `Grade.applyTo` samples, so there is no second copy of the maths.
 `ToneCurveChecks` and the curve part of `GradeChecks` execute it. Drafts write
 version 14.
-Still open from this item: **lift/gamma/gain wheels**, which would fold into the
-same grade pass and are the other half of what a colourist expects.
+Its other half, **lift/gamma/gain wheels**, is **BUILT and DRIVEN, 4 October**:
+a disc and a level slider for each of Shadows, Midtones and Highlights, folded
+into the same grade pass (one more `if` in the shader, three vec3 uniforms) so
+it is still one pass however much grading is on. The dot in the disc and the
+three numbers are the same thing both ways (`Wheel.of` and `Wheel.pad`), which
+`WheelChecks` executes along with the shader's own three steps, read out of the
+`.glsl`. Seen lifting the preview and the exported file by the same amount.
 
 **G7. A "quick fix" row on import** â€” CapCut's AutoCut and Filmora's AI Reel
 Maker both answer "I have 30 clips and no time". We have Fit shots to the beat
@@ -339,10 +344,13 @@ What is left, in the order it is worth doing:
    `docs/DEVICE_FINDINGS.md`. The shape and the keyed mask were checked in an
    exported file as well as on screen; what is still unseen of them is listed
    in `CLAUDE.md`.
-2. Then **G8 optical flow** and **G9 skin smoothing**, the two expensive ones.
-3. **G1 for video overlays**, if the week of compositor work is judged worth it.
-4. **G6's other half**: lift/gamma/gain wheels, which fold into the same grade
-   pass and are the rest of what a colourist expects.
+2. ~~**G6's other half**: lift/gamma/gain wheels.~~ **Done, 4 October 06:50**,
+   and driven - see the item and `docs/DEVICE_FINDINGS.md`.
+3. Then **G9 skin smoothing**: one Strength slider, a bilateral blur inside the
+   face mask MediaPipe already finds. The cheapest of what is left and the one
+   with real demand in this audience.
+4. **G8 optical flow**, which is what would make slow motion genuinely smooth.
+5. **G1 for video overlays**, if the week of compositor work is judged worth it.
 
 The five built on 3-4 October were all reasoned and executed, and **none of them
 has been seen on a phone**. `CLAUDE.md` lists what the device has to answer for

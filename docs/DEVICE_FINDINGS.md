@@ -1045,3 +1045,27 @@ the keyed mask with its diamonds, and the sound.
 
 Everything made for the test was removed: the scratch project (binned by name),
 its export (by MediaStore id), and the screen-on override.
+
+## Seen on the phone, 4 October (06:50) - the colour wheels
+
+Lift, gamma and gain, the other half of G6. Built, then driven within the hour.
+
+- The **Wheels** chip is last on Adjust, after Curves, and opens three chips -
+  Shadows, Midtones, Highlights - a disc and a level slider.
+- The disc's hues are where the three axes actually put them: red up, green at
+  seven o'clock, blue at five. *Drawn the obvious way they were not*: a sweep
+  gradient starts at three o'clock and runs clockwise while the axes are
+  measured anticlockwise, so evenly spaced colours put red on the left and a
+  finger dragged at what looked like red warmed nothing. The stops are placed
+  by hand now and the ring reads correctly.
+- **The shader compiles on this phone's ES2 driver** - which is the thing a
+  JVM check cannot answer, and a shader that does not compile fails
+  asynchronously and plays the shot plain. Shadows at about +72% lifted a
+  near-black region of the preview from 11/18/29 to 67/72/80.
+- **In the file:** the same region of the exported file reads 71/74/84. The
+  preview and the file agree to a few units, which is the done screen's own
+  scaling.
+
+Not seen: the pad dragged into a colour (the disc's upper half sits above the
+sheet's fold at that scroll position, so only the level was driven), and gamma
+and gain by eye.

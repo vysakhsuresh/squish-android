@@ -260,6 +260,9 @@ fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
     // draw in rather than a slider, so it gets the control's whole room.
     val curveIndex = fields.size + HueBand.entries.size
     val onCurve = chosen == curveIndex
+    // And past the curve, the three wheels, which are a disc to drag in.
+    val wheelIndex = curveIndex + 1
+    val onWheels = chosen == wheelIndex
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface(accent = SquishColors.Blue) {
             PanelHeading(
@@ -328,8 +331,20 @@ fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                     accentColor = SquishColors.Blue,
                     onClick = { chosen = curveIndex }
                 )
+                SelectableChip(
+                    label = if (clip.adjust.wheels.isIdentity) "Wheels" else "Wheels •",
+                    selected = onWheels,
+                    accentColor = SquishColors.Blue,
+                    onClick = { chosen = wheelIndex }
+                )
             }
             when {
+                onWheels -> ColorWheelsEditor(
+                    wheels = clip.adjust.wheels,
+                    onChange = { viewModel.clips.setWheels(clip.id, it) },
+                    onFinished = done,
+                    onReset = { viewModel.clips.resetWheels(clip.id) }
+                )
                 onCurve -> CurveEditor(
                     curve = clip.adjust.curve,
                     onChange = { viewModel.clips.setCurve(clip.id, it) },

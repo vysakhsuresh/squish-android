@@ -366,6 +366,16 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         updateVideoClip(clipId) { it.copy(adjust = it.adjust.copy(curve = com.squish.app.media.effects.ToneCurve.NONE)) }
     }
 
+    /** The three wheels on one clip. A drag of one pad is one step. */
+    fun setWheels(clipId: String, wheels: com.squish.app.media.effects.ColorWheels) =
+        record("Wheels", gesture = "Wheels $clipId") {
+            updateVideoClip(clipId) { it.copy(adjust = it.adjust.copy(wheels = wheels)) }
+        }
+
+    fun resetWheels(clipId: String) = record("Reset wheels") {
+        updateVideoClip(clipId) { it.copy(adjust = it.adjust.copy(wheels = com.squish.app.media.effects.ColorWheels.NONE)) }
+    }
+
     /** One band of the HSL sliders, on one clip. */
     fun setHsl(clipId: String, band: HueBand, value: HslBand) = record("HSL", gesture = "HSL ${band.name} $clipId") {
         updateVideoClip(clipId) { it.copy(adjust = it.adjust.withBand(band, value)) }
