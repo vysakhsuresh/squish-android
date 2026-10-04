@@ -609,6 +609,8 @@ data class EditorUiState(
     val reframeProgress: ReframeProgress = ReframeProgress(),
     /** Finding the person in a clip, for background removal. */
     val backgroundProgress: ReframeProgress = ReframeProgress(),
+    /** Measuring how much is happening in each shot, for "Use the liveliest bit". */
+    val bestBitsProgress: ReframeProgress = ReframeProgress(),
     val captions: CaptionProgress = CaptionProgress(),
     val stabilize: StabilizeProgress = StabilizeProgress(),
     val stabilizeStrength: Float = 0.5f,

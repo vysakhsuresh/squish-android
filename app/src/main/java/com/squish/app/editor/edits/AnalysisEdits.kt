@@ -3,6 +3,7 @@ package com.squish.app.editor.edits
 import android.net.Uri
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.ThumbnailExtractor
+import com.squish.app.media.video.LivelinessProfiler
 import com.squish.app.media.video.Reframer
 import com.squish.app.media.video.Segmenter
 import com.squish.app.timeline.BackgroundFill
@@ -12,6 +13,8 @@ import com.squish.app.media.video.Stabilizer
 import com.squish.app.media.video.StabilizerSolve
 import com.squish.app.media.video.TrackRunner
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.LivelinessProfile
+import com.squish.app.timeline.withBestBitsKept
 import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
 import com.squish.app.timeline.Mask
@@ -31,6 +34,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
 
     private var stabilizeJob: Job? = null
     private var trackJob: Job? = null
+    private var bestBitsJob: Job? = null
 
     /** A file to run a frame analysis over, and the frame size it will produce. */
     private data class AnalysisSource(val uri: Uri, val width: Int, val height: Int)
@@ -181,6 +185,65 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
                 alongside = { it.copy(reframeProgress = ReframeProgress()) }
             )
         }
+    }
+
+    /**
+     * Every main-track shot's window slid to the liveliest part of its own
+     * footage, keeping the length it has.
+     *
+     * The piece of AutoCut that was missing: "Fit the shots to the song" gives
+     * every shot its share and keeps its head, which is the safe answer and the
+     * wrong one for a pile of holiday clips. Run the two together and the edit
+     * is cut to the music out of the parts worth watching.
+     *
+     * The measurement is per *file window* rather than per clip, so two shots
+     * cut from one stretch are measured once; the result is one undo step,
+     * filed when it lands, beneath anything edited meanwhile - as auto-reframe's
+     * is, and for the same reason.
+     */
+    fun keepBestBits() {
+        val current = _state.value
+        if (current.bestBitsProgress.running) return
+        val shots = current.videoClips.filter {
+            it.isMain && !it.isStillPicture && (it.uri ?: current.sourceUri) != null
+        }
+        if (shots.isEmpty()) return
+
+        bestBitsJob?.cancel()
+        _state.update { it.copy(bestBitsProgress = ReframeProgress(running = true, total = shots.size)) }
+        bestBitsJob = viewModelScope.launch {
+            // One measurement per file: the profile is of the whole file, so a
+            // file cut into six shots is decoded once, not six times.
+            val files = shots.mapNotNull { it.uri ?: current.sourceUri }.distinct()
+            val profiles = HashMap<Uri, LivelinessProfile>()
+            files.forEachIndexed { index, uri ->
+                val source = analysisSourceFor(uri, current)
+                val durationMs = ThumbnailExtractor.probeDurationMs(app, source.uri)
+                LivelinessProfiler.profile(app, source.uri, durationMs)?.let { profiles[uri] = it }
+                _state.update { it.copy(bestBitsProgress = it.bestBitsProgress.copy(done = index + 1, total = files.size)) }
+            }
+            if (profiles.isEmpty()) {
+                _state.update { it.copy(bestBitsProgress = ReframeProgress(failed = true)) }
+                return@launch
+            }
+            recordLate(
+                "Use the liveliest bit",
+                edit = { snapshot ->
+                    val byClip = snapshot.videoClips.mapNotNull { clip ->
+                        val uri = clip.uri ?: current.sourceUri
+                        profiles[uri]?.let { clip.id to it }
+                    }.toMap()
+                    snapshot.copy(videoClips = snapshot.videoClips.withBestBitsKept(byClip))
+                },
+                alongside = { it.copy(bestBitsProgress = ReframeProgress()) }
+            )
+        }
+    }
+
+    fun cancelBestBits() {
+        bestBitsJob?.cancel()
+        bestBitsJob = null
+        _state.update { it.copy(bestBitsProgress = ReframeProgress()) }
     }
 
     fun cancelReframe() {
