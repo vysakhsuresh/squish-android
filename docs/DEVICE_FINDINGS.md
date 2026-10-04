@@ -964,3 +964,37 @@ switch under the Render button. Scroll it into view and measure again before
 believing it. One change was written against such a false reading (the toggle
 switch) and taken out again once a scrolled dump showed the switches were
 always 48 dp.
+
+## Seen on the phone, 4 October (dawn) - the CPU grade against the shader
+
+The one screen where the two grading paths meet: a photo on an **overlay** row
+is drawn by Compose from a bitmap graded pixel by pixel on the CPU
+(`Look.applyTo`, through `StillPictures.graded`), while everything else goes
+through the player's shader. They are written from one description, but nothing
+had ever put them side by side.
+
+A scratch project with a photo on the main track and a second photo as a small
+overlay over it, and the same 33³ red/blue-swap `.cube` applied to each in turn,
+measured off a screencap rather than judged by eye:
+
+| | red | green | blue |
+|---|---|---|---|
+| base (shader), LUT off | 136 | 142 | 153 |
+| base (shader), LUT on | 152 | 142 | 137 |
+| overlay (CPU), LUT off | 162 | 166 | 173 |
+| overlay (CPU), LUT on | 173 | 166 | 162 |
+
+Both swap, and both leave green alone, to within a unit. Three single blocks of
+the overlay read the same way - 200/138/80 became 80/136/198, and 125/166/204
+became 202/164/124. So the CPU copy and the shader agree on a LUT, which is the
+newest and least-shared part of the grade, and the open item CLAUDE.md carried
+("whether a photo overlay carrying a LUT matches the video beside it") is
+closed.
+
+It also settles, at a cube size other than 8, that the ES2 tile atlas is laid
+out and sampled correctly: a 33³ cube is 33 tiles of 33x33, and a red/blue swap
+is the one transform that shows a transposed atlas immediately.
+
+Everything made for it was removed: the scratch project (binned by name through
+the card's own Delete), and the `.cube` from both `/sdcard/Download` and
+`files/luts/`, which is empty again.

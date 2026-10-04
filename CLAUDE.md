@@ -164,19 +164,22 @@ should work through it and then delete what holds up.
 - **Curves, LUT import, blend modes, keyed filter strength and the safe-area
   guides were all driven on the phone on 4 October** and work in the preview and
   in the file - see `docs/DEVICE_FINDINGS.md`, which also records the three
-  faults that round found. Two things from them are still open: a LUT bigger
-  than the 8-cube tested (the atlas row length changes with the cube's size, so
-  a 33 is worth one run), and whether a photo overlay carrying a LUT matches the
-  video beside it, which is the one screen where the CPU copy and the shader
-  meet.
+  faults that round found. The two things left open that morning were both
+  closed at dawn on 4 October: a 33-cube imports and swaps correctly (so the ES2
+  tile atlas is right at a cube size other than 8), and a photo overlay carrying
+  a LUT matches the video beside it - the one screen where the CPU copy and the
+  shader meet - measured off a screencap rather than judged by eye, both paths
+  swapping red for blue and leaving green alone to within a unit.
 - **The Curves tool (3 October).** The arithmetic is executed on the JVM
   (`tools/jvm/ToneCurveChecks.kt` and the curve part of `GradeChecks.kt`), and a
   lifted midpoint was seen to brighten the picture on the phone on 4 October, so
   the table, its texture and the shader's lookup are right on this driver. Still
   unseen: that an S-curve on screen is the S-curve in the **exported file**;
-  that **a graded photo overlay and the video beside it agree on the same
-  curve**, which is the one screen where the CPU copy and the shader meet; that
-  dragging a point is smooth and does not stall the preview; and that a point
+  that a graded photo overlay and the video beside it agree on the same *curve*
+  (the LUT leg of that meeting was measured at dawn on 4 October and agrees, but
+  the curve is the other leg - a table sampled in Kotlin against a texture
+  looked up in the shader); that dragging a point is smooth and does not stall
+  the preview; and that a point
   dragged onto its neighbour comes off while the two ends cannot be dragged
   sideways. A draft written at version 14 reads its curve back - seen.
 - **A hand-drawn crop in the preview.** It reached the export before it reached
