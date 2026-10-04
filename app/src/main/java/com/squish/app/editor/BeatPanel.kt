@@ -21,6 +21,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -245,6 +249,26 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
                 }
             }
         }
+
+        // Sound design on the joins, which is the layer a fast reel is actually
+        // made of and the one thing a FinalCut timeline for one had that this
+        // could not do in a reasonable number of taps. Outside the branch for
+        // the same reason as below: it has nothing to do with a beat grid.
+        var laid by remember { mutableStateOf<Int?>(null) }
+        BeatAction(
+            icon = Icons.Filled.GraphicEq,
+            title = "Sound on every cut",
+            body = when (val n = laid) {
+                null -> "A whoosh into every join, three going round in turn so ten of them do not " +
+                    "sound like one repeated. Each ends on its cut, which is what pulls the eye into " +
+                    "the next shot. Made on the phone, like the music."
+                0 -> "Nothing to put a sound on — the picture needs more than one shot."
+                1 -> "One sound laid. Undo takes it off."
+                else -> "$n sounds laid, one on each cut. Undo takes them all off."
+            },
+            accent = SquishColors.Amber,
+            action = "Sound on every cut"
+        ) { viewModel.audio.soundOnEveryCut { laid = it } }
 
         // The last piece of AutoCut, and the only thing on this sheet that is
         // not about beats: the fits above keep each shot's head, which is the

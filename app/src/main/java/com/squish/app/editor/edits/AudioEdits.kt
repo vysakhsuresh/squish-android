@@ -10,6 +10,11 @@ import com.squish.app.media.audio.BeatDetector
 import com.squish.app.media.audio.BeatMap
 import com.squish.app.media.audio.PcmDecoder
 import com.squish.app.media.audio.VoiceRecorder
+import com.squish.app.media.audio.MusicLibrary
+import com.squish.app.media.audio.MusicSynth
+import com.squish.app.timeline.CutSoundFit
+import com.squish.app.timeline.CutSoundVariant
+import com.squish.app.timeline.CutSounds
 import com.squish.app.timeline.DuckRules
 import com.squish.app.media.audio.SpeechSegmenter
 import com.squish.app.timeline.SilenceRules
@@ -826,6 +831,75 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         }
     }
 
+    /**
+     * A sound on every cut of the main track, in one step.
+     *
+     * A twenty-two second reel cut in FinalCut was read off a screen recording
+     * of its timeline: twenty-four shots, and ten sound effects, one on nearly
+     * every join. That layer is most of what separates a reel that feels made
+     * from one that feels assembled - and it was the only part of that edit
+     * Squish could not do in a reasonable number of taps.
+     *
+     * Three sounds go round in turn rather than one repeated, and each is laid
+     * so it *ends* on its cut, which is what pulls the eye into the next shot
+     * (see CutSounds). The effects are synthesised the first time they are
+     * asked for, like the music, so nothing is downloaded.
+     */
+    fun soundOnEveryCut(fit: CutSoundFit = CutSoundFit.LeadsIn, onDone: (Int) -> Unit = {}) {
+        val current = _state.value
+        val joins = CutSounds.joinsOf(current.videoClips.filter { it.isMain }, current.trimmedDurationMs)
+        if (joins.isEmpty()) {
+            onDone(0)
+            return
+        }
+        viewModelScope.launch {
+            // Rendered once each, whatever the plan asks for them, and kept by
+            // MusicLibrary against their own files.
+            val made = CUT_SOUND_IDS.mapNotNull { id ->
+                val effect = MusicSynth.effectById(id) ?: return@mapNotNull null
+                val uri = MusicLibrary.effect(app, effect) ?: return@mapNotNull null
+                Triple(id, uri, (effect.seconds * 1000f).toLong())
+            }
+            if (made.isEmpty()) {
+                onDone(0)
+                return@launch
+            }
+            val plan = CutSounds.plan(
+                joins,
+                made.map { (id, _, ms) -> CutSoundVariant(id, ms) },
+                fit
+            )
+            if (plan.isEmpty()) {
+                onDone(0)
+                return@launch
+            }
+            val uris = made.associate { (id, uri, _) -> id to uri }
+            val names = CUT_SOUND_IDS.associateWith { MusicSynth.effectById(it)?.title ?: "Sound" }
+            record("Sound on every cut") {
+                _state.update { s ->
+                    s.copy(
+                        audioClips = s.audioClips + plan.mapNotNull { sound ->
+                            val uri = uris[sound.effectId] ?: return@mapNotNull null
+                            Clip(
+                                kind = ClipKind.Audio,
+                                uri = uri,
+                                label = names[sound.effectId] ?: "Sound",
+                                sourceInMs = 0,
+                                sourceOutMs = sound.lengthMs,
+                                timelineStartMs = sound.atMs,
+                                sourceDurationMs = sound.lengthMs
+                            )
+                        },
+                        selectedClipId = null
+                    )
+                }
+            }
+            uris.values.forEach { ensureWaveform(it) }
+            recomputeEstimate()
+            onDone(plan.size)
+        }
+    }
+
     /** Each main-track shot shortened to end on a beat of the chosen grid (withShotsFittedToBeats), as one step. */
     fun fitShotsToBeats() {
         val beats = _state.value.beatGrid
@@ -867,6 +941,14 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     private val BEAT_MAX_ANALYSIS_MS = 6 * 60 * 1000L
 
     private companion object {
+        /**
+         * The three that go round in turn on the cuts: a reverse whoosh, a whip
+         * and a rub of cloth. Three, because one repeated ten times reads as a
+         * mistake and three alternating read as design - and these three
+         * because they are the three a reel is actually made of.
+         */
+        val CUT_SOUND_IDS = listOf("sfx-reverse", "sfx-swish", "sfx-cloth")
+
         const val MIN_SYNC_CONFIDENCE = 0.28f
 
         /** With less room than this left, a sound that does not fit it is backed up to end with the edit; see EditRules.soundLanding. */

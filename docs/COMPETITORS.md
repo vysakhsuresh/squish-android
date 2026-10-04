@@ -365,3 +365,77 @@ right.
 [InShot review](https://vidpros.com/inshot-review/),
 [CapCut AutoCut](https://www.capcut.com/resource/capcut-autocut),
 [CapCut on Wikipedia](https://en.wikipedia.org/wiki/CapCut).
+
+---
+
+## 4. One real reel, read off its own timeline (4 October)
+
+Two files: a finished 22-second wedding reel, and a screen recording of the
+**Final Cut Pro timeline that made it**. The second is worth more than any
+feature matrix, because it says what a working editor actually reached for.
+Both were opened on the phone and read frame by frame.
+
+**The finished reel.** Vertical, 1080x1920, 30 fps, 22.1 s. Portrait footage,
+warm orange-and-teal grade, shallow depth of field, a blurred copy of the frame
+filling the sides where a shot is narrower than the frame. No text, no
+stickers, no captions - not one word on screen for 22 seconds.
+
+**The timeline behind it**, read off the recording:
+
+- **24 shots** on the main storyline in 22 s - a cut every 0.9 s on average,
+  cut to the music.
+- Above them, **connected clips**: a handful of shots layered over the
+  storyline, and **one green-screen element** (a solid green clip, keyed).
+- Four purple **Adjustment Layers** spanning groups of clips, carrying the
+  zooms and shakes - the labels read "Zoo…", "Adjustmen…".
+- A few shots named `nattu.fx3` - pre-rendered VFX, made elsewhere.
+- One song, `Thalam_Trip_X_Kannod_Kan…`, **chopped into about ten pieces**
+  across two rows with crossfade handles between them.
+- And **ten sound effects** on four more rows: *Whoosh 2, Reverse Bass,
+  Metallic, Lit whoosh3, Lit dark whoosh, Glass_shard_Sound_effects, Lit cloth,
+  Whoosh 1, Woman…, Iro…* - roughly one on every join.
+
+### What of it Squish can already do
+
+Nearly all of it, and this is worth saying plainly:
+
+| What the reel does | Squish |
+|---|---|
+| 24 beat-synced cuts | Find the beat → Cut on the beat → Fit shots to the beat |
+| Shots trimmed to their best stretch | Use the liveliest bit |
+| Zoom punch, shake, flash on groups of clips | the effects library places timed effects on the timeline, over whatever is under them - that *is* an adjustment layer |
+| Speed ramps | the speed curve, with presets |
+| A green-screen element composited | Chroma key, on an overlay row |
+| Blurred-background fill for a vertical frame | Frame → Background → blurred still |
+| Warm orange/teal grade | looks, the 13 sliders, curves, the three wheels, imported LUTs |
+| A song chopped with crossfades | Split on a sound + per-clip fades |
+| Light-leak / flash joins | Flash, Glow, Dip to white |
+
+### What it had that we did not
+
+**One thing, and it is the one that makes a reel feel made rather than
+assembled: the sound design on the joins.** Ten effects, one on nearly every
+cut. Squish had sixteen synthesised effects, but putting ten of them on ten
+joins meant finding one, adding it, dragging it to the join, and doing that
+nine more times.
+
+Built, 5 October:
+
+- **Eight more effects**, synthesised like the rest, chosen off that timeline:
+  Reverse whoosh, Sub drop, Impact, Glass, Metal, Cloth, Swish, Long riser.
+  Nothing to licence and nothing to download.
+- **"Sound on every cut"** on the Sound sheet: one tap lays a sound on every
+  join of the main track. Three go round in turn - a reverse whoosh, a whip, a
+  rub of cloth - because one repeated ten times reads as a mistake and three
+  alternating read as design. Each is laid so it **ends** on its cut, which is
+  what pulls the eye into the next shot; one that starts at the cut chases the
+  shot that has already gone. Joins closer together than a third of a second
+  get one sound between them rather than two on top of each other.
+  `tools/jvm/CutSoundChecks.kt` executes the placing.
+
+### What it had that we are not going to build
+
+- **Pre-rendered VFX shots** (`nattu.fx3`). Made in another tool and imported.
+  Squish imports them the same way - as footage.
+- **Nested timelines / compound clips.** Final Cut's way of grouping; our
+  effects-on-the-timeline covers the case people actually use it for.

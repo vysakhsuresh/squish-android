@@ -249,7 +249,21 @@ object MusicSynth {
         Effect("sfx-typewriter", "Typewriter", "Text · 1.2s", 1.2f),
         Effect("sfx-drumroll", "Drum roll", "Build-up · 1.8s", 1.8f),
         Effect("sfx-tada", "Ta-da", "Reveal · 1.6s", 1.6f),
-        Effect("sfx-zap", "Zap", "Game · 0.4s", 0.4f)
+        Effect("sfx-zap", "Zap", "Game · 0.4s", 0.4f),
+
+        // The sound design a fast reel is actually made of. A FinalCut timeline
+        // for a 22-second wedding reel was read off a screen recording and had
+        // ten of these on it - reverse bass into a cut, a glass shard on a
+        // whip pan, cloth on a turn, a sub under an impact. Synthesised like
+        // everything else here, so there is nothing to licence or download.
+        Effect("sfx-reverse", "Reverse whoosh", "Into a cut · 1.2s", 1.2f),
+        Effect("sfx-subdrop", "Sub drop", "Impact · 1.6s", 1.6f),
+        Effect("sfx-impact", "Impact", "Hit · 1.0s", 1.0f),
+        Effect("sfx-glass", "Glass", "Shatter · 1.1s", 1.1f),
+        Effect("sfx-metal", "Metal", "Ring · 1.3s", 1.3f),
+        Effect("sfx-cloth", "Cloth", "Movement · 0.5s", 0.5f),
+        Effect("sfx-swish", "Swish", "Whip pan · 0.35s", 0.35f),
+        Effect("sfx-build", "Long riser", "Build-up · 4.0s", 4f)
     )
 
     fun effectById(id: String): Effect? = effects.firstOrNull { it.id == id }
@@ -276,6 +290,14 @@ object MusicSynth {
             "sfx-drumroll" -> drumroll(left, right, rng)
             "sfx-tada" -> tada(left, right)
             "sfx-zap" -> zap(left, right)
+            "sfx-reverse" -> reverseWhoosh(left, right, rng)
+            "sfx-subdrop" -> subDrop(left, right, rng)
+            "sfx-impact" -> impact(left, right, rng)
+            "sfx-glass" -> glass(left, right, rng)
+            "sfx-metal" -> metal(left, right, rng)
+            "sfx-cloth" -> cloth(left, right, rng)
+            "sfx-swish" -> swish(left, right, rng)
+            "sfx-build" -> riser(left, right, rng)
             else -> ding(left, right)
         }
         write(out, left, right)
@@ -470,6 +492,153 @@ object MusicSynth {
             lpR += (nr - lpR) * cutoff
             l[i] = (lpL * env * 0.9).toFloat()
             r[i] = (lpR * env * 0.9).toFloat()
+        }
+    }
+
+    /**
+     * A whoosh played backwards: quiet, rising, and cut off dead at the end.
+     *
+     * The one every reel uses, and the reason it works: the silence where it
+     * stops is the cut. Laid so it *ends* on the join (CutSounds.LEAD_IN),
+     * it pulls the eye into the next shot rather than following the last.
+     */
+    private fun reverseWhoosh(l: FloatArray, r: FloatArray, rng: Random) {
+        var lpL = 0.0
+        var lpR = 0.0
+        val n = l.size
+        for (i in 0 until n) {
+            val x = i.toDouble() / n
+            // Rising all the way, loudest at the very end, then nothing.
+            val env = x.pow(2.2)
+            // The filter opens as it rises, which is what makes it read as
+            // coming towards you rather than merely getting louder.
+            val cutoff = 0.01 + 0.45 * x
+            lpL += ((rng.nextFloat() * 2 - 1) - lpL) * cutoff
+            lpR += ((rng.nextFloat() * 2 - 1) - lpR) * cutoff
+            l[i] = (lpL * env * 0.95).toFloat()
+            r[i] = (lpR * env * 0.95).toFloat()
+        }
+    }
+
+    /** A sine falling two octaves under a short noise slap: the drop on an impact. */
+    private fun subDrop(l: FloatArray, r: FloatArray, rng: Random) {
+        var phase = 0.0
+        var lp = 0.0
+        val n = l.size
+        for (i in 0 until n) {
+            val x = i.toDouble() / SAMPLE_RATE
+            val f = 120 * exp(-x * 2.4) + 28
+            phase += 2 * PI * f / SAMPLE_RATE
+            lp += ((rng.nextFloat() * 2 - 1) - lp) * 0.12
+            val slap = lp * 1.2 * exp(-x * 26)
+            val sub = sin(phase) * exp(-x * 1.1)
+            // Up over the first two milliseconds, or the start clicks.
+            val v = (sub + slap) * minOf(1.0, i / (SAMPLE_RATE * 0.002))
+            l[i] = (v * 0.9).toFloat()
+            r[i] = l[i]
+        }
+    }
+
+    /** A broadband hit with a short tail: the thing a cut lands on. */
+    private fun impact(l: FloatArray, r: FloatArray, rng: Random) {
+        var lp = 0.0
+        var hp = 0.0
+        var prev = 0.0
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            val n = (rng.nextFloat() * 2 - 1).toDouble()
+            lp += (n - lp) * 0.08
+            hp = n - prev
+            prev = n
+            val body = lp * exp(-x * 7)
+            val crack = hp * 0.5 * exp(-x * 55)
+            val v = (body * 1.6 + crack) * minOf(1.0, i / (SAMPLE_RATE * 0.001))
+            l[i] = (v * 0.85).toFloat()
+            r[i] = (v * 0.85).toFloat()
+        }
+    }
+
+    /** Bright shards: a burst of high partials that die at different rates. */
+    private fun glass(l: FloatArray, r: FloatArray, rng: Random) {
+        val partials = 14
+        val hz = DoubleArray(partials) { 2200.0 + rng.nextDouble() * 5200.0 }
+        val decay = DoubleArray(partials) { 6.0 + rng.nextDouble() * 26.0 }
+        val start = DoubleArray(partials) { if (it < 4) 0.0 else rng.nextDouble() * 0.09 }
+        val pan = DoubleArray(partials) { rng.nextDouble() }
+        val phase = DoubleArray(partials)
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            var sl = 0.0
+            var sr = 0.0
+            for (p in 0 until partials) {
+                if (x < start[p]) continue
+                phase[p] += 2 * PI * hz[p] / SAMPLE_RATE
+                val v = sin(phase[p]) * exp(-(x - start[p]) * decay[p])
+                sl += v * (1.0 - pan[p])
+                sr += v * pan[p]
+            }
+            l[i] = (sl / partials * 2.4).toFloat()
+            r[i] = (sr / partials * 2.4).toFloat()
+        }
+    }
+
+    /** A struck metal ring: a few inharmonic partials over a long tail. */
+    private fun metal(l: FloatArray, r: FloatArray, rng: Random) {
+        // Inharmonic on purpose - whole-number partials ring as a musical note
+        // and stop sounding like metal.
+        val hz = doubleArrayOf(523.0, 831.0, 1193.0, 1657.0, 2311.0, 3137.0)
+        val gain = doubleArrayOf(1.0, 0.7, 0.55, 0.4, 0.3, 0.22)
+        val phase = DoubleArray(hz.size)
+        var lp = 0.0
+        for (i in l.indices) {
+            val x = i.toDouble() / SAMPLE_RATE
+            var s = 0.0
+            hz.indices.forEach { p ->
+                phase[p] += 2 * PI * hz[p] / SAMPLE_RATE
+                s += sin(phase[p]) * gain[p] * exp(-x * (1.4 + p * 0.9))
+            }
+            lp += ((rng.nextFloat() * 2 - 1) - lp) * 0.4
+            val strike = lp * exp(-x * 90) * 0.6
+            val v = (s / 3.0 + strike) * minOf(1.0, i / (SAMPLE_RATE * 0.001))
+            l[i] = (v * 0.8).toFloat()
+            r[i] = (v * 0.8).toFloat()
+        }
+    }
+
+    /** Fabric moving: band-passed noise with two soft swells. */
+    private fun cloth(l: FloatArray, r: FloatArray, rng: Random) {
+        var lp = 0.0
+        var prev = 0.0
+        val n = l.size
+        for (i in 0 until n) {
+            val x = i.toDouble() / n
+            val raw = rng.nextFloat() * 2 - 1
+            lp += (raw - lp) * 0.25
+            val band = lp - prev
+            prev = lp
+            // Two rubs rather than one, a third of the way apart: one swell
+            // reads as a whoosh, two read as cloth.
+            val env = sin(PI * x) * (0.75 + 0.25 * sin(PI * 3 * x))
+            l[i] = (band * env * 2.6).toFloat()
+            r[i] = (band * env * 2.4).toFloat()
+        }
+    }
+
+    /** A short, high whip: the sound of the camera flicking across. */
+    private fun swish(l: FloatArray, r: FloatArray, rng: Random) {
+        var lp = 0.0
+        var prev = 0.0
+        val n = l.size
+        for (i in 0 until n) {
+            val x = i.toDouble() / n
+            val raw = rng.nextFloat() * 2 - 1
+            lp += (raw - lp) * (0.1 + 0.6 * sin(PI * x))
+            val band = lp - prev
+            prev = lp
+            val env = sin(PI * x.pow(0.55))
+            // Across the stereo field, left to right, which is the pan itself.
+            l[i] = (band * env * 2.2 * (1.0 - x)).toFloat()
+            r[i] = (band * env * 2.2 * x).toFloat()
         }
     }
 
