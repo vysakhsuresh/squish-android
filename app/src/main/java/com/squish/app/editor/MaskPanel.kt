@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Mask
+import com.squish.app.timeline.hasShapeKeyNear
 import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
 import com.squish.app.ui.components.SelectableChip
@@ -36,8 +37,13 @@ import com.squish.app.ui.theme.SquishColors
  * the edge was, and the shape is moved there with a finger.
  */
 @Composable
-fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
-    val mask = clip.mask
+fun MaskPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
+    // The shape at the playhead, which on a keyed mask is not the stored one:
+    // the sliders show and set the shape the picture is being cut to.
+    val sourceMs = clip.sourceAt(state.playheadMs)
+    val held = clip.mask
+    val mask = held?.at(sourceMs)
+    val onClip = state.playheadMs in clip.timelineStartMs..clip.timelineEndMs
 
     PanelSurface(accent = SquishColors.Magenta) {
         PanelHeading(
@@ -108,6 +114,22 @@ fun MaskPanel(clip: Clip, viewModel: EditorViewModel) {
                     com.squish.app.ui.components.TextAction("Unpin", color = SquishColors.Pink) { viewModel.analysis.unpinMask(clip.id) }
                 }
             }
+        }
+
+        // The shape keyed, which is the half of keyframing a mask that its
+        // track does not cover: a track follows something in the picture, this
+        // is drawn by hand - a circle grown over four seconds, a letterbox slid
+        // open. A tracked mask takes its centre from the track every frame, so
+        // keying it as well would be two things fighting over one number.
+        if (mask.track == null) {
+            KeyframeButton(
+                keyed = held?.keys?.hasShapeKeyNear(sourceMs) == true,
+                count = held?.keys?.size ?: 0,
+                onClip = onClip,
+                accent = SquishColors.Magenta,
+                onToggle = { viewModel.layers.toggleMaskKey(clip.id) },
+                onClear = { viewModel.layers.clearMaskKeys(clip.id) }
+            )
         }
 
         // Six shapes now, which is more than fit across a phone: the row scrolls.

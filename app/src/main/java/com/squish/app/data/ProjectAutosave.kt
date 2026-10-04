@@ -54,6 +54,7 @@ import com.squish.app.timeline.ClipLeaving
 import com.squish.app.timeline.ClipLoop
 import com.squish.app.timeline.ValueKey
 import com.squish.app.timeline.Mask
+import com.squish.app.timeline.MaskKey
 import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.ReversedSource
@@ -958,17 +959,20 @@ class ProjectAutosave(context: Context) {
         if (clip.pitchFollowsSpeed) put("pitchFollowsSpeed", true)
         clip.mask?.let { m ->
             put("mask", JSONObject().apply {
-                put("shape", m.shape.name)
-                put("centerXFraction", m.centerXFraction.toDouble())
-                put("centerYFraction", m.centerYFraction.toDouble())
-                put("widthFraction", m.widthFraction.toDouble())
-                put("heightFraction", m.heightFraction.toDouble())
-                put("rotationDegrees", m.rotationDegrees.toDouble())
-                put("feather", m.feather.toDouble())
-                put("cornerRadius", m.cornerRadius.toDouble())
-                put("inverted", m.inverted)
-                put("mode", m.mode.name)
-                put("strength", m.strength.toDouble())
+                putMaskShape(m)
+                // The shape keyed. Written only when it is, so a mask that
+                // stands still reads exactly as it always did.
+                if (m.keys.isNotEmpty()) {
+                    put("keys", JSONArray().apply {
+                        m.keys.forEach { key ->
+                            put(JSONObject().apply {
+                                put("atMs", key.atMs)
+                                put("easing", key.easing.name)
+                                putMaskShape(key.mask)
+                            })
+                        }
+                    })
+                }
                 m.track?.let { t ->
                     put("track", JSONArray().apply {
                         t.samples.forEach { sample ->
@@ -1497,18 +1501,18 @@ class ProjectAutosave(context: Context) {
             },
             reframe = decodeTrack(json.optJSONArray("reframe")),
             mask = json.optJSONObject("mask")?.let { m ->
-                Mask(
-                    shape = enumOrNull<MaskShape>(m.optString("shape")) ?: MaskShape.Ellipse,
-                    centerXFraction = m.optDouble("centerXFraction").toFloat(),
-                    centerYFraction = m.optDouble("centerYFraction").toFloat(),
-                    widthFraction = m.optDouble("widthFraction", 0.6).toFloat(),
-                    heightFraction = m.optDouble("heightFraction", 0.6).toFloat(),
-                    rotationDegrees = m.optDouble("rotationDegrees").toFloat(),
-                    feather = m.optDouble("feather", 0.04).toFloat(),
-                    cornerRadius = m.optDouble("cornerRadius").toFloat(),
-                    inverted = m.optBoolean("inverted"),
-                    mode = enumOrNull<MaskMode>(m.optString("mode")) ?: MaskMode.Cutout,
-                    strength = m.optDouble("strength", 0.5).toFloat(),
+                maskShapeOf(m).copy(
+                    keys = m.optJSONArray("keys")?.let { array ->
+                        (0 until array.length()).mapNotNull { i ->
+                            array.optJSONObject(i)?.let { k ->
+                                MaskKey(
+                                    atMs = k.optLong("atMs"),
+                                    mask = maskShapeOf(k),
+                                    easing = enumOrNull<KeyframeEasing>(k.optString("easing")) ?: KeyframeEasing.Smooth
+                                )
+                            }
+                        }.sortedBy { it.atMs }
+                    }.orEmpty(),
                     track = m.optJSONArray("track")?.let { array ->
                         MotionTrack(
                             (0 until array.length()).mapNotNull { i ->
@@ -1613,6 +1617,41 @@ class ProjectAutosave(context: Context) {
 
     private inline fun <reified T : Enum<T>> enumOrNull(name: String?): T? =
         name?.let { runCatching { enumValueOf<T>(it) }.getOrNull() }
+
+    /**
+     * A mask's shape, apart from what it is following and the keys it moves on.
+     *
+     * Written once for the mask itself and once per shape key, so the two can
+     * never drift: a field added to one and not the other would read back as
+     * its default on every key, which is a mask that snaps between shapes.
+     */
+    private fun JSONObject.putMaskShape(m: Mask) {
+        put("shape", m.shape.name)
+        put("centerXFraction", m.centerXFraction.toDouble())
+        put("centerYFraction", m.centerYFraction.toDouble())
+        put("widthFraction", m.widthFraction.toDouble())
+        put("heightFraction", m.heightFraction.toDouble())
+        put("rotationDegrees", m.rotationDegrees.toDouble())
+        put("feather", m.feather.toDouble())
+        put("cornerRadius", m.cornerRadius.toDouble())
+        put("inverted", m.inverted)
+        put("mode", m.mode.name)
+        put("strength", m.strength.toDouble())
+    }
+
+    private fun maskShapeOf(m: JSONObject): Mask = Mask(
+        shape = enumOrNull<MaskShape>(m.optString("shape")) ?: MaskShape.Ellipse,
+        centerXFraction = m.optDouble("centerXFraction").toFloat(),
+        centerYFraction = m.optDouble("centerYFraction").toFloat(),
+        widthFraction = m.optDouble("widthFraction", 0.6).toFloat(),
+        heightFraction = m.optDouble("heightFraction", 0.6).toFloat(),
+        rotationDegrees = m.optDouble("rotationDegrees").toFloat(),
+        feather = m.optDouble("feather", 0.04).toFloat(),
+        cornerRadius = m.optDouble("cornerRadius").toFloat(),
+        inverted = m.optBoolean("inverted"),
+        mode = enumOrNull<MaskMode>(m.optString("mode")) ?: MaskMode.Cutout,
+        strength = m.optDouble("strength", 0.5).toFloat()
+    )
 
     private companion object {
         /**

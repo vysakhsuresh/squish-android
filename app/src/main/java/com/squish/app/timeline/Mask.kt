@@ -65,7 +65,24 @@ data class Mask(
      * still, so a privacy mask that cannot follow one is a mask you have to keyframe
      * by hand for every frame of the shot.
      */
-    val track: MotionTrack? = null
+    val track: MotionTrack? = null,
+
+    /**
+     * The shape keyed, in **source** time - the clock the track already uses, so
+     * a trim or a move carries the keys with the footage without anything
+     * having to shift them.
+     *
+     * The other half of keyframed filters: a mask already *moves* on a track,
+     * which is a measurement of something in the picture, and this is the hand
+     * drawn version - grow a circle over four seconds, slide a letterbox open.
+     * A key holds a whole shape rather than one number, because the eight
+     * numbers of a mask are one thing to the eye and keying them apart would
+     * mean eight rows of diamonds for one circle.
+     *
+     * A key's own [Mask] never carries keys or a track of its own; [keyed]
+     * strips them, and [at] returns a shape with none.
+     */
+    val keys: List<MaskKey> = emptyList()
 ) {
     /** Never zero: it is the width of a smoothstep band in the shader. */
     val safeFeather: Float get() = feather.coerceAtLeast(0.001f)
@@ -101,4 +118,106 @@ data class Mask(
             ?: return centerXFraction to centerYFraction
         return (sample.xFraction - 0.5f) * 2f to (sample.yFraction - 0.5f) * 2f
     }
+
+    /** Whether the shape itself is keyed, rather than standing still or following a track. */
+    val isKeyed: Boolean get() = keys.size >= 1
+
+    /**
+     * The shape at a moment of the source.
+     *
+     * Before the first key and after the last, that key's shape, exactly as
+     * every other track here holds outside its ends. The numbers are mixed; the
+     * shape, the mode and the inversion are taken from the key at or before the
+     * moment, because there is no half way between a heart and a star.
+     *
+     * The result carries no keys of its own, so it can be handed straight to
+     * the shader loader without it having to know any of this.
+     */
+    fun at(sourceMs: Long): Mask {
+        if (keys.isEmpty()) return this
+        val first = keys.first()
+        if (keys.size == 1 || sourceMs <= first.atMs) return first.mask.inheriting(this)
+        val last = keys.last()
+        if (sourceMs >= last.atMs) return last.mask.inheriting(this)
+
+        var i = 0
+        while (i < keys.size - 1 && keys[i + 1].atMs <= sourceMs) i++
+        val a = keys[i]
+        val b = keys[i + 1]
+        val span = (b.atMs - a.atMs).coerceAtLeast(1L)
+        val t = a.easing.ease(((sourceMs - a.atMs).toFloat() / span).coerceIn(0f, 1f))
+        return a.mask.mixedWith(b.mask, t).inheriting(this)
+    }
+
+    /** This shape as a key holds one: no keys and no track of its own. */
+    fun keyed(): Mask = if (keys.isEmpty() && track == null) this else copy(keys = emptyList(), track = null)
+
+    /** Whatever a key cannot hold, taken back from the mask the keys belong to. */
+    private fun inheriting(owner: Mask): Mask = copy(keys = emptyList(), track = owner.track)
+
+    /** This shape [t] of the way to [other]; the discrete fields stay this one's. */
+    private fun mixedWith(other: Mask, t: Float): Mask = copy(
+        centerXFraction = mix(centerXFraction, other.centerXFraction, t),
+        centerYFraction = mix(centerYFraction, other.centerYFraction, t),
+        widthFraction = mix(widthFraction, other.widthFraction, t),
+        heightFraction = mix(heightFraction, other.heightFraction, t),
+        // The short way round, so a shape turned from 350° to 10° goes forward
+        // twenty degrees rather than backwards three hundred and forty.
+        rotationDegrees = rotationDegrees + shortestTurn(rotationDegrees, other.rotationDegrees) * t,
+        feather = mix(feather, other.feather, t),
+        cornerRadius = mix(cornerRadius, other.cornerRadius, t),
+        strength = mix(strength, other.strength, t)
+    )
+
+    private fun mix(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+
+    private fun shortestTurn(from: Float, to: Float): Float {
+        var delta = (to - from) % 360f
+        if (delta > 180f) delta -= 360f
+        if (delta < -180f) delta += 360f
+        return delta
+    }
 }
+
+/** One moment of a keyed shape: [atMs] is source time, as the track's samples are. */
+data class MaskKey(
+    val atMs: Long,
+    val mask: Mask,
+    val easing: KeyframeEasing = KeyframeEasing.Smooth
+)
+
+/** Inserts a shape key, or replaces the one already within [toleranceMs] of it. */
+fun List<MaskKey>.upserted(key: MaskKey, toleranceMs: Long = KEY_TOLERANCE_MS): List<MaskKey> =
+    (filterNot { kotlin.math.abs(it.atMs - key.atMs) <= toleranceMs } + key).sortedBy { it.atMs }
+
+/** Whether a shape key sits within [toleranceMs] of [atMs] - what the keyframe button lights up for. */
+fun List<MaskKey>.hasShapeKeyNear(atMs: Long, toleranceMs: Long = KEY_TOLERANCE_MS): Boolean =
+    any { kotlin.math.abs(it.atMs - atMs) <= toleranceMs }
+
+/**
+ * The mask with its shape set at [sourceMs]: the shape itself with no keys, a
+ * key there once it has any. The same rule a level or an opacity follows - once
+ * a clip is keyed, a slider sets the value at the playhead, because writing the
+ * static field would move the slider and not the picture.
+ */
+fun Mask.withShapeAt(sourceMs: Long, shape: Mask, toleranceMs: Long = KEY_TOLERANCE_MS): Mask =
+    if (keys.isEmpty()) shape.copy(keys = emptyList(), track = track)
+    else copy(keys = keys.upserted(MaskKey(sourceMs, shape.keyed(), keys.easingNear(sourceMs)), toleranceMs))
+
+/** A key at [sourceMs] holding the shape the mask already has there - the keyframe button. */
+fun Mask.withShapeKeyAdded(sourceMs: Long, toleranceMs: Long = KEY_TOLERANCE_MS): Mask =
+    copy(keys = keys.upserted(MaskKey(sourceMs, at(sourceMs).keyed(), keys.easingNear(sourceMs)), toleranceMs))
+
+/** The shape key at [sourceMs] taken off; the last one leaves the shape standing where it was. */
+fun Mask.withShapeKeyRemoved(sourceMs: Long, toleranceMs: Long = KEY_TOLERANCE_MS): Mask {
+    if (keys.isEmpty()) return this
+    val kept = keys.filterNot { kotlin.math.abs(it.atMs - sourceMs) <= toleranceMs }
+    if (kept.size == keys.size) return this
+    // The last key gone leaves the shape it held, not the shape from before any
+    // of the keys: taking the keys off should not move the picture.
+    if (kept.isEmpty()) return at(sourceMs).copy(keys = emptyList())
+    return copy(keys = kept)
+}
+
+private fun List<MaskKey>.easingNear(atMs: Long): KeyframeEasing =
+    lastOrNull { it.atMs <= atMs }?.easing ?: firstOrNull()?.easing ?: KeyframeEasing.Smooth

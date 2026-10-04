@@ -100,6 +100,7 @@ run silence    $TIMELINE "$SRC/timeline/SilenceRules.kt" tools/jvm/SilenceChecks
 run beatfit    $TIMELINE tools/jvm/BeatFitChecks.kt
 run beatspread $TIMELINE $SRC/timeline/BeatSpread.kt tools/jvm/BeatSpreadChecks.kt
 run liveliness $TIMELINE "$SRC/timeline/Liveliness.kt" tools/jvm/LivelinessChecks.kt
+run maskkeys   $TIMELINE tools/jvm/MaskKeyChecks.kt
 run shapes     "$SRC/editor/Annotation.kt" tools/jvm/ShapeChecks.kt
 run soundstickers "$SRC/editor/SoundStickers.kt" "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SoundStickerChecks.kt
 run templates  tools/jvm/TemplateChecks.kt

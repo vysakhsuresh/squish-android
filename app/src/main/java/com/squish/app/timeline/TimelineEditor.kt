@@ -2190,6 +2190,13 @@ private fun ClipView(
         // Blue, the colour the filter sheets wear, so the three keyed numbers
         // are told apart on the strip by the tool they belong to.
         clip.lookKeys.forEach { key -> KeyDiamond(clip, key.atMs, SquishColors.Blue, 6.dp, drawnStartMs, drawnEndMs, window, latestClip, onKeyTap) }
+        // A keyed mask in magenta, the Mask sheet's colour. Its keys are in
+        // source time - that is what carries them through a trim - so they go
+        // through the speed curve to land on the frame they belong to; drawn at
+        // the raw number, a key on a 2x shot sat at twice its distance along.
+        clip.mask?.keys?.forEach { key ->
+            KeyDiamond(clip, clip.playedAt(key.atMs), SquishColors.Magenta, 6.dp, drawnStartMs, drawnEndMs, window, latestClip, onKeyTap)
+        }
 
         // Only on an edge that is really there. A handle at the side of a clip
         // that carries on past the screen would trim from a point the user never

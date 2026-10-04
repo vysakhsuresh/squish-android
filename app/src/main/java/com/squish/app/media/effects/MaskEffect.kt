@@ -136,10 +136,26 @@ private class MaskShaderProgram(
     /** Latched on the first frame when presentation times are not already source time. */
     private var originUs = Long.MIN_VALUE
 
+    /** The moment of the source this frame is, which both the track and the keys are written in. */
+    private fun sourceAt(presentationTimeUs: Long): Long {
+        if (originUs == Long.MIN_VALUE) originUs = presentationTimeUs
+        return if (timesAreSourceTime) presentationTimeUs / 1_000L
+        else sourceInMs() + (presentationTimeUs - originUs) / 1_000L
+    }
+
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
         try {
             val now = mask()
-            if (!anyLoaded || now !== loaded) {
+            // A keyed shape is a different shape every frame, so the identity
+            // check cannot stand in for it: the uniforms are reloaded from the
+            // shape at this moment, which is what makes a circle grow in the
+            // file as it does on the preview.
+            val keyedNow = if (now?.isKeyed == true) now.at(sourceAt(presentationTimeUs)) else null
+            if (keyedNow != null) {
+                load(keyedNow)
+                loaded = now
+                anyLoaded = true
+            } else if (!anyLoaded || now !== loaded) {
                 load(now)
                 loaded = now
                 anyLoaded = true
@@ -151,10 +167,7 @@ private class MaskShaderProgram(
             // Re-aimed every frame when the shape is following something. A static
             // mask loads its centre once and never touches it again.
             if (now?.track != null) {
-                if (originUs == Long.MIN_VALUE) originUs = presentationTimeUs
-                val sourceMs = if (timesAreSourceTime) presentationTimeUs / 1_000L
-                else sourceInMs() + (presentationTimeUs - originUs) / 1_000L
-                val (x, y) = now.centerAt(sourceMs)
+                val (x, y) = now.centerAt(sourceAt(presentationTimeUs))
                 glProgram.setFloatsUniform("uCenter", floatArrayOf(x, y))
             }
 

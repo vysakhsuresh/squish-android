@@ -870,7 +870,10 @@ private fun PictureToolLayer(tool: PictureTool, clip: Clip, pictureAspect: Float
             )
         }
         PictureTool.Kind.Mask -> {
-            val mask = clip.mask ?: return
+            // The shape at the frame showing, when it is keyed: the outline has
+            // to be the shape the picture is being cut to, or a finger on it
+            // would drag a shape nobody can see.
+            val mask = clip.mask?.at(sourceMs) ?: return
             // A tracked mask is drawn where the track has it at the frame showing.
             // Turned and mirrored with the picture: the mask is cut from the
             // frame the camera saw, before the clip's turn, in the file and in

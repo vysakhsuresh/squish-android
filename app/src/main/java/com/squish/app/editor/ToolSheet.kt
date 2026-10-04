@@ -382,7 +382,7 @@ fun EditorToolSheet(
                 clip != null -> OpacityPanel(state, clip, viewModel)
             }
             Tool.Layer -> clip?.let { LayerPanel(state, it, viewModel) }
-            Tool.Mask -> clip?.let { MaskPanel(it, viewModel) }
+            Tool.Mask -> clip?.let { MaskPanel(state, it, viewModel) }
             Tool.Cutout -> clip?.let {
                 if (chip == 0) BackgroundPanel(state, viewModel)
                 else ChromaKeyPanel(state = state, clip = it, viewModel = viewModel, onEyedropper = onEyedropper)

@@ -470,6 +470,18 @@ data class Clip(
         return sourceInMs + speedRamp.sourceOffsetAt(local, sourceSpanMs)
     }
 
+    /**
+     * A moment of the source as a moment of the clip's own played time -
+     * [sourceAt]'s inverse, through the speed curve.
+     *
+     * The mask's keys and its track are written in source time, which is what
+     * carries them through a trim; the strip measures everything in played
+     * time. On a retimed clip the two are a long way apart, so a diamond drawn
+     * at the raw number would sit nowhere near the frame it belongs to.
+     */
+    fun playedAt(sourceMs: Long): Long =
+        speedRamp.outputOffsetAt((sourceMs - sourceInMs).coerceIn(0L, sourceSpanMs), sourceSpanMs)
+
     /** How fast the clip is playing at a moment of the timeline. */
     fun speedAt(timelineMs: Long): Float {
         val local = (timelineMs - timelineStartMs).coerceAtLeast(0L)
@@ -719,8 +731,16 @@ fun List<Keyframe>.mirroredAt(pivotMs: Long): List<Keyframe> =
 
 /** A mask following its track on the other file's clock (see [mirroredAt]); one with no track is unchanged. */
 fun Mask.withTrackMirroredAt(pivotMs: Long): Mask {
-    val path = track ?: return this
-    return copy(track = MotionTrack(path.samples.map { it.copy(atMs = pivotMs - it.atMs) }.sortedBy { it.atMs }))
+    if (track == null && keys.isEmpty()) return this
+    // The hand-drawn keys turn round with the footage for the same reason the
+    // measured track does: both are written in the file's own clock, and the
+    // render has reversed that clock.
+    val mirroredKeys = keys.map { it.copy(atMs = pivotMs - it.atMs) }.sortedBy { it.atMs }
+    val path = track ?: return copy(keys = mirroredKeys)
+    return copy(
+        track = MotionTrack(path.samples.map { it.copy(atMs = pivotMs - it.atMs) }.sortedBy { it.atMs }),
+        keys = mirroredKeys
+    )
 }
 
 /**
@@ -729,13 +749,17 @@ fun Mask.withTrackMirroredAt(pivotMs: Long): Mask {
  * frame for the track to be on.
  */
 fun Mask.settledAt(sourceMs: Long): Mask {
-    if (track == null) return this
+    if (track == null && keys.isEmpty()) return this
+    // The keyed shape as it stands at that frame, then the track's centre on
+    // top of it: a still has one frame, so neither has anywhere left to go.
+    val shape = at(sourceMs)
+    if (track == null) return shape
     val (x, y) = centerAt(sourceMs)
-    return copy(centerXFraction = x, centerYFraction = y, track = null)
+    return shape.copy(centerXFraction = x, centerYFraction = y, track = null)
 }
 
-/** The mask's shape alone, off whatever it was following. */
-fun Mask.withoutTrack(): Mask = if (track == null) this else copy(track = null)
+/** The mask's shape alone, off whatever it was following and off its keys. */
+fun Mask.withoutTrack(): Mask = if (track == null && keys.isEmpty()) this else copy(track = null, keys = emptyList())
 
 /**
  * A clip's settings, apart from its footage: what Copy attributes carries to

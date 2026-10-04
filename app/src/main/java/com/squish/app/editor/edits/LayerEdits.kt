@@ -12,6 +12,10 @@ import com.squish.app.timeline.withGridTile
 import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Mask
+import com.squish.app.timeline.withShapeAt
+import com.squish.app.timeline.withShapeKeyAdded
+import com.squish.app.timeline.withShapeKeyRemoved
+import com.squish.app.timeline.hasShapeKeyNear
 import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.ClipKind
@@ -385,7 +389,13 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
         record("Mask", gesture = if (sliders.isEmpty()) null else "Mask $sliders $clipId") {
             mutateTimeline { timeline ->
                 val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
-                val current = clip.mask ?: Mask()
+                val held = clip.mask ?: Mask()
+                // On a keyed shape the sliders read and write the shape *at the
+                // playhead*, not the one static shape - writing that would move
+                // the slider and leave the picture alone, which is the rule a
+                // keyed level and a keyed opacity already follow.
+                val sourceMs = clip.sourceAt(timeline.playheadMs)
+                val current = held.at(sourceMs)
                 val next = current.copy(
                     shape = shape ?: current.shape,
                     centerXFraction = (centerX ?: current.centerXFraction).coerceIn(-1.5f, 1.5f),
@@ -399,8 +409,37 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                     mode = mode ?: current.mode,
                     strength = (strength ?: current.strength).coerceIn(0f, 1f)
                 )
-                timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(mask = next) else it })
+                val written = held.withShapeAt(sourceMs, next)
+                timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(mask = written) else it })
             }
+        }
+    }
+
+    /**
+     * The keyframe button on the Mask sheet: a key at the playhead holding the
+     * shape the mask has there, or - with one already there - that key taken
+     * off again. The first key pins the shape; a second one elsewhere is what
+     * makes it move.
+     */
+    fun toggleMaskKey(clipId: String) = record("Mask keyframe") {
+        mutateTimeline { timeline ->
+            val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+            val mask = clip.mask ?: return@mutateTimeline timeline
+            val sourceMs = clip.sourceAt(timeline.playheadMs)
+            val next = if (mask.keys.hasShapeKeyNear(sourceMs)) mask.withShapeKeyRemoved(sourceMs)
+            else mask.withShapeKeyAdded(sourceMs)
+            timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(mask = next) else it })
+        }
+    }
+
+    /** Every shape key off, the shape left standing where the playhead has it. */
+    fun clearMaskKeys(clipId: String) = record("Clear mask keyframes") {
+        mutateTimeline { timeline ->
+            val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+            val mask = clip.mask ?: return@mutateTimeline timeline
+            if (mask.keys.isEmpty()) return@mutateTimeline timeline
+            val settled = mask.at(clip.sourceAt(timeline.playheadMs)).copy(keys = emptyList())
+            timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(mask = settled) else it })
         }
     }
 }
