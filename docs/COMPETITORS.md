@@ -161,15 +161,24 @@ um and uh" does every run in a pass. `withSpanRemoved` and
 takes its whole line, rather than pretending to a precision the data lacks.
 
 **G4. Audio stickers** â€” InShot shipped these recently; cheap and fun.
-- A sticker carries an optional sound that lands as a sound clip at its start.
-- Reuse the sticker picker and the sound-clip landing from Read aloud.
-- Risk: low.
+**BUILT, 4 October**, unseen on a device. Sixteen pairs on the Stickers sheet -
+a ta-da with the party popper, a boom with the explosion, a shutter with the
+camera - landed at the playhead as one undo step, the emoji on the picture and
+the effect on a sound row starting on the sticker's own first frame. The effect
+is synthesised the first time it is asked for, as a Squish original is, and its
+length is the synth's own, so nothing is probed - which is what lets the two
+land in one step. `SoundStickerChecks` runs the list against the synth's own
+effects, which is the one way a list like this rots.
 
 **G5. Filters keyframed** â€” **BUILT, 3 October**, unseen. `ValueTrack.Look` is
 the third keyed number beside opacity and level, with the same button, the same
 playhead rule, diamonds on the strip and the keys in the draft. Only the
 strength: thirteen keyable sliders would be a second timeline nobody asked for.
-Still open: **a mask's shape keyed** rather than only tracked.
+Its other half, **a mask's shape keyed** rather than only tracked, is **BUILT,
+4 October**, unseen: a key holds a whole shape, in source time as the track is,
+so a trim carries it; the numbers mix between keys, the shape, the mode and the
+inversion do not, and a turn goes the short way round. The strip draws the keys
+in magenta through the speed curve. `MaskKeyChecks`.
 
 **G6. Curves (tone curve)** â€” **BUILT, 3 October**, unseen on a device.
 Master + per-channel, monotone rather than Catmull-Rom (a plain spline
@@ -184,10 +193,16 @@ same grade pass and are the other half of what a colourist expects.
 **G7. A "quick fix" row on import** â€” CapCut's AutoCut and Filmora's AI Reel
 Maker both answer "I have 30 clips and no time". We have Fit shots to the beat
 and auto-reframe; we do not have the one button that puts them together.
-- One action: trim each clip to its liveliest N seconds (we already measure
-  loudness and motion), lay them to the beat of a chosen track, apply a look.
-- Entirely local, which is the pitch: "no upload" against CapCut's AutoCut.
-- Risk: medium, but every part exists.
+**DONE, 4 October**, unseen. "Fit the shots to the song" (3 October) lays them
+to the beat; **"Use the liveliest bit"** is the piece that was missing. Each
+shot keeps the length it has and slides its window to where most is happening:
+frame-to-frame change over forty sampled frames, and loudness, each scaled by
+its own peak before they are folded - summed, a silent clip of fast movement
+scored below a still one of someone talking. The ends of a file are discounted
+rather than ruled out, because a hand settling reads as *movement* and would
+otherwise win outright. Entirely local, which is the pitch against CapCut's
+AutoCut. `LivelinessChecks` executes the choosing; the decoding half hands over
+numbers.
 
 ### 2.2 LATER - worth it, not next
 
@@ -209,11 +224,20 @@ users ask.
 
 **G11. More templates, local** â€” 14 against CapCut's thousands. We will never win
 on count, and should not try, but 40 good ones made from our own looks and
-animations is a weekend and raises the floor for a new user.
+animations is a weekend and raises the floor for a new user. **BUILT, 4
+October**, unseen: 42, on five shelves - Social, Film, Life, Retro, Work -
+because 42 in one list is a scroll nobody finishes. `TemplateChecks`.
 
 **G12. Shape and arrow annotations** â€” all three have basic shapes. We have text
 and stickers; a line, arrow, rectangle and circle with the same box controls is
-small and often asked for in product video.
+small and often asked for in product video. **BUILT, 4 October**, unseen: eight
+shapes, outlined in red by default, with the Shapes card above the stickers and
+the sticker's own box on the picture. Its one trap - drawing a shape for the
+preview and again for the renderer - is avoided twice over: the shape is points
+in a box (`editor/Annotation.kt`, `ShapeChecks`), and the preview already paints
+its captions with the *export's* renderer, so one description is one drawing in
+both. The picker's tiles are drawn from the same points, so a tile is the shape
+that lands.
 
 **G13. Safe-area guides** â€” **BUILT, 3 October**, unseen. Chips on the Frame
 sheet dim where TikTok, Reels or Shorts put their own buttons and caption, with
@@ -283,20 +307,39 @@ because the preview and the file can both run the same shader on the shot under
 it. A *video* overlay still cannot - its layers only meet inside Media3's
 compositor. See the item.
 
+**Done on 4 October (dawn to morning), the whole of what was left on this
+list**, built on the desktop and executed on the JVM, none of it seen on a
+phone yet:
+
+- **G12 shape and arrow annotations.** Eight shapes - rectangle, ellipse,
+  triangle, diamond, star, line, arrow, double arrow - outlined in red by
+  default, solid if you want. The trap this item was flagged with, drawing a
+  shape twice, is avoided twice over: the shape is points in a box
+  (`editor/Annotation.kt`, `ShapeChecks`), and the preview already paints its
+  captions with the *export's* renderer, so one description is one drawing in
+  both. A shape is a caption with no words, carried as a sticker, so everything
+  that already leaves stickers out of words leaves shapes out too.
+- **G11 more templates**: 42 against 14, on five shelves (Social, Film, Life,
+  Retro, Work), all made of looks, title presets and effects that already
+  exist. `TemplateChecks` reads the table as text and checks every look id,
+  preset and effect against the files that declare them.
+- **G5's other half: a mask's shape keyed.** A key holds a whole shape, in
+  source time as the track is, mixed between keys and held outside them; the
+  shape, the mode and the inversion do not mix. `MaskKeyChecks`.
+- **The rest of G7**: "Use the liveliest bit" slides each shot's window to
+  where most is happening - frame-to-frame change and loudness, each scaled by
+  its own peak, the ends discounted because a hand settling reads as movement.
+  `LivelinessChecks`.
+- **G4 audio stickers**: sixteen emoji-and-noise pairs landed in one step.
+  `SoundStickerChecks`.
+
 What is left, in the order it is worth doing:
 
-1. **G12 shape and arrow annotations** - small, and asked for in product video.
-   Its one trap: shapes have to be drawn for the preview and for the renderer,
-   which is the duplication the curve and the blend both avoided by sharing one
-   shader - worth thinking about before starting.
-2. **G11 more templates** - a weekend, and it raises the floor for a new user.
-3. **G5's other half: a mask's shape keyed.**
-4. **The rest of G7**: keeping the liveliest part of each shot rather than its
-   head, which needs per-clip loudness or motion and is the one piece of
-   AutoCut still missing.
-5. **G4 audio stickers** - small, and the least of these for anyone making films.
-6. Then **G8 optical flow** and **G9 skin smoothing**, the two expensive ones.
-7. **G1 for video overlays**, if the week of compositor work is judged worth it.
+1. **Drive all five on a phone.** Nothing above has been seen.
+2. Then **G8 optical flow** and **G9 skin smoothing**, the two expensive ones.
+3. **G1 for video overlays**, if the week of compositor work is judged worth it.
+4. **G6's other half**: lift/gamma/gain wheels, which fold into the same grade
+   pass and are the rest of what a colourist expects.
 
 The five built on 3-4 October were all reasoned and executed, and **none of them
 has been seen on a phone**. `CLAUDE.md` lists what the device has to answer for
