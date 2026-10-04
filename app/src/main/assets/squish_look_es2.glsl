@@ -60,6 +60,9 @@ uniform float uVignette;
 uniform float uGrain;
 uniform float uSharpen;
 
+// Smooth skin: a surface blur held to what looks like skin (SkinTone).
+uniform float uSmooth;
+
 // Seconds, so grain moves between frames. Still grain reads as a dirty lens.
 uniform float uTime;
 uniform float uAspect;
@@ -139,6 +142,47 @@ vec3 ringBlur(vec2 uv, float r) {
   return sum / 9.0;
 }
 
+/**
+ * How much of this pixel is skin, 0 to 1 - see SkinTone, which holds these
+ * numbers on the Kotlin side and is checked against this file.
+ *
+ * Chrominance, not brightness: the hue and the colourfulness of skin barely
+ * move from the palest face to the darkest, while the brightness moves all the
+ * way. Finding it this way is what makes one slider work for everyone.
+ */
+float skinWeight(vec3 c) {
+  float y = dot(c, vec3(0.299, 0.587, 0.114));
+  float cb = (c.b - y) * 0.564 + 0.5;
+  float cr = (c.r - y) * 0.713 + 0.5;
+  float inCb = smoothstep(0.26, 0.33, cb) * (1.0 - smoothstep(0.47, 0.54, cb));
+  float inCr = smoothstep(0.49, 0.54, cr) * (1.0 - smoothstep(0.65, 0.70, cr));
+  float lit = smoothstep(0.08, 0.18, y) * (1.0 - smoothstep(0.92, 1.0, y));
+  return inCb * inCr * lit;
+}
+
+/**
+ * A surface blur: twelve taps on two rings, each weighted down by how different
+ * it is from the middle.
+ *
+ * That weighting is the whole feature. A plain blur takes the eyes, the lashes
+ * and the edge of the face with the pores; weighting by colour distance leaves
+ * every edge where it was and softens only what was already nearly flat.
+ */
+vec3 surfaceBlur(vec2 uv, float r, vec3 centre) {
+  vec3 sum = centre;
+  float weight = 1.0;
+  for (int i = 0; i < 12; i++) {
+    float a = float(i) * 0.5235987;
+    float d = (i < 6) ? r : r * 0.55;
+    vec2 o = vec2(cos(a), sin(a)) * d;
+    vec3 s = texture2D(uTexSampler, uv + o).rgb;
+    float w = 1.0 - smoothstep(0.0, 0.22, length(s - centre));
+    sum += s * w;
+    weight += w;
+  }
+  return sum / weight;
+}
+
 vec3 rgb2hsv(vec3 c) {
   vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
   vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
@@ -180,6 +224,16 @@ void main() {
       texture2D(uTexSampler, vTexSamplingCoord + vec2(0.0, uTexel.y)).rgb +
       texture2D(uTexSampler, vTexSamplingCoord - vec2(0.0, uTexel.y)).rgb;
     c += (c - around * 0.25) * uSharpen * 1.5;
+  }
+
+  // Smooth skin, after the sharpening so that turning both up softens the face
+  // and leaves everything else crisp, which is what someone who turned both up
+  // meant. Held to the skin by its colour alone - no model, no face to find,
+  // nothing uploaded.
+  if (uSmooth > 0.001) {
+    float radius = max(uTexel.x, uTexel.y) * (2.0 + 4.0 * uSmooth);
+    vec3 soft = surfaceBlur(vTexSamplingCoord, radius, c);
+    c = mix(c, soft, uSmooth * skinWeight(c));
   }
 
   // Bloom is taken from the untouched picture. Doing it after the grade would

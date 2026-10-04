@@ -122,26 +122,28 @@ fun main() {
         }
     }
 
-    // The start of the edit sits at the strip's left edge (plus the lead), never
-    // half a screen in; past half a screen the playhead is in the middle again.
-    run {
-        val lead = 14f * 2.75f
-        val atStart = TimelineWindow.startClamped(0.0, 42f, 2.75f, 1080, lead)
-        check("0:00 is at the left edge at the start (${atStart.xPx(0)} px)", abs(atStart.xPx(0) - lead) < 1f)
-        val early = TimelineWindow.startClamped(1_000.0, 42f, 2.75f, 1080, lead)
-        check("one second in, the edit still starts at the left edge", abs(early.xPx(0) - lead) < 1f)
-        check("one second in, the playhead is left of the middle", early.xPx(1_000) < 540f)
-        val later = TimelineWindow.startClamped(60_000.0, 42f, 2.75f, 1080, lead)
-        check("a minute in, the playhead is in the middle", abs(later.xPx(60_000) - 540f) < 1f)
-        // Continuous: the playhead's line never jumps as time passes the switch.
-        var last = atStart.xPx(0)
-        var t = 0.0
-        while (t < 30_000.0) {
-            val w = TimelineWindow.startClamped(t, 42f, 2.75f, 1080, lead)
-            val x = w.xPx(t.toLong())
-            check("the playhead line moves smoothly at $t ms ($last -> $x)", x >= last - 1f && x - last < 5f)
-            last = x
-            t += 10.0
+    // The playhead line never moves: it is in the middle at every moment of the
+    // edit, at every zoom and on every screen.
+    //
+    // This is the check the inversion bug needed. The lead used to be 14 dp, so
+    // the line walked right from the strip's left edge until it reached the
+    // middle - and over that whole stretch, which is *all* of an edit short
+    // enough to fit the screen, dragging the strip right moved the line left.
+    // One gesture, two opposite meanings. A line that cannot move cannot move
+    // the wrong way.
+    for (pps in floatArrayOf(2f, 42f, 400f, 4_000f)) {
+        for (viewport in intArrayOf(1080, 1079, 2400)) {
+            val lead = viewport / 2f
+            var t = 0.0
+            while (t < 30_000.0) {
+                val w = TimelineWindow.startClamped(t, pps, 2.75f, viewport, lead)
+                val x = w.xPx(t.toLong())
+                check(
+                    "the playhead is in the middle at $t ms (pps $pps, viewport $viewport): $x",
+                    abs(x - viewport / 2f) < 1f
+                )
+                t += if (t < 2_000.0) 10.0 else 500.0
+            }
         }
     }
 

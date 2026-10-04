@@ -155,6 +155,8 @@ data class Adjust(
     val hue: Float = 0f,
     val fade: Float = 0f,
     val grain: Float = 0f,
+    /** Smooth skin: a surface blur held to what looks like skin (see [SkinTone]). */
+    val smooth: Float = 0f,
     /** One entry per [HueBand], in its order. */
     val hsl: List<HslBand> = NO_HSL,
     /** The Curves tool: a master curve and one per channel. */
@@ -170,6 +172,7 @@ data class Adjust(
         get() = abs(brightness) < EPS && abs(contrast) < EPS && abs(saturation) < EPS && abs(exposure) < EPS &&
             abs(temperature) < EPS && abs(tint) < EPS && abs(highlights) < EPS && abs(shadows) < EPS &&
             abs(sharpen) < EPS && abs(vignette) < EPS && abs(hue) < EPS && abs(fade) < EPS && abs(grain) < EPS &&
+            abs(smooth) < EPS &&
             hsl.all { it.isIdentity } && curve.isIdentity && wheels.isIdentity &&
             (lutFile == null || lutStrength < EPS)
 
@@ -225,7 +228,10 @@ enum class AdjustField(val label: String, val min: Float, val max: Float) {
     Vignette("Vignette", 0f, 1f),
     Hue("Hue", -1f, 1f),
     Fade("Fade", 0f, 1f),
-    Grain("Grain", 0f, 1f);
+    Grain("Grain", 0f, 1f),
+    // Last, because it is the one that is not a tonal move: a surface blur
+    // held to what looks like skin.
+    Smooth("Smooth skin", 0f, 1f);
 
     fun of(adjust: Adjust): Float = when (this) {
         Brightness -> adjust.brightness
@@ -241,6 +247,7 @@ enum class AdjustField(val label: String, val min: Float, val max: Float) {
         Hue -> adjust.hue
         Fade -> adjust.fade
         Grain -> adjust.grain
+        Smooth -> adjust.smooth
     }
 
     fun set(adjust: Adjust, value: Float): Adjust {
@@ -259,6 +266,7 @@ enum class AdjustField(val label: String, val min: Float, val max: Float) {
             Hue -> adjust.copy(hue = v)
             Fade -> adjust.copy(fade = v)
             Grain -> adjust.copy(grain = v)
+            Smooth -> adjust.copy(smooth = v)
         }
     }
 }
@@ -291,6 +299,8 @@ data class Grade(
     val highlights: Float = 0f,
     val shadows: Float = 0f,
     val sharpen: Float = 0f,
+    /** Smooth skin: a surface blur held to the skin by its colour (see [SkinTone]). */
+    val smooth: Float = 0f,
     /** Degrees round the wheel. */
     val hueDegrees: Float = 0f,
     val hsl: List<HslBand> = Adjust.NO_HSL,
@@ -331,7 +341,8 @@ data class Grade(
      */
     val needsShader: Boolean
         get() = abs(fade) > 1e-4f || abs(split) > 1e-4f || abs(bloom) > 1e-4f ||
-            abs(vignette) > 1e-4f || abs(grain) > 1e-4f || abs(sharpen) > 1e-4f
+            abs(vignette) > 1e-4f || abs(grain) > 1e-4f || abs(sharpen) > 1e-4f ||
+            abs(smooth) > 1e-4f
 
     val isIdentity: Boolean
         get() = !hasChannelGain && !hasContrast && !hasSaturation && !needsShader &&
@@ -820,6 +831,7 @@ object Looks {
             highlights = adjust.highlights,
             shadows = adjust.shadows,
             sharpen = adjust.sharpen,
+            smooth = adjust.smooth,
             hueDegrees = adjust.hue * Adjust.HUE_TURN_DEGREES,
             hsl = adjust.hsl,
             // The curve and the wheels are the user's own and a look never

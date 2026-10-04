@@ -116,6 +116,7 @@ private class LookShaderProgram(
         glProgram.setFloatsUniform("uVignette", floatArrayOf(grade.vignette))
         glProgram.setFloatsUniform("uGrain", floatArrayOf(grade.grain))
         glProgram.setFloatsUniform("uSharpen", floatArrayOf(grade.sharpen))
+        glProgram.setFloatsUniform("uSmooth", floatArrayOf(grade.smooth))
         glProgram.setFloatsUniform("uCurveOn", floatArrayOf(if (grade.hasCurve) 1f else 0f))
         uploadCurve(grade.curveLut)
         glProgram.setFloatsUniform("uLutOn", floatArrayOf(if (grade.hasLut) 1f else 0f))

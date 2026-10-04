@@ -124,9 +124,6 @@ private val ROWS_MAX = LANE_HEIGHT * 4
 
 /** How far from an edge counts as an edge, for snapping: a third of a fingertip. */
 private val SNAP_DP = 10.dp
-/** Room left of 0:00 at the start of the edit, so the first clip's head handle is whole. */
-private val START_LEAD = 14.dp
-
 /** How close to the strip's side a carried clip starts scrolling it. */
 private val EDGE_ZONE = 48.dp
 
@@ -347,21 +344,26 @@ fun TimelineEditor(
      * costs to lay out does not depend on how long the video is, and a three-hour
      * clip zooms to the frame exactly like a three-second one.
      */
-    // Centred on the playhead, but never scrolled to before the start: near
-    // 0:00 the edit begins at the strip's left edge and the playhead line walks
-    // right from there until it reaches the middle, where the strip takes over
-    // and scrolls under it. Always centred, the first clip began half a screen
-    // in, the left half empty, which read as the timeline starting part way
-    // along (reported three times; TimelineWindow.startClamped).
+    // Centred on the playhead, always - the strip scrolls under a line that
+    // never moves, as it does in every phone editor.
+    //
+    // It used to be clamped so that the edit began at the strip's left edge
+    // near 0:00 and the line walked right from there to the middle, because an
+    // empty left half read as the timeline starting part way along. The price
+    // of that was far worse and took a user to find: while the line was
+    // walking - which is the whole of a short edit, since a timeline that fits
+    // the screen never scrolls at all - dragging the strip right moved the line
+    // *left*. The gesture meant one thing in one part of the edit and the
+    // opposite in another. A fixed line cannot be dragged the wrong way,
+    // because it does not move; the strip follows the finger everywhere.
     val window = TimelineWindow.startClamped(
         atMs = centre,
         pixelsPerSecond = state.pixelsPerSecond.coerceIn(MIN_PPS, MAX_PPS),
         density = density.density,
         viewportPx = viewportPx,
-        leadPx = with(density) { START_LEAD.toPx() }
+        leadPx = viewportPx / 2f
     )
-    // Where the playhead line is drawn: the middle once the strip scrolls, left
-    // of it near the start.
+    // Where the playhead line is drawn: the middle, at every moment of the edit.
     val playheadPx = window.pxForMs(centre - window.scrollMs)
 
     /**
