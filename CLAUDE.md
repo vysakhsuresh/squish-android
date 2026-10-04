@@ -149,41 +149,36 @@ should work through it and then delete what holds up.
   seek no longer opens the gate (it relies on ExoPlayer masking the state to
   BUFFERING on seek); and that a playhead drag settles exactly the moment the
   finger lifts.
-- **Editing by transcript, LUT import, safe-area guides and keyed filter
-  strength (3-4 October), all of it.** Built on the desktop with no phone
-  attached; the arithmetic of each is executed on the JVM
-  (`tools/jvm/TranscriptChecks.kt`, `SpanRemovalChecks.kt`, `LutChecks.kt`,
-  `SafeAreaChecks.kt`, `LookKeysChecks.kt`). What only a device answers:
-  - **Transcript.** Auto-caption a talking head, open Text → "Edit by
-    transcript", tap two words and Delete: the picture, the sound and the
-    captions all lose that stretch and the rest closes up, as one undo step.
-    "Take out every um and uh" does the same over every run at once. A line
-    typed by hand shows underlined and takes its whole line.
-  - **LUT.** Import a .cube (any grading tool writes one): the picture changes,
-    Strength mixes it back, and **a photo overlay graded with the same LUT must
-    match the video beside it** - the CPU copy and the atlas lookup meeting.
-    Check a 33-cube as well as a 17, since the atlas row length changes with it,
-    and that a draft reopened still has its LUT by name.
-  - **Safe areas.** The Frame sheet's new chips dim the covered bands over the
-    picture and nothing reaches the file.
-  - **Keyed filter strength.** The one with a real risk: the keys are read off
-    the frame's presentation time, which in the preview counts from the clip's
-    start. **If the export's item clock does not, a faded look will be right on
-    screen and wrong in the file.** Fade a look in across one shot and compare
-    the export against the preview before trusting it.
-- **The Curves tool (3 October), all of it.** Built on the desktop with no phone
-  attached. The arithmetic is executed on the JVM (`tools/jvm/ToneCurveChecks.kt`
-  and the curve part of `GradeChecks.kt`): monotone, in range, the table is the
-  curve, and it runs after the tonal sliders and before saturation in both the
-  CPU copy and the shader. What only a device answers: that the 256x1 RGB
-  texture `LookEffect` uploads is read the same way by this phone's ES2 driver
-  as `ToneCurve.sample` reads it on the CPU - so **a graded photo overlay and
-  the video beside it must agree on the same curve**, which is the one screen
-  where the two paths show the same picture; that an S-curve on screen is the
-  S-curve in the exported file; that dragging a point is smooth (one 768-byte
-  upload a frame) and does not stall the preview; that a point dragged onto its
-  neighbour comes off and the two ends cannot be dragged sideways; and that a
-  draft written at version 14 reads its curve back.
+- **Editing by transcript (3 October).** Built on the desktop; its two pure
+  pieces are executed (`tools/jvm/TranscriptChecks.kt`, `SpanRemovalChecks.kt`)
+  and **the panel has not been driven** - the test footage on 4 October had no
+  speech in it, and a line read aloud by the phone's own voice could not be
+  captioned back. What a device still has to answer: auto-caption a talking
+  head, open Text → "Edit by transcript", tap two words and Delete, and the
+  picture, the sound and the captions all lose that stretch as one undo step;
+  "Take out every um and uh" does every run at once; a line typed by hand shows
+  underlined and takes its whole line.
+- **Fit the shots to the song (4 October).** Built on the desktop; the joins are
+  executed (`tools/jvm/BeatSpreadChecks.kt`). Not seen: twenty clips and a
+  thirty-second song, every join on a dot and the edit ending with the music.
+- **Curves, LUT import, blend modes, keyed filter strength and the safe-area
+  guides were all driven on the phone on 4 October** and work in the preview and
+  in the file - see `docs/DEVICE_FINDINGS.md`, which also records the three
+  faults that round found. Two things from them are still open: a LUT bigger
+  than the 8-cube tested (the atlas row length changes with the cube's size, so
+  a 33 is worth one run), and whether a photo overlay carrying a LUT matches the
+  video beside it, which is the one screen where the CPU copy and the shader
+  meet.
+- **The Curves tool (3 October).** The arithmetic is executed on the JVM
+  (`tools/jvm/ToneCurveChecks.kt` and the curve part of `GradeChecks.kt`), and a
+  lifted midpoint was seen to brighten the picture on the phone on 4 October, so
+  the table, its texture and the shader's lookup are right on this driver. Still
+  unseen: that an S-curve on screen is the S-curve in the **exported file**;
+  that **a graded photo overlay and the video beside it agree on the same
+  curve**, which is the one screen where the CPU copy and the shader meet; that
+  dragging a point is smooth and does not stall the preview; and that a point
+  dragged onto its neighbour comes off while the two ends cannot be dragged
+  sideways. A draft written at version 14 reads its curve back - seen.
 - **A hand-drawn crop in the preview.** It reached the export before it reached
   the preview; now it does both, unseen.
 - **Batch B1 of the roadmap (data safety and exit paths), all of it.** Built and

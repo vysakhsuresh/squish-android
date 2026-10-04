@@ -105,12 +105,17 @@ money or a promise).
 
 ### 2.1 BUILD NEXT - cheap, visible, and they all have it
 
-**G1. Blend modes on overlays** â€” **BLOCKED, 3 October.** CapCut, InShot and
-Filmora all have them and we have opacity only, so this is still the biggest
-hole: light leaks, dust, bokeh, smoke and film-burn overlays are all sold on the
-assumption of Screen or Add.
+**G1. Blend modes** - **BUILT FOR STILLS, 4 October**, seen on the phone in the
+preview and in the file. Ten modes (Multiply, Screen, Overlay, Darken, Lighten,
+Hard light, Soft light, Difference, Add) on a photo overlay or a sticker - which
+is what light leaks, dust, bokeh, grain and film burns actually are. The preview
+runs the *file's own shader* on the shot under the still rather than a Compose
+BlendMode: Compose cannot blend against a TextureView, and two implementations
+of a blend are two things to disagree. That is also why a blended still covers
+the whole frame - inside a shot's own surface the output frame is not yet known.
 
-It cannot be done honestly on Media3 1.11.1. Read out of the bytecode:
+**A video overlay still cannot be blended**, and that half stays blocked on
+Media3 1.11.1. Read out of the bytecode:
 `androidx.media3.common.OverlaySettings` offers alpha, the two frame anchors,
 scale, rotation and an HDR luminance multiplier - and no blend mode;
 `VideoCompositorSettings` offers an output size and those settings per input;
@@ -266,20 +271,32 @@ matters more than the item.
 
 ## 3. If you want an order
 
-Done on 3-4 October, all of it unseen on a device: **G6 curves**, **G2 LUT
-import**, **G3 edit by transcript**, **G5 filter keyframes**, **G13 safe-area
-guides**. **G1 blend modes** is blocked by Media3's compositor - see the item.
+Done on 3-4 October: **G6 curves**, **G2 LUT import**, **G3 edit by
+transcript**, **G5 filter keyframes**, **G13 safe-area guides**, **G1 blend
+modes on stills**, and the half of **G7** that matters most - "Fit the shots to
+the song". All but the transcript and the song fit were driven on the phone on
+4 October and work in the preview and in the file; see `docs/DEVICE_FINDINGS.md`
+for the three faults that round turned up.
+
+**G1 blend modes** turned out to be half possible: a *still* can be blended,
+because the preview and the file can both run the same shader on the shot under
+it. A *video* overlay still cannot - its layers only meet inside Media3's
+compositor. See the item.
 
 What is left, in the order it is worth doing:
 
-1. **G7 quick assemble** - the answer to AutoCut, entirely local, and every
-   piece of it already exists (beat fit, auto-reframe, loudness).
-2. **G12 shape and arrow annotations** - small, and asked for in product video.
-3. **G4 audio stickers** - small.
-4. **G11 more templates** - a weekend, and it raises the floor for a new user.
-5. **G5's other half: a mask's shape keyed.**
+1. **G12 shape and arrow annotations** - small, and asked for in product video.
+   Its one trap: shapes have to be drawn for the preview and for the renderer,
+   which is the duplication the curve and the blend both avoided by sharing one
+   shader - worth thinking about before starting.
+2. **G11 more templates** - a weekend, and it raises the floor for a new user.
+3. **G5's other half: a mask's shape keyed.**
+4. **The rest of G7**: keeping the liveliest part of each shot rather than its
+   head, which needs per-clip loudness or motion and is the one piece of
+   AutoCut still missing.
+5. **G4 audio stickers** - small, and the least of these for anyone making films.
 6. Then **G8 optical flow** and **G9 skin smoothing**, the two expensive ones.
-7. **G1 blend modes**, if the week of compositor work is judged worth it.
+7. **G1 for video overlays**, if the week of compositor work is judged worth it.
 
 The five built on 3-4 October were all reasoned and executed, and **none of them
 has been seen on a phone**. `CLAUDE.md` lists what the device has to answer for
