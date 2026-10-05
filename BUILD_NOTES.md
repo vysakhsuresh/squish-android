@@ -280,6 +280,13 @@ list in order, which is what keeps the drawing order. The limit counts
 *samplers*, not moments, so two captions that never share a frame still take two
 of them — there is no cleverer packing than `ceil(n / 15)`.
 
+That the passes run in order is read, not assumed:
+`DefaultVideoFrameProcessor.createShaderPrograms` walks `effects` once and
+appends a shader program per `GlEffect` in that order, and an `OverlayEffect` is
+a plain `GlEffect` — only consecutive `GlMatrixTransformation`s and `RgbMatrix`s
+are collected and folded into one `DefaultShaderProgram`, which is the same fact
+the pass-count note above leans on.
+
 And **an overlay in an HDR graph is a different thing again**: `findHdrTypes`
 treats a `TextOverlay` as text and anything else that is a `BitmapOverlay` —
 which `SquishTextOverlay` is — as an Ultra HDR bitmap behind
