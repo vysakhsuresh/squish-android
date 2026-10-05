@@ -42,8 +42,20 @@ object SkinTone {
     const val MIN_RADIUS = 2f
     const val RADIUS_REACH = 4f
 
-    /** Rec.601, which is what the Cb/Cr formulas below are written against. */
-    fun luma(r: Float, g: Float, b: Float): Float = r * 0.299f + g * 0.587f + b * 0.114f
+    /**
+     * Rec.601, deliberately - and the one place in the app that does not use
+     * Rec.709.
+     *
+     * The Cb/Cr formulas below and the skin locus they bound are defined
+     * against these weights; swapping in 709 moves the locus and the skin with
+     * it. GradeChecks knows about this one exception and asserts the shader's
+     * copy equals these three numbers.
+     */
+    const val LUMA_R = 0.299f
+    const val LUMA_G = 0.587f
+    const val LUMA_B = 0.114f
+
+    fun luma(r: Float, g: Float, b: Float): Float = r * LUMA_R + g * LUMA_G + b * LUMA_B
 
     /**
      * How much of this pixel is skin, 0 to 1.

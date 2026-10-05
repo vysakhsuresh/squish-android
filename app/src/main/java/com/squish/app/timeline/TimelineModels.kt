@@ -971,12 +971,6 @@ fun isVoiceover(address: String?): Boolean {
     return path.endsWith(".wav") && "/voice/" in path
 }
 
-/**
- * How close two key times may be before they are the same key, when a placement
- * edit writes one. A frame at 30fps.
- */
-const val KEY_TOLERANCE_MS = 33L
-
 /** Source milliseconds either side of a cut tried, nearest first, for halves that add up. */
 private const val SPLIT_SEARCH_MS = 40L
 

@@ -4,6 +4,7 @@ import com.squish.app.media.effects.Grade
 import com.squish.app.media.effects.HslBand
 import com.squish.app.media.effects.HueBand
 import com.squish.app.media.effects.Looks
+import com.squish.app.media.effects.SkinTone
 import kotlin.math.abs
 import kotlin.system.exitProcess
 
@@ -38,7 +39,9 @@ fun main() {
     // --- Every slider away from zero does something to the grade, and the
     //     per-pixel ones to a pixel. Grain, vignette and sharpening are spatial
     //     and leave a lone pixel alone by design.
-    val spatial = setOf(AdjustField.Grain, AdjustField.Vignette, AdjustField.Sharpen)
+    // Smooth skin is spatial too: it is a blur of the neighbours, so it cannot
+    // move a lone pixel any more than grain or a vignette can.
+    val spatial = setOf(AdjustField.Grain, AdjustField.Vignette, AdjustField.Sharpen, AdjustField.Smooth)
     // A shadow, a skin midtone and a highlight: Shadows reaches only the first
     // and Highlights only the last, so each slider is asked about all three.
     val probes = listOf(px(0x30, 0x28, 0x24), skin, px(0xE6, 0xDC, 0xC8))
@@ -268,18 +271,27 @@ fun main() {
     // that sums to 1 with green the largest is taken to be a luma vector and
     // has to be the one the Kotlin uses.
     var lumaSites = 0
+    /** The skin locus's own Rec. 601 weights, which are allowed and have to be there. */
+    var skinSites = 0
     assets.listFiles { f -> f.extension == "glsl" }?.sortedBy { it.name }?.forEach { f ->
         Regex("vec3\\(\\s*([\\d.]+)\\s*,\\s*([\\d.]+)\\s*,\\s*([\\d.]+)\\s*\\)").findAll(f.readText()).forEach { m ->
             val w = (1..3).map { m.groupValues[it].toFloat() }
             val weights = near(w.sum(), 1f, 1e-3f) && w[1] > w[0] && w[1] > w[2]
             if (weights) {
                 lumaSites++
-                check(near(w[0], Grade.LUMA_R) && near(w[1], Grade.LUMA_G) && near(w[2], Grade.LUMA_B),
+                // One exception, and it is written down on both sides: the skin
+                // locus Smooth skin uses is defined in Rec. 601 YCbCr, so the
+                // shader's skinWeight carries those weights and SkinTone carries
+                // the same three numbers. Everything else is Rec. 709.
+                val is601 = near(w[0], SkinTone.LUMA_R) && near(w[1], SkinTone.LUMA_G) && near(w[2], SkinTone.LUMA_B)
+                if (is601) skinSites++
+                else check(near(w[0], Grade.LUMA_R) && near(w[1], Grade.LUMA_G) && near(w[2], Grade.LUMA_B),
                     "${f.name} weighs brightness as $w, the Kotlin as ${listOf(Grade.LUMA_R, Grade.LUMA_G, Grade.LUMA_B)}")
             }
         }
     }
     check(lumaSites >= 3, "only $lumaSites luma vectors found in the shaders - the pattern that finds them has stopped matching")
+    check(skinSites == 1, "$skinSites Rec. 601 luma vectors in the shaders - the skin locus is the only thing allowed one")
 
     if (shader.isFile) {
         val text = shader.readText()

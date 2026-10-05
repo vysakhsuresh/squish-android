@@ -1,6 +1,16 @@
 package com.squish.app.timeline
 
 /**
+ * How close two key times may be before they are the same key, when an edit
+ * writes one. A frame at 30fps.
+ *
+ * Here rather than in TimelineModels, which is the whole timeline: Mask.kt's
+ * shape keys default to it, and a check of the mask alone should not have to
+ * compile a thousand lines of clip model to read one number.
+ */
+const val KEY_TOLERANCE_MS = 33L
+
+/**
  * How a value travels from one key to the next. The easing belongs to the key the
  * segment leaves, which is the convention every editor uses - you set how a key
  * exits, not how the next one arrives.
