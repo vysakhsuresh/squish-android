@@ -75,6 +75,38 @@ fun main() {
         check(WaveformBuilder.envelope(signal(8_000, 5), 10).isEmpty(), "a signal shorter than a bucket gave buckets")
     }
 
+    // --- The strip's bars: one per pixel, each the loudest under it. ---------
+    //
+    // A sound is twenty peaks a second and may run an hour, so the strip drew up
+    // to seventy-two thousand lines - a draw call each, on every frame, into a
+    // canvas a thousand pixels wide.
+    run {
+        // An hour's worth, with one transient in the middle of column 500.
+        val peaks = FloatArray(72_000) { 0.1f }
+        val columns = 1_000
+        val inColumn500 = (500.0 * peaks.size / columns).toInt() + 3
+        peaks[inColumn500] = 0.95f
+        val bars = WaveformBuilder.columns(peaks, columns)
+        check(bars.size == columns, "an hour of peaks came back as ${bars.size} bars, not $columns")
+        check(bars[500] == 0.95f, "the transient was lost: column 500 is ${bars[500]}")
+        check(bars.count { it > 0.5f } == 1, "the transient was smeared across ${bars.count { it > 0.5f }} bars")
+        check(bars.all { it > 0f }, "a bar came back at nothing")
+        // Fewer peaks than columns: handed back as they are, since the bars are
+        // then wider than a pixel and there is nothing to gather.
+        val few = FloatArray(40) { it / 40f }
+        check(WaveformBuilder.columns(few, 1_000) === few, "a short sound was gathered when it did not need to be")
+        check(WaveformBuilder.columns(few, 40) === few, "exactly one peak per column was gathered")
+        // Degenerate asks change nothing.
+        check(WaveformBuilder.columns(few, 0) === few, "no columns at all changed the peaks")
+        check(WaveformBuilder.columns(FloatArray(0), 100).isEmpty(), "no peaks gave bars")
+        // Every peak is looked at: the loudest overall survives wherever it is.
+        val edge = FloatArray(5_000) { 0.2f }
+        edge[0] = 1f
+        edge[4_999] = 0.9f
+        val edges = WaveformBuilder.columns(edge, 100)
+        check(edges.first() == 1f && edges.last() == 0.9f, "a peak at an end was lost: ${edges.first()} and ${edges.last()}")
+    }
+
     println("envelope: ${WaveformBuilder.envelope(signal(8_820, 45_000, 30_000), 10).size} buckets of a 45 s take at 8,820 Hz")
     if (problems.isEmpty()) println("PASS - a bucket begins where the clock says, at every rate, so two takes line up")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

@@ -56,6 +56,33 @@ object WaveformBuilder {
         return fromPeaks(out, pcm.durationMs)
     }
 
+    /**
+     * [peaks] gathered into [columns] bars, each the loudest under it.
+     *
+     * A sound is twenty peaks a second (PcmDecoder.decodePeaks) and may run an
+     * hour, so a ten-minute song is twelve thousand of them and an hour's is
+     * seventy-two thousand - and the strip drew one line per peak, every one a
+     * draw call, on every frame, into a canvas a thousand pixels wide. The
+     * loudest of each column rather than the first or an average, so a transient
+     * is not swallowed by the quiet either side of it.
+     *
+     * With fewer peaks than columns the peaks are returned as they are: the bars
+     * are then wider than a pixel and there is nothing to gather.
+     */
+    fun columns(peaks: FloatArray, columns: Int): FloatArray {
+        if (columns <= 0 || peaks.isEmpty() || peaks.size <= columns) return peaks
+        val out = FloatArray(columns)
+        val perColumn = peaks.size.toDouble() / columns
+        for (c in 0 until columns) {
+            val from = (c * perColumn).toInt().coerceIn(0, peaks.size - 1)
+            val to = ((c + 1) * perColumn).toInt().coerceIn(from + 1, peaks.size)
+            var peak = 0f
+            for (i in from until to) if (peaks[i] > peak) peak = peaks[i]
+            out[c] = peak
+        }
+        return out
+    }
+
     /** Peaks already taken per bucket (see PcmDecoder.decodePeaks), normalized so the loudest reaches the top. */
     fun fromPeaks(peaks: FloatArray, durationMs: Long): Waveform {
         var maxPeak = 0f
