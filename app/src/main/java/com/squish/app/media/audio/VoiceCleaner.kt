@@ -30,10 +30,21 @@ class VoiceCleaner(private val sampleRate: Int, private val channels: Int) {
     private val gainRelease = coefficient(GAIN_CLOSE_MS)
     /** How fast the floor may rise, per sample: a room getting louder is followed in a few seconds. */
     private val floorRise = (1.0 + FLOOR_RISE_PER_SECOND / sampleRate).toFloat()
+    /** And how fast it may fall. See [FLOOR_FALL_MS]. */
+    private val floorFall = coefficient(FLOOR_FALL_MS)
 
     private val hp = FloatArray(channels)
     private val hpPrev = FloatArray(channels)
-    private val env = FloatArray(channels)
+    // Both start at the level a quiet room sits at, not at nothing. Started at
+    // nothing, the envelope was below the floor on the very first sample and
+    // the floor - which had no time constant downward - was pulled straight
+    // down to MIN_FLOOR with it, so INITIAL_FLOOR never survived a single
+    // sample and the gate read wide open on room hiss. Enhance then put its
+    // PRESENCE lift on that hiss and made it 1.4x louder for the two or three
+    // seconds the floor took to creep back up - and because Media3 flushes the
+    // processor on every seek and at the start of every clip, a montage of
+    // short takes got the lift and never the gate.
+    private val env = FloatArray(channels) { INITIAL_FLOOR }
     private val floor = FloatArray(channels) { INITIAL_FLOOR }
     private val gain = FloatArray(channels) { 1f }
 
@@ -49,8 +60,17 @@ class VoiceCleaner(private val sampleRate: Int, private val channels: Int) {
         val e = env[channel]
         env[channel] = if (level > e) e + attack * (level - e) else e + release * (level - e)
 
-        // The floor: the lowest level lately, allowed to creep up so it follows the room.
-        floor[channel] = max(MIN_FLOOR, min(floor[channel] * floorRise, env[channel]))
+        // The floor: the lowest level lately, creeping up so it follows a room
+        // getting louder and easing down so it follows one getting quieter.
+        // Easing matters as much as creeping: snapped down to the envelope it
+        // took the value of whatever the quietest sample was, which on the
+        // first sample of a stream is whatever the envelope was primed with.
+        val f = floor[channel]
+        val wants = env[channel]
+        floor[channel] = max(
+            MIN_FLOOR,
+            if (wants < f) f + floorFall * (wants - f) else min(f * floorRise, wants)
+        )
 
         // Open while the voice stands clear of the floor, closed to FLOOR_GAIN otherwise.
         val target = if (env[channel] > floor[channel] * OPEN_RATIO) 1f else FLOOR_GAIN
@@ -61,7 +81,7 @@ class VoiceCleaner(private val sampleRate: Int, private val channels: Int) {
     }
 
     fun reset() {
-        hp.fill(0f); hpPrev.fill(0f); env.fill(0f); floor.fill(INITIAL_FLOOR); gain.fill(1f)
+        hp.fill(0f); hpPrev.fill(0f); env.fill(INITIAL_FLOOR); floor.fill(INITIAL_FLOOR); gain.fill(1f)
     }
 
     private fun coefficient(ms: Double): Float = (1.0 - exp(-1.0 / (sampleRate * ms / 1000.0))).toFloat()
@@ -90,5 +110,15 @@ class VoiceCleaner(private val sampleRate: Int, private val channels: Int) {
         const val INITIAL_FLOOR = 0.01f
         const val MIN_FLOOR = 0.0005f
         const val FLOOR_RISE_PER_SECOND = 0.5
+
+        /**
+         * How long the floor takes to settle onto a quieter room.
+         *
+         * Long enough that a gap between two words is not read as the room
+         * having gone quiet - the gate's own close is 180 ms - and short enough
+         * that the floor has found a real recording's hiss within the first
+         * half second, before anyone has heard the gate make up its mind.
+         */
+        const val FLOOR_FALL_MS = 400.0
     }
 }
