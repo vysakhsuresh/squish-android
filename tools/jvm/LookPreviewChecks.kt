@@ -166,6 +166,47 @@ fun main() {
     check("a vignette darkens the corner", corner < centre - 10)
     check("a vignette spares the middle", centre >= 190)
 
+    // ---- The chip and the photo overlay are the same picture ---------------
+    //
+    // Two CPU copies of the one shader: this one grades a thumbnail for a look
+    // chip, and Grade.applyTo grades a photo on an overlay row. They sit next
+    // to each other on screen - the chip says what the look will do, the
+    // overlay is the look done - and nothing compared them. They disagreed:
+    // this one multiplies the vignette into the colour while it is still a
+    // float, which is what the shader does, and Grade.applyTo used to apply it
+    // to the byte-clamped result, so anything lifted past white was flattened
+    // to 255 and then darkened.
+    //
+    // Only the looks with no bloom, grain or sharpening, because those three
+    // are deliberately absent from Grade.applyTo (a texture the file has and a
+    // still does without) and present here.
+    run {
+        val comparable = Looks.catalog.filter {
+            abs(it.bloom) < 1e-4f && abs(it.grain) < 1e-4f
+        }
+        check("there are looks to compare at all", comparable.size > 20)
+        for (look in comparable) {
+            val mine = testFrame().also { LookPreview.apply(it, W, H, look) }
+            val theirs = testFrame().also { Looks.grade(look.id, 1f).applyTo(it, W, H) }
+            var worst = 0
+            var at = -1
+            for (i in mine.indices) {
+                val (r1, g1, b1) = rgb(mine[i])
+                val (r2, g2, b2) = rgb(theirs[i])
+                val d = maxOf(abs(r1 - r2), abs(g1 - g2), abs(b1 - b2))
+                if (d > worst) { worst = d; at = i }
+            }
+            // Two units: the contrast curve is applied unconditionally on one
+            // side and skipped at zero on the other, which is 1/1.0001 of a
+            // byte, and each side rounds once.
+            check(
+                "${look.id}: the look chip and a graded photo differ by $worst at pixel $at " +
+                    "(${rgb(mine.getOrElse(at) { 0 })} against ${rgb(theirs.getOrElse(at) { 0 })})",
+                worst <= 2
+            )
+        }
+    }
+
     // A one-pixel picture, an empty array, a zero size: none of them may throw.
     LookPreview.apply(IntArray(0), 0, 0, Looks.catalog.last())
     LookPreview.apply(IntArray(1), 1, 1, Looks.catalog.last())
