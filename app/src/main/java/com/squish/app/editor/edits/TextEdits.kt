@@ -503,12 +503,36 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * choice it reads as the answer for that one - which is how you conclude
      * your voiceover has no words in it without ever having captioned it.
      */
-    fun setCaptionSource(source: CaptionSource) = _state.update {
-        if (it.captionSource == source) it else it.copy(captionSource = source, captions = CaptionProgress())
+    fun setCaptionSource(source: CaptionSource) {
+        if (_state.value.captionSource == source) return
+        endCaptionRun()
+        _state.update { it.copy(captionSource = source, captions = CaptionProgress()) }
     }
 
-    fun setCaptionLanguage(tag: String?) = _state.update {
-        if (it.captionLanguage == tag) it else it.copy(captionLanguage = tag, captions = CaptionProgress())
+    fun setCaptionLanguage(tag: String?) {
+        if (_state.value.captionLanguage == tag) return
+        endCaptionRun()
+        _state.update { it.copy(captionLanguage = tag, captions = CaptionProgress()) }
+    }
+
+    /**
+     * Stops a run still going, without putting its card up.
+     *
+     * These two settings choose what the *next* run listens to and blank the
+     * last run's answer with the change - which is right, since the answer
+     * belongs to the sound it was given. Changed while a run was still going,
+     * though, the blank card took away the only Stop there was (it shows on
+     * `captions.running`, and `stopCaptions` returns early without it) while
+     * the pass carried on in the background, landing lines from the source that
+     * had just been switched away from, into an undo step with no card above
+     * it. The run is ended here, quietly: [settleCaptionRun] still runs in the
+     * job's `finally` and still drops the step if nothing landed.
+     */
+    private fun endCaptionRun() {
+        if (captionJob == null && captionRun == null) return
+        captionJob?.cancel()
+        captionJob = null
+        captionRun = null
     }
 
     /**
