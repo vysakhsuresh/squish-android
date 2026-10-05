@@ -43,4 +43,27 @@ object SilenceRules {
     /** How much a cut down to [kept] takes out of a window [inMs]..[outMs], in file milliseconds. */
     fun removedMs(kept: List<LongRange>, inMs: Long, outMs: Long): Long =
         (outMs - inMs) - kept.sumOf { it.last - it.first }
+
+    /**
+     * The windows a cut will actually keep: [kept] held inside [inMs]..[outMs]
+     * and anything shorter than [minKeptMs] dropped, because the timeline
+     * cannot hold a piece shorter than a clip's minimum (MIN_CLIP_MS) and
+     * withSilencesRemoved drops it.
+     *
+     * The count the card reports and the edit underneath both have to come from
+     * this one list. They used to differ: the card counted the unfiltered
+     * windows, so it was always at least as small as the truth, and where every
+     * window fell under the minimum - a shot trimmed to start just after the
+     * talking stops leaves one 160 ms window, since the pad is clamped up to
+     * the in-point - it said it had cut fifteen seconds of pauses while the
+     * edit changed nothing at all and filed an undo step for it.
+     */
+    fun survivingWindows(
+        kept: List<LongRange>,
+        inMs: Long,
+        outMs: Long,
+        minKeptMs: Long
+    ): List<LongRange> = kept
+        .map { maxOf(it.first, inMs)..minOf(it.last, outMs) }
+        .filter { it.last - it.first >= minKeptMs }
 }

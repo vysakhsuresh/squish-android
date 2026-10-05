@@ -35,6 +35,52 @@ fun main() {
     val same = TimelineState(clips = listOf(a, b))
     check(same.withSilencesRemoved("a", listOf(0L..20_000L)) == same, "keeping everything changed the edit")
 
+    // The card's number and the edit are the same list. The card used to count
+    // the unfiltered windows while the cut dropped every one under MIN_CLIP_MS,
+    // so it was always at least as small as the truth - and where nothing
+    // survived it reported seconds cut over an edit that changed nothing.
+    run {
+        val min = com.squish.app.timeline.MIN_CLIP_MS
+        // A 20 s take trimmed to start 100 ms after the talking stops: the pad
+        // is clamped up to the in-point, so one 160 ms window is all that is
+        // found and the timeline cannot hold it.
+        val sliver = SilenceRules.keptWindows(listOf(0L..4_000L), 4_100L, 20_000L)
+        check(sliver == listOf(4_100L..4_150L), "the clamped pad gave $sliver")
+        val surviving = SilenceRules.survivingWindows(sliver, 4_100L, 20_000L, min)
+        check(surviving.isEmpty(), "a window under MIN_CLIP_MS survived: $surviving")
+        // The gate the panel reads: nothing surviving is nothing removed.
+        check(
+            SilenceRules.removedMs(surviving, 4_100L, 20_000L) == 20_000L - 4_100L,
+            "the whole window read as removed with nothing kept"
+        )
+        val clip = Clip(id = "z", kind = ClipKind.Video, uri = null, label = "z", sourceInMs = 4_100, sourceOutMs = 20_000, timelineStartMs = 0, sourceDurationMs = 20_000)
+        val before = TimelineState(clips = listOf(clip))
+        check(before.withSilencesRemoved("z", sliver) == before, "a sliver-only cut changed the edit after all")
+        // The partial case: the number must be the surviving windows', not the
+        // found windows'. Found keeps 1000..2000, 5000..5150, 8000..9000 over a
+        // 10 s shot; the 150 ms one cannot be a clip.
+        val found = listOf(1_000L..2_000L, 5_000L..5_150L, 8_000L..9_000L)
+        val live = SilenceRules.survivingWindows(found, 0L, 10_000L, min)
+        check(live == listOf(1_000L..2_000L, 8_000L..9_000L), "the surviving windows were $live")
+        check(SilenceRules.removedMs(found, 0L, 10_000L) == 7_850L, "the found windows' count moved")
+        check(SilenceRules.removedMs(live, 0L, 10_000L) == 8_000L, "the surviving windows' count is not what is cut")
+        // And what the timeline actually keeps agrees with survivingWindows.
+        val shot = Clip(id = "y", kind = ClipKind.Video, uri = null, label = "y", sourceInMs = 0, sourceOutMs = 10_000, timelineStartMs = 0, sourceDurationMs = 10_000)
+        val pieces = TimelineState(clips = listOf(shot)).withSilencesRemoved("y", found).clips.filter { it.isMain }
+        check(
+            pieces.map { it.sourceInMs..it.sourceOutMs } == live,
+            "the cut kept ${pieces.map { it.sourceInMs..it.sourceOutMs }} where survivingWindows says $live"
+        )
+        check(
+            pieces.sumOf { it.sourceOutMs - it.sourceInMs } == (10_000L - SilenceRules.removedMs(live, 0L, 10_000L)),
+            "the footage left does not match the number the card would report"
+        )
+        // Clamping is part of it: a window reaching past the out-point counts
+        // only as far as the clip goes.
+        val over = SilenceRules.survivingWindows(listOf(9_000L..30_000L), 0L, 10_000L, min)
+        check(over == listOf(9_000L..10_000L), "a window past the out-point was not held inside it: $over")
+    }
+
     layeredChecks()
     rowChecks()
     tinyTrimChecks()

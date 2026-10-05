@@ -1247,7 +1247,12 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             fun same(c: Clip?) = c != null && c.isMain && c.sourceInMs == clip.sourceInMs && c.sourceOutMs == clip.sourceOutMs &&
                 c.uri == clip.uri && c.isReversed == clip.isReversed
             if (!same(current)) return@launch onDone(0L)
-            val kept = SilenceRules.keptWindows(found, current.sourceInMs, current.sourceOutMs)
+            val padded = SilenceRules.keptWindows(found, current.sourceInMs, current.sourceOutMs)
+            // What the timeline will actually keep, not what the listener
+            // found: a window under MIN_CLIP_MS cannot be a clip, so counting
+            // the unfiltered list told the card it had cut pauses the edit then
+            // did not cut. One list for the number, the shifts and the cut.
+            val kept = SilenceRules.survivingWindows(padded, current.sourceInMs, current.sourceOutMs, MIN_CLIP_MS)
             val removed = if (kept.isEmpty()) 0L else SilenceRules.removedMs(kept, current.sourceInMs, current.sourceOutMs)
             if (removed <= 0L) return@launch onDone(0L)
             recordLate("Remove silences", edit = { snapshot ->
@@ -1256,7 +1261,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 val here = snapshot.videoClips.firstOrNull { it.id == clipId }
                 if (!same(here)) return@recordLate snapshot
                 val at = here!!.timelineStartMs
-                val gone = removedOnTimeline(here, kept.filter { it.last - it.first >= MIN_CLIP_MS })
+                val gone = removedOnTimeline(here, kept)
                 snapshot.copy(
                     // Effects on the words after the shot move back with them, as the lines do.
                     effects = snapshot.effects.map { e ->
