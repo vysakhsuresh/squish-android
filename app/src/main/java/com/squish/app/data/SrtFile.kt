@@ -38,13 +38,37 @@ object SrtFile {
     private val BOM = 0xFEFF.toChar().toString()
 
     fun format(cues: List<SrtCue>): String = buildString {
-        cues.sortedBy { it.startMs }.forEachIndexed { index, cue ->
-            append(index + 1).append('\n')
-            append(timestamp(cue.startMs)).append(" --> ").append(timestamp(cue.endMs)).append('\n')
-            append(cue.text.trim()).append('\n')
-            append('\n')
-        }
+        cues.sortedBy { it.startMs }
+            .mapNotNull { cue -> carried(cue.text)?.let { cue to it } }
+            .forEachIndexed { index, (cue, text) ->
+                append(index + 1).append('\n')
+                append(timestamp(cue.startMs)).append(" --> ").append(timestamp(cue.endMs)).append('\n')
+                append(text).append('\n')
+                append('\n')
+            }
     }
+
+    /**
+     * A caption's text as SubRip can carry it, or null when it carries nothing.
+     *
+     * A blank line *ends a cue* in this format, so there can be none inside
+     * one. The writer used to trim only the ends, so a line somebody had typed
+     * two returns into went out with a blank line in the middle of it - and
+     * [parse], correctly, read that as the end of the cue and then dropped
+     * every line after it. The two disagreed about what a blank line means and
+     * the writer was the one in the wrong: a round trip through a file cannot
+     * keep something the file cannot hold.
+     *
+     * A cue left with nothing to say is not written at all, because [parse]
+     * would not produce one either - which is what makes the round trip exact
+     * rather than nearly.
+     */
+    private fun carried(text: String): String? = text
+        .lines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .joinToString("\n")
+        .takeIf { it.isNotEmpty() }
 
     fun parse(raw: String): List<SrtCue> {
         val text = raw.removePrefix(BOM).replace("\r\n", "\n").replace('\r', '\n')
@@ -119,7 +143,15 @@ object SrtFile {
         val minutes = (safe % 3_600_000) / 60_000
         val seconds = (safe % 60_000) / 1000
         val millis = safe % 1000
-        return "%02d:%02d:%02d,%03d".format(hours, minutes, seconds, millis)
+        // Against Locale.ROOT, as PolishRules formats its numbers: `format`
+        // without one takes Locale.getDefault(FORMAT), and %02d then emits the
+        // locale's own digits. On a phone set to Arabic, Persian, Burmese,
+        // Bengali or Nepali, "Export subtitles" wrote Eastern Arabic-Indic or
+        // Devanagari numerals into the timing lines - which no subtitle tool
+        // can read, this one included: STAMP matches \d, which in Java is
+        // [0-9] without UNICODE_CHARACTER_CLASS, so importing the app's own
+        // export found no cues and reported the file unreadable.
+        return String.format(java.util.Locale.ROOT, "%02d:%02d:%02d,%03d", hours, minutes, seconds, millis)
     }
 
     private fun parseTimestamp(value: String): Long {

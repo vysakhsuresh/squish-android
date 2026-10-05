@@ -1134,7 +1134,9 @@ private fun cbrSupported(mime: String, width: Int, height: Int): Boolean = runCa
     // The encoder Media3 would take: one that writes this size, hardware first.
     val candidates = androidx.media3.transformer.EncoderUtil.getSupportedEncoders(mime)
         .filter { width <= 0 || height <= 0 || androidx.media3.transformer.EncoderUtil.isSizeSupported(it, mime, width, height) }
-    val chosen = candidates.firstOrNull { android.os.Build.VERSION.SDK_INT >= 29 && it.isHardwareAccelerated } ?: candidates.firstOrNull()
+    // isHardwareAccelerated alone: the version test beside it was always true
+    // at a minimum of 29, so "hardware first" read as conditional and was not.
+    val chosen = candidates.firstOrNull { it.isHardwareAccelerated } ?: candidates.firstOrNull()
     chosen != null && androidx.media3.transformer.EncoderUtil.isBitrateModeSupported(chosen, mime, android.media.MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
 }.getOrDefault(false)
 

@@ -524,6 +524,13 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                     }
                 }
             }
+            // The grant is held by the sheet, not here: AudioSheet's Record
+            // button calls this only when `mic.granted`, and asks first
+            // otherwise - a custom wrapper lint cannot follow. Refused anyway,
+            // or revoked between the ask and the count-in, start() catches the
+            // SecurityException with everything else and returns false, which
+            // is the failed take below.
+            @Suppress("MissingPermission")
             val opened = withContext(Dispatchers.IO) { recorder.start(VoiceRecorder.dir(app)) }
             if (!opened) {
                 _state.update { it.copy(recording = RecordingState(failed = true)) }

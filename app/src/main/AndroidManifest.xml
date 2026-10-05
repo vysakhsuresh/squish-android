@@ -70,8 +70,12 @@
                      what lint's AppLinkUrlError was asking for, and it makes
                      plain that a remote video URL was never something this
                      filter offered to open. -->
-                <data android:scheme="content" android:mimeType="video/*" />
-                <data android:scheme="file" android:mimeType="video/*" />
+                <!-- One attribute to a tag: Android unions every data element's
+                     attributes anyway, so a tag carrying both reads as if the
+                     pair were tied together when it is not. -->
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="video/*" />
             </intent-filter>
             <intent-filter>
                 <!-- No scheme here, and none wanted: a SEND carries its URI in

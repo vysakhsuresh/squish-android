@@ -264,7 +264,10 @@ fun EyedropperLayer(
 /** The average colour of the [patch] pixels square round ([x], [y]) of the window, or null when they cannot be read. */
 private fun samplePixels(view: View, x: Int, y: Int, patch: Int, onDone: (Int?) -> Unit) {
     val window = view.context.findActivity()?.window
-    if (window == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+    // No version test beside it: PixelCopy from a window landed in API 26 and
+    // the app's minimum is 29, so that half of the condition could never be
+    // true and read as a device the eyedropper does not work on.
+    if (window == null) {
         onDone(null)
         return
     }

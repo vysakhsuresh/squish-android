@@ -32,6 +32,84 @@ fun main() {
             check(a.startMs == b.startMs && a.endMs == b.endMs, "a round trip moved ${a.text}: ${b.startMs}..${b.endMs}")
             check(a.text == b.text, "a round trip changed \"${a.text}\" into \"${b.text}\"")
         }
+        // A blank line inside a caption. It *ends a cue* in this format, so the
+        // writer cannot carry one: it used to trim only the ends, so a line
+        // somebody had typed two returns into went out with a blank line in
+        // the middle, and the parser - correctly - read that as the end of the
+        // cue and dropped every line after it. The round trip lost half the
+        // caption and this section, which promises that what it writes it
+        // reads, did not look.
+        run {
+            val awkward = listOf(
+                SrtCue(0L, 1_000L, "Top\n\nBottom"),
+                SrtCue(2_000L, 3_000L, "  padded  \n   \n  lines  "),
+                SrtCue(4_000L, 5_000L, "\n\nleading blanks"),
+                SrtCue(6_000L, 7_000L, "trailing blanks\n\n")
+            )
+            val written = SrtFile.format(awkward)
+            check(
+                !written.contains("\n\n\n"),
+                "a blank line went into the file inside a cue:\n$written"
+            )
+            val read = SrtFile.parse(written)
+            check(read.size == awkward.size, "${read.size} cues came back of ${awkward.size}:\n$written")
+            check(
+                read.getOrNull(0)?.text == "Top\nBottom",
+                "a caption with a blank line in it came back as \"${read.getOrNull(0)?.text}\""
+            )
+            check(
+                read.getOrNull(1)?.text == "padded\nlines",
+                "a caption with padded lines came back as \"${read.getOrNull(1)?.text}\""
+            )
+            check(
+                read.getOrNull(2)?.text == "leading blanks" && read.getOrNull(3)?.text == "trailing blanks",
+                "leading or trailing blanks survived: ${read.map { it.text }}"
+            )
+            // And every cue's timing survives it, which is the part that would
+            // have been silently wrong: a dropped line shifts nothing, a
+            // dropped *cue* shifts every number after it.
+            awkward.zip(read).forEach { (a, b) ->
+                check(a.startMs == b.startMs && a.endMs == b.endMs, "\"${a.text}\" moved to ${b.startMs}..${b.endMs}")
+            }
+            // A cue with nothing to say is not written, because the parser
+            // would not produce one either.
+            check(
+                SrtFile.parse(SrtFile.format(listOf(SrtCue(0L, 1_000L, "   \n \n ")))).isEmpty(),
+                "a blank caption was written and read back"
+            )
+        }
+
+        // The digits, on a phone that does not use ours.
+        //
+        // `format` without a locale takes Locale.getDefault(FORMAT), and %02d
+        // then emits that locale's own digit set - so on Arabic, Persian,
+        // Burmese, Bengali or Nepali, "Export subtitles" wrote Eastern
+        // Arabic-Indic or Devanagari numerals into the timing lines. No
+        // subtitle tool can read that, and neither can this one: STAMP matches
+        // \d, which in Java is [0-9] without UNICODE_CHARACTER_CLASS, so the
+        // app's own export came back as no cues at all.
+        run {
+            val was = java.util.Locale.getDefault()
+            try {
+                for (tag in listOf("ar-EG", "fa-IR", "my-MM", "bn-IN", "ne-NP", "de-DE", "hi-IN")) {
+                    java.util.Locale.setDefault(java.util.Locale.forLanguageTag(tag))
+                    val written = SrtFile.format(listOf(SrtCue(3_661_001L, 3_665_250L, "Hello")))
+                    check(
+                        written.contains("01:01:01,001 --> 01:01:05,250"),
+                        "on $tag the timing line reads ${written.lines().getOrNull(1)}"
+                    )
+                    check(
+                        written.all { it.code < 128 || it == '\n' },
+                        "on $tag the file is not ASCII: $written"
+                    )
+                    val back = SrtFile.parse(written)
+                    check(back.size == 1 && back[0].startMs == 3_661_001L, "on $tag a round trip gave $back")
+                }
+            } finally {
+                java.util.Locale.setDefault(was)
+            }
+        }
+
         // Written in order and numbered from one, whatever order they came in.
         val jumbled = SrtFile.format(listOf(SrtCue(5_000L, 6_000L, "b"), SrtCue(1_000L, 2_000L, "a")))
         check(jumbled.startsWith("1\n00:00:01,000 --> 00:00:02,000\na\n"), "out-of-order cues were not sorted:\n$jumbled")

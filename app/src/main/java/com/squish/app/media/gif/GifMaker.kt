@@ -67,16 +67,19 @@ object GifMaker {
 
     private fun publish(context: Context, file: File, name: String): Uri? {
         val resolver = context.contentResolver
+        // No version test: the app's minimum is 29, which *is* Q, so the three
+        // checks that were here were always true and the branch under the last
+        // of them - inserting into EXTERNAL_CONTENT_URI with no relative path -
+        // could never run. Dead code that reads as a fallback is worse than no
+        // fallback: it says a path exists that does not, and that one would
+        // have written the GIF to the wrong place.
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "$name.gif")
             put(MediaStore.Images.Media.MIME_TYPE, "image/gif")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Squish")
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            }
+            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Squish")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
         }
-        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val uri = resolver.insert(collection, values) ?: return null
         val ok = runCatching {
             resolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } } != null
@@ -85,9 +88,7 @@ object GifMaker {
             resolver.delete(uri, null, null)
             return null
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
-        }
+        resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
         return uri
     }
 }

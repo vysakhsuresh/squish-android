@@ -71,7 +71,9 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
     val shotUri = shot?.uri ?: state.sourceUri
     val atMs = shot?.sourceAt(state.playheadMs.coerceIn(shot.timelineStartMs, shot.timelineEndMs)) ?: 0L
     val frame by produceState<ImageBitmap?>(null, shotUri, atMs / FRAME_BUCKET_MS) {
-        value = shotUri?.let { ThumbnailExtractor.frameAt(context, it, atMs)?.asImageBitmap() }
+        val uri = shotUri
+        val read = if (uri == null) null else ThumbnailExtractor.frameAt(context, uri, atMs)
+        value = read?.asImageBitmap()
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
