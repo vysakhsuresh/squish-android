@@ -1,5 +1,15 @@
 # Status, 29 September 2026
 
+> **A snapshot of that date, kept as one.** The batch table and the two
+> "seen"/"not seen" sections below are six days and nine sweeps out of date -
+> plenty has been driven on the phone since (30 September, 1 October, 4 October
+> and 5 October), and plenty more has been built that is not in the table at
+> all. For where things actually stand, in the order a session needs them:
+> `CLAUDE.md`'s "What is currently unverified on a device", then
+> `docs/ROADMAP.md` §5 for what to do first with a phone in hand, then
+> `docs/DEVICE_FINDINGS.md` (newest last) for what each round found. The
+> "Known, left on purpose" list at the end of this file *is* still accurate.
+
 ## Done
 
 The whole roadmap in `docs/ROADMAP.md` is built and merged into `main`: all sixteen
