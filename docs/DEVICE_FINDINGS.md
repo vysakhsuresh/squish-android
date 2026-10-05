@@ -1830,3 +1830,41 @@ out; `RunnerChecks` is what catches those, and it did.
 7. **Trim a sixty-second clip to two in Snip**: both handles still answer.
 8. **Remove silences on a shot with overlays above it**: no two overlays on one
    row, and no footage above row three.
+
+### Sweep six's own nine, and what they need from a phone
+
+The nine the refuters confirmed (the rest of that sweep's claims were fixed from
+their text as they arrived, and are in the section above):
+
+1. **Freezing a shot's opening frame took the dissolve off the cut before it.**
+   With no half to cut, the still goes in front of the whole shot - and the
+   transition stayed on the shot, so the dissolve the person set on the previous
+   cut vanished and a new one ran from the frozen frame into the shot it was cut
+   from. *On the phone:* a Dissolve on a join, playhead snapped to that cut,
+   Freeze - the dissolve is still on the join and the edit is longer by the
+   still and nothing else.
+2. **A zoom transition over a placed shot put the picture 195 px off.** The
+   preview folded the placement and the transition into one layer as a plain
+   sum; the file applies them as two passes, so the transition's scale scales
+   the placement's offset too. *On the phone:* Placement across to 0.6, a Zoom
+   or Pop in on the join, export and compare the same frame.
+3. **A slide under a crop travelled the canvas, not the frame the file keeps.**
+   *On the phone:* a 9:16 frame on landscape footage with a Slide on a cut -
+   the outgoing shot leaves the picture at the same moment on screen and in the
+   file. (What is still open: the transition's scale turns about the output
+   frame's centre in the file and the canvas's centre on screen, which differ
+   only for an off-centre crop. That needs two layers and a device.)
+4. **The picture held across a hard cut snapped out to fill the canvas** - the
+   one draw that read the player's size without the file-shape fallback. *On
+   the phone:* a portrait shot cut into a landscape edit, played across a cut
+   into something heavy enough to hold.
+5. **The mask outline did not follow the picture the stabilizer was moving.**
+   *On the phone:* Stabilize a shot, then Cutout → Mask on it, and scrub.
+6. **A shot's own shape was read off whichever surface answered first.**
+7. **The safe-area guide was drawn on the canvas, not on what the file keeps.**
+8. **"Sound only" refused an edit whose first clip was silent.** *On the phone:*
+   open a project on a clip with no audio track, add one that has sound, Sound
+   only → Render.
+9. **Settings counted stills that Clear could not take.** *On the phone:* pick a
+   Background picture on a padded canvas, export, delete every project, then
+   Settings → Storage → Clear "Photos and freezes" - the number goes to nothing.
