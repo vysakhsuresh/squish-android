@@ -99,10 +99,15 @@ import com.squish.app.ui.components.accentSweep
 import com.squish.app.ui.theme.SquishColors
 import java.io.File
 
-fun formatSize(bytes: Long): String {
-    val mb = bytes / 1_000_000.0
-    return if (mb >= 1) "%.1f MB".format(mb) else "%.0f KB".format(bytes / 1000.0)
-}
+/**
+ * A file's size, in the library and on the done screen.
+ *
+ * The project cards already had this in `ProjectRules.sizeLabel`, with a suite
+ * under it; this one was a second copy with no bytes tier and no gigabytes, so
+ * a four-gigabyte export read "4000.0 MB" and a four-hundred-byte file read
+ * "0 KB", while the same file on a project card read correctly. One ladder.
+ */
+fun formatSize(bytes: Long): String = ProjectRules.sizeLabel(bytes)
 
 /** "1 clip", "3 clips" - a count read aloud, not a count with an s stapled on. */
 fun countOf(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"
