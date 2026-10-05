@@ -1100,8 +1100,15 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         val music = _state.value.audioClips.firstOrNull { it.id == clipId } ?: return onDone(0)
         viewModelScope.launch {
             val state = _state.value
-            val sources = (state.audioClips.filter { it.id != clipId && (it.isVoiceover || it.uri?.path?.contains("/speech/") == true) } +
-                (if (state.muteOriginal) emptyList() else state.videoClips.filter { it.isHeard && it.isFootage }))
+            // The camera switch is the *main track's*, as it is everywhere else
+            // (OverlayRules.effectiveVolume): turning the camera off to put
+            // music under a video must not silence the reaction clip over it.
+            // Dropping the whole video list on it meant that with the camera
+            // off - which is the usual move when laying music under footage - a
+            // talking picture-in-picture was still heard over the song and
+            // still ignored by this, with the card saying no talking was found.
+            val speaking = state.videoClips.filter { it.isHeard && it.isFootage && (it.isOverlay || !state.muteOriginal) }
+            val sources = (state.audioClips.filter { it.id != clipId && (it.isVoiceover || it.uri?.path?.contains("/speech/") == true) } + speaking)
                 .distinctBy { it.id }
                 .filter { it.timelineEndMs > music.timelineStartMs && it.timelineStartMs < music.timelineEndMs }
             val found = HashMap<Uri, List<LongRange>>()
@@ -1135,9 +1142,20 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      */
     fun evenOutVolume(onDone: (Int) -> Unit) {
         viewModelScope.launch {
+            // What a shot is heard at is its Volume *under the camera level*;
+            // an overlay's is its Volume alone, because the camera switch is the
+            // main track's (OverlayRules.effectiveVolume). The pass takes both
+            // kinds, and measured both as "raw x Volume", so with the camera at
+            // 30% a picture-in-picture three times louder than the shot beside
+            // it read as exactly as loud - and the one clip that needed bringing
+            // down was the one left alone.
+            val camera = if (_state.value.muteOriginal) 0f else _state.value.originalVolume
             val shots = _state.value.videoClips.filter {
                 // Footage only: a photo on the main track is a rendered MP4 with a silent track, not the PNG isStill reads.
-                it.isHeard && it.volumeKeys.isEmpty() && it.uri != null && it.isFootage
+                it.isHeard && it.volumeKeys.isEmpty() && it.uri != null && it.isFootage &&
+                    // A shot heard at nothing, because the camera is off, is not
+                    // in the comparison at all.
+                    (it.isOverlay || camera > 0f)
             }
             if (shots.size < 2) return@launch onDone(0)
             // Per shot, not per file: each file's sound is let go before the next is read.
@@ -1147,7 +1165,11 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                     shots.filter { it.uri == uri }.forEach { clip ->
                         val from = (clip.sourceInMs * pcm.sampleRate / 1000L).toInt().coerceIn(0, pcm.samples.size)
                         val to = (clip.sourceOutMs * pcm.sampleRate / 1000L).toInt().coerceIn(from, pcm.samples.size)
-                        loudness[clip.id] = Loudness.of(pcm.samples.copyOfRange(from, to), pcm.sampleRate)
+                        // The camera level folded into the measurement rather
+                        // than into the slider, so Loudness.levels still solves
+                        // in the clip's own units and hands back a Volume.
+                        val heardFactor = if (clip.isOverlay) 1f else camera
+                        loudness[clip.id] = Loudness.of(pcm.samples.copyOfRange(from, to), pcm.sampleRate) * heardFactor
                     }
                 }
             }

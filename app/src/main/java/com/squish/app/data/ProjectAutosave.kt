@@ -206,8 +206,19 @@ class ProjectAutosave(context: Context) {
     private fun metaFile(slot: String) = File(dir, "$slot.meta.json")
 
     /** The files that make up one slot, in the order they matter. */
+    /**
+     * Everything a slot owns, for the bin and for a restore out of it.
+     *
+     * The `.start` file is in this list because a project staged and never
+     * saved has *only* that file: left out, [delete] destroyed it in place,
+     * [DraftFiles.moveToBin] found nothing to move and said so, and the
+     * dashboard's Delete on a "not opened yet" card quietly removed the project
+     * with no bin entry and no Undo. Worse, the files it named went with it:
+     * nothing on disk named them any more, so the picker grants it held could
+     * never be let go of, and the phone caps how many of those an app may keep.
+     */
     private fun slotFiles(slot: String) =
-        listOf(liveFile(slot), backupFile(slot), snapshotFile(slot), pendingSnapshotFile(slot), metaFile(slot))
+        listOf(liveFile(slot), backupFile(slot), snapshotFile(slot), pendingSnapshotFile(slot), metaFile(slot), startFile(slot))
 
     /** Cheap change detector, so an idle editor never touches the disk. */
     private val lastSignature = HashMap<String, String>()
@@ -605,10 +616,13 @@ class ProjectAutosave(context: Context) {
      */
     fun delete(slot: String): String? = synchronized(lock) {
         lastSignature.remove(slot)
+        // The three half-written scratch files go; the `.start` does not - it is
+        // in [slotFiles] now and goes into the bin with the rest, which is what
+        // keeps a staged project restorable and its files still named while it
+        // is in there.
         scratchFile(slot).delete()
         snapshotScratchFile(slot).delete()
         metaScratchFile(slot).delete()
-        startFile(slot).delete()
         DraftFiles.moveToBin(trashDir, slot, slotFiles(slot))
     }
 
