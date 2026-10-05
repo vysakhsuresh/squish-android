@@ -39,9 +39,10 @@ music, footage and fonts, and translate caption words.
   leavings and 11 loops (Pulse, Swing, Bob, Shake, Heartbeat, Sway, Orbit,
   Rotate…).
 - Crop per clip (any window, straighten, flip), rotate, mirror.
-- Frame: ratios Original, 9:16, 1:1, 16:9, 3:4, 4:3, 4:5, 2:1, 2.35:1;
-  auto-reframe that follows the subject; padded canvas with colour, picture
-  or blurred background.
+- Frame: ratios Original, 9:16, 1:1, 16:9, 3:4, 4:3, 4:5, 2:1, 2.35:1, and a
+  hand-drawn Custom rectangle; a crop per clip as well as for the edit;
+  straighten, turn and mirror; auto-reframe that follows each shot's own
+  subject; padded canvas with colour, picture or blurred background.
 - Looks: 50 filters in six families (Essentials, Film, Mood, Cinema, Social,
   Retro) with strength; Adjust: brightness, contrast, saturation, exposure,
   temperature, tint, highlights, shadows, sharpen, vignette, hue, fade,
