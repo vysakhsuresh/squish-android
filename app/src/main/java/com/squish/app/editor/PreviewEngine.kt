@@ -22,6 +22,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import com.squish.app.media.AudioMixing
 import com.squish.app.media.ExportPlan
 import com.squish.app.media.StillClips
 import com.squish.app.media.audio.GainProcessor
@@ -632,7 +633,10 @@ class PreviewEngine(private val context: Context) {
     }
 
     private fun newVideoPlayer(voiceNow: () -> VoiceEffect) =
-        ExoPlayer.Builder(context, processedRenderers(VoiceProcessor(voiceNow)))
+        // The fold-down in front of the voice, as the export has it: see
+        // AudioMixing.processor. At unity on a mono or stereo file it makes
+        // itself inactive and costs nothing.
+        ExoPlayer.Builder(context, processedRenderers(AudioMixing.processor(1f), VoiceProcessor(voiceNow)))
         // Ready on half a second of buffer rather than the default two and a half.
         // A shot parked ahead of a cut has to be ready before the cut, and on a
         // heavy original the default was a large part of the stall at every one.
@@ -683,7 +687,11 @@ class PreviewEngine(private val context: Context) {
         // hear the level it will be written at; but the saturating voices are
         // not linear, so at anything other than full level the file and the
         // preview disagreed about the *timbre*, not only the loudness.
-        processedRenderers(VoiceProcessor { chain.voice.get() }, GainProcessor { chain.gain.get() })
+        processedRenderers(
+            AudioMixing.processor(1f),
+            VoiceProcessor { chain.voice.get() },
+            GainProcessor { chain.gain.get() }
+        )
     )
         .setLoadControl(
             DefaultLoadControl.Builder()

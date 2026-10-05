@@ -957,8 +957,20 @@ object ExportPlan {
         return AudioSlice(lead, sourceIn, sourceOut, skippedSource)
     }
 
-    /** The most channels an input is folded down from; eight is 7.1. */
+    /** The most channels an input has a *layout* for; eight is 7.1. */
     const val MAX_INPUT_CHANNELS = 8
+
+    /**
+     * The most channels a matrix is made for at all.
+     *
+     * Past [MAX_INPUT_CHANNELS] there is no layout anyone agrees on, but a file
+     * that has one still has to play and still has to export: a channel count
+     * with no matrix makes `ChannelMixingAudioProcessor.onConfigure` throw
+     * ("No mixing matrix set for input channel count"), which in the export is
+     * a failed render and in the preview a sound that will not start. AAC
+     * allows up to forty-eight; this is past anything a phone will decode.
+     */
+    const val MAX_ANY_CHANNELS = 48
 
     /** Mono stays mono and stereo stays stereo; anything wider becomes stereo. */
     fun downmixOutputChannels(inputChannels: Int): Int = if (inputChannels <= 2) inputChannels else 2
@@ -980,8 +992,16 @@ object ExportPlan {
      * mix a film might also carry, which is the ordinary trade every player makes.
      */
     fun downmixCoefficients(inputChannels: Int): FloatArray {
-        val n = inputChannels.coerceIn(1, MAX_INPUT_CHANNELS)
+        val n = inputChannels.coerceIn(1, MAX_ANY_CHANNELS)
         if (n <= 2) return FloatArray(n * n) { if (it / n == it % n) 1f else 0f }
+        if (n > MAX_INPUT_CHANNELS) {
+            // No layout past 7.1 that anyone agrees on, so the first two
+            // channels are taken as the stereo pair and the rest dropped -
+            // which is what a player does with a layout it does not know, and
+            // the alternative is not a worse mix but no mix: a channel count
+            // with no matrix makes the processor throw.
+            return FloatArray(n * 2) { if (it == 0 || it == 3) 1f else 0f }
+        }
         val side = 0.7071f
         val back = 0.5f
         // Per input channel: (to left, to right).

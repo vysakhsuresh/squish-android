@@ -542,6 +542,55 @@ fun main() {
             val r = (0 until n).sumOf { m[it * 2 + 1].toDouble() }
             check(abs(l - r) < 1e-4, "$n channels: left $l and right $r differ")
         }
+
+        // Past 7.1 there is no layout, but there still has to be a matrix.
+        // Media3's ChannelMixingAudioProcessor throws on a channel count it has
+        // no matrix for - "No mixing matrix set for input channel count" -
+        // which in the export is a failed render and in the preview, which now
+        // puts this same processor in front of its voices, a sound that will
+        // not start. So every count up to MAX_ANY_CHANNELS has one, and none of
+        // them can clip.
+        for (n in (ExportPlan.MAX_INPUT_CHANNELS + 1)..ExportPlan.MAX_ANY_CHANNELS) {
+            val out = ExportPlan.downmixOutputChannels(n)
+            val m = ExportPlan.downmixCoefficients(n)
+            check(out == 2, "$n channels became $out")
+            // Read through getOrNull throughout: a matrix of the wrong size is
+            // the fault being checked for, and it must be reported rather than
+            // thrown out of the suite half way through.
+            check(m.size == n * out, "$n channels: ${m.size} coefficients for $out outputs")
+            val at = { i: Int -> m.getOrNull(i) }
+            check(
+                at(0) == 1f && at(1) == 0f && at(2) == 0f && at(3) == 1f,
+                "$n channels: the first pair is not the stereo pair"
+            )
+            check(
+                (2 until n).all { at(it * 2) == 0f && at(it * 2 + 1) == 0f },
+                "$n channels: a channel past the pair was mixed in, or is not there at all"
+            )
+            for (o in 0 until 2) {
+                val sum = (0 until n).sumOf { (at(it * 2 + o) ?: 0f).toDouble() }
+                check(sum <= 1.0001, "$n channels: output $o can clip (sum $sum)")
+                check(sum > 0.5, "$n channels: output $o nearly silent (sum $sum)")
+            }
+        }
+        // And nothing in between is missed: every count from one to the ceiling
+        // has a matrix of the right size, which is the property the processor
+        // needs and the only one it will throw over.
+        for (n in 1..ExportPlan.MAX_ANY_CHANNELS) {
+            check(
+                ExportPlan.downmixCoefficients(n).size == n * ExportPlan.downmixOutputChannels(n),
+                "$n channels has no matrix of the right size"
+            )
+        }
+        // A count past the ceiling is held to it rather than returning nothing,
+        // since the coefficients are what a matrix is declared from.
+        check(
+            ExportPlan.downmixCoefficients(ExportPlan.MAX_ANY_CHANNELS + 10).size ==
+                ExportPlan.MAX_ANY_CHANNELS * 2,
+            "a count past the ceiling gave a matrix of another size"
+        )
+        check(ExportPlan.downmixCoefficients(0).isNotEmpty(), "no channels gave no matrix")
+        check(ExportPlan.downmixCoefficients(-3).isNotEmpty(), "a negative channel count gave no matrix")
     }
 
     // --- What each sequence declares: the clock is primary for every track. -----

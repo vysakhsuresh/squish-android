@@ -27,12 +27,25 @@ object AudioMixing {
      * even at 100% Media3's mixer has no default for folding stereo music into a
      * six-channel bed. Folded to stereo here, first, every input reaches the mixer
      * in a shape it takes. A mono or stereo input at full volume is an identity
-     * matrix, which Media3 skips outright, so the common case costs nothing.
+     * matrix, which Media3 skips outright (`onConfigure` returns
+     * `AudioFormat.NOT_SET` when the matrix `isIdentity()`), so the common case
+     * costs nothing.
+     *
+     * A matrix for every count up to [ExportPlan.MAX_ANY_CHANNELS], not only
+     * the ones with a layout: a count with no matrix makes `onConfigure` throw,
+     * and that is a failed render rather than a worse mix.
+     *
+     * The preview puts this in front of its own voice processors too, so a
+     * multichannel file is folded down by these coefficients on both sides.
+     * Left to the sink, it was not folded down before the voice at all -
+     * `ChannelMappingAudioProcessor` gets a null map except on two device
+     * workarounds, so the preview's voice saw six channels where the file's saw
+     * two, and the saturating voices are not linear.
      */
     fun processor(volume: Float): AudioProcessor {
         val gain = volume.coerceIn(0f, MAX_GAIN)
         val processor = ChannelMixingAudioProcessor()
-        for (channels in 1..ExportPlan.MAX_INPUT_CHANNELS) {
+        for (channels in 1..ExportPlan.MAX_ANY_CHANNELS) {
             val out = ExportPlan.downmixOutputChannels(channels)
             processor.putChannelMixingMatrix(
                 ChannelMixingMatrix(channels, out, ExportPlan.downmixCoefficients(channels)).scaleBy(gain)

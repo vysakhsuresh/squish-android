@@ -37,11 +37,18 @@ float hash(vec2 p) {
 // it over black, and reading the alpha from the middle tap alone left a
 // hard-edged hole in a picture that had been softened round it.
 vec4 sampleAt(vec2 uv) {
-  if (uBlur <= 0.0001) return texture2D(uTexSampler, uv);
+  if (uBlur <= 0.0001) return texture2D(uTexSampler, clamp(uv, 0.0, 1.0));
   vec4 sum = vec4(0.0);
   for (int i = -1; i <= 1; i++) {
     for (int j = -1; j <= 1; j++) {
-      sum += texture2D(uTexSampler, uv + vec2(float(i), float(j)) * uBlur);
+      // Clamped, as the three other copies of these nine taps are
+      // (squish_transition_es2, squish_premultiply_es2, CanvasFx's AGSL). A tap
+      // at the frame's edge reaches past it, and what it reads then is the
+      // sampler's wrap mode - clamp-to-edge as Media3 makes its textures, but
+      // that is the library's choice and not this shader's to lean on. Four
+      // copies of one blur is already one more than anyone can hold; they may
+      // at least be the same four lines.
+      sum += texture2D(uTexSampler, clamp(uv + vec2(float(i), float(j)) * uBlur, 0.0, 1.0));
     }
   }
   return sum / 9.0;
