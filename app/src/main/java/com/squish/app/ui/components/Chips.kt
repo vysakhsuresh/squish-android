@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -88,7 +89,15 @@ fun SquishToggleSwitch(
             .size(width = 44.dp, height = 26.dp)
             .clip(CircleShape)
             .background(trackColor)
-            .clickable(role = Role.Switch) { onCheckedChange(!checked) }
+            // toggleable, not clickable with a Role: Role.Switch only makes a
+            // screen reader say "switch", while the on or off it then says
+            // comes from the node's ToggleableState, which only this sets. On
+            // a clickable the whole app's switches announced themselves as
+            // switches and never said which way they were - the colour of the
+            // track was the only answer, which is no answer at all to someone
+            // using TalkBack. Nine controls go through here and not one of
+            // them carried semantics of its own.
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
             .padding(3.dp),
         contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
     ) {

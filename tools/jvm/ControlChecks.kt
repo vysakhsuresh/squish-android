@@ -400,6 +400,41 @@ fun main() {
         )
     }
 
+    // ---- A switch has to say which way it is. ------------------------------
+    //
+    // Role.Switch on a clickable only makes a screen reader say "switch". The
+    // "on" or "off" after it comes from the node's ToggleableState, which only
+    // Modifier.toggleable (or an explicit semantics block) sets - so every
+    // switch in the app announced itself as a switch and never said which way
+    // it was. The colour of the track was the only answer, which is no answer
+    // at all to someone using TalkBack, and the privacy switch, Keep HDR, Mute
+    // and "Ticks when snapping" are all behind this one control.
+    run {
+        val chips = read("$SRC/ui/components/Chips.kt")
+        check(
+            chips.contains("SquishToggleSwitch"),
+            "SquishToggleSwitch has moved out of Chips.kt - this check has rotted"
+        )
+        check(
+            Regex("\\.toggleable\\(\\s*value\\s*=").containsMatchIn(chips),
+            "the app's switch is no longer a Modifier.toggleable, so nothing puts an on/off on its node and " +
+                "a screen reader can only say that a switch is there"
+        )
+        // And nowhere may claim to be a switch while being a plain click. Said
+        // over the whole tree rather than the one file, because the next switch
+        // someone writes is the one that will do it.
+        readAll(SRC).forEach { (path, text) ->
+            Regex("\\.clickable\\([^)]*Role\\.Switch").findAll(text).forEach { m ->
+                problems += "$path declares Role.Switch on a clickable (${m.value.trim()}) - it says " +
+                    "\"switch\" and never says on or off; Modifier.toggleable is what carries the state"
+            }
+            Regex("\\.clickable\\([^)]*Role\\.Checkbox").findAll(text).forEach { m ->
+                problems += "$path declares Role.Checkbox on a clickable (${m.value.trim()}) - same fault: " +
+                    "the ticked state comes from toggleable, not from the role"
+            }
+        }
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
