@@ -82,7 +82,11 @@ function first; if it can, it can be checked.
   that for every suite in `run.sh` (about 50 minutes, one line each — and
   `tools/jvm/RunnerChecks.kt` fails if the two runners' lists ever part, which
   they had: four suites were in `run.sh` alone and the desktop had never run
-  them), and
+  them). **A change to a file on the runners' shared `$TIMELINE` list is a
+  change to every suite that compiles it**, and running only the suite the
+  change belongs to proves nothing about the other twenty - one new reference
+  from `TimedEffect.kt` broke thirteen of them while each one I ran passed.
+  After touching anything on that list, run the lot. And
   `sh tools/jvm/jc.sh <Suite> <files...>` runs one. Suites that run app code against Media3
   itself (the voice effects through its real `BaseAudioProcessor`) are in
   `sh tools/jvm/run_media3.sh`, which puts media3-common, guava and the SDK's
