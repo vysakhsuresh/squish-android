@@ -102,5 +102,6 @@ run musicsynth "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SR
 run synthtempo "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SynthTempoChecks.kt
 run runners    tools/jvm/RunnerChecks.kt
 run draftkeys  tools/jvm/DraftKeyChecks.kt
+run privacy    tools/jvm/PrivacyChecks.kt
 
 rm -rf "$OUT"
