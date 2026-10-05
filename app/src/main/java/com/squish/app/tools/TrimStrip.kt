@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.squish.app.editor.Timecode
 import com.squish.app.media.ThumbnailExtractor
@@ -149,8 +150,21 @@ fun TrimStrip(
             // reachable at the full range, and each touch target reaches on
             // inward from its bar - kept inside the strip, since past its edge
             // the card clips it and the finger scrolls the page instead.
+            // The two targets are 48 dp each and the kept stretch can be
+            // narrower than that. They are siblings in one Box, so where they
+            // overlapped the end - composed second, and therefore on top - took
+            // every touch in the overlap, and the start bar could not be
+            // dragged at all: pressing it moved the end instead, and dragging
+            // left collapsed the keep to its floor. They meet in the middle of
+            // the overlap now, each keeping the side its own bar is on.
+            val startLeft = startX.coerceIn(0f, (widthPx - targetPx).coerceAtLeast(0f))
+            val endLeft = (endX - targetPx).coerceIn(0f, (widthPx - targetPx).coerceAtLeast(0f))
+            val share = (((startLeft + targetPx) - endLeft) / 2f).coerceAtLeast(0f)
+            val floorPx = with(density) { HANDLE_WIDTH.toPx() }
+            val targetDp = with(density) { (targetPx - share).coerceAtLeast(floorPx).toDp() }
             TrimHandle(
-                x = startX.coerceIn(0f, (widthPx - targetPx).coerceAtLeast(0f)),
+                x = startLeft,
+                width = targetDp,
                 barAtStart = true,
                 accent = accent,
                 active = active == Handle.Start,
@@ -166,7 +180,8 @@ fun TrimStrip(
                 }
             )
             TrimHandle(
-                x = (endX - targetPx).coerceIn(0f, (widthPx - targetPx).coerceAtLeast(0f)),
+                x = endLeft + share,
+                width = targetDp,
                 barAtStart = false,
                 accent = accent,
                 active = active == Handle.End,
@@ -237,6 +252,7 @@ private enum class Handle { Start, End }
 @Composable
 private fun TrimHandle(
     x: Float,
+    width: Dp,
     barAtStart: Boolean,
     accent: Color,
     active: Boolean,
@@ -249,7 +265,7 @@ private fun TrimHandle(
     Box(
         modifier = Modifier
             .offset { IntOffset(x.roundToInt(), 0) }
-            .width(TARGET_WIDTH)
+            .width(width)
             .fillMaxHeight()
             .pointerInput(Unit) {
                 var travelled = 0f

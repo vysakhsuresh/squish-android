@@ -1,6 +1,10 @@
 package com.squish.app.editor
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +27,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -122,49 +127,64 @@ fun CurveEditor(
                         }
                     }
                 }
+                // Hand-rolled rather than detectDragGestures, for one reason:
+                // that one takes every drag that crosses touch slop and consumes
+                // it, whether or not a point was under the finger. The square is
+                // taller than the tool sheet's scroll viewport, so a swipe on it
+                // moved nothing and scrolled nothing - and once the square filled
+                // the viewport the sheet could not be scrolled at all, which left
+                // "Straighten every channel" and "Apply to all shots" below it
+                // unreachable. Here the gesture is let go of when the finger
+                // grabbed no point, and the sheet behind gets it.
                 .pointerInput(channel) {
-                    detectDragGestures(
-                        onDragStart = { at ->
-                            val x = at.x / size.width
-                            val y = 1f - at.y / size.height
-                            val points = latest.of(channel).points
-                            dragging = points.indices.minByOrNull {
-                                hypot(points[it].x - x, points[it].y - y)
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val x0 = down.position.x / size.width
+                        val y0 = 1f - down.position.y / size.height
+                        val near = latest.of(channel).points.let { points ->
+                            points.indices.minByOrNull {
+                                hypot(points[it].x - x0, points[it].y - y0)
                             }?.takeIf { i ->
-                                hypot((points[i].x - x) * size.width, (points[i].y - y) * size.height) < touchSlop
-                            } ?: -1
-                        },
-                        onDragEnd = { dragging = -1; finished() },
-                        onDragCancel = { dragging = -1; finished() }
-                    ) { _, drag ->
-                        val i = dragging
-                        if (i < 0) return@detectDragGestures
-                        val points = latest.of(channel).points.toMutableList()
-                        if (i >= points.size) return@detectDragGestures
-                        val old = points[i]
-                        // Held between its neighbours, so the sort below can
-                        // never reorder the list under the gesture. [dragging]
-                        // is an index into the sorted points, and a point
-                        // carried past a neighbour in one event used to swap
-                        // with it - from there the finger was dragging the
-                        // other point, and the one it had hold of ran away.
-                        // It can still reach a neighbour, which is what
-                        // [tooClose] below reads as "take this one off".
-                        val floor = if (i > 0) points[i - 1].x else 0f
-                        val ceiling = if (i < points.lastIndex) points[i + 1].x else 1f
-                        val x = (old.x + drag.x / size.width).coerceIn(0f, 1f).coerceIn(floor, ceiling)
-                        val y = (old.y - drag.y / size.height).coerceIn(0f, 1f)
-                        val ends = i == 0 || i == points.lastIndex
-                        // An end keeps its level and only moves up and down; a
-                        // black point that slides sideways is a curve that
-                        // starts somewhere other than black.
-                        points[i] = if (ends) CurvePoint(old.x, y) else CurvePoint(x, y)
-                        val next = if (!ends && tooClose(points, i)) {
-                            // Dragged onto a neighbour: taken off, which is how
-                            // a point is deleted on a touch screen.
-                            points.removeAt(i).let { dragging = -1; points }
-                        } else points
-                        change(latest.with(channel, Curve(next.sortedBy { it.x })))
+                                hypot((points[i].x - x0) * size.width, (points[i].y - y0) * size.height) < touchSlop
+                            }
+                        } ?: return@awaitEachGesture
+                        dragging = near
+                        val slop = awaitTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                        if (slop == null) { dragging = -1; return@awaitEachGesture }
+                        drag(slop.id) { event ->
+                            val drag = event.positionChange()
+                            event.consume()
+                            val i = dragging
+                            if (i < 0) return@drag
+                            val points = latest.of(channel).points.toMutableList()
+                            if (i >= points.size) return@drag
+                            val old = points[i]
+                            // Held between its neighbours, so the sort below can
+                            // never reorder the list under the gesture. [dragging]
+                            // is an index into the sorted points, and a point
+                            // carried past a neighbour in one event used to swap
+                            // with it - from there the finger was dragging the
+                            // other point, and the one it had hold of ran away.
+                            // It can still reach a neighbour, which is what
+                            // [tooClose] below reads as "take this one off".
+                            val floor = if (i > 0) points[i - 1].x else 0f
+                            val ceiling = if (i < points.lastIndex) points[i + 1].x else 1f
+                            val x = (old.x + drag.x / size.width).coerceIn(0f, 1f).coerceIn(floor, ceiling)
+                            val y = (old.y - drag.y / size.height).coerceIn(0f, 1f)
+                            val ends = i == 0 || i == points.lastIndex
+                            // An end keeps its level and only moves up and down; a
+                            // black point that slides sideways is a curve that
+                            // starts somewhere other than black.
+                            points[i] = if (ends) CurvePoint(old.x, y) else CurvePoint(x, y)
+                            val next = if (!ends && tooClose(points, i)) {
+                                // Dragged onto a neighbour: taken off, which is how
+                                // a point is deleted on a touch screen.
+                                points.removeAt(i).let { dragging = -1; points }
+                            } else points
+                            change(latest.with(channel, Curve(next.sortedBy { it.x })))
+                        }
+                        dragging = -1
+                        finished()
                     }
                 }
         ) {
