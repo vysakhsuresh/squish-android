@@ -1953,16 +1953,22 @@ private fun ClipView(
         // A sound's picture: its waveform across the part being drawn, so where
         // the loud bits and the beats fall can be read off the strip.
         if (clip.kind == ClipKind.Audio && waveform != null && waveform.peaks.isNotEmpty() && waveform.durationMs > 0) {
-            val fromMs = clip.sourceAt(drawnStartMs)
-            val toMs = clip.sourceAt(drawnEndMs)
             Canvas(modifier = Modifier.matchParentSize().padding(vertical = 6.dp)) {
                 val bars = (size.width / 3.dp.toPx()).toInt().coerceAtLeast(1)
                 val mid = size.height / 2f
                 val barWidth = 2.dp.toPx()
                 for (b in 0 until bars) {
-                    val atMs = fromMs + (toMs - fromMs) * (b + 0.5f) / bars
-                    val index = (atMs / waveform.durationMs.toFloat() * waveform.peaks.size).toInt()
-                    val peak = waveform.peaks.getOrElse(index.coerceIn(0, waveform.peaks.lastIndex)) { 0f }
+                    // Through the clip's own clock, bar by bar. The bars are
+                    // spread evenly across the *drawn* width, which is timeline
+                    // time, and the peak each shows used to be picked evenly
+                    // across the *source* span - the same mapping only at a flat
+                    // rate. On a curve the wave came off the beat dots twelve
+                    // lines below, which have always gone through
+                    // timelineAtSource, so the dots sat on the transients they
+                    // were found on and the wave under them did not.
+                    val atMs = StripDraw.barSourceMs(b, bars, drawnStartMs, drawnEndMs) { clip.sourceAt(it) }
+                    val index = StripDraw.peakIndex(atMs, waveform.durationMs, waveform.peaks.size)
+                    val peak = waveform.peaks.getOrElse(index) { 0f }
                     val half = (peak.coerceIn(0.05f, 1f) * size.height * 0.48f)
                     val x = (b + 0.5f) * size.width / bars
                     drawLine(

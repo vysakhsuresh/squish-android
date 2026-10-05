@@ -209,14 +209,12 @@ private enum class Grip {
                 rect.right + shiftX, rect.bottom + shiftY
             )
         }
-        Left -> CropRect.of(rect.left + dx, rect.top, rect.right, rect.bottom)
-        Right -> CropRect.of(rect.left, rect.top, rect.right + dx, rect.bottom)
-        Top -> CropRect.of(rect.left, rect.top + dy, rect.right, rect.bottom)
-        Bottom -> CropRect.of(rect.left, rect.top, rect.right, rect.bottom + dy)
-        TopLeft -> CropRect.of(rect.left + dx, rect.top + dy, rect.right, rect.bottom)
-        TopRight -> CropRect.of(rect.left, rect.top + dy, rect.right + dx, rect.bottom)
-        BottomLeft -> CropRect.of(rect.left + dx, rect.top, rect.right, rect.bottom + dy)
-        BottomRight -> CropRect.of(rect.left, rect.top, rect.right + dx, rect.bottom + dy)
+        // Every other grip moves the sides it names and pins the rest, which is
+        // CropRules.draggedFree - executed on the JVM, and the same pinning the
+        // held-ratio path does. Done here by hand, a left or top bracket dragged
+        // past its opposite number pushed that edge along instead of stopping,
+        // and the window ran away under the finger to the far side of the frame.
+        else -> CropRules.draggedFree(rect, dx, dy, movesLeft, movesRight, movesTop, movesBottom)
     }
 }
 

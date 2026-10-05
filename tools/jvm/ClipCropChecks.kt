@@ -117,6 +117,72 @@ fun main() {
         check(tiny.width >= CropRect.MIN_SIDE - 1e-3f, "the window collapsed: $tiny")
     }
 
+    // ---- A free drag pins the side the finger did not touch. ---------------
+    //
+    // CropRect.of clamps the low edges first and derives the high ones from
+    // them, so a left or top bracket dragged past its opposite number pushed
+    // that edge along instead of stopping: the window ran away under the finger,
+    // a step at a time, and parked as an eight-percent strip against the far
+    // side of the frame. Right and bottom were stopped correctly, which is what
+    // made the other two read as working.
+    run {
+        val start = CropRect.of(0.10f, 0f, 0.50f, 1f)
+        // The repro, step by step: twenty-pixel drags rightwards on the left
+        // bracket of a 1000 px preview.
+        var rect = start
+        repeat(40) {
+            rect = CropRules.draggedFree(rect, 0.02f, 0f, movesLeft = true, movesRight = false, movesTop = false, movesBottom = false)
+        }
+        check(
+            near(rect.right, start.right, 1e-4f),
+            "forty drags of the left bracket moved the right edge from ${start.right} to ${rect.right}"
+        )
+        check(
+            near(rect.width, CropRect.MIN_SIDE, 1e-3f),
+            "the window did not stop at its minimum width: ${rect.width}"
+        )
+        check(near(rect.left, start.right - CropRect.MIN_SIDE, 1e-3f), "the left edge stopped at ${rect.left}")
+
+        // The same for the top bracket dragged down, which had the same fault.
+        var tall = CropRect.of(0f, 0.10f, 1f, 0.50f)
+        repeat(40) {
+            tall = CropRules.draggedFree(tall, 0f, 0.02f, movesLeft = false, movesRight = false, movesTop = true, movesBottom = false)
+        }
+        check(near(tall.bottom, 0.50f, 1e-4f), "dragging the top bracket moved the bottom edge to ${tall.bottom}")
+        check(near(tall.height, CropRect.MIN_SIDE, 1e-3f), "the window did not stop at its minimum height: ${tall.height}")
+
+        // And the two that already worked still work: a right bracket dragged
+        // left stops at the minimum without moving the left edge.
+        var narrow = start
+        repeat(40) {
+            narrow = CropRules.draggedFree(narrow, -0.02f, 0f, movesLeft = false, movesRight = true, movesTop = false, movesBottom = false)
+        }
+        check(near(narrow.left, start.left, 1e-4f), "dragging the right bracket moved the left edge to ${narrow.left}")
+        check(near(narrow.width, CropRect.MIN_SIDE, 1e-3f), "the right bracket did not stop: ${narrow.width}")
+
+        // A corner moves two edges and pins the other two.
+        val corner = CropRules.draggedFree(start, 0.05f, 0.05f, movesLeft = true, movesRight = false, movesTop = true, movesBottom = false)
+        check(
+            near(corner.right, start.right, 1e-4f) && near(corner.bottom, start.bottom, 1e-4f),
+            "a top-left corner drag moved the anchored sides: $corner"
+        )
+        check(near(corner.left, 0.15f, 1e-4f) && near(corner.top, 0.05f, 1e-4f), "the corner did not follow the finger: $corner")
+
+        // Off the frame: a bracket dragged outwards stops at the edge.
+        val out = CropRules.draggedFree(start, -0.40f, 0f, movesLeft = true, movesRight = false, movesTop = false, movesBottom = false)
+        check(near(out.left, 0f, 1e-4f) && near(out.right, start.right, 1e-4f), "dragged off the frame it gave $out")
+        val past = CropRules.draggedFree(start, 0.80f, 0f, movesLeft = false, movesRight = true, movesTop = false, movesBottom = false)
+        check(near(past.right, 1f, 1e-4f) && near(past.left, start.left, 1e-4f), "dragged past the frame it gave $past")
+
+        // Move keeps its size, which is the other branch of the same gesture.
+        val moved = CropRect.of(start.left + 0.3f, start.top, start.right + 0.3f, start.bottom)
+        check(near(moved.width, start.width, 1e-4f), "sliding changed the width")
+
+        // Nothing moving changes nothing.
+        val still = CropRules.draggedFree(start, 0.1f, 0.1f, movesLeft = false, movesRight = false, movesTop = false, movesBottom = false)
+        check(still == start, "a grip that moves no edge changed the window: $still")
+    }
+
     println("clip crop: zoom, window, fit, and the shader against the layers")
     if (problems.isEmpty()) println("PASS - the preview's layers and the export's shader keep the same part of the picture")
     else { println("FAIL (${problems.size})"); problems.take(30).forEach { println("  - $it") }; exitProcess(1) }

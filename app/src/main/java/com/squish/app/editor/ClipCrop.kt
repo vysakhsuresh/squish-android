@@ -162,6 +162,44 @@ object CropRules {
     }
 
     /**
+     * A handle dragged with no shape held: the sides the grip moves, moved,
+     * and the sides it does not, pinned.
+     *
+     * Pinned is the point. CropRect.of clamps the low edges first and derives
+     * the high ones from them (`right.coerceIn(l + MIN_SIDE, 1f)`), so an
+     * over-run of *left* or *top* pushed its opposite edge along instead of
+     * stopping - the window ran away under the finger, a step at a time, until
+     * it parked as an eight-percent strip against the far side of the frame.
+     * An over-run of right or bottom was stopped correctly, which is what made
+     * the left and top brackets read as working. The held-ratio path below has
+     * always pinned the still side, and says so: "the shape shrinks to fit from
+     * the anchor rather than the anchor sliding to make room."
+     */
+    fun draggedFree(
+        before: CropRect,
+        dx: Float,
+        dy: Float,
+        movesLeft: Boolean,
+        movesRight: Boolean,
+        movesTop: Boolean,
+        movesBottom: Boolean
+    ): CropRect {
+        val min = CropRect.MIN_SIDE
+        // A moving low edge stops a minimum short of the high edge that stayed;
+        // a moving high edge stops a minimum past the low one. Where both move
+        // (nothing does today, but the signature allows it) the frame bounds it.
+        val left = if (!movesLeft) before.left else
+            (before.left + dx).coerceIn(0f, if (movesRight) 1f - min else (before.right - min).coerceAtLeast(0f))
+        val right = if (!movesRight) before.right else
+            (before.right + dx).coerceIn(if (movesLeft) min else (left + min).coerceAtMost(1f), 1f)
+        val top = if (!movesTop) before.top else
+            (before.top + dy).coerceIn(0f, if (movesBottom) 1f - min else (before.bottom - min).coerceAtLeast(0f))
+        val bottom = if (!movesBottom) before.bottom else
+            (before.bottom + dy).coerceIn(if (movesTop) min else (top + min).coerceAtMost(1f), 1f)
+        return CropRect.of(left, top, right, bottom)
+    }
+
+    /**
      * A handle dragged with the window held to a shape: the rectangle it
      * would be without the hold, then the side the finger moved least
      * follows the other. [movedX] and [movedY] say which sides the grip
