@@ -875,7 +875,11 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      */
     fun soundOnEveryCut(fit: CutSoundFit = CutSoundFit.LeadsIn, onDone: (laid: Int, joins: Int) -> Unit = { _, _ -> }) {
         val current = _state.value
-        val joins = CutSounds.joinsOf(current.videoClips.filter { it.isMain }, current.trimmedDurationMs)
+        // Against the picture's end, not the edit's. A cut is one shot becoming
+        // another; where a song runs on past the last shot the edit is longer
+        // than the picture, and the last shot's end then read as a join - so a
+        // whoosh was laid leading into nothing.
+        val joins = CutSounds.joinsOf(current.videoClips.filter { it.isMain }, current.pictureEndMs)
         if (joins.isEmpty()) {
             onDone(0, joins.size)
             return
