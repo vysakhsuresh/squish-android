@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.MAX_FOOTAGE_LAYER
 import com.squish.app.editor.OverlayRules.canStep
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.ValueTrack
@@ -132,11 +133,21 @@ fun LayerPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                 }
             }
         }
+        // Three cases, not two. A step is refused both when nothing shares the
+        // screen *and* when the row it would move to is one this clip may not
+        // take - footage keeps to the lowest rows, since each is a decoder - and
+        // the sheet said "no other overlay is on screen" for both, with the
+        // other overlay plainly on the picture at that moment.
+        val sharing = state.videoClips.any {
+            it.id != clip.id && it.isOverlay &&
+                it.timelineStartMs < clip.timelineEndMs && it.timelineEndMs > clip.timelineStartMs
+        }
         Text(
-            if (back || forward) {
-                "Moves it past the next overlay on screen with it, over or under."
-            } else {
-                "No other overlay is on screen at the same time as this one, so there is nothing to put it " +
+            when {
+                back || forward -> "Moves it past the next overlay on screen with it, over or under."
+                sharing -> "The overlay on screen with this one is on a row it cannot reach: only the " +
+                    "lowest $MAX_FOOTAGE_LAYER rows take video, because each one is a decoder."
+                else -> "No other overlay is on screen at the same time as this one, so there is nothing to put it " +
                     "in front of or behind."
             },
             style = MaterialTheme.typography.bodySmall,

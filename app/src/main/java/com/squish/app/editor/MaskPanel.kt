@@ -156,8 +156,17 @@ fun MaskPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // What the switch does depends on the mode, and the words were only
+            // right for Cut out. Pixelate and Blur destroy what is *inside* the
+            // shape, so un-inverted they are hiding it and inverted they are the
+            // one thing left clear - the Track tool's "Hide a face or plate
+            // here" makes a Pixelate mask, and the row under it said "Keeping
+            // the shape" over a pixelated face.
             Text(
-                if (mask.inverted) "Hiding the shape" else "Keeping the shape",
+                when (mask.mode) {
+                    MaskMode.Cutout -> if (mask.inverted) "Hiding the shape" else "Keeping the shape"
+                    else -> if (mask.inverted) "Everything but the shape" else "The shape"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = SquishColors.TextPrimary
             )

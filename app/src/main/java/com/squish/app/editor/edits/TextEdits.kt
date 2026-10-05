@@ -655,6 +655,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                     total = made,
                     transcribed = transcribed,
                     done = planned.size,
+                    landed = made,
                     recognitionAvailable = canTranscribe,
                     noWords = canTranscribe && transcribed == 0
                 )
@@ -738,6 +739,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         }
         if (!history.amend(run.tag) { it.copy(textOverlays = land(it.textOverlays)) }) return false
         run.landed = true
+        _state.update { it.copy(captions = it.captions.copy(landed = it.captions.landed + 1)) }
         _state.update { state ->
             val kept = land(state.textOverlays)
             // A selected line of the previous run has gone; nothing is selected in its place.
@@ -775,6 +777,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                     total = progress.done,
                     transcribed = progress.transcribed,
                     done = progress.done,
+                    landed = progress.landed,
                     recognitionAvailable = progress.recognitionAvailable
                 )
             )

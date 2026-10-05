@@ -436,6 +436,15 @@ data class CaptionProgress(
     val transcribed: Int = 0,
     /** Lines worked through so far, words or not - what the progress bar measures. */
     val done: Int = 0,
+    /**
+     * Lines actually put on the timeline.
+     *
+     * Not [done]: a stretch the detector planned can come back with no words at
+     * all - music or street noise under no speech - and is held back rather
+     * than landed. Stopping there, the card read "the lines made so far are on
+     * the timeline" off [done] when nothing had been added.
+     */
+    val landed: Int = 0,
     val finished: Boolean = false,
     /** Finished because it was stopped part-way, rather than by running out of lines. */
     val stopped: Boolean = false,

@@ -115,13 +115,21 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
             // second, each held for a seventh of a second. That is the stepping,
             // and it is arithmetic rather than a fault. Nobody can be expected to
             // work that out from a slider, so the panel says it.
-            SmoothnessLine(sourceFps = state.fps, speed = ramp.slowestSpeed)
+            // Only where there are frames to step. A sound clip takes Speed too
+            // (ToolRules gives it the tool), and these two talked to it about
+            // "this footage" - the rate they quote is the project's first video
+            // file, which has nothing to do with a song, and tapping the card
+            // really did clamp the song's speed to it. FrameBlendRow below has
+            // guarded this case all along.
+            if (clip.kind == ClipKind.Video && !clip.isStillPicture) {
+                SmoothnessLine(sourceFps = state.fps, speed = ramp.slowestSpeed)
 
-            SmoothToggle(
-                sourceFps = state.fps,
-                speed = ramp.slowestSpeed,
-                onHold = { viewModel.clips.keepSmooth(clip.id) }
-            )
+                SmoothToggle(
+                    sourceFps = state.fps,
+                    speed = ramp.slowestSpeed,
+                    onHold = { viewModel.clips.keepSmooth(clip.id) }
+                )
+            }
 
             FrameBlendRow(clip = clip, sourceFps = state.fps, viewModel = viewModel)
 

@@ -383,7 +383,7 @@ private fun TempoReadout(state: EditorUiState) {
                 )
             }
             Text(
-                "${state.barGrid.size} bars",
+                countOf(state.barGrid.size, "bar"),
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextSecondary
             )

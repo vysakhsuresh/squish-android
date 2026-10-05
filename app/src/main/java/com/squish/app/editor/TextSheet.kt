@@ -298,9 +298,14 @@ fun TextPanel(
                     }
                 }
 
+                // On what landed, not on what was worked through. A stretch the
+                // detector planned can come back with no words at all - music or
+                // street noise under no speech - and is held back rather than
+                // put on the timeline, so "the lines made so far are on the
+                // timeline" was said over a timeline with nothing added to it.
                 status.stopped -> Text(
-                    if (status.done == 0) "Stopped before any lines were made."
-                    else "Stopped. The lines made so far are on the timeline — " +
+                    if (status.landed == 0) "Stopped before any lines were made."
+                    else "Stopped. ${countOf(status.landed, "line")} made so far, on the timeline — " +
                         "auto-caption again to replace them with a full pass.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.TextSecondary
@@ -337,9 +342,10 @@ fun TextPanel(
 
                 status.finished -> Text(
                     if (!status.recognitionAvailable)
-                        "${status.total} lines timed. This device has no on-device speech " +
+                        "${countOf(status.total, "line")} timed. This device has no on-device speech " +
                             "recognition, so the words are yours to type — the timing is done."
-                    else "${status.total} lines timed, ${status.transcribed} transcribed. Animation → Words lands each word as it is said.",
+                    else "${countOf(status.total, "line")} timed, ${status.transcribed} transcribed. " +
+                        "Animation → Words lands each word as it is said.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.Teal
                 )
