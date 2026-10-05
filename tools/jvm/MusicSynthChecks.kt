@@ -79,6 +79,16 @@ fun main() {
         //
         // The start is not checked. A transient begins at level because that is
         // what a transient is - silence to a hit is the sound.
+        // The length in the subtitle is the length of the file. Each of these
+        // reads "Impact · 1.6s", and the list is the only place anyone can see
+        // how long a sound is before placing it.
+        Regex("""([0-9.]+)\s*s\b""").find(e.hint)?.let { m ->
+            val said = m.groupValues[1].toFloat()
+            check(
+                kotlin.math.abs(said - e.seconds) < 0.05f,
+                "${e.id} says ${said}s on the list and is ${e.seconds}s long"
+            )
+        } ?: check(false, "${e.id}'s subtitle \"${e.hint}\" does not say how long it is")
         val half = MusicSynth.SAMPLE_RATE / 2000
         check(lastSample(f) < 0.02, "${e.id} ends on a sample at ${lastSample(f)} - it will click on its cut")
         check(tailPeak(f, half) < 0.25, "${e.id} has no taper (last 0.5 ms peaks at ${tailPeak(f, half)})")
