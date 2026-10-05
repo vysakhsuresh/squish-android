@@ -267,6 +267,54 @@ fun main() {
         )
     }
 
+    // ---- A control that is not drawn does not take touches ------------------
+    run {
+        val handles = read("$SRC/editor/OverlayHandles.kt")
+        check(
+            handles.contains("latestShowBox && roomy"),
+            "the overlay box's corner hit test no longer checks `roomy`, which the drawing does - with the " +
+                "keyboard up the four buttons are hidden and their touch zones would stay live, so a tap on " +
+                "bare picture past a corner deletes the line being typed"
+        )
+        check(
+            handles.contains("canOpen"),
+            "the box's double tap no longer asks whether there is anything to open - on a clip overlay the " +
+                "handler returns without acting, and the quick repeat stands in for the tap that cycles a stack"
+        )
+    }
+
+    // ---- A corner is a corner wherever the finger is ------------------------
+    run {
+        val crop = read("$SRC/editor/CustomCropOverlay.kt")
+        check(
+            !Regex("""Grip\.(Top|Bottom)(Left|Right)\s*(?:->|\bto\b)[^\n]*!inside""").containsMatchIn(crop) &&
+                !Regex("""&&\s*!inside\s*->\s*Grip\.""").containsMatchIn(crop),
+            "the hand-drawn crop's corners are gated on being outside the rectangle again - the brackets are " +
+                "drawn inward and the window opens at the whole picture, so no touch is ever outside and a " +
+                "corner cannot be grabbed at all"
+        )
+    }
+
+    // ---- A square inside a scrolling sheet lets go of what it did not grab --
+    run {
+        val curve = read("$SRC/editor/CurveEditor.kt")
+        check(
+            !Regex("""(?m)^\s*detectDragGestures\(""").containsMatchIn(curve),
+            "the Curves square is back on detectDragGestures, which takes and consumes every drag whether or " +
+                "not a point was under the finger - the sheet behind it cannot then be scrolled"
+        )
+    }
+
+    // ---- Two handles on one strip do not cover each other -------------------
+    run {
+        val strip = read("$SRC/tools/TrimStrip.kt")
+        check(
+            strip.contains("val share = ") && strip.contains("width = targetDp"),
+            "Snip's two trim handles are back to a fixed width - below a 48 dp keep the end handle, drawn " +
+                "second, covers the start bar end to end and takes its touches"
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
