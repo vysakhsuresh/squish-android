@@ -169,7 +169,7 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     previewing?.let { record ->
         VideoPreviewSheet(
             title = record.shownTitle,
-            subtitle = "${Timecode.format(record.durationMs).removeSuffix(".000")}  ·  " +
+            subtitle = "${Timecode.format(record.durationMs, withMillis = false)}  ·  " +
                 formatSize(record.outputSizeBytes),
             uri = record.mediaUri,
             durationMs = record.durationMs,

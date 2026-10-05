@@ -830,6 +830,58 @@ fun main() {
         )
     }
 
+    // ---- A formatted number is never cut up by an ASCII literal. -----------
+    //
+    // `"...".format(...)` is java.lang.String.format against the default
+    // locale, so %d emits the phone's own digits. Five call sites took ".000"
+    // off the end of a timecode, which matched nothing on a phone set to
+    // Arabic, Persian, Bengali, Nepali or Burmese: every label grew from four
+    // characters to nine, and the strip's ruler - a tick label a second, laid
+    // out with no width given - ran into itself. The fix is to leave the part
+    // out of the format string, which Timecode.format(ms, withMillis) does.
+    // The sibling call sites that use substringBefore('.') are safe, because
+    // the literal '.' is copied through the format string itself.
+    run {
+        readAll(SRC).forEach { (path, text) ->
+            Regex("""removeSuffix\("\.0+"\)|removePrefix\("0""").findAll(text).forEach { m ->
+                problems += "$path cuts a formatted number up with an ASCII literal (${m.value}) - " +
+                    "format() with no locale emits the phone's own digits, so the literal matches nothing " +
+                    "and the whole string is kept. Leave the part out of the format string instead."
+            }
+        }
+    }
+
+    // ---- "Opened just to look" outlives the process. -----------------------
+    //
+    // A video opened by another app and never edited is binned when the editor
+    // closes - but the rule was held in an in-memory field set on the fresh
+    // path alone, and its one durable record is the .start file that the first
+    // save deletes, inside loadFresh. So a look closed by the process going
+    // rather than by a back press - which is what swiping the app off recents
+    // does - stayed on the dashboard for good as a project nobody made, holding
+    // a picker grant nothing could release (a draft names the file, so
+    // ProjectRules.releasable refuses). Reopening it and pressing back did not
+    // take it off either, because on that path the field was never set.
+    run {
+        val autosave = read("$SRC/data/ProjectAutosave.kt")
+        check(
+            autosave.contains("fun openedJustToLook(slot: String): Boolean"),
+            "ProjectAutosave no longer records \"opened from outside\" past the first save"
+        )
+        check(
+            Regex("""put\("openedFromOutside", true\)""").containsMatchIn(autosave),
+            "the sidecar no longer carries openedFromOutside, so the one record of a look is the .start " +
+                "file that save() deletes"
+        )
+        val editor = read("$SRC/editor/EditorViewModel.kt")
+        check(
+            Regex("""openedJustToLook = withContext\(Dispatchers\.IO\) \{ autosave\.openedJustToLook\(""")
+                .containsMatchIn(editor),
+            "a reopened project does not read back whether it was opened just to look, so a look that " +
+                "survived a process death can never be taken off the grid"
+        )
+    }
+
     // ---- A pick waits for the edit to be open. -----------------------------
     //
     // Killed behind the photo picker, the app comes back and

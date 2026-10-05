@@ -224,6 +224,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(startedAtMillis = startedAt.takeIf { at -> at > 0L } ?: System.currentTimeMillis()) }
             val draft = withContext(Dispatchers.IO) { autosave.peek(projectId) }
             if (draft != null) {
+                // A look reopened is still a look. The flag used to be set on
+                // the fresh path alone, and loadFresh's own save deletes the
+                // only record of it, so a video opened from another app and
+                // closed by the process going rather than by a back press - a
+                // swipe off recents does that - stayed on the grid for good,
+                // and reopening it could not take it off either.
+                openedJustToLook = withContext(Dispatchers.IO) { autosave.openedJustToLook(projectId) }
                 applyDraft(draft)
                 return@launch
             }

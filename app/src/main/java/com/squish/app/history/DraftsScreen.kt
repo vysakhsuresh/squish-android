@@ -378,7 +378,7 @@ private fun DraftCard(
                 // the one most likely to be opened for one more change.
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (draft.durationMs > 0) Text(
-                        Timecode.format(draft.durationMs).removeSuffix(".000"),
+                        Timecode.format(draft.durationMs, withMillis = false),
                         style = MaterialTheme.typography.labelSmall,
                         color = SquishColors.TextMuted.copy(alpha = 0.7f)
                     )

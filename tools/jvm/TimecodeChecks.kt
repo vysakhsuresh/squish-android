@@ -150,6 +150,61 @@ fun main() {
         check(changes == 30, "counting down from 0:30 changed $changes times, want 30")
     }
 
+    // ---- A label with no room for milliseconds drops them in the formatter --
+    //
+    // Five call sites took ".000" off the end of a full timecode instead. But
+    // `"...".format(...)` is java.lang.String.format against the *default*
+    // locale, so on a phone set to Arabic, Persian, Bengali, Nepali or Burmese
+    // the digits are that locale's own and the ASCII ".000" matched nothing:
+    // every label grew from four characters to nine. The worst of the five is
+    // the strip's ruler, which lays a tick label every second with no width
+    // given, so the labels ran into one another and the ruler could not be
+    // read; the others are each clip's length chip and the drafts and library
+    // rows. (The inverse trap, from 5 October: uppercase() with no locale is
+    // locale-independent, format() with no locale is not.)
+    run {
+        val was = java.util.Locale.getDefault()
+        try {
+            // A locale with its own digit set, one with a comma for a decimal
+            // point, and plain English.
+            listOf("ar-EG", "fa-IR", "bn-IN", "my-MM", "ne-NP", "hi-IN", "de-DE", "en-US").forEach { tag ->
+                java.util.Locale.setDefault(java.util.Locale.forLanguageTag(tag))
+                val short = Timecode.format(3_000L, withMillis = false)
+                val full = Timecode.format(3_000L, withMillis = true)
+                // The short form carries no fraction at all, whatever the
+                // digits are: two groups and one separator.
+                check(
+                    !short.contains('.') && short.count { it == ':' } == 1,
+                    "under $tag the short timecode is \"$short\""
+                )
+                check(full.startsWith(short), "under $tag \"$full\" does not begin with \"$short\"")
+                check(full.length > short.length, "under $tag the full form is no longer than the short one")
+                // And the short form is short: four characters in English, and
+                // no more than six in any of these, where it used to be nine.
+                check(short.length <= 6, "under $tag the short timecode is ${short.length} characters: \"$short\"")
+                // With hours it is three groups, still no fraction.
+                val hourly = Timecode.format(2L * 3_600_000 + 35 * 60_000 + 26_000, withMillis = false)
+                check(
+                    !hourly.contains('.') && hourly.count { it == ':' } == 2,
+                    "under $tag an hour-long timecode reads \"$hourly\""
+                )
+            }
+            // English, exactly: the strings the ruler and the chips show.
+            java.util.Locale.setDefault(java.util.Locale.US)
+            check(Timecode.format(0L, withMillis = false) == "0:00", "0 ms reads ${Timecode.format(0L, withMillis = false)}")
+            check(Timecode.format(3_000L, withMillis = false) == "0:03", "3 s reads ${Timecode.format(3_000L, withMillis = false)}")
+            check(Timecode.format(64_320L, withMillis = false) == "1:04", "64.32 s reads ${Timecode.format(64_320L, withMillis = false)}")
+            check(Timecode.format(64_320L) == "1:04.320", "the full form reads ${Timecode.format(64_320L)}")
+            check(
+                Timecode.format(2L * 3_600_000 + 35 * 60_000 + 26_000 + 714) == "2:35:26.714",
+                "an hour-long timecode reads ${Timecode.format(2L * 3_600_000 + 35 * 60_000 + 26_000 + 714)}"
+            )
+            check(Timecode.format(-5L, withMillis = false) == "0:00", "a negative moment reads ${Timecode.format(-5L, withMillis = false)}")
+        } finally {
+            java.util.Locale.setDefault(was)
+        }
+    }
+
     println("timecode: the frame buttons step one frame, on the shot's own frames")
     if (problems.isEmpty()) println("PASS - every press shows the next frame, forward and back, at every rate and speed")
     else { println("FAIL (${problems.size})"); problems.take(30).forEach { println("  - $it") }; exitProcess(1) }

@@ -1620,7 +1620,7 @@ private fun Ruler(
             Column(modifier = Modifier.offset(x = window.xDp(label).dp)) {
                 Box(modifier = Modifier.width(1.dp).height(6.dp).background(SquishColors.Border))
                 Text(
-                    Timecode.format(label).removeSuffix(".000"),
+                    Timecode.format(label, withMillis = false),
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextMuted
                 )
@@ -2082,7 +2082,7 @@ private fun ClipView(
         if (framesOnly) {
             if (width > labelInset * 2 + 40.dp) {
                 Text(
-                    text = Timecode.format(clip.durationMs).removeSuffix(".000"),
+                    text = Timecode.format(clip.durationMs, withMillis = false),
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextPrimary,
                     maxLines = 1,
@@ -2132,7 +2132,7 @@ private fun ClipView(
             }
             if (width > 88.dp) {
                 Text(
-                    text = Timecode.format(clip.durationMs).removeSuffix(".000"),
+                    text = Timecode.format(clip.durationMs, withMillis = false),
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextPrimary.copy(alpha = 0.6f),
                     maxLines = 1,

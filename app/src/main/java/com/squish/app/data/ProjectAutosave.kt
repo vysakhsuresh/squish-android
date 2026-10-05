@@ -318,6 +318,24 @@ class ProjectAutosave(context: Context) {
         }.getOrNull()
     }
 
+    /** The staged start as raw JSON, for [save] to read one field off it. */
+    private fun readStartJson(slot: String): JSONObject? {
+        val file = startFile(slot)
+        if (!file.exists()) return null
+        return runCatching { JSONObject(file.readText()) }.getOrNull()
+    }
+
+    /**
+     * Whether [slot] was opened from another app and has not been edited since
+     * - a look, not a project. Survives the process, unlike the field the
+     * editor used to keep it in; see the sidecar's "openedFromOutside".
+     */
+    fun openedJustToLook(slot: String): Boolean = synchronized(lock) {
+        readMetaJson(metaFile(slot))?.optBoolean("openedFromOutside", false)
+            ?: readStartJson(slot)?.optBoolean("openedFromOutside", false)
+            ?: false
+    }
+
     /**
      * Gives the project a name, or with null takes it away. Written into the
      * draft as a save writes it, and into the sidecar the list reads; an
@@ -803,6 +821,24 @@ class ProjectAutosave(context: Context) {
             // When the project was started, for the name an unnamed one is shown by.
             put("createdAtMillis", previous?.optLong("createdAtMillis", 0L)?.takeIf { it > 0L } ?: savedAtMillis)
             put("editFingerprint", fingerprint)
+            // "Opened from another app just to look", kept across a process
+            // death. Its only record used to be the .start file that this very
+            // save deletes - and loadFresh saves - so a look closed by the
+            // process going rather than by a back press (swiping the app off
+            // recents does exactly that) stayed on the grid for good as a
+            // project nobody made, holding a picker grant that nothing could
+            // release, because a draft names the file. Dropped the moment the
+            // edit differs from the one the project was opened with: after a
+            // real edit it is a project, whatever it was opened by.
+            val startedOutside = previous?.optBoolean("openedFromOutside", false)
+                ?: readStartJson(slot)?.optBoolean("openedFromOutside", false)
+                ?: false
+            val startFingerprint = previous?.optString("startFingerprint")
+                ?.takeIf { it.isNotBlank() } ?: fingerprint
+            if (startedOutside && fingerprint == startFingerprint) {
+                put("openedFromOutside", true)
+                put("startFingerprint", startFingerprint)
+            }
             putCover(coverUri, coverAt, owned + scratchFile(slot).length())
             // The export stamp is the one thing in the sidecar the edit does not
             // carry, so it is kept from the previous sidecar rather than lost on

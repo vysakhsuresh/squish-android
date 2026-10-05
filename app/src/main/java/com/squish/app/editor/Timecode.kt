@@ -84,14 +84,32 @@ object Timecode {
      * "2:35:26.714" once there are hours. Without the hours a film read as
      * "155:26.714", which nobody reads as two and a half hours.
      */
-    fun format(ms: Long): String {
+    fun format(ms: Long): String = format(ms, withMillis = true)
+
+    /**
+     * The same without the fraction - "1:04", "2:35:26" - for a label that has
+     * no room for it: a ruler tick, a clip's length chip, a row in the drafts
+     * or library list.
+     *
+     * Dropped here rather than by taking ".000" off the end afterwards, which
+     * is what five call sites used to do. `"...".format(...)` is
+     * java.lang.String.format against the *default* locale, so on a phone set
+     * to Arabic, Persian, Bengali, Nepali or Burmese the digits are that
+     * locale's own and the ASCII ".000" matched nothing: every label grew from
+     * four characters to nine, and the ruler's ticks - laid out at a tick a
+     * second with no width given - ran into one another and could not be read.
+     * (The inverse trap is worth keeping in mind beside it: `uppercase()` with
+     * no locale is locale-independent, `format()` with no locale is not.)
+     */
+    fun format(ms: Long, withMillis: Boolean): String {
         val safe = ms.coerceAtLeast(0)
         val hours = safe / 3_600_000
         val minutes = (safe % 3_600_000) / 60_000
         val seconds = (safe % 60_000) / 1000
         val millis = safe % 1000
-        return if (hours > 0) "%d:%02d:%02d.%03d".format(hours, minutes, seconds, millis)
-        else "%d:%02d.%03d".format(minutes, seconds, millis)
+        val fraction = if (withMillis) ".%03d".format(millis) else ""
+        return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) + fraction
+        else "%d:%02d".format(minutes, seconds) + fraction
     }
 
     /** "1:04.320 · f1929" */
