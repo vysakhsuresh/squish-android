@@ -51,9 +51,10 @@ music, footage and fonts, and translate caption words.
   VHS, B&W, Invert, Blur, Rainbow, RGB split, Strobe, Earthquake, Heartbeat,
   TV static, Old film, Dream, Negative pulse, Trippy, Sway -
   timed on the strip, previewed on your own shot.
-- Transitions (25): Dissolve, Dip to black/white, Blackout, Slide 4 ways, Push 4
+- Transitions (26): Dissolve, Dip to black/white, Blackout, Slide 4 ways, Push 4
   ways, Whip, Wipe 4 ways, Zoom in, Zoom out, Pop in, Jitter, Flicker, Flash,
-  Glow - previewed on your shots.
+  Glow, Blur (a focus pull through the cut) and Burn out (the old shot turning
+  white and thinning away over the new one) - previewed on your shots.
 - Masks: rectangle, ellipse, linear, mirror, heart, star - cut out,
   pixelate or blur (face privacy), feather, invert, motion-tracked.
 - Chroma key (green screen) with eyedropper; background removal (Cutout)

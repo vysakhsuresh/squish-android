@@ -1,5 +1,14 @@
 # Visual tools: filters/looks, adjust, effects library, transitions, speed, crop/rotate, canvas, masks, chroma key, keyframes/motion, stabilize, background removal, auto-reframe
 
+> **Historical. 28 September 2026, and almost none of it is true any more.**
+> This was the audit against CapCut that the build plan came out of, written
+> before batches B1–B16 existed. It is kept because the *reasoning* in it is
+> what `docs/ROADMAP.md` was built from, and because a few of its "gap" entries
+> are still open — but every statement about what the app does or does not have
+> is seven batches out of date. For what is built, read `ARCHITECTURE.md` §5;
+> for what is unseen on a device, `CLAUDE.md` and `docs/DEVICE_FINDINGS.md`.
+
+
 Read-only audit of the visual-tool panels and the render paths behind them (EffectsPanel/FxPanel/TransitionPanel/SpeedPanel/MotionPanel/MaskPanel/ChromaKeyPanel/BackgroundPanel/CropOverlay/CustomCropOverlay, media/effects, PreviewEngine, VideoProcessor, CompositionFactory, ProjectAutosave, EditorViewModel). The rendering foundations are strong (shared shaders between preview and export, honest look thumbnails, per-frame effect hooks), but there are several places where what the preview shows is not what the export writes (overlay grading, saturation maths, keyframes on retimed clips, rotation order, mixed-aspect surfaces), a data-loss hole (custom crop never persisted), an undo hole (masks, chroma key, keyframes, presets, transitions, stabilize and speed points are not undoable), and a playback-stall hole (every mask/chroma slider tick stops and reloads the player). Against CapCut the biggest structural gaps are: everything colour/crop/rotation is global rather than per clip, there is no canvas/background (padded 9:16 with blurred fill), no direct manipulation of clips or overlays on the preview, a 3-slider Adjust, no in/out/combo animations with duration, keyframes only for transform, and overlays that cannot be photos, keep no audio and have no blend modes. 22 bugs, 16 gaps, 12 UX items follow, most severe first within each kind.
 
 ## gap · high · L — Filters and Adjust are global to the whole edit, not per clip

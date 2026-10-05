@@ -1,5 +1,14 @@
 # Audio: music library, device music, sound effects, voiceover, extract audio, per-clip volume, fades, beats, noise reduction, voice effects, ducking, waveforms, audio trim/split
 
+> **Historical. 28 September 2026, and almost none of it is true any more.**
+> This was the audit against CapCut that the build plan came out of, written
+> before batches B1–B16 existed. It is kept because the *reasoning* in it is
+> what `docs/ROADMAP.md` was built from, and because a few of its "gap" entries
+> are still open — but every statement about what the app does or does not have
+> is seven batches out of date. For what is built, read `ARCHITECTURE.md` §5;
+> for what is unseen on a device, `CLAUDE.md` and `docs/DEVICE_FINDINGS.md`.
+
+
 Squish's audio model is structurally stronger than CapCut's in one respect (every sound is an ordinary timeline clip, unlimited overlapping tracks, auto-sync and beat detection on-device), but the feature surface a CapCut user expects around each clip is mostly missing: no voiceover recording at all (no RECORD_AUDIO in the manifest), no fade in/out, no per-clip volume or mute on video clips (Clip.volume is serialized for video clips but never applied), no gain above 100%, no sound-effects library, no noise reduction, no extract-audio from a clip on the strip, no beat dots on the clip, and overlay clips are always silent. The voice changer is a single project-wide setting that only touches the camera audio. Concrete code defects found: the preview pitch-shifts added music when Chipmunk/Deep is selected while the export does not (PreviewEngine.setSpeed pushes liveVoice.pitch to every audio player); every tick of the Level slider or of an audio drag re-seeks every sound player because setTimeline always calls primeAudio; the export's "silent pad" for a music cue is a slice of the source video's own audio, so a cue placed later than the source file is long starts early on export; a speed-ramped audio clip is clipped to its played length instead of its source span; AudioMixing only registers 1- and 2-channel matrices so any 5.1 film rip fails to export at any volume below 100%; auto-sync ignores the head clip's own trim; none of the audio-panel edits (trim, level, place, nudge, reset, auto-sync) are undoable; the beat grid is not saved in the draft; "Cut on the beat" razors the music itself into fragments; and the Sound panel buries the selected track's controls under a 60-row music browser. The strip's "split every track under the playhead" rule also chops the music bed with every video cut, which CapCut users will read as a bug.
 
 ## gap · critical · L — No voiceover recording

@@ -1,5 +1,14 @@
 # Text, titles, captions and stickers
 
+> **Historical. 28 September 2026, and almost none of it is true any more.**
+> This was the audit against CapCut that the build plan came out of, written
+> before batches B1–B16 existed. It is kept because the *reasoning* in it is
+> what `docs/ROADMAP.md` was built from, and because a few of its "gap" entries
+> are still open — but every statement about what the app does or does not have
+> is seven batches out of date. For what is built, read `ARCHITECTURE.md` §5;
+> for what is unseen on a device, `CLAUDE.md` and `docs/DEVICE_FINDINGS.md`.
+
+
 Read-only audit of the text/caption/sticker surface (CaptionsPanel, StickersPanel, TextStyle, CaptionRenderer, SquishTextOverlay, LiveCaptionOverlay, plus the view-model, autosave, preview engine, export and timeline code they depend on). Nothing was built or run; every bug below is traced to lines, and effects that need a device are labelled as such.
 
 The rendering core is sound: one renderer paints captions for preview and export, the preview layer is value-driven (no pipeline rebuild per keystroke), stickers reuse the caption path, autosave round-trips every text field, and SRT import/export is forgiving. What is missing is almost the entire CapCut text *workflow*: there is no on-canvas editing at all (no drag, pinch, rotate, tap-to-select, handles), no keyboard-first add-text flow, no free placement for captions (Top/Middle/Bottom only, x locked), no adjustable stroke/shadow/background/opacity/alignment/spacing/rotation, a 7-swatch colour row, six system fonts, six combined in/out animations with a fixed 450 ms and no loop, no apply-to-all, no text-to-speech, emoji-only stickers, and a selected text clip on the strip that opens nothing.

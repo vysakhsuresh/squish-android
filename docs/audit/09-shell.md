@@ -1,5 +1,14 @@
 # App shell and first-run experience: home, quick tools, library, drafts, settings, navigation, theme, accessibility, project start flow
 
+> **Historical. 28 September 2026, and almost none of it is true any more.**
+> This was the audit against CapCut that the build plan came out of, written
+> before batches B1–B16 existed. It is kept because the *reasoning* in it is
+> what `docs/ROADMAP.md` was built from, and because a few of its "gap" entries
+> are still open — but every statement about what the app does or does not have
+> is seven batches out of date. For what is built, read `ARCHITECTURE.md` §5;
+> for what is unseen on a device, `CLAUDE.md` and `docs/DEVICE_FINDINGS.md`.
+
+
 The shell is well-crafted and consistent in its own idiom, but a first-time user starts a project one video at a time through a "The Studio" hero (single, video-only picker), there is no project list on the home screen, no project names, one project per source video, and Settings is an About page with nothing to set. Four traceable defects matter most: (1) system-bar icons follow the phone's light/dark setting while the app is always navy, so on a light-mode phone the status bar and gesture pill are dark-on-dark (MainActivity.kt:20); (2) the Editor/Export routes decode their URI argument twice, so a video opened via "Open with" from a file manager (document URIs contain %3A/%2F) resolves to a broken URI and fails as unreadable (SquishNavHost.kt:175-177); (3) each quick tool has one draft slot keyed by tool id, so starting a second Stitch/Squeeze and touching anything silently overwrites the earlier unfinished session (ToolAutosave.kt:48, QuickToolViewModel.kt:170); (4) pressing back or system back mid-export silently cancels the render with no confirmation and no cancel button of its own, and there is no foreground service or keep-screen-on, so long exports die when the screen sleeps or the app is backgrounded. Also: the last <=1.5 s of edits are dropped when the editor is left because nothing flushes on ViewModel clear; "Start fresh" on the recovery banner deletes a draft with no confirmation; every export is stored twice (private copy plus MediaStore copy) and Settings' storage card never shows it; library/draft thumbnails are re-extracted on every scroll; several tap targets are 18-34 dp with unlabeled icon buttons.
 
 ## gap · high · M — New project starts with one video, not a multi-select of photos and videos

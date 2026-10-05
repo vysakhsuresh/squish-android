@@ -1,5 +1,14 @@
 # Preview playback and scrubbing reliability (PreviewEngine, TimelinePreview, PreviewBox, ProxyEngine)
 
+> **Historical. 28 September 2026, and almost none of it is true any more.**
+> This was the audit against CapCut that the build plan came out of, written
+> before batches B1–B16 existed. It is kept because the *reasoning* in it is
+> what `docs/ROADMAP.md` was built from, and because a few of its "gap" entries
+> are still open — but every statement about what the app does or does not have
+> is seven batches out of date. For what is built, read `ARCHITECTURE.md` §5;
+> for what is unseen on a device, `CLAUDE.md` and `docs/DEVICE_FINDINGS.md`.
+
+
 The preview architecture is sound (timeline time is the authority, A/B roll parity matches the exporter, no rebuilds for grade/caption changes) but the multi-clip path was never given the lookahead that the audio path has, so every cut and every transition start begins with a cold seek that stalls the clock and briefly shows a stale frame. The biggest fidelity defect is that surfaces are bare TextureViews filling a box shaped by the FIRST clip, so any clip or overlay of a different aspect is stretched in the preview while the export letterboxes it. Several smaller but traceable defects: redraw() walks the paused frame backwards 1 ms per call (and can show the frame before a trim in-point), the 2-second unstick reload can loop forever on a slow EXACT seek and reloads every surface, overlay players have no error recovery or unstick, speed ramps restart the audio stretcher every tick, the end of the edit parks one frame past the out point, playback continues in the background, and proxies only ever cover the first source. Versus CapCut the notable gaps are fullscreen preview, overlay/per-clip audio, pause-on-scrub and frame stepping.
 
 ## ux · medium · S — Scrubbing while playing does not pause: the finger and the transport fight over the playhead

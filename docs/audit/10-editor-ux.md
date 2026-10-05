@@ -1,5 +1,14 @@
 # Overall editor layout and interaction design versus CapCut: toolbar structure, panels, preview, tap counts, consistency, discoverability
 
+> **Historical. 28 September 2026, and almost none of it is true any more.**
+> This was the audit against CapCut that the build plan came out of, written
+> before batches B1–B16 existed. It is kept because the *reasoning* in it is
+> what `docs/ROADMAP.md` was built from, and because a few of its "gap" entries
+> are still open — but every statement about what the app does or does not have
+> is seven batches out of date. For what is built, read `ARCHITECTURE.md` §5;
+> for what is unseen on a device, `CLAUDE.md` and `docs/DEVICE_FINDINGS.md`.
+
+
 Squish's editor (EditorScreen.kt) is a single vertical stack: header (back / title / Export), preview (max 300dp when a tool is open), status rows, timeline strip + action bar, an optional tool panel, and a bottom rail of 11 always-identical tabs (Cut, Frame, Speed, Blend, Motion, Sound, Words, Stickers, Effects, Looks, Finish). There is no clip-context toolbar: selecting a clip changes nothing in the rail, and every clip-scoped tool (Speed, Motion, Blend/Mask/Chroma) silently falls back to "the first video clip" when the selection is not a video. Ten of the eleven tabs open with the timeline AND its action bar folded away (ROOMY_TABS, EditorScreen.kt:603), so undo/redo, split, delete, zoom and the timecode disappear whenever a tool is open; the one tab that keeps the strip (Blend) is left with roughly 40-100dp of panel on a phone. Common-task tap counts: add music 2-3 (Sound -> Music card -> Add), add text 3+ with no keyboard focus, split 2 (but 3 when any panel is open), delete 2, change speed 2-3; all comparable to CapCut only when no panel is open. Colour and icon systems are inconsistent (Amber = Motion and Words; Magenta = Blend, Stickers, Looks; gutter and rail use different glyphs for the same track), "Cut" means trim in the rail and split on the action bar, Effects/Looks are two adjacent tabs with inverted file names, Export exists twice (header sheet and Finish tab) with different size chips, and rotation/crop/looks/adjust are global rather than per clip. Concrete defects: rotation sliders print "+4500%"; ~25 edit operations bypass record() so undo skips them and mislabels what it will reverse; autosave is suspended for as long as the recovery banner is on screen; the last 1.5s of edits are dropped on back; system back during export cancels the encode silently; the same clip.scale/offset fields are edited by two panels with different ranges; the Cut button lights over a caption it cannot split and pushes an empty undo step.
 
 Proposed information architecture (concrete):

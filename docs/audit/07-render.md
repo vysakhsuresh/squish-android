@@ -1,5 +1,14 @@
 # Export/render correctness
 
+> **Historical. 28 September 2026, and almost none of it is true any more.**
+> This was the audit against CapCut that the build plan came out of, written
+> before batches B1–B16 existed. It is kept because the *reasoning* in it is
+> what `docs/ROADMAP.md` was built from, and because a few of its "gap" entries
+> are still open — but every statement about what the app does or does not have
+> is seven batches out of date. For what is built, read `ARCHITECTURE.md` §5;
+> for what is unseen on a device, `CLAUDE.md` and `docs/DEVICE_FINDINGS.md`.
+
+
 The single-sequence "cuts only" export path is sound (composition-relative timestamps, ramp-aware offsets, captions/FX on the right clock), but everything the app calls compositing does not survive Media3 1.5.1: video gaps are refused outright, the default compositor draws the primary roll on top with no per-input alpha, and overlays are sized against the wrong frame. So any edit with a transition, a picture-in-picture, or a timeline gap either fails at start or renders as hard cuts with the PiP hidden. Beyond that: cropping at a non-Original size pillarboxes the file, keyframes drift under speed changes, music cues land early on silent or extended timelines, a finished export destroys the project, back/cancel leave orphan files, and there is no cancel, fps, bitrate, codec, or HDR policy. Read-only audit; Media3 behaviour was traced in the 1.5.1 source jars from the Gradle cache, not observed on a device.
 
 ## gap · high · S — No cancel button and no keep-screen-on during export

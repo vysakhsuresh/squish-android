@@ -1,5 +1,14 @@
 # Timeline and clip editing (track model, selection, split, trim, drag, ripple, snapping, zoom, playhead, action bar, track buttons, undo/process death)
 
+> **Historical. 28 September 2026, and almost none of it is true any more.**
+> This was the audit against CapCut that the build plan came out of, written
+> before batches B1–B16 existed. It is kept because the *reasoning* in it is
+> what `docs/ROADMAP.md` was built from, and because a few of its "gap" entries
+> are still open — but every statement about what the app does or does not have
+> is seven batches out of date. For what is built, read `ARCHITECTURE.md` §5;
+> for what is unseen on a device, `CLAUDE.md` and `docs/DEVICE_FINDINGS.md`.
+
+
 Squish's strip is technically strong (windowed layout, frame-accurate maths, pinch guard, A/B roll preview) but its track model is the opposite of CapCut's: the main track is free-floating with gaps and overlaps allowed, nothing ripples, clips are not reordered by long-press, scrolling does not scrub, and tapping a clip moves the playhead. Overlays are added only from inside the Blend panel and positioned by four sliders rather than on the picture. Duplicate, replace, freeze, reverse, extract-audio and multi-select do not exist. Traceable defects: the strip refits its zoom and scrolls to 0 whenever the edit's end moves (every tail trim, speed change, delete of the last clip); trim handles truncate sub-millisecond drags so trimming stalls when zoomed in; a split copies keyframes and the incoming transition onto the second half unshifted; a cut within 200 ms of a clip edge produces two overlapping halves; head-trimming a clip parked at 0 grows its tail instead; dragging a caption to 0 shortens it; many edits (transition, layer, overlay geometry, add overlay, keyframes, mask, audio nudges) are not recorded in undo so "Undo: Cut" silently reverts them too; leaving the editor does not flush the 1.5 s autosave; a custom crop rectangle is never persisted; and while the recovery banner is up nothing is saved at all.
 
 ## gap · critical · M — Main track is not magnetic: no ripple on trim or delete, gaps and overlaps allowed

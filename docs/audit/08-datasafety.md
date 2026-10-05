@@ -1,5 +1,14 @@
 # Data safety and project management: autosave, drafts, recovery, deletion paths, persisted media access, project list UX
 
+> **Historical. 28 September 2026, and almost none of it is true any more.**
+> This was the audit against CapCut that the build plan came out of, written
+> before batches B1–B16 existed. It is kept because the *reasoning* in it is
+> what `docs/ROADMAP.md` was built from, and because a few of its "gap" entries
+> are still open — but every statement about what the app does or does not have
+> is seven batches out of date. For what is built, read `ARCHITECTURE.md` §5;
+> for what is unseen on a device, `CLAUDE.md` and `docs/DEVICE_FINDINGS.md`.
+
+
 Traced every path that removes or overwrites files under files/projects/. ProjectAutosave.delete(slot) removes live, backup, scratch and meta together and is reached from four places: (1) export success via markCompleted (EditorViewModel.kt:2141) - silent, no user intent to delete, and the editor is then popped so the work is unreachable; (2) the RecoveryBanner's "Start fresh" via dismissRecovery (EditorViewModel.kt:2174-2177) - one tap, no confirmation, label never says delete; (3) the autosave loop's undo-back-to-untouched rule (EditorViewModel.kt:130-136) - only fires when this session wrote the draft and the edit equals the load baseline, unreachable for a resumed draft; (4) DraftsScreen discard, which is confirmed. Separately, save() overwrites .bak.json on every write (ProjectAutosave.kt:127-131), so the "second parachute" is one 1.5 s tick deep: that is how the pre-02:25 build turned the 17-effect silver-look draft into a one-cut draft (the 02:25 commit message records reproducing exactly that). With the 02:33 build running at 02:38, the only two paths that delete all four files without an explicit confirmed discard are a successful export and "Start fresh"; the FORMAT_VERSION was last bumped 22 Sept, so a version mismatch is ruled out. Beyond the loss itself: no flush on leaving the editor (last 1.5 s lost), autosave silently suspended while a non-modal recovery card is up, non-atomic meta writes that make drafts vanish from the list, one-draft-per-source-URI as the project model (no two edits of one clip, different URIs for the same file, filename as title), no rename/duplicate/cover/bulk-delete, missing-media handled only for the first clip with no relink, and URI grants never released. Deleting a project should require a confirmed, reversible action and nothing else; today two ordinary actions do it.
 
 ## gap · high · M — Project list lacks rename, duplicate, cover, size, bulk delete, and a New project entry; it is hidden behind a door

@@ -1,5 +1,14 @@
 # Overlays / picture-in-picture
 
+> **Historical. 28 September 2026, and almost none of it is true any more.**
+> This was the audit against CapCut that the build plan came out of, written
+> before batches B1–B16 existed. It is kept because the *reasoning* in it is
+> what `docs/ROADMAP.md` was built from, and because a few of its "gap" entries
+> are still open — but every statement about what the app does or does not have
+> is seven batches out of date. For what is built, read `ARCHITECTURE.md` §5;
+> for what is unseen on a device, `CLAUDE.md` and `docs/DEVICE_FINDINGS.md`.
+
+
 Squish's overlay is a data model (layer > 0 on a Clip, scale/offset/opacity/rotation, keyframes, mask, chroma key) with a preview compositor and an export compositor bolted on, but there is no overlay *editing* experience: the only way to add one is a button at the bottom of the Blend panel, there is no bounding box or gesture in the preview (the picture's sole gesture is tap-to-play; the only drag handler in the editor is the custom-crop rectangle), placement is four sliders whose readouts are "+45%" of half a canvas, and the same placement is edited in two panels with different names and ranges. Underneath that, the preview and the export disagree in several concrete ways: a bare TextureView stretches any overlay whose aspect differs from the base while the export letterboxes it (so a portrait selfie over a landscape shot lands at a different size and place); the export hands the compositor an overlay canvas sized to the source frame while the base is scaled to the chosen output size or crop; the preview applies rotation, the grade, timed FX and captions to the PiP surface (a caption is drawn twice, once miniature inside the PiP) while the export applies none of them; overlapping overlays on one layer show one in preview and both in export; and every overlay slider tick re-seeks every audio player. None of add-overlay, layer change, geometry, chroma, mask or keyframe edits are undoable. Overlay audio is always dropped, photos and PNGs cannot be overlays, and overlay footage never gets a proxy. Against CapCut the gaps are: a dedicated Overlay tool and track button, direct manipulation with handles and snapping, blend modes, in/out animations and opacity keyframes, duplicate/replace/mirror/freeze/reverse, per-clip filters, and drag-between-tracks. Fixing the three preview/export mismatches, adding undo recording, and building a preview bounding box with drag/pinch/rotate would take the feature from "exists" to "works like an overlay"; the rest is a menu of CapCut parity items ranked below.
 
 ## gap · critical · L — No direct manipulation of overlays in the preview (bounding box, drag, pinch, rotate)
