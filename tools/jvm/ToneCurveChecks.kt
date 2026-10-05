@@ -111,7 +111,44 @@ fun main() {
     }
     check(ToneCurve.sample(blueLut, 2, 0.5f) > 0.7f, "the blue curve did not lift blue")
 
-    println("tone curve: ${ToneCurve.LUT_SIZE} entries, 4 curves, ${shapes.size} drawn shapes")
+    // --- A curve that turns stays inside the two points it is between. -------
+    //
+    // The file promises "between two points it never leaves the range they
+    // set", and that is only true with Fritsch-Carlson's sign step: where the
+    // secants either side of a point run opposite ways, the averaged slope
+    // points against one of them, and the circle constraint that follows
+    // scales a tangent without changing its sign. So the overshoot survived,
+    // and in the Curves tool a point placed *below* the one before it made the
+    // picture brighter than either of them before coming down - a bright rim
+    // just past a highlight, which is exactly the artefact a monotone fit is
+    // chosen to avoid.
+    val turning = listOf(
+        curve(0f to 0f, 0.5f to 0.9f, 1f to 0.85f),   // a highlight rolled off
+        curve(0f to 0f, 0.5f to 0.8f, 1f to 0.2f),    // up then hard down
+        curve(0f to 0.9f, 0.5f to 0.1f, 1f to 0.3f),  // down then up
+        curve(0f to 0.2f, 0.3f to 0.9f, 0.6f to 0.1f, 1f to 0.8f), // a zigzag
+        curve(0f to 0f, 0.2f to 0.6f, 0.4f to 0.55f, 0.6f to 0.95f, 1f to 1f)
+    )
+    for ((n, c) in turning.withIndex()) {
+        val p = c.points.sortedBy { it.x }
+        for (i in 0 until p.size - 1) {
+            val lo = minOf(p[i].y, p[i + 1].y)
+            val hi = maxOf(p[i].y, p[i + 1].y)
+            for (k in 0..64) {
+                val x = p[i].x + (p[i + 1].x - p[i].x) * k / 64f
+                val v = c.valueAt(x)
+                check(
+                    v >= lo - 1e-4f && v <= hi + 1e-4f,
+                    "turning curve $n overshot between (${p[i].x}, ${p[i].y}) and (${p[i + 1].x}, ${p[i + 1].y}): $v at $x"
+                )
+            }
+        }
+        // And it still goes through its own points, which a flattened tangent
+        // does not change: only the slope between them moved.
+        p.forEach { check(near(c.valueAt(it.x), it.y, 2e-3f), "turning curve $n missed its own point at ${it.x}") }
+    }
+
+    println("tone curve: ${ToneCurve.LUT_SIZE} entries, 4 curves, ${shapes.size} drawn shapes, ${turning.size} that turn")
     if (problems.isEmpty()) println("PASS - monotone, in range, and the table is the curve")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
 }

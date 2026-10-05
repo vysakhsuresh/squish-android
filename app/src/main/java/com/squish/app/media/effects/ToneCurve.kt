@@ -66,6 +66,17 @@ data class Curve(val points: List<CurvePoint> = STRAIGHT) {
         m[0] = d[0]
         m[n - 1] = d[n - 2]
         for (i in 1 until n - 1) m[i] = (d[i - 1] + d[i]) / 2f
+        // Where the curve turns - the secants either side of a point running
+        // opposite ways - the averaged slope points against one of them, and a
+        // segment given a tangent against its own secant leaves the range its
+        // two points set. Fritsch-Carlson flattens the tangent there, and this
+        // step was missing: the circle constraint below scales a tangent but
+        // keeps its sign, so the overshoot survived it. On the Curves tool a
+        // point placed below the one before it made the picture *brighter* than
+        // the higher of the two just before it came down.
+        for (i in 1 until n - 1) {
+            if (d[i - 1] * d[i] <= 0f) m[i] = 0f
+        }
         for (i in 0 until n - 1) {
             if (abs(d[i]) < 1e-7f) {
                 // A flat run stays flat; a tangent through it is what overshoots.
