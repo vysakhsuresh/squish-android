@@ -41,7 +41,22 @@ KOTLINC=<path>/kotlinc sh tools/jvm/run.sh   # the arithmetic, executed for real
 
 # On the desktop, additionally — and this is the one that settles things:
 ./gradlew assembleDebug
+./gradlew lintDebug                     # Android lint. Zero errors is the state to keep it in.
 ```
+
+**Lint had never been run on this project until 5 October**, and it found ten
+errors, two of which were real and one of which was a locale fault of exactly
+the class this codebase already knew about: `Typeface.create` handed a flag set
+where it takes one of four named styles, a literal byte-order mark sitting in a
+Kotlin source file, `createOnDeviceSpeechRecognizer` (API 31) guarded a function
+call away from its use at a minimum of 29, and six `SDK_INT >=` branches that
+cannot be false at minSdk 29 — one of which had a dead `else` that would have
+written a GIF into the wrong MediaStore collection. Dead code shaped like a
+fallback is worse than no fallback: it says a path exists that does not.
+The four `ProduceStateDoesNotAssignValue` errors that remain are suppressed
+where they are, with the reason: the check does not see the assignment in
+Compose 1.7.2, which was established by writing one of them three different
+ways — including a plain `value = local` — and watching lint report every one.
 
 Four of those checkers were written *after* the thing they check for got
 through. When a mistake escapes, the question is not only "what was wrong" but
