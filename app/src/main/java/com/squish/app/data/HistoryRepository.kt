@@ -3,6 +3,7 @@ package com.squish.app.data
 import android.content.Context
 import android.net.Uri
 import com.squish.app.media.GallerySaver
+import com.squish.app.media.ThumbnailCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -82,6 +83,13 @@ class HistoryRepository(context: Context) {
             record?.let {
                 runCatching { File(it.outputPath).delete() }
                 it.galleryUri?.let { uri -> GallerySaver.remove(appContext, Uri.parse(uri)) }
+                // And the thumbnail the library drew from it. The key is the
+                // URI and the moment, so nothing would ever ask for it again -
+                // it simply sat in cache/thumbs until somebody cleared the
+                // whole cache from Settings. `ThumbnailCache.evict` had been
+                // written for exactly this and had no callers at all.
+                // The same uri and moment LibraryScreen draws it from.
+                ThumbnailCache.evict(appContext, it.mediaUri, (it.durationMs / 3).coerceAtLeast(0L))
             }
         }
     }

@@ -813,6 +813,23 @@ fun main() {
         }
     }
 
+    // ---- Nothing in tools/ or media/ is offered and never called. ----------
+    //
+    // ThumbnailCache.evict was written to forget a thumbnail "for a file that
+    // was deleted or replaced" and had no callers at all, so deleting an
+    // export left its picture in cache/thumbs until somebody cleared the whole
+    // cache from Settings. Dead code shaped like an API is the same fault as a
+    // dead `else` shaped like a fallback: it says a path exists that nothing
+    // takes, and nobody can test what it would have done.
+    run {
+        val callers = readAll(SRC).filterNot { (path, _) -> path.endsWith("media/ThumbnailCache.kt") }
+        check(
+            callers.any { (_, text) -> text.contains("ThumbnailCache.evict(") },
+            "ThumbnailCache.evict has no callers again - either something should be calling it when a " +
+                "file goes, or it should not exist"
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
