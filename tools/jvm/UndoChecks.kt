@@ -278,6 +278,53 @@ fun main() {
         check(s.undoLabel == null && s.redoLabel == null, "clear left labels behind")
     }
 
+    // --- amendAll: work that is not an edit, in every state there is. ---------
+    //
+    // A photo on the main track is a short video rendered from the picture, and
+    // dragging its tail out renders a longer file and swaps it under the clip.
+    // Which file plays a clip is a fact about the rendering, not about the edit,
+    // and it was written into the live state alone - so an undo or a redo of any
+    // edit made while the render ran put the long clip back on top of the short
+    // file, and nothing ever asks for the longer render again (only a trim
+    // handle's lift does). The preview then played the short file to its end and
+    // held its last frame while the clock ran on, for the rest of the session
+    // and in the saved draft.
+    run {
+        // A trim that outran the rendering, then an ordinary edit made while the
+        // longer render ran, then the render landing. Every state the history
+        // holds names the long file afterwards; the live state is the view
+        // model's business, this is the history's.
+        val t = UndoStack<String>()
+        t.record("trim", "short@3s", 0)
+        t.record("marker", "short@40s", 1000)
+        t.amendAll { it.replace("short", "long") }
+        val back = t.undo("long@40s+marker")
+        check(back == "long@40s", "undoing the marker gave \"$back\", not the long file")
+        val again = t.undo(back!!)
+        check(again == "long@3s", "undoing the trim gave \"$again\" - the short file came back")
+        val forward = t.redo(again!!)
+        check(forward == "long@40s", "redo gave \"$forward\" - the short file came back on the way forward")
+        // Undoing the step the clip was *made* in still takes the clip away:
+        // amendAll only rewrites what matches, and a state with no clip in it is
+        // untouched.
+        val u = UndoStack<String>()
+        u.record("add photo", "empty", 0)
+        u.record("trim", "short@3s", 1000)
+        u.amendAll { it.replace("short", "long") }
+        check(u.undo("long@40s") == "long@3s", "the trim's before was not amended")
+        check(u.undo("long@3s") == "empty", "undoing the add did not come back to an empty edit")
+        // And it reaches the redo side even when the amend happens after an undo.
+        val v = UndoStack<String>()
+        v.record("trim", "short@3s", 0)
+        v.undo("short@40s")
+        v.amendAll { it.replace("short", "long") }
+        check(v.redo("long@3s") == "long@40s", "redo after an amend gave ${v.redo("long@3s")}")
+        // Nothing recorded: no crash, nothing to do.
+        val w = UndoStack<String>()
+        w.amendAll { it + "!" }
+        check(!w.canUndo && !w.canRedo, "amendAll on an empty stack made history")
+    }
+
     println("undo stack: depth cap ${UndoStack.MAX_DEPTH}, coalesce window ${UndoStack.COALESCE_MS}ms")
     if (problems.isEmpty()) println("PASS - undo and redo step exactly, coalesce gestures and only gestures, and stay bounded")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

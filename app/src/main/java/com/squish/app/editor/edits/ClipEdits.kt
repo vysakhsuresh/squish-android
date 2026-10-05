@@ -343,9 +343,18 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 com.squish.app.media.effects.LutFiles.import(app, uri) { why = it }
             }
             if (name != null) {
-                record("LUT") {
-                    updateVideoClip(clipId) { it.copy(adjust = it.adjust.copy(lutFile = name, lutStrength = 1f)) }
-                }
+                // recordLate: the cube has just been read off disk, so this
+                // lands in the background. Through record it would close a
+                // slider still under the finger and split that drag in two.
+                recordLate(
+                    "LUT",
+                    edit = { snapshot ->
+                        snapshot.copy(videoClips = snapshot.videoClips.map { clip ->
+                            if (clip.id != clipId) clip
+                            else clip.copy(adjust = clip.adjust.copy(lutFile = name, lutStrength = 1f))
+                        })
+                    }
+                )
             }
             onDone(why)
         }
@@ -582,8 +591,20 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         }
     }
 
-    /** Slides an effect along the timeline, keeping its length and staying inside the edit. */
-    fun moveEffect(id: String, deltaMs: Long) = record("Move effect", gesture = "Move $id") {
+    /**
+     * Slides an effect along the timeline, keeping its length and staying
+     * inside the edit.
+     *
+     * No gesture id: the strip calls this once, on the drop, so there is no
+     * per-frame stream to fold. With one, the step stayed open for the
+     * coalescing window and nothing closed it - endGesture is wired to the trim
+     * handles, not to the lift-and-drop path - so two deliberate carries of the
+     * same effect less than 700 ms apart became one step, and one Undo sent it
+     * back past both. The two sibling branches of the same onDrop (Reorder and
+     * Move clip) are discrete for the same reason, and UndoStack's own header
+     * says it: "a discrete action now carries no gesture id".
+     */
+    fun moveEffect(id: String, deltaMs: Long) = record("Move effect") {
         _state.update { current ->
             val total = current.let { effectRoomMs(it.pictureEndMs, it.timelineDurationMs) }
             current.copy(effects = current.effects.map { e ->
@@ -1342,15 +1363,25 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 val longer = StillClips.extended(app, uri, wanted) ?: return@launch
                 val fileMs = ThumbnailExtractor.probe(app, longer).durationMs
                 if (fileMs <= 0L) return@launch
-                _state.update { current ->
-                    current.copy(
-                        videoClips = current.videoClips.map { now ->
-                            // As it is now, not as it was: it may have been
-                            // trimmed again, or replaced, while the render ran.
-                            if (now.id == clipId && now.uri == uri) now.copy(uri = longer, sourceDurationMs = fileMs) else now
-                        }
-                    )
+                // As it is now, not as it was: it may have been trimmed again,
+                // or replaced, while the render ran.
+                fun swap(clips: List<Clip>) = clips.map { now ->
+                    if (now.id == clipId && now.uri == uri) now.copy(uri = longer, sourceDurationMs = fileMs) else now
                 }
+                _state.update { current -> current.copy(videoClips = swap(current.videoClips)) }
+                // And into every state the history holds. This is not an undo
+                // step - which file plays a clip is a fact about the rendering,
+                // not about the edit - but it has to be in the states undo and
+                // redo go back to, or either of them puts the long clip back on
+                // top of the short file. Nothing asks for the longer render
+                // again (only a trim handle's lift does), so that was for good:
+                // the preview played the ten-second file to its end and held
+                // its last frame while the clock ran on to forty, for the rest
+                // of the session and in the saved draft. Reachable without any
+                // race on the undo itself - any recorded edit made while the
+                // render ran captured the stale pair, and undoing it at any
+                // later time brought it back.
+                history.amendAll { snapshot -> snapshot.copy(videoClips = swap(snapshot.videoClips)) }
                 landed = true
             } finally {
                 extending.remove(clipId)

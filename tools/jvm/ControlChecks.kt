@@ -830,6 +830,70 @@ fun main() {
         )
     }
 
+    // ---- A result that lands in the background goes beneath a drag. --------
+    //
+    // recordLate exists for it ("a slider being dragged when Stabilize finished
+    // became two steps, one either side of it"), and every lander in the editor
+    // uses it - Stabilize, Auto-sync, Find the beat, Background, Auto-reframe,
+    // Freeze, Reverse, Auto adjust, Duck under speech, Even out volume, Remove
+    // silences, Translate captions. Read aloud was built after recordBeneathOpen
+    // existed and never picked it up, so a sound landing mid-drag split one
+    // finger movement into two undo steps with "Read aloud" wedged between
+    // them, and the drag could not be taken back without losing the sound.
+    //
+    // A `record(` inside a coroutine launched from one of the edit areas is the
+    // shape of that mistake; the check reads each launch and asks.
+    //
+    // Two are still exempt, named here with the reason rather than quietly
+    // passing: both reach the timeline model through `mutateTimeline`, and the
+    // pure `EditSnapshot.withTimeline` that recordLate would need is a private
+    // helper in AudioEdits and in ClipEdits. A third copy of it is worse than
+    // the fault, and hoisting it into EditArea is a wider change than this is.
+    // docs/ROADMAP.md §5 carries them.
+    val recordLateExempt = listOf(
+        "To main track" to "goes through mutateTimeline; needs withTimeline hoisted into EditArea first",
+        "Replace subtitles" to "the same, and its sibling branch (Add subtitles) with it"
+    )
+    run {
+        readAll("$SRC/editor/edits").forEach { (path, text) ->
+            // Each `viewModelScope.launch {` body, up to the next declaration
+            // at the same indent. Crude, and it only has to be good enough to
+            // see a bare `record(` where `recordLate(` belongs.
+            Regex("""viewModelScope\.launch \{""").findAll(text).forEach { m ->
+                val body = text.substring(m.range.first, minOf(text.length, m.range.first + 4000))
+                val ends = body.indexOf("\n    }")
+                val inside = if (ends > 0) body.substring(0, ends) else body
+                inside.lines().forEach { line ->
+                    val code = line.substringBefore("//")
+                    if (!Regex("""(^|[^a-zA-Z.])record\(""").containsMatchIn(code)) return@forEach
+                    if (recordLateExempt.any { (label, _) -> code.contains("\"$label\"") }) return@forEach
+                    problems += "$path files a background result with record( rather than recordLate( " +
+                        "(\"${code.trim()}\") - record closes whatever gesture is open, so a slider under " +
+                        "the finger when the result lands becomes two undo steps with the result between " +
+                        "them, and the drag cannot be taken back without losing the result"
+                }
+            }
+        }
+    }
+
+    // ---- A one-shot command carries no gesture id. -------------------------
+    //
+    // A gesture id folds a per-frame stream into one step. moveEffect is called
+    // once, on the drop, and carried one anyway - and nothing closed it, since
+    // endGesture is wired to the trim handles and not to the lift-and-drop
+    // path. So two deliberate carries of the same effect inside the coalescing
+    // window became one step and one Undo sent it back past both. UndoStack's
+    // own header says the rule: "a discrete action now carries no gesture id
+    // and is never merged with anything."
+    run {
+        val clips = read("$SRC/editor/edits/ClipEdits.kt")
+        check(
+            Regex("""fun moveEffect\([^)]*\) = record\("Move effect"\) \{""").containsMatchIn(clips),
+            "moveEffect carries a gesture id again - the strip calls it once, on the drop, and nothing " +
+                "closes the step, so two carries inside 700 ms merge into one"
+        )
+    }
+
     // ---- A whole sound is never decoded to draw a few dozen bars. ----------
     //
     // PcmDecoder.decodePeaks exists for this: one float per 50 ms, read

@@ -160,6 +160,32 @@ class UndoStack<T>(private val maxDepth: Int = MAX_DEPTH) {
         return true
     }
 
+    /**
+     * Writes [change] into every state the history holds, past and future.
+     *
+     * For work that is not an edit at all. A photo on the main track is a short
+     * video rendered from the picture, and dragging its tail out past that
+     * rendering renders a longer file and swaps it under the clip - which file
+     * plays a clip is a fact about the rendering, not about the edit, so it
+     * belongs in every state undo and redo can reach, including the ones
+     * recorded before the render finished.
+     *
+     * Left out of them, an undo or a redo of any edit made while the render ran
+     * put the long clip back on top of the short file - and nothing ever asks
+     * for the longer render again, since only a trim handle's lift does - so
+     * the preview played the ten-second file to its end and held its last frame
+     * while the clock ran on to forty, for the rest of the session and in the
+     * saved draft.
+     *
+     * Unlike [amend] there is no tag and no refusal: the change is written to
+     * the states it matches and is a no-op in the rest, which is what makes it
+     * safe to apply blind.
+     */
+    fun amendAll(change: (T) -> T) {
+        for (i in past.indices) past[i] = past[i].copy(value = change(past[i].value))
+        for (i in future.indices) future[i] = future[i].copy(value = change(future[i].value))
+    }
+
     /** The tag of the step undo would reverse, if it has one. */
     val undoTag: String? get() = past.lastOrNull()?.tag
 

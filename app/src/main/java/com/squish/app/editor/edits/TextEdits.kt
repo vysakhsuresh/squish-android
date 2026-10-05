@@ -465,10 +465,21 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                 return@launch
             }
             val name = "Speech · " + item.text.replace('\n', ' ').take(24)
-            record("Read aloud") {
-                _state.update { current ->
-                    // Where the line is now, not where it was when the voice was asked for.
-                    val line = current.textOverlays.firstOrNull { it.id == id } ?: item
+            // recordLate, not record: this is a result landing from the
+            // background, like Stabilize, Auto-sync, Find the beat and every
+            // other lander in the editor. Through record it closed whatever
+            // gesture the finger was still in the middle of, so an Opacity or
+            // Place drag under way while the voice was being made came back as
+            // two undo steps with "Read aloud" wedged between them - and the
+            // drag could not be taken back without also losing the sound. This
+            // was the one lander built after recordBeneathOpen existed and the
+            // one that never picked it up.
+            recordLate(
+                "Read aloud",
+                edit = { snapshot ->
+                    // Where the line is now, not where it was when the voice
+                    // was asked for.
+                    val line = snapshot.textOverlays.firstOrNull { it.id == id } ?: item
                     val clip = Clip(
                         kind = ClipKind.Audio,
                         uri = uri,
@@ -478,10 +489,10 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                         timelineStartMs = line.startMs,
                         sourceDurationMs = duration
                     )
-                    current.copy(audioClips = current.audioClips + clip, speakingId = null)
-                }
-            }
-            _state.update { it.copy(speakingId = null) }
+                    snapshot.copy(audioClips = snapshot.audioClips + clip)
+                },
+                alongside = { it.copy(speakingId = null) }
+            )
             recomputeEstimate()
             // Cached against the file, as every sound's is, so the clip draws
             // at once - and through decodePeaks, like AudioEdits.ensureWaveform

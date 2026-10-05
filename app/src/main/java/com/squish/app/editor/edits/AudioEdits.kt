@@ -75,28 +75,33 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             }
             val name = label ?: displayNameOf(uri) ?: "Audio"
 
+            // At the playhead, ending with the edit - or backed up to end with
+            // it when the playhead is parked on the last second; see
+            // EditRules.soundLanding for both. The playhead stays where it is,
+            // as it does for every other add: a sound backed up to the end ends
+            // under the playhead, on the row the strip shows under the sheet, so
+            // it is in sight without moving anything - and an undo of the add
+            // leaves the view where it was.
+            val here = _state.value
+            val landing = EditRules.soundLanding(here.playheadMs, here.trimmedDurationMs, trackDuration, LAST_MOMENT_MS)
+            val clip = Clip(
+                kind = ClipKind.Audio,
+                uri = uri,
+                label = name,
+                sourceInMs = 0,
+                sourceOutMs = landing.sourceOutMs,
+                timelineStartMs = landing.timelineStartMs,
+                sourceDurationMs = trackDuration
+            )
             // Recorded like every other edit, so a track added by mistake is one
-            // undo away rather than a select-and-delete.
-            record("Add $name") { _state.update { current ->
-                // At the playhead, ending with the edit - or backed up to end
-                // with it when the playhead is parked on the last second; see
-                // EditRules.soundLanding for both. The playhead stays where it
-                // is, as it does for every other add: a sound backed up to the
-                // end ends under the playhead, on the row the strip shows under
-                // the sheet, so it is in sight without moving anything - and an
-                // undo of the add leaves the view where it was.
-                val landing = EditRules.soundLanding(current.playheadMs, current.trimmedDurationMs, trackDuration, LAST_MOMENT_MS)
-                val clip = Clip(
-                    kind = ClipKind.Audio,
-                    uri = uri,
-                    label = name,
-                    sourceInMs = 0,
-                    sourceOutMs = landing.sourceOutMs,
-                    timelineStartMs = landing.timelineStartMs,
-                    sourceDurationMs = trackDuration
-                )
-                current.copy(audioClips = current.audioClips + clip, selectedClipId = clip.id)
-            } }
+            // undo away rather than a select-and-delete - and recordLate, since
+            // this lands after the file has been probed: through record it would
+            // close a slider still under the finger and cut that drag into two
+            // steps with the add between them.
+            recordLate(
+                "Add $name",
+                edit = { it.copy(audioClips = it.audioClips + clip, selectedClipId = clip.id) }
+            )
             recomputeEstimate()
             // A readable file can still carry a codec this phone cannot decode; say
             // so now rather than when the export fails on it.
@@ -1029,25 +1034,24 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             }
             val uris = made.associate { (id, uri, _) -> id to uri }
             val names = CUT_SOUND_IDS.associateWith { MusicSynth.effectById(it)?.title ?: "Sound" }
-            record("Sound on every cut") {
-                _state.update { s ->
-                    s.copy(
-                        audioClips = s.audioClips + plan.mapNotNull { sound ->
-                            val uri = uris[sound.effectId] ?: return@mapNotNull null
-                            Clip(
-                                kind = ClipKind.Audio,
-                                uri = uri,
-                                label = names[sound.effectId] ?: "Sound",
-                                sourceInMs = 0,
-                                sourceOutMs = sound.lengthMs,
-                                timelineStartMs = sound.atMs,
-                                sourceDurationMs = sound.lengthMs
-                            )
-                        },
-                        selectedClipId = null
-                    )
-                }
+            val added = plan.mapNotNull { sound ->
+                val uri = uris[sound.effectId] ?: return@mapNotNull null
+                Clip(
+                    kind = ClipKind.Audio,
+                    uri = uri,
+                    label = names[sound.effectId] ?: "Sound",
+                    sourceInMs = 0,
+                    sourceOutMs = sound.lengthMs,
+                    timelineStartMs = sound.atMs,
+                    sourceDurationMs = sound.lengthMs
+                )
             }
+            // recordLate: the effects were synthesised just now, which takes
+            // seconds, so this lands in the background like every other result.
+            recordLate(
+                "Sound on every cut",
+                edit = { it.copy(audioClips = it.audioClips + added, selectedClipId = null) }
+            )
             uris.values.forEach { ensureWaveform(it) }
             recomputeEstimate()
             onDone(plan.size, joins.size)
