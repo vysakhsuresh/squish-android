@@ -830,6 +830,47 @@ fun main() {
         )
     }
 
+    // ---- A listen that lands after its clip has gone must land on nothing. -
+    //
+    // AudioEdits runs four background listens, and each writes to the edit or
+    // to a panel when it finishes. The clip it is about can leave the edit
+    // while it runs - deleted, undone away, or taken by a Select more delete -
+    // and removeAudioClip's cancel covers only the first of those three.
+    // "Find the beat" was the worst of it: with nothing left matching the
+    // target's uri, every remaining sound took the `else clip.copy(beats =
+    // emptyList())` branch, so the grid the user already had on another song
+    // went off the strip, an undo step was filed for it, and beats.clipId was
+    // left naming a clip that is not there. Auto-sync wrote "Matched" for a
+    // gone clip, which is the fault its own cancel was added to stop. So every
+    // landing looks the clip up again, in the state it lands in.
+    run {
+        val audio = read("$SRC/editor/edits/AudioEdits.kt")
+        check(
+            Regex("""fun gone\(sounds: List<Clip>\) = target != null && sounds\.none \{ it\.id == target\.id \}""")
+                .containsMatchIn(audio),
+            "detectBeats no longer asks whether the sound it listened to is still in the edit"
+        )
+        check(
+            audio.contains("if (gone(snapshot.audioClips)) snapshot else snapshot.copy("),
+            "the \"Find the beat\" step no longer refuses to land on an edit its sound has left - " +
+                "nothing matches the target's uri then, so every other sound's grid is wiped"
+        )
+        check(
+            audio.contains("gone(state.audioClips)"),
+            "the beat card is told a grid was found for a sound that has gone"
+        )
+        check(
+            Regex("""val result = AudioSyncAnalyzer\.detectOffset[\s\S]{0,900}?audioClips\.none \{ it\.id == clipId \}""")
+                .containsMatchIn(audio),
+            "Auto-sync writes its status without checking the sound is still there"
+        )
+        check(
+            audio.contains("if (beatTargetId == clipId && _state.value.beats.running)"),
+            "removing a sound no longer stops a beat listen on it - six minutes of decode for an answer " +
+                "nobody can use, and the removal path is the one case a cancel can catch early"
+        )
+    }
+
     // ---- A MediaCodec that decodes audio must ask the decoder what a frame is.
     //
     // PcmDecoder read KEY_SAMPLE_RATE and KEY_CHANNEL_COUNT off the

@@ -126,6 +126,14 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         // sound's sheet was a confidence from an analysis they had cancelled by
         // deleting it.
         if (_state.value.syncClipId == clipId) syncJob?.cancel()
+        // And a beat listen on it, for the same reason - and so six minutes of
+        // decode is not run for an answer nobody can use. The landing in
+        // detectBeats is guarded as well, because undo and a Select more delete
+        // do not come through here.
+        if (beatTargetId == clipId && _state.value.beats.running) {
+            beatJob?.cancel()
+            _state.update { it.copy(beats = it.beats.copy(running = false, listeningTo = "")) }
+        }
         // Through mutateTimeline, like every other removal, rather than by
         // filtering audioClips here.
         //
@@ -409,6 +417,16 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
 
         syncJob = viewModelScope.launch {
             val result = AudioSyncAnalyzer.detectOffset(app, videoUri, audioUri)
+            // The sound may have gone while this listened. removeAudioClip
+            // cancels this job for exactly that reason, but undo and a Select
+            // more delete do not come through it - and a "Matched" status
+            // written for a clip that is not there is the very thing that
+            // cancel was added to stop. Nothing suspends between here and the
+            // writes below, so one look is enough.
+            if (_state.value.audioClips.none { it.id == clipId }) {
+                _state.update { it.copy(syncStatus = SyncStatus.Idle, syncConfidence = 0f, syncClipId = null) }
+                return@launch
+            }
             if (result == null || result.confidence < MIN_SYNC_CONFIDENCE) {
                 _state.update {
                     it.copy(syncStatus = SyncStatus.NoMatch, syncConfidence = result?.confidence ?: 0f, syncClipId = clipId)
@@ -671,6 +689,9 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
 
     private var beatJob: Job? = null
 
+    /** Which sound [beatJob] is listening to, so a removal can stop it. */
+    private var beatTargetId: String? = null
+
     /**
      * Finds the pulse of whichever sound the edit is built around.
      *
@@ -697,6 +718,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         val label = target?.label ?: "the camera audio"
 
         beatJob?.cancel()
+        beatTargetId = target?.id
         // The grid already found stays until there is a new one. Wiping it at the
         // start meant a failed second listen lost the first answer, with nothing
         // for undo to bring back.
@@ -786,10 +808,20 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 clipId = target?.id,
                 every = every
             )
+            // The sound this listened to can leave the edit while it listens -
+            // deleted, undone away, or taken with a Select more delete. Nothing
+            // matched its uri then, so every remaining sound took the `else`
+            // branch below and lost the grid it already had: the dots went off
+            // the strip, the card dropped back to "Find the pulse…", a step was
+            // filed for it, and beats.clipId was left naming a clip that is not
+            // there. Auto-sync closes the same hole by cancelling its job in
+            // removeAudioClip; this closes it however the clip went, and it is
+            // inside the edit so a redo of the step is refused too.
+            fun gone(sounds: List<Clip>) = target != null && sounds.none { it.id == target.id }
             recordLate(
                 "Find the beat",
                 edit = { snapshot ->
-                    snapshot.copy(
+                    if (gone(snapshot.audioClips)) snapshot else snapshot.copy(
                         beats = found,
                         audioClips = snapshot.audioClips.map { clip ->
                             if (target != null && clip.uri == target.uri) clip.copy(beats = map.beatsMs)
@@ -797,7 +829,10 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                         }
                     )
                 },
-                alongside = { it.copy(beats = found) }
+                alongside = { state ->
+                    if (gone(state.audioClips)) state.copy(beats = state.beats.copy(running = false, listeningTo = ""))
+                    else state.copy(beats = found)
+                }
             )
         }
     }
