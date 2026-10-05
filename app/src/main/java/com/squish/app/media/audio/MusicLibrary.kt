@@ -50,11 +50,41 @@ object MusicLibrary {
             .getOrElse { file.delete(); null }
     }
 
-    /** A sound effect's file, made the first time it is asked for, like a track. */
+    /**
+     * Which build of the synth the effects on disk were made by.
+     *
+     * Raise it when [MusicSynth.renderEffect] changes in a way a listener would
+     * hear. 2: the three-millisecond release that stops a sound clicking where
+     * it meets the cut it is laid against.
+     */
+    private const val EFFECT_BUILD = 2
+
+    /**
+     * A sound effect's file, made the first time it is asked for, like a track -
+     * and made again when the synth has changed since it was written.
+     *
+     * Rewritten in place rather than renamed or deleted: a project that used
+     * this effect holds the file's address in the clip, so a new name would be
+     * a missing sound in every draft that had one, and a delete would be the
+     * same until something asked for it again. An effect is a second of
+     * arithmetic, so remaking all of them costs nothing worth measuring.
+     */
     suspend fun effect(context: Context, effect: MusicSynth.Effect): Uri? = withContext(Dispatchers.Default) {
+        remakeEffectsIfStale(context)
         val file = File(dir(context), "${effect.id}.wav")
         runCatching { if (!file.exists()) MusicSynth.renderEffect(effect, file); Uri.fromFile(file) }
             .getOrElse { file.delete(); null }
+    }
+
+    private fun remakeEffectsIfStale(context: Context) {
+        val stamp = File(dir(context), "effects.build")
+        val made = runCatching { stamp.readText().trim().toInt() }.getOrDefault(0)
+        if (made >= EFFECT_BUILD) return
+        MusicSynth.effects.forEach { e ->
+            val file = File(dir(context), "${e.id}.wav")
+            if (file.exists()) runCatching { MusicSynth.renderEffect(e, file) }
+        }
+        runCatching { stamp.writeText(EFFECT_BUILD.toString()) }
     }
 
     /**
