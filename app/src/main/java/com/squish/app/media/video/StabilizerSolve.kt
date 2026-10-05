@@ -20,6 +20,27 @@ data class StabilizerMeasurement(
     val motions: List<FrameMotion>
 ) {
     val isEmpty: Boolean get() = motions.size < 4 || analysisWidth <= 0 || analysisHeight <= 0
+
+    /**
+     * The same measurement on a reversed render's clock.
+     *
+     * Each motion is the move from one frame to the next, so played backwards
+     * it is the same move the other way: the list is reversed and every motion
+     * negated, and the times are mirrored about [pivotMs] as the solved keys
+     * are. Without this a Reverse mirrored the keys and left the measurement
+     * alone, so one nudge of the Strength slider re-solved from the old clock
+     * and wrote un-mirrored keys over the mirrored ones - a stabilized shot
+     * shaking harder reversed than raw, which is the thing the mirroring is
+     * there to prevent.
+     */
+    fun mirroredAt(pivotMs: Long): StabilizerMeasurement = StabilizerMeasurement(
+        analysisWidth = analysisWidth,
+        analysisHeight = analysisHeight,
+        timesMs = timesMs.map { pivotMs - it }.reversed(),
+        motions = motions.reversed().map {
+            it.copy(dx = -it.dx, dy = -it.dy, rotationDegrees = -it.rotationDegrees)
+        }
+    )
 }
 
 /** The correction solved from a measurement at one strength, and what it costs in frame. */

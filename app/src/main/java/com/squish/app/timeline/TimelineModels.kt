@@ -600,7 +600,17 @@ data class Clip(
             fadeInMs = fadeOutMs,
             fadeOutMs = fadeInMs,
             stabilizer = stabilizer.mirroredAt(renderedOutMs),
+            // The measurement the Strength slider re-solves from is on the
+            // file's clock too, and was carried through untouched - so one nudge
+            // of the slider wrote un-mirrored keys back over the mirrored ones
+            // and a stabilized shot shook harder reversed than raw again, which
+            // is the regression the mirroring above exists to prevent.
+            stabilizerMeasurement = stabilizerMeasurement?.mirroredAt(renderedOutMs),
             mask = mask?.withTrackMirroredAt(renderedOutMs),
+            // And the reframe path, for the same reason: it is read by the
+            // clip's current file time, which the render has turned round, so
+            // the crop panned against the picture.
+            reframe = reframe?.mirroredAt(renderedOutMs),
             background = null,
             reversedFrom = ReversedSource(uri, renderedInMs, renderedOutMs, sourceDurationMs, background)
         )
@@ -626,7 +636,9 @@ data class Clip(
             fadeInMs = fadeOutMs,
             fadeOutMs = fadeInMs,
             stabilizer = stabilizer.mirroredAt(from.sourceOutMs),
+            stabilizerMeasurement = stabilizerMeasurement?.mirroredAt(from.sourceOutMs),
             mask = mask?.withTrackMirroredAt(from.sourceOutMs),
+            reframe = reframe?.mirroredAt(from.sourceOutMs),
             background = from.background,
             reversedFrom = null
         )
@@ -728,6 +740,10 @@ data class ReversedSource(
  */
 fun List<Keyframe>.mirroredAt(pivotMs: Long): List<Keyframe> =
     map { it.copy(atMs = pivotMs - it.atMs) }.sortedBy { it.atMs }
+
+/** A measured path - auto-reframe's subject - on the other file's clock (see [mirroredAt]). */
+fun MotionTrack.mirroredAt(pivotMs: Long): MotionTrack =
+    MotionTrack(samples.map { it.copy(atMs = pivotMs - it.atMs) }.sortedBy { it.atMs })
 
 /** A mask following its track on the other file's clock (see [mirroredAt]); one with no track is unchanged. */
 fun Mask.withTrackMirroredAt(pivotMs: Long): Mask {
@@ -1752,8 +1768,17 @@ fun TimelineState.withClipReplaced(clipId: String, uri: Uri, fileMs: Long, sourc
         sourceOutMs = start + span,
         sourceDurationMs = fileMs,
         stabilizer = emptyList(),
+        // The measurement the Strength slider re-solves from is of the old
+        // footage too, and was being carried onto the new file with it.
+        stabilizerMeasurement = null,
         background = null,
         mask = clip.mask?.withoutTrack(),
+        // And the reframe track: it is a path through footage that is no longer
+        // under this clip, and the replacement's in-point is usually somewhere
+        // else again, so the crop chased where a subject had been in another
+        // film. It is in this function's own list of what goes, and was the one
+        // thing missing from the code.
+        reframe = null,
         reversedFrom = null,
         beats = emptyList()
     )

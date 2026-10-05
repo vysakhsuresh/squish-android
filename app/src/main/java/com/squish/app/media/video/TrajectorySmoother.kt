@@ -1,5 +1,8 @@
 package com.squish.app.media.video
 
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
@@ -124,11 +127,30 @@ object TrajectorySmoother {
      */
     fun requiredCrop(corrections: List<Correction>, frameWidth: Float, frameHeight: Float): Float {
         if (corrections.isEmpty() || frameWidth <= 0f || frameHeight <= 0f) return 0f
+        // The turn counts as well as the shift.
+        //
+        // This measured the translation alone, while the same solve also turns
+        // the frame by up to 1.5 degrees - so the picture was rotated by more
+        // than the zoom covered and black wedges ran along the edges, in the
+        // preview and in the file, with the crop percentage on the card reading
+        // lower than the zoom actually applied. On gimbal footage, where there
+        // is residual roll and almost no translation jitter, the crop came out
+        // at zero with half a degree still being applied to every frame.
+        //
+        // A w by h rectangle turned by t about its centre needs
+        // cos t + sin t * max(w/h, h/w) to still cover what it covered, and a
+        // shift of d pixels needs 2d/size - d on each side. Added rather than
+        // composed: at these angles the difference is in the fourth decimal, and
+        // a little too much zoom is the safe way to be wrong.
+        val longOverShort = max(frameWidth / frameHeight, frameHeight / frameWidth)
         var worst = 0f
         corrections.forEach {
-            worst = max(worst, max(abs(it.dx) / frameWidth, abs(it.dy) / frameHeight))
+            val shift = 2f * max(abs(it.dx) / frameWidth, abs(it.dy) / frameHeight)
+            val radians = abs(it.rotationDegrees) * PI.toFloat() / 180f
+            val turn = cos(radians) + sin(radians) * longOverShort - 1f
+            worst = max(worst, shift + max(turn, 0f))
         }
-        return (worst * 2f).coerceIn(0f, 0.4f)
+        return worst.coerceIn(0f, 0.4f)
     }
 
     private fun gaussian(windowFrames: Int): FloatArray {

@@ -4,7 +4,10 @@ import com.squish.app.editor.CropRatio
 import com.squish.app.editor.CropRect
 import com.squish.app.media.ExportPlan
 import com.squish.app.media.effects.Adjust
+import com.squish.app.media.video.FrameMotion
 import com.squish.app.media.video.MotionTrack
+import com.squish.app.media.video.StabilizerMeasurement
+import com.squish.app.media.video.StabilizerSolve
 import com.squish.app.media.video.TrackSample
 import com.squish.app.timeline.BackgroundRemoval
 import com.squish.app.timeline.Clip
@@ -496,9 +499,49 @@ fun main() {
         // A clip with none of them reverses to none of them.
         check(video("plain", 8_000).reversed(rendered, 8_000).let { it.stabilizer.isEmpty() && it.mask == null && it.background == null }, "reverse invented an analysis")
 
+        // The reframe path and the kept measurement are measured on the footage
+        // too, and both used to be carried through Reverse untouched - so the
+        // auto-reframe crop panned against the picture, and one nudge of the
+        // Strength slider re-solved from the old clock and wrote un-mirrored
+        // keys over the mirrored ones above.
+        val measured = StabilizerMeasurement(
+            analysisWidth = 96, analysisHeight = 54,
+            timesMs = listOf(2_000L, 4_000L, 6_000L, 9_000L),
+            motions = listOf(
+                FrameMotion(1f, 2f, 0.1f, 0.9f), FrameMotion(-3f, 1f, -0.2f, 0.9f),
+                FrameMotion(2f, -1f, 0.3f, 0.9f), FrameMotion(4f, 4f, 0.4f, 0.9f)
+            )
+        )
+        val looked = MotionTrack(listOf(TrackSample(2_000, 0.25f, 0.4f), TrackSample(9_000, 0.75f, 0.6f)))
+        val m = a.copy(stabilizerMeasurement = measured, reframe = looked)
+        val mRev = m.reversed(rendered, 8_000)
+        check(mRev.reframe?.sampleAt(1_000L)?.xFraction?.let { abs(it - 0.75f) < 1e-4f } == true,
+            "reverse: the reframe path at the render's 1 s is ${mRev.reframe?.sampleAt(1_000L)?.xFraction}, not the original's 9 s")
+        check(mRev.reframe?.samples?.map { it.atMs } == listOf(1_000L, 8_000L),
+            "reverse: the reframe samples are at ${mRev.reframe?.samples?.map { it.atMs }}")
+        check(mRev.stabilizerMeasurement?.timesMs == listOf(1_000L, 4_000L, 6_000L, 8_000L),
+            "reverse: the measurement's times are at ${mRev.stabilizerMeasurement?.timesMs}")
+        // Each motion is the move from one frame to the next, so backwards it is
+        // the same move the other way: the list reversed and every motion negated.
+        check(mRev.stabilizerMeasurement?.motions?.map { it.dx } == listOf(-4f, -2f, 3f, -1f),
+            "reverse: the measurement's motions are ${mRev.stabilizerMeasurement?.motions?.map { it.dx }}")
+        check(mRev.stabilizerMeasurement?.motions?.map { it.rotationDegrees } == listOf(-0.4f, -0.3f, 0.2f, -0.1f),
+            "reverse: the measurement's turns are ${mRev.stabilizerMeasurement?.motions?.map { it.rotationDegrees }}")
+        // And back again is the measurement that was taken, exactly.
+        check(mRev.unreversed().stabilizerMeasurement == measured, "unreverse did not put the measurement back")
+        check(mRev.unreversed().reframe == looked, "unreverse did not put the reframe path back")
+        // The solve from the mirrored measurement lands keys on the render's own
+        // clock, which is what the Strength slider needs it for.
+        val resolved = StabilizerSolve.solve(mRev.stabilizerMeasurement!!, 0.5f)
+        check(resolved == null || resolved.keyframes.map { it.atMs } == listOf(1_000L, 4_000L, 6_000L, 8_000L),
+            "reverse: a re-solve from the mirrored measurement keys at ${resolved?.keyframes?.map { it.atMs }}")
+
         // Replace keeps the mask's shape and drops its path; Copy carries the shape alone.
-        val replaced = TimelineState(clips = listOf(a)).withClipReplaced("a", Uri.parse("content://new"), 20_000, 0, "new").byId("a")
+        val replaced = TimelineState(clips = listOf(m)).withClipReplaced("a", Uri.parse("content://new"), 20_000, 0, "new").byId("a")
         check(replaced.mask?.track == null && replaced.mask?.shape == MaskShape.Ellipse, "replace kept the old footage's track")
+        // Both of those are of footage no longer under the clip.
+        check(replaced.reframe == null, "replace kept the old footage's reframe path")
+        check(replaced.stabilizerMeasurement == null, "replace kept the old footage's stabilizer measurement")
         check(a.attributes.mask?.track == null && a.attributes.mask?.shape == MaskShape.Ellipse, "copied attributes carry a track")
         // A freeze at the original's 6 s holds the mask where the track had it then (x 0.5 -> 0 in the shader's -1..1).
         val frozen = TimelineState(clips = listOf(a)).withFrozenFrame("a", 4_000, still).byId(still.id)
