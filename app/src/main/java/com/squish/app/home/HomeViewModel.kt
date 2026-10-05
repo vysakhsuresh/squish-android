@@ -76,16 +76,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 // be, the grants were simply held: a project binned and left to
                 // age out kept its picker grant until the app was uninstalled,
                 // and the phone caps how many of those an app may keep.
-                val expired = autosave.expireOldTrash()
-                if (expired.isNotEmpty()) {
-                    val still = autosave.referencedUris() +
-                        autosave.trashed().flatMap { autosave.urisInTrash(it.trashId) } +
-                        toolAutosave.drafts().flatMap { d -> d.uris.map { it.toString() } } +
-                        toolAutosave.trashed().flatMap { (_, d) -> d.uris.map { it.toString() } }
-                    ProjectRules.releasable(expired, still.toSet())
-                        .filter { it.startsWith("content://") }
-                        .forEach { getApplication<Application>().releaseReadAccess(Uri.parse(it)) }
-                }
+                releaseUnnamed(autosave.expireOldTrash())
                 val edits = autosave.drafts()
                 val tools = toolAutosave.drafts().mapNotNull { it.summary(withEarlier = true) }
                 val bin = autosave.trashed() + toolAutosave.trashed().mapNotNull { (trashId, draft) ->
@@ -243,16 +234,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun purgeDraft(entry: TrashedDraft) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                val named = if (entry.draft.toolId != null) emptySet() else autosave.urisInTrash(entry.trashId)
-                if (entry.draft.toolId != null) toolAutosave.purge(entry.trashId) else autosave.purge(entry.trashId)
-                if (named.isNotEmpty()) {
-                    val still = autosave.referencedUris() +
-                        toolAutosave.drafts().flatMap { d -> d.uris.map { it.toString() } } +
-                        toolAutosave.trashed().flatMap { (_, d) -> d.uris.map { it.toString() } }
-                    ProjectRules.releasable(named, still.toSet())
-                        .filter { it.startsWith("content://") }
-                        .forEach { getApplication<Application>().releaseReadAccess(Uri.parse(it)) }
+                // A quick-tool session's files were not named at all here - the
+                // set was simply empty for one - so purging a binned Trim or
+                // Squeeze held its picker grant until the app was uninstalled,
+                // which is the same leak the bin's own expiry had.
+                val named = if (entry.draft.toolId != null) {
+                    toolAutosave.trashed().firstOrNull { (id, _) -> id == entry.trashId }
+                        ?.second?.uris?.map { it.toString() }?.toSet().orEmpty()
+                } else {
+                    autosave.urisInTrash(entry.trashId)
                 }
+                if (entry.draft.toolId != null) toolAutosave.purge(entry.trashId) else autosave.purge(entry.trashId)
+                releaseUnnamed(named)
             }
             if (_undoOffer.value?.entries?.any { it.trashId == entry.trashId } == true) _undoOffer.value = null
             refreshDrafts()
@@ -261,5 +254,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissUndoOffer() {
         _undoOffer.value = null
+    }
+
+    /**
+     * Lets go of the app's right to read every one of [named] that nothing else
+     * still names. The phone caps how many of those an app may hold, and past
+     * the cap the next file picked cannot have one at all.
+     *
+     * "Nothing else" is every draft and every binned entry, **in both stores** -
+     * and it was written out twice, once at each release site, with the two
+     * copies already apart: the purge's left out the binned *projects*, so
+     * emptying one bin entry could release a file another binned project was
+     * the last to name. Written once now, so they cannot drift again.
+     */
+    private fun releaseUnnamed(named: Set<String>) {
+        if (named.isEmpty()) return
+        val still = autosave.referencedUris() +
+            autosave.trashed().flatMap { autosave.urisInTrash(it.trashId) } +
+            toolAutosave.drafts().flatMap { d -> d.uris.map { it.toString() } } +
+            toolAutosave.trashed().flatMap { (_, d) -> d.uris.map { it.toString() } }
+        ProjectRules.releasable(named, still)
+            .filter { it.startsWith("content://") }
+            .forEach { getApplication<Application>().releaseReadAccess(Uri.parse(it)) }
     }
 }
