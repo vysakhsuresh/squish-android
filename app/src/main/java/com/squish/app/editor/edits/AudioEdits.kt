@@ -678,7 +678,15 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         val target = current.audioClips.firstOrNull { it.id == current.selectedClipId }
             ?: current.beatClip
             ?: current.audioClips.firstOrNull()
-        val uri = target?.uri ?: current.sourceUri ?: return
+        // The camera grid is laid against the *head shot's* clock
+        // (headPictureDeltaMs, below), so it has to be the head shot's file
+        // that is listened to. It was `sourceUri` - the file the project was
+        // opened on - and those are the same file only until a shot from
+        // another one is carried to the front or the first shot is deleted.
+        // After that the beats were heard in one file and placed by another's
+        // trim: every dot off by the difference, which is the fault the delta
+        // itself was added to fix.
+        val uri = target?.uri ?: current.headVideoClip?.uri ?: current.sourceUri ?: return
         val label = target?.label ?: "the camera audio"
 
         beatJob?.cancel()
