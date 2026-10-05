@@ -26,7 +26,12 @@ object OnlineMusic {
          * adaptation) and no "non-commercial".
          */
         val usableInAVideo: Boolean
-            get() = licenseUrl?.let { "-nd" !in it && "-nc" !in it && "/nd" !in it && "/nc" !in it } ?: false
+            // The same guard the stock footage uses, rather than a second
+            // opinion beside it. This was a deny-list of four spellings, which
+            // did catch the CC 1.0 forms the stock side's query missed - but a
+            // deny-list waves through a licence code nobody here has heard of,
+            // and there is now one allow-list with assertions behind it.
+            get() = licenceAllowsCutting(licenseUrl)
 
         val licenseLabel: String
             // Public domain first: its URL is creativecommons.org/licenses/publicdomain/,
@@ -71,7 +76,11 @@ object OnlineMusic {
         val terms = query.trim()
         val q = buildString {
             append("(collection:netlabels OR collection:opensource_audio) AND mediatype:audio AND licenseurl:*creativecommons*")
-            append(" AND NOT licenseurl:*-nd* AND NOT licenseurl:*-nc*")
+            // *nd* and *nc*, not *-nd* and *-nc*: the hyphenated forms only
+            // match the BY-era codes, and CC 1.0 wrote `licenses/nc/1.0/` with
+            // no hyphen before the term. A first cut either way - what decides
+            // is `usableInAVideo` below, which is an allow-list.
+            append(" AND NOT licenseurl:*nd* AND NOT licenseurl:*nc*")
             append(" AND subject:(").append(genre.subjects).append(")")
             // Music to cut to: no talks, sample packs or wartime marches, which the
             // same subjects also find (a "world" search led with a lecture series).
