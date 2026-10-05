@@ -512,7 +512,7 @@ fun TimelinePreview(
                                 .graphicsLayer { if (inPlace) place(clip.placedAt(layerTime)) }
                         ) {
                             ShotFrame(aspect, clip.quarterTurns, if (inPlace) clip.crop else null, rotationDegrees, pictureFrame, pictureSize) {
-                                PictureToolLayer(pictureTool, clip, aspect, clip.sourceAt(layerTime))
+                                PictureToolLayer(pictureTool, clip, aspect, clip.sourceAt(layerTime), layerTime)
                             }
                         }
                     } else if (clip != null) {
@@ -525,7 +525,7 @@ fun TimelinePreview(
                                     .graphicsLayer { if (inPlace) place(clip.placedAt(layerTime)) }
                             ) {
                                 OverlayFrame(aspect, clip.quarterTurns, if (inPlace) clip.crop else null) {
-                                    PictureToolLayer(pictureTool, clip, aspect ?: 1f, clip.sourceAt(layerTime))
+                                    PictureToolLayer(pictureTool, clip, aspect ?: 1f, clip.sourceAt(layerTime), layerTime)
                                 }
                             }
                         }
@@ -877,7 +877,7 @@ private fun OverlayPlacement.plainFor(tool: PictureTool?): OverlayPlacement =
  * [sourceMs] of its file.
  */
 @Composable
-private fun PictureToolLayer(tool: PictureTool, clip: Clip, pictureAspect: Float, sourceMs: Long) {
+private fun PictureToolLayer(tool: PictureTool, clip: Clip, pictureAspect: Float, sourceMs: Long, timelineMs: Long) {
     when (tool.kind) {
         PictureTool.Kind.Crop -> {
             val crop = clip.crop ?: ClipCrop()
@@ -908,7 +908,14 @@ private fun PictureToolLayer(tool: PictureTool, clip: Clip, pictureAspect: Float
                 centre = mask.centerAt(sourceMs),
                 onMove = tool.onMaskMove,
                 onMoveEnd = tool.onMaskMoveEnd,
+                // Stabilized with the picture, as the surface's own content is.
+                // The mask is cut from the decoded frame, so the correction that
+                // moves that frame moves the hole with it - and the outline was
+                // drawn without it, so on a stabilized shot the shape's edge sat
+                // off the hole it cuts and wobbled against it frame by frame,
+                // with a finger on it dragging what nobody could see.
                 modifier = Modifier.turnedInside(clip.quarterTurns, clip.mirrored, pictureAspect, fit = true)
+                    .stabilized(clip.stabilizerAt(timelineMs))
             )
         }
     }
