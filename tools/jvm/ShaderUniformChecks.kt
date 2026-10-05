@@ -122,7 +122,12 @@ fun main() {
                     flag("$driver: '$name' is $kind in ${shader.name} but is handed $given float(s)")
                 }
             }
-            fun covered(name: String) = name in set || prefixes.any { name.startsWith(it) && name != it }
+            // A prefix covers only a name it indexes: "uHsl$i" answers for
+            // uHsl0..uHsl7 and not for a uHslSomething nothing sets, which is
+            // the hole a bare startsWith would leave.
+            fun covered(name: String) = name in set || prefixes.any {
+                name.length > it.length && name.startsWith(it) && name.drop(it.length).all { c -> c.isDigit() }
+            }
             set.sorted().filterNot { it in declared }.forEach {
                 flag("$driver: sets '$it', which ${shader.name} does not declare - GlProgram throws on this")
             }

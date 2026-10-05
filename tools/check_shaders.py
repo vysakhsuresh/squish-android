@@ -138,8 +138,10 @@ def main() -> int:
                         f"— GlProgram throws on this"
                     )
             for name in sorted(declared):
+                # A prefix covers only a name it indexes: "uHsl$i" answers for
+                # uHsl0..uHsl7 and not for a uHslSomething nothing sets.
                 if name not in set_names and not any(
-                    name.startswith(p) and name != p for p in prefixes
+                    name.startswith(p) and name[len(p):].isdigit() for p in prefixes
                 ):
                     problems.append(
                         f"{shader.name}: declares '{name}', which {driver.name} never sets "
