@@ -124,6 +124,32 @@ fun main() {
         check(back in 2_950 until 3_000, "back off a shot's first frame went to $back")
     }
 
+    // ---- "About 4:07 left" -------------------------------------------------
+    //
+    // The render's countdown, said on the progress card and in the notification
+    // at the same moment. One function, so they cannot drift; these are what it
+    // must say.
+    run {
+        check(Timecode.clock(0L) == "0:00", "nothing left reads ${Timecode.clock(0L)}")
+        check(Timecode.clock(-5_000L) == "0:00", "a negative remainder reads ${Timecode.clock(-5_000L)}")
+        check(Timecode.clock(9_000L) == "0:09", "nine seconds reads ${Timecode.clock(9_000L)}")
+        check(Timecode.clock(59_999L) == "0:59", "just under a minute reads ${Timecode.clock(59_999L)}")
+        check(Timecode.clock(60_000L) == "1:00", "a minute reads ${Timecode.clock(60_000L)}")
+        check(Timecode.clock(247_000L) == "4:07", "four minutes seven reads ${Timecode.clock(247_000L)}")
+        // Past an hour it keeps counting in minutes, which is what someone
+        // waiting on a long 4K render wants rather than "1:03:20".
+        check(Timecode.clock(3_800_000L) == "63:20", "an hour and three reads ${Timecode.clock(3_800_000L)}")
+        // It only ever goes down a second at a time: no second is skipped and
+        // none is shown twice as the count falls.
+        var last = Timecode.clock(30_000L)
+        var changes = 0
+        for (ms in 30_000L downTo 0L step 250L) {
+            val now = Timecode.clock(ms)
+            if (now != last) { changes++; last = now }
+        }
+        check(changes == 30, "counting down from 0:30 changed $changes times, want 30")
+    }
+
     println("timecode: the frame buttons step one frame, on the shot's own frames")
     if (problems.isEmpty()) println("PASS - every press shows the next frame, forward and back, at every rate and speed")
     else { println("FAIL (${problems.size})"); problems.take(30).forEach { println("  - $it") }; exitProcess(1) }
