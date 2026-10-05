@@ -140,6 +140,21 @@ function first; if it can, it can be checked.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **The rest of 5 October, after the phone was unplugged at about 07:00.** All
+  of it is executed on the JVM and none of it has been seen or heard: the
+  three-millisecond release that stops a sound effect clicking where it meets
+  its cut, and the rewrite of the effects already on disk that carries it to
+  anyone who is not installing for the first time (`MusicLibrary`'s
+  `EFFECT_BUILD`); "Sound on every cut" choosing, per join, the first variant
+  short enough not to lie across the shot before it; the AAC track being
+  budgeted in the size estimate and the size target whether or not anything is
+  heard; `hasAnyAudio` reading the whole main track rather than the lead file;
+  the default transition *length* on Settings, which was a stored value with no
+  way to set it; and the Frame rate hint no longer saying frames are dropped
+  when the rate chosen is the rate the footage runs at. What a device answers:
+  that the cut sounds no longer tick, that a fitted export lands under its
+  limit now that the track is in the budget, and that the Settings row behaves.
+
 - **The compact muxer (5 October), first on this list because it is on the path
   of every export.** `media/CompactMuxer.kt` turns Media3's streamable output
   off, because the in-app muxer's 400 KB reserved moov space is never trimmed
