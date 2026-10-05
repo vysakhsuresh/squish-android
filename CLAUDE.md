@@ -48,6 +48,16 @@ through. When a mistake escapes, the question is not only "what was wrong" but
 "what would have caught it" — and if the answer is nothing, write the check
 before writing the fix.
 
+**And then break the code again and watch the check fail.** Copy the file to a
+scratch directory, put the fault back, compile the suite against that copy
+(`jc.sh` takes a path, so one file can come from anywhere) and read the failure.
+Three checks written on 5 October did not bite: one asserted a symmetric pair of
+keyframes that looks the same mirrored or not, one indexed a list that the old
+code left one element long and threw instead of failing, and one asserted the
+*shape* of an implementation that turned out to be the wrong shape — so it
+passed for as long as the bug lived and failed the day it was fixed. A check
+nobody has seen fail is a check nobody has tested.
+
 The `tools/jvm` suites are the strongest tool here by a distance. Anything that
 can be separated from the framework — speed curves, crop geometry, colour
 grading, timeline windowing, frame budgets — is compiled and **executed** on the
