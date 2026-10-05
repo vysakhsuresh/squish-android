@@ -1322,3 +1322,61 @@ back to a full encode by itself when a file cannot be cut that way, so it
 wants a device: open a clip, trim it, export, and check the logcat line says
 `trimOnly=true optimization=` with a non-zero result and that the file's
 bitrate matches the source's.
+
+## Sweep three: the class the user found, hunted for (5 October)
+
+A user dragged the strip right and the playhead went left. That fault was
+fixed in the morning; this is the sweep for the *class* of it - a control
+whose direction, sign or label contradicts what you see. Twenty-seven hunts
+over nine groups of files and three lenses (direction, dead control, label
+lies), two adversarial refuters each, both of which had to fail to refute.
+Thirty-four candidates, **twenty-six confirmed**, all fixed. None has been
+seen on a phone: it left before the sweep finished.
+
+The ones worth remembering:
+
+- **A tracked mask sat mirrored and walked the wrong way.** The tracker's
+  `yFraction` is a bitmap row over the frame's height, so 0 is the top; the
+  mask shader's y comes from a GL texture coordinate, where +1 is the top,
+  and that is also what `centerYFraction` and `MaskOutline.dragged` hold.
+  `Mask.centerAt` converted without negating. Track a face in the upper half,
+  Pin, and the ellipse jumped to the lower half and climbed as the face
+  walked down - in the preview and in the exported file.
+
+- **The hand-drawn crop's corners could not be grabbed at all.** `gripAt`
+  returned a corner only when the touch was *not* inside the rectangle, while
+  the brackets are drawn inward and both ways into Crop open the window at
+  the whole picture, where nothing is outside.
+
+- **"Track from the playhead" started at the clip's first frame.** The picker
+  shows the frame under the playhead and asks you to tap the thing to follow
+  on it; the run cut its template at the clip's in-point instead, so what it
+  followed was whatever was at that spot on the opening frame. That is why
+  Track was hard to get a good result from.
+
+- **The overlay box's corner buttons keep their touch zones when they are not
+  drawn.** With the keyboard up the four buttons are deliberately hidden -
+  they covered the words being typed - and a tap on bare picture a little past
+  a corner deleted the line.
+
+- **"Snap to markers and beats" was turning off the cuts too**, against the
+  rule written twice in the same file and obeyed by every trim.
+
+- **The Curves square swallowed every drag**, so the tool sheet behind it
+  could not be scrolled once the square filled the viewport, and the controls
+  below it were unreachable.
+
+- **Snip's two trim handles ate each other** below a 48 dp keep: the start bar
+  could not be dragged at all, and pressing it moved the end.
+
+- **A keyframe diamond within 10-20 dp of a selected clip's edge** sat under
+  the invisible half of the trim handle, whose gesture is a drag and ignores a
+  tap - so the press did nothing whatever.
+
+The rest were sentences: the Mask switch reading backwards in Pixelate and
+Blur, Speed quoting a frame rate at a song, Layer saying no other overlay is
+on screen while one plainly is, "Stopped - the lines made so far are on the
+timeline" counted off stretches rather than lines landed, "1 key - moves
+while it plays", "1 lines timed", "1 bars", a split refusal naming the end
+the finger was nearer rather than the end that was out of room, and the RGB
+split tile drawn as a mirror of the effect it was selling.
