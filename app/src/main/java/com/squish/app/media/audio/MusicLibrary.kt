@@ -76,6 +76,12 @@ object MusicLibrary {
             .getOrElse { file.delete(); null }
     }
 
+    /**
+     * Under a lock: two sounds asked for at once would otherwise both find the
+     * stamp stale and write the same WAVs over each other, and a half-written
+     * file is a sound that does not play.
+     */
+    @Synchronized
     private fun remakeEffectsIfStale(context: Context) {
         val stamp = File(dir(context), "effects.build")
         val made = runCatching { stamp.readText().trim().toInt() }.getOrDefault(0)
