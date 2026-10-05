@@ -270,7 +270,11 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
                     done == null -> "A whoosh into every join, three going round in turn so ten of them do not " +
                         "sound like one repeated. Each ends on its cut, which is what pulls the eye into " +
                         "the next shot. Made on the phone, like the music."
-                    n == 0 -> "Nothing to put a sound on — the picture needs more than one shot."
+                    n == 0 && joins == 0 -> "Nothing to put a sound on — the picture needs more than one shot."
+                    // Joins there and nothing laid: the effects could not be
+                    // made. Saying "the picture needs more than one shot" to
+                    // someone looking at five cuts is the app not believing them.
+                    n == 0 -> "The sounds could not be made just now. Try again in a moment."
                     n < joins -> "${countOf(n, "sound")} laid, across $joins cuts: the joins that come too " +
                         "close together share one. Undo takes them all off."
                     n == 1 -> "One sound laid, on the one cut. Undo takes it off."
