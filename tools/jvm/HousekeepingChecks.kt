@@ -212,6 +212,43 @@ fun main() {
         }
     }
 
+    // --- Every file a slot owns goes into the bin with it. --------------------
+    //
+    // `moveToBin` is handed a list, and anything left off that list is simply
+    // not binned - and, since `delete` unlinks what it does not bin, destroyed.
+    // The `.start` file of a project staged but never saved was left off, so
+    // such a project had *only* files that were not on the list: Delete on its
+    // card moved nothing, `moveToBin` returned null, the snackbar's Undo had
+    // nothing to restore, and the picker grants it held could never be released
+    // because nothing on disk named its files any more.
+    //
+    // Read as text, since the two stores are Android classes: every per-slot
+    // file helper they declare must be named in their own `slotFiles`, except
+    // the `.tmp` scratch files, which are half-written by definition.
+    run {
+        listOf(
+            "app/src/main/java/com/squish/app/data/ProjectAutosave.kt",
+            "app/src/main/java/com/squish/app/data/ToolAutosave.kt"
+        ).forEach { path ->
+            val file = File(path)
+            if (!file.isFile) { problems += "$path is not where this check looks"; return@forEach }
+            val text = file.readText()
+            val helpers = Regex("""private fun (\w+File)\(slot: String\)""").findAll(text)
+                .map { it.groupValues[1] }
+                .filterNot { it.contains("scratch", ignoreCase = true) }
+                .toList()
+            if (helpers.size < 4) problems += "$path: only ${helpers.size} per-slot files found - has the pattern rotted?"
+            val listed = text.substringAfter("private fun slotFiles(slot: String) =", "")
+                .substringBefore("\n\n")
+            if (listed.isBlank()) problems += "$path has no slotFiles"
+            helpers.forEach { helper ->
+                if (!listed.contains("$helper(slot)")) {
+                    problems += "$path: $helper is a file the slot owns and slotFiles does not name it, so Delete destroys it rather than binning it"
+                }
+            }
+        }
+    }
+
     if (problems.isNotEmpty()) {
         problems.forEach { println("FAIL - $it") }
         exitProcess(1)
