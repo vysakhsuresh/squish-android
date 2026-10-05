@@ -640,6 +640,29 @@ fun main() {
         }
     }
 
+    // ---- A storage row counts what Clear can reach. ------------------------
+    //
+    // `sizeOf` measures with walkTopDown, so a row counts the whole tree. The
+    // sweep took a flag and was called with it off for two of the kinds, so a
+    // file in a subdirectory was counted and unreachable: Clear took the number
+    // to nothing on screen and left the bytes on the disk. Twice - the stills'
+    // backdrops first, then every downloaded stock clip under
+    // files/imports/stock. The flag is gone; the sweep walks the tree the row
+    // measures.
+    run {
+        val cleaner = read("$SRC/settings/StorageCleaner.kt")
+        check(cleaner.contains("private fun sweep("), "StorageCleaner has no sweep any more - this check has rotted")
+        check(
+            !Regex("recurse").containsMatchIn(cleaner),
+            "StorageCleaner's sweep takes a recurse flag again: every row measures its whole tree with " +
+                "walkTopDown, so a sweep that stops at the top counts files it cannot delete"
+        )
+        check(
+            Regex("dir\\.walkTopDown\\(\\)").containsMatchIn(cleaner),
+            "StorageCleaner's sweep no longer walks the tree"
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

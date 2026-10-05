@@ -1,5 +1,6 @@
 import com.squish.app.online.MAX_TERMS
 import com.squish.app.online.searchTerms
+import com.squish.app.online.licenceAllowsCutting
 import kotlin.system.exitProcess
 
 /*
@@ -67,6 +68,62 @@ fun main() {
     listOf(malayalam, accented, "a) OR licence:(any", "مرحبا").forEach { typed ->
         val out = searchTerms(typed).orEmpty()
         check(out.none { it in syntax }, "\"$typed\" came out as \"$out\", which holds query syntax")
+    }
+
+    // ---- The licence, which decides what is offered as free b-roll ---------
+    //
+    // It had been left to the query alone - "AND NOT licenseurl:*-nd* AND NOT
+    // licenseurl:*-nc*" - which only matches the hyphenated BY-era codes.
+    // Creative Commons 1.0 wrote its codes without the "by", so
+    // licenses/nd/1.0/, licenses/nc/1.0/ and licenses/nc-sa/1.0/ have no
+    // hyphen before the term and all three slipped through: a no-derivatives
+    // or non-commercial clip was offered as free to cut into someone's video.
+    run {
+        val cuttable = listOf(
+            "http://creativecommons.org/publicdomain/zero/1.0/",
+            "https://creativecommons.org/publicdomain/mark/1.0/",
+            "http://creativecommons.org/licenses/by/4.0/",
+            "http://creativecommons.org/licenses/by/2.0/",
+            "https://creativecommons.org/licenses/by-sa/4.0/",
+            "http://creativecommons.org/licenses/sa/1.0/",
+            "HTTP://CreativeCommons.org/Licenses/BY-SA/3.0/"
+        )
+        for (url in cuttable) check(licenceAllowsCutting(url), "a cuttable licence was refused: $url")
+
+        val refused = listOf(
+            // The three CC 1.0 forms that slipped the query's filter.
+            "http://creativecommons.org/licenses/nd/1.0/",
+            "http://creativecommons.org/licenses/nc/1.0/",
+            "http://creativecommons.org/licenses/nc-sa/1.0/",
+            // And the hyphenated ones, which it did catch.
+            "http://creativecommons.org/licenses/by-nc/4.0/",
+            "http://creativecommons.org/licenses/by-nd/4.0/",
+            "http://creativecommons.org/licenses/by-nc-nd/4.0/",
+            "http://creativecommons.org/licenses/by-nc-sa/4.0/",
+            // A code nobody here has heard of: refused, not waved through.
+            "http://creativecommons.org/licenses/gpl/2.0/",
+            "http://example.com/some-other-licence",
+            "http://creativecommons.org/licenses//4.0/",
+            "creativecommons.org",
+            "",
+            "   "
+        )
+        for (url in refused) check(!licenceAllowsCutting(url), "a licence that forbids cutting was allowed: $url")
+        check(!licenceAllowsCutting(null), "no licence at all was allowed")
+
+        // No term that bans cutting may ever be accepted, however it is spelt
+        // or combined - which is the property an allow-list gives and a
+        // deny-list of patterns did not.
+        val terms = listOf("by", "sa", "nc", "nd")
+        for (a in terms) for (b in terms) for (c in terms) {
+            val code = listOf(a, b, c).distinct().joinToString("-")
+            val url = "http://creativecommons.org/licenses/$code/4.0/"
+            val banned = "nc" in code.split('-') || "nd" in code.split('-')
+            check(
+                licenceAllowsCutting(url) == !banned,
+                "licenses/$code/ came back ${licenceAllowsCutting(url)}"
+            )
+        }
     }
 
     println("search terms: what a text field may put inside a query")

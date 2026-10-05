@@ -31,7 +31,13 @@ object OnlineStock {
     suspend fun search(context: Context, query: String, rows: Int = 24): List<Video> {
         val q = buildString {
             append("collection:stock_footage AND (licenseurl:*creativecommons* OR licenseurl:*publicdomain*)")
-            append(" AND NOT licenseurl:*-nd* AND NOT licenseurl:*-nc* AND item_size:[* TO $MAX_ITEM_BYTES]")
+            // *nc* and *nd* rather than *-nc* and *-nd*: the hyphenated forms
+            // only match the BY-era codes, and Creative Commons 1.0 wrote
+            // `licenses/nc/1.0/` and `licenses/nd/1.0/` with no hyphen before
+            // the term. This is only a first cut, to stop fetching rows that
+            // will be thrown away - `licenceAllowsCutting` below is what
+            // decides, and it is an allow-list.
+            append(" AND NOT licenseurl:*nd* AND NOT licenseurl:*nc* AND item_size:[* TO $MAX_ITEM_BYTES]")
             val terms = Online.searchTerms(query)
             if (terms != null) append(" AND (").append(terms).append(")")
             // Nothing typed: b-roll people cut into their own videos. The
@@ -52,7 +58,7 @@ object OnlineStock {
                 licenseUrl = d.optString("licenseurl").takeIf { it.isNotBlank() },
                 sizeBytes = d.optLong("item_size")
             )
-        }.filter { it.licenseUrl != null }
+        }.filter { licenceAllowsCutting(it.licenseUrl) }
     }
 
     /** The item's picture, kept in the cache. */
@@ -76,18 +82,39 @@ object OnlineStock {
         val file = File(dir, video.id.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".mp4")
         if (file.length() > 0L) return Uri.fromFile(file)
         val files = JSONObject(Online.get(context, "https://archive.org/metadata/${enc(video.id)}")).optJSONArray("files") ?: return null
+        // The smallest mp4 *that is small enough*, rather than the smallest
+        // outright. The search's cutoff is on `item_size`, which is the sum of
+        // every file in the item - the master, each derivative, the thumbnails
+        // and the XML - so it both rejected items whose master is large and a
+        // 40 MB derivative perfectly usable, and let through items whose
+        // smallest mp4 is still a feature film. The real limit belongs here,
+        // where the file's own size is known.
         val mp4 = (0 until files.length()).map { files.getJSONObject(it) }
             .filter { it.optString("name").endsWith(".mp4", ignoreCase = true) }
-            .minByOrNull { it.optString("size").toLongOrNull() ?: Long.MAX_VALUE }
-            ?.optString("name") ?: return null
+            .map { it to (it.optString("size").toLongOrNull() ?: Long.MAX_VALUE) }
+            .filter { (_, size) -> size in 1..MAX_DOWNLOAD_BYTES }
+            .minByOrNull { (_, size) -> size }
+            ?.first?.optString("name") ?: return null
         val url = "https://archive.org/download/${enc(video.id)}/" + mp4.split('/').joinToString("/") { enc(it) }
         return Uri.fromFile(Online.download(context, url, file))
     }
 
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
-    /** Items over this are skipped: a stock clip, not a feature film, on a phone's data. */
-    private const val MAX_ITEM_BYTES = 80_000_000L
+    /**
+     * Items over this are not even listed.
+     *
+     * This is the *item's* total - the master, every derivative, the
+     * thumbnails and the XML - so it is a loose upper bound and not the
+     * download, which is one mp4 out of that set and is held to
+     * [MAX_DOWNLOAD_BYTES] where its own size is known. At 80 MB it was being
+     * read as the download's limit and was throwing away items with a large
+     * master and a small, perfectly usable derivative.
+     */
+    private const val MAX_ITEM_BYTES = 600_000_000L
+
+    /** The most a tap will fetch: a stock clip, not a feature film, on a phone's data. */
+    private const val MAX_DOWNLOAD_BYTES = 80_000_000L
 
     const val DIR = "imports/stock"
 

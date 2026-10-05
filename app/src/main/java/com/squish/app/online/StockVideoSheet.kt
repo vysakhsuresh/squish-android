@@ -189,7 +189,11 @@ private fun StockTile(video: OnlineStock.Video, busy: Boolean, onClick: () -> Un
         }
         Text(video.title, style = MaterialTheme.typography.labelMedium, color = SquishColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
         Text(
-            "${video.licenseLabel} · ${"%.0f".format(video.sizeBytes / 1_000_000.0)} MB",
+            // "up to", because the number is the Archive *item's* total - the
+            // master, every derivative and the thumbnails - while a tap fetches
+            // the smallest mp4 in it, which is usually a fraction of that. Read
+            // as the download's size it was wrong by multiples.
+            "${video.licenseLabel} · up to ${"%.0f".format(video.sizeBytes / 1_000_000.0)} MB",
             style = MaterialTheme.typography.labelSmall,
             color = SquishColors.TextMuted,
             modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp)

@@ -50,9 +50,9 @@ object StorageCleaner {
             // from a shot's file and the frame's shape - so every one goes, and
             // the one that is wanted again is made again from the footage, which
             // is what CanvasBackdrop does anyway.
-            StorageKind.Stills -> sweep(context, listOf(File(context.filesDir, "stills")), recurse = true)
-            StorageKind.Renders -> sweep(context, listOf(File(context.filesDir, "reversed"), File(context.filesDir, IMPORTS_DIR)), recurse = false)
-            StorageKind.Takes -> sweep(context, listOf(File(context.filesDir, "voice"), File(context.filesDir, "speech")), recurse = false)
+            StorageKind.Stills -> sweep(context, listOf(File(context.filesDir, "stills")))
+            StorageKind.Renders -> sweep(context, listOf(File(context.filesDir, "reversed"), File(context.filesDir, IMPORTS_DIR)))
+            StorageKind.Takes -> sweep(context, listOf(File(context.filesDir, "voice"), File(context.filesDir, "speech")))
             StorageKind.Masks -> Segmenter.sweep(context, SquishRepositories.autosave(context).referencedMaskFiles())
             StorageKind.Proxies -> ProxyEngine.clearCache(context)
             StorageKind.Thumbnails -> ThumbnailCache.clearDisk(context)
@@ -91,23 +91,26 @@ object StorageCleaner {
         if (!dir.exists()) 0L else dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
     /**
-     * Deletes the files under [dirs] that no draft names.
+     * Deletes the files under [dirs], and under anything inside them, that no
+     * draft names.
      *
-     * [recurse] for a tree whose whole size the card reports - the stills,
-     * backdrops and all. It used to be false for those on the grounds that
-     * CanvasBackdrop prunes itself, which was true only of the blurred ones:
-     * a picture chosen as a background wrote a multi-megabyte file that was
-     * counted by the row and swept by nothing, so Clear could not take the
-     * number down. Both are pruned now and both are swept.
+     * Always the whole tree, because [sizeOf] measures the whole tree: a row
+     * that counts a file the sweep cannot reach is a number Clear takes to
+     * nothing on screen and leaves on the disk. It has now happened twice. The
+     * stills were swept at the top level only, so a picture chosen as a
+     * background wrote a multi-megabyte file nothing could take; and the
+     * renders row counted `files/imports` whole while sweeping only its top,
+     * so every downloaded stock clip under `files/imports/stock/` was counted
+     * and unreachable. There is no directory here whose contents the rows do
+     * not count, so there is none the sweep should stop at.
      */
-    private fun sweep(context: Context, dirs: List<File>, recurse: Boolean) {
+    private fun sweep(context: Context, dirs: List<File>) {
         val named = SquishRepositories.autosave(context).referencedUris()
             .mapNotNull { StorageRules.pathOf(it) }
             .toSet() +
             SquishRepositories.toolAutosave(context).drafts().flatMap { d -> d.uris.mapNotNull { StorageRules.pathOf(it.toString()) } }
         dirs.forEach { dir ->
-            val files = (if (recurse) dir.walkTopDown().toList() else dir.listFiles()?.toList().orEmpty())
-                .filter { it.isFile }
+            val files = dir.walkTopDown().filter { it.isFile }.toList()
             StorageRules.unreferenced(files.map { it.absolutePath }, named).forEach { runCatching { File(it).delete() } }
         }
     }
