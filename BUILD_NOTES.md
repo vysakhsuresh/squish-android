@@ -164,6 +164,27 @@ release that knows `FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING` would let the
 compat call back, but nothing depends on it. And the type is declared in the
 manifest as `mediaProcessing|dataSync`, one for each side of 35.
 
+**The muxer, and the four hundred kilobytes it reserves.** `Transformer`'s
+default is `DefaultMuxer`, a pure delegate over `InAppMp4Muxer`, whose
+`Mp4Writer.writeHeader` reserves `DEFAULT_MOOV_BOX_SIZE_BYTES = 400_000` bytes
+of `free` space after the `ftyp` so the `moov` can be written at the front.
+`maybeWriteMoovAtStart` writes the moov into that space and leaves the rest as
+a `free` box, which is never trimmed - so every file carried 400 KB of padding,
+69% of a measured three-second export. `media/CompactMuxer.kt` passes
+`InAppMp4Muxer.Factory().setAttemptStreamableOutputEnabled(false)`, which sends
+the moov after the mdat and truncates the file to what it used. The export, the
+proxy copy and every rendered still use it. If a future Media3 trims the
+reserve itself, this can go.
+
+**The audio track is written whether or not anything is heard.** `AUDIO_AAC` is
+set on every composed export, and Media3's `DefaultEncoderFactory
+.DEFAULT_AUDIO_BITRATE` is `128 * 1024`, which the AAC encoder spends on
+silence as readily as on sound - 133 frames of about 380 bytes in a
+three-second export of a clip with none. So `ExportPresets.AUDIO_BITRATE_BPS`
+is that same `128 * 1024`, and the estimate and the size target count the track
+unconditionally. Not declaring audio when nothing has sound would be better and
+is untried; `EditorUiState.estimatedExportBytes` says so.
+
 The sections below were written against 1.4/1.5 and are kept for the history;
 where they name a call that no longer exists (`ChannelMixingMatrix.create`,
 `HslAdjustment` for saturation), that call is no longer used.
