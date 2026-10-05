@@ -37,8 +37,17 @@ fun main() {
 
     // The third runner: the suites that need Media3 itself on the class path,
     // which only the desktop can give them. It has no twin to be out of step
-    // with, but it can still name a file that has moved.
+    // with, but it can still name a file that has moved - and it has to be
+    // *run*, which is the thing that was wrong with it. Nobody invoked it as
+    // part of a full pass, so "every suite passed" meant every suite but those
+    // two, and one of them had stopped compiling when TimedEffect.kt grew a
+    // PolishRules reference its file list did not name.
     run {
+        val desktopText = File("tools/jvm/run_desktop.sh").takeIf { it.isFile }?.readText().orEmpty()
+        if (!desktopText.contains("run_media3.sh")) {
+            problems += "run_desktop.sh does not run run_media3.sh, so a full pass on this machine leaves " +
+                "the Media3 suites out and calls itself complete"
+        }
         val media3 = File("tools/jvm/run_media3.sh")
         if (!media3.isFile) problems += "tools/jvm/run_media3.sh is gone" else {
             val text = media3.readText()

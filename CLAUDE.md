@@ -98,9 +98,16 @@ function first; if it can, it can be checked.
   from `TimedEffect.kt` broke thirteen of them while each one I ran passed.
   After touching anything on that list, run the lot. And
   `sh tools/jvm/jc.sh <Suite> <files...>` runs one. Suites that run app code against Media3
-  itself (the voice effects through its real `BaseAudioProcessor`) are in
-  `sh tools/jvm/run_media3.sh`, which puts media3-common, guava and the SDK's
-  android.jar on the class path through `EXTRA_CP`.
+  itself (the voice effects and the level processors through its real
+  `BaseAudioProcessor`) are in `sh tools/jvm/run_media3.sh`, which puts
+  media3-common, guava and the SDK's android.jar on the class path through
+  `EXTRA_CP` - and which `run_desktop.sh` now calls at its end, because left
+  out of it "every suite passed" meant every suite but those two, and one of
+  them had stopped compiling for a day when `TimedEffect.kt` grew a
+  `PolishRules` reference that *its* file list did not name.
+  **Never edit a runner while one is running**: `sh` reads the script at byte
+  offsets as it goes, so inserting a line near the top sends the running shell
+  into the middle of a later one.
 - **Measure speed on a release build, never a debug one.** `./gradlew
   assemblePerf` is the release build signed with the debug key; it installs
   over a debug build and keeps the drafts (but `run-as` stops working until a

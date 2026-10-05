@@ -121,4 +121,11 @@ run envelope  tools/jvm/stub/MonoPcm.kt "$SRC/media/audio/Waveform.kt" tools/jvm
 run srt "$SRC/data/SrtFile.kt" tools/jvm/SrtChecks.kt
 run shaderuniforms tools/jvm/ShaderUniformChecks.kt
 
+# And the suites that run app code against Media3 itself. They keep their own
+# file lists, and this is the only machine that can compile them at all - so
+# left out of here, "every suite passed" meant every suite but those two. One of
+# them had stopped compiling when TimedEffect.kt grew a PolishRules reference
+# that its list did not name, and nothing said so for a day.
+sh "$S/run_media3.sh"
+
 rm -rf "$OUT"
