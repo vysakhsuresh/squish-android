@@ -172,8 +172,15 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel, acc
                 }
             }
 
+            // Not "could not read the frames": the frames read fine, and the
+            // likeliest reason nothing was followed is that the aim box ran off
+            // the edge of the picture - the template is a patch around the point
+            // and it cannot be cut where there is no picture on one side, which
+            // is a wide box near an edge. Saying the footage was unreadable sent
+            // people looking at the wrong thing.
             tracking.finished && tracking.failed -> Text(
-                "Could not read enough frames to follow anything here.",
+                "Could not follow anything from there. Aim nearer the middle of the picture, " +
+                    "or make the box smaller, and try again.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.Yellow
             )

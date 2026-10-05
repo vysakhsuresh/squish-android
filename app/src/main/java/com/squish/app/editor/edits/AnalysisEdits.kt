@@ -322,8 +322,24 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
 
         trackJob?.cancel()
         _state.update {
-            it.copy(tracking = it.tracking.copy(running = true, finished = false, failed = false, track = null))
+            // The clip's id goes on at the *start*, not only when the run ends.
+            // The panel throws away progress whose clipId is not the selected
+            // clip's - so with the previous run's id still on it, a track
+            // started on a second clip showed no progress at all, the button
+            // still read "Track from the playhead", and pressing it again did
+            // nothing, since this function returns early while one is running.
+            it.copy(
+                tracking = it.tracking.copy(
+                    running = true, finished = false, failed = false, track = null, clipId = clipId
+                )
+            )
         }
+
+        // From the frame the picker showed and the aim was taken on, which is the
+        // one under the playhead - the button says so. It used to start at the
+        // clip's in-point and cut its template there, so the thing being
+        // followed was whatever happened to be at that spot on the first frame.
+        val from = clip.sourceAt(current.playheadMs).coerceIn(clip.sourceInMs, clip.sourceOutMs)
 
         trackJob = viewModelScope.launch {
             val analysis = analysisSourceFor(uri, current)
@@ -333,7 +349,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
                 sourceWidth = analysis.width,
                 sourceHeight = analysis.height,
                 fps = current.fps,
-                fromMs = clip.sourceInMs,
+                fromMs = from,
                 toMs = clip.sourceOutMs,
                 startXFraction = current.tracking.pointX,
                 startYFraction = current.tracking.pointY,
