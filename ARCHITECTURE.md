@@ -429,8 +429,11 @@ evict, rebuilt on demand.
 
 - Multi-track timeline: split, trim, move, delete, close gaps, zoom
 - Frame-accurate precision trim driven by the clip's real frame rate
-- Transitions (dissolve, dip to black, slide, wipe) via A/B-roll compositing,
-  previewed live
+- Transitions via A/B-roll compositing, previewed live from the same
+  `ExportPlan.blend` the file is written from: twenty-six kinds, including the
+  dissolves and dips, slides and pushes all four ways, wipes, zoom, jitter,
+  flicker, flash, glow, and the two read off a real reel on 5 October — a focus
+  pull (**Blur**) and a **Burn out**
 - Layered compositing: picture-in-picture with opacity, scale and position,
   composited live in the preview as well as at export
 - Unlimited audio tracks: music, voiceover and a second mic at once, overlapping
@@ -441,17 +444,36 @@ evict, rebuilt on demand.
 - Auto-captions: speech detection and timing on-device, transcription where the
   device supports it, SRT import and export, and an inline caption editor
 - Chroma key with spill suppression, sampled from your own frame, live in preview
-- Shape masks — rectangle, ellipse, linear, mirror — feathered, rotatable,
-  invertible, composing with the key rather than replacing it
+- Shape masks — rectangle, ellipse, linear, mirror, heart, star — feathered,
+  rotatable, invertible, keyed on a track, composing with the key rather than
+  replacing it, and drawn from the shader's own distance field so the outline on
+  screen is the edge the file cuts (`tools/jvm/MaskOutlineChecks.kt`)
 - Motion tracking: pin a caption, a layer or a privacy mask to something moving
 - Face and plate hiding: a tracked pixelate or blur that follows the subject
 - Stabilization: global motion estimation, trajectory smoothing and automatic crop
 - Keyframed motion: scale, position and rotation over time, with smooth, linear
   and hold easing, six one-tap presets, and live preview
-- Color: brightness, contrast, saturation
-- Effects library: 16 graded looks across three families, with a strength dial,
-  previewed live and previewed honestly on the chips
-- Export presets, fit-to-size bitrate solving, gallery publishing
+- Colour: thirteen sliders and eight hue bands, folded with the look into one
+  grade (`media/effects/Look.kt`), a tone curve per channel, colour wheels, and
+  an imported `.cube` as the last step
+- Effects library: 50 graded looks across six families (Essentials, Film, Mood,
+  Cinema, Retro, Social), with a strength dial, previewed live and previewed
+  honestly on the chips — the number is held by `tools/jvm/LookChecks.kt`,
+  which also holds that no two of them look the same
+- Sound, beyond the tracks: voiceover with a count-in and a live meter, fades,
+  per-clip voices, Enhance voice, Even out volume, Remove silences, Duck under
+  speech, beat grids with a density and a downbeat, cut-on-every-beat, sound
+  effects, and free music and sound searched from the Internet Archive
+- Text: styles and bubbles, arrivals, leavings and loops, an eyedropper, imported
+  fonts, auto-captions with per-word timings, editing by transcript, read aloud,
+  caption translation, stickers and shapes
+- Frame: a padded canvas with a blurred, coloured or chosen backdrop;
+  auto-reframe that follows each shot's own subject; per-clip crop, straighten,
+  turn and mirror; background removal with a person mask
+- Clip operations: freeze, reverse, replace, duplicate, copy and paste
+  attributes, select-more, split screen and grid
+- Export presets, fit-to-size bitrate solving, HEVC and Keep HDR where the
+  encoder allows, Sound only, Save as GIF, gallery publishing
 - Quick tools: compress, trim, extract audio, merge
 - Atomic auto-save and crash recovery
 - Background proxy generation
