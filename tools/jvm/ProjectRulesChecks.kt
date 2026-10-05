@@ -138,6 +138,44 @@ fun main() {
         check(titles.size == titles.toSet().size || titles[3] == "Edit · 2 Oct", "titles still collide: $titles")
     }
 
+    // ---- A clip's window, as read from a draft -----------------------------
+    //
+    // The two numbers come out of a JSON object with optLong, which answers
+    // zero for a key that is not there - so a half-written object, or one a
+    // build with other names wrote, can hand back an out-point before its
+    // in-point. Everything that clamps a moment into the window then calls
+    // coerceIn(in, out), and coerceIn on an inverted range throws rather than
+    // returning anything: sampling a frame, starting a Track or auto-reframing
+    // such a clip would take the editor down.
+    run {
+        // In order already: untouched.
+        check(ProjectRules.window(1_000L, 5_000L) == 1_000L to 5_000L, "a window in order was changed")
+        check(ProjectRules.window(0L, 0L) == 0L to 0L, "an empty window was changed")
+        // The way round a missing out-point leaves it: swapped, not discarded -
+        // both numbers are in the file and only their order is wrong.
+        check(ProjectRules.window(5_000L, 0L) == 0L to 5_000L, "an inverted window was not put in order")
+        check(ProjectRules.window(5_000L, 4_999L) == 4_999L to 5_000L, "a window out by a millisecond was not put in order")
+        // Never before zero, either end.
+        check(ProjectRules.window(-3_000L, 5_000L) == 0L to 5_000L, "a negative in-point survived")
+        check(ProjectRules.window(-3_000L, -1_000L) == 0L to 0L, "a window entirely before zero survived")
+        check(ProjectRules.window(2_000L, -1_000L) == 0L to 2_000L, "a negative out-point survived")
+        // The property every caller leans on, over every mix of signs and
+        // orders: the pair can be handed to coerceIn without throwing.
+        val values = listOf(Long.MIN_VALUE, -5_000L, -1L, 0L, 1L, 5_000L, Long.MAX_VALUE)
+        for (a in values) for (b in values) {
+            val (lo, hi) = ProjectRules.window(a, b)
+            check(lo <= hi, "window($a, $b) came back inverted: $lo to $hi")
+            check(lo >= 0L, "window($a, $b) came back before zero: $lo")
+            // Which is exactly what coerceIn needs; run it to be sure, inside
+            // a runCatching so a bad pair is *reported* rather than thrown out
+            // of the suite before the failures above are printed.
+            check(
+                runCatching { 0L.coerceIn(lo, hi) in lo..hi }.getOrDefault(false),
+                "window($a, $b) gave $lo to $hi, which coerceIn throws on"
+            )
+        }
+    }
+
     if (problems.isEmpty()) {
         println("ProjectRulesChecks: all checks passed")
     } else {

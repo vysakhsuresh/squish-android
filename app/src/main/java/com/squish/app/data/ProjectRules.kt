@@ -55,6 +55,29 @@ object ProjectRules {
     fun releasable(purged: Set<String>, stillNamed: Set<String>): Set<String> = purged - stillNamed
 
     /**
+     * A clip's kept stretch as read from a draft: in order, and never before
+     * zero.
+     *
+     * The two numbers come out of a JSON object with `optLong`, which answers
+     * zero for a key that is not there - so a half-written object, or one a
+     * build with other names wrote, can hand back an out-point before its
+     * in-point. Everything that then clamps a moment into the window calls
+     * `coerceIn(in, out)`, and `coerceIn` on an inverted range *throws* rather
+     * than returning anything: sampling a frame, starting a Track, or
+     * auto-reframing such a clip would take the editor down. A draft this app
+     * wrote is always in order, so this costs nothing and is only ever the
+     * difference between a strange edit and no edit at all.
+     *
+     * The two numbers are swapped rather than one of them discarded: both are
+     * in the file, and the only thing wrong with them is which way round.
+     */
+    fun window(readInMs: Long, readOutMs: Long): Pair<Long, Long> {
+        val lo = minOf(readInMs, readOutMs).coerceAtLeast(0L)
+        val hi = maxOf(readInMs, readOutMs).coerceAtLeast(lo)
+        return lo to hi
+    }
+
+    /**
      * The files a project's own bytes are counted over: what it made itself
      * (stills, reversed renders, voice takes, spoken lines) and keeps under the
      * app's storage. The footage picked from the gallery is the phone's, not

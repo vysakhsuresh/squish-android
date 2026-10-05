@@ -1498,13 +1498,22 @@ class ProjectAutosave(context: Context) {
 
     private fun decodeClip(json: JSONObject?, kind: ClipKind): Clip? {
         if (json == null) return null
+        // In order and never negative: optLong answers zero for a key that is
+        // not there, so a half-written object can hand back an out-point before
+        // its in-point, and everything that clamps a moment into the window
+        // calls coerceIn(in, out), which throws on an inverted range rather
+        // than returning anything. See ProjectRules.window.
+        val (readInMs, readOutMs) = ProjectRules.window(
+            json.optLong("sourceInMs"),
+            json.optLong("sourceOutMs")
+        )
         return Clip(
             id = json.optString("id").takeIf { it.isNotBlank() } ?: return null,
             kind = kind,
             uri = json.optString("uri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse),
             label = json.optString("label", "Clip"),
-            sourceInMs = json.optLong("sourceInMs"),
-            sourceOutMs = json.optLong("sourceOutMs"),
+            sourceInMs = readInMs,
+            sourceOutMs = readOutMs,
             timelineStartMs = json.optLong("timelineStartMs"),
             sourceDurationMs = json.optLong("sourceDurationMs"),
             volume = json.optDouble("volume", 1.0).toFloat(),
@@ -1611,10 +1620,16 @@ class ProjectAutosave(context: Context) {
             mirrored = json.optBoolean("mirrored"),
             quarterTurns = (json.optInt("quarterTurns") % 4 + 4) % 4,
             reversedFrom = json.optJSONObject("reversedFrom")?.let { r ->
+                // The window Reverse again puts back, read the same way: in
+                // order and never negative (ProjectRules.window).
+                val (wasInMs, wasOutMs) = ProjectRules.window(
+                    r.optLong("sourceInMs"),
+                    r.optLong("sourceOutMs")
+                )
                 ReversedSource(
                     uri = r.optString("uri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse),
-                    sourceInMs = r.optLong("sourceInMs"),
-                    sourceOutMs = r.optLong("sourceOutMs"),
+                    sourceInMs = wasInMs,
+                    sourceOutMs = wasOutMs,
                     durationMs = r.optLong("durationMs"),
                     background = r.optJSONObject("background")?.let(::decodeBackground)
                 )

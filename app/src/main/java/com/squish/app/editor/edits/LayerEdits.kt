@@ -237,7 +237,12 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                         val filmed = now.copy(
                             uri = made,
                             sourceInMs = 0L,
-                            sourceOutMs = now.durationMs.coerceIn(MIN_CLIP_MS, fileMs),
+                            // The floor is held to the file, not asserted over
+                            // it: a render that came back shorter than a clip's
+                            // minimum - one frame of a still whose render gave
+                            // up part way - made coerceIn(200, fileMs) an
+                            // inverted range, and coerceIn throws on one.
+                            sourceOutMs = now.durationMs.coerceIn(minOf(MIN_CLIP_MS, fileMs), fileMs),
                             sourceDurationMs = fileMs,
                             speedRamp = SpeedRamp()
                         )
