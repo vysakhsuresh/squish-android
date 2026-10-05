@@ -376,7 +376,15 @@ sealed class SquishError(
         fun preflight(context: Context, state: EditorUiState, estimatedBytes: Long): SquishError? {
             if (state.sourceUri == null) return FileUnreadable()
             if (state.trimmedDurationMs <= 0L) return NothingToExport()
-            if (state.audioOnly && !state.sourceHasAudio && !state.hasSeparateAudio) return NoAudioTrack()
+            // [EditorUiState.anyCameraAudio], not `sourceHasAudio`: that one is
+            // the *lead* file's flag, taken once when the project opens and
+            // never recomputed when more shots are added. It is the field the
+            // Camera sound panel was taken off for exactly this reason, and
+            // Sound only was still asking it - so an edit opened on a clip with
+            // no audio track (a screen recording, a stripped share) and then
+            // given shots that do have sound was refused with "This clip has no
+            // sound" for sound the file would have carried.
+            if (state.audioOnly && !state.anyCameraAudio && !state.hasSeparateAudio) return NoAudioTrack()
             // A photo still being made into a clip is not on the timeline yet, so
             // an export now would silently leave it out and it would turn up in
             // the edit a moment after the file was written without it.

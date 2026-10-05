@@ -44,7 +44,13 @@ object StorageCleaner {
     suspend fun clear(context: Context, kind: StorageKind): List<StorageEntry> = withContext(Dispatchers.IO) {
         when (kind) {
             StorageKind.Exports -> clearExports(context)
-            StorageKind.Stills -> sweep(context, listOf(File(context.filesDir, "stills")), recurse = false)
+            // Into the backdrops too, because the row *counts* them: it measures
+            // stills/ whole, and swept only at the top level the number could
+            // not be cleared. They are not named by any draft - each is derived
+            // from a shot's file and the frame's shape - so every one goes, and
+            // the one that is wanted again is made again from the footage, which
+            // is what CanvasBackdrop does anyway.
+            StorageKind.Stills -> sweep(context, listOf(File(context.filesDir, "stills")), recurse = true)
             StorageKind.Renders -> sweep(context, listOf(File(context.filesDir, "reversed"), File(context.filesDir, IMPORTS_DIR)), recurse = false)
             StorageKind.Takes -> sweep(context, listOf(File(context.filesDir, "voice"), File(context.filesDir, "speech")), recurse = false)
             StorageKind.Masks -> Segmenter.sweep(context, SquishRepositories.autosave(context).referencedMaskFiles())
@@ -85,9 +91,14 @@ object StorageCleaner {
         if (!dir.exists()) 0L else dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
     /**
-     * Deletes the files under [dirs] no draft names - the top level only, so
-     * the backdrops under stills/, which CanvasBackdrop keeps and prunes
-     * itself, are left alone.
+     * Deletes the files under [dirs] that no draft names.
+     *
+     * [recurse] for a tree whose whole size the card reports - the stills,
+     * backdrops and all. It used to be false for those on the grounds that
+     * CanvasBackdrop prunes itself, which was true only of the blurred ones:
+     * a picture chosen as a background wrote a multi-megabyte file that was
+     * counted by the row and swept by nothing, so Clear could not take the
+     * number down. Both are pruned now and both are swept.
      */
     private fun sweep(context: Context, dirs: List<File>, recurse: Boolean) {
         val named = SquishRepositories.autosave(context).referencedUris()

@@ -78,7 +78,10 @@ object CanvasBackdrop {
         if (file.exists() && file.length() > 0) return file
         val decoded = decodeImage(context, image, IMAGE_LONG_SIDE) ?: return null
         return try {
-            write(file, backdropOf(decoded, aspect, blur = false))
+            // Pruned on the way out like a blurred one: each of these is a
+            // whole picture at 1920, and one is written per picture per frame
+            // shape, so left alone they are the heaviest thing in files/.
+            write(file, backdropOf(decoded, aspect, blur = false))?.also { prune(context, keep = it) }
         } finally {
             decoded.recycle()
         }
@@ -152,11 +155,21 @@ object CanvasBackdrop {
      * encoder a moment later.
      */
     private fun prune(context: Context, keep: File) {
-        val stills = dir(context).listFiles { f -> f.name.startsWith("blur_") && f != keep } ?: return
-        if (stills.size <= BLUR_KEEP) return
+        // Both kinds. It read `blur_` alone, so the backdrops made from a
+        // *chosen picture* - one per picture and frame shape, several megabytes
+        // each - were never taken off: they were counted by Settings' "Photos
+        // and freezes" row and swept by nothing, so the number could not be
+        // cleared and grew with every Background picked.
+        prune(dir(context).listFiles { f -> f.name.startsWith("blur_") && f != keep }, BLUR_KEEP)
+        prune(dir(context).listFiles { f -> f.name.startsWith("image_") && f != keep }, IMAGE_KEEP)
+    }
+
+    private fun prune(found: Array<File>?, keep: Int) {
+        val stills = found ?: return
+        if (stills.size <= keep) return
         val now = System.currentTimeMillis()
         stills.sortedBy { it.lastModified() }
-            .take(stills.size - BLUR_KEEP)
+            .take(stills.size - keep)
             .filter { now - it.lastModified() > PRUNE_GRACE_MS }
             .forEach { runCatching { it.delete() } }
     }
@@ -182,5 +195,13 @@ object CanvasBackdrop {
 
     /** Enough for every shot of a long edit at a couple of shapes; the rest are made again when wanted. */
     private const val BLUR_KEEP = 48
+
+    /**
+     * And for the pictures chosen as backgrounds. Fewer, because each is a whole
+     * decoded picture at 1920 rather than a blurred frame, and far fewer are
+     * ever wanted: one per picture per frame shape.
+     */
+    private const val IMAGE_KEEP = 12
+
     private const val PRUNE_GRACE_MS = 60_000L
 }
