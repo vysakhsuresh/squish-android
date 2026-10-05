@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.squish.app.ui.components.SquishSlider
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
@@ -429,16 +430,11 @@ fun LabeledSlider(
             Text(label, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextSecondary)
             Text(readout(value), style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
         }
-        Slider(
+        SquishSlider(
             value = value,
             onValueChange = onChange,
             onValueChangeFinished = onFinished,
-            valueRange = range,
-            colors = SliderDefaults.colors(
-                thumbColor = SquishColors.Teal,
-                activeTrackColor = SquishColors.Teal,
-                inactiveTrackColor = SquishColors.Border
-            )
+            valueRange = range
         )
     }
 }

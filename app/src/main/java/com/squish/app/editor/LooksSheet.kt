@@ -59,6 +59,7 @@ import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ValueTrack
 import com.squish.app.timeline.hasValueKeyAt
 import com.squish.app.timeline.valueAt
+import com.squish.app.ui.components.SquishSlider
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.theme.SquishColors
@@ -461,16 +462,11 @@ private fun AdjustSlider(
                 Text(readout(value), style = MaterialTheme.typography.bodySmall, color = SquishColors.TextPrimary)
             }
         }
-        Slider(
+        SquishSlider(
             value = value,
             onValueChange = onChange,
             onValueChangeFinished = onFinished,
-            valueRange = range,
-            colors = SliderDefaults.colors(
-                thumbColor = SquishColors.Teal,
-                activeTrackColor = SquishColors.Teal,
-                inactiveTrackColor = SquishColors.Border
-            )
+            valueRange = range
         )
     }
 }

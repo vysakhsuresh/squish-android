@@ -159,6 +159,92 @@ fun main() {
         )
     }
 
+    // ---- A knob that names a unit reads in that unit. ----------------------
+    run {
+        // "Beats per second" over a 0..1 fraction read "50%", which is neither
+        // beats nor seconds. Any EffectKind whose parameter names a unit must
+        // carry a readout; and the rate it reads must come from the same
+        // function FxParams uses, or the number and the picture drift apart.
+        val timed = read("$SRC/editor/TimedEffect.kt")
+        val unitKnobs = Regex("""\w+\("[^"]+",\s*"([^"]*(?:per second|seconds|degrees|pixels)[^"]*)"([^)]*)\)""")
+            .findAll(timed).toList()
+        // A check that matches nothing passes for the wrong reason, so the two
+        // that exist today are the floor.
+        check(
+            unitKnobs.size >= 2,
+            "no effect knob names a unit any more - either they were renamed, in which case this check " +
+                "needs the new words, or the regex has rotted and is passing on nothing"
+        )
+        unitKnobs.forEach { m ->
+            check(
+                m.groupValues[2].contains("{"),
+                "the effect knob \"${m.groupValues[1]}\" names a unit but has no readout, so its " +
+                    "0..1 fraction shows as a percent under a label that promises a rate"
+            )
+        }
+        check(
+            Regex("""fun punchPerSecond""").containsMatchIn(timed) &&
+                Regex("""punchPerSecond\(amount\)""").containsMatchIn(timed) &&
+                Regex("""heartbeatPerSecond\(amount\)""").containsMatchIn(timed),
+            "FxParams no longer takes Punch's or Heartbeat's rate from the function the slider's readout " +
+                "reads, so the number over the slider can drift from the one the shader uses"
+        )
+    }
+
+    // ---- A long decode stops when nobody is waiting for it. -----------------
+    run {
+        val pcm = read("$SRC/media/audio/PcmDecoder.kt")
+        check(
+            pcm.contains("private suspend fun decodeFrames") && pcm.contains("ensureActive()"),
+            "PcmDecoder's codec loop no longer checks for cancellation - a waveform read is up to an hour " +
+                "of audio, and a sound deselected would leave it running to the end on the IO pool"
+        )
+        check(
+            pcm.contains("catch (c: CancellationException)"),
+            "PcmDecoder's blanket catch would swallow the cancellation and report the file as having no sound"
+        )
+    }
+
+    // ---- Deleting a sound takes its analysis with it. -----------------------
+    run {
+        val audio = read("$SRC/editor/edits/AudioEdits.kt")
+        val remove = audio.substringAfter("fun removeAudioClip").substringBefore("\n    fun ")
+        check(
+            remove.contains("syncJob?.cancel()") && remove.contains("syncClipId = null"),
+            "removeAudioClip no longer stops the Auto-sync listening to the sound it deletes, so a " +
+                "\"Matched\" status lands for a clip id undo can bring back"
+        )
+    }
+
+    // ---- A pass over every clip says so. ------------------------------------
+    run {
+        // evenOutVolume measures every piece of footage that is heard, overlays
+        // included; the button that starts it must be offered on that same
+        // count, and must not promise shots.
+        val sheet = read("$SRC/editor/AudioSheet.kt")
+        check(
+            sheet.contains("Even out volume across clips") &&
+                sheet.contains("state.videoClips.count { it.isFootage } > 1"),
+            "the Even out volume button no longer counts footage (it used to show for a photo and one " +
+                "video, with nothing to compare) or still says \"shots\" for a pass that changes overlays too"
+        )
+        check(
+            !sheet.contains("\"Apply to all shots\""),
+            "the Voice sheet's Apply button says \"all shots\" again, while setVoiceForAll maps over " +
+                "every video clip, overlay rows included"
+        )
+    }
+
+    // ---- A claim about every shot is counted, not any-ed. -------------------
+    run {
+        val frame = read("$SRC/editor/FrameSheet.kt")
+        check(
+            frame.contains("state.videoClips.count { it.isMain && it.reframe != null }"),
+            "the auto-reframe card is back to an any{} - one reframed shot out of ten would read " +
+                "\"the crop follows the subject in each shot\""
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

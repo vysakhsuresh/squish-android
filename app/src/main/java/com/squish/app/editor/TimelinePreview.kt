@@ -88,6 +88,7 @@ import com.squish.app.timeline.turnedAspect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import com.squish.app.ui.components.SquishSlider
 import com.squish.app.ui.theme.SquishColors
 import com.squish.app.ui.theme.tabularFigures
 import kotlin.math.roundToInt
@@ -1335,7 +1336,7 @@ private fun Transport(
             // the engine must not be left serving a scrub nobody is making.
             val latestBarScrubbing by rememberUpdatedState(onBarScrubbing)
             DisposableEffect(Unit) { onDispose { if (dragging != null) latestBarScrubbing(false) } }
-            Slider(
+            SquishSlider(
                 value = dragging ?: (frame.positionMs.toFloat() / frame.durationMs).coerceIn(0f, 1f),
                 onValueChange = { v ->
                     if (dragging == null) onBarScrubbing(true)
@@ -1346,11 +1347,8 @@ private fun Transport(
                     dragging = null
                     onBarScrubbing(false)
                 },
-                colors = SliderDefaults.colors(
-                    thumbColor = SquishColors.TextPrimary,
-                    activeTrackColor = SquishColors.Primary,
-                    inactiveTrackColor = SquishColors.Border
-                ),
+                accent = SquishColors.Primary,
+                thumbColor = SquishColors.TextPrimary,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
             )
         }

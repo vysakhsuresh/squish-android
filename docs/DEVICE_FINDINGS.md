@@ -1166,3 +1166,16 @@ and the fine text of the screen recording under it are untouched - the blur
 is weighted by the skin locus, not applied to the frame. Judged by eye in the
 preview at about 300 px wide; still unseen in an exported file, and still
 unjudged against a competitor's.
+
+### The dot at the end of every slider (5 October)
+
+Material 3 draws a "stop indicator" on the inactive half of a slider's track -
+a filled dot in the active colour at the far end. Every slider in Squish had
+one, and on the full-screen scrub bar it read as a **marker sitting at 0:22**
+that nothing had put there and nothing would move. The six places that drew a
+slider now go through `ui/components/SquishSlider.kt`, whose track is drawn
+with `drawStopIndicator = null`.
+
+Seen on the phone: the scrub bar is a plain track with the white thumb at
+0:00 and no dot; dragged right it goes to 0:12.803 with the orange behind it;
+and the Brightness slider on Looks → Adjust has lost its teal dot too.

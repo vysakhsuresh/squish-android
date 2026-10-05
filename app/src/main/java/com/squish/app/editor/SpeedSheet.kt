@@ -50,6 +50,7 @@ import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.RampShape
 import com.squish.app.timeline.SlowMotion
 import com.squish.app.timeline.SpeedRamp
+import com.squish.app.ui.components.SquishSlider
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishToggleSwitch
@@ -147,16 +148,12 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
                 // either side of the middle. On a linear track everything below 1x
                 // is crushed into the first fifth and unusable - and with the
                 // ceiling at a hundred times, everything below ten would be.
-                Slider(
+                SquishSlider(
                     value = speedToSlider(ramp.flatSpeed),
                     onValueChange = { viewModel.clips.setClipSpeed(clip.id, sliderToSpeed(it), dragging = true) },
                     onValueChangeFinished = viewModel::endGesture,
                     valueRange = 0f..1f,
-                    colors = SliderDefaults.colors(
-                        thumbColor = accent,
-                        activeTrackColor = accent,
-                        inactiveTrackColor = SquishColors.Border
-                    )
+                    accent = accent
                 )
                 // Two rows of three, as the Curves chips are: six across cut
                 // "0.25x" to ".25" on a narrow phone.

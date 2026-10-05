@@ -29,6 +29,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.squish.app.media.effects.ColorWheels
 import com.squish.app.media.effects.Wheel
+import com.squish.app.ui.components.SquishSlider
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.TextAction
 import com.squish.app.ui.theme.SquishColors
@@ -122,16 +123,11 @@ fun ColorWheelsEditor(
                 color = SquishColors.TextPrimary
             )
         }
-        Slider(
+        SquishSlider(
             value = wheel.master.coerceIn(-1f, 1f),
             onValueChange = { write(wheel.withMaster(it)) },
             onValueChangeFinished = onFinished,
-            valueRange = -1f..1f,
-            colors = SliderDefaults.colors(
-                thumbColor = SquishColors.Teal,
-                activeTrackColor = SquishColors.Teal,
-                inactiveTrackColor = SquishColors.Border
-            )
+            valueRange = -1f..1f
         )
     }
 }
