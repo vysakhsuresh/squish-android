@@ -63,6 +63,10 @@ object SpeechSegmenter {
     private const val MIN_DYNAMIC_RANGE = 2.5f
     private const val MIN_ABSOLUTE_RANGE = 1e-4f
 
+    /** Whether [loud] is clear of [floor] by both measures. */
+    private fun standsClear(loud: Float, floor: Float): Boolean =
+        loud > floor * MIN_DYNAMIC_RANGE && loud - floor >= MIN_ABSOLUTE_RANGE
+
     fun segment(pcm: MonoPcm): List<SpeechSegment> {
         val rate = pcm.sampleRate
         if (rate <= 0 || pcm.samples.isEmpty()) return emptyList()
@@ -84,15 +88,39 @@ object SpeechSegmenter {
 
         val sorted = energy.sortedArray()
         val floor = percentile(sorted, 0.20f)
-        val peak = percentile(sorted, 0.95f)
+        // Two measures of "loud", because the gate and the threshold are asking
+        // different questions.
+        //
+        // [dense] is the 95th percentile, which is what THRESHOLD_FRACTION was
+        // tuned against - but it answers "is more than a twentieth of this
+        // loud", not "is there a loud part". Once talking fell under about 5%
+        // of the decoded audio the 95th percentile *was* room tone, the gate
+        // below fired, and a clip that is nothing but speech came back with no
+        // speech in it. That is not a corner: every caller decodes the whole
+        // file and applies the clip's window afterwards, so a 30 s talking head
+        // trimmed out of a fifteen-minute recording is 3% and auto-captions
+        // reported no speech found; Remove silences and Duck under speech read
+        // the same number, and a shot whose out-point is ten minutes into a
+        // recording is 5%.
+        //
+        // [loudest] does not care what share of the recording is loud. It is
+        // the OPEN_FRAMES-th loudest frame, which is the right measure because
+        // OPEN_FRAMES consecutive loud frames are what it takes to declare
+        // speech at all: a lone click cannot open a segment and cannot raise
+        // this either.
+        val dense = percentile(sorted, 0.95f)
+        val loudest = sorted[(sorted.size - OPEN_FRAMES).coerceAtLeast(0)]
 
         // A recording with no separation between its quiet and loud parts is either
         // silent or solid noise. Either way there is no speech to find, and inventing
         // a threshold would just carve the noise into arbitrary captions.
-        if (peak <= floor * MIN_DYNAMIC_RANGE || peak - floor < MIN_ABSOLUTE_RANGE) {
-            return emptyList()
-        }
+        if (!standsClear(loudest, floor)) return emptyList()
 
+        // The threshold stays on [dense] wherever [dense] stands clear of the
+        // floor on its own, so every recording that worked before behaves
+        // exactly as it did. It falls back to [loudest] only in the case that
+        // used to return nothing.
+        val peak = if (standsClear(dense, floor)) dense else loudest
         val threshold = floor + (peak - floor) * THRESHOLD_FRACTION
 
         val raw = mutableListOf<SpeechSegment>()
