@@ -137,7 +137,25 @@ object AudioRules {
      * on each half.
      */
     fun chosenInWindow(clip: Clip, every: Int, downbeatOffset: Int): List<Long> =
-        chosenBeats(clip.beats, every, downbeatOffset).filter { it >= clip.sourceInMs && it <= clip.sourceOutMs }
+        chosenBeats(clip.beats, every, downbeatOffset).filter { inWindow(clip, it) }
+
+    /** Whether [atSourceMs] is inside the stretch of [clip] that plays. */
+    fun inWindow(clip: Clip, atSourceMs: Long): Boolean =
+        atSourceMs >= clip.sourceInMs && atSourceMs <= clip.sourceOutMs
+
+    /**
+     * Whether a listen that found [beats] in a file found anything this clip
+     * can actually use.
+     *
+     * The listen covers the first six minutes of the *file* and the grid is
+     * read through the clip's window, so a sound trimmed to start after that
+     * comes back with a full list of which not one beat is reachable - and
+     * "the detector found something" is then not the same question as "there
+     * is a grid". Asking the wrong one took the success path: the grid was
+     * written, every other sound's was cleared, an undo step was pushed, and
+     * the panel showed the words it had before the tap.
+     */
+    fun anyInWindow(clip: Clip, beats: List<Long>): Boolean = beats.any { inWindow(clip, it) }
 
     /**
      * The beat grid on the timeline: every sound's chosen beats, carried to

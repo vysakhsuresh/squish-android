@@ -125,6 +125,36 @@ fun main() {
         check(AudioRules.withBeat(beats, 1_030L) == beats, "a tap on a found beat doubled it")
     }
 
+    // --- Found beats that no part of the clip plays. --------------------------
+    // The detector listens to the first six minutes of a file
+    // (BEAT_MAX_ANALYSIS_MS), so a song trimmed to play from 6:10 comes back
+    // with a full BeatMap of which not one dot is inside the window. detectBeats
+    // asks anyInWindow before it writes the grid: without the gate the success
+    // path ran, every other sound's grid was cleared under one undo step, and
+    // the panel sat on its pre-analysis text with no tempo, no dots, no message.
+    run {
+        val early = (0L until 12).map { 300_000L + it * 500L }   // 5:00 to 5:05.5
+        val late = sound(srcIn = 370_000, srcOut = 420_000, start = 0, beats = early)
+        check(!AudioRules.anyInWindow(late, early), "a window wholly after the beats reported one reachable")
+        check(AudioRules.chosenInWindow(late, 1, 0).isEmpty(), "chosenInWindow kept a beat outside the window")
+        // The refuter's narrowing: a window that reaches back before 6:00 keeps
+        // every dot up to there, so it must not be refused.
+        val partial = sound(srcIn = 300_000, srcOut = 420_000, start = 0, beats = early)
+        check(AudioRules.anyInWindow(partial, early), "an overlapping window reported nothing reachable")
+        check(AudioRules.chosenInWindow(partial, 1, 0).size == 12, "an overlapping window dropped dots")
+        // The gate and the grid always agree: anyInWindow is false exactly when
+        // the grid at every beat is empty.
+        for (from in 0L until 450_000L step 25_000L) {
+            val c = sound(srcIn = from, srcOut = from + 30_000, start = 0, beats = early)
+            check(AudioRules.anyInWindow(c, early) == AudioRules.chosenInWindow(c, 1, 0).isNotEmpty(),
+                "the gate and the grid disagree at $from")
+        }
+        // The edges count as inside: a beat exactly on the in- or out-point plays.
+        val edge = sound(srcIn = 302_500, srcOut = 302_500, start = 0, beats = early)
+        check(AudioRules.anyInWindow(edge, early), "a beat exactly on the in-point was called unreachable")
+        check(!AudioRules.anyInWindow(sound(), emptyList()), "an empty beat list reported reachable")
+    }
+
     // --- Loop to fit: butted copies to the end, the last cut to it. -----------
     run {
         var n = 0

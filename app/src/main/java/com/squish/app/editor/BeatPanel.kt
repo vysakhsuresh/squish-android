@@ -99,8 +99,18 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
 
             beats.failed && !hasGrid -> {
                 Text(
-                    "No pulse found in ${beats.listeningTo}. Speech and ambient sound " +
-                        "often have none — try a track with drums on it, or tap the beats in by ear.",
+                    // Two different answers, because they have different
+                    // remedies: no pulse at all, or a pulse that is not where
+                    // this clip plays. The second used to say the first, when
+                    // it said anything - which it did not.
+                    if (beats.failedOutsideWindow) {
+                        "${beats.listeningTo} has a pulse, but none of it is in the part that plays. " +
+                            "This listens to the first six minutes of a file, and that stretch starts " +
+                            "later — move the sound's start earlier, or tap the beats in by ear."
+                    } else {
+                        "No pulse found in ${beats.listeningTo}. Speech and ambient sound " +
+                            "often have none — try a track with drums on it, or tap the beats in by ear."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.Yellow
                 )
@@ -123,7 +133,12 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
                 // used to throw that away along with the failed answer.
                 if (beats.failed) {
                     Text(
-                        "No pulse found in ${beats.listeningTo} — the grid from ${beats.clipLabel} is kept.",
+                        if (beats.failedOutsideWindow) {
+                            "${beats.listeningTo} has a pulse, but none of it is in the part that plays — " +
+                                "the grid from ${beats.clipLabel} is kept."
+                        } else {
+                            "No pulse found in ${beats.listeningTo} — the grid from ${beats.clipLabel} is kept."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = SquishColors.Yellow
                     )

@@ -727,6 +727,33 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 return@launch
             }
 
+            // Found beats, and none of them where this clip plays.
+            //
+            // The listen covers the first six minutes of the *file*
+            // (BEAT_MAX_ANALYSIS_MS), and the grid is read through the clip's
+            // own window (AudioRules.chosenInWindow) - so a sound trimmed to
+            // play from, say, 6:10 of a 7:20 song comes back with a full
+            // BeatMap of which not one dot is reachable. `map.isEmpty` is false
+            // there, so this used to take the success path: the grid was
+            // written, every other sound's was cleared, an undo step was
+            // pushed, and the panel showed the words it had before the tap -
+            // no tempo, no dots, nothing said. The state could not say "found
+            // beats, none of them here", so this is the failure it is.
+            val reachable = target == null || AudioRules.anyInWindow(target, map.beatsMs)
+            if (!reachable) {
+                _state.update {
+                    it.copy(
+                        beats = it.beats.copy(
+                            running = false,
+                            failed = true,
+                            failedOutsideWindow = true,
+                            listeningTo = label
+                        )
+                    )
+                }
+                return@launch
+            }
+
             // A step of its own: the grid is what "Snap to the beat" and "Cut on
             // the beat" act on, and undo puts the previous one back. The beats
             // go onto the sound in its file's time - onto every clip of that

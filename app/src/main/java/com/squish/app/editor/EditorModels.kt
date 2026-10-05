@@ -364,7 +364,19 @@ data class BeatProgress(
      * answer: undo can then put back the grid as it was, rather than a grid that
      * says it is still listening to something.
      */
-    val listeningTo: String = ""
+    val listeningTo: String = "",
+    /**
+     * Why the last listen failed, when the answer was "there is a pulse, but
+     * not where this clip plays".
+     *
+     * The listen covers the first six minutes of the *file* and the grid is
+     * read through the clip's own window, so a sound trimmed to start after
+     * that comes back with a full BeatMap of which no dot is reachable. Without
+     * somewhere to say so, that took the success path and the panel showed the
+     * words it had before the tap. Not written to the draft: like [failed], it
+     * is about the last attempt and not about the edit.
+     */
+    val failedOutsideWindow: Boolean = false
 ) {
     /** Whether a grid was found: on a clip, or on the camera audio. */
     val hasBeats: Boolean get() = beatsMs.size >= 2 || clipId != null
@@ -383,8 +395,8 @@ data class BeatProgress(
 
     /** The grid alone, as undo keeps it: no analysis in flight, no last failure. */
     val settled: BeatProgress
-        get() = if (!running && !failed && listeningTo.isEmpty()) this
-        else copy(running = false, failed = false, listeningTo = "", finished = hasBeats)
+        get() = if (!running && !failed && !failedOutsideWindow && listeningTo.isEmpty()) this
+        else copy(running = false, failed = false, failedOutsideWindow = false, listeningTo = "", finished = hasBeats)
 }
 
 /**
