@@ -348,6 +348,13 @@ class PreviewEngine(private val context: Context) {
         var lastTurns = 0
         var lastCrop: ClipCrop? = null
 
+        /**
+         * The file of the clip this surface last drew, so a draw held across a
+         * hard cut can fall back on the file's own shape when the player has
+         * not reported one (PreviewEngine.fileAspect).
+         */
+        var lastUri: android.net.Uri? = null
+
         var lastWanted = 0L
         var wantedIn = 0L
         var wantedOut = 0L
@@ -1239,7 +1246,16 @@ class PreviewEngine(private val context: Context) {
                 SurfaceDraw(
                     visible = true, transform = held.lastTransform, stabilizer = held.lastStabilizer,
                     mirrored = held.lastMirrored, quarterTurns = held.lastTurns, crop = held.lastCrop,
-                    clipId = held.shownClipId, aspect = held.videoAspect
+                    clipId = held.shownClipId,
+                    // With the file's own shape behind it, as every other
+                    // *visible* draw has (turnedAs). This one read the player's
+                    // reported size raw - and that is null on a player with an
+                    // effect chain on this phone, which is precisely why
+                    // fileAspect exists. So the outgoing frame held across a
+                    // hard cut, pillarboxed into its own column a tick earlier,
+                    // snapped out to fill the whole canvas for up to two
+                    // seconds and then snapped back when the new shot landed.
+                    aspect = held.videoAspect ?: fileAspect(held.lastUri)
                 )
             } else {
                 SurfaceDraw(visible = false, transform = only.placedAt(at), stabilizer = only.stabilizerAt(at), crop = only.crop, clipId = only.id)
@@ -1489,6 +1505,7 @@ class PreviewEngine(private val context: Context) {
         }
 
         val source = playbackUriFor(clip) ?: return
+        s.lastUri = clip.uri
         applyLive(s, clip, t)
         // The clip's own voice: the processed ones through the sink, a pitch
         // shift as a playback parameter - and the speed's own shift with it
