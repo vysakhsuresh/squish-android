@@ -1143,7 +1143,9 @@ should work through it and then delete what holds up.
   about a second and the reversed clip's *last* frames are there, which is what
   the two-keyframe margin protects). Both arithmetics, and every other fix in
   the sweep, are executed on the JVM and negative-tested against the old code;
-  eighty suites now.
+  eighty suites then; eighty-five files over eighty-three `run` lines now, the
+  two Media3 ones among them, and `RunnerChecks` holds that every file is named
+  by a runner and that `run_desktop.sh` calls `run_media3.sh` at its end.
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The
