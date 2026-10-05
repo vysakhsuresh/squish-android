@@ -182,6 +182,43 @@ object PreviewRules {
     fun fxOnCanvas(sdkInt: Int): Boolean = sdkInt >= FX_ON_CANVAS_SDK
 
     const val FX_ON_CANVAS_SDK = 33
+
+    /** One Compose layer's scale and its translation in pixels (see [foldedDraw]). */
+    data class Folded(val scale: Float, val translateX: Float, val translateY: Float)
+
+    /**
+     * A clip's own placement and its share of a transition, folded into the one
+     * `graphicsLayer` the preview draws a surface with - in the order the file
+     * applies them.
+     *
+     * The file is two passes: `ClipTransformEffect` puts the placement on the
+     * picture, then `TransitionEffect` works on *that*. So the transition's
+     * scale scales the placement's offset as well as the picture, and the
+     * transition's own shift is added after. A Compose layer applies its
+     * translation *outside* its scale, so the two have to be folded by hand -
+     * and they were folded as `placementOffset + transitionShift`, which is the
+     * same number only while the transition does not scale. With a Zoom, a Zoom
+     * out or a Pop in over a shot that has been moved off centre, the screen put
+     * the picture somewhere the file does not.
+     *
+     * Offsets come in the units each is written in: the placement's are
+     * fractions of a *half* frame (Transform.offsetXFraction), the transition's
+     * fractions of the whole frame (ExportPlan.Draw.shiftX).
+     */
+    fun foldedDraw(
+        placementScale: Float,
+        placementOffsetXFraction: Float,
+        placementOffsetYFraction: Float,
+        transitionScale: Float,
+        transitionShiftX: Float,
+        transitionShiftY: Float,
+        widthPx: Float,
+        heightPx: Float
+    ): Folded = Folded(
+        scale = placementScale * transitionScale,
+        translateX = transitionShiftX * widthPx + transitionScale * placementOffsetXFraction * widthPx / 2f,
+        translateY = transitionShiftY * heightPx + transitionScale * placementOffsetYFraction * heightPx / 2f
+    )
 }
 
 /**
@@ -226,6 +263,7 @@ class StallWatch(
         waitMs = (waitMs * 2).coerceAtMost(maxWaitMs)
         return true
     }
+
 }
 
 /**

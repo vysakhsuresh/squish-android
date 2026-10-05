@@ -255,6 +255,55 @@ fun main() {
     check("Android 12 keeps them in the chain", !PreviewRules.fxOnCanvas(32))
     check("minSdk keeps them in the chain", !PreviewRules.fxOnCanvas(29))
 
+    // --- The one layer the preview folds a placement and a transition into ---
+    //
+    // The file is two passes - the placement on the picture, then the transition
+    // on *that* - and a Compose layer applies its translation outside its scale,
+    // so the fold has to put the transition's scale on the placement's offset by
+    // hand. Folded as a plain sum, which is what it was, the two agree only
+    // while the transition does not scale: a Zoom, a Zoom out or a Pop in over a
+    // shot moved off centre put the picture somewhere the file does not.
+    //
+    // Here the file's two passes are written out as a point walked through them,
+    // and the fold has to land that point in the same place.
+    run {
+        val w = 1080f
+        val h = 1920f
+        fun twoPasses(ps: Float, pox: Float, poy: Float, ts: Float, tsx: Float, tsy: Float, x: Float, y: Float): Pair<Float, Float> {
+            // Pass one: the placement, about the centre, offsets in half-frames.
+            val ax = w / 2f + ps * (x - w / 2f) + pox * w / 2f
+            val ay = h / 2f + ps * (y - h / 2f) + poy * h / 2f
+            // Pass two: the transition, about the centre, shifts in whole frames.
+            return (w / 2f + ts * (ax - w / 2f) + tsx * w) to (h / 2f + ts * (ay - h / 2f) + tsy * h)
+        }
+        fun folded(ps: Float, pox: Float, poy: Float, ts: Float, tsx: Float, tsy: Float, x: Float, y: Float): Pair<Float, Float> {
+            val f = PreviewRules.foldedDraw(ps, pox, poy, ts, tsx, tsy, w, h)
+            // A Compose layer: scale about the centre, then translate.
+            return (w / 2f + f.scale * (x - w / 2f) + f.translateX) to (h / 2f + f.scale * (y - h / 2f) + f.translateY)
+        }
+        val cases = listOf(
+            // placement scale, offsets, transition scale, shifts
+            listOf(1f, 0f, 0f, 1f, 0f, 0f),            // nothing at all
+            listOf(1.2f, 0.6f, -0.2f, 1f, 0f, 0f),     // a placement, no transition
+            listOf(1f, 0f, 0f, 1.6f, 0f, 0f),          // a zoom, no placement
+            listOf(1f, 0f, 0f, 1f, 0.4f, -0.25f),      // a slide, no placement
+            listOf(1.2f, 0.6f, -0.2f, 1.6f, 0f, 0f),   // the one that was wrong
+            listOf(0.8f, -0.5f, 0.3f, 0.3f, 0.2f, 0.1f), // a pop in over a placement
+            listOf(1.4f, 0.25f, 0.25f, 1.6f, -0.3f, 0.3f)
+        )
+        for (c in cases) {
+            for (x in listOf(0f, w / 4f, w / 2f, w)) for (y in listOf(0f, h / 2f, h)) {
+                val (ex, ey) = twoPasses(c[0], c[1], c[2], c[3], c[4], c[5], x, y)
+                val (fx, fy) = folded(c[0], c[1], c[2], c[3], c[4], c[5], x, y)
+                if (kotlin.math.abs(ex - fx) > 0.01f || kotlin.math.abs(ey - fy) > 0.01f) {
+                    failures += "fold $c at ($x,$y): the layer puts it at ($fx,$fy), the file at ($ex,$ey)"
+                }
+            }
+        }
+        // And the scale is simply the two multiplied, which it always was.
+        check("the folded scale is the two multiplied", PreviewRules.foldedDraw(1.2f, 0f, 0f, 1.6f, 0f, 0f, w, h).scale == 1.2f * 1.6f)
+    }
+
     if (failures.isEmpty()) {
         println("PASS - the preview parks inside the trim, redraws without drifting, rattles no ramp, and never reloads a slow seek forever")
     } else {

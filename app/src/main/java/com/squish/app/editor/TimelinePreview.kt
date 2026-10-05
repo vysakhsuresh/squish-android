@@ -681,12 +681,25 @@ private fun VideoSurface(
                 // The clip's own animated placement, plus whatever the transition
                 // is doing to the whole surface: a slide either way, a zoom.
                 rotationZ = draw.transform.rotationDegrees
-                scaleX = draw.transform.scale * draw.scale
-                scaleY = draw.transform.scale * draw.scale
-                translationX = draw.translateXFraction * size.width +
-                    draw.transform.offsetXFraction * size.width / 2f
-                translationY = draw.translateYFraction * size.height +
-                    draw.transform.offsetYFraction * size.height / 2f
+                // Folded in the order the file applies them - the placement
+                // first, the transition on top of that - which a Compose layer
+                // cannot express directly, since its translation sits outside
+                // its scale. See PreviewRules.foldedDraw, where the arithmetic
+                // is and where it is executed.
+                val folded = PreviewRules.foldedDraw(
+                    placementScale = draw.transform.scale,
+                    placementOffsetXFraction = draw.transform.offsetXFraction,
+                    placementOffsetYFraction = draw.transform.offsetYFraction,
+                    transitionScale = draw.scale,
+                    transitionShiftX = draw.translateXFraction,
+                    transitionShiftY = draw.translateYFraction,
+                    widthPx = size.width,
+                    heightPx = size.height
+                )
+                scaleX = folded.scale
+                scaleY = folded.scale
+                translationX = folded.translateX
+                translationY = folded.translateY
                 // Whitened, the surface draws into its own buffer so the white
                 // lands on this shot's pixels alone (see whitened).
                 compositingStrategy = if (draw.white > 0f) CompositingStrategy.Offscreen else CompositingStrategy.Auto
