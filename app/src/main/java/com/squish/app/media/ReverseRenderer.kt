@@ -368,7 +368,8 @@ object ReverseRenderer {
             val sourceBitrate = if (format.containsKey(MediaFormat.KEY_BIT_RATE)) runCatching { format.getInteger(MediaFormat.KEY_BIT_RATE) }.getOrDefault(0) else 0
 
             // Where each run of frames starts, within the window: the keyframes.
-            val syncs = keyframesWithin(extractor, inUs, outUs)
+            val runs = keyframesWithin(extractor, inUs, outUs)
+            val syncs = runs.syncs
             if (syncs.isEmpty()) error("no keyframe before the window")
 
             decoder = MediaCodec.createDecoderByType(mime).also {
@@ -425,7 +426,7 @@ object ReverseRenderer {
             for ((n, gop) in syncs.indices.reversed().withIndex()) {
                 coroutineContext.ensureActive()
                 val gopStartUs = syncs[gop]
-                val gopEndUs = if (gop + 1 < syncs.size) syncs[gop + 1] else Long.MAX_VALUE
+                val gopEndUs = ReverseRuns.runEndUs(syncs, gop, runs.tailBoundUs)
                 spool.clear()
                 decodeRun(extractor, decoder, gopStartUs, gopEndUs, inUs, outUs) { image, ptsUs ->
                     if (frameW == 0) {
@@ -498,22 +499,36 @@ object ReverseRenderer {
         }
     }
 
+    /** The runs of a window: where each starts, and where the last one's feed stops. */
+    private class Runs(val syncs: List<Long>, val tailBoundUs: Long)
+
     /**
-     * The keyframes that start each run of the window: the one at or before
-     * [inUs], then every one before [outUs]. Read off the sample flags, which
-     * costs a pass over the container and no decoding.
+     * The keyframes that start each run of the window - the one at or before
+     * [inUs], then every one before [outUs] - and where the last of those runs
+     * must stop being fed. Read off the sample flags, which costs a pass over
+     * the container and no decoding.
+     *
+     * The walk carries on a little past [outUs] for that bound alone: see
+     * [ReverseRuns], where the arithmetic is, and why the last run used to be
+     * fed to the end of the file.
      */
-    private fun keyframesWithin(extractor: MediaExtractor, inUs: Long, outUs: Long): List<Long> {
+    private fun keyframesWithin(extractor: MediaExtractor, inUs: Long, outUs: Long): Runs {
         val syncs = ArrayList<Long>()
+        val past = ArrayList<Long>()
         extractor.seekTo(inUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
         while (true) {
             val t = extractor.sampleTime
             if (t < 0L) break
-            if (t >= outUs) break
-            if (extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0 && (syncs.isEmpty() || t > syncs.last())) syncs.add(t)
+            val sync = extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0
+            if (t >= outUs) {
+                if (sync && (past.isEmpty() || t > past.last())) {
+                    past.add(t)
+                    if (past.size >= ReverseRuns.TAIL_SYNCS) break
+                }
+            } else if (sync && (syncs.isEmpty() || t > syncs.last())) syncs.add(t)
             if (!extractor.advance()) break
         }
-        return syncs
+        return Runs(syncs, ReverseRuns.tailBoundUs(past))
     }
 
     /**

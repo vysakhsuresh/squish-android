@@ -420,9 +420,9 @@ sealed class SquishError(
             // Measured where the file is written, and for both copies of it: the
             // render lands in the app's exports folder and is then copied whole
             // into the gallery, so for a moment the phone holds it twice.
-            val needed = (estimatedBytes * SPACE_HEADROOM).toLong().coerceAtLeast(MIN_SPACE_BYTES)
+            val needed = SpaceCheck.needed(estimatedBytes)
             val free = freeBytes(exportsDir(context))
-            if (free in 1 until needed) return NotEnoughSpace(needed, free)
+            if (SpaceCheck.isShort(free, needed)) return NotEnoughSpace(needed, free)
 
             val pixels = state.outputResolution.pixels
             if (pixels > HUGE_FRAME_PIXELS && !state.fitToSize) {
@@ -633,13 +633,7 @@ sealed class SquishError(
 
         private val CODEC_NAMES = listOf("HEVC", "H.265", "VP9", "AV1", "Dolby Vision", "ProRes", "MPEG-4")
 
-        /**
-         * Two copies of the estimate - the render and the gallery copy made from
-         * it - with a tenth over each for an encoder that overshoots its bitrate.
-         * It was 1.6, for one copy, while every export was written twice.
-         */
-        private const val SPACE_HEADROOM = 2.2
-        private const val MIN_SPACE_BYTES = 40L * 1_000_000
+        // The headroom and the floor are SpaceCheck's, with the arithmetic.
         private const val HUGE_FRAME_PIXELS = 8_500_000L // beyond 4K DCI
     }
 }
