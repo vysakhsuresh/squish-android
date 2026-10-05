@@ -133,8 +133,15 @@ fun rememberOnlineGate(): OnlineGate {
     pending?.let { (what, go) ->
         ConfirmDialog(
             title = "$what needs the internet",
-            body = "Squish will connect to fetch it. Only the search you type and the name of what you pick are sent - " +
-                "never your videos, photos or projects.",
+            // A caption's words are named here because this is the dialog
+            // Translate captions puts up, and translating sends the line itself
+            // (OnlineTranslate.translatePiece). Settings' own card was changed
+            // to say so when translation was added; this copy - the one the
+            // person actually agrees to - was left saying only the search and
+            // the picked name, which was not true for the one tool whose
+            // request is the person's own words.
+            body = "Squish will connect to fetch it. Only the search you type, a caption's words if you ask for a " +
+                "translation, and the name of what you pick are sent - never your videos, photos or projects.",
             caution = "This turns on online features. Settings › Online can turn them off again at any time.",
             confirmLabel = "Continue",
             dismissLabel = "Not now",

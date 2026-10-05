@@ -30,6 +30,29 @@ fun main() {
         .map { it.path.replace('\\', '/') to it.readText() }.toList()
     if (files.size < 100) problems += "only ${files.size} Kotlin files found - has this check's path rotted?"
 
+    // ---- The two sentences that say what leaves the phone -------------------
+    //
+    // One is the card in Settings; one is the dialog the person taps Continue
+    // on, which is the one actually agreed to. They have to name the same
+    // things. The card was changed to name a caption's words when Translate
+    // captions was added - translating sends the line itself - and the dialog
+    // was not, so the sentence a person agreed to was untrue for the one tool
+    // whose request is their own words.
+    run {
+        fun sentence(path: String, anchor: String, what: String) {
+            val text = files.firstOrNull { it.first.endsWith(path) }?.second
+            if (text == null) { problems += "$path is not where this check looks"; return }
+            val at = text.indexOf(anchor)
+            if (at < 0) { problems += "$what no longer has its sentence (looked for \"$anchor\")"; return }
+            val window = text.substring(at, minOf(text.length, at + 600))
+            listOf("search", "caption", "the name of", "never your videos, photos or projects").forEach {
+                if (it !in window) problems += "$what does not say \"$it\""
+            }
+        }
+        sentence("/online/Online.kt", "Squish will connect to fetch it.", "the consent dialog")
+        sentence("/settings/SettingsScreen.kt", "Only your search", "the Settings card")
+    }
+
     // ---- One door ----------------------------------------------------------
     val theDoor = "app/src/main/java/com/squish/app/online/Online.kt"
     val waysOut = listOf(
