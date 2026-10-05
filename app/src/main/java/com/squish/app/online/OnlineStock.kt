@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -55,12 +56,19 @@ object OnlineStock {
     }
 
     /** The item's picture, kept in the cache. */
-    suspend fun thumbnail(context: Context, video: Video): Bitmap? = runCatching {
+    suspend fun thumbnail(context: Context, video: Video): Bitmap? = try {
         val dir = File(context.cacheDir, "stock-thumbs").apply { mkdirs() }
         val file = File(dir, video.id.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".jpg")
         if (file.length() == 0L) Online.download(context, video.thumbnailUrl, file)
         BitmapFactory.decodeFile(file.absolutePath)
-    }.getOrNull()
+    } catch (cancelled: CancellationException) {
+        // A tile scrolled off cancels this; runCatching caught that with
+        // everything else and wrote a null picture back into a state nobody is
+        // reading - and, worse, taught the caller the thumbnail does not exist.
+        throw cancelled
+    } catch (t: Throwable) {
+        null
+    }
 
     /** The clip on the phone (files/imports/stock), ready for the timeline. */
     suspend fun download(context: Context, video: Video): Uri? {

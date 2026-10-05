@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.squish.app.ui.theme.SquishColors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -69,7 +70,20 @@ fun StockVideoSheet(onPicked: (Uri) -> Unit, onDismiss: () -> Unit) {
         delay(if (query.isEmpty()) 0L else 500L)
         videos = null
         failed = false
-        videos = runCatching { OnlineStock.search(context, query) }.getOrElse { failed = true; emptyList() }
+        // Not runCatching: it catches Throwable, and the Throwable this most
+        // often sees is the CancellationException of its own effect being
+        // restarted by the next character typed. Caught, it wrote "couldn't
+        // reach" and an empty list into the sheet *after* the new search had
+        // cleared them, so typing at any speed showed the failure the whole way
+        // along and only the last keystroke ever showed a result.
+        videos = try {
+            OnlineStock.search(context, query)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (t: Throwable) {
+            failed = true
+            emptyList()
+        }
     }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -130,7 +144,16 @@ fun StockVideoSheet(onPicked: (Uri) -> Unit, onDismiss: () -> Unit) {
                                 if (fetching != null) return@StockTile
                                 fetching = video.id
                                 scope.launch {
-                                    val uri = runCatching { OnlineStock.download(context, video) }.getOrNull()
+                                    // The sheet closing cancels this; let that
+                                    // through rather than reporting it as a
+                                    // download that failed.
+                                    val uri = try {
+                                        OnlineStock.download(context, video)
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (t: Throwable) {
+                                        null
+                                    }
                                     fetching = null
                                     if (uri == null) rowNote = "“${video.title}” couldn't be downloaded - try another." else onPicked(uri)
                                 }
