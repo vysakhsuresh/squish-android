@@ -360,6 +360,12 @@ private fun PictureRows(state: EditorUiState, viewModel: EditorViewModel) {
                 "The footage runs at ${"%.0f".format(sourceFps)} fps. A higher rate can't add frames; the file keeps the ones it has."
             state.outputFps == ExportSettings.SOURCE_FPS ->
                 if (sourceFps > 1f) "Auto keeps the footage's ${"%.0f".format(sourceFps)} fps." else "Auto keeps the footage's own rate."
+            // The rate asked for is the rate the footage runs at, so nothing is
+            // dropped. The line below said frames were, which is the sheet
+            // describing an edit it is not making - 30 chosen on 30 fps footage
+            // is the commonest case there is.
+            sourceFps > 1f && kotlin.math.abs(state.outputFps - sourceFps) <= 0.5f ->
+                "The footage already runs at ${"%.0f".format(sourceFps)} fps, so every frame is kept."
             else -> "Frames are dropped to reach it. 24 or 25 for a film look; 30 for a smaller file."
         },
         options = listOf("Auto" to ExportSettings.SOURCE_FPS) + ExportSettings.FPS_CHOICES.map { "$it" to it },
