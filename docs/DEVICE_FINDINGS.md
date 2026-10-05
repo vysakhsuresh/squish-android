@@ -1069,3 +1069,48 @@ Lift, gamma and gain, the other half of G6. Built, then driven within the hour.
 Not seen: the pad dragged into a colour (the disc's upper half sits above the
 sheet's fold at that scroll position, so only the level was driven), and gamma
 and gain by eye.
+
+## Seen on the phone, 5 October - the inverted strip, and what sweeping for it found
+
+A user opened a video, dragged the strip to the right, and the playhead
+walked **left**. They were right, and the cause was a design decision with a
+comment explaining itself: the window was clamped so it never scrolled more
+than 14 dp before 0:00, so near the start the edit began at the strip's left
+edge and the line walked right to the middle. While the line walks the strip
+does not move - and a timeline short enough to fit the screen never scrolls at
+all, so that is the whole of a short edit. One gesture, two opposite meanings.
+
+**Fixed, and seen fixed.** The lead is half a viewport now; the line sits in
+the middle at every moment. On the phone: drag left goes forward, drag right
+goes back, 300 px of finger is 10.4 s at 26 px/s, and the line does not shift.
+`WindowChecks` asserted the old walk and now asserts the line is within a pixel
+of the middle at four zooms and three screen widths.
+
+Then that class of fault - a control whose direction, sign or label contradicts
+what you see - was swept for with four agents and two adversarial refuters each.
+Twelve of fourteen candidates survived. Eleven are fixed (the twelfth is a
+duplicate); three were driven on the phone this session:
+
+- **The Sync nudges moved the number above them the wrong way.** "+10 ms"
+  pressed three times now reads **+30 ms (+1f)**; it used to read −30.
+- **The Mask sheet's "Up / down" ran opposite** to every other slider of that
+  name. Dragged right, the ellipse now moves **down** the picture.
+- **The transition badge swallowed the trim handles.** It is composed after
+  every clip in the same Box and sits exactly on the join, which is exactly
+  where the two clips' handles are; on the main track the head handle of every
+  shot but the first could not be grabbed. The selected clip rises above the
+  badges now - pressed and dragged at a join, the trim registers an undo step.
+
+Not driven, fixed on the reasoning in the commit: the keyed-mask drag, the
+curve point that handed the gesture to its neighbour, Placement's Reset
+shrinking a shape, Adjust's Reset throwing away an imported LUT, the camera
+panel reading the first file's audio flag, the Sync sheet showing the last
+sound's result, the stale keyframe tap, and the crop's unclosed undo step.
+
+### Sound on every cut (5 October)
+
+Read off a Final Cut timeline (see `docs/COMPETITORS.md` §4). Five cuts made in
+a 22 s clip, one tap: **"5 sounds laid, one on each cut"**, and on the strip
+five sound clips each *ending* on its join, alternating long-short-medium -
+reverse whoosh, swish, cloth, reverse whoosh, swish. Not judged by ear.
+
