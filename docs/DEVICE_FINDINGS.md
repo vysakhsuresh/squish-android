@@ -1991,3 +1991,98 @@ dropped.
 6-channel AAC file at camera level 50% with music, now also with Megaphone on
 the shot - the preview and the file must be the same voice, and a 5.1 film's
 dialogue must be as present on screen as in the file.
+
+## Sweep eight: the text, vision, online and persistence layers (5 October, night)
+
+The four layers no sweep had been over: the caption model and its renderers,
+the vision code (tracking, stabilizing, auto-reframe, segmentation), the online
+layer, and everything that writes a draft or a record to disk. Twelve hunts
+over the same three lenses, two adversarial refuters each - ninety-two agents.
+
+This sweep found the two worst faults of the day, and both were invisible from
+inside the app:
+
+- **Sixteen captions could not be exported at all.** Every caption, sticker and
+  shape went into one Media3 `OverlayEffect`, and `OverlayShaderProgram` binds
+  them as samplers and refuses more than fifteen in one instance - a
+  `checkArgument` that fails the render at its first frame. A speech segment is
+  at most 4.2 s, so a minute of auto-captioned talking is fifteen lines and two
+  minutes is thirty; an imported film .srt is hundreds. The preview draws them
+  on a Compose canvas with no limit and showed every one. The feature the app
+  leads with could not be rendered.
+
+- **On an Arabic, Persian, Burmese, Bengali or Nepali phone, "Export subtitles"
+  wrote a file nothing can read.** The timestamps went through `format` with no
+  locale, and `%02d` emits the locale's own digits - so the timing lines came
+  out in Eastern Arabic-Indic or Devanagari numerals, which no subtitle tool
+  reads, this app included: its own `STAMP` regex is `\d`, ASCII-only in Java.
+  Importing the app's own export found no cues and reported the file unreadable.
+
+And eleven more, each fixed with an executed check or a source one:
+
+- **A caption's eighth word arrived on the seventh's beat.** The Words arrival
+  passes a word *count* through a Float fraction and multiplies it back; 7/13
+  returns as 7.0000005, whose ceiling is 8. The suite had only ever tested three
+  words, where the trip is exact.
+- **Editing by transcript could take the editor down.** The chosen run was two
+  remembered indices into a list rebuilt whenever the lines changed, so an edit
+  from outside the panel left them past the end and `words.slice` threw during
+  composition.
+- **A caption with a blank line in it lost everything after it**: a blank line
+  ends a cue in SubRip, and the writer trimmed only the ends.
+- **The tracker's fine pass walked off the place it was refining** - it read
+  `bestX + dx` while assigning `bestX += dx` in the same loop, so the 3x3 was
+  taken about a moved centre and each frame's search starts from the last one's
+  answer.
+- **A long shot's auto-reframe lagged its subject by seconds**: the smoothing
+  window was sized in samples and the sample count caps at 360, so past ninety
+  seconds the window grew with the clip.
+- **Four consecutive reframe samples could be one frame** (`OPTION_CLOSEST_SYNC`
+  answers with the nearest keyframe), and the duplicates read as "no motion" and
+  dragged the crop to the middle of the frame.
+- **A pinned overlay pulsed twelve per cent**: `TrackSample.scale` is re-picked
+  every frame from three candidates and was multiplied straight into the layer's
+  size at every key.
+- **A reversed clip's stabilizer keys were one frame early**, and its last frame
+  had none: the times were mirrored without re-pairing them with the motions.
+- **A no-derivatives clip was offered as free b-roll.** The licence filter was
+  the Archive query alone, and its `*-nd*`/`*-nc*` patterns cannot see the CC
+  1.0 codes, which carry no hyphen.
+- **Downloaded music could not be got rid of at all** - no storage kind measured
+  `files/music/online` and no sweep touched it - and downloaded stock clips were
+  counted and unreachable, which is the third time a row has counted a file its
+  Clear could not reach.
+- **"Keep HDR" with one caption on an HLG clip** asks Media3 to keep HDR and
+  then hands it a plain bitmap overlay, which it refuses outright below Android
+  14.
+
+Also: a binned quick tool left to age out kept its picker grant for ever; an
+export moved to the gallery's Bin was forgotten for good; a single tapped beat
+went missing on every save; an edit whose shots had all been deleted reported
+the length of the file it was opened on; a resumed quick-tool session that was
+emptied left its draft on disk; and a multi-valued Archive title became the
+literal text `["A","B"]` on the timeline.
+
+### What a device has to answer from this sweep
+
+1. **Auto-caption two minutes of talking and render it.** That is the sixteen-
+   overlay limit; before tonight it failed at the first frame. Then do it again
+   with thirty-odd lines and check the captions are all there, in the right
+   order and the right one on top where two overlap.
+2. **Set the phone to Arabic and export subtitles**, then import the file back.
+   The timing lines must be ASCII digits and the cues must come back.
+3. **Auto-caption a thirteen-word line and watch the Words arrival** against the
+   speech: each word must land on its own word, not a third of a second early.
+4. **Open "Edit by transcript", choose a run of words, then undo** something
+   from outside the panel until the transcript is shorter. The choice must go
+   away; it used to take the editor down.
+5. **Track something, pin an overlay to it, and watch the overlay's size.** It
+   must not pulse at the frame rate. Then reverse a stabilized clip and nudge
+   Strength: its keys must not shift by a frame.
+6. **Auto-reframe a three-minute handheld shot with no face in it** - the window
+   is a length of time now, and the duplicate keyframes are skipped, so the crop
+   should follow the subject rather than sitting between it and the middle.
+7. **"Keep HDR" on an HLG clip with a caption**: the switch must be off, dim,
+   and say why.
+8. **Settings → Storage → Clear "Reversed renders, imports and downloads"**
+   after downloading a stock clip and a song: the number must go to nothing.

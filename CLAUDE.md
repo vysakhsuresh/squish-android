@@ -1043,6 +1043,23 @@ should work through it and then delete what holds up.
   softness is a uniform, so `PreviewEngine.remember` asks for a redraw when it
   changes); and that a Burn out over a padded canvas or a keyed overlay whitens
   the picture and not the hole. `docs/COMPETITORS.md` §4 has the reading.
+- **Sweep eight, over the text, vision, online and persistence layers
+  (5 October, night).** The four layers no sweep had been over. Ninety-two
+  agents over twelve hunts; `docs/DEVICE_FINDINGS.md`'s last section lists what
+  it found and ends with the eight things a device has to answer. It found the
+  two worst faults of the day, both invisible from inside the app: **sixteen
+  captions could not be exported at all** (every caption, sticker and shape
+  went into one `OverlayEffect`, and `OverlayShaderProgram` refuses more than
+  fifteen in one instance - two minutes of auto-captioned talking is thirty
+  lines, and the preview showed them all), and **on an Arabic, Persian,
+  Burmese, Bengali or Nepali phone "Export subtitles" wrote a file nothing can
+  read**, this app included, because `format` with no locale emits that
+  locale's digits and the parser's `\d` is ASCII-only. Also worth remembering:
+  **the tracker's fine pass read `bestX + dx` while assigning `bestX += dx`**,
+  so it walked off the place it was refining and compounded frame to frame;
+  **a caption's eighth word arrived on the seventh's beat** because a count was
+  laundered through a Float fraction; and **editing by transcript could take the
+  editor down** when an edit from outside the panel shortened the word list.
 - **Sweep seven, over the shared components, the effect wrappers and the audio
   engine (5 October, night).** The layer under *everything*: the composables
   every sheet is built out of, the Media3 wrappers, the colour pipeline's CPU

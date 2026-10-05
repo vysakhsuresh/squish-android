@@ -542,6 +542,27 @@ things on this list that can only be judged *by ear*, so they want quiet:
     and so must the privacy switch, Mute on a clip and Keep HDR. Nine switches,
     one control, and until tonight none of them said which way it was.
 
+**Added after sweep eight** (5 October, night). The first is the single most
+important thing on this whole list: until tonight it could not be done at all.
+
+23. **Auto-caption two minutes of talking and render it.** Sixteen or more
+    captions went into one Media3 overlay pass, which refuses more than fifteen
+    and fails the render at its first frame - while the preview showed every
+    one. Check they are all in the file, in order, with the right one on top
+    where two overlap.
+24. **Set the phone to Arabic, export subtitles, import the file back.** The
+    timing lines must be ASCII digits; they used to come out in Eastern
+    Arabic-Indic numerals that no tool reads, this app's own parser included.
+25. **A thirteen-word auto-caption with the Words arrival on**: each word lands
+    on its own word, not a third of a second early.
+26. **Choose a run of words in "Edit by transcript", then undo from outside the
+    panel until the transcript is shorter.** The choice goes away; it used to
+    take the editor down.
+27. **Pin an overlay to a track**: its size must not pulse at the frame rate.
+    And reverse a stabilized clip, then nudge Strength: the keys must not shift.
+28. **"Keep HDR" on an HLG clip with a caption on it**: off, dim, and saying
+    why - Media3 refuses a bitmap overlay in an HDR graph below Android 14.
+
 **Clean-up owed from the 5 October session**, before anything else is added:
 delete MediaStore ids 1001326343, 1001326344 and 1001326345 *by id* (never by a
 `LIKE` pattern - `_` is a wildcard and `sq_%` once matched every `squish_`
