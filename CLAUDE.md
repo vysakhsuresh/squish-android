@@ -51,8 +51,12 @@ where it takes one of four named styles, a literal byte-order mark sitting in a
 Kotlin source file, `createOnDeviceSpeechRecognizer` (API 31) guarded a function
 call away from its use at a minimum of 29, and six `SDK_INT >=` branches that
 cannot be false at minSdk 29 — one of which had a dead `else` that would have
-written a GIF into the wrong MediaStore collection. Dead code shaped like a
-fallback is worse than no fallback: it says a path exists that does not.
+published a GIF with no `RELATIVE_PATH` and no `IS_PENDING`: not in the
+Pictures/Squish folder, and visible to the gallery while it was still being
+written. (Said more loudly than that in the commit: the legacy
+`EXTERNAL_CONTENT_URI` it also used is the same collection on API 29+, not a
+wrong one.) Dead code shaped like a fallback is worse than no fallback: it says
+a path exists that does not, and nobody can test what it would have done.
 The four `ProduceStateDoesNotAssignValue` errors that remain are suppressed
 where they are, with the reason: the check does not see the assignment in
 Compose 1.7.2, which was established by writing one of them three different
