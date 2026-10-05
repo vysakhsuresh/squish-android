@@ -418,7 +418,13 @@ private fun PlacedEffect(
 private fun EffectSliders(effect: TimedEffect, onChange: ((TimedEffect) -> TimedEffect) -> Unit, onGestureEnd: () -> Unit) {
     LabeledSlider("Strength", effect.intensity, 0.1f..1f, onFinished = onGestureEnd) { v -> onChange { it.copy(intensity = v) } }
     effect.kind.parameter?.let { name ->
-        LabeledSlider(name, effect.amount, 0f..1f, onFinished = onGestureEnd) { v -> onChange { it.copy(amount = v) } }
+        LabeledSlider(
+            name,
+            effect.amount,
+            0f..1f,
+            readout = effect.kind.parameterReadout ?: Readout.percent(0f..1f),
+            onFinished = onGestureEnd
+        ) { v -> onChange { it.copy(amount = v) } }
     }
 }
 

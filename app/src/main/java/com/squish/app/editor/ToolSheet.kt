@@ -295,7 +295,9 @@ fun EditorToolSheet(
             { viewModel.layers.setTransition(c.id, TransitionType.None, c.transitionIn.durationMs) }
         }
         Tool.Opacity -> when {
-            item != null -> { { viewModel.text.setOpacity(item.id, 1f) } }
+            // endGesture after it: setOpacity carries the slider's gesture id, so a
+            // tap left the step open and the next drag folded into the reset.
+            item != null -> { { viewModel.text.setOpacity(item.id, 1f); viewModel.endGesture() } }
             clip != null -> { { viewModel.layers.resetOpacity(clip.id) } }
             else -> null
         }

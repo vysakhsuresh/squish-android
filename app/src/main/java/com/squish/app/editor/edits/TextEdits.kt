@@ -939,13 +939,18 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * would take the sentence round the "um" with it.
      */
     fun removeFillerWords(onDone: (Int) -> Unit = {}) {
-        val runs = com.squish.app.editor.Transcript.fillerRuns(transcriptWords())
+        val words = transcriptWords()
+        val runs = com.squish.app.editor.Transcript.fillerRuns(words)
         if (runs.isEmpty()) {
             onDone(0)
             return
         }
-        removeSpans(runs, if (runs.size == 1) "Remove a filler word" else "Remove ${runs.size} filler words")
-        onDone(runs.size)
+        // The words, not the runs: "um, uh, um" together is one stretch to cut
+        // but three words to say were cut, and the undo step and the notice
+        // both used to read "a filler word" for it.
+        val taken = words.count { it.timed && com.squish.app.editor.Transcript.isFiller(it.text) }
+        removeSpans(runs, if (taken == 1) "Remove a filler word" else "Remove $taken filler words")
+        onDone(taken)
     }
 
     /** The edit read as words, for the transcript sheet and the filler pass. */

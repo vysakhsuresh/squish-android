@@ -150,7 +150,7 @@ fun TranscriptPanel(state: EditorUiState, viewModel: EditorViewModel, onClose: (
                 onClick = {
                     viewModel.text.removeFillerWords { taken ->
                         notice = if (taken == 0) "No filler words with a time of their own."
-                        else "Took out $taken."
+                        else "Took out ${countOfWords(taken)}."
                     }
                     anchor = null
                     head = null

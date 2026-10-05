@@ -53,7 +53,14 @@ import com.squish.app.ui.theme.SquishColors
  */
 @Composable
 fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel, accent: Color) {
-    val tracking = state.tracking
+    // This clip's own track, and nothing else's. The progress carries the id of
+    // the clip it was measured on, and nothing clears it when the selection
+    // changes - so a track measured on one shot was presented as the next one's,
+    // ready to pin to footage it had never seen. The point and the box size are
+    // kept across clips on purpose: they are where you last aimed, not a result.
+    val measured = state.tracking
+    val tracking = if (measured.clipId == null || measured.clipId == clip.id) measured
+    else TrackProgress(pointX = measured.pointX, pointY = measured.pointY, boxFraction = measured.boxFraction)
     var frame by remember(clip.id) { mutableStateOf<Bitmap?>(null) }
     var stale by remember(clip.id) { mutableStateOf(true) }
 

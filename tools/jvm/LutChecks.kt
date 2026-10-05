@@ -98,6 +98,37 @@ fun main() {
         check(near(corner[0], 1f) && near(corner[1], 0f) && near(corner[2], 0f), "the 1D table mixed channels: ${corner.toList()}")
     }
 
+    // --- A long 1D table is a real file, and it used to take the app down. --
+    // A 1D table is grown into a cube, so its length is cubed before anything
+    // is allocated: a camera-matching LUT of 1024 entries asked for 1024 cubed
+    // times three floats, which overflows Int to a negative and threw
+    // NegativeArraySizeException straight out of the import. 256 and 512 died
+    // the same way on an OutOfMemoryError. None of this was covered - the only
+    // 1D table here was four entries long.
+    for (long in intArrayOf(65, 128, 256, 512, 1024, 4096)) {
+        val text = buildString {
+            appendLine("LUT_1D_SIZE $long")
+            // A straight ramp, so the cube it grows into has to be the identity.
+            for (i in 0 until long) {
+                val v = i.toFloat() / (long - 1)
+                appendLine("$v $v $v")
+            }
+        }
+        val lut = runCatching { CubeFile.parse(text) }
+        check(lut.isSuccess, "a 1D table of $long threw ${lut.exceptionOrNull()}")
+        lut.getOrNull()?.let { made ->
+            check(made.size in 2..64, "a 1D table of $long grew to a cube of ${made.size}")
+            listOf(0f, 0.25f, 0.5f, 1f).forEach { v ->
+                val out = made.sample(v, v, v)
+                check(out.all { near(it, v, 0.02f) }, "a straight 1D ramp of $long is not the identity at $v: ${out.toList()}")
+            }
+        }
+    }
+    run {
+        val oneEntry = runCatching { CubeFile.parse("LUT_1D_SIZE 1\n0.5 0.5 0.5\n") }
+        check(oneEntry.isFailure, "a 1D table of one entry was accepted")
+    }
+
     // --- A domain other than 0..1 is brought back to it. --------------------
     run {
         val text = buildString {

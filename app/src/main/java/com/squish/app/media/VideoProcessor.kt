@@ -447,9 +447,12 @@ class VideoProcessor(private val context: Context) {
         // The item's clock starts at 0 on this shot, so the edit's own time is
         // that plus where the shot sits - the same reading a keyed filter
         // strength makes, and the same thing a device has to confirm.
-        val offsetMs = under.timelineStartMs
+        // The item's clock here is the shot's own *source* time from its
+        // in-point, because this effect now sits before the speed change -
+        // where the preview has it. Mapped back through the clip's curve, which
+        // is exactly the reading PreviewEngine.blendedStillFor makes.
         return com.squish.app.media.effects.LayerBlendEffect(bitmap, clip.blend) { itemMs: Long ->
-            val atMs = offsetMs + itemMs
+            val atMs = under.timelineAtSource(under.sourceInMs + itemMs)
             if (atMs < startMs || atMs > endMs) null
             else com.squish.app.media.effects.LayerBlendEffect.Placement(
                 lookup = com.squish.app.media.effects.LayerBlendEffect.WHOLE_FRAME,
@@ -567,9 +570,36 @@ class VideoProcessor(private val context: Context) {
             clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
             clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
             clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
-            // A keyed filter strength is read off the clock; everything else is fixed
-            // when the chain is built, as it was.
-            if (clip.lookAnimated) addAll(ColorGrade.animated(clip::gradeAt)) else addAll(ColorGrade.effects(clip.grade))
+            // A keyed filter strength is read off the clock; everything else is
+            // fixed when the chain is built, as it was.
+            //
+            // The clock here is the item's own *source* time from its in-point,
+            // because this sits before the speed change - while lookKeys, like
+            // every other ValueKey track, are in the clip's *played* time, which
+            // is what the preview reads them at. Through the curve, or on a
+            // retimed shot the look ramped over the wrong stretch in the file
+            // and over the right one on screen.
+            if (clip.lookAnimated) {
+                addAll(ColorGrade.animated { itemMs -> clip.gradeAt(clip.playedAt(clip.sourceInMs + itemMs)) })
+            } else {
+                addAll(ColorGrade.effects(clip.grade))
+            }
+            // Blended stills, right after the grade - which is where the preview
+            // has them, and the only place the two can agree.
+            //
+            // They used to go on at the end of the chain, on the finished
+            // canvas-sized frame, which is where a light leak belongs. But the
+            // preview cannot put them there: a Compose layer cannot blend
+            // against a TextureView, so its copy of this shader lives in the
+            // player's chain, on the decoded frame, and everything Compose does
+            // afterwards - the turn, the clip's crop, the fit, the edit's
+            // rotation, the placement - happens to the blended picture. On any
+            // shot with a crop, a turn or a placement the file and the screen
+            // showed the leak in different places. The two agreeing is worth
+            // more than where it sits, so the file follows the screen.
+            blendedStills.forEach { still ->
+                blendEffectFor(state, still, canvas, under = clip)?.let { add(it) }
+            }
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
             // The clip's own mirror and turn belong to its footage, so they go
             // on before its crop (a window on the footage as seen, where the
@@ -593,14 +623,6 @@ class VideoProcessor(private val context: Context) {
                 add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT))
             }
             addAll(speedEffects(clip, state, frameRateOf(state)))
-            // Blended stills, onto the finished frame of this shot. On the base
-            // clip rather than on the composition, because that is the only
-            // place the preview can put them too - a Compose layer cannot blend
-            // against a TextureView - and the two agreeing matters more than a
-            // blended still sitting above a picture-in-picture as well.
-            blendedStills.forEach { still ->
-                blendEffectFor(state, still, canvas, under = clip)?.let { add(it) }
-            }
             // Its share of a transition, and its own fade, in one pass; on the
             // one-sequence path there is no compositor to read an alpha, so the
             // fade is drawn towards black there (TransitionEffect).

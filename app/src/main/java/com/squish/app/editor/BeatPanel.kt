@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.squish.app.home.countOf
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.theme.SquishColors
@@ -254,21 +255,31 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
         // made of and the one thing a FinalCut timeline for one had that this
         // could not do in a reasonable number of taps. Outside the branch for
         // the same reason as below: it has nothing to do with a beat grid.
-        var laid by remember { mutableStateOf<Int?>(null) }
+        // Both numbers, because they can differ: CutSounds leaves out a join
+        // that lands within 320 ms of the last sound (two of them on top of
+        // each other is a mess, not a rhythm) and stops at sixty. "One on each
+        // cut" was a promise the plan does not always keep.
+        var laid by remember { mutableStateOf<Pair<Int, Int>?>(null) }
         BeatAction(
             icon = Icons.Filled.GraphicEq,
             title = "Sound on every cut",
-            body = when (val n = laid) {
-                null -> "A whoosh into every join, three going round in turn so ten of them do not " +
-                    "sound like one repeated. Each ends on its cut, which is what pulls the eye into " +
-                    "the next shot. Made on the phone, like the music."
-                0 -> "Nothing to put a sound on — the picture needs more than one shot."
-                1 -> "One sound laid. Undo takes it off."
-                else -> "$n sounds laid, one on each cut. Undo takes them all off."
+            body = laid.let { done ->
+                val n = done?.first ?: -1
+                val joins = done?.second ?: 0
+                when {
+                    done == null -> "A whoosh into every join, three going round in turn so ten of them do not " +
+                        "sound like one repeated. Each ends on its cut, which is what pulls the eye into " +
+                        "the next shot. Made on the phone, like the music."
+                    n == 0 -> "Nothing to put a sound on — the picture needs more than one shot."
+                    n < joins -> "${countOf(n, "sound")} laid, across $joins cuts: the joins that come too " +
+                        "close together share one. Undo takes them all off."
+                    n == 1 -> "One sound laid, on the one cut. Undo takes it off."
+                    else -> "$n sounds laid, one on each cut. Undo takes them all off."
+                }
             },
             accent = SquishColors.Amber,
             action = "Sound on every cut"
-        ) { viewModel.audio.soundOnEveryCut { laid = it } }
+        ) { viewModel.audio.soundOnEveryCut { n, joins -> laid = n to joins } }
 
         // The last piece of AutoCut, and the only thing on this sheet that is
         // not about beats: the fits above keep each shot's head, which is the

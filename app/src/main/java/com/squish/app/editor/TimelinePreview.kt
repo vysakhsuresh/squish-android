@@ -1047,7 +1047,18 @@ private fun StillOverlay(clip: Clip, transform: Transform, layerTime: Long, onAs
     if (!clip.blend.isPlain) return
     val uri = clip.uri ?: return
     val context = LocalContext.current
-    val grade = clip.grade
+    // Keyed as well as fixed. The file reads this photo's grade off the clock
+    // (CompositionFactory's image item takes clip::gradeAt), and this read the
+    // resting one, so a keyed filter strength on a photo overlay ramped in the
+    // file and did nothing on screen.
+    //
+    // Stepped, because unlike a video's grade this one is pixels: every new
+    // value costs a pass over a 960-pixel copy on the CPU. A fifth of a second
+    // is finer than the eye follows a filter coming up and leaves the cache
+    // something to hit.
+    val grade = if (!clip.lookAnimated) clip.grade else remember(clip, (layerTime - clip.timelineStartMs) / GRADE_STEP_MS) {
+        clip.gradeAt(((layerTime - clip.timelineStartMs) / GRADE_STEP_MS) * GRADE_STEP_MS)
+    }
     var picture by remember(uri) { mutableStateOf(StillPictures.cached(uri, grade)) }
     LaunchedEffect(uri, grade) {
         val loaded = StillPictures.cached(uri, grade) ?: StillPictures.graded(context, uri, grade)
@@ -1089,6 +1100,12 @@ private fun StillOverlay(clip: Clip, transform: Transform, layerTime: Long, onAs
  * graded copies by grade. A handful at most are on screen together; the cap
  * is there so a long session with many photos cannot grow without end.
  */
+/**
+ * How finely a photo overlay's keyed grade is stepped in the preview. Its grade
+ * is pixels rather than a uniform, so every value costs a pass over the copy.
+ */
+private const val GRADE_STEP_MS = 200L
+
 private object StillPictures {
     /** Long side of the copy drawn - past what a phone's preview box shows. */
     private const val MAX_SIDE = 1440

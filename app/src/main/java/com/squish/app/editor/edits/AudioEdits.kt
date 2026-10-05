@@ -120,12 +120,19 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     }
 
     fun removeAudioClip(clipId: String) = record("Remove sound") {
+        // An Auto-sync listening to this sound is stopped. It used to run on and
+        // then write a "Matched" status for a clip that is no longer there -
+        // which undo can bring back, so the next thing the user saw on that
+        // sound's sheet was a confidence from an analysis they had cancelled by
+        // deleting it.
+        if (_state.value.syncClipId == clipId) syncJob?.cancel()
         _state.update { current ->
             current.copy(
                 audioClips = current.audioClips.filterNot { it.id == clipId },
                 selectedClipId = if (current.selectedClipId == clipId) null else current.selectedClipId,
                 syncStatus = SyncStatus.Idle,
-                syncConfidence = 0f
+                syncConfidence = 0f,
+                syncClipId = null
             )
         }
         recomputeEstimate()
@@ -230,7 +237,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     fun setVoiceForAll(clipId: String, effect: VoiceEffect) {
         val current = _state.value
         val clip = (current.videoClips + current.audioClips).firstOrNull { it.id == clipId } ?: return
-        record(if (clip.kind == ClipKind.Audio) "Voice on every sound" else "Voice on every shot") {
+        record(if (clip.kind == ClipKind.Audio) "Voice on every sound" else "Voice on every shot and overlay") {
             _state.update { s ->
                 if (clip.kind == ClipKind.Audio) s.copy(audioClips = s.audioClips.map { it.copy(voice = effect) })
                 else s.copy(videoClips = s.videoClips.map { if (it.isStillPicture) it else it.copy(voice = effect) })
@@ -812,8 +819,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             val chosen = current.beatGrid
             if (chosen.isEmpty()) current
             else current.copy(
-                markers = EditRules.mergedBeatMarkers(current.markers, current.allBeats, chosen, current.frameMs),
-                snapToMarkers = true
+                markers = EditRules.mergedBeatMarkers(current.markers, current.allBeats, chosen, current.frameMs)
             )
         }
     }
@@ -867,11 +873,11 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      * (see CutSounds). The effects are synthesised the first time they are
      * asked for, like the music, so nothing is downloaded.
      */
-    fun soundOnEveryCut(fit: CutSoundFit = CutSoundFit.LeadsIn, onDone: (Int) -> Unit = {}) {
+    fun soundOnEveryCut(fit: CutSoundFit = CutSoundFit.LeadsIn, onDone: (laid: Int, joins: Int) -> Unit = { _, _ -> }) {
         val current = _state.value
         val joins = CutSounds.joinsOf(current.videoClips.filter { it.isMain }, current.trimmedDurationMs)
         if (joins.isEmpty()) {
-            onDone(0)
+            onDone(0, joins.size)
             return
         }
         viewModelScope.launch {
@@ -883,7 +889,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 Triple(id, uri, (effect.seconds * 1000f).toLong())
             }
             if (made.isEmpty()) {
-                onDone(0)
+                onDone(0, joins.size)
                 return@launch
             }
             val plan = CutSounds.plan(
@@ -892,7 +898,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 fit
             )
             if (plan.isEmpty()) {
-                onDone(0)
+                onDone(0, joins.size)
                 return@launch
             }
             val uris = made.associate { (id, uri, _) -> id to uri }
@@ -918,7 +924,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             }
             uris.values.forEach { ensureWaveform(it) }
             recomputeEstimate()
-            onDone(plan.size)
+            onDone(plan.size, joins.size)
         }
     }
 

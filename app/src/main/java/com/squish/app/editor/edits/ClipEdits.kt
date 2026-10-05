@@ -377,9 +377,18 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     }
 
     /** One band of the HSL sliders, on one clip. */
-    fun setHsl(clipId: String, band: HueBand, value: HslBand) = record("HSL", gesture = "HSL ${band.name} $clipId") {
-        updateVideoClip(clipId) { it.copy(adjust = it.adjust.withBand(band, value)) }
-    }
+    /**
+     * One band of the HSL sliders, on one clip.
+     *
+     * [discrete] for a tap - the band's three Reset links - which must be a step
+     * of its own. Carrying the sliders' gesture id and never ending it left the
+     * step open, so a drag within the coalescing window folded into the reset
+     * and one undo took both back.
+     */
+    fun setHsl(clipId: String, band: HueBand, value: HslBand, discrete: Boolean = false) =
+        record("HSL", gesture = if (discrete) null else "HSL ${band.name} $clipId") {
+            updateVideoClip(clipId) { it.copy(adjust = it.adjust.withBand(band, value)) }
+        }
 
     /**
      * Auto adjust: exposure, white balance, contrast and colour for [clipId],
@@ -1284,6 +1293,10 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * the edit, only which file plays it.
      */
     fun trimEnded() {
+        // The strip knows exactly when the finger left a trim handle, so the
+        // step closes here rather than waiting out the coalescing window - two
+        // trims of the same clip inside 700 ms used to come back as one undo.
+        history.endGesture()
         for (clip in StillRules.outrunning(_state.value.videoClips)) {
             val uri = clip.uri ?: continue
             if (!hasPicture(uri) || !extending.add(clip.id)) continue
@@ -1389,6 +1402,10 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         val current = _state.value
         val selected = current.selectedClipId ?: return
         val all = current.allSelectedIds
+        // A Reverse render under way on something being deleted is stopped: it
+        // used to run on, writing a file for a clip that is gone, with its
+        // progress card still up and a Cancel that no longer reached anything.
+        all.forEach { reverseJobs[it]?.cancel() }
         if (all.size > 1) {
             // Several at once: every kind among them, as one step, the main
             // track closing up once over all of its missing shots.

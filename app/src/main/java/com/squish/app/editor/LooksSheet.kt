@@ -408,17 +408,17 @@ fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                     AdjustSlider(
                         label = "Hue", value = values.hue, range = -1f..1f,
                         readout = Readout.bandDegrees,
-                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(hue = 0f)) },
+                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(hue = 0f), discrete = true) },
                         onFinished = done
                     ) { viewModel.clips.setHsl(clip.id, band, values.copy(hue = it)) }
                     AdjustSlider(
                         label = "Saturation", value = values.saturation, range = -1f..1f,
-                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(saturation = 0f)) },
+                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(saturation = 0f), discrete = true) },
                         onFinished = done
                     ) { viewModel.clips.setHsl(clip.id, band, values.copy(saturation = it)) }
                     AdjustSlider(
                         label = "Luminance", value = values.luminance, range = -1f..1f,
-                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(luminance = 0f)) },
+                        onReset = { viewModel.clips.setHsl(clip.id, band, values.copy(luminance = 0f), discrete = true) },
                         onFinished = done
                     ) { viewModel.clips.setHsl(clip.id, band, values.copy(luminance = it)) }
                 }

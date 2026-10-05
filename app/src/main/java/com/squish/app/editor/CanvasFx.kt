@@ -113,8 +113,14 @@ float hash(float2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
+// uv is in the FILE's space: 0..1 with y running UP, as a texture's does.
+// The layer underneath runs y DOWN, so the lookup turns it back over. The two
+// copies of this shader - this one and squish_fx_es2.glsl - used to measure y
+// on opposite axes, so uOffset.y moved the picture the other way on screen and
+// the glitch bands came out mirrored against the file.
 float3 texel(float2 uv) {
-  float2 px = uOrigin + clamp(uv, 0.0, 1.0) * uSize;
+  float2 flipped = float2(clamp(uv.x, 0.0, 1.0), 1.0 - clamp(uv.y, 0.0, 1.0));
+  float2 px = uOrigin + flipped * uSize;
   return float3(content.eval(px).rgb);
 }
 
@@ -141,7 +147,10 @@ float3 hueRotate(float3 c, float a) {
 }
 
 half4 main(float2 coord) {
-  float2 base = (coord - uOrigin) / uSize;
+  // Turned over into the file's axis at once, so every line below reads the
+  // same way as its twin in squish_fx_es2.glsl; texel() turns it back.
+  float2 layer = (coord - uOrigin) / uSize;
+  float2 base = float2(layer.x, 1.0 - layer.y);
   float2 uv = (base - 0.5) / uZoom + 0.5 + uOffset;
 
   if (uGlitch > 0.001) {

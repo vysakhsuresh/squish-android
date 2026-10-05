@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import com.squish.app.home.countOf
 import com.squish.app.online.rememberOnlineGate
 import com.squish.app.online.OnlineFonts
 import com.squish.app.data.TextStyleJson
@@ -314,7 +315,7 @@ fun TextPanel(
                 )
 
                 status.imported > 0 -> Text(
-                    "Imported ${status.imported} lines from the subtitle file.",
+                    "Imported ${countOf(status.imported, "line")} from the subtitle file.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.Teal
                 )
@@ -1346,7 +1347,7 @@ private fun TranslateCard(viewModel: EditorViewModel) {
                             of == 0 -> "No lines of words to translate."
                             n == 0 -> "Couldn't reach the translation service. Check the connection and try again."
                             n < of -> "Translated $n of $of lines - the service refused the rest, which keep their words. Undo takes it back."
-                            else -> "Translated $n ${if (n == 1) "line" else "lines"}. Undo takes it back."
+                            else -> "Translated ${countOf(n, "line")}. Undo takes it back."
                         }
                     }
                 }

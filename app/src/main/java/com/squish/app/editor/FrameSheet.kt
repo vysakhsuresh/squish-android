@@ -121,7 +121,11 @@ fun MarkersPanel(state: EditorUiState, viewModel: EditorViewModel) {
 private fun AutoReframeRow(state: EditorUiState, viewModel: EditorViewModel) {
     val progress = state.reframeProgress
     val shots = state.videoClips.count { it.isMain }
-    val following = state.cropAspect.ratio != null && state.videoClips.any { it.isMain && it.reframe != null }
+    // Counted, not any-ed: a shot added since the run, or one whose footage
+    // could not be read, has no track of its own, and "in each shot" was then
+    // a claim one reframed shot out of ten was enough to make.
+    val tracked = if (state.cropAspect.ratio == null) 0 else state.videoClips.count { it.isMain && it.reframe != null }
+    val following = tracked > 0
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             when {
@@ -129,7 +133,10 @@ private fun AutoReframeRow(state: EditorUiState, viewModel: EditorViewModel) {
                     "Finding the subject — ${progress.done * 100 / progress.total}%"
                 progress.running -> "Finding the subject…"
                 progress.failed -> "Could not read the footage to reframe it."
-                following && shots > 1 -> "The crop follows the subject in each shot. Play to see it move."
+                tracked >= shots && shots > 1 -> "The crop follows the subject in each shot. Play to see it move."
+                following && tracked < shots ->
+                    "The crop follows the subject in $tracked of $shots shots. " +
+                        "The rest sit in the middle — Again covers the ones added since."
                 following -> "The crop follows the subject. Play to see it move."
                 else -> "Auto-reframe keeps faces and movement in the crop, instead of the middle."
             },

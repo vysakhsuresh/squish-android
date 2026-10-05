@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
+import com.squish.app.home.countOf
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipAnimation
 import com.squish.app.timeline.ClipArrival
@@ -83,7 +84,8 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                 when {
                     clip.hasAnimation && animated -> "Arrives, leaves and moves while it plays"
                     clip.hasAnimation -> "Arrives and leaves as set below"
-                    animated -> "${keys.size} keys · moves while it plays" + if (hidden > 0) " · $hidden more in trimmed footage" else ""
+                    animated -> "${countOf(keys.size, "key")} · moves while it plays" +
+                        if (hidden > 0) " · $hidden more in trimmed footage" else ""
                     else -> "Sitting still — pick an arrival, or a move below"
                 },
                 icon = Icons.Filled.Animation,

@@ -6,15 +6,33 @@ import kotlin.math.exp
 import kotlin.math.pow
 import kotlin.math.sin
 
+/** Punch's hits a second at knob [a]. The slider's readout and [FxParams] share it. */
+fun punchPerSecond(a: Float): Float = 0.5f + 3f * a.coerceIn(0f, 1f)
+
+/** Heartbeat's beats a second at knob [a]. Shared the same way. */
+fun heartbeatPerSecond(a: Float): Float = 0.5f + 2f * a.coerceIn(0f, 1f)
+
+private val perSecond: (Float) -> String = { v -> "%.1f".format(v).trimEnd('0').trimEnd('.') + "/s" }
+
 /**
  * The effects in the library, each a stretch of the video treated a particular
  * way. [parameter] names the one knob each has besides Strength - how fast a
  * shake shakes, how often a punch lands - or null for the effects that are one
  * number all the way down.
+ *
+ * [parameterReadout] is how that knob reads over the slider, for the knobs that
+ * name a unit. The knob is a 0..1 fraction underneath, so the two named "Beats
+ * per second" read "50%" without it - which is not a number of beats and not a
+ * number of seconds. The vaguer knobs (Speed, Reach, Grain) are a fraction of
+ * the usual and a percent is what they mean.
  */
-enum class EffectKind(val label: String, val parameter: String? = null) {
+enum class EffectKind(
+    val label: String,
+    val parameter: String? = null,
+    val parameterReadout: ((Float) -> String)? = null
+) {
     Shake("Shake", "Speed"),
-    Punch("Zoom punch", "Beats per second"),
+    Punch("Zoom punch", "Beats per second", { a -> perSecond(punchPerSecond(a)) }),
     ZoomIn("Slow zoom", "Reach"),
     Glitch("Glitch", "Bursts"),
     Flash("Flash", "Fade"),
@@ -28,7 +46,7 @@ enum class EffectKind(val label: String, val parameter: String? = null) {
     RgbSplit("RGB split", "Width"),
     Strobe("Strobe", "Speed"),
     Earthquake("Earthquake", "Speed"),
-    Heartbeat("Heartbeat", "Beats per second"),
+    Heartbeat("Heartbeat", "Beats per second", { a -> perSecond(heartbeatPerSecond(a)) }),
     Static("TV static", "Grain"),
     OldFilm("Old film", "Grain"),
     Dream("Dream", "Glow"),
@@ -169,8 +187,7 @@ data class FxParams(
                     )
                     EffectKind.Punch -> {
                         // Hits a second, each a sharp push in that settles.
-                        val perSecond = 0.5f + 3f * amount
-                        val phase = (t * perSecond) % 1f
+                        val phase = (t * punchPerSecond(amount)) % 1f
                         p.copy(zoom = p.zoom * (1f + 0.22f * k * exp(-phase * 7f)))
                     }
                     EffectKind.ZoomIn -> p.copy(zoom = p.zoom * (1f + 0.3f * twice * a * (t / span).coerceIn(0f, 1f)))
@@ -205,8 +222,7 @@ data class FxParams(
                         zoom = p.zoom * (1f + 0.14f * k)
                     )
                     EffectKind.Heartbeat -> {
-                        val perSecond = 0.5f + 2f * amount
-                        val phase = (t * perSecond) % 1f
+                        val phase = (t * heartbeatPerSecond(amount)) % 1f
                         val beat = exp(-((phase - 0.08f) * (phase - 0.08f)) / 0.0025f) +
                             0.7f * exp(-((phase - 0.3f) * (phase - 0.3f)) / 0.0025f)
                         p.copy(zoom = p.zoom * (1f + 0.12f * k * beat))

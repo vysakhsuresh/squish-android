@@ -5,7 +5,10 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.nio.ByteOrder
 import kotlin.math.abs
@@ -105,8 +108,14 @@ object PcmDecoder {
      * the channels averaged to one float - to [onFrame] until it returns false
      * or the file ends. [onFormat] gets the sample rate before the first frame.
      * False when there is no readable audio track at all.
+     *
+     * Suspend, and it checks for cancellation on every pass of the codec loop:
+     * a waveform read is up to an hour of audio, and a sound selected and
+     * deselected again used to leave that decode running to the end of the
+     * file on the IO pool with nobody waiting for it. Several of them at once
+     * (a strip of sounds scrolled past) starved everything else there.
      */
-    private fun decodeFrames(
+    private suspend fun decodeFrames(
         context: Context,
         uri: Uri,
         onFormat: (sampleRate: Int) -> Unit,
@@ -147,6 +156,7 @@ object PcmDecoder {
             var delivered = false
 
             while (!outputDone) {
+                currentCoroutineContext().ensureActive()
                 if (!inputDone) {
                     val inIndex = codec.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
@@ -188,6 +198,10 @@ object PcmDecoder {
                 }
             }
             return delivered
+        } catch (c: CancellationException) {
+            // Past the blanket catch below, or a cancelled read would read as
+            // "this file has no sound" and the caller would cache that.
+            throw c
         } catch (t: Throwable) {
             return false
         } finally {

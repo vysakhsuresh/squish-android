@@ -1127,3 +1127,42 @@ Not measured: whether the smoothing visibly softens skin. The test picture was
 a group photo whose faces are about thirty pixels across in the preview, and
 the blur's radius is a share of the frame, so at that size it is under a pixel
 on a face. It wants a close-up and a side-by-side export.
+
+### The second sweep's wording and readout fixes, driven (5 October, 06:00)
+
+Twenty-one findings of the second sweep were fixed; five of them were then
+driven on a scratch project of a photo and a video, cut into three clips.
+
+- **An effect's own knob reads in its own unit.** Zoom punch's "Beats per
+  second" read **2/s** at the middle of its range and **3.4/s** near the top.
+  It used to read 50% and 97% - a percentage of nothing, under a label that
+  names a unit. `EffectKind.parameterReadout` carries the two per-second
+  formatters, and `FxParams` now takes its rate from the same two functions,
+  so the number over the slider cannot drift from the one the shader uses.
+- **"Even out volume across clips"**, not "across shots": it measures every
+  piece of footage that is heard, a picture-in-picture included. With one of
+  three clips moved it says **"Brought 1 clip down to match the rest"** -
+  singular, through `countOf`. The button is also gone now when there is only
+  one piece of *footage*: a photo and a video used to offer it, and it had
+  nothing to compare.
+- **Sound on every cut** on two joins: **"2 sounds laid, one on each cut"**,
+  and both drawn on the sound row, each ending on its join. Where the plan
+  skips a join - two cuts within 320 ms share one sound, and it stops at
+  sixty - the card now says "n sounds laid, across m cuts" instead.
+- **Auto-reframe on a 9:16 crop** of three shots: "The crop follows the
+  subject in each shot." The claim is counted now rather than taken from an
+  `any{}`, so a shot added after the run reads "in 2 of 3 shots" instead of
+  claiming all of them.
+- **The Adjust chip row carries the chosen chip to the middle.** Scrolled to
+  the end and tapped, "Smooth skin" animated from the right edge into the
+  centre of the row with its slider under it. Picked up again after a trip
+  through Filters and Templates, it comes back to the chip it was on.
+
+### Smooth skin, seen (5 October)
+
+On a close-up of a face filling a third of the preview, Smooth skin at 100%
+visibly softens the skin and the saree beside it while the dark background
+and the fine text of the screen recording under it are untouched - the blur
+is weighted by the skin locus, not applied to the frame. Judged by eye in the
+preview at about 300 px wide; still unseen in an exported file, and still
+unjudged against a competitor's.

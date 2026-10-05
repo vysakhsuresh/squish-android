@@ -150,8 +150,6 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
         if (current.reframeProgress.running) return
         val shots = current.videoClips.filter { it.isMain && !it.isStillPicture && (it.uri ?: current.sourceUri) != null }
         if (shots.isEmpty()) return
-        if (current.cropAspect.ratio == null) clips.setCropAspect(CropAspect.Portrait)
-
         reframeJob?.cancel()
         _state.update { it.copy(reframeProgress = ReframeProgress(running = true)) }
         reframeJob = viewModelScope.launch {
@@ -176,11 +174,20 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
             recordLate(
                 "Auto-reframe",
                 edit = { snapshot ->
-                    snapshot.copy(videoClips = snapshot.videoClips.map { clip ->
-                        val uri = clip.uri ?: current.sourceUri
-                        if (!clip.isMain || uri == null) clip
-                        else tracks[Triple(uri, clip.sourceInMs, clip.sourceOutMs)]?.let { clip.copy(reframe = it) } ?: clip
-                    })
+                    // The ratio lands with the tracks, as the one step the
+                    // comment above promises. Forced at press time it was its
+                    // own "Crop" step, so one undo took the tracks off and left
+                    // the edit cropped to 9:16 with nothing following it - and
+                    // over a hand-drawn crop that first step had already thrown
+                    // the rectangle away.
+                    snapshot.copy(
+                        cropAspect = if (snapshot.cropAspect.ratio == null) CropAspect.Portrait else snapshot.cropAspect,
+                        videoClips = snapshot.videoClips.map { clip ->
+                            val uri = clip.uri ?: current.sourceUri
+                            if (!clip.isMain || uri == null) clip
+                            else tracks[Triple(uri, clip.sourceInMs, clip.sourceOutMs)]?.let { clip.copy(reframe = it) } ?: clip
+                        }
+                    )
                 },
                 alongside = { it.copy(reframeProgress = ReframeProgress()) }
             )

@@ -191,9 +191,26 @@ object CubeFile {
             return Lut3D(size3, FloatArray(need) { scaled(values[it]) })
         }
         if (size1 > 0) {
+            // A 1D table is *grown* into a cube, so its length is cubed before
+            // anything is allocated: a camera-matching LUT of 1024 entries - an
+            // ordinary file - asked for 1024³ × 3 floats, which overflows Int to
+            // a negative and threw NegativeArraySizeException out of the import,
+            // past the two exceptions LutFiles catches, and took the app down.
+            // 256 and 512 died the same way on an OutOfMemoryError.
+            //
+            // A long 1D table is not more detail in the cube, only more samples
+            // of the same three curves, so the cube is built at the size this
+            // can use and the curves are read across it.
+            if (size1 < 2) throw Problem("That .cube says it is $size1 long, which is not a table.")
             val need = size1 * 3
             if (values.size < need) throw Problem("That .cube says it is $size1 long but holds ${values.size / 3} of the $size1 entries.")
-            return fromCurves(size1) { i, c -> scaled(values[i * 3 + c]) }
+            val side = size1.coerceAtMost(Lut3D.MAX_SIZE)
+            return fromCurves(side) { i, c ->
+                // The entry of the file's own table that this step of the cube
+                // lands on; with side == size1 this is i exactly.
+                val at = if (side <= 1) 0 else (i.toLong() * (size1 - 1) / (side - 1)).toInt().coerceIn(0, size1 - 1)
+                scaled(values[at * 3 + c])
+            }
         }
         throw Problem("That file has no LUT_3D_SIZE or LUT_1D_SIZE line, so it is not a .cube.")
     }

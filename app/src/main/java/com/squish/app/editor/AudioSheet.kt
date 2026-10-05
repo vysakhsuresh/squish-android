@@ -56,6 +56,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import com.squish.app.home.countOf
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.ValueTrack
@@ -412,12 +413,15 @@ fun CameraSoundPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 onFinished = viewModel::endGesture,
                 onChange = viewModel.audio::setOriginalVolume
             )
-            // Even out volume: a loud shot brought down to the quieter ones.
-            if (state.videoClips.count { !it.isOverlay } > 1) {
+            // Even out volume: a loud clip brought down to the quieter ones.
+            // "Clips", not "shots": evenOutVolume measures every piece of
+            // footage that is heard, a picture-in-picture included, and the
+            // wording said shots while quietly changing an overlay's level.
+            if (state.videoClips.count { it.isFootage } > 1) {
                 var working by remember { mutableStateOf(false) }
                 var note by remember { mutableStateOf<String?>(null) }
                 SquishOutlinedButton(
-                    text = if (working) "Measuring every shot…" else "Even out volume across shots",
+                    text = if (working) "Measuring every clip…" else "Even out volume across clips",
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         if (working) return@SquishOutlinedButton
@@ -425,14 +429,13 @@ fun CameraSoundPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         note = null
                         viewModel.audio.evenOutVolume { changed ->
                             working = false
-                            val shots = if (changed == 1) "shot" else "shots"
-                            note = if (changed == 0) "The shots are already at an even level."
-                            else "Brought $changed $shots down to match the rest. Undo takes it back."
+                            note = if (changed == 0) "The clips are already at an even level."
+                            else "Brought ${countOf(changed, "clip")} down to match the rest. Undo takes it back."
                         }
                     }
                 )
                 Text(
-                    note ?: "Measures how loud each shot sounds and turns the loud ones down to match.",
+                    note ?: "Measures how loud each clip sounds and turns the loud ones down to match.",
                     style = MaterialTheme.typography.labelSmall,
                     color = if (note != null) SquishColors.Teal else SquishColors.TextMuted
                 )
@@ -631,7 +634,10 @@ fun VoicePanel(clip: Clip, viewModel: EditorViewModel) {
             }
         }
         SquishOutlinedButton(
-            text = if (isSound) "Apply to all sounds" else "Apply to all shots",
+            // "Shot and overlay", because setVoiceForAll maps over every video
+            // clip, overlay rows included - the button said shots and changed
+            // the picture-in-picture's voice too.
+            text = if (isSound) "Apply to all sounds" else "Apply to every shot and overlay",
             modifier = Modifier.fillMaxWidth(),
             onClick = { viewModel.audio.setVoiceForAll(clip.id, clip.voice) }
         )
