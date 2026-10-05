@@ -151,6 +151,24 @@ class ToolAutosave(context: Context) {
     }
 
     /**
+     * Takes a session off disk without binning it: the file the tool screen
+     * wrote a moment ago and has since taken back, by undoing its own change.
+     *
+     * [delete] is the person's Delete, and it is right that it goes to the bin
+     * for a month. This is not that: the tool screen saves on a tick, and a
+     * choice made and then unmade retracts the file it wrote. Through [delete]
+     * that showed up on the drafts screen as "Recently deleted", for a session
+     * nobody had deleted - and taking it back out of the bin restored a draft
+     * that was never meant to exist.
+     */
+    fun retract(slot: String) = synchronized(lock) {
+        lastSignature.remove(slot)
+        scratchFile(slot).delete()
+        snapshotScratchFile(slot).delete()
+        slotFiles(slot).forEach { it.delete() }
+    }
+
+    /**
      * Stamps the session as exported: when, and which session - [exported] is
      * the one the file was made from. It stays, so "back to the tool" can carry
      * on with it.

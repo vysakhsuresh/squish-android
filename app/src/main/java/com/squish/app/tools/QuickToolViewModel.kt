@@ -164,6 +164,15 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     @Volatile
     private var resumed = false
 
+    /**
+     * Whether the output size on screen is the one a resumed session chose, so
+     * loading a file must not re-default it. Apart from [resumed], which also
+     * tells `persist` the session came off disk: Change picks a new file for
+     * the same session, which wants the size re-defaulted and the session still
+     * known to be a resumed one.
+     */
+    private var keepsResumedSize = false
+
     /** Whether this session has put a draft on disk, so undoing back to nothing can take it off. */
     @Volatile
     private var wroteDraft = false
@@ -206,7 +215,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        return withContext(Dispatchers.IO) { autosave.peek(slot) }?.also { resumed = true }
+        return withContext(Dispatchers.IO) { autosave.peek(slot) }?.also { resumed = true; keepsResumedSize = true }
     }
 
     /**
@@ -237,9 +246,20 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         if (current.isLoading || restoring) return
         val draft = draftOf(tool, current)
         val untouched = !resumed && (baseline == null || autosave.keyOf(draft) == baseline)
-        if (untouched) {
+        // A session with nothing in it is nothing to keep, and `save` refuses
+        // it - so emptying a Stitch list left the three-clip file it had already
+        // written sitting on disk, and the drafts screen went on offering "3
+        // clips to merge" for a screen the person had cleared. Retracted here
+        // instead, by the same rule as undoing back to the start.
+        val emptied = draft.uris.isEmpty()
+        if (untouched || emptied) {
             if (wroteDraft) {
-                autosave.delete(draft.slot)
+                // Not `delete`, which is the person's Delete and bins the
+                // session for a month: this is the tool screen taking back a
+                // file it wrote a tick ago, and through the bin it showed up on
+                // the drafts screen as "Recently deleted" for a session nobody
+                // had deleted.
+                autosave.retract(draft.slot)
                 wroteDraft = false
             }
         } else if (autosave.save(draft)) {
@@ -386,6 +406,14 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             return
         }
         restoring = false
+        // A different file gets the size its own shape calls for. The size a
+        // resumed session chose belongs to the file it chose it for, and this
+        // was read off [resumed], which Change never cleared - so Change on a
+        // resumed Squeeze carried a 1080p choice onto a 720p file and exported
+        // it upscaled, from a chip the sheet itself had greyed out. Not
+        // [resumed] itself, which is also what tells `persist` this session
+        // came off disk rather than being new.
+        keepsResumedSize = false
         loadSource(uri)
     }
 
@@ -409,7 +437,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                     fps = meta.fps,
                     // A resumed session keeps the size it chose; a new video gets
                     // one below its own, so the default never makes it bigger.
-                    outputP = if (resumed) it.outputP
+                    outputP = if (keepsResumedSize) it.outputP
                     else OutputSize.squeezeDefault(minOf(meta.displayWidth, meta.displayHeight)),
                     originalSizeBytes = size,
                     trimStartMs = 0,
