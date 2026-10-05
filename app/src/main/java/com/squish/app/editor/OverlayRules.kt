@@ -119,7 +119,19 @@ object OverlayRules {
         val main = clip.copy(
             layer = 0,
             volume = levelOnMain(clip.volume, originalVolume),
+            // Each key converted the same way the resting level is, or the
+            // conversion did nothing at all: `volume` is only the fallback once
+            // a clip has keys (Clip.volumeAt), so a keyed overlay moved to the
+            // main track kept its raw keys and went under the camera level a
+            // second time - quieter than it was heard, with nothing to say why.
+            volumeKeys = clip.volumeKeys.map { it.copy(value = levelOnMain(it.value, originalVolume)) },
             opacity = 1f,
+            // And the opacity track with the resting opacity, for the reason the
+            // comment above gives: the keys beat the 1f (Clip.alphaAt), so a
+            // keyed fade written on a picture-in-picture went on fading on the
+            // main track - where the Opacity sheet is not even offered, so there
+            // was no way to see it or take it off.
+            opacityKeys = emptyList(),
             keyframes = emptyList(),
             scale = 1f,
             offsetXFraction = 0f,
@@ -163,8 +175,14 @@ object OverlayRules {
         val clip = lifted.clips.firstOrNull { it.id == clipId } ?: return this
         if (!clip.isOverlay) return this
         val heard = levelAsOverlay(clip.volume, muteOriginal, originalVolume)
+        // Every key the same way, not the resting level alone: `volume` is only
+        // the fallback once a clip has keys (Clip.volumeAt), so a shot with a
+        // keyed level floated out of an edit with the camera sound off kept its
+        // raw keys and went from silent to fully audible over the music - which
+        // is the exact thing this conversion exists to prevent.
+        val heardKeys = clip.volumeKeys.map { it.copy(value = levelAsOverlay(it.value, muteOriginal, originalVolume)) }
         return (if (keepPlacement) lifted else lifted.withPlacementReset(clipId))
-            .let { t -> t.copy(clips = t.clips.map { if (it.id == clipId) it.copy(volume = heard) else it }) }
+            .let { t -> t.copy(clips = t.clips.map { if (it.id == clipId) it.copy(volume = heard, volumeKeys = heardKeys) else it }) }
             .copy(selectedClipId = clipId)
     }
 

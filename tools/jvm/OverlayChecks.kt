@@ -20,6 +20,7 @@ import com.squish.app.timeline.withRowsCompacted
 import com.squish.app.timeline.OVERLAY_LANDING
 import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.TimelineState
+import com.squish.app.timeline.ValueKey
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.transformAt
 import com.squish.app.timeline.withClipAdded
@@ -151,6 +152,22 @@ fun main() {
         val pastEnd = state.withOverlayOnMain("o", 60_000)
         check(pastEnd.baseVideoClips.last().id == "o", "to main past the end")
         check(state.withOverlayOnMain("a", 0) == state, "a main shot was 'dropped' onto the main track")
+
+        // The keyed tracks go the same way the resting values do, because the
+        // keys beat them (Clip.alphaAt, Clip.volumeAt). A keyed opacity carried
+        // onto the main track went on fading there, where the Opacity sheet is
+        // not even offered, so there was no way to see it or take it off; a
+        // keyed level went under the camera level a second time.
+        val keyedOverlay = o.copy(
+            volume = 0.8f,
+            volumeKeys = listOf(ValueKey(0L, 0.5f), ValueKey(2_000L, 1f)),
+            opacityKeys = listOf(ValueKey(0L, 1f), ValueKey(2_000L, 0f))
+        )
+        val keyedState = TimelineState(clips = listOf(video("a", 5_000), video("b", 5_000, start = 5_000), keyedOverlay))
+        val onMain = keyedState.withOverlayOnMain("o", 4_000, originalVolume = 0.5f).byId("o")
+        check(onMain.opacityKeys.isEmpty() && onMain.opacity == 1f, "to main left ${onMain.opacityKeys.size} opacity keys on the shot")
+        check(onMain.volumeKeys.map { it.value } == listOf(1f, 1f), "to main left the level keys raw: ${onMain.volumeKeys.map { it.value }}")
+        check(onMain.volumeKeys.map { it.atMs } == listOf(0L, 2_000L), "to main moved the level keys in time")
     }
 
     // --- Off the main track: the corner, the track closed up behind it. ---------------
@@ -183,6 +200,22 @@ fun main() {
         check(OverlayRules.floatsOverAShot(state.clips, "b"), "the middle of three cannot float")
         check(!OverlayRules.floatsOverAShot(state.clips, "c"), "the last shot is offered a float over nothing")
         check(!OverlayRules.floatsOverAShot(listOf(video("only", 5_000)), "only"), "the only shot is offered a float")
+
+        // A keyed level converts the same way the resting one does. It was the
+        // resting field alone, which is dead once a clip has keys, so a shot
+        // with a keyed level floated out of an edit with the camera sound off
+        // kept its raw keys and went from silent to fully audible over the
+        // music - the exact thing this conversion exists to prevent.
+        val keyedShot = TimelineState(clips = state.clips.map {
+            if (it.id == "b") it.copy(volume = 1f, volumeKeys = listOf(ValueKey(0L, 1f), ValueKey(5_000L, 0.5f))) else it
+        })
+        val muted = keyedShot.withMainOnOverlay("b", muteOriginal = true, originalVolume = 1f).byId("b")
+        check(muted.volume == 0f && muted.volumeKeys.all { it.value == 0f },
+            "floated out of a muted edit the shot is heard at ${muted.volume} / ${muted.volumeKeys.map { it.value }}")
+        val quiet = keyedShot.withMainOnOverlay("b", muteOriginal = false, originalVolume = 0.4f).byId("b")
+        check(quiet.volume == 0.4f && quiet.volumeKeys.map { it.value } == listOf(0.4f, 0.2f),
+            "floated out of a quiet edit the keys are ${quiet.volumeKeys.map { it.value }}")
+        check(quiet.volumeKeys.map { it.atMs } == listOf(0L, 5_000L), "the float moved the level keys in time")
         check(!OverlayRules.floatsOverAShot(state.clips + video("o", 2_000, layer = 1), "o"), "an overlay is offered a float")
         // A shot after it on an overlay row is not under it.
         check(!OverlayRules.floatsOverAShot(listOf(video("m", 5_000), video("o", 2_000, start = 6_000, layer = 1)), "m"), "an overlay after the shot counts as under it")

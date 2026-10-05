@@ -415,11 +415,19 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
         return fits
     }
 
-    /** Source time of the tracked clip into timeline time. */
-    private fun trackInTimelineTime(track: MotionTrack, clip: Clip): MotionTrack {
-        val delta = clip.timelineStartMs - clip.sourceInMs
-        return MotionTrack(track.samples.map { it.copy(atMs = it.atMs + delta) })
-    }
+    /**
+     * Source time of the tracked clip into timeline time.
+     *
+     * Through the clip's speed curve, not by one constant offset. The two agree
+     * only at 1x: on a 2x shot the track's samples span the whole source window
+     * while the clip plays for half as long, so a pinned caption or overlay read
+     * the subject's position from twice as far into the footage as the frame on
+     * screen - drifting further the deeper into the shot it got, and running off
+     * the end of the clip's own samples before the shot was over.
+     * `Clip.timelineAtSource` is the conversion; it already existed.
+     */
+    private fun trackInTimelineTime(track: MotionTrack, clip: Clip): MotionTrack =
+        MotionTrack(track.samples.map { it.copy(atMs = clip.timelineAtSource(it.atMs)) })
 
     /**
      * Pins a mask to the track - the point of which is hiding a face or a plate.
