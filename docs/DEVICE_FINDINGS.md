@@ -1582,3 +1582,46 @@ Nothing here was seen. In rough order of what would show soonest:
    start shaking - and a gimbal shot stabilized, whose edges must be clean.
 7. **A long export on this phone** (twenty-odd cuts over a light leak), for
    the blended-still cache: it used to be the shape of an out-of-memory.
+
+## Two joins the reel had and we did not (5 October, afternoon)
+
+Built on the desktop with no phone attached. The reel in Downloads was read a
+second time, frame by frame off the file rather than by eye on the phone, and
+two of its joins turned out not to be any of the twenty-six kinds we had:
+**Burn out** (the old shot turning white and hanging over the new one as a
+thinning ghost - the new shot is whole underneath from the first frame) and
+**Blur** (a focus pull through the cut). `docs/COMPETITORS.md` §4 has the
+reading; the arithmetic is executed in `tools/jvm/ExportPlanChecks.kt` and
+negative-tested. "Animate every photo" became "Move every shot" on a track that
+is not all photos, which is the other thing that reel does to every one of its
+twenty-four shots.
+
+On the phone, in this order:
+
+1. **A Blur join on two main-track shots.** Softest at the cut, sharp either
+   side of it. Then export and compare: the preview and the file run the same
+   nine taps on the same number, but by different routes - the preview softens
+   the *decoded picture* in the surface's effects pass, the file the *finished
+   canvas* in TransitionEffect - so on a shot cropped or placed much smaller
+   the softness should read a little wider on screen. Note how much.
+2. **A Blur scrubbed through rather than played.** The softness is a GL
+   uniform, so it needs a frame drawn to reach the screen; `PreviewEngine
+   .remember` asks for a redraw when it changes. Drag the strip slowly across
+   the join: the picture must soften and sharpen under the finger, not hold one
+   softness until playback starts.
+3. **A Blur on an overlay** (one butted after another on its row). An overlay's
+   chain ends in the premultiply pass, not the effects pass, so its softness
+   goes through a different shader - the same nine taps, written twice. Check a
+   *keyed* overlay's hole softens with its edge rather than keeping a hard rim.
+4. **A Burn out on two shots.** The new shot whole underneath from the first
+   frame, the old one white over it and thinning. Then on an overlay, where it
+   is the overlay arriving *out of* the white - which is a special case in
+   `ExportPlan.arrival`, since an arrival has no shot leaving to burn.
+5. **Both against a file**, and a Burn out over a padded canvas and over a
+   keyed overlay: the white must land on the picture and not in the hole.
+6. **Move every shot** on a reel of a dozen video shots: twelve slow moves,
+   five presets alternating, one undo step, and a second press changing
+   nothing. On a track of photos the button still reads "Animate every photo".
+7. **The Blur tile on the sheet**, which blurs the thumbnail whole rather than
+   per shot and exaggerates the reach to read at that size. Below Android 12 it
+   is the dissolve underneath - not this phone, but worth knowing.
