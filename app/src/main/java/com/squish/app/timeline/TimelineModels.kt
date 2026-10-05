@@ -1795,7 +1795,18 @@ fun TimelineState.withFrozenFrame(clipId: String, atMs: Long, still: Clip): Time
     val halves = clip.splitAt(atMs)
     val pieces: List<Clip> = when {
         halves != null -> listOf(halves.first, frozen.copy(timelineStartMs = halves.first.timelineEndMs), halves.second)
-        atMs - clip.timelineStartMs <= clip.timelineEndMs - atMs -> listOf(frozen.copy(timelineStartMs = clip.timelineStartMs), clip)
+        // Too near the head to cut, so the still goes in front of the whole
+        // shot - and the join into the shot is now the join into the *still*.
+        // The transition has to move with it: left on the shot, layOutMain read
+        // it as the freeze-to-shot join, so the dissolve the person set on the
+        // cut before vanished from the preview, the strip and the file, and a
+        // new one appeared between the frozen frame and the shot it was cut
+        // from. Every other path that puts a piece in front does this -
+        // halvesAt, withSilencesRemoved, Duplicate.
+        atMs - clip.timelineStartMs <= clip.timelineEndMs - atMs -> listOf(
+            frozen.copy(timelineStartMs = clip.timelineStartMs, transitionIn = clip.transitionIn),
+            clip.copy(transitionIn = Transition())
+        )
         else -> listOf(clip, frozen.copy(timelineStartMs = clip.timelineEndMs))
     }
     if (clip.isMain) {

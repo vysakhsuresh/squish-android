@@ -121,6 +121,31 @@ fun main() {
         check(nearEnd.main() == listOf("a", still.id, "b"), "freeze near the end: ${nearEnd.main()}")
         butted(nearEnd, "freeze near the end")
 
+        // The still goes in front of the whole shot there, so the join into the
+        // shot is now the join into the *still* and the transition moves with
+        // it. Left on the shot, layOutMain read it as the freeze-to-shot join:
+        // the dissolve set on the cut before vanished from the preview, the
+        // strip and the file, and a new one ran from the frozen frame into the
+        // shot it was cut from.
+        run {
+            val x = video("x", 5_000)
+            val dissolved = video("d", 10_000, start = 5_000).copy(transitionIn = Transition(TransitionType.CrossFade, 600))
+            val tail = video("t", 5_000, start = 15_000)
+            val before = TimelineState(clips = listOf(x, dissolved, tail))
+            val frozenIn = before.withFrozenFrame("d", dissolved.timelineStartMs + 100, still)
+            check(frozenIn.main() == listOf("x", still.id, "d", "t"), "freeze at a dissolved shot's head: ${frozenIn.main()}")
+            check(frozenIn.byId(still.id).transitionIn.type == TransitionType.CrossFade,
+                "the join did not move onto the still: ${frozenIn.byId(still.id).transitionIn}")
+            check(frozenIn.byId(still.id).transitionIn.durationMs == 600L, "the join's length changed")
+            check(!frozenIn.byId("d").transitionIn.isActive,
+                "a dissolve runs from the frozen frame into the shot it was cut from: ${frozenIn.byId("d").transitionIn}")
+            // And the edit is still the length the overlap makes it, rather than
+            // 600 ms longer because the dissolve was dropped.
+            val was = before.baseVideoClips.maxOf { it.timelineEndMs }
+            val now = frozenIn.baseVideoClips.maxOf { it.timelineEndMs }
+            check(now == was + still.durationMs, "the edit came out ${now - was} longer, not the still's ${still.durationMs}")
+        }
+
         // The placement at that moment, still: a push-in frozen half-way is held at 1.09.
         val push = listOf(Keyframe(0, Transform(scale = 1f), KeyframeEasing.Linear), Keyframe(10_000, Transform(scale = 1.18f), KeyframeEasing.Linear))
         val moving = TimelineState(clips = listOf(a.copy(keyframes = push), b)).withFrozenFrame("a", 5_000, still)
