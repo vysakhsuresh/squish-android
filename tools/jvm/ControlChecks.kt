@@ -267,6 +267,23 @@ fun main() {
         )
     }
 
+    // ---- A cache can remember the answer "nothing" --------------------------
+    run {
+        // getOrPut reads a stored null as absent and calls its lambda again, so
+        // a cache of a nullable thing cannot remember a miss. Three of those in
+        // one day: the export's blended-still bitmaps, the preview's, and the
+        // caption renderer's typefaces - where the missing font was looked for
+        // on disk again for every caption of every frame. Nothing nullable goes
+        // through getOrPut; containsKey does.
+        val nullable = Regex("""getOrPut\([^)]*\)\s*\{[^}]*(?:getOrNull\(\)|takeIf|\?\.let\()""", RegexOption.DOT_MATCHES_ALL)
+        readAll(SRC).forEach { (path, text) ->
+            nullable.findAll(text).forEach {
+                problems += "$path caches something that can be null through getOrPut, which reads a stored " +
+                    "null as absent and recomputes it every time - use containsKey"
+            }
+        }
+    }
+
     // ---- A cut is one shot becoming another --------------------------------
     run {
         val audio = read("$SRC/editor/edits/AudioEdits.kt")
