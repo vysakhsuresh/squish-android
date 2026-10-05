@@ -11,7 +11,7 @@ run() {
 }
 TIMELINE="$SRC/timeline/SpeedRamp.kt $SRC/timeline/TimelineModels.kt $SRC/timeline/VoiceEffect.kt
   $SRC/timeline/TimelineLanes.kt $SRC/timeline/Keyframe.kt $SRC/timeline/ValueTracks.kt $SRC/timeline/Mask.kt $SRC/timeline/ChromaKey.kt
-  $SRC/timeline/Background.kt $SRC/timeline/LayerBlend.kt $SRC/editor/TimedEffect.kt
+  $SRC/timeline/Background.kt $SRC/timeline/LayerBlend.kt $SRC/editor/TimedEffect.kt $SRC/editor/MotionPreset.kt $SRC/editor/PolishRules.kt
   $SRC/media/effects/ToneCurve.kt $SRC/media/effects/Lut.kt $SRC/media/effects/ColorWheels.kt $SRC/media/effects/SkinTone.kt $SRC/media/effects/Look.kt $SRC/editor/ClipCrop.kt $SRC/editor/CropRect.kt
   tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt
   $SRC/media/video/ObjectTracker.kt $SRC/media/video/MotionEstimator.kt
@@ -36,7 +36,7 @@ run preview    "$SRC/editor/PreviewBox.kt" tools/jvm/PreviewChecks.kt
 run previewrules "$SRC/editor/PreviewRules.kt" tools/jvm/PreviewRulesChecks.kt
 run probegate  "$SRC/editor/ProbeGate.kt" tools/jvm/ProbeGateChecks.kt
 run toolrules  "$SRC/editor/ToolRules.kt" tools/jvm/ToolRulesChecks.kt
-run polish     $TIMELINE "$SRC/editor/MotionPreset.kt" "$SRC/editor/PolishRules.kt" tools/jvm/PolishRulesChecks.kt
+run polish     $TIMELINE tools/jvm/PolishRulesChecks.kt
 run window     "$SRC/timeline/TimelineWindow.kt" tools/jvm/WindowChecks.kt
 run span       "$SRC/timeline/TimelineSpan.kt" tools/jvm/SpanChecks.kt
 run filmstrip  "$SRC/media/video/Filmstrip.kt" tools/jvm/FilmstripChecks.kt
