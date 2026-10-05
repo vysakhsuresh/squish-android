@@ -14,6 +14,13 @@ package com.squish.app.timeline
  * them, so a song under the picture is cut at the same two moments and keeps
  * step. Overlays and sounds inside the stretch go with it; ones that straddle an
  * edge are cut at it and keep the part that survives.
+ *
+ * One edge is blunt and meant to be: a cut that would leave a piece under
+ * [MIN_CLIP_MS] is refused, so a clip straddling an edge by less than that
+ * keeps the sliver instead of being carved into something too short to hold or
+ * draw. At most 200 ms of a sound reaches past where it should - which is
+ * better than a 40 ms clip on the strip, and is why the refusal exists. What it
+ * must not do is leave two overlays on one row, and that is handled below.
  */
 fun TimelineState.withSpanRemoved(fromMs: Long, toMs: Long): TimelineState {
     val start = minOf(fromMs, toMs).coerceAtLeast(0L)
