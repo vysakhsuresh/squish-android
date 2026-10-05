@@ -355,12 +355,26 @@ fun main() {
     }
 
     // ---- Two handles on one strip do not cover each other -------------------
+    //
+    // This used to assert the shape of the arithmetic that was inline here -
+    // "val share =" and "width = targetDp" - which held it to one particular
+    // wrong answer: that split closes the gap only while the kept stretch is at
+    // least a target wide, and below that the two overlapped again. The
+    // geometry is `TrimRules.handleBoxes` now, where it can be executed, and
+    // TrimRulesChecks sweeps every width of keep for an overlap. What is left
+    // for a text check is that the strip still *asks* it rather than working
+    // the widths out again on the spot.
     run {
         val strip = read("$SRC/tools/TrimStrip.kt")
         check(
-            strip.contains("val share = ") && strip.contains("width = targetDp"),
-            "Snip's two trim handles are back to a fixed width - below a 48 dp keep the end handle, drawn " +
-                "second, covers the start bar end to end and takes its touches"
+            strip.contains("TrimRules.handleBoxes("),
+            "Snip's trim handles are no longer laid out by TrimRules.handleBoxes, so nothing executed holds " +
+                "them apart - below a 48 dp keep the end handle, drawn second, covers the start bar and takes its touches"
+        )
+        check(
+            !strip.contains("val share = "),
+            "the old inline split is back in TrimStrip: it meets in the middle of the *overlap*, which closes " +
+                "the gap only while the keep is at least one target wide"
         )
     }
 
