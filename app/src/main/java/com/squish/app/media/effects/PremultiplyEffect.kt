@@ -15,13 +15,26 @@ import androidx.media3.effect.GlShaderProgram
 import java.io.IOException
 
 /**
- * The last step of a preview layer's chain: straight alpha made premultiplied.
+ * The last step of a layer's chain: straight alpha made premultiplied.
  *
- * Preview only. Everything upstream - key, background, mask - writes straight
- * alpha because that is what the export's compositor blends; a view composites
- * premultiplied, and reading one as the other adds every cut-away pixel's colour
- * onto the picture behind it. Never in an export chain, where it would darken
- * every soft edge a second time.
+ * Everything upstream - key, background, mask - writes straight alpha because
+ * that is what the export's compositor blends; a view composites premultiplied,
+ * and reading one as the other adds every cut-away pixel's colour onto the
+ * picture behind it.
+ *
+ * Two places want it, and both are places where nothing downstream will blend
+ * the alpha:
+ *
+ * - **A preview layer**, which the view composites itself.
+ * - **The one-sequence export** (`VideoProcessor`, `rolls == null`), which has
+ *   no compositor and whose encoder drops alpha: a Cut out mask or a keyed hole
+ *   wrote the whole picture there, the shape ignored. Premultiplied, what the
+ *   mask or the key hid is black, as the composited path and the preview show
+ *   it. This doc used to say "never in an export chain", which that path had
+ *   already contradicted.
+ *
+ * Not on the *composited* export's chain, where the compositor blends straight
+ * alpha and this would darken every soft edge a second time.
  */
 class PremultiplyEffect(
     /**
