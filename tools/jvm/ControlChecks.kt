@@ -776,6 +776,37 @@ fun main() {
         )
     }
 
+    // ---- Nothing in the app can send a body. -------------------------------
+    //
+    // The promise on Settings' privacy card, and the one thing in this app that
+    // would be worth a user's anger: footage, photos and projects never leave
+    // the phone. `Online` is the only thing that opens a connection, both of
+    // its calls take a URL and give back bytes, and `open` sets a timeout, a
+    // redirect policy and a User-Agent and nothing else - no request method, no
+    // doOutput - so every request is a GET. This holds that shape, because a
+    // promise nothing checks is a promise waiting to be broken by a helpful
+    // refactor.
+    run {
+        val online = read("$SRC/online/Online.kt")
+        check(online.contains("HttpURLConnection"), "Online.kt no longer opens a connection - this check has rotted")
+        check(
+            !Regex("doOutput").containsMatchIn(online),
+            "Online.kt sets doOutput, which is how a request gets a body - nothing here may upload"
+        )
+        check(
+            !Regex("setRequestMethod|requestMethod\\s*=").containsMatchIn(online),
+            "Online.kt sets a request method: every request here is a GET, and a POST is an upload"
+        )
+        // And nothing else in the app opens one behind its back.
+        readAll(SRC).forEach { (path, text) ->
+            if (path.endsWith("online/Online.kt")) return@forEach
+            Regex("openConnection\\(\\)|HttpURLConnection|OkHttpClient|Retrofit").findAll(text).forEach { m ->
+                problems += "$path reaches the network directly (${m.value}) - every request goes through " +
+                    "Online.get or Online.download, which refuse while the Settings switch is off"
+            }
+        }
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

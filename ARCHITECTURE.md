@@ -105,9 +105,25 @@ playback it never fires.
 These are what the app is actually competing on. They are implemented, not planned.
 
 ### Nothing is ever uploaded
-No network permission is requested, no SDK phones home, and there is no account.
-Every frame is decoded, composed and encoded on the device. This is not a privacy
-policy; it is an architectural fact you can verify from the manifest.
+No SDK phones home and there is no account. Every frame is decoded, composed and
+encoded on the device: no footage, no photo and no project ever leaves it.
+
+This used to read "no network permission is requested", and that stopped being
+true when the online features arrived - free music, stock footage, fonts and
+caption translation. `INTERNET` is in the manifest, with the reason beside it.
+What is still an architectural fact rather than a policy is the *shape* of the
+permission's use: every request in the app goes through `online/Online.kt`,
+whose `get` and `download` throw while the Settings switch is off, and a tool
+that needs the internet asks first (`rememberOnlineGate`). Both of those take a
+URL and give back bytes - **there is no call in `Online` that sends a body**, so
+there is nowhere for a video to go. Settings' privacy card says exactly that
+("off until you turn them on, and only fetch"), and a grep is the check:
+`Online.open` sets a timeout, a redirect policy and a User-Agent and nothing
+else - no `setRequestMethod`, no `doOutput` - so every request is a GET. The one
+`outputStream()` in the file writes the bytes that came *back* into a local file.
+
+Google's datatransport, which came in with MediaPipe, is removed in the
+manifest. Keep it removed.
 
 ### No edit is ever lost
 `ProjectAutosave` writes the whole timeline to disk every 1.5 seconds, and the write
