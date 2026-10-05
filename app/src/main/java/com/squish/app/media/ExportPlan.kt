@@ -317,6 +317,9 @@ object ExportPlan {
      * grows it about its centre. Only the part of the frame from [keepFrom] to
      * [keepTo] across, and [keepFromY] to [keepToY] down (fractions of the
      * frame), is drawn at all. [white] mixes what is drawn towards white.
+     * [blur] softens it: how far apart the nine taps are taken, as a fraction
+     * of the frame, so the softness is the same at any resolution - the same
+     * number and the same nine taps the effects library's Blur uses.
      */
     data class Draw(
         val alpha: Float = 1f,
@@ -327,10 +330,11 @@ object ExportPlan {
         val scale: Float = 1f,
         val keepFromY: Float = 0f,
         val keepToY: Float = 1f,
-        val white: Float = 0f
+        val white: Float = 0f,
+        val blur: Float = 0f
     ) {
         val isPlain: Boolean
-            get() = alpha >= 1f && shiftX == 0f && shiftY == 0f && scale == 1f && white == 0f &&
+            get() = alpha >= 1f && shiftX == 0f && shiftY == 0f && scale == 1f && white == 0f && blur == 0f &&
                 keepFrom <= 0f && keepTo >= 1f && keepFromY <= 0f && keepToY >= 1f
 
         /** This draw at [factor] of its opacity: a clip's own fade under its transition. */
@@ -346,7 +350,12 @@ object ExportPlan {
             keepTo = minOf(keepTo, own.keepTo),
             keepFromY = maxOf(keepFromY, own.keepFromY),
             keepToY = minOf(keepToY, own.keepToY),
-            white = maxOf(white, own.white)
+            white = maxOf(white, own.white),
+            // The wider of the two rather than the sum: two softenings of the
+            // same picture are one softening, and adding them would take a
+            // defocus join on a clip that is also being blurred past the reach
+            // the nine taps are shaped for.
+            blur = maxOf(blur, own.blur)
         )
 
         /**
@@ -368,11 +377,13 @@ object ExportPlan {
             keepFromY = 1f - keepToY,
             keepToX = keepTo,
             keepToY = 1f - keepFromY,
-            white = white.coerceIn(0f, 1f)
+            white = white.coerceIn(0f, 1f),
+            // Symmetric about the pixel, so it needs no turning over.
+            blur = blur.coerceIn(0f, MAX_BLUR)
         )
     }
 
-    /** [Draw.shaderUniforms]: what goes into uAlpha, uShift, uScale, uKeep and uWhite, texture-space Y. */
+    /** [Draw.shaderUniforms]: what goes into uAlpha, uShift, uScale, uKeep, uWhite and uBlur, texture-space Y. */
     data class ShaderUniforms(
         val alpha: Float,
         val shiftX: Float,
@@ -382,8 +393,17 @@ object ExportPlan {
         val keepFromY: Float,
         val keepToX: Float,
         val keepToY: Float,
-        val white: Float
+        val white: Float,
+        val blur: Float
     )
+
+    /**
+     * As far apart as the nine taps are ever taken. Past this the ring reads as
+     * nine copies rather than as a softening, which is the fault of a box of
+     * nine and not of the number: the effects library's Blur tops out at 0.012
+     * for the same reason.
+     */
+    const val MAX_BLUR = 0.014f
 
     val PLAIN = Draw()
     private val HIDDEN = Draw(alpha = 0f)
@@ -554,6 +574,25 @@ object ExportPlan {
                 Draw(alpha = minOf(1f, 3f * q), scale = POP_FROM + (1f - POP_FROM) * smoothstep(0f, 1f, q)) to HIDDEN
             }
 
+        // A focus pull through the cut: both shots softened by the same amount,
+        // most at the middle, dissolving across. Both the same, like the Glow,
+        // so the mix reads alike whichever shot is on top.
+        TransitionType.Defocus -> {
+            val soft = BLUR_PEAK * (1f - kotlin.math.abs(2f * p - 1f))
+            if (incomingOnTop) Draw(alpha = p, blur = soft) to Draw(blur = soft)
+            else Draw(blur = soft) to Draw(alpha = 1f - p, blur = soft)
+        }
+
+        // The old shot burns to white over the new one and thins away. The new
+        // shot is whole underneath from the first frame; what fades is the white
+        // ghost of the old one. Zero at p=0, so the overlap still opens on the
+        // old shot alone.
+        TransitionType.BurnOut -> {
+            val burn = smoothstep(0f, BURN_IN, p)
+            if (incomingOnTop) Draw(alpha = p) to Draw(white = burn)
+            else PLAIN to Draw(alpha = 1f - p, white = burn)
+        }
+
         // Black for the moments either side of the cut, hard in and out.
         TransitionType.Blackout ->
             if (p < 0.5f) HIDDEN to Draw(alpha = 1f - smoothstep(0.3f, 0.45f, p))
@@ -575,6 +614,12 @@ object ExportPlan {
 
     /** How far towards white a Glow goes at its middle. */
     private const val GLOW_PEAK = 0.7f
+
+    /** How soft a Defocus is at its middle: the nine taps' reach, a fraction of the frame. */
+    private const val BLUR_PEAK = 0.010f
+
+    /** How much of a Burn out is spent getting the old shot to white. */
+    private const val BURN_IN = 0.35f
 
     /** Whether the Flicker shows the new shot at [p]: every other beat, and always at the end. */
     fun flickerShowsIncoming(p: Float): Boolean {

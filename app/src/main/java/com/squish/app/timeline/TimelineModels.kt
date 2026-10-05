@@ -62,7 +62,26 @@ enum class TransitionType(val label: String, val category: TransitionCategory) {
     /** The new shot grows out of the middle. */
     PopIn("Pop in", TransitionCategory.Camera),
     /** A short, hard black on the cut. */
-    Blackout("Blackout", TransitionCategory.Light)
+    Blackout("Blackout", TransitionCategory.Light),
+    /**
+     * Both shots soften to the cut and sharpen away from it: a focus pull.
+     *
+     * Read off a wedding reel's own timeline (docs/COMPETITORS.md §4) - it
+     * joins two of its twenty-four shots this way, and it is the one join
+     * Squish had no shape for. The blur is the same nine taps the effects
+     * library's own Blur uses, so the preview and the file run one program on
+     * one number.
+     */
+    Defocus("Blur", TransitionCategory.Basic),
+    /**
+     * The old shot burns out to white over the new one and fades off it.
+     *
+     * Not the Flash, which hides both shots behind white, nor the Dip, which
+     * goes through it: here the new shot is up from the first frame and the old
+     * one hangs over it as a white ghost of itself, thinning away. The same reel
+     * uses it four times, and it is what a blown-out dissolve looks like.
+     */
+    BurnOut("Burn out", TransitionCategory.Light)
 }
 
 /**

@@ -32,18 +32,27 @@ class FxEffect(
      * writes the frame opaque. The export's pass runs on the finished,
      * composited frame and leaves it as it is.
      */
-    private val overBlack: Boolean = false
+    private val overBlack: Boolean = false,
+    /**
+     * A softness this pass adds on top of whatever the library asks for, the
+     * wider of the two winning: the preview's share of a Defocus join, which
+     * the file draws in its own TransitionEffect instead (see
+     * SurfaceDraw.blur). Zero in the export, whose pass runs on the composited
+     * frame and would soften every layer at once.
+     */
+    private val extraBlur: () -> Float = { 0f }
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        FxShaderProgram(context, useHdr, effectsNow, overBlack)
+        FxShaderProgram(context, useHdr, effectsNow, overBlack, extraBlur)
 }
 
 private class FxShaderProgram(
     context: Context,
     useHdr: Boolean,
     private val effectsNow: () -> List<TimedEffect>,
-    private val overBlack: Boolean
+    private val overBlack: Boolean,
+    private val extraBlur: () -> Float
 ) : BaseGlShaderProgram(useHdr, /* texturePoolCapacity= */ 1) {
 
     private val glProgram: GlProgram = try {
@@ -78,7 +87,7 @@ private class FxShaderProgram(
             glProgram.setFloatsUniform("uInvert", floatArrayOf(p.invert))
             glProgram.setFloatsUniform("uScan", floatArrayOf(p.scan))
             glProgram.setFloatsUniform("uNoise", floatArrayOf(p.noise))
-            glProgram.setFloatsUniform("uBlur", floatArrayOf(p.blur))
+            glProgram.setFloatsUniform("uBlur", floatArrayOf(maxOf(p.blur, extraBlur())))
             glProgram.setFloatsUniform("uHue", floatArrayOf(p.hue))
             glProgram.setFloatsUniform("uTime", floatArrayOf(p.timeSec))
             glProgram.setFloatsUniform("uOverBlack", floatArrayOf(if (overBlack) 1f else 0f))

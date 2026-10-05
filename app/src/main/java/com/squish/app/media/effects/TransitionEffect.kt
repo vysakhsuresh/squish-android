@@ -97,6 +97,7 @@ private class TransitionShaderProgram(
             glProgram.setFloatsUniform("uScale", floatArrayOf(u.scale))
             glProgram.setFloatsUniform("uKeep", floatArrayOf(u.keepFromX, u.keepFromY, u.keepToX, u.keepToY))
             glProgram.setFloatsUniform("uWhite", floatArrayOf(u.white))
+            glProgram.setFloatsUniform("uBlur", floatArrayOf(u.blur))
             glProgram.setFloatsUniform("uOpaque", floatArrayOf(if (opaque) 1f else 0f))
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)

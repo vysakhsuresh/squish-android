@@ -95,7 +95,20 @@ data class SurfaceDraw(
     val revealFromY: Float = 0f,
     val revealToY: Float = 1f,
     /** Flash, glow, dip to white: how far towards white the picture is mixed. */
-    val white: Float = 0f
+    val white: Float = 0f,
+    /**
+     * Defocus: how far apart the blur's nine taps are, as a fraction of the
+     * frame. Not drawn by the Compose layer like the rest of this - Compose
+     * cannot blur a TextureView's content without a RenderEffect, which is
+     * API 31 and would leave Android 10 and 11 showing a join the file does
+     * not - but handed to the surface's own effects pass, which is the same
+     * nine-tap program on the same number that the file's TransitionEffect
+     * runs. The one difference, and it is small: the preview softens the
+     * decoded picture, the file the finished canvas, so on a shot that is
+     * cropped or placed much smaller the softness reads a little wider on
+     * screen than in the file.
+     */
+    val blur: Float = 0f
 ) {
     companion object {
         /** [draw] as the screen draws it, on top ([zIndex] 1) or under. */
@@ -110,7 +123,8 @@ data class SurfaceDraw(
             revealFrom = draw.keepFrom,
             revealFromY = draw.keepFromY,
             revealToY = draw.keepToY,
-            white = draw.white
+            white = draw.white,
+            blur = draw.blur
         )
     }
 }
@@ -266,6 +280,15 @@ class PreviewEngine(private val context: Context) {
         val effects = AtomicReference<List<TimedEffect>>(emptyList())
 
         /**
+         * A defocus join's softness for this surface, read by its effects pass
+         * on every frame (see SurfaceDraw.blur). Kept apart from [effects] -
+         * which is the library's list and is only rebuilt when the clip or the
+         * list changes - because this one is a function of where the playhead
+         * is and changes on every tick of a transition.
+         */
+        val transitionBlur = AtomicReference(0f)
+
+        /**
          * The blended still this surface draws under, in this surface's own
          * clock. One at a time: a second would need a second sampler and a
          * second branch in the shader, and nobody stacks two light leaks.
@@ -410,7 +433,7 @@ class PreviewEngine(private val context: Context) {
                         blendStill.get()?.placementAt?.invoke(atMs)
                     })
                     // Writes alpha 1, so a base frame reaches its view opaque.
-                    add(FxEffect({ effects.get() }, overBlack = true))
+                    add(FxEffect({ effects.get() }, overBlack = true, extraBlur = { transitionBlur.get() }))
                 } else {
                     // A layer keeps its transparency all the way to the screen,
                     // where its view blends it premultiplied; see PremultiplyEffect.
@@ -1292,6 +1315,17 @@ class PreviewEngine(private val context: Context) {
         surfaceB.wasVisible = b.visible
         if (a.visible) surfaceA.noteShown(a)
         if (b.visible) surfaceB.noteShown(b)
+        // A defocus join softens inside the surface's own pass rather than in
+        // the Compose layer above it (see SurfaceDraw.blur). Every path out of
+        // the drawing comes through here, so a join that ends leaves no blur
+        // behind on the surface it was on. A uniform, unlike the alpha and the
+        // scale above, needs a frame drawn to reach the screen: scrubbed
+        // through a join rather than played, the surface would otherwise hold
+        // the softness it had when the picture last moved.
+        // Both set, then asked: `||` would short-circuit past the second one.
+        val blurMovedA = surfaceA.transitionBlur.getAndSet(a.blur) != a.blur
+        val blurMovedB = surfaceB.transitionBlur.getAndSet(b.blur) != b.blur
+        if (blurMovedA || blurMovedB) requestRedraw()
         return a to b
     }
 

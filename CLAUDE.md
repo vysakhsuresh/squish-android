@@ -1001,6 +1001,23 @@ should work through it and then delete what holds up.
   watch that a grade, mask, key or effect edit still reaches the picture at
   once, paused and playing, and that the loupe still lifts the key while it is
   up.
+- **Two transitions off the reel, read frame by frame (5 October).** Built on
+  the desktop with no phone attached; the arithmetic is executed in
+  `tools/jvm/ExportPlanChecks.kt` and negative-tested. **Burn out** (the old
+  shot turning white and hanging over the new one as a thinning ghost - not the
+  Flash, which hides both) and **Blur** (a focus pull through the cut). The
+  blur is `ExportPlan.Draw.blur`, the nine taps a fraction of the frame apart -
+  the same ring and the same number as the effects library's own Blur. It is a
+  uniform on `TransitionEffect` in the file, and in the preview it goes to the
+  surface's *own* effects pass rather than to a Compose layer, which cannot
+  blur a TextureView without an API-31 RenderEffect. What a device answers: that
+  a Blur join softens on screen as it does in the file (the preview softens the
+  decoded picture, the file the finished canvas, so on a shot cropped or placed
+  much smaller it should read a little wider on screen - by how much?); that a
+  Blur *scrubbed* through rather than played moves on the screen at all (the
+  softness is a uniform, so `PreviewEngine.remember` asks for a redraw when it
+  changes); and that a Burn out over a padded canvas or a keyed overlay whitens
+  the picture and not the hole. `docs/COMPETITORS.md` §4 has the reading.
 - **Sweep four, over the export, media and data layers (5 October).** The three
   sweeps before it went over what you can see; this one went under it, and
   almost none of it shows as a wrong picture - it shows as a long export

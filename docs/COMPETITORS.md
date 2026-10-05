@@ -439,3 +439,56 @@ Built, 5 October:
   Squish imports them the same way - as footage.
 - **Nested timelines / compound clips.** Final Cut's way of grouping; our
   effects-on-the-timeline covers the case people actually use it for.
+
+### Read again, frame by frame off the file itself (5 October)
+
+The reading above was done on the phone, by eye. This one was done off the two
+files on the desktop - frames pulled at a twentieth of a second through the
+joins - and it found two things the first pass took for the ones we already
+have. (There is no ffmpeg on this machine and Application Control refuses to
+run a binary built on the spot, so the frames came out of Windows' own
+`MediaComposition.GetThumbnailsAsync` through PowerShell; the script is in the
+session's scratch, not the repo.)
+
+- **The white one is not our Flash.** At 0.0 s, 4.0 s, 10.0 s and 17.8 s the
+  old shot does not disappear behind white: it *becomes* white, keeps its
+  shape, and hangs over the new shot - which is already up, whole, underneath -
+  as a bright ghost of itself that thins away. Our Flash hides both shots
+  behind a burst; our Dip to white goes through it. Neither reads like this.
+- **Two joins are a focus pull.** At 8.1 s and 18.3 s both shots go soft into
+  the cut and sharpen out of it. We had no shape for that at all - the effects
+  library's Blur is a placed effect over a stretch, not a join.
+
+Both were built the same day, and neither needed a new kind of draw past one:
+
+- **Burn out** (Light). The old shot's white rises over the first third and
+  holds; its alpha falls across the whole join. No new draw - `Draw.white` has
+  been there since the Flash.
+- **Blur** (Basic). `Draw.blur`, the one addition: how far apart nine taps are
+  taken, as a fraction of the frame. Deliberately the same nine taps and the
+  same number as the effects library's own Blur, so a defocus join and a placed
+  blur are one program. In the file it is a uniform on `TransitionEffect`; in
+  the preview it is handed to the surface's own effects pass rather than drawn
+  by Compose, which cannot blur a TextureView's content without a RenderEffect
+  (API 31 - it would leave Android 10 and 11 showing a join the file does not).
+
+`tools/jvm/ExportPlanChecks.kt` executes both. The blur is the one part of a
+draw no pixel check above it can see - a box of nine taps of one flat colour is
+that colour - so it has assertions of its own: sharp at both ends, softest at
+the cut, the same on both shots and on either stacking, never past the ring's
+reach, never leaking into any other kind, and two blurs on one picture taking
+the wider rather than the sum.
+
+What the frames also confirmed, and what we are still not going to build: the
+red-cloth join at 18.5 s is not a transition at all - the saree is thrown
+across the lens and the cut is hidden inside it. The software's whole part in
+it is landing the cut on the right frame and putting a cloth rub under it,
+which "Sound on every cut" already does.
+
+Not seen on a device: no phone attached. What a phone has to answer is that a
+Blur join softens in the preview as it does in the file (they are the same nine
+taps, but the preview softens the decoded picture and the file the finished
+canvas, so on a shot cropped or placed much smaller the softness should read a
+little wider on screen - check how much), that a Blur scrubbed through rather
+than played moves on the screen, and that a Burn out over a padded canvas or a
+keyed overlay whitens only the picture.

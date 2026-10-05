@@ -270,6 +270,95 @@ fun main() {
             check(differs, "$type is a plain cut")
         }
         check(TransitionType.entries.map { it.category }.distinct().size == 4, "a tab has no transitions")
+
+        // --- The softness of a Defocus join, which no pixel above can see. ---
+        //
+        // drawPixel and shaderPixel are fed one flat colour per shot, and a box
+        // of nine taps of one colour is that colour - so the blur is invisible
+        // to every check above and needs its own. It is the only part of a draw
+        // that is not a function of the pixel.
+        run {
+            var peak = 0f
+            for (step in 0..20) {
+                val p = step / 20f
+                for (onTop in listOf(true, false)) {
+                    val (inD, outD) = ExportPlan.blend(TransitionType.Defocus, p, onTop)
+                    check(inD.blur == outD.blur, "defocus p=$p: the two shots are softened differently, ${inD.blur} and ${outD.blur}")
+                    check(inD.blur >= 0f && inD.blur <= ExportPlan.MAX_BLUR, "defocus p=$p: a softness of ${inD.blur}, past the ring's reach")
+                    val other = ExportPlan.blend(TransitionType.Defocus, p, !onTop)
+                    check(other.first.blur == inD.blur, "defocus p=$p: the softness depends on which roll the shot fell on")
+                    peak = maxOf(peak, inD.blur)
+                }
+            }
+            check(peak > 0.005f, "a defocus never softens more than $peak")
+            // Sharp at both ends, so the shots either side of the join are
+            // themselves and the overlap opens and closes on a plain picture.
+            check(ExportPlan.blend(TransitionType.Defocus, 0f, true).let { it.first.blur == 0f && it.second.blur == 0f }, "a defocus opens soft")
+            check(ExportPlan.blend(TransitionType.Defocus, 1f, true).let { it.first.blur == 0f && it.second.blur == 0f }, "a defocus closes soft")
+            // Softest at the cut itself.
+            val mid = ExportPlan.blend(TransitionType.Defocus, 0.5f, true).first.blur
+            listOf(0.1f, 0.25f, 0.75f, 0.9f).forEach { p ->
+                check(ExportPlan.blend(TransitionType.Defocus, p, true).first.blur < mid, "a defocus is as soft at $p as at its middle")
+            }
+            // And it is still a dissolve underneath: the picture crosses over.
+            check(ExportPlan.blend(TransitionType.Defocus, 0.5f, true).first.alpha in 0.4f..0.6f, "a defocus does not cross over")
+
+            // No other kind softens anything. A blur that leaked into a slide
+            // would cost every frame of it nine taps for nothing.
+            for (type in TransitionType.entries.filter { it != TransitionType.Defocus }) {
+                for (step in 0..10) {
+                    val p = step / 10f
+                    val (inD, outD) = ExportPlan.blend(type, p, true)
+                    check(inD.blur == 0f && outD.blur == 0f, "$type softens at p=$p")
+                }
+            }
+
+            // The pass is not skipped for a draw whose only move is the blur.
+            check(!ExportPlan.Draw(blur = 0.01f).isPlain, "a softened draw reads as plain and is skipped")
+            check(ExportPlan.Draw().isPlain, "an untouched draw does not read as plain")
+            // Two softenings of one picture are one softening, the wider.
+            check(ExportPlan.Draw(blur = 0.004f).over(ExportPlan.Draw(blur = 0.01f)).blur == 0.01f, "two blurs were added rather than the wider taken")
+            check(ExportPlan.Draw(blur = 0.012f).over(ExportPlan.Draw(blur = 0.003f)).blur == 0.012f, "the wider blur was lost")
+            // Symmetric about the pixel, so it is not turned over on the way in
+            // the way the shift and the kept band are, and it is clamped.
+            check(ExportPlan.Draw(blur = 0.008f).shaderUniforms().blur == 0.008f, "the softness was changed on its way to the shader")
+            check(ExportPlan.Draw(blur = 1f).shaderUniforms().blur == ExportPlan.MAX_BLUR, "an absurd softness reached the shader whole")
+            check(ExportPlan.Draw(blur = -1f).shaderUniforms().blur == 0f, "a negative softness reached the shader")
+        }
+
+        // --- A Burn out leaves the new shot whole and hangs the old one over it. ---
+        run {
+            // The old shot is itself at the start - the overlap opens on it, as
+            // every kind must - and white before the join is half over.
+            check(ExportPlan.blend(TransitionType.BurnOut, 0f, true).second.white == 0f, "a burn out starts already white")
+            check(ExportPlan.blend(TransitionType.BurnOut, 0.5f, true).second.white > 0.99f, "a burn out is not white by its middle")
+            check(ExportPlan.blend(TransitionType.BurnOut, 1f, true).second.white > 0.99f, "a burn out comes off white")
+            // Rising, never falling: what thins is the ghost's alpha, not its white.
+            var last = -1f
+            for (step in 0..20) {
+                val w = ExportPlan.blend(TransitionType.BurnOut, step / 20f, true).second.white
+                check(w >= last - 1e-6f, "a burn out dims again at ${step / 20f}")
+                last = w
+            }
+            // The new shot is up from the first frame underneath, which is what
+            // makes it a burn out rather than a flash: with the incoming on the
+            // lower roll it is drawn plain and the old one fades off it.
+            check(ExportPlan.blend(TransitionType.BurnOut, 0.5f, incomingOnTop = false).first.isPlain, "a burn out hides the new shot")
+            // And with it on top the mix is a straight dissolve, so the two
+            // stackings land on the same picture (the loop above holds that).
+            check(ExportPlan.blend(TransitionType.BurnOut, 0.5f, incomingOnTop = true).first.alpha in 0.49f..0.51f, "a burn out does not cross over evenly")
+            // Neither of the two new kinds moves the picture: a defocus and a
+            // burn out are both cuts you do not feel as a camera move.
+            for (type in listOf(TransitionType.Defocus, TransitionType.BurnOut)) {
+                for (step in 0..10) {
+                    val (inD, outD) = ExportPlan.blend(type, step / 10f, true)
+                    listOf(inD, outD).forEach {
+                        check(it.shiftX == 0f && it.shiftY == 0f && it.scale == 1f, "$type moves the picture at ${step / 10f}")
+                        check(it.keepFrom == 0f && it.keepTo == 1f && it.keepFromY == 0f && it.keepToY == 1f, "$type cuts the picture at ${step / 10f}")
+                    }
+                }
+            }
+        }
         // A flicker ends on the new shot however it is sampled.
         check(ExportPlan.flickerShowsIncoming(1f) && !ExportPlan.flickerShowsIncoming(0f), "flicker ends")
 
