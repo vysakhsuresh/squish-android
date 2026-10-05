@@ -1,5 +1,6 @@
 package com.squish.app.media
 
+import com.squish.app.editor.Timecode
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -138,7 +139,7 @@ class ExportService : Service() {
             percent == null -> "Starting the encoder…"
             else -> buildString {
                 append("$percent%")
-                progress.remainingMs?.let { append(" · about ${clockOf(it)} left") }
+                progress.remainingMs?.let { append(" · about ${Timecode.clock(it)} left") }
             }
         }
         return NotificationCompat.Builder(this, CHANNEL)
@@ -155,12 +156,6 @@ class ExportService : Service() {
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setContentIntent(open)
             .build()
-    }
-
-    /** "4:07" - minutes and seconds, which is the resolution anyone waiting cares about. */
-    private fun clockOf(ms: Long): String {
-        val total = (ms / 1000).coerceAtLeast(0)
-        return "%d:%02d".format(total / 60, total % 60)
     }
 
     companion object {

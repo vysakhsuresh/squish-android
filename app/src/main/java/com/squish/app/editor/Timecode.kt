@@ -97,6 +97,19 @@ object Timecode {
     /** "1:04.320 · f1929" */
     fun formatWithFrame(ms: Long, fps: Float): String = "${format(ms)} · f${frameAt(ms, fps)}"
 
+    /**
+     * "4:07" - minutes and seconds, the resolution anyone waiting cares about.
+     *
+     * For how long is left of a render, which is said in two places at once:
+     * the progress card on screen and the notification behind it. They each had
+     * their own copy of this, which is two chances to drift and a user watching
+     * both of them at the same time.
+     */
+    fun clock(ms: Long): String {
+        val total = (ms / 1000).coerceAtLeast(0)
+        return "%d:%02d".format(total / 60, total % 60)
+    }
+
     /** Signed offset for the sync readout: "+120 ms (4f)" / "-83 ms (-2f)". */
     fun formatOffset(ms: Long, fps: Float): String {
         val frames = if (fps > 0f) (ms / frameDurationMs(fps).toDouble()).roundToLong() else 0L

@@ -1,5 +1,6 @@
 package com.squish.app.ui.components
 
+import com.squish.app.editor.Timecode
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -119,11 +120,11 @@ fun ExportProgressCard(
         if (!saving) {
             Text(
                 buildString {
-                    append(clockOf(progress.elapsedMs))
+                    append(Timecode.clock(progress.elapsedMs))
                     append(" elapsed")
                     progress.remainingMs?.let {
                         append("  ·  about ")
-                        append(clockOf(it))
+                        append(Timecode.clock(it))
                         append(" left")
                     }
                 },
@@ -184,8 +185,3 @@ private fun ProgressTrack(fraction: Float?, eased: Float, accent: Color) {
     }
 }
 
-/** "4:07" — minutes and seconds, which is the resolution anyone waiting cares about. */
-private fun clockOf(ms: Long): String {
-    val total = (ms / 1000).coerceAtLeast(0)
-    return "%d:%02d".format(total / 60, total % 60)
-}
