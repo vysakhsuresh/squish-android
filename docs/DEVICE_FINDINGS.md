@@ -1300,3 +1300,25 @@ nothing is heard.** It is 128 kbps of silence in every file a soundless edit
 makes. That needs a device, because `BUILD_NOTES.md` records that the base
 rolls lean on a sequence declaring sound so gaps and photos get silence - true
 when *something* has sound, and the case to prove is when nothing does.
+
+### Worth trying on a device: a trim in the editor could copy the stream
+
+From the same three exports. At Original size the sheet asked the encoder for
+300 kbps - the floor - because the source is a 250 kbps WhatsApp clip, and the
+encoder delivered 240. So an edit that changed nothing about the picture was
+re-encoded a generation down for no gain.
+
+`VideoProcessor.isPlainTrim` exists for exactly this and copies the stream
+instead, but it requires `state.videoClips.isEmpty()`, which is the quick
+tools' shape and never the editor's: a project opened on one video has one
+clip in `videoClips` from the first frame, so `trimOnly` was false on all
+three runs (the logcat line says so).
+
+Widening it to "one main shot, nothing else: no overlay, no text, no effect,
+no grade, no crop, no turn, Original size, Auto rate, Recommended quality, no
+HEVC, full volume, not muted, no added sound" would make a trim in the editor
+as cheap and as lossless as a Snip. It is export-path surgery and Media3 falls
+back to a full encode by itself when a file cannot be cut that way, so it
+wants a device: open a clip, trim it, export, and check the logcat line says
+`trimOnly=true optimization=` with a non-zero result and that the file's
+bitrate matches the source's.
