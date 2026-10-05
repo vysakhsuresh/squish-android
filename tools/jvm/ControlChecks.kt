@@ -591,6 +591,28 @@ fun main() {
         )
     }
 
+    // ---- Float output off, or the sound processors are not in the chain. ---
+    //
+    // DefaultAudioSink puts the processors it was given into its pipeline on
+    // the *int* branch only: with float output on it adds a to-float processor
+    // instead and the chain is not there at all. So the voice, the fold-down
+    // and the boost would stop working, with nothing thrown and nothing logged.
+    // The sink the preview builds therefore drops the enableFloatOutput
+    // parameter it is handed rather than passing it on - which reads like an
+    // oversight and is the opposite.
+    run {
+        val engine = read("$SRC/editor/PreviewEngine.kt")
+        check(
+            engine.contains("DefaultAudioSink.Builder(context)"),
+            "the preview no longer builds its own audio sink - this check has rotted"
+        )
+        check(
+            !Regex("setEnableFloatOutput").containsMatchIn(engine),
+            "the preview's sink enables float output, which takes the voice, the fold-down and the boost " +
+                "out of DefaultAudioSink's pipeline altogether - silently"
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

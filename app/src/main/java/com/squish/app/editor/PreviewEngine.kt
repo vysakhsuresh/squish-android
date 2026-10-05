@@ -628,6 +628,17 @@ class PreviewEngine(private val context: Context) {
             enableFloatOutput: Boolean,
             enableAudioTrackPlaybackParams: Boolean
         ): AudioSink = DefaultAudioSink.Builder(context)
+            // [enableFloatOutput] is deliberately dropped rather than passed
+            // on. Read in the 1.11.1 source: DefaultAudioSink only puts the
+            // processors it was given into its pipeline on the *int* branch -
+            //
+            //   if (shouldUseFloatOutput(...)) pipeline.add(toFloatPcm)
+            //   else { pipeline.add(toInt16Pcm); pipeline.add(chain) }
+            //
+            // - so with float output on, the voice, the fold-down and the boost
+            // are not in the chain at all, and every one of them stops working
+            // with nothing thrown and nothing logged. Off is also what makes
+            // them 16-bit, which all three require.
             .setAudioProcessors(arrayOf(*processors))
             .build()
     }
