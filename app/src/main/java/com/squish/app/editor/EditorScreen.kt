@@ -1020,7 +1020,7 @@ private fun EditorPreview(
             modifier = Modifier.fillMaxSize(),
             // Inside the picture, so the crop rectangle is measured
             // against the frame rather than against the whole box.
-            pictureOverlay = {
+            pictureOverlay = { kept ->
                 // Live framing while cropping, so the ratio is never
                 // chosen blind - and with the part being cropped away
                 // still on screen, dimmed, which is the only way to see
@@ -1035,7 +1035,15 @@ private fun EditorPreview(
                 // a thing to work against, not a thing to work on, so it never
                 // takes a touch and never hides the crop's own handles.
                 if (!fullscreen) {
-                    state.safeArea?.let { SafeAreaLayer(it, modifier = Modifier.fillMaxSize()) }
+                    // Inside the rectangle the file keeps, not over the whole
+                    // canvas. The insets are fractions of the *delivered* frame -
+                    // that is what a phone's own UI covers - and measured against
+                    // the canvas they were fractions of something larger: with a
+                    // 9:16 crop of a landscape edit the guide sat wide of the
+                    // picture and promised room the file does not have. It was
+                    // right while nothing was cropped, which is how it was seen
+                    // to work on 4 October.
+                    state.safeArea?.let { SafeAreaLayer(it, modifier = Modifier.inFrame(kept)) }
                 }
                 when {
                     fullscreen -> Unit

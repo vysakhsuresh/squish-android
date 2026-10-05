@@ -204,7 +204,8 @@ fun TimelinePreview(
      * rectangle partly on the surround beside the footage, and measure it against
      * the wrong width.
      */
-    pictureOverlay: @Composable BoxScope.() -> Unit = {}
+    /** Over every layer, laid over the whole preview; given the rectangle the file keeps, for what belongs inside it. */
+    pictureOverlay: @Composable BoxScope.(kept: PreviewBox.Frame) -> Unit = {}
 ) {
     val context = LocalContext.current
     val engine = remember { PreviewEngine(context) }
@@ -546,7 +547,7 @@ fun TimelinePreview(
             // Above every layer: the crop rectangle and its handles are drawn over
             // a picture-in-picture, never under it.
             Box(modifier = Modifier.fillMaxSize().zIndex(30f)) {
-                pictureOverlay()
+                pictureOverlay(kept)
             }
         }
 
@@ -1187,7 +1188,12 @@ private fun keptOnArea(frame: PreviewBox.Frame, picture: IntSize, area: IntSize,
     return Rect(left.toFloat(), top.toFloat(), (left + width).toFloat(), (top + height).toFloat())
 }
 
-private fun Modifier.inFrame(frame: PreviewBox.Frame): Modifier = layout { measurable, constraints ->
+/**
+ * A layer laid inside the rectangle the file keeps, rather than over the whole
+ * canvas. Internal rather than private because the picture-overlay slot hands
+ * the frame out so its caller can use it too (the safe-area guide).
+ */
+internal fun Modifier.inFrame(frame: PreviewBox.Frame): Modifier = layout { measurable, constraints ->
     if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
         val placeable = measurable.measure(constraints)
         return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
