@@ -51,6 +51,7 @@ run probegate  "$SRC/editor/ProbeGate.kt" tools/jvm/ProbeGateChecks.kt
 run toolrules  "$SRC/editor/ToolRules.kt" tools/jvm/ToolRulesChecks.kt
 run polish     $TIMELINE tools/jvm/PolishRulesChecks.kt
 run textfit    "$SRC/ui/components/TextFit.kt" tools/jvm/TextFitChecks.kt
+run previewspan "$SRC/ui/components/PreviewSpan.kt" tools/jvm/PreviewSpanChecks.kt
 run window     "$SRC/timeline/TimelineWindow.kt" tools/jvm/WindowChecks.kt
 run span       "$SRC/timeline/TimelineSpan.kt" tools/jvm/SpanChecks.kt
 run filmstrip  "$SRC/media/video/Filmstrip.kt" tools/jvm/FilmstripChecks.kt

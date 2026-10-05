@@ -106,7 +106,17 @@ fun ClipPreview(
     var positionMs by remember { mutableStateOf(0L) }
     var playing by remember { mutableStateOf(false) }
 
-    val totalMs = remember(sources) { sources.sumOf { it.durationMs }.coerceAtLeast(0L) }
+    val probedMs = remember(sources) { sources.sumOf { it.durationMs }.coerceAtLeast(0L) }
+    // What the player found out for itself, for the case where the caller's
+    // probe came back with nothing. Everything below is measured against
+    // totalMs, so a zero there left the bar at the start and the timecode at
+    // 0:00 for the whole of a file that was playing perfectly well.
+    // Not keyed on the sources: the ticker below is a long-lived effect that
+    // captured this delegate on the first composition, and a keyed remember
+    // would hand the composition a new holder while the ticker went on writing
+    // the old one. It is cleared where the playlist is set instead.
+    var measuredMs by remember { mutableStateOf(0L) }
+    val totalMs = PreviewSpan.scrubTotalMs(probedMs, sources.size, measuredMs)
     // Where each source begins on the joined timeline, so a position in the
     // playlist can be read as one number and scrubbed as one bar.
     val offsets = remember(sources) {
@@ -124,6 +134,7 @@ fun ClipPreview(
 
     val playlistKey = remember(sources) { sources.joinToString("|") { it.uri.toString() } }
     LaunchedEffect(playlistKey) {
+        measuredMs = 0L
         player.setMediaItems(sources.map { MediaItem.fromUri(it.uri) })
         player.prepare()
         player.playWhenReady = false
@@ -176,6 +187,13 @@ fun ClipPreview(
 
     LaunchedEffect(player) {
         while (true) {
+            // Before it has prepared the file this is C.TIME_UNSET, a large
+            // negative, so the test is for a positive number and not for a
+            // number at all. Only stored when it changes, so a tick where
+            // nothing has moved recomposes nothing.
+            val reported = player.duration
+            if (reported > 0L && reported != measuredMs) measuredMs = reported
+
             val live = player.isPlaying
             if (live != playing) playing = live
             if (live) {
