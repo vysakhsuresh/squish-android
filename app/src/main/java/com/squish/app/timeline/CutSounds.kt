@@ -64,6 +64,14 @@ object CutSounds {
      * A sound that leads in starts its own length before its join and is
      * dropped when there is no room before 0, rather than being squashed or
      * started before the edit.
+     *
+     * The room a lead-in needs is its own length, not [minGapMs]. A reverse
+     * whoosh is over a second long, so on joins a second apart it would start
+     * before the previous join and run back over the whole shot before it -
+     * two of them laid over one another is the mud this is supposed to avoid,
+     * and the gap rule alone let it through. Each join takes the first variant
+     * whose length fits in the room there is, starting from the one whose turn
+     * it is, so a fast edit gets its short sounds rather than nothing.
      */
     fun plan(
         joins: List<Long>,
@@ -85,13 +93,19 @@ object CutSounds {
             if (out.size >= limit) return@forEach
             val since = lastAt
             if (since != null && join - since < minGapMs) return@forEach
-            val variant = usable[i % usable.size]
+            // The earliest a sound may start: the join before it, so one never
+            // runs back over the shot before, and never before the edit begins.
+            val floor = maxOf(0L, since ?: 0L)
+            val turn = (0 until usable.size).firstOrNull { offset ->
+                val v = usable[(i + offset) % usable.size]
+                (if (fit == CutSoundFit.LeadsIn) join - v.lengthMs else join) >= floor
+            } ?: return@forEach
+            val variant = usable[(i + turn) % usable.size]
             val at = if (fit == CutSoundFit.LeadsIn) join - variant.lengthMs else join
-            // Before the start of the edit there is nothing to lead into.
-            if (at < 0L) return@forEach
             out += CutSound(variant.effectId, at, variant.lengthMs)
             lastAt = join
-            i++
+            // Past the one taken, so the next join does not start on it again.
+            i += turn + 1
         }
         return out
     }

@@ -62,6 +62,37 @@ fun main() {
         }
     }
 
+    // --- A lead-in never runs back over the join before it. ------------------
+    //
+    // The gap rule is about the joins; this is about the sounds. A reverse
+    // whoosh is over a second long, so on joins a second apart it used to start
+    // before the previous join and lie across the whole shot before it, with
+    // the next one on top of it. Each join takes the longest variant that fits.
+    run {
+        val mixed = listOf(
+            CutSoundVariant("long", 1_200L),
+            CutSoundVariant("mid", 600L),
+            CutSoundVariant("short", 300L)
+        )
+        for (gap in 350..3_000 step 37) {
+            val joins = (1..12).map { 2_000L + it * gap.toLong() }
+            val plan = CutSounds.plan(joins, mixed, CutSoundFit.LeadsIn)
+            plan.zipWithNext().forEach { (a, b) ->
+                check(
+                    b.atMs >= a.atMs + a.lengthMs,
+                    "at ${gap}ms joins a sound starts at ${b.atMs} while the one before runs to ${a.atMs + a.lengthMs}"
+                )
+            }
+            check(plan.none { it.atMs < 0L }, "a lead-in started before 0 at gap $gap")
+            // And something is laid at every gap wide enough for the shortest.
+            if (gap >= 350) check(plan.isNotEmpty(), "nothing at all was laid at gap $gap")
+        }
+        // The short one is picked where the long one will not fit.
+        val tight = CutSounds.plan(listOf(2_000L, 2_500L, 3_000L), mixed, CutSoundFit.LeadsIn)
+        check(tight.size == 3, "a tight run laid ${tight.size} sounds, want 3")
+        check(tight.drop(1).all { it.lengthMs <= 500L }, "a sound too long for its room was laid: $tight")
+    }
+
     // --- Nothing starts before the edit does. --------------------------------
     run {
         val plan = CutSounds.plan(listOf(400L, 5_000L), VARIANTS, CutSoundFit.LeadsIn)
