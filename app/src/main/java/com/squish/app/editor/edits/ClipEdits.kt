@@ -298,7 +298,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     fun setLook(clipId: String, lookId: String?) = record("Look") {
         updateVideoClip(clipId) { clip ->
             val next = if (lookId == null || lookId == clip.lookId) null else lookId
-            clip.copy(lookId = next, lookIntensity = if (next == null) 1f else clip.lookIntensity)
+            clip.withLook(next)
         }
     }
 
@@ -449,7 +449,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         _state.update { s ->
             s.copy(videoClips = s.videoClips.map {
                 if (it.isOverlay != from.isOverlay) it
-                else it.copy(lookId = from.lookId, lookIntensity = from.lookIntensity)
+                else it.withLook(from.lookId, from.lookIntensity)
             })
         }
     }
@@ -542,7 +542,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             current.copy(
                 cropAspect = template.crop ?: CropAspect.Original,
                 videoClips = current.videoClips.map {
-                    if (it.isOverlay) it else it.copy(lookId = template.lookId, lookIntensity = 1f)
+                    if (it.isOverlay) it else it.withLook(template.lookId, 1f)
                 },
                 effects = current.effects.filterNot { it.id.startsWith(TEMPLATE_PREFIX) } + placed,
                 textOverlays = current.textOverlays.filterNot { it.id.startsWith(TEMPLATE_PREFIX) } +

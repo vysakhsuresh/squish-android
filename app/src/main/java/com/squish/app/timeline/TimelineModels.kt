@@ -319,6 +319,23 @@ data class Clip(
     /** Whether the filter's strength moves over this clip. */
     val lookAnimated: Boolean get() = lookKeys.isNotEmpty()
 
+    /**
+     * This clip with [lookId] on it, and nothing left over from the look that
+     * was there.
+     *
+     * A look-strength track is the *filter's* strength, so taking the filter
+     * off has to take the track with it. Left behind, the strip went on drawing
+     * blue diamonds and the Looks sheet's keyframe button went on glowing for a
+     * filter that was not there, the file took the animated path per frame for
+     * nothing, and the next look picked arrived already animated by the last
+     * one's keys. Three places set a look and all three could leave the track:
+     * tapping a chip twice to clear it, Apply to all from a clip with no look,
+     * and a template that names none.
+     */
+    fun withLook(lookId: String?, intensity: Float = lookIntensity): Clip =
+        if (lookId == null) copy(lookId = null, lookIntensity = 1f, lookKeys = emptyList())
+        else copy(lookId = lookId, lookIntensity = intensity)
+
     /** Whether anything about this clip's colour has been touched. */
     val isGraded: Boolean get() = lookId != null || !adjust.isIdentity
 

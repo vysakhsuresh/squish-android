@@ -24,6 +24,7 @@ import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.SpeedPoint
 import com.squish.app.timeline.SpeedRamp
 import com.squish.app.timeline.TimelineState
+import com.squish.app.timeline.ValueKey
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
@@ -628,6 +629,30 @@ fun main() {
         check(com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/photo_1790792006247_67c2aefc.mp4"), "a main-track photo is not a photo")
         check(!com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/blank_1_ab.mp4") && !com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/freeze_1_ab.mp4"), "a blank or a freeze read as a photo")
         check(!com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/overlay_1.png") && !com.squish.app.timeline.isRenderedPhoto(null), "a photo overlay or nothing read as a main-track photo")
+
+        // Taking the filter off takes its strength track with it: a look-
+        // strength key belongs to the look, and left behind it drew diamonds on
+        // the strip and lit the keyframe button for a filter that was not
+        // there, took the file's animated path per frame for nothing, and
+        // animated the *next* look picked by the last one's keys.
+        run {
+            val keys = listOf(ValueKey(0L, 0.2f), ValueKey(3_000L, 1f))
+            val graded = video("g", 6_000).copy(lookId = "noir", lookIntensity = 0.6f, lookKeys = keys)
+            check(graded.lookAnimated, "the keyed clip is not animated to begin with")
+            val cleared = graded.withLook(null)
+            check(cleared.lookId == null && cleared.lookKeys.isEmpty() && !cleared.lookAnimated,
+                "clearing the look left ${cleared.lookKeys.size} strength keys on it")
+            check(cleared.lookIntensity == 1f, "clearing the look left the strength at ${cleared.lookIntensity}")
+            // A different look keeps the track - the strength is of whichever
+            // filter is on, which is the point of keying it.
+            val swapped = graded.withLook("warm")
+            check(swapped.lookId == "warm" && swapped.lookKeys == keys && swapped.lookIntensity == 0.6f,
+                "swapping the look lost the strength track or the strength")
+            check(graded.withLook("warm", 0.3f).lookIntensity == 0.3f, "an explicit strength was not taken")
+            // And a clip with no track is unchanged either way.
+            val plain = video("p", 6_000)
+            check(plain.withLook(null) == plain.copy(lookIntensity = 1f), "clearing nothing changed something")
+        }
 
         // A blank, which "Move every shot" leaves alone: there is nothing in a
         // flat colour to move. Named off the address like the rest of these.
