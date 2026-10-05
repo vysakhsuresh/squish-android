@@ -165,17 +165,27 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                 style = MaterialTheme.typography.bodySmall,
                 color = SquishColors.TextMuted
             )
-            // A slideshow in one tap: every still photo on the track given its own slow move.
-            // The note lives outside the button's condition: once every photo
+            // A reel in one tap: every shot on the main track that carries no
+            // keys given its own slow move, the presets taken in turn.
+            //
+            // It was photos only - a slideshow - and said so. The wedding reel
+            // in docs/COMPETITORS.md §4 is twenty-four video shots and every one
+            // of them drifts, which was twenty-four visits to this sheet. One
+            // button still, not two: it reads "Animate every photo" when that is
+            // all the track holds, which is what it has always said there.
+            //
+            // The note lives outside the button's condition: once every shot
             // moves the button goes, and it used to take its note with it.
             var photosNote by remember { mutableStateOf<String?>(null) }
-            if (state.videoClips.count { it.isMain && com.squish.app.timeline.isRenderedPhoto(it.uri?.toString()) && it.keyframes.isEmpty() } > 1) {
+            val unmoved = viewModel.clips.unmovedMainShots()
+            val allPhotos = unmoved.all { com.squish.app.timeline.isRenderedPhoto(it.uri?.toString()) }
+            if (unmoved.size > 1) {
                 com.squish.app.ui.components.SquishOutlinedButton(
-                    text = "Animate every photo",
+                    text = if (allPhotos) "Animate every photo" else "Move every shot",
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         val n = viewModel.clips.animateAllPhotos()
-                        photosNote = "$n photos given a slow move each, in turn. Undo takes it back."
+                        photosNote = "$n ${if (allPhotos) "photos" else "shots"} given a slow move each, in turn. Undo takes it back."
                     }
                 )
             }

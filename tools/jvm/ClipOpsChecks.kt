@@ -628,6 +628,19 @@ fun main() {
         check(com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/photo_1790792006247_67c2aefc.mp4"), "a main-track photo is not a photo")
         check(!com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/blank_1_ab.mp4") && !com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/freeze_1_ab.mp4"), "a blank or a freeze read as a photo")
         check(!com.squish.app.timeline.isRenderedPhoto("file:///data/user/0/com.squish.app/files/stills/overlay_1.png") && !com.squish.app.timeline.isRenderedPhoto(null), "a photo overlay or nothing read as a main-track photo")
+
+        // A blank, which "Move every shot" leaves alone: there is nothing in a
+        // flat colour to move. Named off the address like the rest of these.
+        fun blank(a: String?) = com.squish.app.timeline.isBlankStill(a)
+        check(blank("file:///data/user/0/com.squish.app/files/stills/blank_1790792006247_67c2aefc.mp4"), "a blank is not a blank")
+        check(!blank("file:///data/user/0/com.squish.app/files/stills/photo_1_ab.mp4"), "a photo read as a blank")
+        check(!blank("file:///data/user/0/com.squish.app/files/stills/freeze_1_ab.mp4"), "a freeze read as a blank")
+        // The PNG the blank is rendered *from* lives in the same folder and is
+        // not a clip; nor is a gallery file whose own name happens to start the
+        // same way.
+        check(!blank("file:///data/user/0/com.squish.app/files/stills/blank_1080x1920.png"), "the blank's own frame read as a clip")
+        check(!blank("content://media/external/video/media/12") && !blank(null), "a gallery file or nothing read as a blank")
+        check(!blank("file:///data/user/0/com.squish.app/files/imports/blank_canvas.mp4"), "a file called blank_ somewhere else read as a blank")
         check(video("a", 1_000).isFootage && !still.isFootage && still.isRenderedStill, "footage and a still are confused")
         check(!audio("s", 1_000).isFootage, "a sound is footage")
     }

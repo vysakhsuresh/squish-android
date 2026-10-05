@@ -1169,18 +1169,36 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
 
     /** The one-tap moves people actually want, as a pair of keys across the clip. */
     /**
-     * Every photo on the main track given a slow move, the presets taken in
-     * turn - push in, pull out, pan right, pan left, rise - so a slideshow
-     * moves without every picture doing the same thing. Photos already
-     * animated are left. One step; the count of photos moved.
+     * Which shots "Move every shot" would take: everything on the main track
+     * that shows a picture and carries no keys of its own. A blank is left out
+     * - there is nothing in it to move - and so is anything already animated,
+     * which is what makes the button safe to press twice.
+     */
+    fun unmovedMainShots(): List<Clip> = _state.value.videoClips.filter {
+        it.isMain && it.keyframes.isEmpty() && !com.squish.app.timeline.isBlankStill(it.uri?.toString())
+    }
+
+    /**
+     * Every shot on the main track given a slow move, the presets taken in
+     * turn - push in, pull out, pan right, pan left, rise - so a reel moves
+     * without every shot doing the same thing. One repeated twenty-four times
+     * reads as a mistake; five alternating read as design, which is the same
+     * reasoning "Sound on every cut" is laid by.
+     *
+     * It was photos only, for a slideshow. The wedding reel in
+     * docs/COMPETITORS.md §4 is twenty-four *video* shots and every one of them
+     * drifts; doing that by hand is twenty-four visits to this sheet.
+     *
+     * Shots already animated are left, so a second press changes nothing. One
+     * step; the count moved.
      */
     fun animateAllPhotos(): Int {
-        val photos = _state.value.videoClips.filter { it.isMain && com.squish.app.timeline.isRenderedPhoto(it.uri?.toString()) && it.keyframes.isEmpty() }
-        if (photos.isEmpty()) return 0
+        val shots = unmovedMainShots()
+        if (shots.isEmpty()) return 0
         val cycle = listOf(MotionPreset.PushIn, MotionPreset.PullOut, MotionPreset.PanRight, MotionPreset.PanLeft, MotionPreset.RiseUp)
-        record("Animate photos") {
+        record("Move every shot") {
             mutateTimeline { timeline ->
-                val order = photos.sortedBy { it.timelineStartMs }.mapIndexed { i, p -> p.id to cycle[i % cycle.size] }.toMap()
+                val order = shots.sortedBy { it.timelineStartMs }.mapIndexed { i, p -> p.id to cycle[i % cycle.size] }.toMap()
                 timeline.copy(clips = timeline.clips.map { clip ->
                     val preset = order[clip.id] ?: return@map clip
                     val (from, to) = preset.endpoints()
@@ -1191,7 +1209,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 })
             }
         }
-        return photos.size
+        return shots.size
     }
 
     fun applyMotionPreset(clipId: String, preset: MotionPreset) = record(preset.label) {

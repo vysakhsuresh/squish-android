@@ -996,6 +996,16 @@ fun isRenderedPhoto(address: String?): Boolean =
     isRenderedStill(address) && address!!.substringBefore('?').substringBefore('#').substringAfterLast('/').startsWith("photo_")
 
 /**
+ * Whether [address] is a blank - the colour card Add → Blank lays, rendered as
+ * blank_<w>x<h>.mp4 beside the photos and freezes (StillClips.blank). From the
+ * address alone, like the rest of these, so nothing is stored for it.
+ *
+ * "Move every shot" asks, because there is nothing in a flat colour to move.
+ */
+fun isBlankStill(address: String?): Boolean =
+    isRenderedStill(address) && address!!.substringBefore('?').substringBefore('#').substringAfterLast('/').startsWith("blank_")
+
+/**
  * Whether [address] is a take the editor recorded - a WAV it wrote under its
  * own files/voice/ (VoiceRecorder). From the address alone, like a still, so
  * no draft field is needed to draw the mic on it.
