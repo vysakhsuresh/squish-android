@@ -788,7 +788,7 @@ object MusicSynth {
 
         if (style.echo > 0f) echo(left, right, (beat * 0.75 * SAMPLE_RATE).toInt(), style.echo)
         if (style.crackle) crackle(left, right, rng)
-        fadeEdges(left, right)
+        fadeOutTail(left, right)
         write(out, left, right)
     }
 
@@ -925,7 +925,15 @@ object MusicSynth {
         }
     }
 
-    private fun fadeEdges(l: FloatArray, r: FloatArray) {
+    /**
+     * The last two seconds of a track faded out, so it ends rather than stops.
+     *
+     * One edge, not both - the name said edges and it has only ever touched the
+     * tail, which is right: a track is meant to start. [release] is the
+     * millisecond-scale version for the effects, which are shorter than this
+     * fade is long.
+     */
+    private fun fadeOutTail(l: FloatArray, r: FloatArray) {
         val fade = SAMPLE_RATE * 2
         for (i in 0 until minOf(fade, l.size)) {
             val g = i.toFloat() / fade
