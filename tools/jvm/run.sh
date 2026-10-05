@@ -40,6 +40,7 @@ run space      "$SRC/media/SpaceCheck.kt" tools/jvm/SpaceCheckChecks.kt
 run reverseruns "$SRC/media/ReverseRuns.kt" tools/jvm/ReverseRunChecks.kt
 run crop       "$SRC/editor/CropRect.kt" tools/jvm/CropChecks.kt
 run clipcrop   "$SRC/editor/CropRect.kt" "$SRC/editor/ClipCrop.kt" tools/jvm/ClipCropChecks.kt
+run tracker    "$SRC/media/video/MotionEstimator.kt" "$SRC/media/video/ObjectTracker.kt" tools/jvm/TrackerChecks.kt
 run maskoutline "$SRC/timeline/Mask.kt" "$SRC/timeline/Keyframe.kt" "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
                "$SRC/editor/MaskOutline.kt" tools/jvm/MaskOutlineChecks.kt
 run frames     "$SRC/media/video/FrameBatch.kt" tools/jvm/stub/Bitmap.kt \

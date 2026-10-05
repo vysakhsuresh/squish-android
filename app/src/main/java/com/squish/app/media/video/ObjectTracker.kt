@@ -212,13 +212,24 @@ class ObjectTracker(
             offsetY += 2
         }
 
+        // Measured from the coarse winner, which does not move while the nine
+        // are scored. It used to read `bestX + dx` while assigning `bestX +=
+        // dx` in the same loop, so after the first improvement the 3x3 was
+        // taken about a *moved* centre: offsets inside the intended square
+        // were never scored, offsets outside it were, and which ones depended
+        // on the iteration order - with (-1,-1) first the walk leant up and
+        // left. Nine iterations could each take a step, putting the answer
+        // nine analysis pixels from the coarse winner; and since every frame
+        // searches from the frame before, that compounded.
+        val coarseX = bestX
+        val coarseY = bestY
         for (dy in -1..1) {
             for (dx in -1..1) {
-                val score = correlate(frame, bestX + dx, bestY + dy, 1f)
+                val score = correlate(frame, coarseX + dx, coarseY + dy, 1f)
                 if (score > best) {
                     best = score
-                    bestX += dx
-                    bestY += dy
+                    bestX = coarseX + dx
+                    bestY = coarseY + dy
                 }
             }
         }
