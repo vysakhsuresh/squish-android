@@ -451,13 +451,17 @@ class VideoProcessor(private val context: Context) {
         // nothing on the shots before it.
         if (clip.timelineEndMs <= under.timelineStartMs || clip.timelineStartMs >= under.timelineEndMs) return null
         val uri = clip.uri ?: return null
-        // Decoded once for the export. A failed decode is remembered as a null,
-        // so a picture that cannot be read is not opened again for every shot.
-        val bitmap = bitmaps.getOrPut(uri.toString()) {
-            runCatching {
+        // Decoded once for the export. By containsKey rather than getOrPut: that
+        // one treats a stored null as absent and calls the lambda again, so a
+        // picture that cannot be read would have been opened afresh for every
+        // shot it covers - the very thing this map is here to stop.
+        val key = uri.toString()
+        if (!bitmaps.containsKey(key)) {
+            bitmaps[key] = runCatching {
                 context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
             }.getOrNull()
-        } ?: return null
+        }
+        val bitmap = bitmaps[key] ?: return null
         val startMs = clip.timelineStartMs
         val endMs = clip.timelineEndMs
         // The item's clock starts at 0 on this shot, so the edit's own time is
