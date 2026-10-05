@@ -52,6 +52,21 @@ fun main() {
         }
     }
 
+    // And the other way round: a *Checks.kt no runner names is a suite nobody
+    // runs, which is the same cover-that-is-not-cover as a suite in one runner
+    // and not the other - it just arrives from the other direction, by someone
+    // writing a file and forgetting the line.
+    run {
+        val named = listOf("tools/jvm/run.sh", "tools/jvm/run_desktop.sh", "tools/jvm/run_media3.sh")
+            .filter { File(it).isFile }
+            .flatMap { Regex("""[A-Za-z0-9]+Checks\.kt""").findAll(File(it).readText()).map { m -> m.value } }
+            .toSet()
+        val present = File("tools/jvm").listFiles { f -> f.isFile && f.name.endsWith("Checks.kt") }
+            ?.map { it.name }.orEmpty()
+        if (present.size < 60) problems += "only ${present.size} suite files found - has this check's path rotted?"
+        (present - named).sorted().forEach { problems += "tools/jvm/$it is a suite no runner names, so nothing runs it" }
+    }
+
     // Every suite named must end in a checks file that is actually there.
     listOf("tools/jvm/run.sh", "tools/jvm/run_desktop.sh").forEach { path ->
         Regex("""(?m)^run\s+[a-z0-9]+\s+(.*)$""").findAll(File(path).readText()).forEach { m ->
