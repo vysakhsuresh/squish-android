@@ -23,3 +23,11 @@ local.properties
 
 # Local agent state and the worktrees parallel sessions build in.
 /.claude/
+
+# A hunting agent's scratch file. The sweeps write throwaway probes into
+# tools/jvm to read a function's behaviour - printlns, no assertions - and they
+# were landing in commits. A real suite is named in run.sh and run_desktop.sh,
+# which RunnerChecks holds it to; anything here matching these is not one.
+/tools/jvm/*Probe.kt
+/tools/jvm/ZProbe*.kt
+/tools/jvm/ProbeChecks.kt
