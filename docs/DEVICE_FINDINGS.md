@@ -1114,3 +1114,16 @@ a 22 s clip, one tap: **"5 sounds laid, one on each cut"**, and on the strip
 five sound clips each *ending* on its join, alternating long-short-medium -
 reverse whoosh, swish, cloth, reverse whoosh, swish. Not judged by ear.
 
+### Smooth skin's shader compiles (5 October)
+
+The one thing only a device answers about it: a look shader that does not
+compile fails on the player asynchronously and the surface then plays *plain*.
+With Smooth skin at 93% and Brightness dragged to +59%, a band of faces went
+from 124/103/102 to 177/156/155 - the grade reached the picture, so the shader
+carrying the new `skinWeight` and `surfaceBlur` functions and the `uSmooth`
+branch built and ran on this phone's ES2 driver.
+
+Not measured: whether the smoothing visibly softens skin. The test picture was
+a group photo whose faces are about thirty pixels across in the preview, and
+the blur's radius is a share of the frame, so at that size it is under a pixel
+on a face. It wants a close-up and a side-by-side export.
