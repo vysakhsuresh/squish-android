@@ -35,6 +35,23 @@ fun main() {
     }
     if (sandbox.size < 60) problems += "only ${sandbox.size} suites in run.sh - has the parsing rotted?"
 
+    // The third runner: the suites that need Media3 itself on the class path,
+    // which only the desktop can give them. It has no twin to be out of step
+    // with, but it can still name a file that has moved.
+    run {
+        val media3 = File("tools/jvm/run_media3.sh")
+        if (!media3.isFile) problems += "tools/jvm/run_media3.sh is gone" else {
+            val text = media3.readText()
+            val suites = Regex("""jc\.sh\s+([A-Za-z0-9]+)""").findAll(text).map { it.groupValues[1] }.toList()
+            if (suites.size < 2) problems += "only ${suites.size} suite(s) in run_media3.sh - has the parsing rotted?"
+            val dollar = '$'
+            Regex("(?:tools/jvm|\\${dollar}SRC)[A-Za-z0-9/._${dollar}-]*\\.kt").findAll(text).forEach { m ->
+                val path = m.value.replace("${dollar}SRC", "app/src/main/java/com/squish/app")
+                if (!File(path).isFile) problems += "run_media3.sh names " + path + ", which is not there"
+            }
+        }
+    }
+
     // Every suite named must end in a checks file that is actually there.
     listOf("tools/jvm/run.sh", "tools/jvm/run_desktop.sh").forEach { path ->
         Regex("""(?m)^run\s+[a-z0-9]+\s+(.*)$""").findAll(File(path).readText()).forEach { m ->
