@@ -97,6 +97,7 @@ run musicsynth "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SR
 run synthtempo "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SynthTempoChecks.kt
 run effectrecipes $TIMELINE tools/jvm/EffectRecipeChecks.kt
 run stillrules $TIMELINE "$SRC/editor/StillRules.kt" tools/jvm/StillRulesChecks.kt
+run picsample "$SRC/media/PictureSample.kt" tools/jvm/PictureSampleChecks.kt
 run timecode   $TIMELINE "$SRC/editor/Timecode.kt" tools/jvm/TimecodeChecks.kt
 run framerules $TIMELINE "$SRC/editor/PreviewBox.kt" "$SRC/media/ExportPresets.kt" tools/jvm/stub/Quality.kt \
                "$SRC/editor/FrameRules.kt" tools/jvm/FrameRulesChecks.kt

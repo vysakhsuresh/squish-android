@@ -830,6 +830,33 @@ fun main() {
         )
     }
 
+    // ---- A picture is decoded the way up it is meant to be seen. -----------
+    //
+    // BitmapFactory does not apply the camera's orientation tag and ImageDecoder
+    // does, and phone cameras write the tag rather than rotating the pixels, so
+    // for a portrait photo straight off a camera the two decoders disagree about
+    // which way up it is. previewBitmap went through BitmapFactory while every
+    // sibling in the same file went through ImageDecoder - and it is the helper
+    // ThumbnailExtractor.cover falls back to for a photo picked as a document
+    // URI, so a portrait photo came back lying on its side on the project's
+    // cover card, in the library, and written to cache/thumbs at that angle,
+    // where it outlived the next restart. The sibling that reads only the
+    // picture's *size* (uprightSize) has applied the tag by hand since it was
+    // written, for exactly this reason.
+    //
+    // inSampleSize is the marker of a BitmapFactory decode that wants pixels
+    // rather than bounds; a bounds-only read (inJustDecodeBounds) is fine,
+    // since it is reading the header and nothing else.
+    run {
+        readAll(SRC).forEach { (path, text) ->
+            if (text.contains("inSampleSize")) {
+                problems += "$path decodes a picture's pixels through BitmapFactory (inSampleSize) - " +
+                    "that decoder ignores the camera's orientation tag, so a portrait photo comes back " +
+                    "on its side. ImageDecoder applies it."
+            }
+        }
+    }
+
     // ---- A listen that lands after its clip has gone must land on nothing. -
     //
     // AudioEdits runs four background listens, and each writes to the edit or

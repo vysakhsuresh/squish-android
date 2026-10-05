@@ -178,10 +178,24 @@ object StillClips {
             // Software, so it can be scaled and written; sampled down on the way
             // in, so a 50-megapixel photo never sits whole in memory.
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-            val short = minOf(info.size.width, info.size.height).coerceAtLeast(1)
-            var sample = 1
-            while (short / (sample * 2) >= MAX_SHORT_SIDE) sample *= 2
-            decoder.setTargetSampleSize(sample)
+            // Solved against both bounds, because [overlayFit] is bounded on
+            // both. Against the short side alone the doubling stopped the
+            // moment the short side would fall under 1080, which for anything
+            // wider than 3840/1080 - a panorama, a long screenshot - is
+            // straight away: a 12000x1200 panorama has a short side of 1200, so
+            // sample stayed 1 and ImageDecoder allocated the whole 57 MB as
+            // ARGB_8888, then held it alongside the 5.9 MB it was scaled to.
+            // The comment above promised the opposite, and the OutOfMemoryError
+            // is swallowed by the runCatching round this, so the photo was
+            // silently refused after taking the heap down with it. The same
+            // mistake, the same way round, as the one ThumbnailExtractor.cover
+            // records having fixed.
+            //
+            // The sample must not undershoot what overlayFit keeps either, so
+            // the arithmetic is PictureSample's and is executed on the JVM.
+            decoder.setTargetSampleSize(
+                PictureSample.forFit(info.size.width, info.size.height, MAX_SHORT_SIDE, MAX_LONG_SIDE)
+            )
         }
         val (w, h) = overlayFit(decoded.width, decoded.height)
         val bitmap = if (w == decoded.width && h == decoded.height) decoded
@@ -218,16 +232,29 @@ object StillClips {
     /**
      * A picture for the preview to draw, at most [maxSide] on its long side.
      * Blocking. Null if it cannot be read.
+     *
+     * Through ImageDecoder, like every other decode in this file, because
+     * BitmapFactory does not apply the camera's orientation tag and phone
+     * cameras write the tag rather than rotating the pixels. This is the helper
+     * ThumbnailExtractor.cover falls back to for a photo picked as a document
+     * URI, so a portrait photo straight off the camera came back lying on its
+     * side - on the project's cover card, in the library, and written to
+     * cache/thumbs at that angle, where it outlived the next restart. The
+     * sibling that reads only the *size* of a picture (uprightSize) has
+     * applied the tag by hand since it was written, for the same reason.
      */
     fun previewBitmap(context: Context, uri: Uri, maxSide: Int): Bitmap? = runCatching {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        val long = maxOf(bounds.outWidth, bounds.outHeight)
-        if (long <= 0) return@runCatching null
-        var sample = 1
-        while (long / (sample * 2) >= maxSide) sample *= 2
-        val options = BitmapFactory.Options().apply { inSampleSize = sample }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+        val source = ImageDecoder.createSource(context.contentResolver, uri)
+        ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            // Software: the callers compress it to a JPEG for the thumbnail
+            // cache and read its pixels to grade a photo overlay.
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            // info.size is the size the way up it will be handed back, the tag
+            // already applied, so the sample is solved on that.
+            decoder.setTargetSampleSize(
+                PictureSample.forLongSide(info.size.width, info.size.height, maxSide)
+            )
+        }
     }.getOrNull()
 
     /**
@@ -235,14 +262,8 @@ object StillClips {
      * long side at most [MAX_LONG_SIDE] - a panorama at 1080 tall would be ten
      * thousand pixels wide, far past anything a layer is drawn at.
      */
-    private fun overlayFit(width: Int, height: Int): Pair<Int, Int> {
-        val scale = minOf(
-            1f,
-            MAX_SHORT_SIDE.toFloat() / minOf(width, height).coerceAtLeast(1),
-            MAX_LONG_SIDE.toFloat() / maxOf(width, height).coerceAtLeast(1)
-        )
-        return (width * scale).toInt().coerceAtLeast(1) to (height * scale).toInt().coerceAtLeast(1)
-    }
+    private fun overlayFit(width: Int, height: Int): Pair<Int, Int> =
+        PictureSample.fit(width, height, MAX_SHORT_SIDE, MAX_LONG_SIDE)
 
     /**
      * A freeze frame: the frame of [video] at [sourceMs], kept as a picture under

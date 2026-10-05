@@ -84,6 +84,7 @@ run segmenter "$SRC/media/audio/SpeechSegmenter.kt" tools/jvm/stub/MonoPcm.kt to
 run lut "$SRC/media/effects/Lut.kt" tools/jvm/LutChecks.kt
 run safearea "$SRC/editor/SafeArea.kt" tools/jvm/SafeAreaChecks.kt
 run stillrules $TIMELINE "$SRC/editor/StillRules.kt" tools/jvm/StillRulesChecks.kt
+run picsample "$SRC/media/PictureSample.kt" tools/jvm/PictureSampleChecks.kt
 run timecode   $TIMELINE "$SRC/editor/Timecode.kt" tools/jvm/TimecodeChecks.kt
 run framerules $TIMELINE "$SRC/editor/PreviewBox.kt" "$SRC/media/ExportPresets.kt" tools/jvm/stub/Quality.kt \
                "$SRC/editor/FrameRules.kt" tools/jvm/FrameRulesChecks.kt
