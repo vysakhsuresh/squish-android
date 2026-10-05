@@ -1015,10 +1015,22 @@ data class EditorUiState(
      * said "This clip has no audio track" and hid the switch and the level for
      * every shot that was not. A file whose metadata has not been read yet
      * counts as having sound, which is the side that leaves the control there.
+     *
+     * A still on the main track is not a shot. The guard used to be
+     * `!isStillPicture`, which is the *overlay row's* PNG and never reaches
+     * layer 0: the still that does is `isRenderedStill`, an MP4 this app writes
+     * with a silent AAC track - so `hasAudio` is genuinely true for it. And
+     * `sourceHasAudio` is true for the same reason in a photo-first project, so
+     * both halves of the old test said yes. A slideshow of photos offered the
+     * Camera sound switch and a level slider that moved nothing.
+     *
+     * The lead file's flag is gone from the test with it: "not read yet counts
+     * as sound" is already what the per-clip reading does, and the flag was
+     * answering for a file that may not be in the edit at all.
      */
     val anyCameraAudio: Boolean
-        get() = sourceHasAudio || videoClips.any { clip ->
-            clip.isMain && !clip.isStillPicture &&
+        get() = videoClips.any { clip ->
+            clip.isMain && !clip.isStillPicture && !com.squish.app.timeline.isRenderedStill(clip.uri?.toString()) &&
                 clip.uri?.let { com.squish.app.media.MediaCompat.cached(it) }
                     .let { it == null || it.hasAudio }
         }
