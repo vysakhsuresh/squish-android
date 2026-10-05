@@ -39,6 +39,12 @@ class FxEffect(
      * the file draws in its own TransitionEffect instead (see
      * SurfaceDraw.blur). Zero in the export, whose pass runs on the composited
      * frame and would soften every layer at once.
+     *
+     * The wider rather than both, which costs one case: on Android 12 and
+     * below, where the library is carried by these chains instead of over the
+     * canvas (CanvasFx), a placed Blur lying over a Defocus join reads as one
+     * softening here and two in the file. From 13 up the library is on the
+     * canvas, this pass carries the join alone, and the two agree.
      */
     private val extraBlur: () -> Float = { 0f }
 ) : GlEffect {
