@@ -1305,6 +1305,29 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     /** A file picked for the missing one (Relink), once the edit is open and it is named. */
     fun relinkWhenOpened(uri: Uri) = onceOpened { relink(uri) }
 
+    // Every other pick waits the same way. Only Replace and Relink did, and
+    // the rest ran against the default empty state: killed behind the photo
+    // picker, the app comes back and ActivityResultRegistry dispatches the
+    // pending result while the launcher's effect commits - before open() has
+    // read a byte of the draft. So the add landed at playhead 0 on an empty
+    // timeline, applyDraft then replaced the clip lists wholesale and the pick
+    // vanished, nothing of it reached disk (persist refuses while the source is
+    // loading), and the undo step *survived* - so one tap on Undo restored the
+    // empty snapshot and blanked the whole edit, which the next autosave tick
+    // wrote over the draft.
+
+    /** Media picked for the main track, once the edit is open. */
+    fun insertWhenOpened(uris: List<Uri>) = onceOpened { clips.insertSourcesAtPlayhead(uris) }
+
+    /** A sound picked, once the edit is open. */
+    fun addAudioWhenOpened(uri: Uri) = onceOpened { audio.addAudioTrack(uri) }
+
+    /** Media picked for an overlay row, once the edit is open. */
+    fun addOverlaysWhenOpened(uris: List<Uri>) = onceOpened { layers.addOverlayClips(uris) }
+
+    /** A picture picked for the canvas's background, once the edit is open. */
+    fun setCanvasImageWhenOpened(uri: Uri) = onceOpened { clips.setCanvasImage(uri) }
+
     /**
      * An opened edit whose files are not all readable any more - a grant that
      * did not survive, a file deleted from the gallery - says which one, by

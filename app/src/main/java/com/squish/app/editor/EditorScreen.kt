@@ -139,7 +139,17 @@ fun EditorScreen(
     // blank - Done, back, another selection - it is taken off again: a line with
     // no words draws nothing, and sat on the strip as an empty bar.
     var newLineId by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(openTool, state.selectedClipId) {
+    // Not while the draft is still being read. newLineId and openToolName come
+    // back from saved state after a process kill and the selection does not, so
+    // on the first composition the guard below did not hold: this fired against
+    // the default empty state, where discardIfBlank finds no such line and does
+    // nothing, and cleared newLineId - so when applyDraft brought the line back
+    // (ON_STOP had already flushed it to disk) nothing was left pointing at it.
+    // The project was then left carrying a caption reading "Your text" for
+    // good, on the strip, in the draft and in every render, with no undo step
+    // for it either.
+    LaunchedEffect(openTool, state.selectedClipId, state.isLoadingSource) {
+        if (state.isLoadingSource) return@LaunchedEffect
         val id = newLineId ?: return@LaunchedEffect
         if (openTool == Tool.Edit && state.selectedClipId == id) return@LaunchedEffect
         newLineId = null
@@ -296,7 +306,7 @@ fun EditorScreen(
             runCatching {
                 context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            viewModel.audio.addAudioTrack(it)
+            viewModel.addAudioWhenOpened(it)
         }
     }
     // Several at once, added in the order picked - one video at a time made
@@ -304,7 +314,7 @@ fun EditorScreen(
     // the strip is looking - see insertSourcesAtPlayhead.
     val pickExtraClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
         uris.forEach { context.keepReadAccess(it) }
-        viewModel.clips.insertSourcesAtPlayhead(uris)
+        viewModel.insertWhenOpened(uris)
     }
     val addVideos = {
         pickExtraClips.launch(
@@ -317,7 +327,7 @@ fun EditorScreen(
     // are all overlays. It was one video at a time.
     val pickOverlayClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
         uris.forEach { context.keepReadAccess(it) }
-        viewModel.layers.addOverlayClips(uris)
+        viewModel.addOverlaysWhenOpened(uris)
     }
     // Free stock footage: asked for online first, then a grid; the pick lands at the playhead.
     val stockGate = com.squish.app.online.rememberOnlineGate()
@@ -338,7 +348,7 @@ fun EditorScreen(
     // A picture for the canvas's background, behind footage that does not
     // fill the frame's shape.
     val pickBackgroundImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { viewModel.clips.setCanvasImage(it) }
+        uri?.let { viewModel.setCanvasImageWhenOpened(it) }
     }
     val addText = {
         newLineId = viewModel.text.addCaptionAtPlayhead()

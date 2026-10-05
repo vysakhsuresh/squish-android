@@ -830,6 +830,63 @@ fun main() {
         )
     }
 
+    // ---- A pick waits for the edit to be open. -----------------------------
+    //
+    // Killed behind the photo picker, the app comes back and
+    // ActivityResultRegistry dispatches the pending result while the launcher's
+    // effect commits - before open() has read a byte of the draft. Only Replace
+    // and Relink waited; the other four ran against the default empty state, so
+    // the add landed at playhead 0 on an empty timeline, applyDraft then
+    // replaced the clip lists wholesale and the pick vanished, nothing of it
+    // reached disk, and the undo step *survived* - so one tap on Undo restored
+    // the empty snapshot and blanked the whole edit, which the next autosave
+    // tick wrote over the draft.
+    run {
+        val screen = read("$SRC/editor/EditorScreen.kt")
+        listOf(
+            "viewModel.audio.addAudioTrack(" to "addAudioWhenOpened",
+            "viewModel.layers.addOverlayClips(" to "addOverlaysWhenOpened",
+            "viewModel.clips.setCanvasImage(" to "setCanvasImageWhenOpened"
+        ).forEach { (direct, waiting) ->
+            check(
+                !screen.contains(direct),
+                "EditorScreen calls $direct straight from a picker - it has to be $waiting, or a pick " +
+                    "delivered before the draft is read lands on an empty edit"
+            )
+        }
+        // insertSourcesAtPlayhead has one direct caller left: the stock-footage
+        // sheet, which is a Compose sheet inside the open editor and cannot be
+        // reached before open().
+        check(
+            Regex("""viewModel\.clips\.insertSourcesAtPlayhead\(""").findAll(screen).count() == 1,
+            "EditorScreen has more than one direct insertSourcesAtPlayhead - a picker's must be " +
+                "insertWhenOpened; only the stock sheet, which cannot run before the edit is open, is direct"
+        )
+        check(
+            screen.contains("viewModel.insertWhenOpened(uris)"),
+            "the media picker no longer waits for the edit to be open"
+        )
+    }
+
+    // ---- A blank new line is only discarded once the edit is there. --------
+    //
+    // newLineId and the open tool come back from saved state after a process
+    // kill and the selection does not, so the guard did not hold on the first
+    // composition: the effect fired against the default empty state, where
+    // discardIfBlank finds no such line and does nothing, and cleared newLineId
+    // - so when the draft was applied the line came back with nothing left
+    // pointing at it, and the project carried a caption reading "Your text" for
+    // good, with no undo step for it either.
+    run {
+        val screen = read("$SRC/editor/EditorScreen.kt")
+        check(
+            Regex("""LaunchedEffect\(openTool, state\.selectedClipId, state\.isLoadingSource\) \{\s*\n\s*if \(state\.isLoadingSource\) return@LaunchedEffect""")
+                .containsMatchIn(screen),
+            "the blank-line discard runs before the draft has been read - it clears newLineId against an " +
+                "empty edit, and the line comes back with nothing left to take it off"
+        )
+    }
+
     // ---- A result that lands in the background goes beneath a drag. --------
     //
     // recordLate exists for it ("a slider being dragged when Stabilize finished
