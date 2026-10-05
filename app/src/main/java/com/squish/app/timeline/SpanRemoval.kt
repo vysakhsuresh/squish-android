@@ -48,14 +48,34 @@ fun TimelineState.withSpanRemoved(fromMs: Long, toMs: Long): TimelineState {
     val before = cut.baseVideoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
     val after = next.baseVideoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
     val span = if (cut.baseVideoClips.isEmpty()) end - start else (before - after).coerceAtLeast(0L)
+    val shifted = HashSet<String>()
     next = next.copy(
         clips = next.clips.map { clip ->
             if (!clip.isMain && clip.timelineStartMs >= end - EDGE_MS) {
+                shifted += clip.id
                 clip.copy(timelineStartMs = (clip.timelineStartMs - span).coerceAtLeast(0L))
             } else clip
         }
     )
-    return next.withPlayhead(start)
+
+    // An overlay that has moved into one that has not, on the same row, goes up
+    // to a row with room - the same rule withSilencesRemoved follows, and for
+    // the same reason: two on one row is one player in the preview and two
+    // layers in the file, so the screen and the file disagree.
+    //
+    // It can happen because a cut at either edge is refused when it would leave
+    // a piece under MIN_CLIP_MS: that overlay stays where it is, is not inside
+    // the stretch, and is not shifted - while the next one on its row slides
+    // back into it. Pictures only, and never past the row a clip may sit on
+    // (Clip.topLayer): each row of footage is a decoder.
+    var seated = next
+    next.clips.filter { it.kind == ClipKind.Video && it.isOverlay && it.id in shifted }.forEach { o ->
+        if (!seated.layerIsFree(o.layer, o.timelineStartMs, o.timelineEndMs, o.id)) {
+            val row = seated.firstFreeLayer(o.timelineStartMs, o.timelineEndMs, o.id, top = o.topLayer)
+            if (row != null) seated = seated.copy(clips = seated.clips.map { c -> if (c.id == o.id) c.copy(layer = row) else c })
+        }
+    }
+    return seated.withRowsCompacted().withPlayhead(start)
 }
 
 /**

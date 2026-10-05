@@ -159,6 +159,30 @@ fun main() {
             "a stretch with no gap in it moved the sound to ${tight.clips.first { it.id == "s" }.timelineStartMs}, not 6000")
     }
 
+    // --- No two overlays end up on one row. ---------------------------------
+    //
+    // A cut at either edge is refused when it would leave a piece under
+    // MIN_CLIP_MS, so that overlay stays where it is and is not shifted - while
+    // the next one on its row slides back into it. Two on a row is one player
+    // in the preview and two layers in the file, which is the disagreement
+    // firstFreeLayer exists to prevent.
+    run {
+        // P 10.0..12.0 and Q 12.05..20.0, both on row 1; take out 11.0..11.9,
+        // whose tail cut would leave 100 ms of P and is refused.
+        val st = TimelineState(clips = listOf(
+            video("m", 30_000),
+            video("p", 2_000, start = 10_000, layer = 1),
+            video("q", 7_950, start = 12_050, layer = 1)
+        ))
+        val after = st.withSpanRemoved(11_000, 11_900)
+        val rows = after.clips.filter { it.kind == ClipKind.Video && it.layer > 0 }
+        val clash = rows.any { x -> rows.any { y -> x.id != y.id && x.layer == y.layer && x.timelineStartMs < y.timelineEndMs && y.timelineStartMs < x.timelineEndMs } }
+        check(!clash, "two overlays share a row: ${rows.map { "${it.id}@${it.layer} ${it.timelineStartMs}-${it.timelineEndMs}" }}")
+        // And nothing was pushed past the row footage may sit on.
+        check(rows.all { it.layer <= com.squish.app.timeline.MAX_FOOTAGE_LAYER },
+            "an overlay was re-seated past the footage ceiling: ${rows.map { it.id to it.layer }}")
+    }
+
     // --- When it refuses, it changes nothing at all. ------------------------
     //
     // Two cases, and TextEdits.removeSpans has to tell them from a removal: it
