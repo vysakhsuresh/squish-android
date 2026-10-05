@@ -267,6 +267,28 @@ fun main() {
         )
     }
 
+    // ---- Cuts and the playhead always snap ---------------------------------
+    run {
+        // The switch is "Snap to markers and beats". Cuts, 0:00 and the end of
+        // the edit are none of those, and the strip says so twice. Both scrub
+        // paths had the whole lookup behind the switch, so with it off a drag
+        // held on nothing while a trim handle an inch away still held on the cut.
+        val editor = read("$SRC/timeline/TimelineEditor.kt")
+        check(
+            !Regex("""if\s*\(!latestSnapScrub\)\s*null""").containsMatchIn(editor),
+            "the strip's scrub gates its whole snap on the markers switch again - cuts and the ends go with it"
+        )
+        val model = read("$SRC/editor/EditorViewModel.kt")
+        check(
+            Regex("""val snapped = snapToAnything\(target, current\)""").containsMatchIn(model),
+            "EditorViewModel.scrubTo gates its whole snap on snapToMarkers again"
+        )
+        check(
+            Regex("""if \(current\.snapToMarkers\) current\.markers""").containsMatchIn(model),
+            "snapToAnything no longer keeps the markers behind the switch, so turning it off changes nothing"
+        )
+    }
+
     // ---- A control that is not drawn does not take touches ------------------
     run {
         val handles = read("$SRC/editor/OverlayHandles.kt")
