@@ -236,6 +236,16 @@ Media3 minor versions. If it will not resolve, delete the `getOverlaySettings`
 override entirely — captions then render centered instead of lower-third, which
 is cosmetic. Only `getText` is required.
 
+### 6. `SpeedChangeEffect` — `media/VideoProcessor.kt`
+
+Deprecated in 1.11.1 and still the thing that retimes the *picture* (the sound
+moved to `SpeedChangingAudioProcessor` in B13, for the pitch). It compiles with a
+warning and works; the replacement is `Effects` with a speed-adjusted
+presentation-time provider, which changes the clock every keyframe and every
+timed effect is read against, so it is not a swap to make without a phone. Named
+here so the warning is not read as rot: five warnings is the whole build, and
+these two are it.
+
 ## Things that are NOT uncertain
 
 Plain Android framework, no Media3 involved, so these either work or have real
