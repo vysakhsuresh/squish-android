@@ -103,5 +103,6 @@ run synthtempo "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SR
 run runners    tools/jvm/RunnerChecks.kt
 run draftkeys  tools/jvm/DraftKeyChecks.kt
 run privacy    tools/jvm/PrivacyChecks.kt
+run shaderuniforms tools/jvm/ShaderUniformChecks.kt
 
 rm -rf "$OUT"
