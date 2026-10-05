@@ -1138,7 +1138,14 @@ data class EditorUiState(
      * this rather than promising.
      */
     val isLayered: Boolean
-        get() = ExportPlan.needsCompositing(videoClips, trimmedDurationMs)
+        // The padded canvas counts, as it does in the export's own copy of this
+        // decision (CompositionFactory.needsCompositing, which passes it): a
+        // background under the picture is a second layer by definition. Left
+        // out here, an edit on a padded canvas read as cuts-only on the sheet -
+        // so "Keep HDR" offered itself, the codec row locked to HEVC to keep
+        // it, and the render composited and tone-mapped anyway. The one thing
+        // the two copies must not disagree about is what the render will do.
+        get() = ExportPlan.needsCompositing(videoClips, trimmedDurationMs, paddedCanvas)
 
     /**
      * Whether the file keeps its HDR: asked for, on an HDR source, and not

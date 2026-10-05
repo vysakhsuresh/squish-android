@@ -595,6 +595,15 @@ fun main() {
         check(!ExportPlan.needsCompositing(listOf(video("a", 0, 1000), video("b", 1000, 1000))), "butted clips composited")
         check(ExportPlan.needsCompositing(listOf(video("a", 500, 1000))), "a late first clip did not composite")
         check(ExportPlan.needsCompositing(listOf(video("a", 0, 1000), video("b", 1500, 1000))), "a gap did not composite")
+        // A padded canvas is a second layer by definition, and it is the one
+        // argument with a default - so a caller that forgets it reads a padded
+        // edit as cuts-only. EditorUiState.isLayered forgot it, and the export's
+        // own copy did not, so the sheet offered Keep HDR on an edit the render
+        // was always going to composite and tone-map.
+        val butted = listOf(video("a", 0, 1000), video("b", 1000, 1000))
+        check(!ExportPlan.needsCompositing(butted, padded = false), "butted clips composited with no canvas")
+        check(ExportPlan.needsCompositing(butted, padded = true), "a padded canvas did not composite")
+        check(ExportPlan.needsCompositing(emptyList(), padded = true), "a padded canvas with no shots did not composite")
         check(ExportPlan.needsCompositing(listOf(video("a", 0, 1000), video("p", 0, 500, layer = 1))), "an overlay did not composite")
         check(
             ExportPlan.needsCompositing(listOf(video("a", 0, 1000), video("b", 900, 1000, transition = Transition(TransitionType.CrossFade, 100)))),
