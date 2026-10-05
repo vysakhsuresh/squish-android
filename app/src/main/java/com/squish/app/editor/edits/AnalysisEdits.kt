@@ -509,7 +509,13 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
         val layer = current.videoClips.firstOrNull { it.id == layerClipId } ?: return
         val timed = trackInTimelineTime(track, source)
 
-        val keys = timed.samples.map { sample ->
+        // The scale smoothed, the positions not. A sample's scale is a coarse
+        // reading of one frame against the original patch - one of three
+        // numbers, re-picked every frame and never accumulated - so multiplied
+        // straight in it made the overlay pulse by twelve per cent at every
+        // key. The positions are what the pin is for and are left exactly as
+        // the tracker found them.
+        val keys = com.squish.app.media.video.withSmoothedScale(timed.samples, PIN_SCALE_SMOOTH_SECONDS).map { sample ->
             Keyframe(
                 atMs = (sample.atMs - layer.timelineStartMs).coerceAtLeast(0L),
                 transform = Transform(
@@ -666,3 +672,12 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
  */
 internal fun sameFootage(then: Clip, now: Clip?): Boolean =
     now != null && now.uri == then.uri && now.isReversed == then.isReversed
+
+/**
+ * How far either way the pinned overlay's *size* is smoothed.
+ *
+ * Half a second: long enough to take the twelve per cent pulse out of a
+ * per-frame scale reading, short enough that an overlay pinned to something
+ * walking towards the camera still grows with it.
+ */
+private const val PIN_SCALE_SMOOTH_SECONDS = 0.5f

@@ -8,7 +8,18 @@ data class TrackSample(
     val atMs: Long,
     val xFraction: Float,
     val yFraction: Float,
-    /** Relative to the size it was first selected at. */
+    /**
+     * Relative to the size it was first selected at - estimated afresh on each
+     * frame from three candidates (1, 0.94, 1.06) at the winning position, and
+     * never accumulated, because the template is blended back at scale 1 and
+     * so never adopts a new size.
+     *
+     * So this is a coarse reading of *this* frame against the original patch,
+     * not a running measure of how much the subject has grown, and it can only
+     * ever be one of those three numbers. Multiplied straight into a layer's
+     * size per frame it pulsed by twelve per cent, which is why the one place
+     * that uses it smooths it first ([withSmoothedScale]).
+     */
     val scale: Float = 1f,
     /** -1..1. Below [MotionTrack.LOST_BELOW] the tracker had lost it. */
     val confidence: Float = 1f
@@ -26,13 +37,7 @@ data class TrackSample(
  * spacing is read back off the samples rather than assumed.
  */
 fun smoothedTrack(samples: List<TrackSample>, seconds: Float): List<TrackSample> {
-    if (samples.size < 2 || seconds <= 0f) return samples
-    val spanMs = (samples.last().atMs - samples.first().atMs).toFloat()
-    val stepMs = (spanMs / (samples.size - 1)).coerceAtLeast(1f)
-    // Half a sample is the floor: below that the kernel is one sample wide and
-    // the smoothing is a no-op, which is the honest answer for samples that are
-    // already further apart than the window.
-    val sigma = (seconds * 1000f / stepMs).coerceAtLeast(0.5f)
+    val sigma = trackSigma(samples, seconds) ?: return samples
     val radius = (sigma * 3).roundToInt().coerceAtLeast(1)
     return samples.indices.map { i ->
         var sx = 0f
@@ -48,6 +53,50 @@ fun smoothedTrack(samples: List<TrackSample>, seconds: Float): List<TrackSample>
         val s = samples[i]
         if (total <= 0f) s else s.copy(xFraction = sx / total, yFraction = sy / total)
     }
+}
+
+/**
+ * The same path with its *scale* smoothed and its positions untouched.
+ *
+ * For pinning a layer to a track. [TrackSample.scale] is a coarse reading of
+ * one frame against the original patch - one of three numbers, re-picked every
+ * frame and never accumulated - so multiplied straight into a layer's size it
+ * made the layer pulse by twelve per cent at every frame of the track. The
+ * positions are left alone on purpose: the tracker's own x and y are what the
+ * pin is *for*, and smoothing them would make the overlay lag the thing it is
+ * pinned to.
+ */
+fun withSmoothedScale(samples: List<TrackSample>, seconds: Float): List<TrackSample> {
+    val sigma = trackSigma(samples, seconds) ?: return samples
+    val radius = (sigma * 3).roundToInt().coerceAtLeast(1)
+    return samples.indices.map { i ->
+        var sum = 0f
+        var total = 0f
+        for (j in (i - radius).coerceAtLeast(0)..(i + radius).coerceAtMost(samples.lastIndex)) {
+            val d = (j - i).toFloat()
+            val w = kotlin.math.exp(-(d * d) / (2 * sigma * sigma)) * samples[j].confidence
+            sum += samples[j].scale * w
+            total += w
+        }
+        val s = samples[i]
+        if (total <= 0f) s else s.copy(scale = sum / total)
+    }
+}
+
+/**
+ * The Gaussian's width in *samples* for a window of [seconds], or null when
+ * there is nothing to smooth.
+ *
+ * Half a sample is the floor: below that the kernel is one sample wide and the
+ * smoothing is a no-op, which is the honest answer for samples already further
+ * apart than the window. The spacing is read off the samples rather than
+ * assumed, which is the whole point - see [smoothedTrack].
+ */
+private fun trackSigma(samples: List<TrackSample>, seconds: Float): Float? {
+    if (samples.size < 2 || seconds <= 0f) return null
+    val spanMs = (samples.last().atMs - samples.first().atMs).toFloat()
+    val stepMs = (spanMs / (samples.size - 1)).coerceAtLeast(1f)
+    return (seconds * 1000f / stepMs).coerceAtLeast(0.5f)
 }
 
 /**

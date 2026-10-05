@@ -124,10 +124,18 @@ object TrackRunner {
                     x = startXFraction * analysisWidth
                     y = startYFraction * analysisHeight
                     val template = cut(luma, x.roundToInt(), y.roundToInt(), size)
-                    if (template != null) {
-                        tracker = ObjectTracker(template, size, size)
-                        samples.add(TrackSample(atMs, startXFraction, startYFraction, 1f, 1f))
-                    }
+                    // Given up on at once rather than tried again every frame.
+                    // `cut` fails on bounds and not on content - the point
+                    // chosen is nearer an edge than half the box - and neither
+                    // the point nor the size changes from one frame to the
+                    // next, so no later frame could have succeeded. The whole
+                    // clip was decoded to fail the same way up to twelve
+                    // hundred times, with the progress bar at nothing the
+                    // entire time (it is fed samples.size, which stays empty),
+                    // and only then did the panel say it could not follow it.
+                    if (template == null) return@withContext null
+                    tracker = ObjectTracker(template, size, size)
+                    samples.add(TrackSample(atMs, startXFraction, startYFraction, 1f, 1f))
                 } else {
                     val step = current.step(luma, x, y, SEARCH_RADIUS)
                     // A lost object is not chased. Holding the last good position

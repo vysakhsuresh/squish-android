@@ -7,6 +7,7 @@ import com.squish.app.editor.OutputSize
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
 import com.squish.app.media.video.smoothedTrack
+import com.squish.app.media.video.withSmoothedScale
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.Transform
@@ -244,6 +245,42 @@ fun main() {
         // where it was rather than dividing by nothing.
         val unsure = (0 until 5).map { TrackSample(atMs = it * 250L, xFraction = 0.9f, yFraction = 0.1f, confidence = 0f) }
         check(smoothedTrack(unsure, 0.75f).all { it.xFraction == 0.9f }, "a track of no confidence was moved")
+
+        // ---- And the pinned overlay's size, which pulsed ------------------
+        //
+        // A sample's scale is a coarse reading of one frame against the
+        // original patch - one of {1, 0.94, 1.06}, re-picked every frame and
+        // never accumulated - so multiplied straight into a layer's size it
+        // made the overlay pulse by twelve per cent at every key.
+        run {
+            val jitter = (0 until 60).map {
+                TrackSample(
+                    atMs = it * 33L,
+                    xFraction = 0.5f,
+                    yFraction = 0.5f,
+                    scale = when (it % 3) { 0 -> 1f; 1 -> 0.94f; else -> 1.06f }
+                )
+            }
+            val smoothed = withSmoothedScale(jitter, 0.5f)
+            val swing = (smoothed.maxOf { it.scale } - smoothed.minOf { it.scale })
+            check(swing < 0.02f, "a jittering scale still swings by $swing after smoothing")
+            // Around one, not away from it: the mean is kept.
+            check(
+                kotlin.math.abs(smoothed.map { it.scale }.average() - 1.0) < 0.01,
+                "smoothing moved the average scale to ${smoothed.map { it.scale }.average()}"
+            )
+            // The positions are untouched - they are what the pin is for.
+            check(smoothed.all { it.xFraction == 0.5f && it.yFraction == 0.5f }, "smoothing the scale moved the path")
+            // A real growth still comes through: a subject that grows over the
+            // track is followed, slowly.
+            val growing = (0 until 60).map {
+                TrackSample(atMs = it * 33L, xFraction = 0.5f, yFraction = 0.5f, scale = 1f + it * 0.01f)
+            }
+            val followed = withSmoothedScale(growing, 0.5f)
+            check(followed.last().scale > followed.first().scale + 0.3f, "a growing subject was flattened: ${followed.first().scale} to ${followed.last().scale}")
+            check(withSmoothedScale(emptyList(), 0.5f).isEmpty(), "an empty track was changed")
+            check(withSmoothedScale(jitter, 0f) == jitter, "a window of no time smoothed anyway")
+        }
     }
 
     println("frame rules: padded canvas, fitted picture, subject on the canvas, reframe per shot, backdrop stretches")
