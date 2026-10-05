@@ -560,11 +560,23 @@ class ProjectAutosave(context: Context) {
         val (file, version) = earlierOf(slot, summary) ?: return null
         val text = runCatching { file.readText() }.getOrNull() ?: return null
         val earlier = runCatching { decode(JSONObject(text)) }.getOrNull() ?: return null
+        // What the sidecar carries and the draft does not, read before the bin
+        // move takes the file away: the export stamp and the day the project
+        // was started live only here, and [writeMeta] carries them forward
+        // through every ordinary save. Written fresh, "Earlier version" wiped
+        // the export badge off a project for good - the next save then read the
+        // stamp from this sidecar, which no longer had one - and reset the
+        // project's start to the snapshot's day, which is the date its card
+        // shows when it has no name of its own.
+        val keep = runCatching { JSONObject(metaFile(slot).readText()) }.getOrNull()
         val binned = delete(slot) ?: return null
         val placed = runCatching {
             // The sidecar first, as a save writes it.
             val meta = JSONObject().apply {
                 put("id", slot)
+                keep?.optLong("createdAtMillis", 0L)?.takeIf { it > 0L }?.let { put("createdAtMillis", it) }
+                keep?.optLong("exportedAtMillis", 0L)?.takeIf { it > 0L }?.let { put("exportedAtMillis", it) }
+                keep?.optString("exportedFingerprint")?.takeIf { it.isNotBlank() }?.let { put("exportedFingerprint", it) }
                 put("title", earlier.name ?: earlier.clips.firstOrNull()?.label ?: "Untitled edit")
                 earlier.name?.let { put("name", it) }
                 put("uri", earlier.sourceUri.toString())
@@ -621,17 +633,38 @@ class ProjectAutosave(context: Context) {
         }
     }
 
-    /** Everything in the bin, newest first, with anything past its month gone. */
-    fun trashed(): List<TrashedDraft> = synchronized(lock) {
+    /**
+     * Takes out everything past its month, and says which files those entries
+     * were the last thing to name.
+     *
+     * Separate from [trashed] so the caller can let go of the read grants, the
+     * way it does after a Delete forever. The expiry used to happen inside the
+     * listing, which has no way to release anything - so a project binned and
+     * left to age out held its picker grant until the app was uninstalled, and
+     * the phone caps how many of those an app may keep.
+     */
+    fun expireOldTrash(): Set<String> = synchronized(lock) {
         runCatching {
             val now = System.currentTimeMillis()
+            val entries: Array<File> = trashDir.listFiles() ?: return@runCatching emptySet()
+            val released = HashSet<String>()
+            entries.filter { it.isDirectory }.forEach { entry ->
+                val (_, at) = DraftHousekeeping.parseTrashName(entry.name) ?: return@forEach
+                if (DraftHousekeeping.isExpired(at, now)) {
+                    released += urisUnder(entry)
+                    entry.deleteRecursively()
+                }
+            }
+            released
+        }.getOrDefault(emptySet())
+    }
+
+    /** Everything in the bin, newest first. Anything past its month is taken out by [expireOldTrash]. */
+    fun trashed(): List<TrashedDraft> = synchronized(lock) {
+        runCatching {
             val entries: Array<File> = trashDir.listFiles() ?: return@runCatching emptyList()
             entries.filter { it.isDirectory }.mapNotNull { entry ->
                 val (slot, at) = DraftHousekeeping.parseTrashName(entry.name) ?: return@mapNotNull null
-                if (DraftHousekeeping.isExpired(at, now)) {
-                    entry.deleteRecursively()
-                    return@mapNotNull null
-                }
                 val live = File(entry, liveFile(slot).name)
                 val summary = summaryOf(slot, live, File(entry, metaFile(slot).name))
                     ?: read(File(entry, backupFile(slot).name))?.let { s ->

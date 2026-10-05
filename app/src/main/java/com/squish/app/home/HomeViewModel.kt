@@ -70,6 +70,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { historyRepository.forgetDeleted() }
         viewModelScope.launch {
             val (edits, tools, binned) = withContext(Dispatchers.IO) {
+                // Anything past its month in the bin goes here, and whatever it
+                // was the last thing to name is let go of - the same release a
+                // Delete forever does. Done inside the listing, as it used to
+                // be, the grants were simply held: a project binned and left to
+                // age out kept its picker grant until the app was uninstalled,
+                // and the phone caps how many of those an app may keep.
+                val expired = autosave.expireOldTrash()
+                if (expired.isNotEmpty()) {
+                    val still = autosave.referencedUris() +
+                        autosave.trashed().flatMap { autosave.urisInTrash(it.trashId) } +
+                        toolAutosave.drafts().flatMap { d -> d.uris.map { it.toString() } } +
+                        toolAutosave.trashed().flatMap { (_, d) -> d.uris.map { it.toString() } }
+                    ProjectRules.releasable(expired, still.toSet())
+                        .filter { it.startsWith("content://") }
+                        .forEach { getApplication<Application>().releaseReadAccess(Uri.parse(it)) }
+                }
                 val edits = autosave.drafts()
                 val tools = toolAutosave.drafts().mapNotNull { it.summary(withEarlier = true) }
                 val bin = autosave.trashed() + toolAutosave.trashed().mapNotNull { (trashId, draft) ->

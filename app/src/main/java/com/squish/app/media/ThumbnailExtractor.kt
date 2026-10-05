@@ -184,18 +184,17 @@ object ThumbnailExtractor {
     suspend fun cover(context: Context, uri: Uri, timeMs: Long): Bitmap? =
         if (StillClips.isStill(uri)) withContext(Dispatchers.IO) { StillClips.previewBitmap(context, uri, SAMPLE_WIDTH_PX) }
         else frameAt(context, uri, timeMs) ?: withContext(Dispatchers.IO) {
-            // A photo picked as a file - a document URI to a JPEG - has no frames either.
-            runCatching {
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    android.graphics.BitmapFactory.decodeStream(input, null, bounds)
-                    var sample = 1
-                    while (bounds.outWidth / (sample * 2) >= SAMPLE_WIDTH_PX && bounds.outHeight / (sample * 2) >= SAMPLE_HEIGHT_PX) sample *= 2
-                    context.contentResolver.openInputStream(uri)?.use { again ->
-                        android.graphics.BitmapFactory.decodeStream(again, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
-                    }
-                }
-            }.getOrNull()
+            // A photo picked as a file - a document URI to a JPEG - has no frames
+            // either, and is read by the same helper the branch above uses.
+            //
+            // It used to solve its own sample size, and against whichever side
+            // was *shorter*: the two tests were joined with &&, so the doubling
+            // stopped the moment either side would fall under 480. A 12000x1200
+            // panorama therefore came back 6000x600 - fourteen megabytes of
+            // ARGB_8888 for a 56 dp row, and written to cache/thumbs at that
+            // size - where solving on the long side, as every other loop in the
+            // app does, gives 750x75.
+            StillClips.previewBitmap(context, uri, SAMPLE_WIDTH_PX)
         }
 
     suspend fun extractFrames(context: Context, uri: Uri, count: Int, durationMs: Long): List<Bitmap?> =

@@ -323,17 +323,27 @@ object StillClips {
         val (outW, outH) = fit(w, h, maxShortSide)
         val target = File(dir(context), "$name.mp4")
         val partial = File(target.absolutePath + ".part")
-        val done = withContext(Dispatchers.Main) {
-            transcode(context.applicationContext, image, partial, outW, outH, lengthMs, withSound = true) || run {
-                // The silent track is a convenience, not the point. A phone whose
-                // Media3 will not make silence for a picture used to be a phone
-                // that could add photos and blanks at all; it still is, with a
-                // still that has no sound track - which the export copes with,
-                // since it declares sound on every sequence itself.
-                runCatching { partial.delete() }
-                transcode(context.applicationContext, image, partial, outW, outH, lengthMs, withSound = false)
+        // The partial is taken off on the way out, however the way out is found.
+        //
+        // Cancelling throws out of the withContext, past the failure branch
+        // below that deletes it - and the name is unique per call, so nothing
+        // ever reuses or overwrites it. Back out of "Preparing 1 photo…" and a
+        // part-written megabyte stayed in files/stills/ for good, since Android
+        // never clears that directory and only the Settings storage card would
+        // have taken it. ReverseRenderer does the same operation this way.
+        val done = runCatching {
+            withContext(Dispatchers.Main) {
+                transcode(context.applicationContext, image, partial, outW, outH, lengthMs, withSound = true) || run {
+                    // The silent track is a convenience, not the point. A phone whose
+                    // Media3 will not make silence for a picture used to be a phone
+                    // that could add photos and blanks at all; it still is, with a
+                    // still that has no sound track - which the export copes with,
+                    // since it declares sound on every sequence itself.
+                    runCatching { partial.delete() }
+                    transcode(context.applicationContext, image, partial, outW, outH, lengthMs, withSound = false)
+                }
             }
-        }
+        }.onFailure { runCatching { partial.delete() } }.getOrThrow()
         return if (done && partial.length() > 0 && partial.renameTo(target)) {
             Uri.fromFile(target)
         } else {
