@@ -71,7 +71,7 @@ music, footage and fonts, and translate caption words.
 
 ## Sound
 
-- 22 Squish Originals (music composed on the phone) by mood, 16 sound effects,
+- 22 Squish Originals (music composed on the phone) by mood, 24 sound effects,
   songs on
   the phone, starred and recent; audition before adding.
 - **Free music online**: 15 genres, thousands of tracks each, Load more (Internet Archive, Creative Commons, video-safe
@@ -91,8 +91,11 @@ music, footage and fonts, and translate caption words.
 
 ## Words
 
-- 14 one-tap templates (Reel, Vlog, Cinematic, Retro, Party, Memories, Travel,
-  Birthday, Food, Fitness, Gaming, Love, News, Sale).
+- 45 one-tap templates (Reel, Vlog, Cinematic, Retro, Party, Memories, Travel,
+  Birthday, Food, Fitness, Gaming, Love, News, Sale and thirty-one more), each
+  one a crop, a look, a title and a set of effects - and
+  `tools/jvm/TemplateChecks.kt` holds that every one of them names a look, a
+  title and effects that exist.
 - Add text, 17 title styles (Headline, Subtitle, Name tag, Neon, Breaking,
   Quote, Sale, Big number, Chapter, Vlog, Gaming, Love, Follow, Cinema, Spin,
   Typewriter, Bounce), 12 sticker sets, templates (Reel, Vlog, Cinematic,
