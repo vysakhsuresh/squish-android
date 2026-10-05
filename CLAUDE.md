@@ -137,6 +137,10 @@ function first; if it can, it can be checked.
 
 ## What is currently unverified on a device
 
+The list below is by batch and is long. `docs/ROADMAP.md` §5 says what to do
+**first** when a phone is actually here - ten things in order of risk times
+reach, plus the clean-up this machine owes the phone. Start there, not here.
+
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 

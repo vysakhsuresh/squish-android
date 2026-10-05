@@ -454,3 +454,59 @@ All on the moto g84 (`adb -s ZY32J8HF2S`), `adb logcat -G 16M` first, build with
 5. Cutout on a main-track shot with a shot after it and a Push in on it: no Key green / Key blue / Cut out, a "Float this clip" button under Chroma key; press it: the shot is on an overlay row, selected, full frame where it was with its Push in still on it and the next shot under it, and the sheet now offers the key buttons; Key green shows the next shot through. Under Background, the button shows only with Cut out chosen (an old draft), never under Blur or Colour; Colour gives the person over a colour on the main track. On the last shot, and on the only shot, no button, the line says to put a shot after it. With six overlay rows taken it says the rows are taken and the shot stays. Paste attributes from a keyed overlay onto a shot: Chroma key shows the swatch, Pick and the sliders, and Turn off. The panel is headed "Chroma key".
 6. Effects: a placed effect's card has Strength and Remove only, and says to close the sheet and tap the effect to drag its ends. Crop: the Flip buttons carry left-right and up-down icons. Track: a pinned line shows a tick icon, not "✓". Sync: the four nudges are two rows of two, one line each at the largest font.
 7. First open on a fresh install (clear the app's data): one gesture hint (B15's editor coach mark) appears under the strip's notices, Got it dismisses it, and it does not come back on the next project; no second card ever shows beside it.
+
+## 5. The first hour with a phone (5 October)
+
+§4 is per batch and exhaustive; nothing above says what to do **first**. By
+5 October the unseen backlog ran to sixteen batches and five sweeps, and a
+session that reaches a device and works down §4 in order will spend its hour on
+B1 and never reach the things most likely to be broken.
+
+This list is ordered by risk times reach: how badly a thing could be wrong,
+multiplied by how many edits touch it. Work down it, and delete from it what
+holds up. Everything in it is unseen.
+
+`adb -s ZY32J8HF2S`, `adb logcat -G 16M` first, `JAVA_HOME=$HOME/.jdks/jbr-21.0.11
+./gradlew clean assembleDebug` (clean, because `TimelinePreview.kt` has changed).
+
+1. **It opens, plays and scrubs the right way.** Open a clip, play, drag the
+   strip right - the playhead goes right. This is the fault the owner found on
+   5 October and the reason three sweeps happened; it is fixed, and it is the
+   first thing to see with your own eyes.
+2. **An export still works, and is a fifth of the size.** Export any short
+   cuts-only edit. The file plays in Photos, in WhatsApp and in Chrome, and it
+   is far smaller than the same edit was before 5 October. Every export in the
+   app went through the change that did this (`media/CompactMuxer.kt`), so if
+   anything here is wrong, everything is.
+3. **The composited export gate**, §4's B5 steps 1 to 4, in that order: a video
+   and a photo with a Dissolve on the join, then the photo first, then a video
+   overlay at 40%, then a gap. These are the four that failed on Media3 1.5.1
+   and the four the whole layered pipeline rests on. If one fails, the log line
+   `SquishExport failed: N sequences` names which assumption went.
+4. **The two new joins** (5 October): put a **Blur** and a **Burn out** on a cut
+   and look at the preview, then at the file. The Blur is the one place where
+   the preview and the file run the same shader on the same number by different
+   routes; the Burn out should leave the new shot whole underneath from the
+   first frame. Also put a Blur on an overlay, where the softness goes through
+   the premultiply pass instead.
+5. **Reverse a short window of a long recording.** Trim three seconds off the
+   head of a twenty-minute file and Reverse: about a second, not minutes - and
+   the reversed clip's *last* frames must be there.
+6. **Track and Stabilize on a 60 fps clip in a 30 fps project**, and a Track
+   aimed at the clip's last frame, which used to throw and say nothing.
+7. **The beat grid after a head trim.** Find the beat on the camera sound, trim
+   five seconds off the head shot, and the dots must still be on the music.
+8. **The audio suite by ear** (B9): a voiceover recorded and heard back, a 300%
+   sound, a fade, a voice effect on one clip and not the one beside it. None of
+   it has been heard at all.
+9. **A long export on this phone** - twenty-odd cuts over a light leak - for the
+   blended-still cache, which used to be the shape of an out-of-memory.
+10. **Then §4 from B1**, and `docs/DEVICE_FINDINGS.md`'s own lists.
+
+**Clean-up owed from the 5 October session**, before anything else is added:
+delete MediaStore ids 1001326343, 1001326344 and 1001326345 *by id* (never by a
+`LIKE` pattern - `_` is a wildcard and `sq_%` once matched every `squish_`
+export); remove the two scratch projects, "Edit · 5 Oct" from the reel with a
+"Hello" line on it and a three-second one from VID-20261003-WA0186.mp4; and put
+back `adb shell settings put system accelerometer_rotation 1` and
+`adb shell svc power stayon false`.
