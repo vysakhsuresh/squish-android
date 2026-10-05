@@ -298,6 +298,9 @@ object MusicSynth {
             "sfx-cloth" -> cloth(left, right, rng)
             "sfx-swish" -> swish(left, right, rng)
             "sfx-build" -> riser(left, right, rng)
+            // Named rather than left to the fallback, so every effect on the
+            // list has a branch of its own and ControlChecks can say so.
+            "sfx-ding" -> ding(left, right)
             else -> ding(left, right)
         }
         write(out, left, right)
