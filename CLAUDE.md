@@ -68,14 +68,21 @@ function first; if it can, it can be checked.
 - **There are no unit tests.** `./gradlew testDebugUnitTest` succeeds by having
   nothing to run, so it proves nothing. The `tools/jvm` suites are the tests.
 - **Python is not installed here**, so the `tools/check_*.py` checkers only run
-  in the sandbox. On this machine `assembleDebug` is the check.
+  in the sandbox. On this machine `assembleDebug` is the check — and it is a
+  better one for five of the six, which look for things the compiler finds
+  anyway. The sixth, `check_shaders.py`, looks at assets the compiler never
+  reads, so it is also a suite now (`tools/jvm/ShaderUniformChecks.kt`) and
+  runs on both machines.
 - **No `kotlinc` here either, but the `tools/jvm` suites still run:** the
   Kotlin 2.0.20 compiler is in the Gradle cache. With `java` from JBR 21,
   `java -cp <kotlin-compiler-embeddable;kotlin-stdlib;kotlin-reflect;kotlin-script-runtime;kotlin-daemon-embeddable;trove4j;annotations-13.0;kotlinx-coroutines-core-jvm>
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib -classpath <kotlin-stdlib> -d <dir> <the suite's files from run.sh>`
   then `java -cp "<dir>;<kotlin-stdlib>" <Suite>Kt`. Every jar is under
   `~/.gradle/caches/modules-2/files-2.1/`. `sh tools/jvm/run_desktop.sh` does
-  that for every suite in `run.sh` (about 50 minutes, one line each), and
+  that for every suite in `run.sh` (about 50 minutes, one line each — and
+  `tools/jvm/RunnerChecks.kt` fails if the two runners' lists ever part, which
+  they had: four suites were in `run.sh` alone and the desktop had never run
+  them), and
   `sh tools/jvm/jc.sh <Suite> <files...>` runs one. Suites that run app code against Media3
   itself (the voice effects through its real `BaseAudioProcessor`) are in
   `sh tools/jvm/run_media3.sh`, which puts media3-common, guava and the SDK's
