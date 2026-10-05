@@ -115,7 +115,7 @@ fun CurveEditor(
                     detectTapGestures { at ->
                         val x = (at.x / size.width).coerceIn(0f, 1f)
                         val y = 1f - (at.y / size.height).coerceIn(0f, 1f)
-                        val points = latest.of(channel).points
+                        val points = latest.of(channel).ordered
                         // Only on empty space: a tap on a point is how you
                         // choose it, not how you stack a second one on it.
                         val onTop = points.any {
@@ -141,7 +141,7 @@ fun CurveEditor(
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val x0 = down.position.x / size.width
                         val y0 = 1f - down.position.y / size.height
-                        val near = latest.of(channel).points.let { points ->
+                        val near = latest.of(channel).ordered.let { points ->
                             points.indices.minByOrNull {
                                 hypot(points[it].x - x0, points[it].y - y0)
                             }?.takeIf { i ->
@@ -156,7 +156,7 @@ fun CurveEditor(
                             event.consume()
                             val i = dragging
                             if (i < 0) return@drag
-                            val points = latest.of(channel).points.toMutableList()
+                            val points = latest.of(channel).ordered.toMutableList()
                             if (i >= points.size) return@drag
                             val old = points[i]
                             // Held between its neighbours, so the sort below can
@@ -207,7 +207,7 @@ fun CurveEditor(
 
             val drawn = curve.of(channel)
             drawCurve(drawn, w, h, channel.tint, 3f)
-            drawn.points.forEach { p ->
+            drawn.ordered.forEach { p ->
                 val at = Offset(p.x * w, (1f - p.y) * h)
                 drawCircle(SquishColors.Background, radius = 9f, center = at)
                 drawCircle(channel.tint, radius = 9f, center = at, style = Stroke(width = 3f))

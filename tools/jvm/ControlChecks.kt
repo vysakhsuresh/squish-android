@@ -569,6 +569,28 @@ fun main() {
         }
     }
 
+    // ---- The curve editor reads the curve in the curve's own order. --------
+    //
+    // It holds an index into the list of points and clamps a dragged point
+    // between its neighbours *in that list*. Read off `points`, which is
+    // whatever order a draft happened to store, a point's floor could be above
+    // its ceiling - and `coerceIn` on an inverted range throws. `Curve.ordered`
+    // is sorted and has two points on one x reduced to one, which is what both
+    // the index and the clamp assume.
+    run {
+        val editor = read("$SRC/editor/CurveEditor.kt")
+        check(editor.contains(".ordered"), "CurveEditor no longer reads Curve.ordered - this check has rotted")
+        check(
+            !Regex("of\\(channel\\)\\.points").containsMatchIn(editor),
+            "CurveEditor reads a curve's raw points again: its index and its neighbour clamp both assume " +
+                "sorted, deduped points, and coerceIn on an inverted range throws"
+        )
+        check(
+            !Regex("drawn\\.points").containsMatchIn(editor),
+            "CurveEditor draws a curve's raw points again, so an out-of-order draft is drawn as a zigzag"
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

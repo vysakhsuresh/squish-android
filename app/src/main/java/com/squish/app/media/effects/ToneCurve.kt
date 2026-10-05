@@ -21,11 +21,23 @@ data class CurvePoint(val x: Float, val y: Float)
  */
 data class Curve(val points: List<CurvePoint> = STRAIGHT) {
 
-    /** Sorted, with any two points sharing an x reduced to the last of them. */
-    private val sorted: List<CurvePoint>
+    /**
+     * Sorted, with any two points sharing an x reduced to the last of them.
+     *
+     * Public because the editor has to agree with this about what the curve
+     * *is*. It held an index into [points] while calling it "an index into the
+     * sorted points", and clamped a dragged point between its neighbours in
+     * that list - so an out-of-order list (a draft written by another build, a
+     * file edited by hand) gave a floor above its ceiling, and `coerceIn` on an
+     * inverted range throws rather than returning anything. Everything that
+     * reads a curve reads it in this order.
+     */
+    val ordered: List<CurvePoint>
         get() = points.sortedBy { it.x }.let { list ->
             list.filterIndexed { i, p -> i == list.lastIndex || abs(list[i + 1].x - p.x) > X_EPS }
         }
+
+    private val sorted: List<CurvePoint> get() = ordered
 
     /** Nothing done: every point sits on the diagonal, however many there are. */
     val isIdentity: Boolean get() = points.all { abs(it.y - it.x) < EPS }

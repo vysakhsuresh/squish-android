@@ -1166,8 +1166,12 @@ class ProjectAutosave(context: Context) {
                     }
                 }
                 // A curve written with fewer than two points cannot be drawn;
-                // a straight one is the honest reading of it.
-                return if (points.size >= 2) com.squish.app.media.effects.Curve(points) else com.squish.app.media.effects.Curve()
+                // a straight one is the honest reading of it. Sorted on the way
+                // in, so what is stored is canonical from the next save on -
+                // everything that reads a curve reads it through Curve.ordered,
+                // but a file is a file and this is where it stops mattering.
+                return if (points.size >= 2) com.squish.app.media.effects.Curve(points.sortedBy { it.x })
+                else com.squish.app.media.effects.Curve()
             }
             adjust = adjust.copy(curve = com.squish.app.media.effects.ToneCurve(
                 master = curveOf("m"), red = curveOf("r"), green = curveOf("g"), blue = curveOf("b")

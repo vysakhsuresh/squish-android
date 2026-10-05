@@ -67,6 +67,47 @@ fun main() {
 
     // --- Points out of order, doubled, or missing. --------------------------
     check(near(curve(1f to 1f, 0f to 0f).valueAt(0.5f), 0.5f), "points given out of order were not sorted")
+
+    // `ordered` is what everything that reads a curve reads, the editor
+    // included. It held an index into the raw list while calling it "an index
+    // into the sorted points" and clamped a dragged point between its
+    // neighbours there - so an out-of-order list (a draft from another build, a
+    // file edited by hand) gave a floor above its ceiling, and coerceIn on an
+    // inverted range throws rather than returning anything.
+    run {
+        val jumbled = curve(0.8f to 0.9f, 0.1f to 0.2f, 0.5f to 0.3f, 0.3f to 0.7f)
+        val inOrder = jumbled.ordered
+        check(inOrder.size == 4, "ordering a jumbled curve lost a point: ${inOrder.size}")
+        check(
+            inOrder.map { it.x } == inOrder.map { it.x }.sorted(),
+            "ordered is not sorted: ${inOrder.map { it.x }}"
+        )
+        // Which is the property the editor's clamp needs: every point's
+        // neighbours are on the right sides of it.
+        for (i in 1 until inOrder.lastIndex) {
+            check(
+                inOrder[i - 1].x <= inOrder[i + 1].x,
+                "ordered gave point $i a floor above its ceiling: ${inOrder[i - 1].x} to ${inOrder[i + 1].x}"
+            )
+        }
+        // The y values travel with their x, not with their place in the list.
+        check(inOrder[0] == CurvePoint(0.1f, 0.2f), "ordering moved a point's value: ${inOrder[0]}")
+        check(inOrder[3] == CurvePoint(0.8f, 0.9f), "ordering moved a point's value: ${inOrder[3]}")
+        // Two points on one x are one point, so an index into this list is an
+        // index into what is drawn.
+        val stacked = curve(0f to 0f, 0.5f to 0.3f, 0.5f to 0.8f, 1f to 1f)
+        check(stacked.ordered.size == 3, "two points on one x came back as ${stacked.ordered.size} points")
+        check(stacked.ordered.map { it.x } == listOf(0f, 0.5f, 1f), "the kept points are ${stacked.ordered}")
+        // And an out-of-order curve evaluates exactly as the sorted one does.
+        val sortedSame = Curve(jumbled.points.sortedBy { it.x })
+        for (i in 0..255) {
+            val x = i / 255f
+            check(
+                near(jumbled.valueAt(x), sortedSame.valueAt(x), 1e-6f),
+                "a jumbled curve and a sorted one disagree at $x"
+            )
+        }
+    }
     val doubled = curve(0f to 0f, 0.5f to 0.3f, 0.5f to 0.8f, 1f to 1f)
     for (i in 0..255) check(doubled.valueAt(i / 255f) in 0f..1f, "two points on one x produced ${doubled.valueAt(i / 255f)}")
     check(near(Curve(emptyList()).valueAt(0.4f), 0.4f), "an empty curve is not a straight one")
