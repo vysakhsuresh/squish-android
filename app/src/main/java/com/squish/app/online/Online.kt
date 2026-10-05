@@ -98,16 +98,8 @@ object Online {
         return connection
     }
 
-    /**
-     * What a person typed, safe inside a Lucene query: letters, digits and
-     * spaces only, the words joined by AND - so a search can narrow a query
-     * but never escape its licence filter. Lower case, too: a typed "rock OR
-     * jazz" sent the operator as a bare word between two ANDs, a syntax error
-     * the Archive answers with no list, read as "couldn't reach".
-     */
-    fun searchTerms(typed: String): String? =
-        typed.lowercase().replace(Regex("[^\\p{L}\\p{N} ]"), " ").trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-            .take(8).joinToString(" AND ").ifEmpty { null }
+    /** See the top-level [com.squish.app.online.searchTerms], which is where it can be executed. */
+    fun searchTerms(typed: String): String? = com.squish.app.online.searchTerms(typed)
 
     private const val PREFS = "settings"
     private const val KEY = "online_enabled"

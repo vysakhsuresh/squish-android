@@ -1388,3 +1388,26 @@ the size and the rate - and `singleFileEffects` covers all four of those, so
 requiring it empty is the whole test. The look, the thirteen sliders, the
 speed curve and the stabilizer have all been per-clip since B12 and B13, so
 there is no edit-wide grade left to miss.
+
+### A search typed in Malayalam matched nothing (5 October)
+
+Found by writing the check for it. `Online.searchTerms` keeps what someone
+types inside a Lucene query - letters, digits and spaces, the words joined by
+AND - so a search can narrow the licence filter beside it but never escape
+its parentheses. The filter was `[^\p{L}\p{N} ]`, and `\p{L}` is *letters*: in
+an Indic script the vowel signs and the virama are combining marks, not
+letters, so "കല്യാണം" came out as three fragments joined by AND, which matches
+nothing. The app read the empty list as "couldn't reach". The same went for
+Arabic, Hebrew, Thai and Devanagari, and for any decomposed accent.
+
+`\p{M}` is kept now. The function moved into `online/SearchTerms.kt` so it can
+be executed at all - `Online` holds a Context, a connection and a Compose
+helper and cannot be compiled off a phone - and `tools/jvm/SearchTermChecks.kt`
+asserts the shape, the eight-word cap, null for nothing, that a typed OR or
+NOT comes through as a word rather than an operator, and that nothing which
+comes out is a character Lucene reads as syntax, Malayalam and Arabic
+included.
+
+(The suite writes its non-ASCII as `\u` escapes: `tools/jvm/jc.sh` does not
+tell the compiler what charset the sources are in, so a literal in another
+script arrives as question marks and fails for a reason that is not the code's.)

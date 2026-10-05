@@ -113,6 +113,7 @@ run controls   tools/jvm/ControlChecks.kt
 run runners   tools/jvm/RunnerChecks.kt
 run draftkeys tools/jvm/DraftKeyChecks.kt
 run privacy   tools/jvm/PrivacyChecks.kt
+run searchterms "$SRC/online/SearchTerms.kt" tools/jvm/SearchTermChecks.kt
 run shaderuniforms tools/jvm/ShaderUniformChecks.kt
 run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScreen.kt" tools/jvm/SplitScreenChecks.kt
 run gif        "$SRC/media/gif/GifEncoder.kt" tools/jvm/GifChecks.kt
