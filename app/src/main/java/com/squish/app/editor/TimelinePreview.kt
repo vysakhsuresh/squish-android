@@ -343,8 +343,15 @@ fun TimelinePreview(
         // is taken as until its player has said otherwise.
         val unrotatedPicture = if (PreviewBox.isQuarterTurn(rotationDegrees)) 1f / pictureAspect else pictureAspect
         // The shape of the picture a base surface holds, as its player decoded it.
+        // The first draw that has one, not the first draw that names the clip:
+        // with a single shot covering the playhead the idle surface is stamped
+        // with that shot's id too, and its aspect is left unset. Taking the
+        // first by id alone, whenever the idle surface was A, this answered
+        // null and the caller fell back to the *project's* shape - so a
+        // portrait clip cut into a landscape edit had auto-reframe's focus and
+        // the Crop and Mask tools' coordinates measured on the wrong picture.
         fun surfaceAspect(clipId: String): Float? =
-            listOf(frame.surfaceA, frame.surfaceB).firstOrNull { it.clipId == clipId }?.aspect
+            listOf(frame.surfaceA, frame.surfaceB).firstNotNullOfOrNull { if (it.clipId == clipId) it.aspect else null }
         // Where auto-reframe has the crop centred: the subject in the shot under
         // the playhead, from that shot's own track, carried onto the canvas
         // through the shot's crop, the turn and its placement - the export's
