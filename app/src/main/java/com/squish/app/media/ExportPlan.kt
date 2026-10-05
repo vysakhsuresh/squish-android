@@ -682,6 +682,15 @@ object ExportPlan {
      * first frame, a jitter shakes itself still.
      */
     fun arrival(type: TransitionType, p: Float): Draw {
+        // A Burn out's whole character is on the shot that is leaving, and an
+        // arrival has none. Taken from blend like the rest it would come out a
+        // plain dissolve - the one kind on the sheet that did nothing when it
+        // was picked on an overlay. The overlay arrives out of the white
+        // instead: the same white, on the shot that is here.
+        if (type == TransitionType.BurnOut) {
+            val q = p.coerceIn(0f, 1f)
+            return Draw(alpha = q, white = 1f - q)
+        }
         val q = if (type in ONE_AT_A_TIME) 0.5f + p.coerceIn(0f, 1f) / 2f else p
         return blend(type, q, incomingOnTop = true).first
     }

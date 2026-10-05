@@ -37,6 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -215,19 +216,28 @@ private fun TransitionTile(
             .clickable(onClick = onClick)
             .padding(6.dp)
     ) {
+        val at = p.coerceIn(0f, 1f)
+        val shots = if (arrival) listOf(ExportPlan.arrival(type, at) to INCOMING)
+        else ExportPlan.blend(type, at, incomingOnTop = true).let { (incoming, outgoing) ->
+            listOf(outgoing to OUTGOING, incoming to INCOMING)
+        }
+        // A Defocus softens both shots by the same amount, so the tile can blur
+        // whole rather than per shot. The shader's reach is a fraction of the
+        // frame, which at a tile's size would be a fraction of a pixel and
+        // invisible; the tile is a diagram at a tenth the size, so it is scaled
+        // up until it reads. Below Android 12 Modifier.blur does nothing and
+        // the tile is the dissolve underneath - a thumbnail, not the file.
+        val soft = shots.maxOf { it.first.blur }
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color.Black)
+                .then(if (soft > 0f) Modifier.blur((soft * TILE_BLUR_DP).dp) else Modifier)
         ) {
-            if (arrival) {
-                drawShot(ExportPlan.arrival(type, p.coerceIn(0f, 1f)), INCOMING, incomingFrame)
-            } else {
-                val (incoming, outgoing) = ExportPlan.blend(type, p.coerceIn(0f, 1f), incomingOnTop = true)
-                drawShot(outgoing, OUTGOING, outgoingFrame)
-                drawShot(incoming, INCOMING, incomingFrame)
+            shots.forEach { (draw, colour) ->
+                drawShot(draw, colour, if (colour == INCOMING) incomingFrame else outgoingFrame)
             }
         }
         // Two lines' room, every tile the same height: four across on a narrow
@@ -294,6 +304,13 @@ private fun DrawScope.drawShot(draw: ExportPlan.Draw, colour: Color, frame: Imag
 
 /** How far inside a shot its tile frame is taken: not the very first or last frame, which is often a fade or a blur. */
 private const val FRAME_INSET_MS = 300L
+
+/**
+ * What a Defocus's reach - a fraction of the frame - is worth in dp on a tile.
+ * At the peak of 0.010 this is 4 dp, which reads on an 80 dp thumbnail; the
+ * same fraction of the thumbnail itself would be under a pixel.
+ */
+private const val TILE_BLUR_DP = 400f
 
 private val OUTGOING = Color(0xFF5B6478)
 private val INCOMING = Color(0xFFB8C4DC)

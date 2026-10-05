@@ -443,6 +443,14 @@ fun main() {
         }
         check(abs(ExportPlan.arrival(TransitionType.DipToBlack, 0.5f).alpha - 0.5f) < 1e-4f, "a dip to black as an arrival is not a fade up")
         check(ExportPlan.arrival(TransitionType.DipToWhite, 0f).white >= 0.99f, "a dip to white as an arrival does not open on white")
+        // A burn out has nothing to burn when there is no shot leaving, so as an
+        // arrival it is the overlay coming out of the white rather than the
+        // dissolve the blend would have given.
+        check(ExportPlan.arrival(TransitionType.BurnOut, 0.2f).white > 0.5f, "a burn out as an arrival is a plain dissolve")
+        check(ExportPlan.arrival(TransitionType.BurnOut, 0f).white >= 0.99f, "a burn out as an arrival does not open on white")
+        // And a defocus arrival sharpens as it lands, rather than landing soft.
+        check(ExportPlan.arrival(TransitionType.Defocus, 0.2f).blur > 0f, "a defocus as an arrival never softens")
+        check(ExportPlan.arrival(TransitionType.Defocus, 1f).blur == 0f, "a defocus arrival lands soft")
         // The transition's draw with the clip's own laid on it.
         val stacked = ExportPlan.Draw(alpha = 0.5f, shiftX = 0.2f).over(ExportPlan.Draw(alpha = 0.5f, keepTo = 0.6f, white = 0.3f))
         check(abs(stacked.alpha - 0.25f) < 1e-5f && stacked.shiftX == 0.2f && stacked.keepTo == 0.6f && stacked.white == 0.3f, "over: $stacked")
