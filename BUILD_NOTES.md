@@ -89,17 +89,30 @@ Photos and blanks are rendered with a silent AAC track; if that render fails,
 they are rendered again picture-only, as before 1.11 (`StillClips.render`).
 
 The sound tools (B9) lean on the order of a clip's audio processors and on
-one fact about each side. `buildAudioProcessors` is fold-down and gain, then
-the speed change, then `FadeProcessor`, then the voice: the fade counts the
+one fact about each side. `buildAudioProcessors` is the fold-down, then the
+voice, then the gain, then the speed change, then `FadeProcessor`: the fade counts the
 frames it writes and turns them into played milliseconds, so it has to sit
 after `SpeedChangingAudioProcessor`, where the stream runs at the strip's
 clock - before it, a song at half speed would fade over half the seconds the
-wedge shows. Both `FadeProcessor` and the preview's `GainProcessor` take
+wedge shows. The level is *after* the voice on purpose, and on both sides:
+the saturating voices are `tanh`, so where the level goes is a question of
+timbre and not only of loudness, and the preview can only apply it after -
+a player's own volume sits past the sink's processors. Which means the
+mixer's matrix carries no gain any more; it runs first only because it is
+also the fold-down to stereo, and the voice should hear the channels the
+file will have. Read against the 1.11.1 source: `ChannelMixingAudioProcessor
+.onConfigure` returns `AudioFormat.NOT_SET` when its matrix `isIdentity()`,
+so at unity gain on a stereo source the mixer makes itself inactive and
+costs nothing, while a 6-channel source still folds down through it.
+Both `FadeProcessor` and the preview's `GainProcessor` take
 16-bit PCM only, as `VoiceProcessor` always has: Transformer decodes to
 16-bit and `DefaultAudioSink` hands its processors 16-bit while float output
-is off (the default). A gain past 1 clips to the sample range in both places
-- `ChannelMixingAudioProcessor` constrains its sums - so a level that
-distorts in the file distorts the same in the preview. The preview's boost
+is off (the default). A gain past 1 clips to the sample range wherever it is
+applied - `ChannelMixingAudioProcessor` constrains its sums, which is the
+path a clip with no voice still takes, and `GainProcessor` clamps to the
+short range, which is the path a clip with one takes in the file and every
+sound takes in the preview - so a level that distorts in the file distorts
+the same in the preview. The preview's boost
 and voice are read from an `AtomicReference` per player on every buffer,
 never a rebuilt sink; a Media3 that stops calling `queueInput` on an
 inactive-looking processor would take the boost with it (`GainProcessor` is
