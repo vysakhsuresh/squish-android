@@ -72,6 +72,10 @@ object PolishRules {
      * it gives "2,00", and the trim then takes the zeros and cannot take the
      * comma - so every speed chip read "2,x", every effect knob "1,/s", and the
      * Settings transition list "0,5 s". Seven labels were built that way.
+     *
+     * The fifteen other `"%.Nf".format(...)` labels in the app do *not* trim, so
+     * a comma there is simply a comma and they are left alone: it is the trim
+     * that cannot see one, not the format.
      */
     fun number(value: Float, decimals: Int = 2): String =
         String.format(java.util.Locale.ROOT, "%.${decimals}f", value).trimEnd('0').trimEnd('.')
