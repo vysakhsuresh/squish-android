@@ -52,9 +52,14 @@ object CustomFonts {
 
     /** The face saved under [file], or null when it is gone or unreadable - the caption falls back to its system face. */
     fun typeface(file: String): Typeface? = synchronized(cache) {
-        cache.getOrPut(file) {
-            dir?.let { File(it, file) }?.takeIf { it.isFile }?.let(::load)
+        // containsKey, not getOrPut: that one reads a stored null as absent, and
+        // null is the answer this cache exists to remember - a font imported
+        // once and since deleted was looked for on disk, and attempted, on every
+        // caption of every frame of a render.
+        if (!cache.containsKey(file)) {
+            cache[file] = dir?.let { File(it, file) }?.takeIf { it.isFile }?.let(::load)
         }
+        cache[file]
     }
 
     /** Every font on hand, by file name. */
