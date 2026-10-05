@@ -1226,6 +1226,19 @@ should work through it and then delete what holds up.
 - **The sandbox's `kotlinc` log is mostly noise, but not entirely.** "No value
   passed for parameter" is real. It was filtered out as framework noise once, and
   a broken build shipped.
+- **`.format()` takes the phone's locale; `.uppercase()` does not.** The two read
+  alike and behave oppositely, which cost a round trip on 5 October in both
+  directions. `"%02d".format(n)` uses `Locale.getDefault(FORMAT)`, so on Arabic,
+  Persian, Burmese, Bengali or Nepali it emits that locale's own digits - which
+  is how "Export subtitles" came to write a file the app's own `\d` parser could
+  not read. Anything machine-readable wants `String.format(Locale.ROOT, …)`;
+  anything on screen is better in the user's. Kotlin's no-argument `uppercase()`
+  and `lowercase()`, on the other hand, are locale-*independent* - they are not
+  Java's `toUpperCase()` - so the Turkish dotless i cannot bite through them, and
+  a sweep for it finds nothing. Executed under `tr-TR` rather than argued:
+  `"lut_3d_size".uppercase()` is `LUT_3D_SIZE`, `uppercase(tr)` is
+  `LUT_3D_SİZE`. `tools/jvm/LutChecks.kt` keeps that honest for the one place it
+  would matter.
 
 ## Longer form
 
