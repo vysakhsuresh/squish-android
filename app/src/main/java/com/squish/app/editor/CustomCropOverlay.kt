@@ -243,11 +243,23 @@ private fun gripAt(x: Float, y: Float, rect: CropRect, width: Float, height: Flo
     // Corners before edges: at a corner both tests pass, and the corner is what a
     // finger that close to one meant. Inside a small rectangle every edge can be
     // "near", so the nearest one wins rather than whichever is tested first.
+    //
+    // By distance to the corner itself, and with no `!inside` on it. The corner
+    // brackets are drawn *inward*, so every pixel of one is inside the
+    // rectangle, and both ways into Crop open the window at the whole picture -
+    // where there is no outside at all. A press on a bracket therefore fell
+    // through to the edges below and moved one edge instead of two, which is
+    // the opposite of what a corner is for, and the doc comment two lines up
+    // had been promising "a corner changes two edges" the whole time.
+    val corners = listOf(
+        Grip.TopLeft to kotlin.math.hypot(x - left, y - top),
+        Grip.TopRight to kotlin.math.hypot(x - right, y - top),
+        Grip.BottomLeft to kotlin.math.hypot(x - left, y - bottom),
+        Grip.BottomRight to kotlin.math.hypot(x - right, y - bottom)
+    )
+    val corner = corners.minBy { it.second }
     return when {
-        nearLeft && nearTop && !inside -> Grip.TopLeft
-        nearRight && nearTop && !inside -> Grip.TopRight
-        nearLeft && nearBottom && !inside -> Grip.BottomLeft
-        nearRight && nearBottom && !inside -> Grip.BottomRight
+        corner.second < reachPx -> corner.first
         nearLeft || nearRight || nearTop || nearBottom -> {
             val distances = listOf(
                 Grip.Left to kotlin.math.abs(x - left),

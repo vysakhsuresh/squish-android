@@ -1,3 +1,5 @@
+import com.squish.app.media.video.MotionTrack
+import com.squish.app.media.video.TrackSample
 import com.squish.app.editor.MaskOutline
 import com.squish.app.timeline.Mask
 import com.squish.app.timeline.MaskShape
@@ -78,6 +80,31 @@ fun main() {
     run {
         val (dx, dy) = MaskOutline.dragged(10f, 10f, 200f, 100f)
         check(near(dx, 0.1f) && near(dy, -0.2f), "a drag of 10px on 200x100 is not (0.1, -0.2): ($dx,$dy)")
+    }
+
+    // ---- A track and a drag move the shape the same way -------------------
+    //
+    // The tracker's y is a bitmap row over the frame's height, so 0 is the top;
+    // the shader's is a GL texture coordinate, so +1 is the top, which is the
+    // convention centerYFraction and MaskOutline.dragged are both in. The
+    // conversion did not negate, so a pinned track sat mirrored about the
+    // middle of the picture and walked up while its subject walked down.
+    run {
+        val near = { a: Float, b: Float -> kotlin.math.abs(a - b) < 1e-4f }
+        val top = Mask(track = MotionTrack(listOf(TrackSample(0L, 0.5f, 0.1f, 0.2f))))
+        val (_, y) = top.centerAt(0L)
+        check(y > 0f, "a track in the top of the frame gives a centre of $y, and the shader's +y is the top")
+        val bottom = Mask(track = MotionTrack(listOf(TrackSample(0L, 0.5f, 0.9f, 0.2f))))
+        check(bottom.centerAt(0L).second < 0f, "a track in the bottom of the frame does not give a negative centre")
+        check(near(Mask(track = MotionTrack(listOf(TrackSample(0L, 0.5f, 0.5f, 0.2f)))).centerAt(0L).second, 0f),
+            "a track in the middle is not at 0")
+        // And the same way as a finger: dragging down and tracking down agree.
+        val draggedDown = MaskOutline.dragged(0f, 10f, 200f, 100f).second
+        val trackedDown = Mask(track = MotionTrack(listOf(TrackSample(0L, 0.5f, 0.6f, 0.2f)))).centerAt(0L).second
+        check(draggedDown < 0f && trackedDown < 0f, "a drag down gives $draggedDown and a track down $trackedDown")
+        // x runs the same way in both, so it is not negated.
+        check(Mask(track = MotionTrack(listOf(TrackSample(0L, 0.9f, 0.5f, 0.2f)))).centerAt(0L).first > 0f,
+            "a track on the right of the frame is not on the right")
     }
 
     println("mask outline: ${MaskShape.entries.size} shapes on the shader's own field")

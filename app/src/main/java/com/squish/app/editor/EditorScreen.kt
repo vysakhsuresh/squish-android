@@ -922,7 +922,12 @@ private fun EditorPreview(
                         viewModel.selectClip(id)
                         latestOpenToolSheet(if (item.sticker) Tool.Placement else Tool.Edit)
                     }
-                }
+                },
+                // Only a line or a sticker has anything to open. On a clip
+                // overlay the handler above returns without acting, so the
+                // second of two quick taps did nothing - and stood in the way
+                // of the tap that cycles down a stack of overlapping PiPs.
+                canOpen = { id -> textItem(id) != null }
             )
         }
         // The hand-drawn crop is only taken hold of on the Frame sheet, where it

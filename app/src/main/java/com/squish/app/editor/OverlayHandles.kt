@@ -93,6 +93,17 @@ class OverlayHandleActions(
     /** A double tap on it: for a line of text, the keyboard, as in CapCut. Null where a double tap is two taps. */
     val onOpen: ((String) -> Unit)? = null,
     /**
+     * Whether [onOpen] would do anything for this one.
+     *
+     * The handler is one lambda for every kind of overlay and it returns
+     * without acting on a clip, so "a double tap opens it" was true of lines
+     * and stickers and a no-op on a picture-in-picture - and worse than a
+     * no-op, because the quick repeat also stood in for the tap that cycles
+     * down a stack. Two overlapping PiPs could not be cycled by tapping at a
+     * normal speed: the second tap did nothing at all.
+     */
+    val canOpen: (String) -> Boolean = { onOpen != null },
+    /**
      * A line of text's gesture, in the line's own terms - where it is and how
      * big - worked out by the preview from the box's Transform (TextGeometry);
      * [onPlace] is for clips.
@@ -110,7 +121,12 @@ private enum class Corner(val label: String, val icon: ImageVector) {
     Resize("Resize and turn overlay", Icons.Filled.OpenInFull),
     // Section 2's "edit". It was a one-tap Reset, which threw away an animated
     // overlay's every key when brushed; Reset is on the sheet this opens.
-    Edit("Edit overlay placement", Icons.Filled.Edit)
+    //
+    // "Edit overlay", not "Edit overlay placement": which sheet it opens
+    // depends on what is selected - Placement for a clip or a sticker, the
+    // keyboard for a line of words, as CapCut does - and TalkBack read the
+    // placement one aloud before opening the other.
+    Edit("Edit overlay", Icons.Filled.Edit)
 }
 
 /**
@@ -192,8 +208,14 @@ fun OverlayHandles(
 
                     // A button of the selected box - never from inside it (see
                     // OverlayRules.cornerAt). Only buttons that are drawn: while
-                    // it plays there are none.
-                    val corner = selectedBox?.takeIf { latestShowBox && w > 0f && h > 0f }
+                    // it plays there are none, and none on a picture too short
+                    // for them either. That second test was in the drawing and
+                    // not here, so with the keyboard up - where the buttons are
+                    // deliberately hidden - their touch zones stayed live, and a
+                    // tap on bare picture a little past a corner of the outline
+                    // deleted the line being typed.
+                    val roomy = size.height.toDp() >= MIN_HEIGHT_FOR_BUTTONS
+                    val corner = selectedBox?.takeIf { latestShowBox && roomy && w > 0f && h > 0f }
                         ?.let {
                             val handles = OverlayRules.reachableHandles(it, cornerOutset, -origin.x, -origin.y, size.width - origin.x, size.height - origin.y, margin)
                             OverlayRules.handleAt(it, at.x, at.y, handles, cornerOutset, cornerReach)
@@ -308,8 +330,11 @@ fun OverlayHandles(
                             // goes to the next one down, and round again, as CapCut does.
                             // The one beneath a sticker could not be reached at all.
                             val stack = items.filter { boxes[it.clipId]?.contains(x, y, grace) == true }
-                            // Not the second of a double tap, which opens the one selected.
-                            val quickRepeat = lastTap?.let { (id, at) -> id == hit.clipId && System.currentTimeMillis() - at <= DOUBLE_TAP_MS } == true
+                            // Not the second of a double tap, which opens the one
+                            // selected - and only where there is something to open.
+                            val openable = latestActions.canOpen(hit.clipId)
+                            val quickRepeat = openable &&
+                                lastTap?.let { (id, at) -> id == hit.clipId && System.currentTimeMillis() - at <= DOUBLE_TAP_MS } == true
                             val cycled = if (hit.clipId == latestSelected && stack.size > 1 && !quickRepeat) {
                                 val i = stack.indexOfFirst { it.clipId == hit.clipId }
                                 stack[(i + 1) % stack.size]
@@ -324,7 +349,7 @@ fun OverlayHandles(
                             val now = System.currentTimeMillis()
                             val open = latestActions.onOpen
                             val again = lastTap?.let { (id, at) -> id == hit.clipId && now - at <= DOUBLE_TAP_MS } == true
-                            if (again && open != null) {
+                            if (again && open != null && openable) {
                                 lastTap = null
                                 open(hit.clipId)
                             } else lastTap = hit.clipId to now

@@ -112,11 +112,20 @@ data class Mask(
      * The shape's center at a moment of the source, following its track if it has
      * one. Track fractions run 0 to 1 across the frame; the shader's center runs
      * -1 to 1 from the middle.
+     *
+     * And the two run opposite ways up. `TrackSample.yFraction` is a row of a
+     * bitmap over its height, so 0 is the top; the shader's y comes from
+     * `vTexSamplingCoord`, a GL texture coordinate, so +1 is the top - which is
+     * also the convention `centerYFraction` is held in, and what
+     * `MaskOutline.dragged` returns `-2 * dy / h` for. Without the negation a
+     * pinned track sat mirrored about the middle of the frame and walked up
+     * while the thing it was following walked down, in the preview and in the
+     * file alike.
      */
     fun centerAt(sourceMs: Long): Pair<Float, Float> {
         val sample = track?.sampleAt(sourceMs)
             ?: return centerXFraction to centerYFraction
-        return (sample.xFraction - 0.5f) * 2f to (sample.yFraction - 0.5f) * 2f
+        return (sample.xFraction - 0.5f) * 2f to -(sample.yFraction - 0.5f) * 2f
     }
 
     /** Whether the shape itself is keyed, rather than standing still or following a track. */
