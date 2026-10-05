@@ -33,10 +33,21 @@ fun TimelineState.withSpanRemoved(fromMs: Long, toMs: Long): TimelineState {
     // behind it, which is what closes the gap.
     var next = inside.fold(cut) { state, clip -> state.withClipRemoved(clip.id) }
 
-    // Everything after the stretch comes back by its length. The main track has
-    // already closed up (withClipRemoved relays it); the other rows have not,
-    // so they are pulled back here or the sound would sit a stretch late.
-    val span = end - start
+    // Everything after the stretch comes back by what the *picture* lost. The
+    // main track has already closed up (withClipRemoved relays it); the other
+    // rows have not, so they are pulled back here or the sound would sit a
+    // stretch late.
+    //
+    // By the picture's own loss, not by `end - start`. The relay keeps each
+    // shot's gap from the one before it (mainSpacing), so a stretch that covers
+    // a gap on the main track closes by less than its own length - and the
+    // sounds and lines over it were pulled back by the whole of it, landing
+    // that gap early, off the words they were cued to. With no main track at
+    // all there is no picture to measure against and the stretch itself is the
+    // answer.
+    val before = cut.baseVideoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
+    val after = next.baseVideoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
+    val span = if (cut.baseVideoClips.isEmpty()) end - start else (before - after).coerceAtLeast(0L)
     next = next.copy(
         clips = next.clips.map { clip ->
             if (!clip.isMain && clip.timelineStartMs >= end - EDGE_MS) {

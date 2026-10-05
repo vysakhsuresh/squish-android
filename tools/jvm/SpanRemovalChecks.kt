@@ -128,6 +128,37 @@ fun main() {
         check(all.baseVideoClips.isEmpty(), "taking everything out left ${all.baseVideoClips.size} shots")
     }
 
+    // --- The sound comes back by what the picture lost, not by the stretch. ---
+    //
+    // The relay keeps each shot's gap from the one before (mainSpacing), so a
+    // stretch covering a gap on the main track closes by less than its own
+    // length. The other rows were pulled back by the whole of it, so a sound or
+    // a caption over the stretch landed that gap early, off the words it was
+    // cued to - the one thing this function exists to keep together.
+    run {
+        // Shots at 0..4s and 8..12s, a two-second gap between them; a sound at 12s.
+        val gapped = TimelineState(clips = listOf(
+            video("a", 4_000),
+            video("b", 4_000, start = 8_000),
+            audio("s", 2_000, start = 12_000)
+        ))
+        // Take out 3s..6s: one second of "a", then two seconds of the gap, and
+        // nothing of "b" - so "b" keeps the gap it had recorded and the picture
+        // loses one second, not three.
+        val after = gapped.withSpanRemoved(3_000, 6_000)
+        val mainEnd = after.baseVideoClips.maxOf { it.timelineEndMs }
+        val lost = 12_000L - mainEnd
+        val sound = after.clips.first { it.id == "s" }
+        check(lost == 1_000L, "the picture lost $lost, not the one second of shot that was in the stretch")
+        check(sound.timelineStartMs == 12_000L - lost,
+            "the sound moved by ${12_000L - sound.timelineStartMs} and the picture by $lost")
+        // And with no gap the two are the same number, as they always were.
+        val butted = TimelineState(clips = listOf(video("a", 4_000), video("b", 4_000, start = 4_000), audio("s", 2_000, start = 8_000)))
+        val tight = butted.withSpanRemoved(3_000, 5_000)
+        check(tight.clips.first { it.id == "s" }.timelineStartMs == 6_000L,
+            "a stretch with no gap in it moved the sound to ${tight.clips.first { it.id == "s" }.timelineStartMs}, not 6000")
+    }
+
     // --- When it refuses, it changes nothing at all. ------------------------
     //
     // Two cases, and TextEdits.removeSpans has to tell them from a removal: it
