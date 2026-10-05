@@ -162,7 +162,13 @@ fun ShapePlacementPanel(
     viewModel: EditorViewModel,
     onEyedropper: ((Int) -> Unit) -> Unit
 ) {
-    var pickerOpen by remember { mutableStateOf(false) }
+    // Keyed to the shape, as the text sheets' pickers are. The colour picker's
+    // two gestures are keyed pointerInput(Unit), so they hold the onChange they
+    // were created with; left open across a change of selection - and Placement
+    // survives one - the hue strip and the shade square went on restyling the
+    // shape that was selected when it opened, while the heading and the hex
+    // readout had already moved to the new one.
+    var pickerOpen by remember(item.id) { mutableStateOf(false) }
     val onDrag = { change: (TextOverlayItem) -> TextOverlayItem ->
         viewModel.text.restyleCaption(item.id, change, dragging = true)
     }

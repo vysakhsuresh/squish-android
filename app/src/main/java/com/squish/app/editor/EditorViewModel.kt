@@ -387,7 +387,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      */
     fun scrubTo(ms: Long) = _state.update { current ->
         val target = ms.coerceIn(0L, current.timelineDurationMs)
-        val snapped = if (current.snapToMarkers) snapToAnything(target, current) else target
+        // Always: the switch is "Snap to markers and beats", and cuts, 0:00 and
+        // the end are not markers - the strip's own rule, stated twice in
+        // TimelineEditor and obeyed by every trim and lift. Gating the whole
+        // thing on it meant the playhead held on nothing with it off while a
+        // trim handle an inch away still held on the same cut.
+        val snapped = snapToAnything(target, current)
         current.copy(playheadMs = snapped, scrubNonce = current.scrubNonce + 1)
     }
 
@@ -485,7 +490,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val candidates = sequence {
             yield(0L)
             yield(current.timelineDurationMs)
-            current.markers.forEach { yield(it) }
+            if (current.snapToMarkers) current.markers.forEach { yield(it) }
             (current.videoClips + current.audioClips).forEach { clip ->
                 yield(clip.timelineStartMs)
                 yield(clip.timelineEndMs)

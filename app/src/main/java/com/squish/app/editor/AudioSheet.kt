@@ -168,7 +168,17 @@ fun SoundVoicePanel(state: EditorUiState, viewModel: EditorViewModel) {
  */
 @Composable
 fun RecordPanel(state: EditorUiState, viewModel: EditorViewModel) {
-    val mic = rememberPermission(android.Manifest.permission.RECORD_AUDIO, onGranted = { viewModel.audio.startVoiceover() })
+    // Which take the permission dialog was opened for.
+    //
+    // onGranted is fixed when the panel is composed, and it used to be a plain
+    // startVoiceover() - so with the mic not yet allowed, "Record this take
+    // again" opened the dialog, and on Allow the new take started at the
+    // playhead and the old one stayed on the strip, which is the one thing that
+    // button promises not to do.
+    var replaceOnGrant by remember { mutableStateOf(false) }
+    val mic = rememberPermission(android.Manifest.permission.RECORD_AUDIO, onGranted = {
+        viewModel.audio.startVoiceover(replaceSelected = replaceOnGrant)
+    })
     val rec = state.recording
     val replacing = state.audioClips.firstOrNull { it.id == state.selectedClipId && it.isVoiceover }
     val hasPicture = state.pictureEndMs > 0L
@@ -210,7 +220,7 @@ fun RecordPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         // record over, and the button used to run the count-in
                         // and land a take by itself.
                         RecordButton(recording = false, enabled = hasPicture) {
-                            if (mic.granted) viewModel.audio.startVoiceover() else mic.ask()
+                            if (mic.granted) viewModel.audio.startVoiceover() else { replaceOnGrant = false; mic.ask() }
                         }
                         Text(
                             if (!hasPicture) "Add a clip first: the take is recorded over the picture."
@@ -223,7 +233,7 @@ fun RecordPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         SquishOutlinedButton(
                             text = "Record this take again",
                             modifier = Modifier.fillMaxWidth(),
-                            onClick = { if (mic.granted) viewModel.audio.startVoiceover(replaceSelected = true) else mic.ask() }
+                            onClick = { if (mic.granted) viewModel.audio.startVoiceover(replaceSelected = true) else { replaceOnGrant = true; mic.ask() } }
                         )
                         Text(
                             "The new take lands where “${replacing.label}” starts, and that one goes.",

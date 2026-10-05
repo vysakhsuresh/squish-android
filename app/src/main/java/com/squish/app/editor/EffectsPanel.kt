@@ -266,9 +266,14 @@ private fun DrawScope.drawFrame(frame: ImageBitmap, p: FxParams) {
     if (p.split > 0.0001f) {
         val d = p.split * w
         drawRect(Color.Black)
-        image(d, 1f, floatArrayOf(1f, 0f, 0f))
+        // Red left, blue right - the way round both shaders do it. They sample
+        // red at `uv + uSplit`, so the red channel shows what is to the *right*
+        // of each pixel, which puts the red copy of the picture to the left;
+        // the tile drew it to the right and the preview the other way, so the
+        // card in the library was a mirror of the effect it was selling.
+        image(-d, 1f, floatArrayOf(1f, 0f, 0f))
         image(0f, 1f, floatArrayOf(0f, 1f, 0f))
-        image(-d, 1f, floatArrayOf(0f, 0f, 1f))
+        image(d, 1f, floatArrayOf(0f, 0f, 1f))
     } else {
         image(0f, 1f)
     }

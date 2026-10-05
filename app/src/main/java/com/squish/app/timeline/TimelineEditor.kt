@@ -430,8 +430,15 @@ fun TimelineEditor(
         val from = (scrubRawMs ?: heldMs ?: s.playheadMs.toDouble()).coerceIn(0.0, end)
         val to = (from - w.msForPx(deltaPx)).coerceIn(0.0, end)
         scrubRawMs = to
-        val snapped = if (!latestSnapScrub) null
-        else TimelineLanes.nearest(
+        // Not gated on the switch. "Snap to markers and beats" empties
+        // [snapMarks], which is the whole of what it is for; scrubTargets adds
+        // 0:00, the end and every clip and effect edge whatever is passed in,
+        // and those are the ones this file says twice are always snapped to
+        // and that every other path here obeys. The extra gate was left from
+        // before that rule and took the cuts with the beats, so with the switch
+        // off a drag of the strip held on nothing - no tick, no line - while a
+        // trim handle an inch away still snapped to the same cut.
+        val snapped = TimelineLanes.nearest(
             to.roundToLong(), TimelineLanes.scrubTargets(s, latestMarkers), w.msForDp(SNAP_DP.value).roundToLong()
         )
         scrubSnapMs = snapped
@@ -2248,11 +2255,24 @@ private fun BoxScope.KeyDiamond(
     val x = window.widthDp(atTimeline - drawnStartMs).dp
     val tapClip = rememberUpdatedState(latestClip)
     val tapKey = rememberUpdatedState(onKeyTap)
+    // Above the trim handles, but only where no grip is drawn.
+    //
+    // A selected clip's handle takes touches over HANDLE_WIDTH while it paints
+    // GRIP_DRAWN, and it is composed after the diamonds, so a key in that
+    // invisible half-inch could not be tapped at all - and the handle's own
+    // gesture is a horizontal drag, which ignores a tap, so the press did
+    // nothing whatever. Raised here, the diamond wins its own 22 dp back. Not
+    // where the grip is actually drawn: there the white bar is the control the
+    // eye sees, and a diamond on top of it would be a trim handle that cannot
+    // be grabbed in its middle.
+    val wide = window.widthDp(drawnEndMs - drawnStartMs).dp
+    val onGrip = x < GRIP_DRAWN || x > wide - GRIP_DRAWN
     Box(
         modifier = Modifier
             .align(Alignment.BottomStart)
             .offset(x = x - KEY_TARGET / 2)
             .size(KEY_TARGET)
+            .zIndex(if (onGrip) 0f else 3f)
             // The clip and the callback read through rememberUpdatedState, not
             // captured: pointerInput keys on (clip.id, atMs), so the block does
             // not restart when the clip merely moves, and `latestClip` captured

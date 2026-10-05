@@ -55,6 +55,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -1065,6 +1066,13 @@ internal fun ColourRow(
  */
 @Composable
 private fun ColourPicker(argb: Int, onChange: (Int) -> Unit, onFinished: () -> Unit) {
+    // Read through rememberUpdatedState: the four gestures below are keyed
+    // pointerInput(Unit), so each holds whatever lambda it was created with, and
+    // a picker left open across a change of selection went on colouring the
+    // thing that was selected when it opened while the readout above it had
+    // already moved on.
+    val latestChange by rememberUpdatedState(onChange)
+    val latestFinished by rememberUpdatedState(onFinished)
     var hue by remember { mutableStateOf(0f) }
     var sat by remember { mutableStateOf(0f) }
     var bright by remember { mutableStateOf(1f) }
@@ -1077,7 +1085,7 @@ private fun ColourPicker(argb: Int, onChange: (Int) -> Unit, onFinished: () -> U
             hue = hsv[0]; sat = hsv[1]; bright = hsv[2]
         }
     }
-    val emit = { onChange(hsvToArgb(hue, sat, bright)) }
+    val emit = { latestChange(hsvToArgb(hue, sat, bright)) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(
@@ -1086,7 +1094,7 @@ private fun ColourPicker(argb: Int, onChange: (Int) -> Unit, onFinished: () -> U
                 .height(120.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .pointerInput(Unit) {
-                    detectDragGestures(onDragEnd = { onFinished() }) { change, _ ->
+                    detectDragGestures(onDragEnd = { latestFinished() }) { change, _ ->
                         sat = (change.position.x / size.width).coerceIn(0f, 1f)
                         bright = (1f - change.position.y / size.height).coerceIn(0f, 1f)
                         emit()
@@ -1097,7 +1105,7 @@ private fun ColourPicker(argb: Int, onChange: (Int) -> Unit, onFinished: () -> U
                         sat = (at.x / size.width).coerceIn(0f, 1f)
                         bright = (1f - at.y / size.height).coerceIn(0f, 1f)
                         emit()
-                        onFinished()
+                        latestFinished()
                     }
                 }
         ) {
@@ -1116,7 +1124,7 @@ private fun ColourPicker(argb: Int, onChange: (Int) -> Unit, onFinished: () -> U
                 .height(22.dp)
                 .clip(RoundedCornerShape(11.dp))
                 .pointerInput(Unit) {
-                    detectDragGestures(onDragEnd = { onFinished() }) { change, _ ->
+                    detectDragGestures(onDragEnd = { latestFinished() }) { change, _ ->
                         hue = (change.position.x / size.width).coerceIn(0f, 1f) * 360f
                         emit()
                     }
@@ -1125,7 +1133,7 @@ private fun ColourPicker(argb: Int, onChange: (Int) -> Unit, onFinished: () -> U
                     detectTapGestures { at ->
                         hue = (at.x / size.width).coerceIn(0f, 1f) * 360f
                         emit()
-                        onFinished()
+                        latestFinished()
                     }
                 }
         ) {
