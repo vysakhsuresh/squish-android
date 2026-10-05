@@ -15,3 +15,17 @@ export EXTRA_CP
 SRC=app/src/main/java/com/squish/app
 sh tools/jvm/jc.sh VoiceEffectsChecks "$SRC/media/audio/VoiceProcessor.kt" "$SRC/media/audio/VoiceCleaner.kt" \
   "$SRC/timeline/VoiceEffect.kt" tools/jvm/VoiceEffectsChecks.kt 2>&1 | grep -v "^warning" | tail -5
+# The three level processors - the fades and the volume curves - run against
+# Media3's BaseAudioProcessor on real PCM. AudioRulesChecks executes what a
+# fade's level should be; these execute the buffer loops that apply it.
+TIMELINE="$SRC/timeline/SpeedRamp.kt $SRC/timeline/TimelineModels.kt $SRC/timeline/VoiceEffect.kt
+  $SRC/timeline/TimelineLanes.kt $SRC/timeline/Keyframe.kt $SRC/timeline/ValueTracks.kt $SRC/timeline/Mask.kt $SRC/timeline/ChromaKey.kt
+  $SRC/timeline/Background.kt $SRC/timeline/LayerBlend.kt $SRC/editor/TimedEffect.kt
+  $SRC/media/effects/ToneCurve.kt $SRC/media/effects/Lut.kt $SRC/media/effects/ColorWheels.kt $SRC/media/effects/SkinTone.kt $SRC/media/effects/Look.kt $SRC/editor/ClipCrop.kt $SRC/editor/CropRect.kt
+  tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt
+  $SRC/media/video/ObjectTracker.kt $SRC/media/video/MotionEstimator.kt
+  $SRC/media/video/TrajectorySmoother.kt $SRC/media/video/StabilizerSolve.kt
+  tools/jvm/stub/Uri.kt"
+sh tools/jvm/jc.sh ProcessorChecks $TIMELINE "$SRC/editor/AudioRules.kt" "$SRC/media/audio/FadeProcessor.kt" \
+  "$SRC/media/audio/GainProcessor.kt" "$SRC/media/audio/GainCurveProcessor.kt" \
+  tools/jvm/ProcessorChecks.kt 2>&1 | grep -v "^warning" | tail -8
