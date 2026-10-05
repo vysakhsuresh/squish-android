@@ -1604,6 +1604,20 @@ On the phone, in this order:
    the *decoded picture* in the surface's effects pass, the file the *finished
    canvas* in TransitionEffect - so on a shot cropped or placed much smaller
    the softness should read a little wider on screen. Note how much.
+
+   **And the question this one really has to answer:** does it read as a
+   *defocus*, or as three copies of the picture? The ring is nine taps on a
+   3x3 grid - the effects library's own Blur, deliberately, so a placed blur
+   and a defocus join are one program on one number - and at the peak reach of
+   0.010 those taps are about 11 px apart on a 1080-wide frame. That is
+   undersampled: on a high-contrast edge it may treble rather than soften. If
+   it does, the fix is a *disc* of thirteen taps at the golden angle on two
+   rings instead of the grid - smoother for the same order of cost - and it has
+   to be made in all four copies of the kernel at once, or they stop agreeing:
+   `squish_fx_es2.glsl`, the AGSL copy of it in `editor/CanvasFx.kt`,
+   `squish_transition_es2.glsl` and `squish_premultiply_es2.glsl`. Judge the
+   library's placed Blur at full strength at the same time; it has the same
+   ring and has never been looked at closely either.
 2. **A Blur scrubbed through rather than played.** The softness is a GL
    uniform, so it needs a frame drawn to reach the screen; `PreviewEngine
    .remember` asks for a redraw when it changes. Drag the strip slowly across
