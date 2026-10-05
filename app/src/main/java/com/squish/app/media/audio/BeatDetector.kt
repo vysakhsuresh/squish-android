@@ -269,9 +269,17 @@ object BeatDetector {
     private fun estimateTempo(envelope: FloatArray, framesPerSecond: Double): Tempo? {
         val slowestPeriod = (60.0 / MIN_BPM * framesPerSecond).roundToInt()
         val fastestPeriod = max(2, (60.0 / MAX_BPM * framesPerSecond).roundToInt())
-        // Correlations are needed out to three times the slowest period, since
-        // that is where a slow tempo's support lives.
-        val maxLag = min(envelope.size - 2, slowestPeriod * 3)
+        // Out to four times the slowest period, because that is the furthest
+        // multiple the scoring below reads - the duple score's `at(4 * period)`,
+        // and the triple score's `at(3 * period + 1)`. Sized to three times, as
+        // it was, `at` fell off the end and returned zero for every candidate
+        // slower than about 80 BPM, so a slow candidate was scored on three
+        // terms where its own double at twice the tempo was scored on four.
+        // Nothing in the suite's seventy-eight synthetic tracks changes answer
+        // either way, so this is the scoring doing what it says rather than a
+        // fault anything has been seen to cause; the extra lap of correlation
+        // is a few million multiply-adds on a three-minute song.
+        val maxLag = min(envelope.size - 2, slowestPeriod * 4 + 1)
         if (maxLag <= fastestPeriod + 2) return null
 
         val weighted = DoubleArray(maxLag + 1)

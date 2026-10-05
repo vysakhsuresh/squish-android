@@ -116,7 +116,13 @@ fun main() {
     // On a pattern with nothing between the beats there is no ambiguity left, and
     // the exact tempo is demanded.
 
-    val tempos = listOf(70.0, 90.0, 100.0, 120.0, 128.0, 140.0, 150.0, 174.0)
+    // 60 and 65 are here because of the correlation array's length. The duple
+    // score reads the correlation at four times a candidate period, and the
+    // array was sized to three times the *slowest* period - so for anything
+    // under about 80 BPM that term came back zero while its double at twice the
+    // tempo still had it, and the score leaned towards the faster reading of
+    // exactly the slow tracks the octave weighting is there to settle.
+    val tempos = listOf(60.0, 65.0, 70.0, 90.0, 100.0, 120.0, 128.0, 140.0, 150.0, 174.0)
 
     println("--- with off-beat hats (tempo may legitimately come back at an octave)")
     println("%-8s %-10s %-8s %-8s %s".format("true", "found", "ratio", "conf", "beats"))
