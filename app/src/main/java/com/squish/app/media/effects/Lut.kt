@@ -160,6 +160,13 @@ object CubeFile {
             val line = raw.substringBefore('#').trim()
             if (line.isEmpty()) return@forEach
             val parts = line.split(WHITESPACE)
+            // Kotlin's no-argument `uppercase()` is locale-independent - it is
+            // not Java's `toUpperCase()`, which takes the default locale and
+            // would turn "lut_3d_size" into "LUT_3D_SİZE" on a Turkish phone
+            // and match none of the keywords below. Three of the six have an i
+            // in them, so if this is ever changed to `uppercase(someLocale)`
+            // the import stops working in Turkish and Azerbaijani.
+            // LutChecks parses a cube under five locales for that reason.
             when (parts[0].uppercase()) {
                 "TITLE" -> Unit
                 "LUT_3D_SIZE" -> size3 = parts.getOrNull(1)?.toIntOrNull() ?: 0

@@ -162,6 +162,47 @@ fun main() {
         check(problem("hello")!!.endsWith("."), "the message is not a sentence: ${problem("hello")}")
     }
 
+    // ---- A cube reads on a phone set to any language -----------------------
+    //
+    // Insurance, not a fault found: the header keywords are matched by
+    // uppercasing the line's first word, and Kotlin's no-argument `uppercase()`
+    // is locale-independent - *executed* to be sure of it, under tr-TR:
+    // "lut_3d_size".uppercase() is LUT_3D_SIZE, while `uppercase(tr)` and
+    // Java's `toUpperCase()` both give LUT_3D_SİZE with a dotted capital I,
+    // which matches nothing. Three of the six keywords have an i in them, so
+    // the day someone passes a locale in, every .cube import stops working in
+    // Turkish and Azerbaijani and this is what says so.
+    run {
+        val cube = """
+            TITLE "warm"
+            LUT_3D_SIZE 2
+            DOMAIN_MIN 0.0 0.0 0.0
+            DOMAIN_MAX 1.0 1.0 1.0
+            0 0 0
+            1 0 0
+            0 1 0
+            1 1 0
+            0 0 1
+            1 0 1
+            0 1 1
+            1 1 1
+        """.trimIndent()
+        val was = java.util.Locale.getDefault()
+        try {
+            for (tag in listOf("tr-TR", "az-AZ", "en-US", "de-DE", "ar-EG")) {
+                java.util.Locale.setDefault(java.util.Locale.forLanguageTag(tag))
+                val read = runCatching { CubeFile.parse(cube) }.getOrNull()
+                check(read != null, "on $tag a cube did not read at all")
+                check(read?.size == 2, "on $tag the cube's size read as ${read?.size}")
+                // And the lower-case spelling some tools write.
+                val lower = runCatching { CubeFile.parse(cube.lowercase(java.util.Locale.ROOT)) }.getOrNull()
+                check(lower?.size == 2, "on $tag a lower-case header read as ${lower?.size}")
+            }
+        } finally {
+            java.util.Locale.setDefault(was)
+        }
+    }
+
     println("lut: .cube 3D and 1D, atlas laid out for ES2")
     if (problems.isEmpty()) println("PASS - a cube reads, samples and flattens the way the shader expects")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
