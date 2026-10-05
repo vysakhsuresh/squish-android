@@ -77,7 +77,35 @@ fun main() {
         }
     }
 
-    println("privacy: one file opens connections, and it can only ask")
-    if (problems.isEmpty()) println("PASS - nothing outside online/Online.kt can reach the network, and nothing it sends has a body")
+    // ---- And nothing deletes what it did not make ---------------------------
+    //
+    // The other promise, on the delete dialog: "Your original videos are
+    // untouched either way." Three places delete through the content resolver
+    // and all three delete a row this app has just inserted, by its own URI.
+    // A delete with a *selection* is the shape that takes somebody else's
+    // file - a pattern over display names is how one goes wrong, and `_` is a
+    // wildcard in SQL LIKE, so "squish\_%" matches more than it reads as.
+    run {
+        val mayDelete = setOf(
+            "app/src/main/java/com/squish/app/media/GallerySaver.kt",
+            "app/src/main/java/com/squish/app/media/gif/GifMaker.kt"
+        )
+        files.forEach { (path, text) ->
+            Regex("""(?:contentResolver|resolver)\.delete\(([^)]*)\)""").findAll(text).forEach { m ->
+                if (path !in mayDelete) {
+                    problems += "$path deletes through the content resolver. Only the gallery saver and the " +
+                        "GIF writer may, and only the row they have just inserted"
+                }
+                val args = m.groupValues[1].split(",").map { it.trim() }
+                if (args.size >= 2 && args.drop(1).any { it != "null" }) {
+                    problems += "$path deletes with a selection (${m.groupValues[1]}). A delete by URI takes the " +
+                        "row this app made; a delete by query takes whatever matches, and it is the user's gallery"
+                }
+            }
+        }
+    }
+
+    println("privacy: one file opens connections, it can only ask, and nothing deletes what it did not make")
+    if (problems.isEmpty()) println("PASS - no connection outside online/Online.kt, no body on a request, no delete by query")
     else { println("FAIL (${problems.size})"); problems.forEach { println("  - $it") }; exitProcess(1) }
 }
