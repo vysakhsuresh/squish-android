@@ -483,6 +483,60 @@ fun main() {
         )
     }
 
+    // ---- One blur, in four copies that have to be the same four lines. -----
+    //
+    // The nine taps of a Defocus join and of the library's own Blur live in
+    // four files - the effects pass, the transition pass, an overlay's closing
+    // premultiply pass, and CanvasFx's AGSL copy for the preview's Compose
+    // layers - because each runs in a different place and none of them can call
+    // the others. `check_shaders.py` compares uniform *names*; nothing compared
+    // the loop. One of the four read its taps without clamping, so what a tap
+    // at the frame's edge returned was the sampler's wrap mode rather than this
+    // shader's decision.
+    run {
+        // The clamp is written at the tap in the three GLSL copies and inside
+        // the AGSL copy's own `texel`, which is where that one turns y over -
+        // so each is checked where it keeps it rather than where the others do.
+        val blurs = listOf(
+            Triple("app/src/main/assets/squish_fx_es2.glsl", "texture2D", "texture2D\\(uTexSampler, clamp\\(uv \\+ "),
+            Triple("app/src/main/assets/squish_transition_es2.glsl", "texture2D", "texture2D\\(uTexSampler, clamp\\(uv \\+ "),
+            Triple("app/src/main/assets/squish_premultiply_es2.glsl", "texture2D", "texture2D\\(uTexSampler, clamp\\(uv \\+ "),
+            Triple("$SRC/editor/CanvasFx.kt", "texel", "float3 texel\\(float2 uv\\) \\{\\s*\\n\\s*float2 flipped = float2\\(clamp\\(uv\\.x")
+        )
+        for ((path, sampler, clamped) in blurs) {
+            val text = read(path)
+            if (text.isEmpty()) continue
+            // Nine taps: a -1..1 pair of loops, not some other count.
+            check(
+                Regex("for \\(int i = -1; i <= 1; i\\+\\+\\)").containsMatchIn(text) &&
+                    Regex("for \\(int j = -1; j <= 1; j\\+\\+\\)").containsMatchIn(text),
+                "$path no longer takes its blur as a -1..1 box of nine taps"
+            )
+            check(
+                Regex("sum / 9\\.0").containsMatchIn(text),
+                "$path divides its blur by something other than nine"
+            )
+            // Every tap clamped into the frame, in all four.
+            check(
+                Regex(clamped).containsMatchIn(text),
+                "$path takes a blur tap without clamping it into the frame, so what a tap at the edge " +
+                    "returns is the sampler's wrap mode and not this shader's decision - the other three clamp"
+            )
+            // And it is the same helper the loop reads through, so the clamp
+            // the line above found is on the path the taps take.
+            check(
+                Regex("sum \\+= $sampler\\(").containsMatchIn(text),
+                "$path's blur loop no longer reads through $sampler, so the clamp checked above may not be on its path"
+            )
+            // And the early-out at the same threshold, or a join that softens
+            // in one pass does nothing in another.
+            check(
+                Regex("uBlur <= 0\\.0001").containsMatchIn(text),
+                "$path leaves its blur early at some other threshold than 0.0001"
+            )
+        }
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

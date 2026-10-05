@@ -1963,7 +1963,31 @@ been heard or seen. In rough order of what would be learnt per minute:
 8. **A tile's name on a two-across row after a one-across**, or the phone turned:
    the words must come back to full size, not stay small.
 
-Still open and *not* fixed, because the right answer needs a phone: the
-preview's voice processors see the source's own channel count while the export's
-see the fold-down to stereo, so a 6-channel file with a saturating voice can
-still differ between the two. That is B5's device item (8).
+### The channel count, closed from the source rather than left open
+
+This section first said the preview's voice seeing the source's own channel
+count while the export's saw the fold-down was left open for a phone. It is not
+open; it was answerable from Media3's 1.11.1 source, which is in the Gradle
+cache. `DefaultAudioSink`'s pipeline is trimming, channel mapping, to-16-bit,
+then the app's own processors - and `ChannelMappingAudioProcessor` is handed a
+null map except on two device workarounds (`MediaCodecAudioRenderer` builds one
+only for `codecNeedsDiscardChannelsWorkaround` and the Vorbis layout), so
+nothing folded a 5.1 file down before the custom chain: the AudioTrack was
+opened with six channels and the HAL mixed them. The export folds down first,
+with `ExportPlan.downmixCoefficients`.
+
+So two disagreements, not one. A saturating voice saw six channels on screen and
+two in the file; and *with no voice at all* the preview was hearing the phone's
+own fold-down while the file had ours. `AudioMixing.processor(1f)` now sits in
+front of the voice on both the video and the sound players.
+
+A matrix for every channel count up to 48 came with it, since a count with no
+matrix makes `onConfigure` throw - a failed render on a nine-channel file
+before, and a sound that would not play at all once the preview used the same
+processor. Past 7.1 the first two channels are the stereo pair and the rest are
+dropped.
+
+*On the phone*, which is B5's device item (8) with one thing added to it: a
+6-channel AAC file at camera level 50% with music, now also with Megaphone on
+the shot - the preview and the file must be the same voice, and a 5.1 film's
+dialogue must be as present on screen as in the file.

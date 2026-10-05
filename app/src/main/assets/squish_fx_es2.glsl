@@ -42,7 +42,8 @@ vec4 sampleAt(vec2 uv) {
   for (int i = -1; i <= 1; i++) {
     for (int j = -1; j <= 1; j++) {
       // Clamped, as the three other copies of these nine taps are
-      // (squish_transition_es2, squish_premultiply_es2, CanvasFx's AGSL). A tap
+      // (squish_transition_es2 and squish_premultiply_es2 here, CanvasFx's AGSL
+      // inside its own `texel`, which is where that one turns y over). A tap
       // at the frame's edge reaches past it, and what it reads then is the
       // sampler's wrap mode - clamp-to-edge as Media3 makes its textures, but
       // that is the library's choice and not this shader's to lean on. Four
