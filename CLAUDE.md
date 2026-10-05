@@ -1036,6 +1036,18 @@ should work through it and then delete what holds up.
   softness is a uniform, so `PreviewEngine.remember` asks for a redraw when it
   changes); and that a Burn out over a padded canvas or a keyed overlay whitens
   the picture and not the hole. `docs/COMPETITORS.md` §4 has the reading.
+- **Sweep six, over the timeline model, the preview engine and the shell
+  (5 October, evening).** The layer under the commands: what every tool reaches.
+  `docs/DEVICE_FINDINGS.md`'s last section lists what it found and ends with the
+  eight things a device has to answer. The ones that would show first: **a
+  stretch taken out over a gap moved the sound further than the picture** (the
+  other rows came back by the stretch's length, the main track by what it
+  actually lost); **changing a blended still's mode or opacity did not reach the
+  preview** until the shot under it changed, because the held still was keyed on
+  clip *ids* and an edit makes a new clip with the same id; **the safe-area guide
+  was drawn on the canvas rather than on what the file keeps**, so it was right
+  only while nothing was cropped; and **on a phone set to German every speed chip
+  read "2,x"**.
 - **Sweep five, over the edit commands, the quick tools and the shell
   (5 October).** The layer between the screens and the model: what the toolbar
   actually calls. Twenty-two confirmed faults, all fixed, none seen;
