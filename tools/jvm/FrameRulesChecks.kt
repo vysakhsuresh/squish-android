@@ -6,6 +6,7 @@ import com.squish.app.editor.FrameRules
 import com.squish.app.editor.OutputSize
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
+import com.squish.app.media.video.smoothedTrack
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.Transform
@@ -196,6 +197,53 @@ fun main() {
         val tail = a.copy(sourceOutMs = a.sourceOutMs + 2_000L)
         check(FrameRules.backdropMomentMs(tail) == 13_000L, "a long trim did not move the still: ${FrameRules.backdropMomentMs(tail)}")
         check(FrameRules.backdropMomentMs(tail) % FrameRules.BACKDROP_GRID_MS == 0L, "the still is off the grid")
+    }
+
+    // ---- The reframe path's smoothing window is a length of time ----------
+    //
+    // Auto-reframe samples four times a second and caps the count at 360, so
+    // past ninety seconds the samples spread out. The window was sized in
+    // *samples* - sigma = 4 * 0.75 - so it grew with the clip: at five minutes
+    // the step is 833 ms and three samples of sigma is two and a half seconds,
+    // where the code's own comment promises three quarters of one. A long
+    // shot's reframe lagged its subject by seconds.
+    run {
+        /** A step at a moment, to see how far the smoothing carries it. */
+        fun track(stepMs: Long, n: Int, stepAt: Int): List<TrackSample> =
+            (0 until n).map {
+                TrackSample(atMs = it * stepMs, xFraction = if (it < stepAt) 0f else 1f, yFraction = 0.5f)
+            }
+
+        /** How many samples either side of the step are moved off their own value. */
+        fun spread(stepMs: Long, n: Int): Long {
+            val at = n / 2
+            val out = smoothedTrack(track(stepMs, n, at), 0.75f)
+            val moved = out.indices.filter { kotlin.math.abs(out[it].xFraction - (if (it < at) 0f else 1f)) > 0.02f }
+            if (moved.isEmpty()) return 0L
+            return (moved.max() - moved.min() + 1) * stepMs
+        }
+
+        // Four a second (a clip of 90 s or less) and a fifth of that (five
+        // minutes, where the count has saturated): the window must be the same
+        // *length of time*, not the same number of samples.
+        val quick = spread(250L, 120)
+        val slow = spread(833L, 120)
+        check(quick in 3_000L..6_500L, "at four samples a second the smoothing reaches ${quick}ms")
+        check(
+            kotlin.math.abs(slow - quick) <= 2_500L,
+            "the smoothing reaches ${quick}ms at four samples a second and ${slow}ms at 1.2 - it is sized in samples, not seconds"
+        )
+
+        // Degenerate inputs come back as they are rather than throwing.
+        check(smoothedTrack(emptyList(), 0.75f).isEmpty(), "an empty track was changed")
+        check(smoothedTrack(track(250L, 1, 0), 0.75f).size == 1, "a one-sample track was changed")
+        check(smoothedTrack(track(250L, 5, 2), 0f).map { it.xFraction } == listOf(0f, 0f, 1f, 1f, 1f), "a window of no time smoothed anyway")
+        check(smoothedTrack(track(0L, 5, 2), 0.75f).size == 5, "samples all at one moment threw")
+        // A sample nothing is confident about does not drag the path: the
+        // weights are the confidences, and a run of zeroes leaves the sample
+        // where it was rather than dividing by nothing.
+        val unsure = (0 until 5).map { TrackSample(atMs = it * 250L, xFraction = 0.9f, yFraction = 0.1f, confidence = 0f) }
+        check(smoothedTrack(unsure, 0.75f).all { it.xFraction == 0.9f }, "a track of no confidence was moved")
     }
 
     println("frame rules: padded canvas, fitted picture, subject on the canvas, reframe per shot, backdrop stretches")

@@ -78,6 +78,20 @@ object Reframer {
                     continue
                 }
                 val grid = lumaGrid(frame)
+                // The same decoded frame, handed back again. The retriever is
+                // asked for OPTION_CLOSEST_SYNC, which answers with the nearest
+                // *keyframe* - so on footage with a one-second keyframe interval
+                // four consecutive samples are one frame. Taken as samples they
+                // read as "no motion" and fell through to the frame's centre at
+                // confidence 0.2, and three of those outweighed the one real
+                // reading between them: a motion-driven reframe landed halfway
+                // between the subject and the middle. Skipped instead, so the
+                // path is made of the frames there actually are.
+                if (previous != null && grid.contentEquals(previous)) {
+                    frame.recycle()
+                    onProgress(i + 1, count)
+                    continue
+                }
                 val face = faceCentre(frame)
                 val motion = previous?.let { motionCentre(it, grid) }
                 previous = grid
@@ -177,28 +191,19 @@ object Reframer {
     }
 
     /**
-     * Confidence-weighted Gaussian smoothing, about three quarters of a second
-     * each way: slow enough to read as a deliberate pan, quick enough to keep a
-     * walking person in frame.
+     * Confidence-weighted Gaussian smoothing, [SMOOTH_SECONDS] each way: slow
+     * enough to read as a deliberate pan, quick enough to keep a walking person
+     * in frame.
+     *
+     * In `smoothedTrack` rather than here, because the window has to be sized
+     * in seconds and the spacing read off the samples - see there for what
+     * sizing it in samples cost on a clip over ninety seconds.
      */
-    private fun smooth(samples: List<TrackSample>): List<TrackSample> {
-        val sigma = SAMPLES_PER_SECOND * 0.75f
-        val radius = (sigma * 3).roundToInt()
-        return samples.indices.map { i ->
-            var sx = 0f
-            var sy = 0f
-            var total = 0f
-            for (j in (i - radius).coerceAtLeast(0)..(i + radius).coerceAtMost(samples.lastIndex)) {
-                val d = (j - i).toFloat()
-                val w = exp(-(d * d) / (2 * sigma * sigma)) * samples[j].confidence
-                sx += samples[j].xFraction * w
-                sy += samples[j].yFraction * w
-                total += w
-            }
-            val s = samples[i]
-            if (total <= 0f) s else s.copy(xFraction = sx / total, yFraction = sy / total)
-        }
-    }
+    private fun smooth(samples: List<TrackSample>): List<TrackSample> =
+        smoothedTrack(samples, SMOOTH_SECONDS)
+
+    /** How wide the smoothing window is, each way. */
+    private const val SMOOTH_SECONDS = 0.75f
 
     private const val MAX_FACES = 4
 }

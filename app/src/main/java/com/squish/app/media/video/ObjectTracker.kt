@@ -15,6 +15,42 @@ data class TrackSample(
 )
 
 /**
+ * A path smoothed by a confidence-weighted Gaussian [seconds] wide each way.
+ *
+ * The width is in *seconds*, deliberately, and that is the whole point of this
+ * being a function of its own. Auto-reframe samples four times a second but
+ * caps the count, so past ninety seconds the samples spread out - and a window
+ * sized in *samples*, as this was, grew with the clip: at five minutes it was
+ * smoothing over two and a half seconds where its own comment promised three
+ * quarters of one, so a long shot's reframe lagged the subject by seconds. The
+ * spacing is read back off the samples rather than assumed.
+ */
+fun smoothedTrack(samples: List<TrackSample>, seconds: Float): List<TrackSample> {
+    if (samples.size < 2 || seconds <= 0f) return samples
+    val spanMs = (samples.last().atMs - samples.first().atMs).toFloat()
+    val stepMs = (spanMs / (samples.size - 1)).coerceAtLeast(1f)
+    // Half a sample is the floor: below that the kernel is one sample wide and
+    // the smoothing is a no-op, which is the honest answer for samples that are
+    // already further apart than the window.
+    val sigma = (seconds * 1000f / stepMs).coerceAtLeast(0.5f)
+    val radius = (sigma * 3).roundToInt().coerceAtLeast(1)
+    return samples.indices.map { i ->
+        var sx = 0f
+        var sy = 0f
+        var total = 0f
+        for (j in (i - radius).coerceAtLeast(0)..(i + radius).coerceAtMost(samples.lastIndex)) {
+            val d = (j - i).toFloat()
+            val w = kotlin.math.exp(-(d * d) / (2 * sigma * sigma)) * samples[j].confidence
+            sx += samples[j].xFraction * w
+            sy += samples[j].yFraction * w
+            total += w
+        }
+        val s = samples[i]
+        if (total <= 0f) s else s.copy(xFraction = sx / total, yFraction = sy / total)
+    }
+}
+
+/**
  * A thing's path through a clip, keyed by source time.
  *
  * Source time rather than clip time for the same reason the stabilizer uses it: the
