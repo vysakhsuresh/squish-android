@@ -1,4 +1,6 @@
 import androidx.media3.common.C
+import com.squish.app.media.audio.VoiceProcessor
+import com.squish.app.timeline.VoiceEffect
 import androidx.media3.common.audio.AudioProcessor
 import com.squish.app.editor.AudioRules
 import com.squish.app.media.audio.FadeProcessor
@@ -132,6 +134,64 @@ fun main() {
     run {
         val out = run(FadeProcessor(1_000L, 0L, 2_000L), flat(2.0, channels = 1), channels = 1)
         check(abs(levelAt(out, 500L, 1) - 0.5f) < 0.03f, "a mono fade is ${levelAt(out, 500L, 1)} at 500ms")
+    }
+
+    // ---- The level goes after the voice, and the order is audible ----------
+    //
+    // The saturating voices are tanh, which is not linear: tanh(v * x * d) is
+    // not v * tanh(x * d). The export used to fold the level into the mixer's
+    // matrix, which runs *before* the voice, while the preview applies it
+    // after - a player's volume sits past the sink's processors. So at any
+    // level other than full, the file and the preview disagreed about the
+    // timbre of a Megaphone or a Radio, not merely its loudness.
+    //
+    // Run here rather than argued: the same samples through the two orders,
+    // and they have to come out different. (Which is what makes the source
+    // check in ControlChecks worth having: it holds the one order both sides
+    // now use.)
+    run {
+        val level = 0.5f
+        // Not a square wave: a band-pass has nothing to chew on in a constant,
+        // and the voices are band-passed before they saturate. A tone at a
+        // third of full scale is well inside the knee until the drive hits it.
+        val tone = ShortArray(RATE * CHANNELS) { i ->
+            val frame = i / CHANNELS
+            (10_000 * kotlin.math.sin(2 * Math.PI * 300 * frame / RATE)).toInt().toShort()
+        }
+        for (voice in listOf(VoiceEffect.Megaphone, VoiceEffect.Radio, VoiceEffect.Telephone)) {
+            val voiceThenLevel = run(GainProcessor { level }, run(VoiceProcessor { voice }, tone))
+            val levelThenVoice = run(VoiceProcessor { voice }, run(GainProcessor { level }, tone))
+            check(
+                voiceThenLevel.size == levelThenVoice.size,
+                "$voice: the two orders gave different lengths, ${voiceThenLevel.size} and ${levelThenVoice.size}"
+            )
+            // Measured over the second half, past the filters' settling.
+            val from = voiceThenLevel.size / 2
+            var worst = 0
+            var after = 0.0
+            for (i in from until minOf(voiceThenLevel.size, levelThenVoice.size)) {
+                worst = maxOf(worst, abs(voiceThenLevel[i] - levelThenVoice[i]))
+                after += voiceThenLevel[i].toDouble() * voiceThenLevel[i]
+            }
+            val rms = kotlin.math.sqrt(after / (voiceThenLevel.size - from).coerceAtLeast(1))
+            // One per cent of RMS, not more: how far the two orders diverge is
+            // the voice's own business - Megaphone's drive of 5 pulls them a
+            // long way apart, Telephone's band-pass leaves a 300 Hz tone with
+            // little to saturate and they come within five per cent. The
+            // measurements are printed below so the sizes are on the record
+            // rather than hidden behind a threshold.
+            check(
+                worst > rms * 0.01,
+                "$voice at ${level}x sounds the same whichever side of the voice the level goes " +
+                    "(worst sample difference $worst against an RMS of ${rms.toInt()}) - if that is really so, " +
+                    "the order stops mattering and this check is the thing that is wrong"
+            )
+            println("  %-10s level %.1fx: the two orders differ by %d, %.1f%% of an RMS of %d"
+                .format(voice.toString(), level, worst, 100.0 * worst / rms, rms.toInt()))
+            // And the voice is doing something at all, or the comparison above
+            // is between two copies of silence.
+            check(rms > 100, "$voice gave nothing back: RMS ${rms.toInt()}")
+        }
     }
 
     println("processors: the fades and the levels, applied to samples through Media3's own base class")

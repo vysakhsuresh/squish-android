@@ -435,6 +435,41 @@ fun main() {
         }
     }
 
+    // ---- The level goes after the voice, on both sides. -------------------
+    //
+    // ProcessorChecks runs the two orders against Media3 and measures how far
+    // apart they come out - 18.5% of RMS for Megaphone at half level. Which
+    // side is right is a convention, and the convention is the fader after the
+    // insert, as every mixing desk has it: turning a clip down makes it
+    // quieter and does not make it cleaner. Held as text because neither chain
+    // can be built off a phone.
+    run {
+        val export = read("$SRC/media/VideoProcessor.kt")
+        val voiceAt = export.indexOf("processors.add(VoiceProcessor")
+        val levelAt = export.indexOf("processors.add(GainProcessor")
+        check(voiceAt >= 0, "the export's chain no longer adds a VoiceProcessor - this check has rotted")
+        check(
+            levelAt > voiceAt,
+            "the export applies a clip's level before its voice. The saturating voices are tanh, which is " +
+                "not linear, so the file then disagrees with the preview about the timbre and not only the " +
+                "loudness - Megaphone at half level came out clean in the file and a loud-hailer on screen"
+        )
+        check(
+            export.contains("AudioMixing.processor(1f)"),
+            "the export's mixer carries a gain again: its matrix runs before the voice, so the gain in it is " +
+                "the level arriving on the wrong side"
+        )
+        val preview = read("$SRC/editor/PreviewEngine.kt")
+        val pVoice = preview.indexOf("VoiceProcessor { chain.voice")
+        val pGain = preview.indexOf("GainProcessor { chain.gain")
+        check(pVoice >= 0 && pGain >= 0, "the preview's sound chain has been rewritten - this check has rotted")
+        check(
+            pGain > pVoice,
+            "the preview puts a sound's boost before its voice, where its player's own volume applies the rest " +
+                "of the level after it: the two halves of one split level would land on opposite sides of a tanh"
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

@@ -675,8 +675,15 @@ class PreviewEngine(private val context: Context) {
      */
     private fun newAudioPlayer(chain: AudioChain) = ExoPlayer.Builder(
         context,
-        // The boost first, so a voice hears the level it will be written at.
-        processedRenderers(GainProcessor { chain.gain.get() }, VoiceProcessor { chain.voice.get() })
+        // The voice first and the level after it, which is where a player's own
+        // volume applies it anyway - past the sink's processors - so the two
+        // halves of a split level (AudioRules.gainSplit) land on the same side
+        // of the voice as each other, and on the same side as the export's.
+        // The boost used to come first, on the reasoning that a voice should
+        // hear the level it will be written at; but the saturating voices are
+        // not linear, so at anything other than full level the file and the
+        // preview disagreed about the *timbre*, not only the loudness.
+        processedRenderers(VoiceProcessor { chain.voice.get() }, GainProcessor { chain.gain.get() })
     )
         .setLoadControl(
             DefaultLoadControl.Builder()

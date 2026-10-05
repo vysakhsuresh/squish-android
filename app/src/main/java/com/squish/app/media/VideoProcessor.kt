@@ -37,6 +37,7 @@ import com.squish.app.editor.OverlayRules
 import com.squish.app.timeline.VoiceEffect
 import com.squish.app.media.audio.FadeProcessor
 import com.squish.app.media.audio.GainCurveProcessor
+import com.squish.app.media.audio.GainProcessor
 import com.squish.app.media.audio.VoiceProcessor
 import com.squish.app.media.video.FrameBlendEffect
 import com.squish.app.media.video.FrameBlendPlan
@@ -1051,12 +1052,34 @@ class VideoProcessor(private val context: Context) {
         pitchFollowsSpeed: Boolean = false,
         curve: GainCurveProcessor? = null
     ): ImmutableList<AudioProcessor> {
-        val processors = mutableListOf<AudioProcessor>(AudioMixing.processor(volume))
         // The voice's processing first, on the file's own time, and its pitch last:
         // the order the preview runs them (its sink's processors, then its speed
         // and pitch). After the speed change, a 2x clip's Wobble ran at half the
         // rate in the file, and Alien's ring was pitched in the preview only.
-        if (voice != VoiceEffect.None) processors.add(VoiceProcessor { voice })
+        //
+        // And the level *after* the voice, which is where the preview applies it
+        // - a player's own volume, and the boost above it, both sit past the
+        // sink's processors. It used to go first, folded into the mixer's
+        // matrix, and the saturating voices are not linear: Megaphone is
+        // tanh(x * 5) * 0.85, and tanh(v * x * d) is not v * tanh(x * d). At a
+        // camera level of 50% a band-passed 0.4 came out 0.648 in the file and
+        // 0.410 in the preview - not a difference of loudness but of timbre, a
+        // clean voice in the file where the preview had a loud-hailer. The
+        // mixer still runs first, because its matrix is also the fold-down to
+        // stereo and the voice should hear the channels the file will have; it
+        // just carries no gain any more.
+        val level = volume.coerceIn(0f, AudioMixing.MAX_GAIN)
+        val processors = mutableListOf<AudioProcessor>()
+        if (voice == VoiceEffect.None) {
+            // Nothing to be before or after: one processor, as it was.
+            processors.add(AudioMixing.processor(level))
+        } else {
+            processors.add(AudioMixing.processor(1f))
+            processors.add(VoiceProcessor { voice })
+            // Clipped to the sample range the way the mixer's matrix clips, so
+            // a level that distorts still distorts.
+            if (kotlin.math.abs(level - 1f) > 1e-4f) processors.add(GainProcessor { level })
+        }
         if (!ramp.isIdentity && spanMs > 0L) {
             val segments = ramp.segments(spanMs)
             if (segments.isNotEmpty()) {

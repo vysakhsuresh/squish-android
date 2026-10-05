@@ -28,4 +28,5 @@ TIMELINE="$SRC/timeline/SpeedRamp.kt $SRC/timeline/TimelineModels.kt $SRC/timeli
   tools/jvm/stub/Uri.kt"
 sh tools/jvm/jc.sh ProcessorChecks $TIMELINE "$SRC/editor/AudioRules.kt" "$SRC/media/audio/FadeProcessor.kt" \
   "$SRC/media/audio/GainProcessor.kt" "$SRC/media/audio/GainCurveProcessor.kt" \
+  "$SRC/media/audio/VoiceProcessor.kt" "$SRC/media/audio/VoiceCleaner.kt" \
   tools/jvm/ProcessorChecks.kt 2>&1 | grep -v "^warning" | tail -8
