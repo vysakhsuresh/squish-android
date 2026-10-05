@@ -1022,6 +1022,19 @@ should work through it and then delete what holds up.
   softness is a uniform, so `PreviewEngine.remember` asks for a redraw when it
   changes); and that a Burn out over a padded canvas or a keyed overlay whitens
   the picture and not the hole. `docs/COMPETITORS.md` §4 has the reading.
+- **Sweep five, over the edit commands, the quick tools and the shell
+  (5 October).** The layer between the screens and the model: what the toolbar
+  actually calls. Twenty-two confirmed faults, all fixed, none seen;
+  `docs/DEVICE_FINDINGS.md`'s last section lists them and ends with the ten
+  things a device has to answer. The worst of them: **"Take out every um and
+  uh" could cut half a minute of footage** (fillers were merged by their place
+  in the word list, which runs across lines, so two "um"s twenty-seven seconds
+  apart became one cut of 29,000 ms inside one undo step); **deleting a word
+  that took nothing out still moved every caption after it**; **x2 on a song's
+  beat grid doubled the dots and left the tempo and the bar phase where they
+  were**; and **a staged project deleted from the grid was destroyed in place**,
+  with no bin entry, an Undo that did nothing and its picker grants held until
+  uninstall.
 - **Sweep four, over the export, media and data layers (5 October).** The three
   sweeps before it went over what you can see; this one went under it, and
   almost none of it shows as a wrong picture - it shows as a long export
