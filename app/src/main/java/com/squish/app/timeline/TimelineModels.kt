@@ -960,6 +960,18 @@ data class TimelineState(
         splitTarget(selection)?.canSplitAt(playheadMs) == true
 }
 
+/**
+ * How loud a sound clip may be turned: four times its own level. The players
+ * cannot turn a sound up past its own, so the part above that is a processor in
+ * front of them (AudioRules.gainSplit, AudioMixing).
+ *
+ * Here rather than in `AudioRules` - which is where it used to be, and still
+ * reads from - because it is a fact about a [Clip], and the model has to know
+ * it: Paste attributes clamped a carried level to 1, so a sound copied at 300%
+ * was pasted at 100% and nothing said so.
+ */
+const val MAX_SOUND_GAIN = 4f
+
 const val MIN_CLIP_MS = 200L
 const val ZOOM_MIN = 0.05f
 const val ZOOM_MAX = 2_000f
@@ -1886,7 +1898,12 @@ fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): T
     val clip = clips.firstOrNull { it.id == clipId } ?: return this
     if (clip.kind == ClipKind.Text) return this
     val sounding = if (clip.isStillPicture) clip else clip.copy(
-        volume = attrs.volume.coerceIn(0f, 1f),
+        // A sound's level runs to four times its own (AudioRules.MAX_SOUND_GAIN,
+        // which is the Level slider's range and what AudioMixing writes); a
+        // picture's is its share of the camera level and stops at one. Clamped
+        // to one for both, a sound copied at 300% was pasted at 100% with
+        // nothing said - the one attribute the paste quietly changed.
+        volume = attrs.volume.coerceIn(0f, if (clip.kind == ClipKind.Audio) MAX_SOUND_GAIN else 1f),
         fadeInMs = attrs.fadeInMs,
         fadeOutMs = attrs.fadeOutMs,
         voice = attrs.voice,

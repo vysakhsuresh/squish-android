@@ -24,8 +24,11 @@ object AudioRules {
      * How loud an added sound may be turned: four times its own level. The
      * players cannot turn a sound up past its own level, so the part above
      * that is done by a processor in front of them (see [gainSplit]).
+     *
+     * The number itself lives on the model, where Paste attributes needs it to
+     * clamp a carried level; this is the name the editor has always used for it.
      */
-    const val MAX_SOUND_GAIN = 4f
+    const val MAX_SOUND_GAIN = com.squish.app.timeline.MAX_SOUND_GAIN
 
     /** The most copies Loop to end lays: each is a player in the preview, and a phone opens about forty sounds at once. */
     const val MAX_LOOP_COPIES = 30

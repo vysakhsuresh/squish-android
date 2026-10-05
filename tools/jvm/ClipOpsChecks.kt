@@ -579,6 +579,19 @@ fun main() {
             .copy(scale = 0.4f, offsetXFraction = 0.5f, mask = Mask(), mirrored = true, quarterTurns = 1)
         val p = TimelineState(clips = listOf(video("base", 10_000), song, pip)).withAttributesPasted("pip", song.attributes).byId("pip")
         check(p.volume == 0.3f && p.fadeInMs == 400L && p.voice == VoiceEffect.Robot, "paste from a sound: the sound was not carried")
+        // A sound's level runs to four times its own; a picture's stops at one.
+        // Clamped to one for both, a sound copied at 300% was pasted at 100%
+        // with nothing said - the one attribute the paste quietly changed.
+        val loud = audio("loud", 8_000).copy(volume = 3f)
+        val quiet = audio("quiet", 8_000, start = 8_000)
+        val pastedLoud = TimelineState(clips = listOf(video("b", 20_000), loud, quiet))
+            .withAttributesPasted("quiet", loud.attributes).byId("quiet")
+        check(pastedLoud.volume == 3f, "paste onto a sound landed a level of ${pastedLoud.volume}, not the 3x copied")
+        check(com.squish.app.timeline.MAX_SOUND_GAIN == 4f, "the sound ceiling moved")
+        // Onto a picture it is still its share of the camera level, which stops at one.
+        val onShot = TimelineState(clips = listOf(video("b", 20_000), loud))
+            .withAttributesPasted("b", loud.attributes).byId("b")
+        check(onShot.volume == 1f, "paste onto a shot landed a level of ${onShot.volume}, past what a shot may be")
         check(p.keyframes == pip.keyframes && p.offsetXFraction == 0.5f && p.mask == Mask() && p.mirrored && p.quarterTurns == 1,
             "paste from a sound reset the picture: keys ${p.keyframes.size}, x ${p.offsetXFraction}, mask ${p.mask}, mirror ${p.mirrored}, turns ${p.quarterTurns}")
     }
