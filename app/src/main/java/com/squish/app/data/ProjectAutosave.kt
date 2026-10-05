@@ -1833,10 +1833,19 @@ data class ProjectSnapshot(
 ) {
     /**
      * How long the edit runs: where its last picture or sound ends, overlays
-     * included - the same number as EditorUiState.trimmedDurationMs. It used to
-     * be the clips' lengths added up, which counted an overlay on top of the
-     * shots it sits over: the card offered 0:16 of edit for an 8 s video with an
-     * 8 s overlay, a length the timeline could never show.
+     * included - the same number as EditorUiState.trimmedDurationMs once
+     * anything has been laid down. It used to be the clips' lengths added up,
+     * which counted an overlay on top of the shots it sits over: the card
+     * offered 0:16 of edit for an 8 s video with an 8 s overlay, a length the
+     * timeline could never show.
+     *
+     * With nothing laid down the two differ on purpose: this is nothing, which
+     * is the honest length of an empty edit, while the state falls back to the
+     * source file's own window because the strip has to be drawn over
+     * something. They used to differ when only the *pictures* were gone, which
+     * was not on purpose - a five-second edit of one song reported the thirty
+     * seconds of the video it had been opened on, six times out in the card,
+     * the header, the export sheet and the size estimate alike.
      */
     val totalDurationMs: Long
         get() = maxOf(clips.maxOfOrNull { it.timelineEndMs } ?: 0L, audioClips.maxOfOrNull { it.timelineEndMs } ?: 0L)
