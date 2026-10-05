@@ -356,9 +356,35 @@ data class Grade(
      * description is the only way the swatch can be trusted to match the export.
      */
     fun applyTo(argb: Int): Int {
-        var r = ((argb shr 16) and 0xFF) / 255f
-        var g = ((argb shr 8) and 0xFF) / 255f
-        var b = (argb and 0xFF) / 255f
+        val out = FloatArray(3)
+        graded(
+            ((argb shr 16) and 0xFF) / 255f,
+            ((argb shr 8) and 0xFF) / 255f,
+            (argb and 0xFF) / 255f,
+            out
+        )
+        return (0xFF shl 24) or (byte(out[0]) shl 16) or (byte(out[1]) shl 8) or byte(out[2])
+    }
+
+    /**
+     * The colour chain on one pixel, into [out], **unclamped** - the shader
+     * exactly as far as its last line, which is the only place it clamps.
+     *
+     * [applyTo] exists on top of this and clamps to a byte. The split matters
+     * for the whole-picture path: a vignette darkens the colour the shader is
+     * still carrying as a float, and applying it to a byte-clamped value
+     * instead made a bright area with a vignette on it darker on the CPU than
+     * in the file - the clamp to 1.0 had thrown away the headroom the falloff
+     * was meant to bring back down. It also rounded twice, once into the byte
+     * and once out of the multiply.
+     *
+     * [out] is handed in rather than returned so the whole-picture loop can
+     * reuse one array over a twelve-megapixel photo.
+     */
+    fun graded(rIn: Float, gIn: Float, bIn: Float, out: FloatArray) {
+        var r = rIn
+        var g = gIn
+        var b = bIn
 
         r *= redScale; g *= greenScale; b *= blueScale
         r += brightness; g += brightness; b += brightness
@@ -414,7 +440,11 @@ data class Grade(
         }
 
         if (hasHue || hasHsl) {
-            val hsv = rgbToHsv(r, g, b)
+            // Clamped first, as the shader's `rgb2hsv(clamp(c, 0.0, 1.0))` is.
+            // Without it a channel the gains or the contrast had pushed past 1
+            // gave a value above 1 to work from, and the hue wheel and the HSL
+            // bands came out of a different place than they do in the file.
+            val hsv = rgbToHsv(r.coerceIn(0f, 1f), g.coerceIn(0f, 1f), b.coerceIn(0f, 1f))
             var h = hsv[0]
             var s = hsv[1]
             var v = hsv[2]
@@ -469,9 +499,14 @@ data class Grade(
             b += (out[2] - b) * lutStrength
         }
 
-        fun byte(v: Float) = (min(1f, max(0f, v)) * 255f + 0.5f).toInt()
-        return (0xFF shl 24) or (byte(r) shl 16) or (byte(g) shl 8) or byte(b)
+        out[0] = r; out[1] = g; out[2] = b
     }
+
+    /**
+     * One channel as a byte: the shader's closing `clamp(c, 0.0, 1.0)` and the
+     * eight bits the texture it writes into holds, in one step.
+     */
+    private fun byte(v: Float) = (min(1f, max(0f, v)) * 255f + 0.5f).toInt()
 
     /**
      * A whole picture graded in place - [applyTo] on every pixel, and the
@@ -490,23 +525,34 @@ data class Grade(
         val vignetted = abs(vignette) > 1e-3f
         val first = fromRow.coerceIn(0, height)
         val last = toRow.coerceIn(first, height)
+        // One array for the whole picture. A twelve-megapixel photo is twelve
+        // million calls through here.
+        val colour = FloatArray(3)
         var i = first * width
         for (y in first until last) {
             for (x in 0 until width) {
                 val argb = pixels[i]
-                var graded = applyTo(argb)
+                graded(
+                    ((argb shr 16) and 0xFF) / 255f,
+                    ((argb shr 8) and 0xFF) / 255f,
+                    (argb and 0xFF) / 255f,
+                    colour
+                )
                 if (vignetted) {
                     val px = ((x + 0.5f) / width - 0.5f) * aspect
                     val py = (y + 0.5f) / height - 0.5f
                     val d = kotlin.math.sqrt(px * px + py * py) / halfDiagonal
+                    // On the colour the shader is still carrying as a float,
+                    // before the clamp - not on a byte. Clamped first, a bright
+                    // area with a vignette over it came out darker here than in
+                    // the file, because the clamp to 1.0 had thrown away the
+                    // headroom the falloff was about to bring back down.
                     val falloff = 1f - vignette * smoothstep(0.42f, 1.06f, d)
-                    val r = (((graded shr 16) and 0xFF) * falloff + 0.5f).toInt().coerceIn(0, 255)
-                    val g = (((graded shr 8) and 0xFF) * falloff + 0.5f).toInt().coerceIn(0, 255)
-                    val b = ((graded and 0xFF) * falloff + 0.5f).toInt().coerceIn(0, 255)
-                    graded = (r shl 16) or (g shl 8) or b
+                    colour[0] *= falloff; colour[1] *= falloff; colour[2] *= falloff
                 }
                 // The picture's own alpha stays: a transparent logo is still transparent.
-                pixels[i] = (argb and 0xFF000000.toInt()) or (graded and 0xFFFFFF)
+                pixels[i] = (argb and 0xFF000000.toInt()) or
+                    (byte(colour[0]) shl 16) or (byte(colour[1]) shl 8) or byte(colour[2])
                 i++
             }
         }

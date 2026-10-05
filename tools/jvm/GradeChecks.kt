@@ -331,6 +331,88 @@ fun main() {
         }
     }
 
+    // --- The two places the CPU copy had stopped being the shader. ----------
+    //
+    // Both are about *when* the value is held to 0..1. The shader carries the
+    // colour as an unbounded float all the way to its last line and clamps
+    // twice on the way: once before the HSV conversion, once at the end. The
+    // CPU copy clamped in neither of those places and in one the shader does
+    // not.
+    run {
+        // 1. The hue wheel and the HSL bands read a clamped colour, as
+        //    `rgb2hsv(clamp(c, 0.0, 1.0))` does. So once a channel is past
+        //    white, how far past makes no difference. Unclamped it did: the
+        //    value became the HSV `v`, every component came out scaled by it,
+        //    and the middle channel of a rotated hue landed somewhere else.
+        val turned = Grade(
+            redScale = 2f, greenScale = 1f, blueScale = 1f,
+            contrast = 0f, saturation = 0f, hueDegrees = 30f
+        )
+        val bright = turned.applyTo(0xFFFF6464.toInt())   // red 255, past white at 2x
+        val brighter = turned.applyTo(0xFFC86464.toInt()) // red 200, also past white
+        check(
+            bright == brighter,
+            "two reds that both clip at 2x graded differently through the hue wheel: " +
+                "${rgb(bright)} and ${rgb(brighter)}"
+        )
+        // And the middle channel is the clamped answer, not the scaled one: a
+        // 30 degree turn of a clipped red leaves green below white.
+        val (_, greenOf, _) = rgb(bright)
+        check(greenOf < 255, "a 30 degree hue turn of a clipped red took green to white: $greenOf")
+        // The shader has to still be clamping there, or this is now the wrong
+        // answer and nothing else would say so.
+        if (shader.isFile) check(
+            Regex("rgb2hsv\\s*\\(\\s*clamp\\s*\\(").containsMatchIn(shader.readText()),
+            "the look shader no longer clamps before rgb2hsv, so the CPU copy's clamp is now the odd one out"
+        )
+
+        // 2. The vignette multiplies the float the shader is still carrying,
+        //    before the clamp - not a byte. Applied after the clamp it took a
+        //    bright area darker than the file does, because the clamp to 1.0
+        //    had thrown away the headroom the falloff was about to bring back
+        //    down. A picture lifted well past white with a vignette over it
+        //    must come out white in the middle *and* at a radius where the
+        //    falloff is small.
+        val lifted = Grade(
+            redScale = 1f, greenScale = 1f, blueScale = 1f,
+            contrast = 0f, saturation = 0f, brightness = 0.8f, vignette = 0.6f
+        )
+        val w = 64
+        val h = 64
+        val pixels = IntArray(w * h) { 0xFFFFFFFF.toInt() }
+        lifted.applyTo(pixels, w, h)
+        val middle = rgb(pixels[(h / 2) * w + w / 2])
+        check(middle.first == 255, "white under a vignette is ${middle.first} in the middle of the frame")
+        // Out where the falloff has begun but is still under the headroom the
+        // brightness lift gave - 0.82 against a value of 1.8 - the picture is
+        // white, as the shader's clamp-at-the-end makes it. Clamped first it
+        // was not: 255 * 0.82 came out at 209, a grey band in a white wall.
+        // (Nearer the middle the falloff is exactly 1 and the two agree, which
+        // is why the fixture reaches this far out.)
+        val edge = rgb(pixels[(h / 2) * w + 61])
+        check(
+            edge.first == 255,
+            "a vignette ate into the headroom a brightness lift gave: ${edge.first} where the file has 255"
+        )
+        // And the corner is genuinely darkened, so the fixture is not simply
+        // a vignette that does nothing.
+        val corner = rgb(pixels[(h - 1) * w + (w - 1)])
+        check(corner.first < 200, "the corner of a vignetted frame is ${corner.first} - the fixture is wrong")
+        // One pixel of a picture and one colour through the chain land on the
+        // same place when there is no vignette, which is what lets a swatch
+        // stand for a frame.
+        val plain = Grade(
+            redScale = 1.07f, greenScale = 1f, blueScale = 0.95f,
+            contrast = 0.1f, saturation = 0.06f, hueDegrees = 12f
+        )
+        val one = IntArray(4) { skin }
+        plain.applyTo(one, 2, 2)
+        check(
+            one.all { it and 0xFFFFFF == plain.applyTo(skin) and 0xFFFFFF },
+            "a picture and a swatch disagree with no vignette on: ${rgb(one[0])} and ${rgb(plain.applyTo(skin))}"
+        )
+    }
+
     // --- The swatch maths still holds for every catalogue look with the sliders on. ---
     for (look in Looks.catalog) {
         val g = Looks.grade(look.id, 1f, Adjust(exposure = 0.3f, highlights = 0.5f, hue = 0.2f))
