@@ -227,6 +227,35 @@ fun main() {
         val four = BeatMap(listOf(0L, 500L, 1000L, 1500L), 120f, 0.8f, 0)
         check(four.halved().bpm == 60f && four.halved().beatsMs == listOf(0L, 1000L), "a four-beat map halved to ${four.halved()}")
         check(four.doubled().bpm == 240f && four.doubled().beatsMs.size == 7, "a four-beat map doubled to ${four.doubled()}")
+
+        // --- The bar comes with the beats -----------------------------------
+        //
+        // Halving kept the indices congruent to the downbeat and then said the
+        // downbeat was at 0, which is only true when it was on the first or
+        // second beat. On the third or fourth it moved the bar by half of one,
+        // so the taller lines on the strip and "Cut on the bar" fell between
+        // bars after a single tap. Doubling left the offset outside the 0..3
+        // every other producer of the field maintains.
+        run {
+            val eight = (0..15).map { it * 500L }
+            for (d in 0..3) {
+                val m = BeatMap(eight, 120f, 0.9f, d)
+                // The moment that was the downbeat is still the downbeat.
+                val wasDownbeatAt = m.beatsMs[d]
+                val h = m.halved()
+                check(h.downbeatOffset in 0..3, "halving put the downbeat at ${h.downbeatOffset}, outside a bar")
+                check(h.beatsMs.getOrNull(h.downbeatOffset) == wasDownbeatAt,
+                    "halving with the downbeat on beat ${d + 1} moved it from $wasDownbeatAt to ${h.beatsMs.getOrNull(h.downbeatOffset)}")
+                val x2 = m.doubled()
+                check(x2.downbeatOffset in 0..3, "doubling put the downbeat at ${x2.downbeatOffset}, outside a bar")
+                // Doubling leaves every old beat in place, so the moment is still
+                // a beat; the offset counts bars of the new, faster pulse.
+                check(x2.beatsMs.contains(wasDownbeatAt), "doubling lost the beat that was the downbeat")
+                // And the bars it marks still start on a beat that exists.
+                check(x2.every(4).isNotEmpty() && x2.every(4).all { it in x2.beatsMs }, "doubling marks a bar on no beat")
+                check(h.every(4).all { it in h.beatsMs }, "halving marks a bar on no beat")
+            }
+        }
     }
 
     // --- The bass note must not be what it locks onto. ------------------------

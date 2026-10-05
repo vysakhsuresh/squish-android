@@ -41,7 +41,13 @@ data class BeatMap(
     fun halved(): BeatMap {
         if (beatsMs.size < 4) return this
         val kept = beatsMs.filterIndexed { i, _ -> (i - downbeatOffset).mod(2) == 0 }
-        return copy(beatsMs = kept, bpm = bpm / 2f, downbeatOffset = 0)
+        // The bar comes with the beats. The kept list holds the old indices
+        // congruent to the downbeat, so the beat that *was* the downbeat lands
+        // at position `downbeatOffset / 2` - not at 0, which is what this used
+        // to say. With the downbeat on the third or fourth beat that moved the
+        // bar by half of one, so the taller lines on the strip and "Cut on the
+        // bar" fell between bars after a single tap of the half-tempo button.
+        return copy(beatsMs = kept, bpm = bpm / 2f, downbeatOffset = (downbeatOffset / 2).mod(4))
     }
 
     fun doubled(): BeatMap {
@@ -51,7 +57,13 @@ data class BeatMap(
             kept.add(beatsMs[i])
             if (i < beatsMs.lastIndex) kept.add((beatsMs[i] + beatsMs[i + 1]) / 2)
         }
-        return copy(beatsMs = kept, bpm = bpm * 2f, downbeatOffset = downbeatOffset * 2)
+        // Every old beat keeps its place with a midpoint after it, so the old
+        // downbeat's index doubles - brought back inside a bar, which is the
+        // range this field is documented as and which `withDownbeat` and
+        // `nudgeDownbeat` both maintain. Left at six or eight it counted the
+        // same bars (`every` works in modular arithmetic) but read back out of
+        // range to everything else.
+        return copy(beatsMs = kept, bpm = bpm * 2f, downbeatOffset = (downbeatOffset * 2).mod(4))
     }
 
     /** Shifts which beat counts as the start of the bar. */
