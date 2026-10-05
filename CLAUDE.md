@@ -133,6 +133,16 @@ function first; if it can, it can be checked.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **The compact muxer (5 October), first on this list because it is on the path
+  of every export.** `media/CompactMuxer.kt` turns Media3's streamable output
+  off, because the in-app muxer's 400 KB reserved moov space is never trimmed
+  and was 69% of a measured three-second export (`docs/DEVICE_FINDINGS.md`).
+  The change is one builder call and `DefaultMuxer` is a pure delegate over the
+  same factory, but **no file has been written with it**. First thing on a
+  device: render anything, check it plays in the gallery and in a share, and
+  that `Mp4Probe` now accounts for nearly the whole file. The same factory is
+  on the proxy copy and on every rendered still.
+
 - **Batch B4 of the roadmap (preview engine), all of it.** Built with no phone
   attached; `docs/ROADMAP.md` §4 has the script. The decisions are executed on
   the JVM (`tools/jvm/PreviewRulesChecks.kt`, `PreviewChecks.kt`); what only a

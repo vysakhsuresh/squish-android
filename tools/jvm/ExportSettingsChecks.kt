@@ -60,6 +60,13 @@ fun main() {
     check("Original stays Original", ExportSettings.defaultOutputP(OutputSize.ORIGINAL, 1080) == OutputSize.ORIGINAL)
     check("an unmeasured source takes the remembered size", ExportSettings.defaultOutputP(720, 0) == 720)
 
+    // The frame rate lands by the same rule as the size.
+    check("a remembered 60 lands on 60 fps footage", ExportSettings.defaultOutputFps(60, 59.94f) == 60)
+    check("a remembered 60 falls back to the footage's own 30", ExportSettings.defaultOutputFps(60, 30f) == ExportSettings.SOURCE_FPS)
+    check("a remembered 24 lands on 30 fps footage", ExportSettings.defaultOutputFps(24, 30f) == 24)
+    check("Auto stays Auto", ExportSettings.defaultOutputFps(ExportSettings.SOURCE_FPS, 30f) == ExportSettings.SOURCE_FPS)
+    check("an unmeasured rate takes the remembered one", ExportSettings.defaultOutputFps(60, 0f) == 60)
+
     // ---- Fit to a size: the resolution is solved too -----------------------------
     // A minute of 4K at 16 MB: two megabits a second cannot cover eight million
     // pixels; it steps down to a size each pixel gets enough at.

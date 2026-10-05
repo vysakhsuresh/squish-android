@@ -394,6 +394,10 @@ object StillClips {
             val transformer = Transformer.Builder(context)
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
                 .apply { if (withSound) setAudioMimeType(MimeTypes.AUDIO_AAC) }
+                // A still is a few kilobytes of picture; the muxer's reserved
+                // moov space was four hundred of padding on each one, and a
+                // project of twenty photos carried eight megabytes of it.
+                .setMuxerFactory(compactMuxerFactory())
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         if (continuation.isActive) continuation.resume(true)

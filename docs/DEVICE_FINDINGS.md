@@ -1179,3 +1179,54 @@ with `drawStopIndicator = null`.
 Seen on the phone: the scrub bar is a plain track with the white thumb at
 0:00 and no dot; dragged right it goes to 0:12.803 with the orange behind it;
 and the Brightness slider on Looks → Adjust has lost its teal dot too.
+
+### Every exported file carried 400 KB of padding (5 October, 06:50)
+
+Measured, then diagnosed from Media3's own source. Three exports of the same
+3-second clip, with the logcat line and `tools/jvm/Mp4Probe.kt`:
+
+| size chosen | sheet said | file was | picture | sound | unaccounted |
+|---|---|---|---|---|---|
+| Original (716×1274) | ≈114 KB | 540,337 | 240 kbps | — | ~400 KB |
+| 1080p | ≈2.4 MB | 1,757,777 | 3,487 kbps | — | ~390 KB |
+| 360p | ≈114 KB | 579,440 | 128,791 B | 50,597 B | 400,052 B |
+
+A 360p export came out **bigger than the 716p one**, which is what gave it
+away: the overhead is a constant, not a rate. `Mp4Probe` (extended here to
+print each track's bytes and codec from stsd and stsz) says the 360p file is
+129 KB of avc1 and 51 KB of mp4a - 179 KB of media in a 579 KB file.
+
+The cause is in `Mp4Writer.writeHeader`: Media3's in-app MP4 muxer, which
+`Transformer` uses by default, reserves `DEFAULT_MOOV_BOX_SIZE_BYTES =
+400_000` bytes after the `ftyp` box so the `moov` can be written at the front.
+`maybeWriteMoovAtStart` then writes the moov into that space and fills the
+rest with a `free` box, which is never trimmed. Streamable output is what buys
+the reserve, and nothing here streams: the file goes to the gallery and into a
+share, and Android's own `MediaMuxer` writes its moov at the end anyway.
+
+**Fixed, not seen** (the phone left before the build was installed):
+`media/CompactMuxer.kt` builds `InAppMp4Muxer.Factory()
+.setAttemptStreamableOutputEnabled(false)` - `DefaultMuxer` is a pure delegate
+over that same factory, so nothing else changes - and the export, the proxy
+copy and every rendered still now use it. What a device has to answer: that an
+export still completes and plays, in the gallery and shared to WhatsApp, and
+that a short export is now about the sum of its tracks. The 400 KB was also in
+every still under `files/stills/`, so a project of twenty photos was carrying
+eight megabytes of it.
+
+Two related things the same session measured, both unsurprising once the
+padding is subtracted: the encoder honours a low requested bitrate (240 kbps
+delivered against 300 kbps asked) and undershoots a high one (3.5 Mbps against
+6.2), so the sheet's estimate is sound - it was the file that was not.
+
+### A remembered 60 fps landed on 30 fps footage (5 October, 06:48)
+
+The export sheet opened on a fresh 30 fps project with **60** lit in the Frame
+rate row and the line under it reading "The footage runs at 30 fps. A higher
+rate can't add frames; the file keeps the ones it has." The rate came from
+`export_defaults`, which carries the last export's choices onto the next new
+project - the *size* is capped at the footage's there and the rate was not, so
+one 60 chosen for 60 fps footage doubled the bitrate of every project after it
+for frames that do not exist. `ExportSettings.defaultOutputFps` now falls back
+to Auto, by the same rule as `defaultOutputP`. Seen on the phone: the next
+project opened on **Auto**, "Auto keeps the footage's 30 fps."

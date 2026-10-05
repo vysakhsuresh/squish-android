@@ -226,6 +226,7 @@ class VideoProcessor(private val context: Context) {
                     }
                 }
                 .setEncoderFactory(encoderFactory)
+                .setMuxerFactory(compactMuxerFactory())
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         android.util.Log.i(

@@ -88,6 +88,19 @@ object ExportSettings {
     }
 
     /**
+     * The rate a remembered default lands at on a new project, by the same rule
+     * as the size: the rate kept, unless the footage does not run that fast.
+     *
+     * A 60 chosen once for 60 fps footage was carried onto every project after
+     * it, and on a 30 fps shot that writes the same thirty frames under a 60
+     * fps label at twice the bitrate - the sheet said so in a line under the
+     * row ("a higher rate can't add frames") while the row itself stayed on 60.
+     * Nobody chose 60 for this footage, so it falls back to the footage's own.
+     */
+    fun defaultOutputFps(remembered: Int, sourceFps: Float): Int =
+        if (exceedsSource(remembered, sourceFps)) SOURCE_FPS else remembered
+
+    /**
      * Whether a fitted export missed its target. Encoders overshoot a requested
      * rate a little on a busy scene; a file within [OVERSHOOT_TOLERANCE] of the
      * limit is under it for every upload page that rounds, and asking for

@@ -180,13 +180,15 @@ object Preferences {
 }
 
 /**
- * A fresh project with the last export's choices on it. The size is taken
- * only when it is not bigger than this footage (ExportSettings.defaultOutputP):
- * a 4K kept from the last project would upscale every 720p clip by default.
+ * A fresh project with the last export's choices on it. The size and the frame
+ * rate are taken only where this footage has them (ExportSettings.defaultOutputP
+ * and defaultOutputFps): a 4K kept from the last project would upscale every
+ * 720p clip by default, and a 60 would write a 30 fps shot's own frames under a
+ * 60 fps label at twice the bitrate.
  */
 fun EditorUiState.withExportDefaults(defaults: ExportDefaults): EditorUiState = copy(
     outputP = ExportSettings.defaultOutputP(defaults.outputP, minOf(sourceWidth, sourceHeight)),
-    outputFps = defaults.outputFps,
+    outputFps = ExportSettings.defaultOutputFps(defaults.outputFps, fps),
     quality = defaults.quality,
     hevc = defaults.hevc,
     keepHdr = defaults.keepHdr,
