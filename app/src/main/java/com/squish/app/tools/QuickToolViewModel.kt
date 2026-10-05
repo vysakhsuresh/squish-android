@@ -173,7 +173,18 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      */
     private var keepsResumedSize = false
 
-    /** Whether this session has put a draft on disk, so undoing back to nothing can take it off. */
+    /**
+     * Whether there is a draft on disk for this slot that this screen owns, so
+     * undoing back to nothing - or emptying the list - can take it off.
+     *
+     * Set when a save lands *and* when a session is resumed, because a resumed
+     * one is on disk by definition. It used to be set only by a save, and
+     * `ToolAutosave.save` deliberately returns false when the file already says
+     * exactly what is on screen - which is every resumed session's first tick.
+     * So emptying a resumed Stitch list retracted nothing: the three-clip file
+     * stayed on disk and the drafts screen went on offering "3 clips to merge"
+     * for a screen the person had cleared.
+     */
     @Volatile
     private var wroteDraft = false
 
@@ -215,7 +226,8 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        return withContext(Dispatchers.IO) { autosave.peek(slot) }?.also { resumed = true; keepsResumedSize = true }
+        return withContext(Dispatchers.IO) { autosave.peek(slot) }
+            ?.also { resumed = true; keepsResumedSize = true; wroteDraft = true }
     }
 
     /**

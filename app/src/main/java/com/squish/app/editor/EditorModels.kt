@@ -369,6 +369,18 @@ data class BeatProgress(
     /** Whether a grid was found: on a clip, or on the camera audio. */
     val hasBeats: Boolean get() = beatsMs.size >= 2 || clipId != null
 
+    /**
+     * Whether there is anything here worth writing to the draft.
+     *
+     * Not the same question as [hasBeats], which asks whether a *grid* was
+     * found and wants two beats before it says yes. One beat somebody tapped
+     * with "Add beat" is a live part of the edit - it is drawn on the ruler and
+     * drags snap to it, because nothing that reads the grid applies that gate -
+     * and the draft was written and read under `hasBeats`, so that beat, the
+     * density and the downbeat went missing on every save.
+     */
+    val worthSaving: Boolean get() = beatsMs.isNotEmpty() || clipId != null
+
     /** The grid alone, as undo keeps it: no analysis in flight, no last failure. */
     val settled: BeatProgress
         get() = if (!running && !failed && listeningTo.isEmpty()) this

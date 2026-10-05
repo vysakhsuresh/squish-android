@@ -912,7 +912,11 @@ class ProjectAutosave(context: Context) {
         // says so - and writing it only after a listen that succeeded left it out
         // of the draft, and out of the edit key, so a failed listen could even
         // make the edit read as undone back to the bare clip and bin the draft.
-        if (state.beats.hasBeats) {
+        // `worthSaving`, not `hasBeats`: one beat tapped with "Add beat" is
+        // drawn on the ruler and snapped to, and under hasBeats - which wants
+        // two before it calls it a grid - it went missing on every save, taking
+        // the density and the downbeat with it.
+        if (state.beats.worthSaving) {
             put("beats", JSONObject().apply {
                 put("bpm", state.beats.bpm.toDouble())
                 put("confidence", state.beats.confidence.toDouble())
@@ -1462,7 +1466,10 @@ class ProjectAutosave(context: Context) {
                 // grid, and the card must not say it does.
                 val clipId = b.optString("clipId").takeIf { id -> id.isNotBlank() && audio.any { it.id == id } }
                 BeatProgress(
-                    finished = true,
+                    // "Found a grid" wants two beats; one tapped beat is still
+                    // read back, and the card then says what it is rather than
+                    // claiming a grid.
+                    finished = beatsMs.size >= 2 || clipId != null,
                     bpm = b.optDouble("bpm", 0.0).toFloat(),
                     confidence = b.optDouble("confidence", 0.0).toFloat(),
                     beatsMs = beatsMs,
@@ -1470,7 +1477,7 @@ class ProjectAutosave(context: Context) {
                     clipLabel = b.optString("clipLabel"),
                     clipId = clipId,
                     every = b.optInt("every", 1).coerceIn(1, 4)
-                ).takeIf { it.hasBeats }
+                ).takeIf { it.worthSaving }
             } ?: BeatProgress(),
             pixelsPerSecond = json.optDouble("pixelsPerSecond", 42.0).toFloat()
         )
