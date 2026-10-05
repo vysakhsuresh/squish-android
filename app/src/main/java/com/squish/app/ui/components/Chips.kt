@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
@@ -61,7 +62,17 @@ fun SelectableChip(
                 else Modifier.background(SquishColors.Background)
             )
             .border(1.5.dp, border, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            // selectable, not clickable: the sweep behind the chosen chip is
+            // the only thing that said which one it was, and a colour is not an
+            // answer to someone using a screen reader. This is the control
+            // fifty-nine chip rows are built out of, so a plain clickable left
+            // every one of them reading as a list of identical buttons.
+            //
+            // No role: one of these rows is a set of tabs, the next is one
+            // value out of several, the next is a set of toggles, and the
+            // state - which `selectable` speaks either way - is the thing that
+            // was missing. A role would name two of the three wrongly.
+            .selectable(selected = selected, onClick = onClick)
             // 8 at the sides: at 12, four to a row on a 360dp phone cut "Camera"
             // and "Bottom" short.
             .padding(vertical = 8.dp, horizontal = 8.dp),

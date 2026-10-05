@@ -420,6 +420,19 @@ fun main() {
             "the app's switch is no longer a Modifier.toggleable, so nothing puts an on/off on its node and " +
                 "a screen reader can only say that a switch is there"
         )
+        // The same for the chip every option row in the app is built out of -
+        // fifty-nine of them. The sweep behind the chosen chip was the only
+        // thing that said which one it was, so a chip row read as a list of
+        // identical buttons. Modifier.selectable is what puts the state on the
+        // node; which role it carries is a separate question and this one
+        // carries none on purpose, because the rows are variously tabs, values
+        // and toggles.
+        check(
+            Regex("\\.selectable\\(\\s*selected\\s*=").containsMatchIn(chips),
+            "SelectableChip is no longer a Modifier.selectable, so nothing says which chip in a row is the " +
+                "chosen one except its colour"
+        )
+
         // And nowhere may claim to be a switch while being a plain click. Said
         // over the whole tree rather than the one file, because the next switch
         // someone writes is the one that will do it.
