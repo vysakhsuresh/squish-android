@@ -1746,3 +1746,87 @@ None of it has been seen. In order:
 8. **Relink a stabilized, reframed shot**: the new footage plays plain.
 9. **Trim a sixty-second clip down to two in Snip**: both handles still answer.
 10. **The stock search, typing quickly**: no "couldn't reach" between letters.
+
+## Sweep six: the model, the preview engine and the shell (5 October, evening)
+
+The sixth and last broad sweep: the layer *under* the commands - the one model
+every command edits, the rows and lanes, the preview engine and the Compose
+surface it draws on, the editor's own derived state, and the settings and
+navigation. Eighteen hunts over six groups and the same three lenses, two
+adversarial refuters each.
+
+What this layer costs when it is wrong is not one tool misbehaving but every
+tool that reaches it. The ones worth remembering:
+
+- **A stretch taken out over a gap moved the sound further than the picture.**
+  The other rows came back by the stretch's own length while the main track
+  closed up by what it actually lost - and those differ whenever the stretch
+  runs into a gap. Everything after landed early, off the words it was cued to,
+  which is the one thing the operation exists to keep together.
+
+- **Taking a stretch out could leave two overlays on one row** - one player in
+  the preview, two layers in the file - because a cut refused for leaving a
+  sliver under 200 ms left one overlay in place while its neighbour slid back
+  into it.
+
+- **Remove silences re-seated sounds onto video rows**, since `isOverlay` is
+  `layer > 0` and says nothing about kind, **and shots past the decoder
+  ceiling**, since the free-row search was never given the clip's own top row.
+
+- **Changing a blended still's mode or opacity did not reach the preview.** The
+  held still was keyed on the two clip *ids*, and an edit makes a new clip with
+  the same id; nothing happened on screen until the shot under it changed, and
+  then everything did at once.
+
+- **A shot's own shape was read off whichever surface answered first.** With one
+  shot covering the playhead both surfaces carry its id, and the idle one has no
+  shape - so half the time auto-reframe's focus and the Crop and Mask tools'
+  coordinates were measured against the project's shape rather than the clip's.
+
+- **The safe-area guide was drawn on the canvas, not on what the file keeps**,
+  so with any crop it promised room the file does not have. It was right while
+  nothing was cropped, which is how it passed on 4 October.
+
+- **The export sheet read a padded canvas as cuts-only**, so "Keep HDR" offered
+  itself and the codec row locked to HEVC on an edit the render was always going
+  to composite and tone-map.
+
+- **A slideshow of photos offered a Camera sound switch that moved nothing**: a
+  main-track still is an MP4 this app renders with a silent track, so the test
+  for "any shot has camera sound" said yes for an edit with no camera in it.
+
+- **Paste attributes quietly turned a 300% sound down to 100%** (it clamped a
+  sound's level to a picture's range) **and was the fourth place a look is set**
+  that could leave a strength track behind.
+
+- **On a phone set to German every speed chip read "2,x"** - seven labels
+  formatted with the phone's own locale and then trimmed the trailing zeros and
+  the point, which cannot see a comma.
+
+- **Snip's trim handles still ate each other** below the width the morning's fix
+  reached, which is also where `ControlChecks` turned out to be holding the
+  implementation to one particular wrong answer: it passed for as long as the
+  bug lived and failed the day it was fixed.
+
+Three checks written during this sweep did not bite when first tried, and
+CLAUDE.md now says to break the code again and watch each one fail. Two scratch
+files a hunting agent wrote into `tools/jvm` reached commits before being taken
+out; `RunnerChecks` is what catches those, and it did.
+
+### What a device has to answer from this sweep
+
+1. **Delete words over a gap** on the main track: the captions after it move by
+   what the picture moved, not more.
+2. **Blend a still over a shot, then change its mode and its Opacity**: the
+   picture changes as you change them, not when the shot under it does.
+3. **A portrait clip cut into a landscape edit**: auto-reframe follows its
+   subject, and the Crop and Mask tools' handles land where the finger is -
+   whichever surface happens to be idle.
+4. **The safe-area guide with a 9:16 crop on a landscape edit**: the dashed
+   rectangle is inside the picture the file keeps.
+5. **An HLG clip on a padded canvas**: the sheet says the file will be
+   converted, and the codec row is not locked to HEVC.
+6. **A slideshow of photos**: no Camera sound row.
+7. **Trim a sixty-second clip to two in Snip**: both handles still answer.
+8. **Remove silences on a shot with overlays above it**: no two overlays on one
+   row, and no footage above row three.
