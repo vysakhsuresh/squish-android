@@ -137,6 +137,41 @@ fun main() {
         }
     }
 
+    // --- The one blur, written four times. ------------------------------------
+    //
+    // A softening is `uBlur` taps a fraction of the frame apart, and four files
+    // hold a copy of it: the effects pass, the AGSL copy of that pass that
+    // Android 13+ draws over the canvas, the transition pass (a Defocus join on
+    // a base shot) and the premultiply pass (the same join on an overlay). They
+    // are four because they live in different places, not because they do
+    // different things - and a placed Blur, a defocus on a shot and a defocus on
+    // an overlay must all look the same, in the preview and in the file alike.
+    //
+    // So each must be the same ring: a 3x3 of taps uBlur apart, averaged. The
+    // moment one of them is widened or re-shaped on its own, this says so.
+    run {
+        val ring = listOf(
+            "app/src/main/assets/squish_fx_es2.glsl",
+            "app/src/main/assets/squish_transition_es2.glsl",
+            "app/src/main/assets/squish_premultiply_es2.glsl",
+            "app/src/main/java/com/squish/app/editor/CanvasFx.kt"
+        )
+        ring.forEach { path ->
+            val text = File(path).takeIf { it.isFile }?.readText()
+            if (text == null) { flag("$path is not where the blur check looks"); return@forEach }
+            if ("uBlur" !in text) { flag("$path no longer has a blur at all"); return@forEach }
+            val loops = Regex("""for \(int i = -1; i <= 1; i\+\+\)""").findAll(text).count()
+            val inner = Regex("""for \(int j = -1; j <= 1; j\+\+\)""").findAll(text).count()
+            val mean = Regex("""/ 9\.0""").findAll(text).count()
+            if (loops != 1 || inner != 1) flag("$path: the blur is not one 3x3 ring ($loops by $inner loops)")
+            if (mean != 1) flag("$path: the blur's taps are not averaged over nine ($mean divisions)")
+            // Exactly uBlur apart, with nothing applied after it: a copy that
+            // doubles its own reach is the way these four quietly stop agreeing.
+            val spacing = Regex("""\(float\(i\), float\(j\)\)\s*\*\s*uBlur\s*[,)]""").findAll(text).count()
+            if (spacing != 1) flag("$path: the taps are not spaced exactly uBlur apart ($spacing match(es)) - this copy has drifted from the other three")
+        }
+    }
+
     println("shaders: ${shaders.size} checked against the Kotlin that drives them")
     if (problems.isEmpty()) println("PASS - every uniform a shader declares is set, and every uniform set is declared")
     else { println("FAIL (${problems.size})"); problems.forEach { println("  - $it") }; exitProcess(1) }
