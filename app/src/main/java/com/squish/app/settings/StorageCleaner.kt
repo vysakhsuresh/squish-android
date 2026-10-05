@@ -7,6 +7,7 @@ import com.squish.app.media.ProxyEngine
 import com.squish.app.media.SquishError
 import com.squish.app.media.ThumbnailCache
 import com.squish.app.media.video.Segmenter
+import com.squish.app.online.OnlineMusic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -25,7 +26,11 @@ import java.io.File
 enum class StorageKind(val title: String, val blurb: String) {
     Exports("Exports kept inside Squish", "Renders whose copy to the gallery did not land. The library plays these; clearing removes them from it."),
     Stills("Photos and freezes", "Clips rendered from pictures. Only ones no project uses are cleared."),
-    Renders("Reversed renders and imports", "Files made for Reverse, and videos shared into Squish. Only ones no project uses are cleared."),
+    Renders(
+        "Reversed renders, imports and downloads",
+        "Files made for Reverse, videos shared into Squish, and the stock clips and music it downloaded. " +
+            "Only ones no project uses are cleared."
+    ),
     Takes("Voice and speech", "Voiceover takes and lines read aloud. Only ones no project uses are cleared."),
     Masks("Person masks", "What Cutout found in each shot. Only ones no project uses are cleared."),
     Proxies("Preview cache", "Light 540p copies of large clips, kept only to keep scrubbing smooth. Exports always read the original."),
@@ -51,7 +56,7 @@ object StorageCleaner {
             // the one that is wanted again is made again from the footage, which
             // is what CanvasBackdrop does anyway.
             StorageKind.Stills -> sweep(context, listOf(File(context.filesDir, "stills")))
-            StorageKind.Renders -> sweep(context, listOf(File(context.filesDir, "reversed"), File(context.filesDir, IMPORTS_DIR)))
+            StorageKind.Renders -> sweep(context, renderDirs(context))
             StorageKind.Takes -> sweep(context, listOf(File(context.filesDir, "voice"), File(context.filesDir, "speech")))
             StorageKind.Masks -> Segmenter.sweep(context, SquishRepositories.autosave(context).referencedMaskFiles())
             StorageKind.Proxies -> ProxyEngine.clearCache(context)
@@ -63,7 +68,7 @@ object StorageCleaner {
     private fun bytesOf(context: Context, kind: StorageKind): Long = when (kind) {
         StorageKind.Exports -> sizeOf(SquishError.exportsDir(context))
         StorageKind.Stills -> sizeOf(File(context.filesDir, "stills"))
-        StorageKind.Renders -> sizeOf(File(context.filesDir, "reversed")) + sizeOf(File(context.filesDir, IMPORTS_DIR))
+        StorageKind.Renders -> renderDirs(context).sumOf { sizeOf(it) }
         StorageKind.Takes -> sizeOf(File(context.filesDir, "voice")) + sizeOf(File(context.filesDir, "speech"))
         StorageKind.Masks -> sizeOf(File(context.filesDir, "segments"))
         StorageKind.Proxies -> ProxyEngine.cacheSizeBytes(context)
@@ -86,6 +91,22 @@ object StorageCleaner {
         dir.listFiles()?.forEach { runCatching { it.delete() } }
         history.forget(stranded)
     }
+
+    /**
+     * One list, read by both the measuring and the sweeping, so a folder
+     * cannot be counted by a row and left out of its Clear.
+     *
+     * `music/online` is here because it had been left out of *both*: a track
+     * downloaded from the Archive sat in `files/music/online` which no kind
+     * measured and no sweep touched, so there was no way to get rid of it from
+     * inside the app at all. It is a download like the stock clips, which land
+     * under `imports`, so it is counted and cleared with them.
+     */
+    private fun renderDirs(context: Context): List<File> = listOf(
+        File(context.filesDir, "reversed"),
+        File(context.filesDir, IMPORTS_DIR),
+        File(context.filesDir, OnlineMusic.DIR)
+    )
 
     private fun sizeOf(dir: File): Long =
         if (!dir.exists()) 0L else dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }

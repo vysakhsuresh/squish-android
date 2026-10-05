@@ -661,6 +661,46 @@ fun main() {
             Regex("dir\\.walkTopDown\\(\\)").containsMatchIn(cleaner),
             "StorageCleaner's sweep no longer walks the tree"
         )
+        // And one list of folders, read by the measuring and the sweeping
+        // both, so a folder cannot be counted by a row and left out of its
+        // Clear. `music/online` had been left out of both, so a downloaded
+        // track could not be got rid of from inside the app at all.
+        check(
+            cleaner.contains("private fun renderDirs("),
+            "StorageCleaner no longer keeps one list of the folders a row covers, so the measuring and " +
+                "the sweeping can name different ones again"
+        )
+        check(
+            cleaner.contains("OnlineMusic.DIR"),
+            "downloaded music is not in StorageCleaner's folders, so nothing counts it and nothing clears it"
+        )
+        check(
+            Regex("renderDirs\\(context\\)").findAll(cleaner).count() >= 2,
+            "the folder list is read in only one place - the point of it is that both read it"
+        )
+    }
+
+    // ---- A sticker is a sticker because it says so. ------------------------
+    //
+    // TextOverlayItem carries a `sticker` flag, and clearCaptions and the SRT
+    // export both read it. Translate captions guessed instead - "more than two
+    // code points" - so a short real caption was skipped *and* left out of the
+    // tally it reports: "Hi", "No", "OK", and every one- or two-character line
+    // in Chinese or Japanese, which is a whole sentence. The sheet said three
+    // of three were translated with one still in the old language.
+    run {
+        val text = read("$SRC/editor/edits/TextEdits.kt")
+        val translate = text.substringAfter("fun translateCaptions(", "").substringBefore("viewModelScope").take(600)
+        check(translate.isNotEmpty(), "translateCaptions has moved - this check has rotted")
+        check(
+            translate.contains("sticker"),
+            "Translate captions does not read the sticker flag, so it is guessing which lines are stickers"
+        )
+        check(
+            !translate.contains("codePointCount"),
+            "Translate captions is counting code points again: a short caption is a caption, and the flag " +
+                "that says what a sticker is is right there on the item"
+        )
     }
 
     println("controls: the conventions that, broken, make a control lie")

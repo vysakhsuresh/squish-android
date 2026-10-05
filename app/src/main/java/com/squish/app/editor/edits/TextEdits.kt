@@ -828,10 +828,15 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * lines were translated, or -1 when the service could not be reached.
      */
     fun translateCaptions(from: String, to: String, onDone: (translated: Int, of: Int) -> Unit) {
-        val lines = _state.value.textOverlays.filter { item ->
-            val t = item.text.trim()
-            t.isNotEmpty() && t.codePointCount(0, t.length) > 2
-        }
+        // On the flag the item carries, not on how long its words are. The
+        // filter used to be "more than two code points", standing in for
+        // `sticker` - which this same data class has and which clearCaptions
+        // and the SRT export both read. So a short real caption was quietly
+        // skipped *and* left out of the tally: "Hi", "No", "OK", and every
+        // one-or-two-character line in Chinese or Japanese, which is a whole
+        // sentence. The sheet then said three of three were translated while
+        // one of them was still in the old language.
+        val lines = _state.value.textOverlays.filter { !it.sticker && it.text.isNotBlank() }
         if (lines.isEmpty()) return onDone(0, 0)
         viewModelScope.launch {
             // Line by line; one the service refuses is left in its own words and
