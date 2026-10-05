@@ -1910,8 +1910,6 @@ fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): T
             mask = if (clip.isStillPicture) clip.mask else attrs.mask,
             mirrored = attrs.mirrored,
             quarterTurns = attrs.quarterTurns,
-            lookId = attrs.lookId,
-            lookIntensity = attrs.lookIntensity,
             adjust = attrs.adjust,
             crop = attrs.crop,
             arrival = attrs.arrival,
@@ -1921,7 +1919,11 @@ fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): T
             loop = attrs.loop,
             loopMs = attrs.loopMs,
             frameBlend = attrs.frameBlend
-        )
+        // Through withLook, like every other place a look is set: pasting from
+        // a clip with no filter nulls `lookId` and has to take the target's own
+        // strength track with it, or the clip keeps diamonds on the strip and a
+        // lit keyframe button for a filter that is not there (see Clip.withLook).
+        ).withLook(attrs.lookId, attrs.lookIntensity)
     }
     if (pasted == clip) return this
     val next = copy(clips = clips.map { if (it.id == clipId) pasted else it })

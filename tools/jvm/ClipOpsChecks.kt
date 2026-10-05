@@ -677,6 +677,18 @@ fun main() {
             // And a clip with no track is unchanged either way.
             val plain = video("p", 6_000)
             check(plain.withLook(null) == plain.copy(lookIntensity = 1f), "clearing nothing changed something")
+            // Paste attributes is the fourth place a look is set, and it set the
+            // two fields itself: pasted from a clip with no filter it nulled the
+            // id and left the target's own strength track behind.
+            val target = video("t", 6_000).copy(lookId = "warm", lookIntensity = 0.5f, lookKeys = keys)
+            val fromPlain = TimelineState(clips = listOf(target, video("src", 6_000, start = 6_000)))
+                .withAttributesPasted("t", video("src", 6_000).attributes).byId("t")
+            check(fromPlain.lookId == null && fromPlain.lookKeys.isEmpty(),
+                "paste from a clip with no look left ${fromPlain.lookKeys.size} strength keys and look ${fromPlain.lookId}")
+            // Pasted from a clip that has one, the look and its strength come across.
+            val fromGraded = TimelineState(clips = listOf(target, graded.copy(id = "g", timelineStartMs = 6_000)))
+                .withAttributesPasted("t", graded.attributes).byId("t")
+            check(fromGraded.lookId == "noir" && fromGraded.lookIntensity == 0.6f, "paste did not carry the look: ${fromGraded.lookId} at ${fromGraded.lookIntensity}")
         }
 
         // A blank, which "Move every shot" leaves alone: there is nothing in a
