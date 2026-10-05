@@ -1427,3 +1427,31 @@ else in that parser held up under the suite: a BOM, CRLF, a lone CR, a dot
 before the milliseconds, no indices at all, no blank line between cues, hours
 left off, one- and two-digit fractions, a caption whose text is "42", and a
 round trip through `format`.
+
+### Three caches that could not remember "nothing" (5 October)
+
+`getOrPut` reads a stored null as absent and calls its lambda again, so a
+cache of a nullable thing cannot remember a miss - which is the one answer a
+cache of this kind exists to keep:
+
+- **The export's blended stills.** Worse than a miss: `blendEffectFor` had no
+  cache at all and was called once per shot the still lies over, so a light
+  leak across a reel of twenty-four cuts decoded the same PNG twenty-four
+  times and held every copy for the whole render. At 1080x1920 that is about
+  eight megabytes each - two hundred alive at once, on a phone also running a
+  decoder and an encoder, which is the shape of an out-of-memory failure that
+  only shows on a long edit.
+- **The preview's blended stills**, which had the cache and the `getOrPut`:
+  a still that could not be read was opened again, and warned about, on every
+  tick of the clock.
+- **`CaptionRenderer.typeface`**, the same: a font imported once and since
+  deleted was looked for on disk, and attempted, for every caption of every
+  frame of a render.
+
+All three read by `containsKey` now, and `ControlChecks` fails on any
+`getOrPut` whose lambda can give null - a planted example confirms it fires.
+Every other `getOrPut` in the app stores something that cannot be null.
+
+None of this is visible on screen; it is memory and work. A device would
+show it as a long export failing on a mid-range phone where a short one did
+not.
