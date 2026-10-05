@@ -267,6 +267,16 @@ fun main() {
         )
     }
 
+    // ---- A cut is one shot becoming another --------------------------------
+    run {
+        val audio = read("$SRC/editor/edits/AudioEdits.kt")
+        check(
+            audio.contains("CutSounds.joinsOf(current.videoClips.filter { it.isMain }, current.pictureEndMs)"),
+            "\"Sound on every cut\" measures its joins against the edit's length again - where a song runs " +
+                "on past the last shot that makes the picture's end a join, and a sound is laid into black"
+        )
+    }
+
     // ---- Cuts and the playhead always snap ---------------------------------
     run {
         // The switch is "Snap to markers and beats". Cuts, 0:00 and the end of
