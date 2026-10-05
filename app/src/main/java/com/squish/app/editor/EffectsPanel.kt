@@ -70,10 +70,12 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
     val shot = state.baseClipAt(state.playheadMs) ?: state.videoClips.firstOrNull { it.layer == 0 }
     val shotUri = shot?.uri ?: state.sourceUri
     val atMs = shot?.sourceAt(state.playheadMs.coerceIn(shot.timelineStartMs, shot.timelineEndMs)) ?: 0L
+    // The lint check cannot see the assignment below - verified against
+    // Compose 1.7.2 by writing it three different ways, including a plain
+    // `value = local`, and it reports every one. The producer does assign.
+    @Suppress("ProduceStateDoesNotAssignValue")
     val frame by produceState<ImageBitmap?>(null, shotUri, atMs / FRAME_BUCKET_MS) {
-        val uri = shotUri
-        val read = if (uri == null) null else ThumbnailExtractor.frameAt(context, uri, atMs)
-        value = read?.asImageBitmap()
+        value = shotUri?.let { ThumbnailExtractor.frameAt(context, it, atMs)?.asImageBitmap() }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {

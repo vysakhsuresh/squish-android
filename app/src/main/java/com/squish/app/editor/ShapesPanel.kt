@@ -261,10 +261,15 @@ fun ShapePlacementPanel(
         LabeledSlider("Up / down", item.yFraction * 2 - 1, -1f..1f, onFinished = viewModel::endGesture) { v ->
             onDrag { it.copy(yFraction = ((v + 1) / 2).coerceIn(0.02f, 0.98f)) }
         }
+        // The range is the model's own limits in multiples of the default, not
+        // a narrower pair of numbers: at 0.2..1.8 of 110 the slider reached
+        // 22..198 while a shape may be 8..200, so one dragged to an end by a
+        // pinch sat with its thumb pinned there and the first touch moved it.
         LabeledSlider(
             "Size",
             item.sizeSp / ShapeGeometry.DEFAULT_SIZE_SP.toFloat(),
-            0.2f..1.8f,
+            TextStyleSpec.MIN_SIZE_SP / ShapeGeometry.DEFAULT_SIZE_SP.toFloat()..
+                TextStyleSpec.MAX_SIZE_SP / ShapeGeometry.DEFAULT_SIZE_SP.toFloat(),
             readout = Readout.times,
             onFinished = viewModel::endGesture
         ) { v ->

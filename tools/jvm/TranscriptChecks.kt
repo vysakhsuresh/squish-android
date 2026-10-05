@@ -196,6 +196,45 @@ fun main() {
         check(Transcript.afterRemoval(line, 2_000, 2_000) == line, "an empty stretch changed a line")
     }
 
+    // --- The chosen run, against a list that changed under it. --------------
+    //
+    // The panel remembers the two ends as they were tapped and rebuilds the
+    // word list whenever the lines change. An edit from outside it - an undo, a
+    // trim that drops a line, a Delete on the strip - left the ends pointing
+    // past the end of the list, and `words.slice(range)` threw an
+    // IndexOutOfBoundsException in the middle of composition: the editor went
+    // down rather than the choice going away.
+    run {
+        check(Transcript.chosenRange(2, 5, 10) == 2..5, "a plain choice is ${Transcript.chosenRange(2, 5, 10)}")
+        check(Transcript.chosenRange(5, 2, 10) == 2..5, "a choice made backwards is ${Transcript.chosenRange(5, 2, 10)}")
+        check(Transcript.chosenRange(3, 3, 10) == 3..3, "one word is ${Transcript.chosenRange(3, 3, 10)}")
+        check(Transcript.chosenRange(null, 4, 10) == null, "half a choice is a choice")
+        check(Transcript.chosenRange(4, null, 10) == null, "half a choice is a choice")
+        check(Transcript.chosenRange(null, null, 10) == null, "no choice is a choice")
+        // The list shrank under it: dropped, not clamped. Clamping would
+        // quietly choose a different run of words in a panel whose next button
+        // is Delete.
+        check(Transcript.chosenRange(2, 8, 5) == null, "a choice past the end was kept: ${Transcript.chosenRange(2, 8, 5)}")
+        check(Transcript.chosenRange(7, 9, 5) == null, "a choice wholly past the end was kept")
+        check(Transcript.chosenRange(0, 4, 5) == 0..4, "a choice that exactly fits was dropped")
+        check(Transcript.chosenRange(0, 5, 5) == null, "a choice one past the end was kept")
+        // Every word gone.
+        check(Transcript.chosenRange(0, 0, 0) == null, "a choice over no words was kept")
+        check(Transcript.chosenRange(3, 3, 0) == null, "a choice over no words was kept")
+        // And the thing the panel does with it never throws, for any pair of
+        // ends over any length - which is the property the crash was.
+        val words: List<String> = (0 until 12).map { "w$it" }
+        for (a in -3..15) for (b in -3..15) for (n in 0..12) {
+            val range = Transcript.chosenRange(a, b, n) ?: continue
+            check(
+                range.first >= 0 && range.last < n,
+                "chosenRange($a, $b, $n) gave $range, which is not inside the list"
+            )
+            val sliced = runCatching { words.take(n).slice(range) }
+            check(sliced.isSuccess, "chosenRange($a, $b, $n) gave $range, which slicing $n words throws on")
+        }
+    }
+
     println("transcript: ${Transcript.FILLERS.size} filler words")
     if (problems.isEmpty()) println("PASS - words carry their own moment, or say they do not")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

@@ -169,6 +169,8 @@ fun StockVideoSheet(onPicked: (Uri) -> Unit, onDismiss: () -> Unit) {
 @Composable
 private fun StockTile(video: OnlineStock.Video, busy: Boolean, onClick: () -> Unit) {
     val context = LocalContext.current
+    // See EffectsPanel: the lint check does not see this assignment.
+    @Suppress("ProduceStateDoesNotAssignValue")
     val thumb by produceState<Bitmap?>(null, video.id) { value = OnlineStock.thumbnail(context, video) }
     Column(
         modifier = Modifier

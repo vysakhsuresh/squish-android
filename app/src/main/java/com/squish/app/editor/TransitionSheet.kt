@@ -89,9 +89,12 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
     // the one before, the start of this one - instead of two grey boxes. Read
     // once per join; until they arrive the drawn shots stand in.
     val context = LocalContext.current
+    // See EffectsPanel: the lint check does not see these assignments.
+    @Suppress("ProduceStateDoesNotAssignValue")
     val incomingFrame by produceState<ImageBitmap?>(null, clip.uri, clip.sourceInMs) {
         value = clip.uri?.let { ThumbnailExtractor.frameAt(context, it, clip.sourceInMs + FRAME_INSET_MS)?.asImageBitmap() }
     }
+    @Suppress("ProduceStateDoesNotAssignValue")
     val outgoingFrame by produceState<ImageBitmap?>(null, previous?.uri, previous?.sourceOutMs) {
         value = previous?.let { p -> p.uri?.let { ThumbnailExtractor.frameAt(context, it, (p.sourceOutMs - FRAME_INSET_MS).coerceAtLeast(p.sourceInMs))?.asImageBitmap() } }
     }

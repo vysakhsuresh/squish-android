@@ -930,7 +930,20 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
                 onEyedropper = onEyedropper
             )
 
-            TextSlider("Size", item.sizeSp.toFloat(), 12f..120f, { "${it.roundToInt()}" }, done) { v ->
+            // The model's own limits, not a narrower pair of numbers. The
+            // slider ran 12..120 while a pinch on the picture is held to
+            // 8..200 (TextGeometry), so a line pinched larger than 120 showed
+            // its real size in the readout with the thumb pinned at the
+            // right-hand end - and the first touch anywhere on the track shrank
+            // it to 120. The control disagreed with the label beside it, and
+            // the control was the destructive one.
+            TextSlider(
+                "Size",
+                item.sizeSp.toFloat(),
+                TextStyleSpec.MIN_SIZE_SP.toFloat()..TextStyleSpec.MAX_SIZE_SP.toFloat(),
+                { "${it.roundToInt()}" },
+                done
+            ) { v ->
                 drag { it.copy(sizeSp = v.roundToInt()) }
             }
             TextSlider("Letter spacing", item.letterSpacing, 0f..TextStyleSpec.MAX_LETTER_SPACING, { "%.2f".format(it) }, done) { v ->

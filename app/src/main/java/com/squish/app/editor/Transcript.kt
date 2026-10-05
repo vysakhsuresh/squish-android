@@ -72,6 +72,27 @@ object Transcript {
     }
 
     /**
+     * The run of words a tap on [anchor] and a tap on [head] choose, over a
+     * list of [count] words - or null when there is no choice to show.
+     *
+     * The two ends are remembered as they were tapped, while the word list is
+     * rebuilt every time the lines change. So an edit from *outside* the
+     * transcript panel - an undo, a trim that drops a line, a Delete on the
+     * strip - left them pointing past the end of the list, and `words.slice`
+     * threw an IndexOutOfBoundsException in the middle of composition: the
+     * editor went down rather than the choice going away.
+     *
+     * Dropped rather than clamped. Clamping would quietly choose a *different*
+     * run of words, in a panel whose next button is Delete.
+     */
+    fun chosenRange(anchor: Int?, head: Int?, count: Int): IntRange? {
+        if (anchor == null || head == null || count <= 0) return null
+        val lo = minOf(anchor, head)
+        val hi = maxOf(anchor, head)
+        return if (lo in 0 until count && hi in 0 until count) lo..hi else null
+    }
+
+    /**
      * The stretches a filler-word pass would take out: every run of neighbouring
      * filler words, merged, so "um, um" is one cut rather than two.
      *

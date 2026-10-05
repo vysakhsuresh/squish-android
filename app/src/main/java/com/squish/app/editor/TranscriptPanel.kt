@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,10 +62,17 @@ fun TranscriptPanel(state: EditorUiState, viewModel: EditorViewModel, onClose: (
     var head by remember { mutableStateOf<Int?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
 
-    val chosen: IntRange? = run {
-        val a = anchor
-        val b = head
-        if (a == null || b == null) null else minOf(a, b)..maxOf(a, b)
+    // Through Transcript.chosenRange, which drops a choice that no longer fits
+    // the list rather than slicing past its end - see there for what that cost.
+    val chosen: IntRange? = Transcript.chosenRange(anchor, head, words.size)
+    // And the stale ends are let go of, so the panel is not holding a choice it
+    // is not showing. Keyed on the list's length, which is what can invalidate
+    // them; a change of words at the same length is still those words' places.
+    LaunchedEffect(words.size) {
+        if (Transcript.chosenRange(anchor, head, words.size) == null) {
+            anchor = null
+            head = null
+        }
     }
     val span = chosen?.let { range -> Transcript.span(words.slice(range)) }
 

@@ -613,6 +613,33 @@ fun main() {
         )
     }
 
+    // ---- A slider reaches everything its value may be. ---------------------
+    //
+    // The Size slider ran 12..120 while a line's size may be 8..200 - which is
+    // what a pinch on the picture is held to. A line pinched past 120 showed
+    // its real size in the readout with the thumb pinned at the end, and the
+    // first touch anywhere on the track shrank it to 120. The control
+    // disagreed with the label beside it, and the control was the destructive
+    // one. The shape panel's Size had the same gap, 22..198 of a possible
+    // 8..200.
+    //
+    // So a Size slider's range is built from the model's own constants. Spelt
+    // as text because a Compose slider cannot be executed here.
+    run {
+        for ((name, file) in listOf("the text sheet" to "editor/TextSheet.kt", "the shapes panel" to "editor/ShapesPanel.kt")) {
+            val text = read("$SRC/$file")
+            if (text.isEmpty()) continue
+            val size = text.substringAfter("\"Size\"", "").take(400)
+            check(size.isNotEmpty(), "$file no longer has a Size slider - this check has rotted")
+            check(
+                size.contains("TextStyleSpec.MIN_SIZE_SP") && size.contains("TextStyleSpec.MAX_SIZE_SP"),
+                "$name's Size slider sets its range from numbers of its own rather than from " +
+                    "TextStyleSpec's limits, so a line or a shape pinched past the slider's end is shrunk " +
+                    "by the first touch on the track"
+            )
+        }
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
