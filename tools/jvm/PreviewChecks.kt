@@ -73,6 +73,44 @@ fun main() {
     val (zw, zh) = PreviewBox.fittedSizeDp(1.78f, 0f, 0f)
     check("a zero box has no picture in it", zw == 0f && zh == 0f)
 
+    // ---- The cap is a cap, both ways ------------------------------------------
+    //
+    // A screen with no strip under the picture can afford a taller preview, and
+    // the quick tools ask for 320dp. They used to ask by clamping the answer
+    // afterwards, which could only make the box shorter - this function had
+    // already cut it to 300 - so the ask did nothing and the quick tools have
+    // had the editor's height all along. The cap belongs inside, where the
+    // division is.
+    run {
+        val taller = PreviewBox.heightDp(9f / 16f, 336f, 320f)
+        check("a raised cap raises the box", taller > PreviewBox.MAX_HEIGHT_DP)
+        check("a raised cap is the cap", abs(taller - 320f) < 0.01f)
+        val lower = PreviewBox.heightDp(9f / 16f, 336f, 220f)
+        check("a lowered cap lowers the box", abs(lower - 220f) < 0.01f)
+        // The floor still wins. A cap under it would make an inverted range,
+        // and coerceIn throws on one rather than returning a number.
+        val squashed = PreviewBox.heightDp(2.39f, 336f, 40f)
+        check("a cap under the floor gives the floor", abs(squashed - PreviewBox.MIN_HEIGHT_DP) < 0.01f)
+        check("a cap of nothing gives the floor", abs(PreviewBox.heightDp(1.78f, 336f, 0f) - PreviewBox.MIN_HEIGHT_DP) < 0.01f)
+        check("a negative cap gives the floor", abs(PreviewBox.heightDp(1.78f, 336f, -50f) - PreviewBox.MIN_HEIGHT_DP) < 0.01f)
+        check("a NaN cap falls back to the default", abs(PreviewBox.heightDp(9f / 16f, 336f, Float.NaN) - PreviewBox.MAX_HEIGHT_DP) < 0.01f)
+        // A cap no one asked for is the default, so every existing caller is
+        // unchanged by the parameter arriving.
+        for (aspect in listOf(9f / 16f, 1f, 1.78f, 2.39f)) {
+            for (widthDp in listOf(0f, 120f, 336f, 720f)) {
+                check(
+                    "the default cap is ${PreviewBox.MAX_HEIGHT_DP} at $aspect in ${widthDp}dp",
+                    PreviewBox.heightDp(aspect, widthDp) == PreviewBox.heightDp(aspect, widthDp, PreviewBox.MAX_HEIGHT_DP)
+                )
+            }
+        }
+        // And the picture is still whole inside the taller box.
+        val (tw, th) = PreviewBox.fittedSizeDp(9f / 16f, 336f, taller)
+        check("a portrait clip is whole in a raised box", tw <= 336f + 0.01f && th <= taller + 0.01f)
+        check("a raised box shows a bigger picture", th > ph)
+        println("portrait 9:16 at a 320dp cap: box %.0fdp tall, picture %.0f x %.0f".format(taller, tw, th))
+    }
+
     // ---- Rotation on screen ----------------------------------------------------
     // The case that froze the editor on the phone: a 640x480 clip, Rotate 90. The
     // canvas takes the rotated shape; the view laid out inside it must cover it

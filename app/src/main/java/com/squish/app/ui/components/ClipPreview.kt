@@ -218,7 +218,7 @@ fun ClipPreview(
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val shape = if (audioOnly) 3.2f else aspect.coerceIn(0.4f, 2.5f)
             val boxHeight = if (audioOnly) maxWidth.value / shape
-            else PreviewBox.heightDp(shape, maxWidth.value).coerceAtMost(maxHeightDp)
+            else PreviewBox.heightDp(shape, maxWidth.value, maxHeightDp)
             val (pictureWidth, pictureHeight) = PreviewBox.fittedSizeDp(shape, maxWidth.value, boxHeight)
 
             Box(

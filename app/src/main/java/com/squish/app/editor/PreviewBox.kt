@@ -42,11 +42,21 @@ object PreviewBox {
      * picture fill the width for a tall clip. The height is clamped and the
      * picture is then fitted inside whatever came out, so the frame is always
      * whole. Cropping to fill is what lost the picture in the first place.
+     *
+     * [maxHeightDp] is the cap, [MAX_HEIGHT_DP] by default. It is a parameter
+     * because a screen with no strip under the picture can afford a taller one,
+     * and the quick tools ask for that. They used to ask by clamping the answer
+     * afterwards, which could only ever make the box *shorter*: the cap here
+     * had already cut it to 300, so their 320 did nothing and the quick tools
+     * have had the editor's height all along. Below [MIN_HEIGHT_DP] the floor
+     * wins - and the floor has to be the lower of the two, or `coerceIn`
+     * throws on an inverted range rather than returning anything.
      */
-    fun heightDp(aspect: Float, widthDp: Float): Float {
+    fun heightDp(aspect: Float, widthDp: Float, maxHeightDp: Float = MAX_HEIGHT_DP): Float {
         if (widthDp <= 0f) return MIN_HEIGHT_DP
         val shape = if (aspect > 0f && aspect.isFinite()) aspect else DEFAULT_ASPECT
-        return (widthDp / shape).coerceIn(MIN_HEIGHT_DP, MAX_HEIGHT_DP)
+        val cap = if (maxHeightDp.isFinite()) maxOf(maxHeightDp, MIN_HEIGHT_DP) else MAX_HEIGHT_DP
+        return (widthDp / shape).coerceIn(MIN_HEIGHT_DP, cap)
     }
 
     /**
