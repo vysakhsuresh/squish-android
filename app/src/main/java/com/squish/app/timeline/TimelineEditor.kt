@@ -2688,11 +2688,25 @@ fun TimelineActionBar(
                     effectSelected -> "Effect selected · hold to move, drag its ends to retime"
                     splittable -> "Split cuts the clip under the playhead"
                     // Whichever end it is: at half a second into a shot it said "end".
+                    // Measured where the refusal is: on the *source* offset
+                    // through the clip's speed curve (Clip.splitOffsetAt), not
+                    // on the played time. On a ramped shot the two disagree -
+                    // a hundred times through the footage in the first second
+                    // leaves the playhead near the start and the footage nearly
+                    // used up - and the line named the end the finger was
+                    // nearer rather than the end that was out of room, so
+                    // moving away from it made things worse. And when the whole
+                    // shot holds less than two minimum clips there is no
+                    // splittable moment in it at all, which neither end
+                    // explains.
                     nearEdge -> cuttable.mainClipAt(state.playheadMs)?.let { clip ->
-                        val toStart = state.playheadMs - clip.timelineStartMs
-                        val toEnd = clip.timelineEndMs - state.playheadMs
-                        if (toStart < toEnd) "Too close to the start of the clip to split here"
-                        else "Too close to the end of the clip to split here"
+                        val span = clip.sourceSpanMs
+                        if (span <= MIN_CLIP_MS * 2) "This clip is too short to split"
+                        else {
+                            val offset = clip.speedRamp.sourceOffsetAt(state.playheadMs - clip.timelineStartMs, span)
+                            if (offset < MIN_CLIP_MS) "Too close to the start of the clip to split here"
+                            else "Too close to the end of the clip to split here"
+                        }
                     } ?: "Too close to the edge of the clip to split here"
                     else -> "Drag the timeline to find a moment · tap a clip to edit it"
                 },
