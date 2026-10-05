@@ -39,21 +39,42 @@ object ThumbnailCache {
     private val decoding = Mutex()
 
     /**
+     * Files a frame could not be got out of, and when the attempt was made.
+     *
+     * A miss used not to be remembered at all, on the grounds that a
+     * remembered one would outlive its cause: nothing calls [evict] when a
+     * missing file is relinked, so a project that works again would have stayed
+     * blank. But not remembering it costs more than that is worth. A file the
+     * phone cannot decode - a 10-bit HEVC film rip, which this phone cannot
+     * decode at all - was probed again on every pass of the list, and the probe
+     * runs inside [decoding], the one process-wide lane, so every readable
+     * row's thumbnail queued behind the failure; and the dashboard pays twice,
+     * because its fallback on a null re-reads and re-parses the whole project
+     * JSON and opens a file descriptor per clip.
+     *
+     * So it is remembered, and it expires. A relink puts a different uri under
+     * the clip, which is a different key and no stale miss at all; what the
+     * expiry is for is the same file becoming readable - a picker grant
+     * restored, a share still being copied in - and [MISS_TTL_MS] is short
+     * enough that the picture appears on the next look and long enough that a
+     * scroll back and forth does not re-probe.
+     */
+    private val misses = LinkedHashMap<String, Long>()
+
+    /** Half a minute: longer than a scroll, shorter than a look away. */
+    private const val MISS_TTL_MS = 30_000L
+
+    /** Bounded, so a library of unreadable files cannot grow it without end. */
+    private const val MAX_MISSES = 256
+
+    /**
      * The frame of [uri] at [timeMs], from memory, from disk, or decoded and
      * kept; null when the file cannot be read.
-     *
-     * A null is deliberately *not* remembered. It would save a retriever open
-     * per composition on a file that has gone - the callers all ask from a
-     * `LaunchedEffect` keyed on the uri, so it is one open per entry and not
-     * one per frame - and it would cost correctness: nothing calls [evict] when
-     * a missing file is relinked, so a remembered miss would outlive the thing
-     * that caused it and the picture would stay blank on a project that works
-     * again. If a negative cache is ever wanted, the relink has to clear it
-     * first.
      */
     suspend fun frame(context: Context, uri: Uri, timeMs: Long): Bitmap? {
         val key = key(uri, timeMs)
         memory.get(key)?.let { return it }
+        if (missedRecently(key)) return null
         return withContext(Dispatchers.IO) {
             val app = context.applicationContext
             val file = diskFile(app, key)
@@ -63,21 +84,51 @@ object ThumbnailCache {
                 return@withContext onDisk
             }
             val decoded = decoding.withLock {
-                memory.get(key) ?: ThumbnailExtractor.cover(app, uri, timeMs)
-            } ?: return@withContext null
+                // Another row may have answered this while we waited for the
+                // lane - including answering that there is nothing here.
+                memory.get(key) ?: if (missedRecently(key)) null else ThumbnailExtractor.cover(app, uri, timeMs)
+            }
+            if (decoded == null) {
+                noteMiss(key)
+                return@withContext null
+            }
             memory.put(key, decoded)
+            // Through a .part and renamed, like every other picture this app
+            // writes. BitmapFactory.decodeFile hands back a *partial* bitmap
+            // for a truncated JPEG rather than null - AOSP accepts
+            // kIncompleteInput - so a write that died part way (the process
+            // going, a full disk) left a half-drawn thumbnail that `exists()`
+            // was happy with and that was served for ever, with nothing but
+            // Settings' "Clear preview thumbnails" to get rid of it. The same
+            // lesson StillClips.blank records in so many words.
             runCatching {
                 file.parentFile?.mkdirs()
-                file.outputStream().use { decoded.compress(Bitmap.CompressFormat.JPEG, 82, it) }
+                val partial = File(file.absolutePath + ".part")
+                partial.outputStream().use { decoded.compress(Bitmap.CompressFormat.JPEG, 82, it) }
+                if (partial.length() <= 0L || !partial.renameTo(file)) partial.delete()
             }
             decoded
         }
+    }
+
+    private fun missedRecently(key: String): Boolean = synchronized(misses) {
+        val at = misses[key] ?: return false
+        if (System.currentTimeMillis() - at <= MISS_TTL_MS) return true
+        misses.remove(key)
+        false
+    }
+
+    private fun noteMiss(key: String) = synchronized(misses) {
+        misses.remove(key)
+        misses[key] = System.currentTimeMillis()
+        while (misses.size > MAX_MISSES) misses.remove(misses.keys.first())
     }
 
     /** Forgets what is kept for [uri], memory and disk - for a file that was deleted or replaced. */
     fun evict(context: Context, uri: Uri, timeMs: Long) {
         val key = key(uri, timeMs)
         memory.remove(key)
+        synchronized(misses) { misses.remove(key) }
         runCatching { diskFile(context.applicationContext, key).delete() }
     }
 
@@ -87,6 +138,9 @@ object ThumbnailCache {
     fun clearDisk(context: Context) {
         dir(context).listFiles()?.forEach { runCatching { it.delete() } }
         memory.evictAll()
+        // Asked for by somebody who wants the pictures made again - the files a
+        // frame could not be got out of included.
+        synchronized(misses) { misses.clear() }
     }
 
     private fun key(uri: Uri, timeMs: Long): String = "$uri@$timeMs"

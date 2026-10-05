@@ -830,6 +830,45 @@ fun main() {
         )
     }
 
+    // ---- A picture is written through a .part and renamed. -----------------
+    //
+    // Every picture writer in the app does this and one did not. Written
+    // straight to its final name, a compress that died part way - the process
+    // going, a full disk - leaves a file that `exists()` is happy with, and a
+    // truncated JPEG is *not* self-healing: BitmapFactory.decodeFile hands back
+    // a partial bitmap rather than null (AOSP accepts kIncompleteInput), so the
+    // half-drawn thumbnail was served for ever, with nothing but Settings'
+    // "Clear preview thumbnails" to get rid of it. StillClips.blank records the
+    // same lesson in so many words, having been broken that way for one frame
+    // shape until somebody cleared the stills by hand.
+    run {
+        readAll(SRC).forEach { (path, text) ->
+            Regex("""(?m)^.*\.compress\(.*$""").findAll(text).forEach { m ->
+                val line = m.value
+                if (!line.contains("partial")) {
+                    problems += "$path compresses a bitmap straight to its destination ($line) - " +
+                        "it has to go to a .part and be renamed, or a write that dies part way leaves a " +
+                        "truncated picture that exists() accepts and decodeFile happily returns half of"
+                }
+            }
+        }
+    }
+
+    // ---- A queue of decodes is dropped with the cache it fills. ------------
+    run {
+        val filmstrip = read("$SRC/media/video/FilmstripLoader.kt")
+        check(
+            Regex("""fun evictAll\(\)[\s\S]{0,400}?pending\.clear\(\)""").containsMatchIn(filmstrip),
+            "FilmstripLoader.evictAll no longer empties the queue - the worker lives on a process-lifetime " +
+                "scope, so it carries on decoding the closed project's tiles back into the cache it was " +
+                "just told to empty, against the dashboard the user has navigated to"
+        )
+        check(
+            Regex("""fun evictAll\(\)[\s\S]{0,400}?stopping\?\.cancel\(\)""").containsMatchIn(filmstrip),
+            "FilmstripLoader.evictAll no longer stops its worker"
+        )
+    }
+
     // ---- A picture is decoded the way up it is meant to be seen. -----------
     //
     // BitmapFactory does not apply the camera's orientation tag and ImageDecoder

@@ -192,8 +192,29 @@ object FilmstripLoader {
         }
     }
 
-    /** Drops every thumbnail. Called when the editor lets go of its project. */
+    /**
+     * Drops every thumbnail. Called when the editor lets go of its project.
+     *
+     * The queue and the worker go with it. They used not to: the scope is the
+     * process's, so the worker carried on pulling the closed project's asks -
+     * up to MAX_PENDING of them, a retriever per distinct file - and put every
+     * result back into the cache it had just been told to empty, competing for
+     * the IO pool with the dashboard the user had navigated to and bumping
+     * [arrivals] on the main looper for a strip that was gone. The tiles then
+     * sat in the cache until some *later* editor session's onCleared.
+     *
+     * The worker clears `worker` itself on the way out only if it is still the
+     * current one, so nulling it here is safe: a request arriving after this
+     * starts a fresh one.
+     */
     fun evictAll() {
+        val stopping = synchronized(pending) {
+            pending.clear()
+            val job = worker
+            worker = null
+            job
+        }
+        stopping?.cancel()
         cache.clear()
         synchronized(decoded) { decoded.clear() }
     }
