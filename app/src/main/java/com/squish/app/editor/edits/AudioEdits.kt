@@ -126,16 +126,25 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         // sound's sheet was a confidence from an analysis they had cancelled by
         // deleting it.
         if (_state.value.syncClipId == clipId) syncJob?.cancel()
-        _state.update { current ->
-            current.copy(
-                audioClips = current.audioClips.filterNot { it.id == clipId },
-                selectedClipId = if (current.selectedClipId == clipId) null else current.selectedClipId,
-                syncStatus = SyncStatus.Idle,
-                syncConfidence = 0f,
-                syncClipId = null
+        // Through mutateTimeline, like every other removal, rather than by
+        // filtering audioClips here.
+        //
+        // That is the one place a deleted clip leaves the Select more set, and
+        // the one place the playhead comes back when the edit gets shorter - and
+        // a song dragged out past the last shot *is* the edit's end
+        // (EditorUiState.trimmedDurationMs counts the sounds), so deleting it
+        // left the playhead past the new end with the strip, which is centred on
+        // the playhead, showing empty track and the first drag of it leaping
+        // back. It is also where the estimate is worked out again.
+        mutateTimeline { timeline ->
+            timeline.copy(
+                clips = timeline.clips.filterNot { it.id == clipId },
+                selectedClipId = if (timeline.selectedClipId == clipId) null else timeline.selectedClipId
             )
         }
-        recomputeEstimate()
+        _state.update { current ->
+            current.copy(syncStatus = SyncStatus.Idle, syncConfidence = 0f, syncClipId = null)
+        }
     }
 
     /** Changes one added sound. Not recorded itself: every caller is its own undo step. */
