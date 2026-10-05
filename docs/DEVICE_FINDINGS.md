@@ -1639,3 +1639,110 @@ On the phone, in this order:
 7. **The Blur tile on the sheet**, which blurs the thumbnail whole rather than
    per shot and exaggerates the reach to read at that size. Below Android 12 it
    is the dissolve underneath - not this phone, but worth knowing.
+
+## Sweep five: the edit commands, the quick tools, the shell (5 October)
+
+The four sweeps before this went over the UI and then under it, into the export
+and media layers. This one went over the layer between: the commands the
+toolbar actually calls - `editor/edits/*`, the editor's own view model - and the
+two places the editor is not: the quick tools and the dashboard, plus every
+network call. Eighteen hunts over six groups and three lenses (wrong
+arithmetic, state left behind, two places that must agree and do not), two
+adversarial refuters per candidate, both of which had to fail to refute.
+**Twenty-two confirmed**, and a handful more confirmed by reading them against
+the code here. All fixed, none seen on a phone.
+
+The ones worth remembering:
+
+- **"Take out every um and uh" could cut half a minute of footage.** Fillers
+  were merged on their position in the *word list*, and that list is every
+  line's words laid end to end - so a line ending "…and um" followed by one
+  beginning "uh, so…" merged into a single stretch covering the whole gap
+  between them. The suite's own figures: two "um"s twenty-seven seconds apart
+  came out as one cut of 29,000 ms, inside one undo step, with a notice reading
+  "2 filler words removed".
+
+- **Deleting a word that took nothing out still moved every caption after it.**
+  The removal is two halves - the timeline, then the lines - and the second ran
+  whether or not the first did anything. `withSpanRemoved` refuses a stretch
+  with no clip in it, so a word over a gap slid every caption after it off its
+  footage, for good.
+
+- **x2 on a song's beat grid doubled its dots and left the tempo where it was.**
+  The new tempo and bar phase were read off the *camera* grid, which is empty
+  whenever the grid is on a sound - and `BeatMap.doubled` hands a list that
+  short straight back. Twice the dots with every fourth still marked is every
+  eighth beat of the new pulse.
+
+- **The camera's beat grid listened to one file and was placed by another's
+  trim** - `sourceUri` against `headVideoClip` - which are the same file only
+  until a shot is carried to the front.
+
+- **Deleting a song left the playhead past the end of the edit**, because that
+  one removal did not go through `mutateTimeline`, which is where the playhead
+  comes back and where a deleted clip leaves the Select more set.
+
+- **A freeze of a keyed clip was not the frame that was on screen.** The
+  placement and the mask were read at the moment; the opacity and the filter
+  strength were taken from the static fields, which on a keyed clip are only
+  the fallback the keys replaced.
+
+- **The layer moves converted the resting level and left the key track raw**, in
+  both directions - so a keyed shot floated out of a muted edit went from
+  silent to fully audible, and a keyed fade carried to the main track went on
+  fading where the Opacity sheet is not even offered.
+
+- **Even out volume and Duck under speech both forgot the camera switch is the
+  main track's only**, so a picture-in-picture was compared in the wrong domain
+  and, with the camera off, ignored entirely while still being heard.
+
+- **Relink carried the old footage's measurements onto the new file** - the
+  stabilizer, the person masks, the reframe window, the beat grid, and a
+  `reversedFrom` pointing at a render of a file that is gone.
+
+- **Three "go to" buttons landed somewhere else**: a keyframe's, an effect's and
+  a line's all snapped, so the key you tapped was no longer the key under the
+  playhead and the next slider move wrote a second key beside the first.
+
+- **Snip's trim handles still ate each other**, below the width this morning's
+  fix reached. Laying both touch targets inside the kept stretch cannot work
+  when the stretch is narrower than two targets; they meet at its middle and
+  reach outward now.
+
+- **The stock search read "couldn't reach" for every character but the last**,
+  because `runCatching` caught the cancellation of its own effect - the same
+  bug the music search carries a comment about having fixed.
+
+- **The dialog people agree to did not mention the one thing it sends of
+  theirs.** Translate captions is gated by it and sends the caption's words;
+  Settings' card was changed to say so and this copy was not.
+
+- **A Stitch quietly dropped a clip whose file had gone and said it was saved**,
+  and **a staged project deleted from the grid was destroyed in place** - no bin
+  entry, an Undo that did nothing, and its picker grants held until uninstall.
+
+Eight suites gained assertions for these, and `TrimRules.handleBoxes`,
+`ReverseRuns` and `SpaceCheck` were pulled out as pure functions so the
+arithmetic could be executed at all. Every fix was negative-tested against the
+old code.
+
+### What a device has to answer from this sweep
+
+None of it has been seen. In order:
+
+1. **The filler pass on a real transcript**, with "um" at the end of one line
+   and "uh" at the start of the next: two short cuts, not one long one.
+2. **Delete a word over a gap** on the main track: nothing moves, including the
+   captions after it.
+3. **A song's beat grid at x2**: the dots double, the bpm on the card doubles,
+   and "Every bar" still falls on the bar.
+4. **Delete a song that runs past the last shot**: the playhead comes back.
+5. **Freeze mid-fade on a clip with a keyed opacity**: the still matches the
+   frame it was cut from.
+6. **Float a shot with a keyed level out of an edit with the camera sound off**:
+   it stays silent. And To main with a keyed fade: the fade is gone.
+7. **Even out volume with the camera at 30% and a PiP on screen**; **Duck under
+   speech with the camera off and a talking PiP**.
+8. **Relink a stabilized, reframed shot**: the new footage plays plain.
+9. **Trim a sixty-second clip down to two in Snip**: both handles still answer.
+10. **The stock search, typing quickly**: no "couldn't reach" between letters.
