@@ -93,9 +93,20 @@ object GallerySaver {
             ?: return@withContext null
 
         try {
-            resolver.openOutputStream(target)?.use { output ->
+            val wrote = resolver.openOutputStream(target)?.use { output ->
                 source.inputStream().use { input -> input.copyTo(output) }
-            } ?: return@withContext null
+                true
+            } ?: false
+            if (!wrote) {
+                // The same tidying the catch below does. A provider that hands
+                // back no stream at all left the pending row it had just handed
+                // us behind: invisible to the gallery, holding the name, and
+                // only cleared when Android expires a pending item a week
+                // later. One of the two failure paths swept up and the other
+                // returned past it.
+                runCatching { resolver.delete(target, null, null) }
+                return@withContext null
+            }
 
             values.clear()
             values.put(MediaStore.MediaColumns.IS_PENDING, 0)

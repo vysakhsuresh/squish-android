@@ -537,6 +537,38 @@ fun main() {
         }
     }
 
+    // ---- A pending row is deleted on *both* ways out. ----------------------
+    //
+    // A gallery copy starts as a MediaStore row with IS_PENDING set, and a row
+    // nothing ever writes to is invisible to the gallery, holds the name, and
+    // is only cleared when Android expires a pending item a week later. Both
+    // files that insert one tidied up when the copy *threw*; one of them
+    // returned straight past the tidying when the provider handed back no
+    // stream at all - `openOutputStream(target)?.use { … } ?: return`, which is
+    // the shape this looks for.
+    run {
+        for (name in listOf("media/GallerySaver.kt", "media/gif/GifMaker.kt")) {
+            val text = read("$SRC/$name")
+            if (text.isEmpty()) continue
+            check(
+                text.contains("IS_PENDING"),
+                "$name no longer inserts a pending row - this check has rotted"
+            )
+            // A stream that comes back null must not take a return with it: the
+            // row has to be deleted first. Matched across the line break,
+            // since the `?:` is usually on the next line.
+            check(
+                // Lazily, and across braces: the `use` block has a nested
+                // `use` in it, so a pattern that stopped at the first `}`
+                // matched nothing and said so by passing.
+                !Regex("openOutputStream\\([^)]*\\)\\?\\.use \\{.*?\\}\\s*\\?:\\s*return", RegexOption.DOT_MATCHES_ALL)
+                    .containsMatchIn(text),
+                "$name returns straight out when openOutputStream gives nothing, leaving the pending row it " +
+                    "had just inserted behind - delete it the way the catch does"
+            )
+        }
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
