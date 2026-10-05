@@ -299,7 +299,17 @@ class PreviewEngine(private val context: Context) {
         var blendFrom: List<Clip>? = null
 
         /** Which still, on which shot, the surface is holding - null for none. */
-        var blendKey: Pair<String?, String>? = null
+        /**
+         * The still and the shot the held [blendStill] was built from, by
+         * identity. Identity because an edit always makes a new [Clip], and a
+         * tick without one hands back the same object - so this is exact and
+         * costs a pointer compare. It was the two *ids*, which do not change
+         * when a still's blend mode, its opacity or its place does: the held
+         * BlendedStill closes over all three, so changing any of them left the
+         * surface drawing the one it had until the shot under it changed.
+         */
+        var blendStillClip: Clip? = null
+        var blendUnderClip: Clip? = null
         var effectsClip: Clip? = null
         var effectsFrom: List<TimedEffect>? = null
 
@@ -886,13 +896,13 @@ class PreviewEngine(private val context: Context) {
             val still = blendStills.firstOrNull {
                 it.timelineEndMs > clip.timelineStartMs && it.timelineStartMs < clip.timelineEndMs
             }
-            // Compared as one key, because the obvious test - "the held still's
-            // clip and shot still match" - is true every tick when there is no
-            // still at all (null never equals this shot's id), which asked for a
-            // fresh frame on every tick of a scrub and stalled the decoder.
-            val key = still?.id to clip.id
-            if (s.blendKey != key) {
-                s.blendKey = key
+            // The two clips themselves, by identity: see [Surface.blendStillClip].
+            // Both have to be in it, and both as objects - with no still at all
+            // the pair is (null, this shot), which is equal to itself on every
+            // tick, so a scrub does not ask for a fresh frame it does not need.
+            if (s.blendStillClip !== still || s.blendUnderClip !== clip) {
+                s.blendStillClip = still
+                s.blendUnderClip = clip
                 s.blendStill.set(still?.let { blendedStillFor(it, clip) })
                 changed = true
             }

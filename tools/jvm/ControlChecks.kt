@@ -354,6 +354,28 @@ fun main() {
         )
     }
 
+    // ---- What a held thing is keyed on is what it was built from ------------
+    //
+    // The preview holds a blended still per base surface, built from the still
+    // and the shot under it, closing over the still's blend mode, its opacity
+    // track and where it sits. It was re-made only when the two *ids* changed -
+    // and an edit makes a new Clip with the same id, so changing a still's
+    // Blend mode or its Opacity left the surface drawing the one it had until
+    // the shot under it changed. Keyed on the two clips by identity it is
+    // exact, and a tick with no edit hands back the same objects.
+    run {
+        val engine = read("$SRC/editor/PreviewEngine.kt")
+        check(
+            engine.contains("s.blendStillClip !== still || s.blendUnderClip !== clip"),
+            "the preview's blended still is no longer re-made when its clip changes - keyed on ids, a new " +
+                "blend mode or opacity on the same still never reaches the surface"
+        )
+        check(
+            !engine.contains("val key = still?.id to clip.id"),
+            "the blended still is back on an id-only key, which cannot see a mode, an opacity or a move"
+        )
+    }
+
     // ---- Two handles on one strip do not cover each other -------------------
     //
     // This used to assert the shape of the arithmetic that was inline here -
