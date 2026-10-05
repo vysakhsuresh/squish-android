@@ -803,6 +803,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * The finger lifted - off a slider, a handle. The next change to the same
      * thing is a new step, however soon it comes.
      */
+    /**
+     * Which chip the Adjust sheet was last on.
+     *
+     * Not part of [EditorUiState]: it changes nothing about the edit and
+     * belongs on no undo step. It is here rather than in a `rememberSaveable`
+     * because the sheet is removed from composition when it closes, so the
+     * remembered value went with it - and the row is twenty-four chips long,
+     * so coming back to the one you were on meant six flings every time.
+     */
+    var adjustChip: Int = 0
+
     fun endGesture() = history.endGesture()
 
     /**

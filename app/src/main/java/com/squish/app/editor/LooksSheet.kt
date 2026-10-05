@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,6 +44,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -252,7 +255,11 @@ private fun LutCard(clip: Clip, viewModel: EditorViewModel) {
 fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
     val done = viewModel::endGesture
     // The chip chosen: a slider by its ordinal, or a colour of the wheel past them.
-    var chosen by rememberSaveable { mutableStateOf(0) }
+    // Kept on the view model, not in a rememberSaveable: the sheet leaves
+    // composition when it closes, so a remembered chip went with it and the
+    // row - twenty-four chips long - opened at the left every time.
+    var chosen by rememberSaveable { mutableStateOf(viewModel.adjustChip) }
+    LaunchedEffect(chosen) { viewModel.adjustChip = chosen }
     val fields = AdjustField.entries
     val field = fields.getOrNull(chosen)
     val band = HueBand.entries.getOrNull(chosen - fields.size)
@@ -289,10 +296,37 @@ fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                 }
             )
             autoNote?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.Teal) }
+            // Twenty-four chips in one scroller - fourteen sliders, the eight
+            // wheel colours, Curves and Wheels - and the row always opened at
+            // the left. Picking the one at the far end meant six flings, and
+            // coming back to it meant six more. The chosen chip is scrolled to
+            // when the sheet opens and whenever it changes, so the row lands
+            // where the work is.
+            val chips = rememberScrollState()
+            var chipEnds by remember { mutableStateOf(mapOf<Int, Pair<Int, Int>>()) }
+            // Where each chip sits in the un-scrolled row, reported as it is laid
+            // out. Written only when it moves, or every layout pass would set
+            // state and ask for another.
+            val noteChip: (Int) -> Modifier = { i ->
+                Modifier.onGloballyPositioned { c ->
+                    val left = c.positionInParent().x.toInt()
+                    val width = c.size.width
+                    val had = chipEnds[i]
+                    if (had == null || had.first != left || had.second != width) {
+                        chipEnds = chipEnds + (i to (left to width))
+                    }
+                }
+            }
+            LaunchedEffect(chosen, chipEnds[chosen]) {
+                chipEnds[chosen]?.let { (left, width) ->
+                    val middle = left + width / 2 - chips.viewportSize / 2
+                    chips.animateScrollTo(middle.coerceIn(0, chips.maxValue.coerceAtLeast(0)))
+                }
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                modifier = Modifier.fillMaxWidth().horizontalScroll(chips)
             ) {
                 fields.forEachIndexed { i, entry ->
                     val touched = entry.of(clip.adjust) != 0f
@@ -300,6 +334,7 @@ fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                         label = if (touched) "${entry.label} •" else entry.label,
                         selected = chosen == i,
                         accentColor = SquishColors.Blue,
+                        modifier = noteChip(i),
                         onClick = { chosen = i }
                     )
                 }
@@ -323,18 +358,21 @@ fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                                 CircleShape
                             )
                             .clickable(onClickLabel = entry.label) { chosen = index }
+                            .then(noteChip(index))
                     )
                 }
                 SelectableChip(
                     label = if (clip.adjust.curve.isIdentity) "Curves" else "Curves •",
                     selected = onCurve,
                     accentColor = SquishColors.Blue,
+                    modifier = noteChip(curveIndex),
                     onClick = { chosen = curveIndex }
                 )
                 SelectableChip(
                     label = if (clip.adjust.wheels.isIdentity) "Wheels" else "Wheels •",
                     selected = onWheels,
                     accentColor = SquishColors.Blue,
+                    modifier = noteChip(wheelIndex),
                     onClick = { chosen = wheelIndex }
                 )
             }
