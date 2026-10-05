@@ -521,6 +521,27 @@ each one is a thing that was plainly broken for anyone who did it:
     rectangle is inside the picture the file keeps.
 17. **A slideshow of photos**: no Camera sound row on the Sound sheet.
 
+**Added after sweep seven** (5 October, night). The first two are the only
+things on this list that can only be judged *by ear*, so they want quiet:
+
+18. **Enhance on a take that opens with room tone.** A second of silence before
+    the first word, Enhance on the clip: that second must be quieter than the
+    untreated clip, not hissier. Then cut the take into three-second pieces,
+    Enhance each, export - no piece used to be long enough for the noise floor
+    to climb back, so every one was 1.4x hissier than the source.
+19. **Megaphone at 50% camera level, preview against file.** They must be the
+    same voice now; they used to be a loud-hailer on screen and a clean voice in
+    the file. Radio and Telephone are the same test at a fifth of the size.
+20. **A photo overlay with Brightness up and a vignette on**, beside the video it
+    is over: the white part of the photo must be as white as the video's, with no
+    grey ring where the falloff begins. Off a screencap, not by eye.
+21. **The Curves tool with a point pulled below the one before it** - a highlight
+    rolled off. Nothing between two points may be brighter than the higher of
+    them, on screen and in the file.
+22. **TalkBack on, Settings open.** "Ticks when snapping" must say "on" or "off",
+    and so must the privacy switch, Mute on a clip and Keep HDR. Nine switches,
+    one control, and until tonight none of them said which way it was.
+
 **Clean-up owed from the 5 October session**, before anything else is added:
 delete MediaStore ids 1001326343, 1001326344 and 1001326345 *by id* (never by a
 `LIKE` pattern - `_` is a wildcard and `sq_%` once matched every `squish_`

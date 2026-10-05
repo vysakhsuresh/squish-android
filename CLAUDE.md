@@ -1036,6 +1036,24 @@ should work through it and then delete what holds up.
   softness is a uniform, so `PreviewEngine.remember` asks for a redraw when it
   changes); and that a Burn out over a padded canvas or a keyed overlay whitens
   the picture and not the hole. `docs/COMPETITORS.md` §4 has the reading.
+- **Sweep seven, over the shared components, the effect wrappers and the audio
+  engine (5 October, night).** The layer under *everything*: the composables
+  every sheet is built out of, the Media3 wrappers, the colour pipeline's CPU
+  copy and the audio processors. Eighty-seven agents over fifteen hunts.
+  `docs/DEVICE_FINDINGS.md`'s last section lists what it found and ends with the
+  eight things a device has to answer. The ones that would show first: **every
+  switch in the app said "switch" and never said on or off** (`Role.Switch` on a
+  `clickable` names the node; only `toggleable` puts a state on it, and all nine
+  switches go through the one control); **Enhance made room hiss 1.4x louder for
+  the first three seconds** (the noise floor had no time constant downward, so it
+  was dragged to its minimum on the first sample and `INITIAL_FLOOR` never
+  survived one - and Media3 flushes the processor on every seek and every clip);
+  **a clip's level reached the voice from opposite sides in the preview and the
+  export**, which for a tanh voice is a difference of timbre, not loudness
+  (Megaphone at half level, 18.5% of RMS apart - the fader goes after the insert
+  on both sides now); and **a photo overlay's vignette ran on the byte-clamped
+  colour** where the shader multiplies the float it is still carrying, so
+  anything lifted past white was flattened to 255 and then darkened.
 - **Sweep six, over the timeline model, the preview engine and the shell
   (5 October, evening).** The layer under the commands: what every tool reaches.
   `docs/DEVICE_FINDINGS.md`'s last section lists what it found and ends with the

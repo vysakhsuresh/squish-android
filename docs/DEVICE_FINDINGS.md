@@ -1871,3 +1871,99 @@ their text as they arrived, and are in the section above):
 9. **Settings counted stills that Clear could not take.** *On the phone:* pick a
    Background picture on a padded canvas, export, delete every project, then
    Settings → Storage → Clear "Photos and freezes" - the number goes to nothing.
+
+## Sweep seven: the shared components, the effect wrappers, the audio engine (5 October, night)
+
+The seventh sweep went at the layer under *everything*: the composables every
+sheet is built out of, the Media3 effect wrappers, the colour pipeline's CPU
+copy, and the audio processors. Fifteen hunts over the same three lenses, two
+adversarial refuters each - eighty-seven agents in all.
+
+What this layer costs when it is wrong is not one screen but every screen that
+uses it, and - for the audio and colour halves - a difference between what you
+hear and see while editing and what comes out of the render. The ones worth
+remembering:
+
+- **Every switch in the app said "switch" and never said on or off.** The one
+  control was a `Modifier.clickable(role = Role.Switch)`, and `Role.Switch` is
+  only the *name* a screen reader gives a node; the on or off after it comes
+  from the node's `ToggleableState`, which only `Modifier.toggleable` sets. Nine
+  switches go through it - the privacy switch among them - and not one carried
+  semantics of its own, so with TalkBack on the colour of the track was the only
+  answer to which way a switch was.
+
+- **Enhance made room hiss 1.4x louder for the first three seconds.** The noise
+  floor had no time constant downward and the level envelope started at nothing,
+  so the floor was dragged to its minimum on the very first sample and
+  `INITIAL_FLOOR` never survived one - setting it to 0.9 produced byte-identical
+  output. With the floor at the bottom the gate read wide open on room tone and
+  the presence lift went on the hiss. Media3 flushes the processor on every seek
+  and at the start of every clip, so a montage of short takes never got anything
+  but the boost.
+
+- **A clip's level reached the voice from opposite sides in the two places.**
+  The export folded it into the mixer's channel matrix, which runs *before* the
+  voice; the preview applies it at the player, which is *after*. The saturating
+  voices are tanh, so the file and the preview disagreed about the timbre and not
+  only the loudness - Megaphone at half level, 18.5% of RMS apart.
+
+- **A photo overlay's vignette and hue wheel were not the file's.** The CPU copy
+  of the grade ran the vignette on the byte-clamped colour where the shader
+  multiplies the float it is still carrying, so anything lifted past white was
+  flattened to 255 and *then* darkened - a grey band in a white wall that is not
+  in the file. And the hue wheel and the HSL bands read an unclamped colour where
+  the shader reads `rgb2hsv(clamp(c, 0.0, 1.0))`.
+
+- **A curve that turns went brighter than either point.** The monotone fit was
+  missing Fritsch-Carlson's sign step, and the circle constraint that followed
+  scales a tangent without changing its sign - so a point placed below the one
+  before it made the picture brighter than either of them before coming down.
+
+- **A line that shrank to fit never grew back.** Only a change of words reset the
+  scale, so a tile's name that shrank at three across stayed small at two across.
+
+- **A preview whose probe failed had no bar to drag**, and **a waveform that
+  could not be read waited for ever** - one nullable saying both "not started"
+  and "came back with nothing".
+
+- **A preview cap that could only ever make the box shorter.** The quick tools
+  ask for 320dp and `heightDp` had already cut the height to 300, so the ask did
+  nothing and they have been showing the editor's height all along.
+
+### What a device has to answer from this sweep
+
+Everything above is reasoned, executed on the JVM, and compiled. Nothing has
+been heard or seen. In rough order of what would be learnt per minute:
+
+1. **Enhance on a take that opens with room tone.** Record a talking head with a
+   second of silence before the first word, set the clip's voice to Enhance, and
+   listen to that second: it must be quieter than the untreated clip, not
+   hissier. Then cut the clip into three-second pieces, Enhance each, and export
+   - no piece is long enough for the old floor to have climbed back, so every one
+   of them used to be 1.4x hissier than the source.
+2. **Megaphone at half level, preview against file.** Megaphone on a shot, camera
+   level to 50%, listen in the preview, export, listen to the file. They must
+   now be the same voice. Radio and Telephone are the same test at a fifth of
+   the difference.
+3. **A photo overlay with Brightness up and a vignette on**, beside the video it
+   is over: the bright part of the photo must be as white as the video's, with no
+   grey ring where the falloff begins. Measure it off a screencap rather than
+   judge it by eye, as the LUT leg of this was measured at dawn on 4 October.
+4. **The Curves tool with a point pulled below the one before it** - a highlight
+   rolled off. Nothing between the two points may be brighter than the higher of
+   them, on screen and in the file.
+5. **TalkBack on, Settings open.** Focus "Ticks when snapping": it must say
+   "on" or "off". Then the privacy switch, Mute on a clip, Keep HDR.
+6. **A quick tool's preview** is 320dp tall now rather than 300. Check the
+   controls under it are still on screen on this phone, upright and on its side.
+7. **The done screen on a gallery URI** whose duration the retriever will not
+   answer: the bar must move and be draggable. A file with no sound track in a
+   quick tool must say "No sound could be read from this video." rather than
+   sitting on the music glyph.
+8. **A tile's name on a two-across row after a one-across**, or the phone turned:
+   the words must come back to full size, not stay small.
+
+Still open and *not* fixed, because the right answer needs a phone: the
+preview's voice processors see the source's own channel count while the export's
+see the fold-down to stereo, so a 6-channel file with a saturating voice can
+still differ between the two. That is B5's device item (8).
