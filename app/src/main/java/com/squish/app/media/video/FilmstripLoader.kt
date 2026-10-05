@@ -101,8 +101,18 @@ object FilmstripLoader {
     /**
      * How many tiles may wait at once. Past it the oldest asks are dropped: they
      * were for a part of the strip that has most likely scrolled away.
+     *
+     * Which is true of a scroll and false of a first layout, where the "oldest"
+     * ask is a row that is on screen right now. Four rows of footage - the
+     * budget B8 sets - compose in one main-thread pass and ask for up to
+     * MAX_TILES each before the worker has drained a single tile, so at 48 the
+     * top overlay row's asks were all thrown away; and a dropped ask left no
+     * cache entry, nothing in `decoded` and no record that it was ever wanted,
+     * so that row drew as bare lane colour until a scroll or a pinch changed
+     * its times. Four rows at MAX_TILES is the number here, and the asker
+     * re-asks as tiles land, so a drop under a real scroll heals itself.
      */
-    private const val MAX_PENDING = 48
+    private const val MAX_PENDING = 4 * FilmstripPlan.MAX_TILES
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 

@@ -1,3 +1,7 @@
+import com.squish.app.timeline.Clip
+import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.RampShape
+import com.squish.app.timeline.SpeedRamp
 import com.squish.app.media.video.BoundedCache
 import com.squish.app.media.video.FilmstripPlan
 
@@ -93,6 +97,8 @@ fun main() {
     cache.clear()
     check("clearing resets the count", cache.size == 0 && cache.bytes == 0L)
 
+    rampedTileChecks()
+
     if (failures.isEmpty()) {
         println("PASS - filmstrips sample inside their clips, reuse tiles, and stay inside their budget")
     } else {
@@ -100,3 +106,70 @@ fun main() {
         kotlin.system.exitProcess(1)
     }
 }
+
+/**
+ * A tile shows the moment it covers, on a retimed clip as on a flat one.
+ *
+ * The tiles divide the clip's *drawn* width equally - each is a weight(1f) of
+ * the box - and the source times were taken by dividing the *source* span
+ * equally, which is the same mapping only at a flat rate. On a curve every
+ * tile showed a frame from the wrong moment, up to about a third of the clip
+ * away: scrubbing to the start of a Bullet clip put a frame on the preview
+ * that its first tile did not show, and the last tile was a second behind the
+ * playhead.
+ */
+fun rampedTileChecks() {
+    val tiles = 10
+
+    // --- A flat rate must be unchanged: same answer as the old split. --------
+    listOf(1f, 2f, 0.5f).forEach { rate ->
+        val clip = shot(SpeedRamp.flat(rate))
+        val onClock = FilmstripPlan.tileTimes(0L, clip.durationMs, tiles) { clip.sourceAt(it) }
+        val oldWay = FilmstripPlan.tileTimes(clip.sourceInMs, clip.sourceOutMs, tiles)
+        check("a flat ${rate}x clip's tiles moved: $onClock vs $oldWay", onClock == oldWay)
+    }
+
+    // --- A curve: each tile is the moment under its own centre. --------------
+    val clip = shot(SpeedRamp.preset(RampShape.BulletTime, 8_000L))
+    val played = clip.durationMs
+    check("a Bullet curve did not stretch the clip (played $played)", played > 15_000L)
+    val onClock = FilmstripPlan.tileTimes(0L, played, tiles) { clip.sourceAt(it) }
+    onClock.forEachIndexed { i, at ->
+        val centre = played * (2 * i + 1) / (2L * tiles)
+        val wanted = FilmstripPlan.quantize(clip.sourceAt(centre))
+        check("tile $i asked for $at where the moment under it is $wanted", at == wanted)
+    }
+
+    // --- And the old split really was far off, so this is not a tautology. ---
+    val oldWay = FilmstripPlan.tileTimes(clip.sourceAt(0L), clip.sourceAt(played), tiles)
+    val worst = (0 until tiles).maxOf { kotlin.math.abs(oldWay[it] - onClock[it]) }
+    check("the equal-source split was only ${worst}ms out, so this case proves nothing", worst >= 800L)
+
+    // --- Tiles run forwards and stay inside the clip's own window. -----------
+    check("the tiles are not in order: $onClock", onClock == onClock.sorted())
+    check(
+        "a tile is outside the clip's window: $onClock",
+        onClock.all { it >= clip.sourceInMs && it <= clip.sourceOutMs }
+    )
+
+    // --- A window onto part of the clip samples only that part. --------------
+    //
+    // The box is a window: the strip draws the stretch on screen, not the whole
+    // clip, so a clip scrolled half off asks only about the half that shows.
+    val half = FilmstripPlan.tileTimes(played / 2, played, tiles) { clip.sourceAt(it) }
+    check(
+        "a half window reached back before its start: $half",
+        half.all { it >= FilmstripPlan.quantize(clip.sourceAt(played / 2)) - FilmstripPlan.QUANTUM_MS }
+    )
+
+    // --- Degenerate: no width, no tiles, a window of nothing. ----------------
+    check("no tiles gave times", FilmstripPlan.tileTimes(0L, played, 0) { clip.sourceAt(it) }.isEmpty())
+    val still = FilmstripPlan.tileTimes(1_000L, 1_000L, 3) { clip.sourceAt(it) }
+    check("a window of nothing did not give one moment three times: $still", still.distinct().size == 1)
+}
+
+private fun shot(ramp: SpeedRamp) = Clip(
+    kind = ClipKind.Video, label = "shot", uri = null,
+    sourceInMs = 0, sourceOutMs = 8_000, timelineStartMs = 0, sourceDurationMs = 8_000,
+    speedRamp = ramp
+)

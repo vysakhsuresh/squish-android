@@ -91,6 +91,7 @@ import com.squish.app.editor.EditRules
 import com.squish.app.editor.Timecode
 import com.squish.app.editor.TransitionGlyph
 import com.squish.app.editor.effectRoomMs
+import com.squish.app.media.video.FilmstripPlan
 import com.squish.app.ui.theme.SquishColors
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
@@ -2038,11 +2039,20 @@ private fun ClipView(
             // The box is a window onto the clip, so sampling the clip's whole
             // source into it would show the wrong moments - and on a long clip
             // would space them minutes apart.
+            //
+            // And through the clip's own clock, tile by tile. The tiles divide
+            // the drawn width equally, so the moment under one is its played
+            // centre carried into the file by the clip's curve; splitting the
+            // source span equally is right only at a flat rate, and on a
+            // Bullet curve it put every tile up to a third of the clip from the
+            // moment it sits over.
+            val tiles = FilmstripPlan.tileCount(width.value)
+            val tileTimes = remember(drawnStartMs, drawnEndMs, tiles, clip.speedRamp, clip.sourceInMs, clip.sourceOutMs) {
+                FilmstripPlan.tileTimes(drawnStartMs, drawnEndMs, tiles) { clip.sourceAt(it) }
+            }
             Filmstrip(
                 uri = strip,
-                sourceInMs = clip.sourceAt(drawnStartMs),
-                sourceOutMs = clip.sourceAt(drawnEndMs),
-                widthDp = width.value,
+                times = tileTimes,
                 modifier = Modifier.matchParentSize()
             )
             // A wash of the lane's colour over the frames. Without it the strip

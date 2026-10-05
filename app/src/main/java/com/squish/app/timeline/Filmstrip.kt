@@ -33,18 +33,11 @@ import com.squish.app.media.video.FilmstripPlan
 @Composable
 internal fun Filmstrip(
     uri: Uri,
-    sourceInMs: Long,
-    sourceOutMs: Long,
-    widthDp: Float,
+    times: List<Long>,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val tiles = FilmstripPlan.tileCount(widthDp)
-    if (tiles <= 0) return
-
-    val times = remember(sourceInMs, sourceOutMs, tiles) {
-        FilmstripPlan.tileTimes(sourceInMs, sourceOutMs, tiles)
-    }
+    if (times.isEmpty()) return
 
     // Straight from the cache, so a zoom or a scroll redraws the strip in the
     // same frame instead of blanking it. Reading the arrival count is what
@@ -55,7 +48,13 @@ internal fun Filmstrip(
         times.map { FilmstripLoader.cached(uri, it) ?: FilmstripLoader.nearest(uri, it) }
     }
 
-    LaunchedEffect(uri, times) {
+    // Asked again whenever anything lands, not only when the times change. The
+    // queue is capped and trims its oldest asks, and a dropped ask leaves no
+    // cache entry, nothing in `decoded` and no record that it was ever wanted -
+    // so a row whose asks were trimmed away drew as bare lane colour until a
+    // scroll or a pinch changed `times`. request() skips what is already
+    // cached, so this costs a hash lookup per tile and the loop converges.
+    LaunchedEffect(uri, times, arrived) {
         FilmstripLoader.request(context, uri, times)
     }
 

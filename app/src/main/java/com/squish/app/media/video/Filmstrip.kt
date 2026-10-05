@@ -65,6 +65,34 @@ object FilmstripPlan {
         }
     }
 
+    /**
+     * The source times to decode for a clip that does not play at one rate.
+     *
+     * The tiles divide the clip's *drawn* width equally - each is a weight(1f)
+     * of the box - so tile i covers the played stretch from
+     * `drawnStartMs + i * step` for one step, and the moment under its centre
+     * is that played moment carried into the file by the clip's own curve
+     * ([sourceAt], which is Clip.sourceAt through SpeedRamp.sourceOffsetAt).
+     *
+     * Dividing the *source* span equally instead, as [tileTimes] above does, is
+     * only right at a flat rate. On a Bullet curve over an 8 s shot (2x, 0.25x,
+     * 0.25x, 2x) the clip plays for 18.5 s and is drawn about ten tiles wide:
+     * the eighth tile covers played 14.8-16.7 s, whose centre is 5,637 ms of
+     * the file, and the equal-source split asked for 6,800 - a frame
+     * thirty-five frames away from the moment it is sitting over. The first
+     * tile was a second early and the last a second late, so scrubbing to the
+     * start of the clip put a frame on the preview that the first tile did not
+     * show.
+     */
+    fun tileTimes(drawnStartMs: Long, drawnEndMs: Long, tiles: Int, sourceAt: (Long) -> Long): List<Long> {
+        if (tiles <= 0) return emptyList()
+        val span = (drawnEndMs - drawnStartMs).coerceAtLeast(0L)
+        if (span == 0L) return List(tiles) { quantize(sourceAt(drawnStartMs)) }
+        return (0 until tiles).map { i ->
+            quantize(sourceAt(drawnStartMs + span * (2 * i + 1) / (2L * tiles)))
+        }
+    }
+
     /** Rounds a source time onto the cache grid. */
     fun quantize(timeMs: Long): Long =
         (timeMs.coerceAtLeast(0L) + QUANTUM_MS / 2) / QUANTUM_MS * QUANTUM_MS
