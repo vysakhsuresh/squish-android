@@ -1230,3 +1230,20 @@ one 60 chosen for 60 fps footage doubled the bitrate of every project after it
 for frames that do not exist. `ExportSettings.defaultOutputFps` now falls back
 to Auto, by the same rule as `defaultOutputP`. Seen on the phone: the next
 project opened on **Auto**, "Auto keeps the footage's 30 fps."
+
+### Left on the phone, 5 October - clean up on the next session
+
+The phone was unplugged mid-test, so this round's scratch did not get cleared.
+Whoever reaches it next should take these off and nothing else:
+
+- three test exports in the gallery, MediaStore ids **1001326343**,
+  **1001326344** and **1001326345** (`squish_1791168783188.mp4`,
+  `squish_1791168932075.mp4`, `squish_1791169046735.mp4`) - by id, never by a
+  `LIKE 'squish_%'` pattern, since `_` is a wildcard and would match the
+  user's own exports;
+- two scratch projects on the dashboard: one made from the reel with a
+  "Hello" line on it, and one three-second project from
+  `VID-20261003-WA0186.mp4`;
+- `adb shell settings put system accelerometer_rotation 1` (rotation was
+  locked to portrait for the layout test) and `adb shell svc power stayon
+  false`.
