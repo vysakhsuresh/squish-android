@@ -83,16 +83,39 @@ object Transcript {
         var open: LongRange? = null
         for (w in words) {
             val filler = w.timed && isFiller(w.text)
-            open = if (filler) {
-                if (open == null) w.startMs..w.endMs else open.first..w.endMs
-            } else {
-                open?.let { runs += it }
-                null
+            // Neighbours in *time*, not in the list.
+            //
+            // The list is every line's words laid end to end, so two lines
+            // running "…and um" then "uh, so…" put two fillers side by side in
+            // it with the whole gap between the lines in between. Merged on
+            // their position in the list alone, the run ran from the first's
+            // start to the second's end and the pass cut everything between
+            // them out of the edit - seconds of footage, for two "um"s.
+            val carriesOn = filler && open != null && w.startMs <= open.last + JOIN_SLACK_MS
+            open = when {
+                carriesOn -> open!!.first..maxOf(open!!.last, w.endMs)
+                filler -> {
+                    open?.let { runs += it }
+                    w.startMs..w.endMs
+                }
+                else -> {
+                    open?.let { runs += it }
+                    null
+                }
             }
         }
         open?.let { runs += it }
         return runs
     }
+
+    /**
+     * How far apart two fillers may be and still be cut as one stretch. A word
+     * runs until the next one starts, so two in a row within a line are exactly
+     * touching; this is for the breath between "um" and "uh" when the
+     * segmenter put a hair of silence between them, and is far short of the gap
+     * between two lines.
+     */
+    const val JOIN_SLACK_MS = 120L
 
     /** Punctuation and case are not part of the word: "Um," is still "um". */
     fun isFiller(word: String): Boolean =

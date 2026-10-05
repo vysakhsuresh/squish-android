@@ -91,6 +91,50 @@ fun main() {
         check(runs[0].first == 0L && runs[0].last == 2_000L, "the run covers ${runs[0]}")
     }
 
+    // --- Two fillers in different lines are two cuts, not one long one. -----
+    //
+    // The word list is every line's words laid end to end, so a line ending in
+    // "um" and the next beginning "uh" put two fillers side by side in it with
+    // the whole gap between the lines in between. Merged on their position in
+    // the list, the pass cut that gap out of the edit too.
+    run {
+        val w = Transcript.words(listOf(
+            Line("a", "hello there um", 0, 3_000, listOf(0L, 1_000L, 2_000L)),
+            Line("b", "uh right then", 30_000, 33_000, listOf(0L, 1_000L, 2_000L))
+        ))
+        val runs = Transcript.fillerRuns(w)
+        check(runs.size == 2, "two fillers twenty-seven seconds apart gave ${runs.size} stretch(es): $runs")
+        check(runs.getOrNull(0) == 2_000L..3_000L, "the first line's filler covers ${runs.getOrNull(0)}")
+        check(runs.getOrNull(1) == 30_000L..31_000L, "the second line's filler covers ${runs.getOrNull(1)}")
+        check(runs.sumOf { it.last - it.first } < 3_000L,
+            "the pass would cut ${runs.sumOf { it.last - it.first }} ms for two filler words")
+    }
+
+    // --- Two lines that run straight on are still one stretch. --------------
+    //
+    // Auto-captions land one line after another; a filler at the end of one and
+    // the start of the next, with nothing between them, is one cut.
+    run {
+        val w = Transcript.words(listOf(
+            Line("a", "hello um", 0, 2_000, listOf(0L, 1_000L)),
+            Line("b", "uh right", 2_000, 4_000, listOf(0L, 1_000L))
+        ))
+        val runs = Transcript.fillerRuns(w)
+        check(runs.size == 1, "two fillers meeting across a line break gave ${runs.size} stretches: $runs")
+        check(runs[0] == 1_000L..3_000L, "the run across the line break covers ${runs[0]}")
+        // And a breath between them is still one, but a pause is not.
+        val breath = Transcript.words(listOf(
+            Line("a", "hello um", 0, 2_000, listOf(0L, 1_000L)),
+            Line("b", "uh right", 2_000 + Transcript.JOIN_SLACK_MS, 4_000, listOf(0L, 1_000L))
+        ))
+        check(Transcript.fillerRuns(breath).size == 1, "a breath between two fillers split them")
+        val pause = Transcript.words(listOf(
+            Line("a", "hello um", 0, 2_000, listOf(0L, 1_000L)),
+            Line("b", "uh right", 4_000, 6_000, listOf(0L, 1_000L))
+        ))
+        check(Transcript.fillerRuns(pause).size == 2, "a two-second pause between two fillers was cut out with them")
+    }
+
     // --- An untimed filler is left alone. -----------------------------------
     run {
         val w = Transcript.words(listOf(Line("l", "um hello", 0, 2_000)))
