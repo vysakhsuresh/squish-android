@@ -101,5 +101,6 @@ run effectrecipes $TIMELINE tools/jvm/EffectRecipeChecks.kt
 run musicsynth "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/MusicSynthChecks.kt
 run synthtempo "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SynthTempoChecks.kt
 run runners    tools/jvm/RunnerChecks.kt
+run draftkeys  tools/jvm/DraftKeyChecks.kt
 
 rm -rf "$OUT"
