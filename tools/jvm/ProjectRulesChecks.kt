@@ -70,6 +70,24 @@ fun main() {
         check(ProjectRules.sizeLabel(12_345L) == "12 KB", "kilobytes mislabelled: ${ProjectRules.sizeLabel(12_345L)}")
         check(ProjectRules.sizeLabel(12_345_678L) == "12.3 MB", "megabytes mislabelled: ${ProjectRules.sizeLabel(12_345_678L)}")
         check(ProjectRules.sizeLabel(2_500_000_000L) == "2.50 GB", "gigabytes mislabelled: ${ProjectRules.sizeLabel(2_500_000_000L)}")
+        // The tiers end where the rounding carries, so no label ever says a
+        // thousand of the unit below the one it should have used.
+        check(ProjectRules.sizeLabel(999_999L) == "1.0 MB", "999,999 bytes reads ${ProjectRules.sizeLabel(999_999L)}")
+        check(ProjectRules.sizeLabel(999_499L) == "999 KB", "999,499 bytes reads ${ProjectRules.sizeLabel(999_499L)}")
+        check(ProjectRules.sizeLabel(999_999_999L) == "1.00 GB", "999,999,999 bytes reads ${ProjectRules.sizeLabel(999_999_999L)}")
+        check(ProjectRules.sizeLabel(999_000L) == "999 KB", "999,000 bytes reads ${ProjectRules.sizeLabel(999_000L)}")
+        // And nothing in the ladder ever prints four digits before the point,
+        // up to the largest number that can reach it. The ladder stops at
+        // gigabytes on purpose: a phone's whole storage is about a terabyte and
+        // one project cannot be a thousand gigabytes, so a terabyte tier would
+        // be a unit nobody will see.
+        var bytes = 1L
+        while (bytes < 999_000_000_000L) {
+            val label = ProjectRules.sizeLabel(bytes)
+            val digits = label.substringBefore('.').substringBefore(' ').length
+            check(digits <= 3, "$bytes bytes reads \"$label\", which is four digits of a unit")
+            bytes = (bytes * 7) / 5 + 1
+        }
     }
 
     // --- A storage clear takes only what no draft names, companions included. --

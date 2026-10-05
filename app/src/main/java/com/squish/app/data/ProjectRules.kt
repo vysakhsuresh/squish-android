@@ -66,8 +66,11 @@ object ProjectRules {
     /** "0 B", "1.2 MB", "3.4 GB" - the size on a project card. */
     fun sizeLabel(bytes: Long): String = when {
         bytes < 1_000L -> "$bytes B"
-        bytes < 1_000_000L -> "%.0f KB".format(bytes / 1_000.0)
-        bytes < 1_000_000_000L -> "%.1f MB".format(bytes / 1_000_000.0)
+        // The tiers end where the rounding would carry, not at the round
+        // number: at 999,999 bytes the old boundaries printed "1000 KB", and
+        // at 999,999,999 "1000.0 MB", which is a unit the eye reads twice.
+        bytes < 999_500L -> "%.0f KB".format(bytes / 1_000.0)
+        bytes < 999_950_000L -> "%.1f MB".format(bytes / 1_000_000.0)
         else -> "%.2f GB".format(bytes / 1_000_000_000.0)
     }
 
