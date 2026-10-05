@@ -173,8 +173,24 @@ a `free` box, which is never trimmed - so every file carried 400 KB of padding,
 69% of a measured three-second export. `media/CompactMuxer.kt` passes
 `InAppMp4Muxer.Factory().setAttemptStreamableOutputEnabled(false)`, which sends
 the moov after the mdat and truncates the file to what it used. The export, the
-proxy copy and every rendered still use it. If a future Media3 trims the
-reserve itself, this can go.
+proxy copy and every rendered still use it - which is all three
+`Transformer.Builder` sites there are. If a future Media3 trims the reserve
+itself, this can go.
+
+Read against the 1.11.1 sources in the Gradle cache (5 October), since every
+file the app writes depends on it: `DefaultMuxer` holds an `InAppMp4Muxer`
+and forwards `addTrack`, `writeSampleData`, `addMetadataEntry` and `close`
+with nothing added, so swapping the factory changes nothing but the reserve.
+`Mp4Writer.writeHeader` writes the 400 KB `free` box only under
+`canWriteMoovAtStart`, which is that flag, and the moov-at-end path ends in
+`muxerOutput.truncate(newMoovLocation + moovBytesNeeded)` - so the file really
+is cut to what it used, rather than padded at the other end.
+`InAppMp4Muxer.Factory.supportsWritingNegativeTimestampsInEditList()` returns
+`true`, which is what the trim optimisation the export enables
+(`experimentalSetTrimOptimizationEnabled`) requires of a muxer factory, so
+that still applies. And `Transformer`'s own metrics collector tests for
+`InAppMp4Muxer.Factory` before `DefaultMuxer.Factory`, so the muxer name it
+reports on Android 15 is right rather than merely unchanged.
 
 **The audio track is written whether or not anything is heard.** `AUDIO_AAC` is
 set on every composed export, and Media3's `DefaultEncoderFactory
