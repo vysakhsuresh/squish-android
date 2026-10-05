@@ -392,8 +392,15 @@ private fun Cover(cover: Bitmap?, meta: VideoMeta?, isAudio: Boolean, uri: Uri, 
     val context = androidx.compose.ui.platform.LocalContext.current
     var wave by remember(uri) { mutableStateOf<FloatArray?>(null) }
     if (isAudio) LaunchedEffect(uri) {
-        val pcm = com.squish.app.media.audio.PcmDecoder.decodeMono(context, uri, maxDurationMs = 10 * 60_000L)
-        wave = pcm?.let { com.squish.app.media.audio.WaveformBuilder.buildBars(it, buckets = 90).peaks }
+        // Through decodePeaks, which is the function that exists for this: one
+        // float per 50 ms, read straight off the decoder. decodeMono held the
+        // whole decimated file - a ten-minute sound is 4.8 million floats, and
+        // the doubling plus the final copy is about 38 MB live at the peak - to
+        // produce ninety bars, and on a tight heap it returns null by design,
+        // so the wave silently never appeared. The same twelve thousand peaks
+        // the strip draws from, gathered into the card's ninety columns.
+        val sound = com.squish.app.media.audio.PcmDecoder.decodePeaks(context, uri, maxDurationMs = 10 * 60_000L)
+        wave = sound?.let { com.squish.app.media.audio.WaveformBuilder.columns(it.peaks, columns = 90) }
     }
     val shape = when {
         isAudio -> 3.2f

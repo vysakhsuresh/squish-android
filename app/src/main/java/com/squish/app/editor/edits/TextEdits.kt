@@ -483,10 +483,13 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             }
             _state.update { it.copy(speakingId = null) }
             recomputeEstimate()
-            // Cached against the file, as every sound's is, so the clip draws at once.
-            val pcm = PcmDecoder.decodeMono(app, uri, maxDurationMs = 10 * 60_000L)
-            if (pcm != null) {
-                val wave = WaveformBuilder.build(pcm)
+            // Cached against the file, as every sound's is, so the clip draws
+            // at once - and through decodePeaks, like AudioEdits.ensureWaveform
+            // beside it. Decoding the whole thing to mono first held the
+            // decimated file in memory for a waveform that is one float per
+            // 50 ms, and gave up on a long one.
+            val wave = PcmDecoder.decodePeaks(app, uri)
+            if (wave != null) {
                 _state.update { it.copy(audioWaveforms = it.audioWaveforms + (uri.toString() to wave)) }
             }
         }

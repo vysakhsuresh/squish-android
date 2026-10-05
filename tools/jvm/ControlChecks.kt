@@ -830,6 +830,97 @@ fun main() {
         )
     }
 
+    // ---- A whole sound is never decoded to draw a few dozen bars. ----------
+    //
+    // PcmDecoder.decodePeaks exists for this: one float per 50 ms, read
+    // straight off the decoder, so an hour of audio costs a few hundred
+    // kilobytes. Three places still went through decodeMono, which holds the
+    // whole decimated file - a ten-minute sound is 4.8 million floats, and the
+    // doubling plus the final copy is about 38 MB live at the peak - and which
+    // gives up and returns null on a tight heap *by design*, so the wave
+    // silently never appeared. decodeMono's remaining callers all want the
+    // samples themselves (beat detection, auto-sync, the speech segmenter, the
+    // silence probe), and none of them builds a waveform.
+    // The check is structural rather than a grep for callers, which is stronger:
+    // there is no longer any way to make a Waveform out of decoded samples.
+    // WaveformBuilder's only MonoPcm-taking function is `envelope`, which is
+    // auto-sync's cross-correlation signal and does want the samples.
+    run {
+        val wave = read("$SRC/media/audio/Waveform.kt")
+        val fromSamples = Regex("""fun (\w+)\([^)]*pcm: MonoPcm""").findAll(wave).map { it.groupValues[1] }.toList()
+        check(
+            fromSamples == listOf("envelope"),
+            "WaveformBuilder can build from decoded samples again ($fromSamples) - a waveform is one float " +
+                "per 50 ms off the decoder (PcmDecoder.decodePeaks), and decoding the whole sound first held " +
+                "millions of floats for a few dozen bars and gave up on a long file by design, so the wave " +
+                "silently never appeared. `envelope` is the one exception: auto-sync correlates samples."
+        )
+    }
+
+    // ---- A .part survives nothing, a cancellation included. ----------------
+    //
+    // ProxyEngine deleted its half-written copy on both of its own exits and
+    // not on a cancellation - and a cancellation is the ordinary case, because
+    // the only thing that cancels it is leaving the editor, which is what a
+    // user does while the notice over the strip still says "Building a light
+    // preview copy · 37%". About a hundred megabytes for a fifteen-minute clip
+    // abandoned there, counted in Settings' storage figure, and one more orphan
+    // for every different clip abandoned. ReverseRenderer has always wrapped
+    // its body in runCatching for exactly this.
+    run {
+        // The shape is: catch everything round the await, delete the .part,
+        // *then* rethrow. So the delete has to come before the rethrow, and
+        // there has to be a rethrow - without one the delete is on the happy
+        // path only, which is what it was.
+        //
+        // Named shapes rather than a general grep, because "the delete is on
+        // the path a throw takes" is not something text can be asked in
+        // general: each of these files has a pre-emptive delete before the
+        // await as well, and any rule that only counts deletes is satisfied by
+        // that one. So each names where its failure path begins and where it
+        // rethrows, and the delete has to sit between the two.
+        listOf(
+            Triple("media/ProxyEngine.kt", "val outcome = runCatching {", "outcome.exceptionOrNull()"),
+            Triple("media/ReverseRenderer.kt", "if (result.isFailure)", "result.exceptionOrNull()?.let")
+        ).forEach { (name, from, to) ->
+            val text = read("$SRC/$name")
+            val begins = text.indexOf(from)
+            val rethrows = text.indexOf(to)
+            val deleted = text.lastIndexOf("partial.delete()")
+            check(
+                begins >= 0 && rethrows > begins && deleted in (begins + 1) until rethrows,
+                "$name writes a .part and does not delete it on the way out of a cancellation - catch " +
+                    "round the await, delete, then rethrow. Leaving the editor is the ordinary case, not " +
+                    "a corner: it is what a user does while the notice still shows a percentage."
+            )
+        }
+    }
+
+    // ---- The ceiling asks the encoders Media3 will actually choose from. ----
+    //
+    // EncoderSelector.DEFAULT returns only the hardware encoders when any
+    // exist. Asking the unfiltered list was the failure EncoderCeiling exists
+    // to prevent: on a phone whose hardware AVC encoder stops at 1920x1088
+    // while AOSP's size-flexible software one advertises 4080x4080, the
+    // software encoder won by area, so the sheet left 4K tappable with no note,
+    // budgeted a 4K bitrate, and recorded 3840x2160 in the library - while the
+    // render wrote 1920x1088.
+    run {
+        readAll(SRC).forEach { (path, text) ->
+            if (!text.contains("getSupportedEncoders(")) return@forEach
+            // A bare "is there one at all" question needs no filter.
+            if (!Regex("""getSupportedEncoders\([^)]*\)\s*\n?\s*\.?\s*(isNotEmpty|isEmpty)""").containsMatchIn(text) ||
+                Regex("""getSupportedEncoders""").findAll(text).count() > 1
+            ) {
+                if (!text.contains("isHardwareAccelerated")) {
+                    problems += "$path picks an encoder out of getSupportedEncoders without preferring the " +
+                        "hardware ones - Media3's EncoderSelector.DEFAULT returns only those when any exist, " +
+                        "so an answer taken from the whole list is not the encoder the render will use"
+                }
+            }
+        }
+    }
+
     // ---- One rate is printed one way, wherever it is printed. --------------
     //
     // PolishRules.rateLabel's own doc says it is "a rate as the Speed sheet

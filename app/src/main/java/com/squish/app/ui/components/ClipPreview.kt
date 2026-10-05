@@ -462,12 +462,17 @@ private fun SoundWave(
     // second wore the first's clothes: a file with no sound track, a codec the
     // decoder would not open, or a long file the heap refused showed the
     // waiting glyph for ever, with nothing to tell a user it had stopped
-    // trying. PcmDecoder.decodeMono returns null for all three.
+    // trying. PcmDecoder.decodePeaks returns null for all three.
     var tried by remember(uri) { mutableStateOf(false) }
     LaunchedEffect(uri, totalMs) {
         if (uri == null || totalMs <= 0L) return@LaunchedEffect
-        val pcm = PcmDecoder.decodeMono(context, uri, maxDurationMs = totalMs.coerceAtMost(WAVE_MAX_MS))
-        wave = pcm?.let { WaveformBuilder.buildBars(it, buckets = WAVE_BARS) }
+        // decodePeaks, not decodeMono: one float per 50 ms read straight off
+        // the decoder, gathered into the card's bars. Decoding the whole file
+        // to mono first held millions of floats - a ten-minute sound is about
+        // 38 MB live at the peak - for a card of a few dozen bars, and on a
+        // tight heap it gave up and the wave never appeared.
+        val sound = PcmDecoder.decodePeaks(context, uri, maxDurationMs = totalMs.coerceAtMost(WAVE_MAX_MS))
+        wave = sound?.let { Waveform(WaveformBuilder.columns(it.peaks, WAVE_BARS), it.durationMs) }
         tried = true
     }
 

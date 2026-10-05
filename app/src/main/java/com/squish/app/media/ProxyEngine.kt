@@ -108,14 +108,24 @@ object ProxyEngine {
         // Transformer posts callbacks to the looper it was built on, so it is built
         // and started on the main thread exactly like the export path. The encoding
         // itself runs on the library's own threads; this coroutine only waits.
-        val built = withContext(Dispatchers.Main) { transcode(context, uri, partial, onProgress) }
-
-        return if (built && partial.length() > 0 && partial.renameTo(target)) {
-            target
-        } else {
-            runCatching { partial.delete() }
-            null
+        //
+        // Through runCatching so a *cancellation* reaches the delete below, the
+        // way ReverseRenderer does it. transcode is a
+        // suspendCancellableCoroutine, so leaving the editor - which is the one
+        // thing that cancels this, and the one thing a user does while the
+        // notice over the strip still says "Building a light preview copy ·
+        // 37%" - threw straight out of here and left the half-written .part on
+        // disk for ever: about a hundred megabytes for a fifteen-minute clip
+        // abandoned at 37%, counted by Settings' storage figure, and one more
+        // orphan for every different clip abandoned.
+        val outcome = runCatching {
+            withContext(Dispatchers.Main) { transcode(context, uri, partial, onProgress) }
         }
+        val built = outcome.getOrDefault(false)
+        if (built && partial.length() > 0 && partial.renameTo(target)) return target
+        runCatching { partial.delete() }
+        outcome.exceptionOrNull()?.let { throw it }
+        return null
     }
 
     fun evict(context: Context, uri: Uri) {
