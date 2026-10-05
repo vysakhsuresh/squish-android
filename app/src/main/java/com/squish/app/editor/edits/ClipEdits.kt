@@ -1315,26 +1315,53 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         // step closes here rather than waiting out the coalescing window - two
         // trims of the same clip inside 700 ms used to come back as one undo.
         history.endGesture()
-        for (clip in StillRules.outrunning(_state.value.videoClips)) {
-            val uri = clip.uri ?: continue
-            if (!hasPicture(uri) || !extending.add(clip.id)) continue
-            viewModelScope.launch {
-                try {
-                    val wanted = StillRules.renderLengthFor(clip.sourceOutMs, StillClips.RENDER_MS)
-                    val longer = StillClips.extended(app, uri, wanted) ?: return@launch
-                    val fileMs = ThumbnailExtractor.probe(app, longer).durationMs
-                    if (fileMs <= 0L) return@launch
-                    _state.update { current ->
-                        current.copy(
-                            videoClips = current.videoClips.map { now ->
-                                // As it is now, not as it was: it may have been
-                                // trimmed again, or replaced, while the render ran.
-                                if (now.id == clip.id && now.uri == uri) now.copy(uri = longer, sourceDurationMs = fileMs) else now
-                            }
-                        )
-                    }
-                } finally {
-                    extending.remove(clip.id)
+        StillRules.outrunning(_state.value.videoClips).forEach { extendStill(it.id) }
+    }
+
+    /**
+     * One still rendered long enough to cover its clip, and the longer file
+     * swapped in.
+     *
+     * Asked again once it lands, if the clip has outrun the new file too. The
+     * guard is one per clip, so a photo dragged to twenty seconds and then, while
+     * that rendering ran, to forty found the guard up on the second lift and
+     * started nothing: the twenty-second file landed under a forty-second clip
+     * and stayed there, with the preview holding the picture's last frame while
+     * the clock ran on - for good, not until it landed, because nothing asked
+     * again. It terminates because each round's file is longer than the last,
+     * and a photo cannot be dragged past [StillRules.MAX_MS].
+     */
+    private fun extendStill(clipId: String) {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return
+        val uri = clip.uri ?: return
+        if (!hasPicture(uri) || !extending.add(clipId)) return
+        val wanted = StillRules.renderLengthFor(clip.sourceOutMs, StillClips.RENDER_MS)
+        viewModelScope.launch {
+            var landed = false
+            try {
+                val longer = StillClips.extended(app, uri, wanted) ?: return@launch
+                val fileMs = ThumbnailExtractor.probe(app, longer).durationMs
+                if (fileMs <= 0L) return@launch
+                _state.update { current ->
+                    current.copy(
+                        videoClips = current.videoClips.map { now ->
+                            // As it is now, not as it was: it may have been
+                            // trimmed again, or replaced, while the render ran.
+                            if (now.id == clipId && now.uri == uri) now.copy(uri = longer, sourceDurationMs = fileMs) else now
+                        }
+                    )
+                }
+                landed = true
+            } finally {
+                extending.remove(clipId)
+                // Only when a *longer* rendering is wanted than the one just
+                // made. Asking on "still outruns its file" alone would spin for
+                // ever on a render that came back a few milliseconds short of
+                // what was asked for, re-making the same length each round.
+                val still = _state.value.videoClips.firstOrNull { it.id == clipId }
+                val nextWanted = still?.let { StillRules.renderLengthFor(it.sourceOutMs, StillClips.RENDER_MS) } ?: 0L
+                if (landed && still != null && StillRules.outrunsFile(still) && nextWanted > wanted) {
+                    extendStill(clipId)
                 }
             }
         }
