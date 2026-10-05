@@ -830,6 +830,36 @@ fun main() {
         )
     }
 
+    // ---- A MediaCodec that decodes audio must ask the decoder what a frame is.
+    //
+    // PcmDecoder read KEY_SAMPLE_RATE and KEY_CHANNEL_COUNT off the
+    // *container's* track format, handed the rate to its caller before
+    // codec.start(), and had no INFO_OUTPUT_FORMAT_CHANGED branch at all - that
+    // constant is -2, so it fell through the `outIndex >= 0` test and was
+    // dropped. On HE-AAC (SBR doubles the output rate) and HE-AACv2
+    // (parametric stereo decodes a mono-signalled stream to two channels) the
+    // two formats disagree, and then every length this layer reports is wrong
+    // by that factor: the waveform lane drawn against a file twice or four
+    // times its length, the beat detector handed audio that slow, the auto-sync
+    // offset scaled. ReverseRenderer had always re-read all three, so the two
+    // readers of one file disagreed about what a frame is.
+    run {
+        readAll(SRC).forEach { (path, text) ->
+            if (!text.contains("dequeueOutputBuffer")) return@forEach
+            // Video readers hand frames to a Surface and have no PCM layout to
+            // get wrong; the audio ones are the ones that must ask.
+            if (!Regex("KEY_SAMPLE_RATE|KEY_CHANNEL_COUNT").containsMatchIn(text)) return@forEach
+            if (!text.contains("INFO_OUTPUT_FORMAT_CHANGED")) {
+                problems += "$path decodes audio with MediaCodec and never reads codec.outputFormat - " +
+                    "the container's sample rate and channel count are not the decoder's on HE-AAC, " +
+                    "and INFO_OUTPUT_FORMAT_CHANGED is -2, so it falls through `outIndex >= 0` unnoticed"
+            }
+            if (!text.contains("codec.outputFormat") && !text.contains(".outputFormat")) {
+                problems += "$path has the INFO_OUTPUT_FORMAT_CHANGED branch but never reads outputFormat"
+            }
+        }
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

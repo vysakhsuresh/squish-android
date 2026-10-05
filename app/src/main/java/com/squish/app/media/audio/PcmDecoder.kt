@@ -1,6 +1,7 @@
 package com.squish.app.media.audio
 
 import android.content.Context
+import android.media.AudioFormat
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -106,8 +107,9 @@ object PcmDecoder {
     /**
      * Runs the decoder over the file's first audio track, handing every frame -
      * the channels averaged to one float - to [onFrame] until it returns false
-     * or the file ends. [onFormat] gets the sample rate before the first frame.
-     * False when there is no readable audio track at all.
+     * or the file ends. [onFormat] gets the *decoder's* sample rate, once,
+     * before the first frame - not the container's, which is a different number
+     * on HE-AAC. False when there is no readable audio track at all.
      *
      * Suspend, and it checks for cancellation on every pass of the codec loop:
      * a waveform read is up to an hour of audio, and a sound selected and
@@ -140,11 +142,28 @@ object PcmDecoder {
             extractor.selectTrack(trackIndex)
 
             val mime = format.getString(MediaFormat.KEY_MIME) ?: return false
-            val sourceRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-            val channels = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+            // Seeded from the container, corrected by the decoder below. These
+            // are not the same number for every file: HE-AAC's SBR doubles the
+            // output rate over the one the esds signals, and HE-AACv2's
+            // parametric stereo decodes a mono-signalled stream to two
+            // channels. Taking the container's word for it made every
+            // millisecond this layer reports wrong by that factor - the strip's
+            // waveform drawn against a length twice or four times the file's,
+            // the beat detector handed audio that slow, the sync offset scaled -
+            // and read interleaved channels as consecutive mono frames.
+            var rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE).coerceAtLeast(1)
+            var channels = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
                 format.getInteger(MediaFormat.KEY_CHANNEL_COUNT).coerceAtLeast(1)
             } else 1
-            onFormat(sourceRate)
+            var floatPcm = false
+            // So onFormat waits for the first output buffer rather than firing
+            // here: the callers fix their stride, their bucket and their output
+            // array inside it, and the decoder's own format has not been said
+            // yet. MediaCodec delivers INFO_OUTPUT_FORMAT_CHANGED before the
+            // first buffer, so by the time this fires the numbers are the real
+            // ones. (ReverseRenderer has always done this; the two readers of
+            // one file disagreed about what a frame is.)
+            var announced = false
 
             codec = MediaCodec.createDecoderByType(mime)
             codec.configure(format, null, null, 0)
@@ -173,18 +192,40 @@ object PcmDecoder {
                 }
 
                 val outIndex = codec.dequeueOutputBuffer(info, 10_000)
-                if (outIndex >= 0) {
+                if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    val f = codec.outputFormat
+                    if (f.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                        rate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE).coerceAtLeast(1)
+                    }
+                    if (f.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                        channels = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT).coerceAtLeast(1)
+                    }
+                    floatPcm = f.containsKey(MediaFormat.KEY_PCM_ENCODING) &&
+                        f.getInteger(MediaFormat.KEY_PCM_ENCODING) == AudioFormat.ENCODING_PCM_FLOAT
+                } else if (outIndex >= 0) {
                     if (info.size > 0) {
                         val buf = codec.getOutputBuffer(outIndex)
                         if (buf != null) {
                             buf.position(info.offset)
                             buf.limit(info.offset + info.size)
-                            val shorts = buf.order(ByteOrder.nativeOrder()).asShortBuffer()
-                            while (shorts.hasRemaining() && !outputDone) {
+                            buf.order(ByteOrder.nativeOrder())
+                            if (!announced) {
+                                announced = true
+                                onFormat(rate)
+                            }
+                            // 16-bit unless the decoder said otherwise. Nothing
+                            // asks for float here (configure gets the
+                            // container's own format, which carries no
+                            // KEY_PCM_ENCODING), so this leg is insurance - but
+                            // reading floats as pairs of shorts is noise, not a
+                            // wrong number, so it is cheap insurance.
+                            val floats = if (floatPcm) buf.asFloatBuffer() else null
+                            val shorts = if (floatPcm) null else buf.asShortBuffer()
+                            while (!outputDone && (floats?.hasRemaining() ?: shorts!!.hasRemaining())) {
                                 var sum = 0f
                                 var read = 0
-                                while (read < channels && shorts.hasRemaining()) {
-                                    sum += shorts.get() / 32768f
+                                while (read < channels && (floats?.hasRemaining() ?: shorts!!.hasRemaining())) {
+                                    sum += floats?.get() ?: (shorts!!.get() / 32768f)
                                     read++
                                 }
                                 if (read == 0) break
