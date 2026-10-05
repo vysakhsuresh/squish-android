@@ -412,7 +412,12 @@ private fun Cover(cover: Bitmap?, meta: VideoMeta?, isAudio: Boolean, uri: Uri, 
             .clip(RoundedCornerShape(18.dp))
             .background(SquishColors.Surface)
             .border(1.dp, SquishColors.Border, RoundedCornerShape(18.dp))
-            .clickable(role = Role.Button, onClick = onPlay),
+            // Named, because nothing inside this one is words: the cover is an
+            // image with no description and the sound-only case is a waveform
+            // drawn on a Canvas, so a screen reader had a button and no idea
+            // what it did - on the one screen whose whole point is "watch what
+            // you just made".
+            .clickable(role = Role.Button, onClickLabel = if (isAudio) "Play the file" else "Watch the file", onClick = onPlay),
         contentAlignment = Alignment.Center
     ) {
         if (cover != null) {
