@@ -67,6 +67,23 @@ fun main() {
     check("Auto stays Auto", ExportSettings.defaultOutputFps(ExportSettings.SOURCE_FPS, 30f) == ExportSettings.SOURCE_FPS)
     check("an unmeasured rate takes the remembered one", ExportSettings.defaultOutputFps(60, 0f) == 60)
 
+    // The AAC track is budgeted whether or not there is sound in it: the file
+    // gets one either way (EditorUiState.estimatedExportBytes says why), and a
+    // target that left it out overshot by 128 kbps - 2.9 MB over three minutes.
+    run {
+        val threeMinutes = 180_000L
+        val with = ExportPresets.bitrateForTargetSize(16 * MB, threeMinutes, includeAudio = true)
+        val without = ExportPresets.bitrateForTargetSize(16 * MB, threeMinutes, includeAudio = false)
+        check("budgeting the track leaves the video less", with < without)
+        check(
+            "the difference is the track's own rate",
+            kotlin.math.abs((without - with) - ExportPresets.AUDIO_BITRATE_BPS) < 2_000
+        )
+        // What the file then weighs, video plus track, is inside the target.
+        val bytes = ((with + ExportPresets.AUDIO_BITRATE_BPS) * (threeMinutes / 1000.0) / 8).toLong()
+        check("a fitted three minutes lands under its 16 MB with the track in it", bytes <= 16 * MB)
+    }
+
     // ---- Fit to a size: the resolution is solved too -----------------------------
     // A minute of 4K at 16 MB: two megabits a second cannot cover eight million
     // pixels; it steps down to a size each pixel gets enough at.

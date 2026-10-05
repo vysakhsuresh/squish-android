@@ -979,9 +979,18 @@ data class EditorUiState(
      * as the background check has said: a silent screen recording used to count,
      * and a size-targeted export set aside audio bits for a track that was never
      * written. Not yet checked counts as sound, the safe side of the estimate.
+     *
+     * The camera side reads [anyCameraAudio], not [sourceHasAudio]. That flag is
+     * the *lead* file's alone, taken when the project opens; an edit whose first
+     * shot happened to be silent and whose second was not said it had no sound
+     * at all, which is the same trap the Camera sound panel fell into.
+     *
+     * This is whether the file will have sound *in* it. Whether it will have an
+     * audio *track* is a different question and the answer is always yes -
+     * see [estimatedExportBytes].
      */
     val hasAnyAudio: Boolean
-        get() = (!muteOriginal && sourceHasAudio) || hasSeparateAudio ||
+        get() = (!muteOriginal && anyCameraAudio) || hasSeparateAudio ||
             videoClips.any { clip ->
                 clip.isOverlay && clip.isHeard && !clip.isStillPicture &&
                     clip.uri?.let { com.squish.app.media.MediaCompat.cached(it) }
@@ -1094,7 +1103,10 @@ data class EditorUiState(
      */
     private val fitVideoBitrate: Int
         get() {
-            val budget = ExportPresets.bitrateForTargetSize(targetSizeMb * 1_000_000L, trimmedDurationMs, hasAnyAudio)
+            // Always: the file gets a 128 kbps AAC track whether anything is
+            // heard in it or not (see estimatedExportBytes), and a target that
+            // did not set those bits aside overshot by them.
+            val budget = ExportPresets.bitrateForTargetSize(targetSizeMb * 1_000_000L, trimmedDurationMs, includeAudio = true)
             return (budget * fitScale).toInt().coerceAtLeast(ExportPresets.MIN_VIDEO_BPS)
         }
 
@@ -1164,13 +1176,26 @@ data class EditorUiState(
             ExportSettings.scaledBitrate(recommended, quality, exportCodecHevc)
         }
 
-    /** What the finished file should weigh. */
+    /**
+     * What the finished file should weigh.
+     *
+     * The AAC track is counted whether or not anything is heard. `VideoProcessor`
+     * sets `AUDIO_AAC` on the Transformer for every composed export, and the
+     * encoder writes constant 128 kbps frames with silence in them as readily as
+     * with sound: a three-second export of a clip with no audio was measured
+     * with 50,597 bytes of mp4a in it against an estimate that had set aside
+     * none. Counting it is the honest number and the safe side of a size target.
+     *
+     * [hasAnyAudio] is the other question - whether there is sound in the file.
+     * Not writing the track at all when there is none would be better than
+     * budgeting for it, and is the thing to try on a device: it is 128 kbps of
+     * silence in every file a soundless edit makes.
+     */
     val estimatedExportBytes: Long
         get() {
             val seconds = trimmedDurationMs / 1000.0
             if (audioOnly) return (ExportPresets.AUDIO_BITRATE_BPS * seconds / 8).toLong()
-            val audioBits = if (hasAnyAudio) ExportPresets.AUDIO_BITRATE_BPS * seconds else 0.0
-            return ((exportVideoBitrate * seconds + audioBits) / 8).toLong()
+            return ((exportVideoBitrate * seconds + ExportPresets.AUDIO_BITRATE_BPS * seconds) / 8).toLong()
         }
 }
 

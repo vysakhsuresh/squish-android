@@ -1271,3 +1271,32 @@ are butted against a join: the tick would land on every cut in the edit.
 nothing (132 samples - it cannot take the swell off a riser), and the suite
 now asserts both that the final sample is near zero and that the last half
 millisecond is a taper rather than a one-sample notch. Not heard.
+
+### The size estimate left the audio track out (5 October, from the same probes)
+
+With the 400 KB of muxer padding accounted for, the 360p export still did not
+add up: the sheet said ≈114 KB and `Mp4Probe` found 128,791 bytes of picture
+and **50,597 of sound**. 114 KB is 300 kbps over 3.034 s - the video bitrate
+alone. The estimate had set no bits aside for the track.
+
+It was right to think there was no sound: that clip has none, and
+`hasAnyAudio` was false. But the file gets an AAC track anyway -
+`VideoProcessor` sets `AUDIO_AAC` on every composed export, and the encoder
+writes constant 128 kbps frames (133 of them, ~380 bytes each, which is
+exactly 128 kbps at 44.1 kHz) with silence in them as readily as with sound.
+
+Two things fixed, both pure arithmetic and executed:
+
+- **The estimate and the size target count the track.** Over three minutes
+  that is 2.9 MB a "Fit to 16 MB" had never budgeted, so it overshot by them.
+- **`hasAnyAudio` read the lead file's flag alone.** `sourceHasAudio` is taken
+  once when the project opens; an edit whose *first* shot was silent and whose
+  second was not reported no sound at all. It reads `anyCameraAudio` now, which
+  scans the main track - the same trap the Camera sound panel was pulled out of
+  earlier, left in place here.
+
+Still open, and better than budgeting for it: **do not write the track when
+nothing is heard.** It is 128 kbps of silence in every file a soundless edit
+makes. That needs a device, because `BUILD_NOTES.md` records that the base
+rolls lean on a sequence declaring sound so gaps and photos get silence - true
+when *something* has sound, and the case to prove is when nothing does.
