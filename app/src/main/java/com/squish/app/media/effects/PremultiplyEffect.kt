@@ -23,14 +23,24 @@ import java.io.IOException
  * onto the picture behind it. Never in an export chain, where it would darken
  * every soft edge a second time.
  */
-class PremultiplyEffect : GlEffect {
+class PremultiplyEffect(
+    /**
+     * An overlay's share of a Defocus join, read on every frame: the nine taps
+     * that far apart as a fraction of the frame. A base surface takes its
+     * softness from the effects pass that ends its chain; a layer's chain ends
+     * here instead, because a layer keeps its transparency all the way to the
+     * screen - so this is where its softness goes (see SurfaceDraw.blur).
+     */
+    private val blurNow: () -> Float = { 0f }
+) : GlEffect {
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        PremultiplyShaderProgram(context, useHdr)
+        PremultiplyShaderProgram(context, useHdr, blurNow)
 }
 
 private class PremultiplyShaderProgram(
     context: Context,
-    useHdr: Boolean
+    useHdr: Boolean,
+    private val blurNow: () -> Float
 ) : BaseGlShaderProgram(/* useHighPrecisionColorComponents= */ useHdr, /* texturePoolCapacity= */ 1) {
 
     private val glProgram: GlProgram = try {
@@ -55,6 +65,7 @@ private class PremultiplyShaderProgram(
         try {
             glProgram.use()
             glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
+            glProgram.setFloatsUniform("uBlur", floatArrayOf(blurNow()))
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, /* first= */ 0, /* count= */ 4)
         } catch (e: GlUtil.GlException) {

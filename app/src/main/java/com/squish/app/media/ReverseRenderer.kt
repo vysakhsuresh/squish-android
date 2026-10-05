@@ -72,6 +72,14 @@ object ReverseRenderer {
     private const val VP9_AV1_PROFILE_2 = 4
     private const val TEN_BIT = "10-bit or HDR footage cannot be reversed here"
 
+    /**
+     * How far past the window [keyframesWithin] goes looking for the margin the
+     * last run is fed to. A minute is far more than any ordinary file's spacing
+     * - a second is usual - and past it there is nothing to find that would
+     * save anything.
+     */
+    private const val TAIL_SCAN_US = 60_000_000L
+
     private const val TIMEOUT_US = 10_000L
     /** Dequeue attempts, at [TIMEOUT_US] each, before a draining encoder is given up on: five seconds. */
     private const val DRAIN_PATIENCE = 500
@@ -521,6 +529,11 @@ object ReverseRenderer {
             if (t < 0L) break
             val sync = extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0
             if (t >= outUs) {
+                // Only the margin is looked for past the window, and only so
+                // far: a file with no keyframe for the next minute has one run
+                // covering all of it anyway, so walking the rest of its samples
+                // to say so would be a pass over the container for nothing.
+                if (t - outUs > TAIL_SCAN_US) break
                 if (sync && (past.isEmpty() || t > past.last())) {
                     past.add(t)
                     if (past.size >= ReverseRuns.TAIL_SYNCS) break

@@ -437,7 +437,7 @@ class PreviewEngine(private val context: Context) {
                 } else {
                     // A layer keeps its transparency all the way to the screen,
                     // where its view blends it premultiplied; see PremultiplyEffect.
-                    add(PremultiplyEffect())
+                    add(PremultiplyEffect { transitionBlur.get() })
                 }
             }
             // Installed on an empty player, before anything is loaded: the order a
@@ -1429,11 +1429,18 @@ class PreviewEngine(private val context: Context) {
         }
 
         if (clip == null) {
+            s.transitionBlur.set(0f)
             OverlayPlacement(layer = layer, visible = false, aspect = s.videoAspect)
         } else {
             // Its opacity track and fade, and a transition over its head, as
             // the export draws them (TransitionEffect on the overlay's chain).
             val own = ExportPlan.ownDrawAt(clip, t - clip.timelineStartMs)
+            // The softness goes to the layer's own chain, which ends in the
+            // premultiply pass, rather than to the Compose layer that draws the
+            // rest of this (see SurfaceDraw.blur). A uniform needs a frame drawn
+            // to reach the screen, so a join scrubbed through rather than played
+            // asks for one.
+            if (s.transitionBlur.getAndSet(own.blur) != own.blur) requestRedraw()
             OverlayPlacement(
                 layer = layer,
                 visible = s.shownClipId == clip.id,
