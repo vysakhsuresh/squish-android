@@ -475,11 +475,15 @@ class PreviewEngine(private val context: Context) {
     private fun blendedStillFor(still: Clip, under: Clip): BlendedStill? {
         val uri = still.uri ?: return null
         val key = uri.toString()
-        val bitmap = blendBitmaps.getOrPut(key) {
-            runCatching {
+        // containsKey, not getOrPut: that one treats a stored null as absent,
+        // so a still that cannot be read was opened again on every tick and
+        // warned about every time. The export's copy of this reads the same way.
+        if (!blendBitmaps.containsKey(key)) {
+            blendBitmaps[key] = runCatching {
                 context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
             }.getOrNull()
         }
+        val bitmap = blendBitmaps[key]
         if (bitmap == null) {
             Log.w(TAG, "could not read the blended still $uri")
             return null
