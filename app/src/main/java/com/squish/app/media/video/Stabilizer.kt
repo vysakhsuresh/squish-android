@@ -45,7 +45,6 @@ object Stabilizer {
         strength: Float,
         onProgress: (Int, Int) -> Unit
     ): Result? = withContext(Dispatchers.IO) {
-        val frameRate = if (fps > 1f) fps else 30f
         val retriever = MediaMetadataRetriever()
 
         try {
@@ -56,8 +55,23 @@ object Stabilizer {
                 ?.toIntOrNull() ?: 0
             if (totalFrames <= 2) return@withContext null
 
-            val firstIndex = (fromMs / 1000.0 * frameRate).toInt().coerceIn(0, totalFrames - 1)
-            val lastIndex = (toMs / 1000.0 * frameRate).toInt().coerceIn(firstIndex + 1, totalFrames - 1)
+            // This file's own rate, and a range that cannot be inverted - the
+            // same two corrections TrackRunner carries, for the same reasons:
+            // [fps] is the lead file's, while the indices and the count below
+            // are this one's, and coerceIn throws on an empty range rather than
+            // taking a bound, so a clip trimmed to its file's last frames
+            // failed to stabilize with no reason given.
+            val lengthMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val frameRate = when {
+                lengthMs > 0L && totalFrames > 1 -> (totalFrames * 1000.0 / lengthMs).toFloat()
+                fps > 1f -> fps
+                else -> 30f
+            }.coerceIn(1f, 480f)
+
+            val firstIndex = (fromMs / 1000.0 * frameRate).toInt().coerceIn(0, totalFrames - 2)
+            val lastIndex = (toMs / 1000.0 * frameRate).toInt()
+                .coerceAtMost(totalFrames - 1)
+                .coerceAtLeast(firstIndex + 1)
 
             // Shake lives around 2-10 Hz, so frames cannot be skipped far before the
             // measurement stops describing it. Striding is a last resort for very

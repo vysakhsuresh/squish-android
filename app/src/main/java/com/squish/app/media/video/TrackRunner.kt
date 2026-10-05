@@ -39,7 +39,6 @@ object TrackRunner {
         boxFraction: Float,
         onProgress: (Int, Int) -> Unit
     ): MotionTrack? = withContext(Dispatchers.IO) {
-        val frameRate = if (fps > 1f) fps else 30f
         val retriever = MediaMetadataRetriever()
 
         try {
@@ -49,8 +48,32 @@ object TrackRunner {
                 ?.toIntOrNull() ?: 0
             if (totalFrames <= 2) return@withContext null
 
-            val firstIndex = (fromMs / 1000.0 * frameRate).toInt().coerceIn(0, totalFrames - 1)
-            val lastIndex = (toMs / 1000.0 * frameRate).toInt().coerceIn(firstIndex + 1, totalFrames - 1)
+            // This file's own rate, not the edit's.
+            //
+            // [fps] is EditorUiState.fps, which is the *lead* file's rate - the
+            // one the project was opened on. Frame indices and the frame count
+            // below come from this clip's file, so on a 60 fps clip in a 30 fps
+            // project the window read was half as long as it should be and
+            // every sample was stamped at twice its real moment: a mask pinned
+            // to the track followed its subject at half speed and then held.
+            // The frame count and the duration are both this file's, so their
+            // ratio is its rate; the edit's is only the fallback.
+            val lengthMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val frameRate = when {
+                lengthMs > 0L && totalFrames > 1 -> (totalFrames * 1000.0 / lengthMs).toFloat()
+                fps > 1f -> fps
+                else -> 30f
+            }.coerceIn(1f, 480f)
+
+            val firstIndex = (fromMs / 1000.0 * frameRate).toInt().coerceIn(0, totalFrames - 2)
+            // The low bound first, so the range is never inverted. It was
+            // firstIndex + 1 against totalFrames - 1, and Kotlin's coerceIn
+            // throws on an empty range rather than taking a bound - so aiming at
+            // the clip's very last frame failed with "tracking failed" and no
+            // reason. Reachable now that the run starts at the playhead.
+            val lastIndex = (toMs / 1000.0 * frameRate).toInt()
+                .coerceAtMost(totalFrames - 1)
+                .coerceAtLeast(firstIndex + 1)
             val span = lastIndex - firstIndex + 1
             val stride = ((span + MAX_FRAMES - 1) / MAX_FRAMES).coerceAtLeast(1)
 

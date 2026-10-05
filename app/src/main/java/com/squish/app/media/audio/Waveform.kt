@@ -72,19 +72,34 @@ object WaveformBuilder {
      */
     fun envelope(pcm: MonoPcm, bucketMs: Int): FloatArray {
         if (pcm.samples.isEmpty() || bucketMs <= 0) return FloatArray(0)
-        val samplesPerBucket = (pcm.sampleRate * bucketMs / 1000).coerceAtLeast(1)
-        val count = pcm.samples.size / samplesPerBucket
+        // Bucket boundaries are placed on the clock, not counted off in whole
+        // samples.
+        //
+        // `rate * bucketMs / 1000` is an integer, so at 8,820 Hz a 10 ms bucket
+        // was 88 samples - 9.9773 ms - and the error accumulated: a click at
+        // thirty seconds landed in bucket 3,007 rather than 3,000. Auto-sync
+        // correlates one of these against another, and `PcmDecoder.decodeMono`
+        // decimates by an integer stride, so a 48 kHz camera track lands on
+        // 8,000 Hz and a 44.1 kHz recording on 8,820. The two envelopes then ran
+        // at different speeds and no single lag could line them up: a true
+        // three-second offset came back as about 3,060 ms. Boundaries taken from
+        // the moment make every bucket start where the clock says, at any rate.
+        val perBucket = pcm.sampleRate.toDouble() * bucketMs / 1000.0
+        if (perBucket < 1.0) return FloatArray(0)
+        val count = (pcm.samples.size / perBucket).toInt()
         if (count <= 0) return FloatArray(0)
 
         val env = FloatArray(count)
         for (b in 0 until count) {
+            val start = (b * perBucket).toInt()
+            val end = ((b + 1) * perBucket).toInt().coerceAtMost(pcm.samples.size)
+            if (end <= start) continue
             var sumSq = 0f
-            val start = b * samplesPerBucket
-            for (i in start until start + samplesPerBucket) {
+            for (i in start until end) {
                 val v = pcm.samples[i]
                 sumSq += v * v
             }
-            env[b] = sqrt(sumSq / samplesPerBucket)
+            env[b] = sqrt(sumSq / (end - start))
         }
 
         var mean = 0f

@@ -709,12 +709,28 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             // file, so a song already cut in two carries them on both halves -
             // and off every other sound: one grid at a time, as the card says.
             val every = _state.value.beats.every
+            // The camera's beats are heard in the *file's* time and everything
+            // that uses the grid - the dots, the snaps, Cut on the beat, the
+            // bar lines - reads it as timeline moments. A sound clip's beats
+            // are carried through its position already; the camera's were not,
+            // so trimming the head shot's head by five seconds put every dot
+            // five seconds away from the beat it was heard on, and "Snap to the
+            // beat" snapped to silence. One delta, the same one every other
+            // camera-sync reading uses (headPictureDeltaMs); on a retimed head
+            // shot it matches at the first frame, as the Sound panel says.
+            val headDelta = _state.value.headPictureDeltaMs
+            val onTimeline = if (target != null) emptyList() else map.beatsMs.map { it - headDelta }
+            val dropped = onTimeline.count { it < 0L }
+            val cameraBeats = onTimeline.drop(dropped)
             val found = BeatProgress(
                 finished = true,
                 bpm = map.bpm,
                 confidence = map.confidence,
-                beatsMs = if (target == null) map.beatsMs else emptyList(),
-                downbeatOffset = map.downbeatOffset,
+                beatsMs = cameraBeats,
+                // The downbeat is an index into the list, so beats dropped off
+                // the front of it move which one the bar starts on.
+                downbeatOffset = if (target != null || dropped == 0) map.downbeatOffset
+                else ((map.downbeatOffset - dropped) % 4 + 4) % 4,
                 clipLabel = label,
                 clipId = target?.id,
                 every = every
