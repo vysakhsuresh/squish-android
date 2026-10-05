@@ -457,25 +457,42 @@ evict, rebuilt on demand.
 - Background proxy generation
 - Typed, human-readable errors
 
-## 6. Not built — and honestly scoped
+## 6. Not built
 
-Listed in the order they would actually be worth doing. None of these are small;
-claiming otherwise would be the fastest way to lose trust in this document.
+**This section used to be a table of eleven things to build, with costs from
+two days to three months and a closing line about it being a year's work. Every
+one of the eleven is built.** The table stood unchanged while they were built
+underneath it, which made this file say that features anyone can see in the
+code do not exist — the exact rot the first page of CLAUDE.md is about. Where
+each went, so nobody has to find out the way I did:
 
-| Feature | Real cost | Note |
-| --- | --- | --- |
-| True 3D LUTs and custom shaders | ~1 week | Grain, vignette, halation and .cube import, on top of the look library below. |
-| Per-clip looks | 2-3 days | The grade is currently the whole timeline; Clip would carry its own. |
-| Keyframed opacity and color | 3-4 days | Needs a time-varying alpha effect and RgbMatrix; the transform hook does not cover them. |
-| Keyframes for existing parameters | 1–2 weeks | Needs an interpolation model on every animatable property, plus timeline UI. |
-| Audio beat detection | Days | Onset detection on the PCM data we already decode for waveforms. |
-| Chroma key | 1–2 weeks | A GL shader is a day; spill suppression and edge matting are the rest. |
-| Masking | 2–3 weeks | Shape masks, feathering, and per-mask keyframing. |
-| Auto-captions | 1–2 months | On-device ASR model, bundled weights, per-language packs, app-size budget. |
-| Text to speech | Weeks | Android's TTS engine gets a usable first version; a good one does not. |
-| Stabilization | 1–2 months | Optical flow, trajectory smoothing, crop compensation. |
-| Motion tracking | 2–3 months | The hardest item here by a wide margin. |
+| It said | Where it is |
+| --- | --- |
+| True 3D LUTs and custom shaders | `media/effects/Lut.kt`, `.cube` import, the tile atlas in `squish_look_es2.glsl`; grain, vignette and halation are sliders on Adjust |
+| Per-clip looks | `Clip.lookId` and `Clip.adjust`; the whole-timeline grade is gone (B12) |
+| Keyframed opacity and colour | `ValueTrack.Opacity` and `ValueTrack.Look`, keyed from the sheets and drawn on the strip (B13) |
+| Keyframes for existing parameters | `timeline/ValueTracks.kt` and `Keyframe`, with smooth, linear and hold easing |
+| Audio beat detection | `media/audio/BeatDetector.kt` — onset envelope, Ellis tempo scoring, dynamic-programming tracking |
+| Chroma key | `squish_chroma_key_es2.glsl` with spill suppression, sampled by the loupe |
+| Masking | `timeline/Mask.kt` and `squish_mask_es2.glsl`: six shapes on a distance field, feathered, keyed on a track |
+| Auto-captions | `media/audio/Transcriber.kt` on the platform recogniser, `SpeechSegmenter` for the timings, SRT both ways |
+| Text to speech | `media/audio/Tts.kt`, landed as a sound clip under `files/speech/` |
+| Stabilization | `media/video/MotionEstimator.kt`, `TrajectorySmoother.kt`, `StabilizerSolve.kt` |
+| Motion tracking | `media/video/ObjectTracker.kt` (ZNCC template tracking) and `TrackRunner.kt` |
 
-The "one release, all features" goal stands. What cannot stand is the idea that
-this list is a single session's work — it is a roadmap of roughly a year for one
-person, and pretending otherwise would just move the disappointment later.
+What is genuinely not built, as of 5 October:
+
+- **Keyframes on a mask's shape and on a clip's filter.** A mask already moves
+  on its Track and a filter is per clip; the `ValueKey` track is what they would
+  key, so neither is hard — they were left out of B13 on purpose, not missed.
+- **Keyframes on a line of words or a sticker.** Those are not clips; they have
+  their own arrival, leaving and loop from B10, and giving them a key track
+  means deciding how the two interact.
+- **A Stop action on the export's notification.** Declined: it cannot ask first,
+  and a render thrown away by a mis-tap on a lock screen is worse than walking
+  back into the app.
+
+The "one release, all features" goal stands, and the honest caution the old
+section ended on is still worth keeping: the list above took far longer than the
+table's estimates, and nothing on this page should be read as a promise about
+how long the next thing will take.
