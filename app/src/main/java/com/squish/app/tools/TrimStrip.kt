@@ -150,22 +150,16 @@ fun TrimStrip(
             // reachable at the full range, and each touch target reaches on
             // inward from its bar - kept inside the strip, since past its edge
             // the card clips it and the finger scrolls the page instead.
-            // The two targets are 48 dp each and the kept stretch can be
-            // narrower than that. They are siblings in one Box, so where they
-            // overlapped the end - composed second, and therefore on top - took
-            // every touch in the overlap, and the start bar could not be
-            // dragged at all: pressing it moved the end instead, and dragging
-            // left collapsed the keep to its floor. They meet in the middle of
-            // the overlap now, each keeping the side its own bar is on.
-            val startLeft = startX.coerceIn(0f, (widthPx - targetPx).coerceAtLeast(0f))
-            val endLeft = (endX - targetPx).coerceIn(0f, (widthPx - targetPx).coerceAtLeast(0f))
-            val share = (((startLeft + targetPx) - endLeft) / 2f).coerceAtLeast(0f)
-            val floorPx = with(density) { HANDLE_WIDTH.toPx() }
-            val targetDp = with(density) { (targetPx - share).coerceAtLeast(floorPx).toDp() }
+            // They meet at the middle of the kept stretch and reach outward
+            // from it when the stretch cannot hold them both; the arithmetic is
+            // TrimRules.handleBoxes, which says why.
+            val barPx = with(density) { HANDLE_WIDTH.toPx() }
+            val (startBox, endBox) = TrimRules.handleBoxes(startX, endX, widthPx, targetPx, barPx)
+            val boxDp = with(density) { startBox.width.toDp() }
             TrimHandle(
-                x = startLeft,
-                width = targetDp,
-                barAtStart = true,
+                x = startBox.x,
+                width = boxDp,
+                barX = startBox.barX,
                 accent = accent,
                 active = active == Handle.Start,
                 description = "Start handle, ${Timecode.format(startMs)}",
@@ -180,9 +174,9 @@ fun TrimStrip(
                 }
             )
             TrimHandle(
-                x = endLeft + share,
-                width = targetDp,
-                barAtStart = false,
+                x = endBox.x,
+                width = boxDp,
+                barX = endBox.barX,
                 accent = accent,
                 active = active == Handle.End,
                 description = "End handle, ${Timecode.format(endMs)}",
@@ -253,7 +247,8 @@ private enum class Handle { Start, End }
 private fun TrimHandle(
     x: Float,
     width: Dp,
-    barAtStart: Boolean,
+    /** Where the bar sits inside the target, in pixels (TrimRules.handleBoxes). */
+    barX: Float,
     accent: Color,
     active: Boolean,
     description: String,
@@ -282,10 +277,11 @@ private fun TrimHandle(
                 )
             }
             .clickable(role = Role.Button, onClickLabel = description) {},
-        contentAlignment = if (barAtStart) Alignment.CenterStart else Alignment.CenterEnd
+        contentAlignment = Alignment.CenterStart
     ) {
         Box(
             modifier = Modifier
+                .offset { IntOffset(barX.roundToInt(), 0) }
                 .width(HANDLE_WIDTH)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(6.dp))

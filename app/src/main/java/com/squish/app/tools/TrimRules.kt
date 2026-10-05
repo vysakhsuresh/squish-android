@@ -78,6 +78,56 @@ object TrimRules {
     fun steppedEnd(endMs: Long, frames: Int, startMs: Long, durationMs: Long, frameMs: Long): Long =
         movedEnd(endMs + frames * frameMs.coerceAtLeast(1L), startMs, durationMs, frameMs)
 
+    /** One handle's touch target and where its bar is drawn inside it, in pixels along the strip. */
+    data class HandleBox(val x: Float, val width: Float, val barX: Float)
+
+    /**
+     * Where the two handles' touch targets go, so that they never overlap and
+     * each bar stays on the trim point it moves.
+     *
+     * They are siblings in one box, so an overlap belongs entirely to whichever
+     * is drawn second - the end - and the start simply stops answering there.
+     * Both were laid *inside* the kept stretch, each [targetPx] wide with a
+     * floor of [barPx], and inside a stretch narrower than two targets that is
+     * not possible: the two met in the middle of the overlap, which closes the
+     * gap only while the keep is at least [targetPx] wide. Trim a long clip
+     * down to a couple of seconds - a few dp of keep - and they sat on top of
+     * each other again, with the start reachable across a sliver and then not
+     * at all.
+     *
+     * So they meet at the *middle of the keep* and reach outward from it when
+     * the keep cannot hold them, onto the dimmed stretches either side, which
+     * have the room precisely when the keep does not. The bars stay where they
+     * belong: the start's left edge on the in point, the end's right edge on
+     * the out point, each nudged back inside its own target only where the
+     * strip's own edge has pushed the target in.
+     */
+    fun handleBoxes(startX: Float, endX: Float, stripPx: Float, targetPx: Float, barPx: Float): Pair<HandleBox, HandleBox> {
+        val keep = (endX - startX).coerceAtLeast(0f)
+        val mid = startX + keep / 2f
+        // Never wider than the target, never narrower than the bar it holds -
+        // and never so wide that two of them cannot both stand on the strip.
+        val width = minOf(targetPx, keep / 2f).coerceAtLeast(barPx).coerceAtMost((stripPx / 2f).coerceAtLeast(1f))
+        // Meeting at the middle of the keep, reaching outward from it.
+        var start = minOf(startX, mid - width)
+        var end = maxOf(endX - width, mid)
+        // Then the pair is pushed onto the strip as a pair. Pushing one alone -
+        // which the clamp used to do - put them back on top of each other
+        // wherever the keep was both narrow and against an edge.
+        if (end < start + width) end = start + width
+        if (end + width > stripPx) {
+            end = stripPx - width
+            start = minOf(start, end - width)
+        }
+        if (start < 0f) {
+            start = 0f
+            end = maxOf(end, width)
+        }
+        val inset = (width - barPx).coerceAtLeast(0f)
+        return HandleBox(start, width, (startX - start).coerceIn(0f, inset)) to
+            HandleBox(end, width, (endX - barPx - end).coerceIn(0f, inset))
+    }
+
     /** How many frames a strip [widthDp] wide shows: one per [TILE_DP], at least [MIN_TILES], at most [MAX_TILES]. */
     fun tileCount(widthDp: Float): Int = (widthDp / TILE_DP).toInt().coerceIn(MIN_TILES, MAX_TILES)
 

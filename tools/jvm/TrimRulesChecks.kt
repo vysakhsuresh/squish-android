@@ -103,6 +103,48 @@ fun main() {
         check(TrimRules.tileCount(2_000f) == TrimRules.MAX_TILES, "a wide strip asked for more than the cap")
     }
 
+    // --- The two touch targets never overlap, at any width of keep. ----------
+    //
+    // They are siblings in one box, so an overlap belongs entirely to the one
+    // drawn second and the other stops answering there. Laid inside the kept
+    // stretch with a floor under each, that is exactly what happened once the
+    // stretch was narrower than two targets: trim a long clip down to a couple
+    // of seconds and the start handle could be pressed across a sliver and then
+    // not at all.
+    run {
+        val strip = 900f
+        val target = 144f   // 48 dp at 3x
+        val bar = 72f       // 24 dp at 3x
+        // Every width of keep, including the ones that used to overlap.
+        for (keepPx in 0..900 step 3) {
+            val startX = ((strip - keepPx) / 2f).coerceAtLeast(0f)
+            val endX = startX + keepPx
+            val (s, e) = TrimRules.handleBoxes(startX, endX, strip, target, bar)
+            check(s.x + s.width <= e.x + 0.01f, "keep ${keepPx}px: the targets overlap, ${s.x}..${s.x + s.width} and ${e.x}..${e.x + e.width}")
+            check(s.width >= bar - 0.01f && e.width >= bar - 0.01f, "keep ${keepPx}px: a target is ${s.width} wide, under the bar")
+            check(s.width <= target + 0.01f && e.width <= target + 0.01f, "keep ${keepPx}px: a target is ${s.width} wide, over the 48 dp")
+            check(s.x >= -0.01f && e.x + e.width <= strip + 0.01f, "keep ${keepPx}px: a target is off the strip")
+            check(s.barX >= -0.01f && s.barX + bar <= s.width + 0.01f, "keep ${keepPx}px: the start bar is outside its target")
+            check(e.barX >= -0.01f && e.barX + bar <= e.width + 0.01f, "keep ${keepPx}px: the end bar is outside its target")
+        }
+        // On a comfortable keep each bar is exactly on its trim point and each
+        // target is the full 48 dp, reaching inward from the bar.
+        val (ws, we) = TrimRules.handleBoxes(100f, 700f, strip, target, bar)
+        check(ws.x == 100f && ws.barX == 0f, "a wide keep put the start target at ${ws.x} with its bar at ${ws.barX}")
+        check(we.x + we.width == 700f && we.barX + bar == we.width, "a wide keep put the end bar at ${we.barX} in a ${we.width} target")
+        check(ws.width == target && we.width == target, "a wide keep did not give both handles the full target")
+        // On a keep too narrow for both they straddle its middle, which is the
+        // whole point: the room is on the dimmed stretches either side.
+        val (ns, ne) = TrimRules.handleBoxes(440f, 460f, strip, target, bar)
+        check(ns.x + ns.width <= ne.x + 0.01f, "a 20px keep overlapped")
+        check(ns.x < 440f && ne.x + ne.width > 460f, "a 20px keep kept both targets inside it")
+        check(ns.x + ns.width == 450f && ne.x == 450f, "a 20px keep did not meet at the middle: ${ns.x + ns.width} and ${ne.x}")
+        // A keep at the strip's own edge stays on the strip.
+        val (es, ee) = TrimRules.handleBoxes(0f, 10f, strip, target, bar)
+        check(es.x >= 0f && ee.x + ee.width <= strip, "a keep at the edge put a target off the strip")
+        check(es.x + es.width <= ee.x + 0.01f, "a keep at the edge overlapped")
+    }
+
     if (problems.isEmpty()) {
         println("TrimRulesChecks: all checks passed")
     } else {
