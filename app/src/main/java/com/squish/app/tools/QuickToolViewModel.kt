@@ -700,6 +700,24 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             return
         }
 
+        // Every file in the list, not the ones that survived the filter in
+        // [editorStateOf]. A clip that no longer reads probes to no length and
+        // is kept in the list on purpose - the row says so - but it was filtered
+        // out of the state the preflight is handed, so the readability check
+        // never saw it: a merge whose middle file had been deleted from the
+        // gallery since it was picked rendered the other two and said "Saved to
+        // your gallery" for a video a third shorter than the one on screen.
+        if (tool == QuickTool.Stitch) {
+            val gone = current.mergeClips.filter { it.sourceSpanMs <= 0L }
+            if (gone.isNotEmpty()) {
+                onError(
+                    if (gone.size == 1) "“${gone.first().label}” can't be read any more. Take it out of the list, or pick it again."
+                    else "${gone.size} of these clips can't be read any more. Take them out of the list, or pick them again."
+                )
+                return
+            }
+        }
+
         // The same checks the editor runs. They were never run here, so a merge
         // whose third file had been deleted since it was picked spent two minutes
         // encoding before finding out.
