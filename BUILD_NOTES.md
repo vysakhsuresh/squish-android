@@ -265,6 +265,29 @@ Media3 minor versions. If it will not resolve, delete the `getOverlaySettings`
 override entirely — captions then render centered instead of lower-third, which
 is cosmetic. Only `getText` is required.
 
+**Fifteen overlays to a pass, and that is not negotiable.**
+`OverlayShaderProgram` binds each overlay as a sampler and its constructor is
+
+```java
+checkArgument(overlays.size() <= MAX_OVERLAY_SAMPLERS,   // 15
+  "OverlayShaderProgram does not support more than 15 SDR overlays in the same instance.")
+```
+
+so one `OverlayEffect` holding sixteen fails the render at its first frame.
+`ExportPlan.overlayGroups(count)` chunks them and `compositionEffects` adds one
+`OverlayEffect` per chunk; the passes run in order and each pass draws its own
+list in order, which is what keeps the drawing order. The limit counts
+*samplers*, not moments, so two captions that never share a frame still take two
+of them — there is no cleverer packing than `ceil(n / 15)`.
+
+And **an overlay in an HDR graph is a different thing again**: `findHdrTypes`
+treats a `TextOverlay` as text and anything else that is a `BitmapOverlay` —
+which `SquishTextOverlay` is — as an Ultra HDR bitmap behind
+`checkState(SDK_INT >= 34)`. So Keep HDR with any caption on the edit fails
+outright below Android 14 and runs the gainmap path on a bitmap with no gainmap
+above it. `EditorUiState.canKeepHdr` is false when `textOverlays` is not empty,
+and the sheet reads the same answer the render does.
+
 ### 6. `SpeedChangeEffect` — `media/VideoProcessor.kt`
 
 Deprecated in 1.11.1 and still the thing that retimes the *picture* (the sound
@@ -401,10 +424,21 @@ because they do four things:
 
 They must stay identical: a placed Blur, a defocus on a shot and a defocus on an
 overlay are meant to look the same, on screen and in the file.
-`tools/jvm/ShaderUniformChecks.kt` holds them to one ring and names any copy that
-drifts. If the ring is ever changed — nine taps undersample at the reach a
-transition uses, which is the open question in `docs/DEVICE_FINDINGS.md` — it is
-changed in all four at once.
+`tools/jvm/ShaderUniformChecks.kt` holds every shader and its Kotlin to the same
+*uniforms*, which is a different question — it never looked at the loop, and
+`tools/check_shaders.py` does not either. So `tools/jvm/ControlChecks.kt` reads
+all four and holds that each takes a −1..1 box of nine taps, divides by nine,
+leaves early at the same `uBlur <= 0.0001`, and **clamps every tap into the
+frame** — at the tap in the three GLSL copies, inside `texel` in the AGSL one,
+each checked where it keeps it. That last one is why the check exists:
+`squish_fx_es2.glsl` did not clamp, so what a tap at the frame's edge returned
+was the sampler's wrap mode rather than the shader's own decision.
+
+If the ring is ever changed — nine taps undersample at the reach a transition
+uses, which is the open question in `docs/DEVICE_FINDINGS.md` — it is changed in
+all four at once, and `MAX_BLUR` is the library's own maximum (`0.012 × 1.75`,
+the Blur effect at full strength with its knob right over), so a Defocus join
+peaking at `BLUR_PEAK` sits well inside it.
 
 ## On-device speech recognition
 
