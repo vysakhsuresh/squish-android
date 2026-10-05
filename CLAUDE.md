@@ -1001,6 +1001,24 @@ should work through it and then delete what holds up.
   watch that a grade, mask, key or effect edit still reaches the picture at
   once, paused and playing, and that the loupe still lifts the key while it is
   up.
+- **Sweep four, over the export, media and data layers (5 October).** The three
+  sweeps before it went over what you can see; this one went under it, and
+  almost none of it shows as a wrong picture - it shows as a long export
+  failing where a short one did not, a file that is right but took twenty
+  minutes, a draft that quietly forgets. Eighteen distinct faults, all fixed
+  and all unseen; `docs/DEVICE_FINDINGS.md`'s last section lists them and ends
+  with the seven things a device has to answer, in the order they would show.
+  The two biggest: **every exported file carried 400 KB of padding** from
+  Media3's streamable-moov reservation (`media/CompactMuxer.kt` turns it off
+  for the three places that mux in-app - check a short export is about a fifth
+  of what it was and still plays in the gallery, in WhatsApp and in a browser),
+  and **the last run of a reverse was fed to the end of the file**, so
+  reversing three seconds off the head of a twenty-minute recording decoded the
+  whole remaining twenty minutes (`media/ReverseRuns.kt` - check it finishes in
+  about a second and the reversed clip's *last* frames are there, which is what
+  the two-keyframe margin protects). Both arithmetics, and every other fix in
+  the sweep, are executed on the JVM and negative-tested against the old code;
+  eighty suites now.
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
   review of them.** Built on the desktop with no phone attached; each entry
   there under "Fixed (pending device check)" says what to do on the phone. The

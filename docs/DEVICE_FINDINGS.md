@@ -1455,3 +1455,130 @@ Every other `getOrPut` in the app stores something that cannot be null.
 None of this is visible on screen; it is memory and work. A device would
 show it as a long export failing on a mid-range phone where a short one did
 not.
+
+## Sweep four: the export, media and data layers (5 October)
+
+The three sweeps above all went over what you can see. This one went under it:
+twenty-seven hunts across nine groups of files - the export plan and the
+composition, the muxer and the encoder settings, the reverse and still
+renderers, the audio processors and the decoders, the trackers and the
+stabilizer, the drafts and the sidecars, the thumbnails and the caches - and
+three lenses: wrong arithmetic, state left behind, and the preview and the file
+disagreeing. Two adversarial refuters per candidate, both of which had to fail
+to refute. **Twenty-eight confirmed, about eighteen distinct after the
+duplicates were merged**, all fixed. None has been seen on a phone.
+
+What this layer hides, and the UI sweeps could not have found, is that almost
+none of it shows as a wrong picture. It shows as a long export failing where a
+short one did not, a file that is right but took twenty minutes, a draft that
+quietly forgets, a phone that stops handing out picker grants.
+
+The ones worth remembering:
+
+- **Every exported file carried 400 KB of padding.** Media3's in-app MP4 muxer
+  reserves `Mp4Writer.DEFAULT_MOOV_BOX_SIZE_BYTES` for a streamable moov and
+  leaves the slack as a `free` box when the real table is smaller, which it
+  almost always is. The tell was a 360p export coming out *larger* than a 716p
+  one. `media/CompactMuxer.kt` turns streamable output off for the three places
+  that mux in-app; a short clip is now a fifth of the size it was.
+
+- **An overlay's keyed filter strength read the wrong clock** - the same bug
+  fixed on the base track that morning, in the copy of the line that lives in
+  `CompositionFactory`, with the comment from before the fix still on it. On a
+  2x overlay the look reached its last key half way through and held; the shot
+  beside it on the base track with the same keys came out right.
+
+- **The camera's beat grid was stored in the file's time** while everything
+  that reads a grid reads timeline moments. Trim five seconds off the head
+  shot's head and every dot sat five seconds from the beat it was heard on, so
+  "Snap to the beat" snapped to silence.
+
+- **Track and Stabilize measured in the lead file's frame rate**, not the
+  clip's. On a 60 fps clip in a 30 fps project only the first half of the
+  window was read and every sample was stamped at twice its real moment, so a
+  pinned mask followed its subject at half speed and then held.
+
+- **The sync envelope's buckets were whole samples, not lengths of time**, so
+  two recordings decimated to different rates ran at different speeds and no
+  single lag lined them up: a true three-second offset came back as 3,060 ms.
+
+- **Three caches could not remember "nothing"** (`getOrPut` reads a stored null
+  as absent), the worst of them the export's blended stills - no cache at all,
+  one decode per shot the still covered, every copy held for the whole render.
+
+- **The last run of a reverse was fed to the end of the file.** Reversing the
+  first three seconds of a twenty-minute recording decoded the whole remaining
+  twenty minutes and discarded every frame, with the card parked on the sound's
+  share of the progress. The file came out right.
+
+- **A full phone was let through the space check.** `free in 1 until needed`
+  had a lower bound of 1 to let `freeBytes`'s -1 "could not measure" through,
+  and took 0 with it - and 0 is exactly what StatFs reports on a volume full
+  down to its root reserve. The render started and died in the muxer.
+
+- **A bin entry that aged out kept its read grants**, so a project binned and
+  left a month held its picker grant until uninstall, against the cap the
+  phone puts on those.
+
+- **"Earlier version" wiped the export badge for good**, because reverting
+  wrote a fresh sidecar without the export stamp and the next save read "no
+  export" from it.
+
+- **A panorama's cover decoded sixty-four times too big** - the sample size
+  solved against the shorter side - fourteen megabytes of ARGB_8888 for a
+  56 dp row, written to the thumbnail cache at that size.
+
+- **What was measured on the footage did not survive Reverse or Replace.** The
+  reframe path and the kept stabilizer measurement are both in the file's
+  clock, and both were carried through a reverse untouched while the keys
+  beside them were mirrored: auto-reframe panned against the picture, and one
+  nudge of the Strength slider re-solved from the old clock and wrote
+  un-mirrored keys over the mirrored ones. Replace left both on a clip whose
+  footage had just been swapped out.
+
+- **The stabilizer's zoom ignored its own turn.** `requiredCrop` measured the
+  translation while the same solve rotates the frame by up to 1.5°, so black
+  wedges ran along the edges with the card's crop reading lower than what was
+  applied. On gimbal footage - residual roll, no translation jitter - the crop
+  came out at exactly zero with half a degree still being applied.
+
+The rest: a Blank and a cancelled still render written straight to their final
+names, so a write that died part way left a truncated PNG that `exists()` was
+happy with; two size ladders that disagreed, one of them saying "1000 KB"; the
+export estimate leaving out the AAC track; a chosen rate above the source's
+being remembered as a default; `MusicSynth` effects ending on a click; a
+`PcmDecoder` that could not be cancelled; and a timecode formatted two
+different ways in two places.
+
+**Eight suites were written for this sweep**, most of them for pure functions
+that had never had one: `RunnerChecks`, `DraftKeyChecks`, `PrivacyChecks`,
+`ShaderUniformChecks`, `ProcessorChecks`, `SearchTermChecks`, `SrtChecks`,
+`EnvelopeChecks`, and then `ReverseRunChecks` and `SpaceCheckChecks` for the
+last two findings - which meant pulling the arithmetic out into
+`media/ReverseRuns.kt` and `media/SpaceCheck.kt`, since neither edge (a full
+volume, a file far longer than the window) can be arranged on a phone. Eighty
+suites now. Every fix in this sweep was negative-tested against the old code.
+
+### What a device still has to answer from this sweep
+
+Nothing here was seen. In rough order of what would show soonest:
+
+1. **The muxer.** Export the same short edit and check the file is about a
+   fifth of what it was, and that it still plays in the gallery, in WhatsApp
+   and in a browser (the slack was for streamable output; nothing here needs
+   it, but that is the thing being given up).
+2. **A reverse of a short window out of a long file.** Trim three seconds off
+   the head of a twenty-minute recording and Reverse: it should finish in
+   about a second, and the reversed clip's last frames must be there (the
+   two-keyframe margin is what protects them).
+3. **The beat grid after a head trim.** Find the beat on the camera sound,
+   trim five seconds off the head shot, and the dots must still be on the
+   music - and Cut on beats must land on it.
+4. **Track on a 60 fps clip in a 30 fps project**, and a Track aimed at the
+   clip's last frame (which used to throw and say nothing).
+5. **Auto-sync a 48 kHz camera track against a 44.1 kHz recording** with a
+   known offset, and check the lag it reports.
+6. **A stabilized shot reversed, then its Strength nudged** - it must not
+   start shaking - and a gimbal shot stabilized, whose edges must be clean.
+7. **A long export on this phone** (twenty-odd cuts over a light leak), for
+   the blended-still cache: it used to be the shape of an out-of-memory.
