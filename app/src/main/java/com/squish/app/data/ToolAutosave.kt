@@ -244,22 +244,52 @@ class ToolAutosave(context: Context) {
         null
     }
 
-    /** Everything in the bin, newest first, with anything past its month gone. */
+    /**
+     * Everything in the bin, newest first. Anything past its month is left out
+     * but *not* deleted here - see [expireOldTrash].
+     */
     fun trashed(): List<Pair<String, ToolDraft>> = synchronized(lock) {
         runCatching {
             val now = System.currentTimeMillis()
             val entries: Array<File> = trashDir.listFiles() ?: return@runCatching emptyList()
             entries.filter { it.isDirectory }.mapNotNull { entry ->
                 val (slot, at) = DraftHousekeeping.parseTrashName(entry.name) ?: return@mapNotNull null
-                if (DraftHousekeeping.isExpired(at, now)) {
-                    entry.deleteRecursively()
-                    return@mapNotNull null
-                }
+                if (DraftHousekeeping.isExpired(at, now)) return@mapNotNull null
                 val draft = read(File(entry, liveFile(slot).name), slot) ?: read(File(entry, backupFile(slot).name), slot)
                     ?: return@mapNotNull null
                 entry.name to draft
             }.sortedByDescending { (name, _) -> DraftHousekeeping.parseTrashName(name)?.second ?: 0L }
         }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Takes out every bin entry past its month, and says which files those
+     * entries named.
+     *
+     * Separate from [trashed] for the reason ProjectAutosave's own
+     * `expireOldTrash` is: a listing has no way to release a read grant. The
+     * expiry used to happen inside [trashed], so a binned Trim or Squeeze left
+     * to age out held its picker grant until the app was uninstalled - and the
+     * phone caps how many of those an app may keep. ProjectAutosave was given
+     * this treatment and this was not, although the confirmed Delete forever
+     * on the same list ([purge]) releases correctly.
+     */
+    fun expireOldTrash(): Set<String> = synchronized(lock) {
+        runCatching {
+            val now = System.currentTimeMillis()
+            val entries: Array<File> = trashDir.listFiles() ?: return@runCatching emptySet()
+            val released = HashSet<String>()
+            entries.filter { it.isDirectory }.forEach { entry ->
+                val (slot, at) = DraftHousekeeping.parseTrashName(entry.name) ?: return@forEach
+                if (!DraftHousekeeping.isExpired(at, now)) return@forEach
+                // Read before deleting: the files it named are inside it.
+                val draft = read(File(entry, liveFile(slot).name), slot)
+                    ?: read(File(entry, backupFile(slot).name), slot)
+                draft?.uris?.forEach { released += it.toString() }
+                entry.deleteRecursively()
+            }
+            released
+        }.getOrDefault(emptySet())
     }
 
     /**

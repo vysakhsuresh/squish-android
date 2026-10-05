@@ -76,7 +76,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 // be, the grants were simply held: a project binned and left to
                 // age out kept its picker grant until the app was uninstalled,
                 // and the phone caps how many of those an app may keep.
-                releaseUnnamed(autosave.expireOldTrash())
+                // Both bins: a quick tool's sessions have their own, and its
+                // expiry was still happening inside its listing, which can
+                // release nothing - so a binned Trim or Squeeze left to age out
+                // held its grant where a binned project no longer did.
+                releaseUnnamed(autosave.expireOldTrash() + toolAutosave.expireOldTrash())
                 val edits = autosave.drafts()
                 val tools = toolAutosave.drafts().mapNotNull { it.summary(withEarlier = true) }
                 val bin = autosave.trashed() + toolAutosave.trashed().mapNotNull { (trashId, draft) ->

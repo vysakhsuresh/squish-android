@@ -87,7 +87,15 @@ object OnlineMusic {
             val id = d.optString("identifier").takeIf { it.isNotBlank() } ?: return@mapNotNull null
             Track(
                 id = id,
-                title = d.optString("title").takeIf { it.isNotBlank() } ?: id,
+                // The same guard the artist beside it already has, and the one
+                // OnlineStock gives its title. An Archive item may carry
+                // several titles, and `optString` on Android answers
+                // `String.valueOf(value)` for anything that is not a String -
+                // so a multi-valued title became the literal JSON text
+                // `["A","B"]`, which is then starred, kept in the recents, and
+                // written onto the clip on the timeline.
+                title = d.opt("title")?.let { t -> if (t is org.json.JSONArray) t.optString(0) else t.toString() }
+                    ?.takeIf { it.isNotBlank() } ?: id,
                 artist = d.opt("creator")?.let { c -> if (c is org.json.JSONArray) c.optString(0) else c.toString() }?.takeIf { it.isNotBlank() },
                 licenseUrl = d.optString("licenseurl").takeIf { it.isNotBlank() }
             )

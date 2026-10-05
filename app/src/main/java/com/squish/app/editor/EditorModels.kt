@@ -745,8 +745,21 @@ data class EditorUiState(
      * recovery card alike.
      */
     val trimmedDurationMs: Long
-        get() = if (videoClips.isEmpty()) (trimEndMs - trimStartMs).coerceAtLeast(0)
-        else maxOf(videoClips.maxOf { it.timelineEndMs }, audioClips.maxOfOrNull { it.timelineEndMs } ?: 0L)
+        get() {
+            val laid = maxOf(
+                videoClips.maxOfOrNull { it.timelineEndMs } ?: 0L,
+                audioClips.maxOfOrNull { it.timelineEndMs } ?: 0L
+            )
+            // The source file's own window only when *nothing* has been laid
+            // down, which is what a project looks like before its clips are
+            // made. It used to be whenever there was no *picture*, so an edit
+            // whose shots had all been deleted - which is a supported state,
+            // and the one a sound-only edit is in - reported the length of the
+            // file it was opened on instead of its own. That number is the
+            // header, the export sheet, the file's length and the recovery
+            // card, and the drafts list writes it into the sidecar.
+            return if (laid > 0L) laid else (trimEndMs - trimStartMs).coerceAtLeast(0L)
+        }
 
     /** The full span the strip has to cover: the edit, and any line an old draft left past its end. */
     val timelineDurationMs: Long

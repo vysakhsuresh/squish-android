@@ -703,6 +703,60 @@ fun main() {
         )
     }
 
+    // ---- The edit's length is the edit's, not the file it was opened on. ---
+    //
+    // trimmedDurationMs is the header, the export sheet, the file's length and
+    // the recovery card, and the drafts list writes it into the sidecar. It
+    // fell back to the lead source file's own trim window whenever there was no
+    // *picture* - so an edit whose shots had all been deleted, which is a
+    // supported state and the one a sound-only edit is in, reported the length
+    // of the file it came from. The fallback is for a project with nothing laid
+    // down at all.
+    run {
+        val models = read("$SRC/editor/EditorModels.kt")
+        val getter = models.substringAfter("val trimmedDurationMs: Long", "").take(800)
+        check(getter.isNotEmpty(), "trimmedDurationMs has moved - this check has rotted")
+        check(
+            !getter.contains("if (videoClips.isEmpty())"),
+            "the edit's length falls back to the source file's window whenever there is no picture, so an " +
+                "edit of sounds alone reports the length of the clip it was opened on"
+        )
+        check(
+            getter.contains("audioClips.maxOfOrNull"),
+            "the edit's length no longer looks at the sounds before falling back"
+        )
+    }
+
+    // ---- A bin's expiry is not its listing. --------------------------------
+    //
+    // A listing has no way to release a read grant. ProjectAutosave learned
+    // that and split its expiry out into expireOldTrash; ToolAutosave kept
+    // deleting expired entries inside trashed(), so a binned Trim or Squeeze
+    // left to age out held its picker grant until the app was uninstalled -
+    // and the phone caps how many of those an app may keep. Both bins are
+    // expired by the caller now, and both hand back what they released.
+    run {
+        for (name in listOf("data/ProjectAutosave.kt", "data/ToolAutosave.kt")) {
+            val text = read("$SRC/$name")
+            if (text.isEmpty()) continue
+            check(
+                text.contains("fun expireOldTrash("),
+                "$name has no expireOldTrash, so whatever expires inside its listing releases nothing"
+            )
+            val listing = text.substringAfter("fun trashed(", "").take(1200)
+            check(listing.isNotEmpty(), "$name has no trashed() any more - this check has rotted")
+            check(
+                !listing.contains("deleteRecursively"),
+                "$name deletes inside its listing again: a listing cannot release the grants of what it removes"
+            )
+        }
+        val home = read("$SRC/home/HomeViewModel.kt")
+        check(
+            home.contains("toolAutosave.expireOldTrash()"),
+            "the dashboard expires the projects' bin and not the quick tools', so one of the two still leaks"
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
