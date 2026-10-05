@@ -245,6 +245,28 @@ fun main() {
         )
     }
 
+    // ---- One slider, so the dot cannot come back. --------------------------
+    run {
+        // Material 3 draws a stop indicator on the inactive track - a filled dot
+        // at the far end - which on the full-screen scrub bar reads as a marker
+        // sitting on the video. SquishSlider is the only place that calls
+        // Material's Slider, with the track drawn without it; a second call site
+        // would be a second slider that has the dot and nobody would look.
+        readAll("$SRC").forEach { (path, text) ->
+            if (path.endsWith("/ui/components/SquishSlider.kt")) return@forEach
+            check(
+                !Regex("""(?m)^\s*(Slider|RangeSlider)\(""").containsMatchIn(text),
+                "$path builds a Material slider of its own - every slider goes through SquishSlider, which " +
+                    "is where the stop-indicator dot is turned off"
+            )
+        }
+        val squish = read("$SRC/ui/components/SquishSlider.kt")
+        check(
+            squish.contains("drawStopIndicator = null"),
+            "SquishSlider no longer turns the stop indicator off, so every slider has a dot at its end again"
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
