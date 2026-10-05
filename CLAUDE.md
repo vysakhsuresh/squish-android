@@ -133,6 +133,14 @@ function first; if it can, it can be checked.
   --sampling 1000 com.squish.app /data/local/tmp/sq.trace`, act, `am profile
   stop com.squish.app`, pull it, and `tools/jvm/TraceTop.kt` lists the
   heaviest methods (`TraceTopKt sq.trace main 40 "~"` for the app's own).
+- **And nothing to *look* at a video with - no ffmpeg, no VLC, and Application
+  Control refuses any binary built on the spot.** `tools/desktop/` closes that
+  with three PowerShell scripts over Windows' own
+  `MediaComposition.GetThumbnailsAsync`: `frames.ps1` pulls frames at even
+  intervals as JPEGs, `contact_sheet.ps1` lays them in a grid, `crop.ps1` cuts a
+  region out of one. Nothing is installed and nothing is compiled; its README
+  has the calls. That is how the reel on 5 October was read frame by frame, and
+  it is the only way to see a pixel on this machine.
 - **No ffprobe here, but `tools/jvm/Mp4Probe.kt` answers what the device
   checks ask of a file** - each track's sample count, length, rate and the
   spread of its frame durations, from the MP4's own tables. Compile it alone

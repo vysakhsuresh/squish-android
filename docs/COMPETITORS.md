@@ -447,8 +447,10 @@ files on the desktop - frames pulled at a twentieth of a second through the
 joins - and it found two things the first pass took for the ones we already
 have. (There is no ffmpeg on this machine and Application Control refuses to
 run a binary built on the spot, so the frames came out of Windows' own
-`MediaComposition.GetThumbnailsAsync` through PowerShell; the script is in the
-session's scratch, not the repo.)
+`MediaComposition.GetThumbnailsAsync` through PowerShell. The scripts are in the
+repo, at `tools/desktop/` - `frames.ps1` for frames at even intervals,
+`contact_sheet.ps1` for a grid of them, `crop.ps1` to cut a region out of one -
+and its README says how to call them.)
 
 - **The white one is not our Flash.** At 0.0 s, 4.0 s, 10.0 s and 17.8 s the
   old shot does not disappear behind white: it *becomes* white, keeps its
