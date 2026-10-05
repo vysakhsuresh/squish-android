@@ -16,6 +16,7 @@ import com.squish.app.timeline.Keyframe
 import com.squish.app.timeline.KeyframeEasing
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.Mask
+import com.squish.app.timeline.MaskKey
 import com.squish.app.timeline.MaskShape
 import com.squish.app.timeline.SpeedPoint
 import com.squish.app.timeline.SpeedRamp
@@ -203,6 +204,57 @@ fun main() {
         check(back.uri == a.uri && back.sourceInMs == 2_000L && back.sourceOutMs == 10_000L && !back.isReversed, "unreverse: ${back.sourceInMs}..${back.sourceOutMs}")
         check(back.speedRamp.speedAt(8_000) == ramp.speedAt(8_000) && back.fadeInMs == 500L, "unreverse: curve or fades not put back")
         check(back.sourceDurationMs == a.sourceDurationMs, "unreverse: file length ${back.sourceDurationMs}")
+        // The stabilizer's measurement and a mask's track are written in the
+        // *file's* clock, and the render has reversed that clock, so both turn
+        // round with it. The curve and the fades above were asserted and these
+        // two were not, which is the half of a reverse that only shows as a
+        // shake correction fighting the picture or a cut-out walking away.
+        run {
+            // A window of 2,000..12,000 in the file, so the pivot a reverse
+            // mirrors about is 12,000. Keys at 2,000 and 6,000 therefore land
+            // at 10,000 and 6,000 - picked asymmetric on purpose, since a
+            // symmetric pair looks identical whether it was mirrored or not.
+            val steady = video("s", 10_000, srcIn = 2_000).copy(
+                stabilizer = listOf(
+                    Keyframe(2_000, Transform(offsetXFraction = 0.1f)),
+                    Keyframe(6_000, Transform(offsetXFraction = 0.4f))
+                ),
+                mask = Mask(
+                    keys = listOf(
+                        MaskKey(2_000, Mask(centerXFraction = -0.5f)),
+                        MaskKey(6_000, Mask(centerXFraction = 0.5f))
+                    ),
+                    track = MotionTrack(listOf(TrackSample(2_000, 0.1f, 0.5f), TrackSample(6_000, 0.9f, 0.5f)))
+                )
+            )
+            val r = steady.reversed(rendered, renderedMs = 10_000)
+            check(
+                r.stabilizer.map { it.atMs } == listOf(6_000L, 10_000L),
+                "reverse: the stabilizer's keys are at ${r.stabilizer.map { it.atMs }}, want 6000 and 10000"
+            )
+            check(
+                r.stabilizer.last().transform.offsetXFraction == 0.1f,
+                "reverse: the stabilizer's keys kept their order rather than their moments"
+            )
+            check(
+                r.mask?.keys?.map { it.atMs } == listOf(6_000L, 10_000L),
+                "reverse: the mask's keys are at ${r.mask?.keys?.map { it.atMs }}"
+            )
+            check(
+                r.mask?.track?.samples?.map { it.atMs } == listOf(6_000L, 10_000L),
+                "reverse: the mask's track is at ${r.mask?.track?.samples?.map { it.atMs }}"
+            )
+            // The thing it was following was on the left at the window's start,
+            // so on the render's last frame it is still on the left.
+            check(
+                r.mask?.track?.samples?.last()?.xFraction == 0.1f,
+                "reverse: the track's samples moved as well as their moments"
+            )
+            // And back again is where it began.
+            val again = r.unreversed()
+            check(again.stabilizer.map { it.atMs } == listOf(2_000L, 6_000L), "unreverse: the stabilizer is at ${again.stabilizer.map { it.atMs }}")
+            check(again.mask?.track?.samples?.map { it.atMs } == listOf(2_000L, 6_000L), "unreverse: the mask's track is at ${again.mask?.track?.samples?.map { it.atMs }}")
+        }
 
         // Trimmed while reversed: the original window is the frames still shown.
         val trimmed = rev.copy(sourceInMs = 1_000, sourceOutMs = 5_000)

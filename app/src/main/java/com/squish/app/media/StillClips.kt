@@ -291,13 +291,21 @@ object StillClips {
     suspend fun blank(context: Context, width: Int, height: Int): Uri? {
         val (w, h) = fit(width.takeIf { it > 0 } ?: 1080, height.takeIf { it > 0 } ?: 1920)
         val frame = File(dir(context), "blank_${w}x$h.png")
-        if (!frame.exists()) {
+        // Through a .part and trusted only when it has length, the way
+        // [clearFrame] below does it. Written straight to its final name, a
+        // write that died part way - a full disk, the process going - left a
+        // truncated PNG that `exists()` was happy with, so Blank was broken for
+        // that frame shape until someone cleared the app's stills by hand.
+        if (!frame.exists() || frame.length() == 0L) {
             val made = withContext(Dispatchers.IO) {
                 runCatching {
+                    val partial = File(frame.absolutePath + ".part")
                     val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLACK) }
-                    FileOutputStream(frame).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    FileOutputStream(partial).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                     bitmap.recycle()
-                }.isSuccess
+                    frame.delete()
+                    if (!partial.renameTo(frame)) error("could not keep $frame")
+                }.onFailure { File(frame.absolutePath + ".part").delete() }.isSuccess
             }
             if (!made) return null
         }

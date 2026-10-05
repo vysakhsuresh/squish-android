@@ -250,7 +250,21 @@ object CompositionFactory {
             // its own picture, before the fit, where the preview's layers cut it.
             // A keyed filter strength is read off the clock; everything else is fixed
             // when the chain is built, as it was.
-            if (clip.lookAnimated) addAll(ColorGrade.animated(clip::gradeAt)) else addAll(ColorGrade.effects(clip.grade))
+            //
+            // The clock here is the item's own *source* time from its in-point,
+            // because this sits before `addAll(speed)` below - while lookKeys,
+            // like every other ValueKey track, are in the clip's *played* time,
+            // which is what the preview reads them at. Through the curve, or on
+            // a retimed overlay the look ramped over the wrong stretch in the
+            // file and the right one on screen: at 2x it reached the last key
+            // half way through and held, at 0.5x it never reached it at all.
+            // The base-track copy of this line was fixed first and this one was
+            // left behind, with the comment from before the fix still on it.
+            if (clip.lookAnimated) {
+                addAll(ColorGrade.animated { itemMs -> clip.gradeAt(clip.playedAt(clip.sourceInMs + itemMs)) })
+            } else {
+                addAll(ColorGrade.effects(clip.grade))
+            }
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
             // Mirrored and turned as footage, before it is fitted: a turned
             // landscape layer is then fitted standing, as the preview lays its
