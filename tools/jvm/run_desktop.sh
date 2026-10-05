@@ -85,6 +85,7 @@ run lut "$SRC/media/effects/Lut.kt" tools/jvm/LutChecks.kt
 run safearea "$SRC/editor/SafeArea.kt" tools/jvm/SafeAreaChecks.kt
 run stillrules $TIMELINE "$SRC/editor/StillRules.kt" tools/jvm/StillRulesChecks.kt
 run picsample "$SRC/media/PictureSample.kt" tools/jvm/PictureSampleChecks.kt
+run stillprune "$SRC/media/StillPrune.kt" tools/jvm/StillPruneChecks.kt
 run timecode   $TIMELINE "$SRC/editor/Timecode.kt" tools/jvm/TimecodeChecks.kt
 run framerules $TIMELINE "$SRC/editor/PreviewBox.kt" "$SRC/media/ExportPresets.kt" tools/jvm/stub/Quality.kt \
                "$SRC/editor/FrameRules.kt" tools/jvm/FrameRulesChecks.kt
@@ -105,7 +106,7 @@ run wheels     "$SRC/media/effects/ColorWheels.kt" tools/jvm/WheelChecks.kt
 run cutsounds  $TIMELINE "$SRC/timeline/CutSounds.kt" tools/jvm/CutSoundChecks.kt
 run controls   tools/jvm/ControlChecks.kt
 run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScreen.kt" tools/jvm/SplitScreenChecks.kt
-run gif        "$SRC/media/gif/GifEncoder.kt" tools/jvm/GifChecks.kt
+run gif        "$SRC/media/gif/GifEncoder.kt" "$SRC/media/gif/GifSize.kt" tools/jvm/GifChecks.kt
 run autoadjust "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/ColorWheels.kt" "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
 run translatechunks "$SRC/online/OnlineTranslate.kt" tools/jvm/stub/translate/OnlineStub.kt tools/jvm/stub/translate/ContextStub.kt tools/jvm/stub/translate/JsonStub.kt tools/jvm/TranslateChunkChecks.kt
 # These four were in run.sh and not here, so the desktop - the only machine that

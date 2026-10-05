@@ -60,6 +60,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -134,6 +135,13 @@ class VideoProcessor(private val context: Context) {
         }
 
         var result: Result<File>? = null
+        // Nothing prunes the backdrop stills until this render is done with
+        // them. The plan below names each one as a file and the Transformer
+        // opens it minutes later; the prune that runs after every write used to
+        // take the earliest of them away mid-render once the folder passed its
+        // cap, which made the cap a ceiling on how many shots a blurred canvas
+        // could export.
+        CanvasBackdrop.holdStills()
         try {
             // The transparent still that fills a layer's empty stretches, written
             // once and kept. Only a composited export needs it.
@@ -156,6 +164,11 @@ class VideoProcessor(private val context: Context) {
             outcome
         } finally {
             poll.cancel()
+            // NonCancellable: a cancelled render reaches here too, and the hold
+            // has to come off or nothing is ever pruned again.
+            withContext(NonCancellable + Dispatchers.IO) {
+                runCatching { CanvasBackdrop.releaseStills(context) }
+            }
             // A file that did not finish is not an export. Left behind, a
             // cancelled or failed render sat in exports/ as a broken MP4 nobody
             // could see or remove - and each one cost what a finished export

@@ -22,7 +22,7 @@ import java.io.File
 object GifMaker {
 
     const val FPS = 12
-    const val WIDTH = 480
+    const val WIDTH = GifSize.MAX_WIDTH
     const val MAX_SECONDS = 8
 
     /** The GIF's gallery URI, or null when the video could not be read or the gallery refused it. [progress] runs 0..1. */
@@ -32,10 +32,33 @@ object GifMaker {
         try {
             retriever.setDataSource(context, video)
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: return@withContext null
-            val probe = retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: return@withContext null
-            val w = WIDTH.coerceAtMost(probe.width).let { it - it % 2 }
-            val h = (w.toLong() * probe.height / probe.width).toInt().coerceAtLeast(2).let { it - it % 2 }
-            probe.recycle()
+            // The shape from the header, which costs no pixels. This used to
+            // decode frame zero at full size to read two numbers - 33 MB as a
+            // single ARGB_8888 bitmap for a 4K edit, which is the large-video
+            // crash three other comments in this repo name, and it runs in
+            // GifJobs' own scope so it can land while the editor's preview
+            // players are still up. Through ThumbnailExtractor.probe rather
+            // than this retriever's own metadata, because whether
+            // METADATA_KEY_VIDEO_WIDTH is the coded width or the displayed one
+            // has varied by device and by version; the probe settles it off
+            // the track format and hands back the turned shape.
+            val meta = com.squish.app.media.ThumbnailExtractor.probe(context, video)
+            val sourceW: Int
+            val sourceH: Int
+            if (meta.displayWidth > 0 && meta.displayHeight > 0) {
+                sourceW = meta.displayWidth
+                sourceH = meta.displayHeight
+            } else {
+                // Nothing in the header: one frame, scaled on the way out so
+                // the fallback cannot be the thing that runs out of memory.
+                val probe = retriever.getScaledFrameAtTime(
+                    0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, WIDTH, WIDTH
+                ) ?: return@withContext null
+                sourceW = probe.width
+                sourceH = probe.height
+                probe.recycle()
+            }
+            val (w, h) = GifSize.of(sourceW, sourceH) ?: return@withContext null
             val spanMs = minOf(durationMs, MAX_SECONDS * 1000L)
             val frames = (spanMs * FPS / 1000).toInt().coerceAtLeast(1)
             val pixels = IntArray(w * h)

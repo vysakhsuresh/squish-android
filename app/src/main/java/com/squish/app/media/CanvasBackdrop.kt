@@ -147,31 +147,59 @@ object CanvasBackdrop {
     }
 
     /**
+     * Nothing is let go of while a hold is open.
+     *
+     * The export takes one round the whole of building its plan and running
+     * the encode. Pruning used to run after every write, including the writes
+     * the export itself was making, so an export of a padded canvas with more
+     * than [BLUR_KEEP] stretches deleted the earliest of its own backdrops out
+     * from under its own plan: VideoProcessor.backdropClips names each file in
+     * a Clip and the Transformer opens it minutes later. The defence was a
+     * sixty-second grace on the file's age, and a wall clock does not protect a
+     * still made for the same export a minute earlier, nor one the preview made
+     * while scrubbing before the export began - so the cap was a silent ceiling
+     * on how many shots a blurred canvas could export.
+     *
+     * Counted, because a proxy render and an export can be in flight together.
+     */
+    private val holds = java.util.concurrent.atomic.AtomicInteger(0)
+
+    fun holdStills() {
+        holds.incrementAndGet()
+    }
+
+    /** Blocking: it lists and deletes. Call it off the main thread. */
+    fun releaseStills(context: Context) {
+        if (holds.decrementAndGet() > 0) return
+        holds.set(0)
+        prune(context, keep = null)
+    }
+
+    /**
      * Keeps the blurred stills to a few dozen. Every one can be made again
      * from the footage, and a session of trimming and reordering would
      * otherwise leave a file for every moment ever asked about, none of them
-     * ever removed. The newest stay, [keep] among them, and nothing younger
-     * than a minute goes: a still just made for an export is read by the
-     * encoder a moment later.
+     * ever removed. The newest stay, [keep] among them.
      */
-    private fun prune(context: Context, keep: File) {
+    private fun prune(context: Context, keep: File?) {
         // Both kinds. It read `blur_` alone, so the backdrops made from a
         // *chosen picture* - one per picture and frame shape, several megabytes
         // each - were never taken off: they were counted by Settings' "Photos
         // and freezes" row and swept by nothing, so the number could not be
         // cleared and grew with every Background picked.
-        prune(dir(context).listFiles { f -> f.name.startsWith("blur_") && f != keep }, BLUR_KEEP)
-        prune(dir(context).listFiles { f -> f.name.startsWith("image_") && f != keep }, IMAGE_KEEP)
+        prune(dir(context).listFiles { f -> f.name.startsWith("blur_") }, BLUR_KEEP, keep)
+        prune(dir(context).listFiles { f -> f.name.startsWith("image_") }, IMAGE_KEEP, keep)
     }
 
-    private fun prune(found: Array<File>?, keep: Int) {
+    private fun prune(found: Array<File>?, keep: Int, keeping: File?) {
         val stills = found ?: return
-        if (stills.size <= keep) return
-        val now = System.currentTimeMillis()
-        stills.sortedBy { it.lastModified() }
-            .take(stills.size - keep)
-            .filter { now - it.lastModified() > PRUNE_GRACE_MS }
-            .forEach { runCatching { it.delete() } }
+        val victims = StillPrune.victims(
+            stills = stills.map { it.name to it.lastModified() },
+            keep = keep,
+            held = holds.get() > 0,
+            keeping = keeping?.name
+        ).toSet()
+        stills.filter { it.name in victims }.forEach { runCatching { it.delete() } }
     }
 
     /** A frame of [aspect] with its long side [longSide], both sides even as encoders require. */
@@ -202,6 +230,4 @@ object CanvasBackdrop {
      * ever wanted: one per picture per frame shape.
      */
     private const val IMAGE_KEEP = 12
-
-    private const val PRUNE_GRACE_MS = 60_000L
 }
