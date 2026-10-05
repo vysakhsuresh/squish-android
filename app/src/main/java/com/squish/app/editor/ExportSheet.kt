@@ -195,6 +195,8 @@ fun ExportSheet(
                     OvershootCard(
                         actualBytes = missed.actualBytes,
                         targetBytes = missed.targetBytes,
+                        unreachable = state.fitUnreachable,
+                        smallestBytes = state.smallestFittedBytes,
                         onKeep = { viewModel.keepOversize(onExported) },
                         onRetry = { viewModel.retryFit(onExported) }
                     )
@@ -230,7 +232,17 @@ fun ExportSheet(
                         // .m4a, whose sound is at one fixed rate.
                         SwitchRow(
                             title = "Fit to a size",
-                            subtitle = "For a strict upload limit. The size and the bitrate are chosen to land under it.",
+                            // Said here rather than discovered after the render:
+                            // under the smallest bitrate anything is written
+                            // at, the limit cannot be met at all, and that is
+                            // every edit over about five minutes at 16 MB.
+                            subtitle = if (state.fitUnreachable) {
+                                "This edit is too long for ${state.targetSizeMb} MB - the smallest it can " +
+                                    "be made is about ${formatSize(state.smallestFittedBytes)}. " +
+                                    "Trim it, or pick a larger size."
+                            } else {
+                                "For a strict upload limit. The size and the bitrate are chosen to land under it."
+                            },
                             checked = state.fitToSize,
                             onCheckedChange = viewModel::setFitToSize
                         )
@@ -504,7 +516,14 @@ private fun SwitchRow(
  * the question is whether to keep it as it is or run once more, aimed lower.
  */
 @Composable
-private fun OvershootCard(actualBytes: Long, targetBytes: Long, onKeep: () -> Unit, onRetry: () -> Unit) {
+private fun OvershootCard(
+    actualBytes: Long,
+    targetBytes: Long,
+    unreachable: Boolean,
+    smallestBytes: Long,
+    onKeep: () -> Unit,
+    onRetry: () -> Unit
+) {
     SquishCard(accent = SquishColors.Amber) {
         Text(
             "Came out at ${formatSize(actualBytes)} - over the ${formatSize(targetBytes)} limit",
@@ -512,17 +531,29 @@ private fun OvershootCard(actualBytes: Long, targetBytes: Long, onKeep: () -> Un
             color = SquishColors.TextPrimary
         )
         Text(
-            "Encoders overshoot on busy footage. This file is saved in your gallery as it is. " +
-                "A second run aims lower and should land under the limit.",
+            // No retry where a retry cannot work. Below the smallest bitrate
+            // anything is written at, every run lands on the same size, and
+            // each one published another copy to the gallery and showed this
+            // card again.
+            if (unreachable) {
+                "This edit is too long to be made that small - about ${formatSize(smallestBytes)} is the " +
+                    "least it can be. The file is saved in your gallery as it is; to go smaller, trim the " +
+                    "edit or pick a larger size."
+            } else {
+                "Encoders overshoot on busy footage. This file is saved in your gallery as it is. " +
+                    "A second run aims lower and should land under the limit."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextSecondary
         )
         // Stacked: side by side at half width "Try again, tighter" was cut short.
-        SquishPrimaryButton(
-            text = "Try again, tighter",
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onRetry
-        )
+        if (!unreachable) {
+            SquishPrimaryButton(
+                text = "Try again, tighter",
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onRetry
+            )
+        }
         SquishOutlinedButton(
             text = "Keep this one",
             modifier = Modifier.fillMaxWidth(),

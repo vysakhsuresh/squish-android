@@ -1164,9 +1164,37 @@ data class EditorUiState(
             // Always: the file gets a 128 kbps AAC track whether anything is
             // heard in it or not (see estimatedExportBytes), and a target that
             // did not set those bits aside overshot by them.
-            val budget = ExportPresets.bitrateForTargetSize(targetSizeMb * 1_000_000L, trimmedDurationMs, includeAudio = true)
+            //
+            // Scaled off the *unfloored* solve. Scaling the floored one meant
+            // that once the floor bit, the retry scale was arithmetically
+            // discarded: "Try again, tighter" re-rendered at a byte-identical
+            // bitrate, published another copy to the gallery, added another
+            // library row and showed the same card. It is still floored here -
+            // nothing is written under it - so a fit that cannot be met is
+            // answered by [fitUnreachable] rather than by a retry that cannot
+            // help.
+            val budget = ExportPresets.solvedBitrateForTargetSize(
+                targetSizeMb * 1_000_000L, trimmedDurationMs, includeAudio = true
+            )
             return (budget * fitScale).toInt().coerceAtLeast(ExportPresets.MIN_VIDEO_BPS)
         }
+
+    /**
+     * Whether the size this export is fitted to can be met at all.
+     *
+     * Below the smallest bitrate anything is written at it cannot, and no
+     * amount of aiming lower changes that: a ten-minute edit fitted to 16 MB
+     * lands at about 32 MB on every run. The sheet says so under the chip, and
+     * the overshoot card drops its retry.
+     */
+    val fitUnreachable: Boolean
+        get() = fitToSize && !ExportPresets.fitReachable(
+            targetSizeMb * 1_000_000L, trimmedDurationMs, includeAudio = true
+        )
+
+    /** The smallest this edit can be fitted to, for saying so when the target is under it. */
+    val smallestFittedBytes: Long
+        get() = ExportPresets.smallestFittedBytes(trimmedDurationMs, includeAudio = true)
 
     /** The rate the file is written at: the choice on the sheet, or the footage's own. */
     val exportFps: Float get() = ExportSettings.effectiveFps(outputFps, fps)

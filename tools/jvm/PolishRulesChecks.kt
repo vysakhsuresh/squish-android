@@ -160,6 +160,30 @@ fun main() {
         }
     }
 
+    // ---- The strip and the Speed sheet print one rate the same way. --------
+    //
+    // The badge on a retimed clip used PolishRules.number (two decimals) where
+    // every other place in the app uses rateLabel (one above 1x, whose own doc
+    // says it is "a rate as the Speed sheet prints it everywhere"). The slider
+    // rounds to two decimals below 10x, so two-decimal rates are the ordinary
+    // case: a shot dragged to 1.25x wore "1.25x" on the strip and said "1.3x"
+    // the moment the sheet was opened. They agree below 1x, which is what made
+    // it read as working.
+    // Which of the two is used where is a source assertion, in
+    // tools/jvm/ControlChecks.kt - nothing executable can see what a composable
+    // passes. What is executable is that the two really do differ above 1x, so
+    // that assertion is about something.
+    run {
+        val differ = listOf(1.07f, 1.25f, 1.37f, 2.63f, 3.14f).filter {
+            PolishRules.number(it) + "x" != PolishRules.rateLabel(it)
+        }
+        check(differ.size == 5, "number and rateLabel agree on $differ, so using the wrong one would be invisible")
+        check(PolishRules.rateLabel(1.25f) == "1.3x", "1.25x reads \"${PolishRules.rateLabel(1.25f)}\"")
+        check(PolishRules.rateLabel(3.14f) == "3.1x", "3.14x reads \"${PolishRules.rateLabel(3.14f)}\"")
+        check(PolishRules.rateLabel(0.78f) == "0.78x", "0.78x reads \"${PolishRules.rateLabel(0.78f)}\"")
+        check(PolishRules.rateLabel(2f) == "2x", "a whole rate carries a decimal")
+    }
+
     if (problems.isEmpty()) {
         println("PolishRulesChecks: all checks passed")
     } else {

@@ -1178,8 +1178,21 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Runs the fitted export again at the tightened budget (see [FitOvershoot]); the oversize file stays in the library. */
     fun retryFit(onResult: (String) -> Unit) {
+        // Held, not dropped. export() has five refusals that set `failure` and
+        // come back without starting a render - the likeliest being the space
+        // check, which the first run's own gallery copy has just made more
+        // likely - and with the card already cleared, the oversize file that is
+        // in the gallery and in history could never reach the done screen and
+        // "Keep this one" could not be reached at all: the sheet fell back to
+        // its settings rows with no mention of the file that had been written.
+        // Every refusal is before the render starts, so the card goes back up.
+        val held = _state.value.fitOvershoot
         _state.update { it.copy(fitOvershoot = null) }
         export(onResult, tightened = true)
+        val after = _state.value
+        if (held != null && !after.isExporting && after.fitOvershoot == null) {
+            _state.update { it.copy(fitOvershoot = held) }
+        }
     }
 
     /**

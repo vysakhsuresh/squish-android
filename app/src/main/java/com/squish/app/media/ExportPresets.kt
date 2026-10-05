@@ -188,13 +188,52 @@ object ExportPresets {
             .toLong().coerceIn(MIN_VIDEO_BPS.toLong(), MAX_VIDEO_BPS.toLong()).toInt()
     }
 
-    fun bitrateForTargetSize(targetSizeBytes: Long, durationMs: Long, includeAudio: Boolean): Int {
+    /**
+     * The video bitrate a target size asks for, *before* the floor below which
+     * nothing is written - so a caller can tell whether the fit is reachable at
+     * all. It is not when this comes out under [MIN_VIDEO_BPS]: the file lands
+     * over the limit however the budget is scaled, because the scaled number
+     * is clamped straight back up to the floor. At 16 MB that is every edit
+     * longer than about five minutes, and at the Email preset's 10 MB every
+     * edit longer than three.
+     *
+     * May be zero or negative: a target too small even for the sound track
+     * cannot be met by any picture at all.
+     */
+    fun solvedBitrateForTargetSize(targetSizeBytes: Long, durationMs: Long, includeAudio: Boolean): Int {
         val durationSec = (durationMs / 1000.0).coerceAtLeast(1.0)
         val audioBits = if (includeAudio) AUDIO_BITRATE_BPS * durationSec else 0.0
-        val totalBits = targetSizeBytes * 8.0
-        val videoBits = (totalBits - audioBits).coerceAtLeast(200_000.0)
-        return (videoBits / durationSec).toInt().coerceIn(300_000, 20_000_000)
+        val videoBits = targetSizeBytes * 8.0 - audioBits
+        return (videoBits / durationSec).coerceIn(-1e9, MAX_FIT_VIDEO_BPS.toDouble()).toInt()
     }
+
+    /** Whether a fit to [targetSizeBytes] over [durationMs] can be met at all. */
+    fun fitReachable(targetSizeBytes: Long, durationMs: Long, includeAudio: Boolean): Boolean =
+        solvedBitrateForTargetSize(targetSizeBytes, durationMs, includeAudio) >= MIN_VIDEO_BPS
+
+    /**
+     * The smallest a fit can come out at over [durationMs]: the floor's own
+     * bitrate plus the sound track, which is what the file lands at when the
+     * target cannot be met. For telling the user the number rather than
+     * letting them discover it after the render.
+     */
+    fun smallestFittedBytes(durationMs: Long, includeAudio: Boolean): Long {
+        val durationSec = (durationMs / 1000.0).coerceAtLeast(1.0)
+        val audio = if (includeAudio) AUDIO_BITRATE_BPS.toDouble() else 0.0
+        return ((MIN_VIDEO_BPS + audio) * durationSec / 8.0).toLong()
+    }
+
+    fun bitrateForTargetSize(targetSizeBytes: Long, durationMs: Long, includeAudio: Boolean): Int =
+        solvedBitrateForTargetSize(targetSizeBytes, durationMs, includeAudio)
+            .coerceIn(MIN_VIDEO_BPS, MAX_FIT_VIDEO_BPS)
+
+    /**
+     * The most a fit will ask for. Lower than [MAX_VIDEO_BPS], which is the
+     * encoder's ceiling: a fit is for an upload limit, and spending eighty
+     * megabits on a three-second clip to use up a 100 MB budget is not what
+     * anybody means by it.
+     */
+    const val MAX_FIT_VIDEO_BPS = 20_000_000
 
     /**
      * The size a fitted export is written at: the largest named size, no bigger

@@ -830,6 +830,27 @@ fun main() {
         )
     }
 
+    // ---- One rate is printed one way, wherever it is printed. --------------
+    //
+    // PolishRules.rateLabel's own doc says it is "a rate as the Speed sheet
+    // prints it everywhere", and the strip's badge on a retimed clip used
+    // PolishRules.number instead - two decimals where the sheet gives one above
+    // 1x. The slider rounds to two decimals below 10x, so two-decimal rates are
+    // the ordinary case: a shot dragged to 1.25x wore "1.25x" on the strip and
+    // said "1.3x" the moment the sheet was opened. They agree below 1x, which
+    // is what made it read as working. (The locale fix that put `number` on
+    // that line picked the lower-level formatter; both are locale-safe, and
+    // rateLabel is the shared one.)
+    run {
+        val editor = read("$SRC/timeline/TimelineEditor.kt")
+        check(
+            Regex("""isRamped\) "ramp"\s*\n\s*else com\.squish\.app\.editor\.PolishRules\.rateLabel\(""")
+                .containsMatchIn(editor),
+            "the strip's speed badge does not print its rate with PolishRules.rateLabel - the Speed sheet " +
+                "does, everywhere, and `number` gives a second decimal the sheet does not"
+        )
+    }
+
     // ---- A picture is written through a .part and renamed. -----------------
     //
     // Every picture writer in the app does this and one did not. Written

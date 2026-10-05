@@ -153,6 +153,80 @@ fun main() {
     check("the scale never rises above the first run", ExportSettings.retryScale(1f, 8 * MB, 16 * MB) <= 1f)
     check("no file size leaves the scale alone", ExportSettings.retryScale(0.9f, 0L, 16 * MB) == 0.9f)
 
+    // ---- A retry has to change the bitrate the run is given ---------------------
+    //
+    // The suite used to test retryScale's *scale* and the size it solves, each in
+    // isolation, and never the composition of the two through the floor - which is
+    // where the fault was. bitrateForTargetSize floors its answer at
+    // MIN_VIDEO_BPS, and EditorUiState.fitVideoBitrate then multiplied *that* by
+    // the retry scale and floored it again, so once the floor bit the scale was
+    // arithmetically discarded: every "Try again, tighter" re-rendered at a
+    // byte-identical bitrate, published another copy to the gallery, added
+    // another library row, and showed the same card. At 16 MB the floor bites
+    // for every edit over about five minutes.
+    run {
+        // fitVideoBitrate's own arithmetic, as EditorUiState does it.
+        fun given(targetMb: Int, durationMs: Long, scale: Float): Int {
+            val solved = ExportPresets.solvedBitrateForTargetSize(targetMb * MB, durationMs, includeAudio = true)
+            return (solved * scale).toInt().coerceAtLeast(ExportPresets.MIN_VIDEO_BPS)
+        }
+        // A one-minute edit at 16 MB: well above the floor, and a retry bites.
+        val first = given(16, 60_000L, 1f)
+        val second = given(16, 60_000L, ExportSettings.retryScale(1f, 20 * MB, 16 * MB))
+        check("a one-minute fit is above the floor ($first)", first > ExportPresets.MIN_VIDEO_BPS)
+        check("the retry lowered the bitrate ($second < $first)", second < first)
+
+        // A ten-minute edit at 16 MB: the fit cannot be met, and the state says so
+        // rather than offering a retry that re-renders the same file.
+        check(
+            "a ten-minute fit to 16 MB is reported unreachable",
+            !ExportPresets.fitReachable(16 * MB, 600_000L, includeAudio = true)
+        )
+        check(
+            "a one-minute fit to 16 MB is reported reachable",
+            ExportPresets.fitReachable(16 * MB, 60_000L, includeAudio = true)
+        )
+        // The threshold is where the floor plus the sound track fills the target:
+        // 128,000,000 / (300,000 + 131,072) = 296.9 s at 16 MB.
+        check(
+            "the 16 MB threshold is just under five minutes",
+            ExportPresets.fitReachable(16 * MB, 296_000L, includeAudio = true) &&
+                !ExportPresets.fitReachable(16 * MB, 298_000L, includeAudio = true)
+        )
+        check(
+            "the 10 MB threshold is just over three minutes",
+            ExportPresets.fitReachable(10 * MB, 184_000L, includeAudio = true) &&
+                !ExportPresets.fitReachable(10 * MB, 187_000L, includeAudio = true)
+        )
+        // And the number the sheet offers instead is the one the file lands at.
+        val smallest = ExportPresets.smallestFittedBytes(600_000L, includeAudio = true)
+        check("the smallest a ten-minute edit fits to is about 32 MB ($smallest)", smallest in 32_000_000L..32_700_000L)
+        check(
+            "the smallest is what the floored bitrate writes",
+            smallest == ((ExportPresets.MIN_VIDEO_BPS + ExportPresets.AUDIO_BITRATE_BPS) * 600L / 8L)
+        )
+        // A target under the sound track alone is unreachable too, not a crash.
+        check(
+            "a target smaller than its own sound track is unreachable",
+            !ExportPresets.fitReachable(1 * MB, 600_000L, includeAudio = true)
+        )
+        check("and it does not throw", ExportPresets.bitrateForTargetSize(1 * MB, 600_000L, true) == ExportPresets.MIN_VIDEO_BPS)
+        // The floored answer is unchanged for everything that worked: a fit that
+        // is reachable gives exactly the bitrate it always gave.
+        listOf(16 to 60_000L, 25 to 60_000L, 50 to 120_000L, 100 to 60_000L).forEach { (mb, ms) ->
+            val floored = ExportPresets.bitrateForTargetSize(mb * MB, ms, includeAudio = true)
+            val solved = ExportPresets.solvedBitrateForTargetSize(mb * MB, ms, includeAudio = true)
+            check("$mb MB over ${ms}ms: the floored and solved answers agree ($floored vs $solved)", floored == solved)
+            check("$mb MB over ${ms}ms is inside the ceiling", floored <= ExportPresets.MAX_FIT_VIDEO_BPS)
+        }
+        // A tiny edit is still capped: a three-second clip fitted to 100 MB does
+        // not ask for the encoder's whole ceiling.
+        check(
+            "a short edit's fit is capped",
+            ExportPresets.bitrateForTargetSize(100 * MB, 3_000L, includeAudio = true) == ExportPresets.MAX_FIT_VIDEO_BPS
+        )
+    }
+
     if (failures.isEmpty()) {
         println("PASS - the export sheet's arithmetic holds: rates, quality, the ceiling, defaults, the fit and the retry")
     } else {

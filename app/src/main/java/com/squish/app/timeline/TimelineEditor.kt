@@ -2200,8 +2200,15 @@ private fun ClipView(
                     .padding(horizontal = 4.dp, vertical = 1.dp)
             ) {
                 Text(
+                    // rateLabel, which is how the Speed sheet prints a rate
+                    // everywhere - the readout, the preset chips, the curve
+                    // hint. Printing it with `number` instead gave two decimals
+                    // where the sheet gives one above 1x, so a shot dragged to
+                    // 1.25x wore "1.25x" on the strip and said "1.3x" the
+                    // moment the sheet was opened. (They agree below 1x, which
+                    // is what made it read as working.)
                     text = if (clip.speedRamp.isRamped) "ramp"
-                    else "${com.squish.app.editor.PolishRules.number(clip.speedRamp.flatSpeed)}x",
+                    else com.squish.app.editor.PolishRules.rateLabel(clip.speedRamp.flatSpeed),
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.Cyan,
                     maxLines = 1,
