@@ -64,9 +64,18 @@
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="video/*" />
+                <!-- The two schemes spelled out. A data element with only a
+                     mimeType already matches content: and file: and nothing
+                     else, so this changes no matching - it says so, which is
+                     what lint's AppLinkUrlError was asking for, and it makes
+                     plain that a remote video URL was never something this
+                     filter offered to open. -->
+                <data android:scheme="content" android:mimeType="video/*" />
+                <data android:scheme="file" android:mimeType="video/*" />
             </intent-filter>
             <intent-filter>
+                <!-- No scheme here, and none wanted: a SEND carries its URI in
+                     an extra and is matched on the MIME type alone. -->
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="video/*" />

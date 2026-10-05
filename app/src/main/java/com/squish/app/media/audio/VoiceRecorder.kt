@@ -54,8 +54,19 @@ class VoiceRecorder {
     private var suppressor: NoiseSuppressor? = null
     private var gainControl: AutomaticGainControl? = null
 
-    /** Starts listening into a new file under [dir]. False when the mic could not be opened. */
+    /**
+     * Starts listening into a new file under [dir]. False when the mic could
+     * not be opened.
+     *
+     * Declared as needing the permission rather than checking for it here: the
+     * editor asks before the count-in and this says so to a caller and to lint,
+     * which otherwise reports the AudioRecord below as a call that may be
+     * refused. Refused anyway - revoked between the ask and the take - it
+     * throws a SecurityException, which the catch takes with everything else
+     * and turns into the false this promises.
+     */
     @Synchronized
+    @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO)
     fun start(dir: File): Boolean {
         if (running) return true
         val minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)

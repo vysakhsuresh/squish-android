@@ -130,6 +130,43 @@ fun main() {
         check(TextAnimation.shownWords("one two three", 0.4f) == "one two", "a share is rounded up to whole words")
         check(TextAnimation.shownWords("one two three", 1f) == "one two three", "all the words")
         check(TextAnimation.shownWords("one two three", 0f) == "", "no words")
+
+        // The round trip, for every line length and every word in it.
+        //
+        // A Words arrival hands shownWords a *count* laundered through a
+        // fraction - wordsReveal returns shown/size and shownWords multiplies
+        // by the same size - and a Float trip out and back overshoots: 7 of 13
+        // came back as 7.0000005, whose ceiling is 8, so the eighth word
+        // appeared on the seventh's beat and sat there until its own. Three
+        // words, which is all this suite tested, round-trips exactly, which is
+        // why it never bit. Thirteen is the first that does, and the thing it
+        // breaks is the caption against the speech, in the preview and in the
+        // file alike - both read these two functions.
+        var early = 0
+        var firstEarly = ""
+        for (n in 1..200) {
+            val line = (1..n).joinToString(" ") { "w$it" }
+            val starts = (0 until n).map { it * 100L }
+            for (k in 0..n) {
+                // The moment just after the kth word's own beat.
+                val at = if (k == 0) -1L else (k - 1) * 100L
+                val reveal = TextAnimation.wordsReveal(at, 1_000f, starts)
+                val shown = TextAnimation.shownWords(line, reveal)
+                val count = if (shown.isEmpty()) 0 else shown.split(' ').size
+                if (count != k) {
+                    early++
+                    if (firstEarly.isEmpty()) firstEarly = "$n words, $k started, $count shown (reveal $reveal)"
+                }
+            }
+        }
+        check(early == 0, "a word arrived off its own beat in $early of the 20,301 cases - first: $firstEarly")
+
+        // And a reveal that is a true fraction still rounds up, so a letter or
+        // a word part way through its own moment is on screen rather than not.
+        check(TextAnimation.shownWords("one two three four", 0.26f) == "one two", "a true fraction no longer rounds up")
+        check(TextAnimation.shownLetters("abcdefghij", 0.41f) == "abcde", "a letter part way through is not shown")
+        check(TextAnimation.shownLetters("abcdefghij", 0.5f) == "abcde", "half the letters is not half the letters")
+        check(TextAnimation.shownLetters("abc", 1f / 3f) == "a", "a third of three letters is not one")
     }
 
     // --- The loop: periodic about rest, never to black. -------------------------------

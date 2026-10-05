@@ -134,8 +134,16 @@ object CaptionRenderer {
         val own = item.fontFile?.let(CustomFonts::typeface)
         val base = own ?: Typeface.create(item.font.family, Typeface.NORMAL)
         val bold = item.bold || (own == null && item.font.bold)
-        val style = (if (bold) Typeface.BOLD else 0) or (if (item.italic) Typeface.ITALIC else 0)
-        return if (style == 0) base else Typeface.create(base, style)
+        // Named rather than or-ed together. BOLD or ITALIC does come to
+        // BOLD_ITALIC, but Typeface.create takes one of the four styles and not
+        // a flag set - it happened to be right, and nothing said so.
+        val style = when {
+            bold && item.italic -> Typeface.BOLD_ITALIC
+            bold -> Typeface.BOLD
+            item.italic -> Typeface.ITALIC
+            else -> Typeface.NORMAL
+        }
+        return if (style == Typeface.NORMAL) base else Typeface.create(base, style)
     }
 
     /**

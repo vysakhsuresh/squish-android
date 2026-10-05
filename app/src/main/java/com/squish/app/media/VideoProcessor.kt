@@ -1083,6 +1083,15 @@ class VideoProcessor(private val context: Context) {
         if (!ramp.isIdentity && spanMs > 0L) {
             val segments = ramp.segments(spanMs)
             if (segments.isNotEmpty()) {
+                // SpeedChangingAudioProcessor is @RestrictTo(LIBRARY_GROUP) -
+                // supported for Media3's own modules and not for us, which lint
+                // reports and which BUILD_NOTES records. Taken knowingly: the
+                // one-argument constructor pitches with the rate, which made
+                // the file disagree with the preview on every retimed clip, and
+                // this three-argument one is the only thing in the library that
+                // separates the two. If a Media3 upgrade removes or renames it,
+                // this is the call that stops compiling.
+                @Suppress("RestrictedApi")
                 processors.add(
                     SpeedChangingAudioProcessor(
                         RampSpeedProvider(segments),

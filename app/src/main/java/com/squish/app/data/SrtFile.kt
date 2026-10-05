@@ -19,6 +19,24 @@ data class SrtCue(val startMs: Long, val endMs: Long, val text: String)
  */
 object SrtFile {
 
+    /**
+     * The byte-order mark an SRT saved by Notepad, or exported by half the
+     * caption tools, starts with.
+     *
+     * Belt and braces, and measured as such: [parse] only recognises a line
+     * with `-->` in it and a line of digits, and a mark stuck to the front of
+     * the first index simply stops that line being an index - which it already
+     * tolerates. Taking this strip out changes none of the suite's answers,
+     * including the file with no indices at all. It stays because the intent is
+     * worth stating, not because anything leans on it.
+     *
+     * Written as a number rather than as a character, because written out it is
+     * three bytes of U+FEFF sitting in the middle of a Kotlin source file -
+     * which Android lint reports, and which any tool that splits a file on a
+     * BOM gets wrong.
+     */
+    private val BOM = 0xFEFF.toChar().toString()
+
     fun format(cues: List<SrtCue>): String = buildString {
         cues.sortedBy { it.startMs }.forEachIndexed { index, cue ->
             append(index + 1).append('\n')
@@ -29,7 +47,7 @@ object SrtFile {
     }
 
     fun parse(raw: String): List<SrtCue> {
-        val text = raw.removePrefix("﻿").replace("\r\n", "\n").replace('\r', '\n')
+        val text = raw.removePrefix(BOM).replace("\r\n", "\n").replace('\r', '\n')
         val cues = mutableListOf<SrtCue>()
 
         var start = -1L

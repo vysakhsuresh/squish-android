@@ -68,9 +68,18 @@ object Transcriber {
         // from the main thread, and its callbacks arrive there.
         return withTimeoutOrNull(allowanceMs) { withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { continuation ->
-                val recognizer = runCatching {
-                    SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-                }.getOrNull()
+                // The version test again, at the call rather than only in
+                // isAvailable above: createOnDeviceSpeechRecognizer arrived in
+                // API 31 and this app runs from 29, so on Android 10 and 11 an
+                // unguarded call is a NoSuchMethodError rather than a false.
+                // isAvailable does hold it off today, which is why nothing has
+                // seen it - but the guard is a function call away from the use,
+                // and that is exactly the distance a refactor closes.
+                val recognizer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    runCatching { SpeechRecognizer.createOnDeviceSpeechRecognizer(context) }.getOrNull()
+                } else {
+                    null
+                }
 
                 if (recognizer == null) {
                     continuation.resume(null)

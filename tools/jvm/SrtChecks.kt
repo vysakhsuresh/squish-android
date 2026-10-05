@@ -41,8 +41,23 @@ fun main() {
     val plain = "1\n00:00:01,000 --> 00:00:02,000\nHello\n\n2\n00:00:03,000 --> 00:00:04,000\nWorld\n"
     run {
         check(one(plain).map { it.text } == listOf("Hello", "World"), "a plain file did not read")
-        // A byte-order mark, CRLF, and lone CR.
-        check(one("﻿$plain").size == 2, "a BOM broke it")
+        // A byte-order mark, CRLF, and lone CR. Written as a number rather
+        // than as a character, so this file has no stray U+FEFF in it either.
+        val bom = 0xFEFF.toChar().toString()
+        check(one("$bom$plain").size == 2, "a BOM broke it")
+        // And it is *gone*, not merely survived. The parse used to pass this
+        // by being forgiving about the index line while the mark itself was
+        // still on the front - which is fine until the first cue has no index,
+        // when the mark lands in its text instead.
+        check(
+            one("$bom$plain").none { it.text.contains(bom) },
+            "a BOM ended up inside a cue's text: ${one("$bom$plain").map { it.text }}"
+        )
+        val noIndex = "00:00:01,000 --> 00:00:02,000\nHello\n"
+        check(
+            one("$bom$noIndex").map { it.text } == listOf("Hello"),
+            "a BOM on a file with no indices: ${one("$bom$noIndex").map { it.text }}"
+        )
         check(one(plain.replace("\n", "\r\n")).size == 2, "CRLF broke it")
         check(one(plain.replace("\n", "\r")).size == 2, "lone CR broke it")
         // A dot before the milliseconds, as several tools write.

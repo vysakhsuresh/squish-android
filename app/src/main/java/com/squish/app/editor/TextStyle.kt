@@ -443,19 +443,40 @@ object TextAnimation {
         return (shown.toFloat() / wordStartsMs.size).coerceIn(0f, 1f)
     }
 
-    /** The first [reveal] of [text]'s words, whole words only, so none is half typed. */
+    /**
+     * The first [reveal] of [text]'s words, whole words only, so none is half
+     * typed.
+     *
+     * [COUNT_EPSILON] is subtracted before the ceiling because a Words arrival
+     * hands this a *count* laundered through a fraction: [wordsReveal] returns
+     * `shown / size` and this multiplies by the same size. The round trip
+     * through a Float overshoots - 7 of 13 comes back as 7.0000005, whose
+     * ceiling is 8 - so the eighth word appeared on the seventh's beat and sat
+     * there until its own. A whisker's worth of a word is below anything a
+     * reveal means and above the error.
+     */
     fun shownWords(text: String, reveal: Float): String {
         if (reveal >= 1f) return text
         val words = text.split(' ')
-        val count = ceil(words.size * reveal).toInt().coerceIn(0, words.size)
+        val count = ceil(words.size * reveal - COUNT_EPSILON).toInt().coerceIn(0, words.size)
         return words.take(count).joinToString(" ")
     }
 
     /** The first [reveal] of [text]'s letters. */
     fun shownLetters(text: String, reveal: Float): String {
-        val count = ceil(text.length * reveal).toInt().coerceIn(0, text.length)
+        val count = ceil(text.length * reveal - COUNT_EPSILON).toInt().coerceIn(0, text.length)
         return text.substring(0, count)
     }
+
+    /**
+     * How far above a whole number a count may land and still be that number.
+     *
+     * Small enough that no reveal anyone can set is moved by it - a thousandth
+     * of a word is under a millisecond of a line's arrival - and large enough
+     * to swallow the few ULPs a Float round trip through `k / n` and back
+     * leaves behind.
+     */
+    private const val COUNT_EPSILON = 1e-3f
 
     private fun easeOut(t: Float): Float = 1f - (1f - t) * (1f - t) * (1f - t)
 
