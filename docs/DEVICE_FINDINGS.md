@@ -1380,3 +1380,11 @@ timeline" counted off stretches rather than lines landed, "1 key - moves
 while it plays", "1 lines timed", "1 bars", a split refusal naming the end
 the finger was nearer rather than the end that was out of room, and the RGB
 split tile drawn as a mirror of the effect it was selling.
+
+As it stands the predicate is sound, which was checked rather than assumed:
+with `videoClips` empty there is nothing on an `EditorUiState` that changes a
+frame except the trim, the edit-wide rotation, the crop or the padded canvas,
+the size and the rate - and `singleFileEffects` covers all four of those, so
+requiring it empty is the whole test. The look, the thirteen sliders, the
+speed curve and the stabilizer have all been per-clip since B12 and B13, so
+there is no edit-wide grade left to miss.
