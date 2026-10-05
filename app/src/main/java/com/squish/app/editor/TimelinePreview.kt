@@ -614,6 +614,10 @@ fun TimelinePreview(
                 onDuplicate = overlayActions.onDuplicate,
                 onEdit = overlayActions.onEdit,
                 onOpen = overlayActions.onOpen,
+                // Forwarded, not left to the default: this wrapper is what the
+                // editor's actions actually reach the box through, so dropping
+                // it here would put the swallowed double tap straight back.
+                canOpen = overlayActions.canOpen,
                 onPlaceText = overlayActions.onPlaceText
             )
             OverlayHandles(
