@@ -104,6 +104,7 @@ run runners    tools/jvm/RunnerChecks.kt
 run draftkeys  tools/jvm/DraftKeyChecks.kt
 run privacy    tools/jvm/PrivacyChecks.kt
 run searchterms "$SRC/online/SearchTerms.kt" tools/jvm/SearchTermChecks.kt
+run srt "$SRC/data/SrtFile.kt" tools/jvm/SrtChecks.kt
 run shaderuniforms tools/jvm/ShaderUniformChecks.kt
 
 rm -rf "$OUT"

@@ -48,7 +48,7 @@ object SrtFile {
         val lines = text.split('\n')
         lines.forEachIndexed { i, line ->
             val trimmed = line.trim()
-            val arrow = ARROW.find(trimmed)
+            val arrow = timingIn(trimmed)
 
             // A bare number is an index only when a timing line follows it
             // *immediately*. That one-line lookahead is what separates the index of
@@ -58,15 +58,15 @@ object SrtFile {
             val isIndex = arrow == null &&
                 trimmed.toIntOrNull() != null &&
                 i + 1 < lines.size &&
-                ARROW.containsMatchIn(lines[i + 1].trim())
+                timingIn(lines[i + 1].trim()) != null
 
             when {
                 arrow != null -> {
                     // A new timing line means the previous cue is finished, whether
                     // or not the file bothered to leave a blank line between them.
                     flush()
-                    start = parseTimestamp(arrow.groupValues[1])
-                    end = parseTimestamp(arrow.groupValues[2])
+                    start = arrow.first
+                    end = arrow.second
                 }
                 isIndex -> flush()
                 trimmed.isEmpty() -> flush()
@@ -78,6 +78,21 @@ object SrtFile {
         }
         flush()
         return cues.filter { it.endMs > it.startMs }
+    }
+
+    /**
+     * The two moments of a timing line, or null if this is not one.
+     *
+     * An arrow is not enough. A caption can say "he said --> go", and a line
+     * taken for a timing line on the arrow alone ended the cue it was part of
+     * and then set a start of -1, so the caption and everything after it in
+     * that cue were dropped without a word. Both sides have to parse.
+     */
+    private fun timingIn(line: String): Pair<Long, Long>? {
+        val m = ARROW.find(line) ?: return null
+        val from = parseTimestamp(m.groupValues[1])
+        val to = parseTimestamp(m.groupValues[2])
+        return if (from >= 0 && to >= 0) from to to else null
     }
 
     private fun timestamp(ms: Long): String {

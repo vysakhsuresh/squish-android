@@ -1411,3 +1411,19 @@ included.
 (The suite writes its non-ASCII as `\u` escapes: `tools/jvm/jc.sh` does not
 tell the compiler what charset the sources are in, so a literal in another
 script arrives as question marks and fails for a reason that is not the code's.)
+
+### A caption containing "-->" threw its own cue away (5 October)
+
+Found the same way: by writing the suite `SrtFile` had never had. The parser
+took any line holding an arrow for a timing line, so a caption reading
+"he said --> go" ended the cue it was part of and then set a start of -1 -
+and the caption, and every line after it in that cue, vanished with no
+message. Imported from a tool that writes dialogue arrows, a file lost
+captions silently.
+
+A line is a timing line now only when both sides parse to a moment
+(`SrtFile.timingIn`), which is also what the index lookahead asks. Everything
+else in that parser held up under the suite: a BOM, CRLF, a lone CR, a dot
+before the milliseconds, no indices at all, no blank line between cues, hours
+left off, one- and two-digit fractions, a caption whose text is "42", and a
+round trip through `format`.
