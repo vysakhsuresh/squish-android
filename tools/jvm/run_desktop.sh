@@ -7,7 +7,16 @@ run() {
   last=""; for a in "$@"; do last=$a; done
   suite=$(basename "$last" .kt)
   out=$(sh $S/jc.sh "$suite" "$@" 2>&1)
-  if echo "$out" | grep -qiE "error:|FAIL|Exception in thread|Could not find or load"; then echo "### $name FAILED"; echo "$out" | grep -iE "error:|FAIL|Exception|Could not" | head -5; else echo "ok  $name: $(echo "$out" | tail -1 | cut -c1-90)"; fi
+  # The three shapes a suite prints a failure in - "FAIL (n)", "FAIL: msg" and
+  # "FAIL - msg" - and not the bare word, which a passing suite may use in a
+  # sentence: "a failed probe falls back to the player" was reported as a
+  # failure for a run, with its own PASS line printed underneath as the reason.
+  if echo "$out" | grep -qiE "error:|FAIL \(|FAIL:|FAIL -|Exception in thread|Could not find or load"; then
+    echo "### $name FAILED"
+    echo "$out" | grep -iE "error:|FAIL \(|FAIL:|FAIL -|Exception|Could not|^  - " | head -8
+  else
+    echo "ok  $name: $(echo "$out" | tail -1 | cut -c1-90)"
+  fi
 }
 TIMELINE="$SRC/timeline/SpeedRamp.kt $SRC/timeline/TimelineModels.kt $SRC/timeline/VoiceEffect.kt
   $SRC/timeline/TimelineLanes.kt $SRC/timeline/Keyframe.kt $SRC/timeline/ValueTracks.kt $SRC/timeline/Mask.kt $SRC/timeline/ChromaKey.kt
