@@ -277,6 +277,16 @@ class VideoProcessor(private val context: Context) {
         // the finished picture is a texture a shader of ours can read. Video
         // overlays cannot be blended at all; the sheet only offers it on stills.
         val blended = state.videoClips.filter { it.isOverlay && it.blend != LayerBlend.Normal && StillClips.isStill(it.uri) }
+        // One decode per still, not one per shot it covers.
+        //
+        // A blended still is drawn into every shot underneath it, and each of
+        // those asked for its own copy of the PNG. A light leak over a reel of
+        // twenty-four cuts therefore decoded the same picture twenty-four times
+        // and held all of them for the whole render - at 1080x1920 that is about
+        // eight megabytes each, two hundred alive at once, on a phone that is
+        // also running a decoder and an encoder. Shared, for this export only:
+        // the map is local, so nothing is held after it.
+        val stillBitmaps = HashMap<String, android.graphics.Bitmap?>()
         val track = state.videoClips - blended.toSet()
         val videoOut = !state.audioOnly
         // A sound-only export keeps the camera's sound even when the picture's
@@ -321,7 +331,7 @@ class VideoProcessor(private val context: Context) {
                             ExportPlan.Role.Overlay -> editedOverlay(state, clip, canvas, rate)
                             ExportPlan.Role.Backdrop ->
                                 CompositionFactory.backdropItem(checkNotNull(clip.uri), clip.durationMs, rate, canvas)
-                            else -> editedClip(state, clip, canvas, layers.baseRolls, aspects, blended)
+                            else -> editedClip(state, clip, canvas, layers.baseRolls, aspects, blended, stillBitmaps)
                         }
                     }
                 )
@@ -333,7 +343,7 @@ class VideoProcessor(private val context: Context) {
             // empty window.
             else -> CompositionFactory.buildCutsOnly(
                 track.filter { it.durationMs > 0 }.sortedBy { it.timelineStartMs }
-                    .map { editedClip(state, it, canvas, rolls = null, aspects, blended) },
+                    .map { editedClip(state, it, canvas, rolls = null, aspects, blended, stillBitmaps) },
                 trackTypesFor(videoOut, baseAudio)
             )
         }
@@ -434,15 +444,20 @@ class VideoProcessor(private val context: Context) {
         state: EditorUiState,
         clip: Clip,
         canvas: ExportPresets.Resolution?,
-        under: Clip
+        under: Clip,
+        bitmaps: MutableMap<String, android.graphics.Bitmap?>
     ): Effect? {
         // Only on the shots it actually covers, so a still near the end costs
         // nothing on the shots before it.
         if (clip.timelineEndMs <= under.timelineStartMs || clip.timelineStartMs >= under.timelineEndMs) return null
         val uri = clip.uri ?: return null
-        val bitmap = runCatching {
-            context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
-        }.getOrNull() ?: return null
+        // Decoded once for the export. A failed decode is remembered as a null,
+        // so a picture that cannot be read is not opened again for every shot.
+        val bitmap = bitmaps.getOrPut(uri.toString()) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+            }.getOrNull()
+        } ?: return null
         val startMs = clip.timelineStartMs
         val endMs = clip.timelineEndMs
         // The item's clock starts at 0 on this shot, so the edit's own time is
@@ -564,7 +579,9 @@ class VideoProcessor(private val context: Context) {
         rolls: List<List<Clip>>?,
         aspects: Map<android.net.Uri, Float>,
         /** Stills with a blend mode: not layers, drawn into each shot they cover. */
-        blendedStills: List<Clip> = emptyList()
+        blendedStills: List<Clip> = emptyList(),
+        /** One decoded picture per still for the whole export, not one per shot. */
+        stillBitmaps: MutableMap<String, android.graphics.Bitmap?> = HashMap()
     ): EditedMediaItem {
         val uri = clip.uri ?: state.sourceUri
         val effects: List<Effect> = if (state.audioOnly) emptyList() else buildList {
@@ -599,7 +616,7 @@ class VideoProcessor(private val context: Context) {
             // showed the leak in different places. The two agreeing is worth
             // more than where it sits, so the file follows the screen.
             blendedStills.forEach { still ->
-                blendEffectFor(state, still, canvas, under = clip)?.let { add(it) }
+                blendEffectFor(state, still, canvas, under = clip, bitmaps = stillBitmaps)?.let { add(it) }
             }
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
             // The clip's own mirror and turn belong to its footage, so they go
