@@ -35,4 +35,41 @@ object PreviewSpan {
         sources == 1 && playerDurationMs > 0L -> playerDurationMs
         else -> 0L
     }
+
+    /** What the waveform strip has to show. */
+    enum class Wave {
+        /** The decode has not finished. A glyph, because it is about to change. */
+        Waiting,
+
+        /** Decoded, and nothing in it above the floor: said in words. */
+        Silent,
+
+        /** Tried, and nothing came back at all: also said in words. */
+        Unreadable,
+
+        /** Bars. */
+        Drawn
+    }
+
+    /**
+     * Which of the four a waveform strip is in, given whether the decode has
+     * been tried and what it produced.
+     *
+     * [Unreadable] is the state that did not exist. A null wave meant both "not
+     * started" and "came back with nothing", and the second wore the first's
+     * clothes - a file with no sound track, a codec the decoder would not open
+     * and a long file the heap refused all showed the waiting glyph for ever,
+     * with nothing to say it had stopped trying. `PcmDecoder.decodeMono`
+     * returns null for all three, so only a flag set after the attempt can
+     * tell them apart.
+     *
+     * [Silent] is tested before [Unreadable] because a decode that worked and
+     * found silence is a different sentence from one that found nothing, and a
+     * row of floor-height bars reads as a wave still loading.
+     */
+    fun waveState(tried: Boolean, peaks: FloatArray?): Wave = when {
+        peaks != null && peaks.isNotEmpty() && peaks.all { it == 0f } -> Wave.Silent
+        peaks == null || peaks.isEmpty() -> if (tried) Wave.Unreadable else Wave.Waiting
+        else -> Wave.Drawn
+    }
 }

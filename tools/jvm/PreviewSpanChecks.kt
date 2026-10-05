@@ -65,7 +65,38 @@ fun main() {
         )
     }
 
-    println("preview span: ${probes.size * durations.size * 5} probe-and-player pairs")
+    // --- The waveform strip's four states -----------------------------------
+    //
+    // Unreadable is the one that did not exist. A null wave meant both "not
+    // started" and "came back with nothing", so a file with no sound track, a
+    // codec the decoder would not open and a long file the heap refused all
+    // showed the waiting glyph for ever - nothing told anyone it had stopped
+    // trying. PcmDecoder.decodeMono returns null for all three.
+    run {
+        // Spelled out: an enum class is not a value, so there is no aliasing it.
+        check(PreviewSpan.waveState(tried = false, peaks = null) == PreviewSpan.Wave.Waiting, "nothing tried yet is not Waiting")
+        check(PreviewSpan.waveState(tried = false, peaks = FloatArray(0)) == PreviewSpan.Wave.Waiting, "an empty wave before the attempt is not Waiting")
+        check(PreviewSpan.waveState(tried = true, peaks = null) == PreviewSpan.Wave.Unreadable, "a decode that came back with nothing is not Unreadable")
+        check(PreviewSpan.waveState(tried = true, peaks = FloatArray(0)) == PreviewSpan.Wave.Unreadable, "a decode that came back empty is not Unreadable")
+        check(PreviewSpan.waveState(tried = true, peaks = FloatArray(64)) == PreviewSpan.Wave.Silent, "a decoded silence is not Silent")
+        check(PreviewSpan.waveState(tried = false, peaks = FloatArray(64)) == PreviewSpan.Wave.Silent, "a silence read before the flag landed is not Silent")
+        check(PreviewSpan.waveState(tried = true, peaks = floatArrayOf(0f, 0f, 0.01f)) == PreviewSpan.Wave.Drawn, "one bar above the floor is not Drawn")
+        check(PreviewSpan.waveState(tried = true, peaks = floatArrayOf(0.4f, 0.9f)) == PreviewSpan.Wave.Drawn, "a wave is not Drawn")
+        // Silence is tested before the flag, so the sentence a user reads does
+        // not depend on which of the two states lands first.
+        check(
+            PreviewSpan.waveState(true, FloatArray(8)) == PreviewSpan.waveState(false, FloatArray(8)),
+            "a silent wave said different things before and after the attempt"
+        )
+        // Waiting is the only state that is about to change, so nothing else
+        // may be it: a strip that says Waiting and never moves is the fault.
+        check(
+            PreviewSpan.waveState(true, null) != PreviewSpan.Wave.Waiting && PreviewSpan.waveState(true, FloatArray(0)) != PreviewSpan.Wave.Waiting,
+            "a finished attempt still read as Waiting"
+        )
+    }
+
+    println("preview span: ${probes.size * durations.size * 5} probe-and-player pairs, 4 wave states")
     if (problems.isEmpty()) println("PASS - a failed probe falls back to the player on one file and to nothing on a playlist")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
 }

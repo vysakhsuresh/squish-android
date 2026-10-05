@@ -457,37 +457,52 @@ private fun SoundWave(
 ) {
     val context = LocalContext.current
     var wave by remember(uri) { mutableStateOf<Waveform?>(null) }
+    // Whether the decode has been *tried*. Without it a null wave says two
+    // different things - not started and come back with nothing - and the
+    // second wore the first's clothes: a file with no sound track, a codec the
+    // decoder would not open, or a long file the heap refused showed the
+    // waiting glyph for ever, with nothing to tell a user it had stopped
+    // trying. PcmDecoder.decodeMono returns null for all three.
+    var tried by remember(uri) { mutableStateOf(false) }
     LaunchedEffect(uri, totalMs) {
         if (uri == null || totalMs <= 0L) return@LaunchedEffect
         val pcm = PcmDecoder.decodeMono(context, uri, maxDurationMs = totalMs.coerceAtMost(WAVE_MAX_MS))
         wave = pcm?.let { WaveformBuilder.buildBars(it, buckets = WAVE_BARS) }
+        tried = true
     }
 
     val shown = wave
-    // Decoded and silent throughout - a photo's rendered track, a muted export:
-    // said in words. A row of floor-height bars read as a wave still loading.
-    if (shown != null && shown.peaks.isNotEmpty() && shown.peaks.all { it == 0f }) {
-        Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Text(
-                "This video is silent - there is no sound to keep.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = SquishColors.TextSecondary
-            )
+    val state = PreviewSpan.waveState(tried, shown?.peaks)
+    when (state) {
+        // Decoded and silent throughout - a photo's rendered track, a muted
+        // export - and a file with no readable sound at all. Both said in
+        // words: a row of floor-height bars reads as a wave still loading.
+        PreviewSpan.Wave.Silent, PreviewSpan.Wave.Unreadable -> {
+            val line = if (state == PreviewSpan.Wave.Silent) {
+                "This video is silent - there is no sound to keep."
+            } else {
+                "No sound could be read from this video."
+            }
+            Box(modifier = modifier, contentAlignment = Alignment.Center) {
+                Text(line, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextSecondary)
+            }
+            return
         }
-        return
-    }
-    if (shown == null || shown.peaks.isEmpty()) {
-        // Still decoding, or there is no sound to draw.
-        Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Icon(
-                Icons.Filled.MusicNote,
-                contentDescription = null,
-                tint = accent.copy(alpha = 0.55f),
-                modifier = Modifier.size(34.dp)
-            )
+        PreviewSpan.Wave.Waiting -> {
+            Box(modifier = modifier, contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Filled.MusicNote,
+                    contentDescription = null,
+                    tint = accent.copy(alpha = 0.55f),
+                    modifier = Modifier.size(34.dp)
+                )
+            }
+            return
         }
-        return
+        PreviewSpan.Wave.Drawn -> Unit
     }
+    // Drawn is the only state left, and it is the only one with a wave in it.
+    val bars = shown ?: return
 
     Canvas(modifier = modifier) {
         if (totalMs <= 0L) return@Canvas
@@ -495,14 +510,14 @@ private fun SoundWave(
         val h = size.height
         val mid = h / 2f
         // The decoded span may be shorter than the file; the bars cover only it.
-        val span = (shown.durationMs.toFloat() / totalMs).coerceIn(0f, 1f)
-        val step = w * span / shown.peaks.size
+        val span = (bars.durationMs.toFloat() / totalMs).coerceIn(0f, 1f)
+        val step = w * span / bars.peaks.size
         val bar = (step * 0.62f).coerceAtLeast(1f)
         val keepFrom = w * startMs / totalMs
         val keepTo = w * endMs / totalMs
         val played = w * positionMs / totalMs
 
-        shown.peaks.forEachIndexed { i, peak ->
+        bars.peaks.forEachIndexed { i, peak ->
             val x = i * step + step / 2f
             val half = (peak.coerceIn(0.04f, 1f) * h * 0.46f)
             val color = when {
