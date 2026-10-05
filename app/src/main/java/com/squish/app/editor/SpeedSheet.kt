@@ -596,7 +596,7 @@ private fun SmoothToggle(sourceFps: Float, speed: Float, onHold: () -> Unit) {
                 color = SquishColors.TextPrimary
             )
             Text(
-                "Nothing slower than ${"%.2f".format(limit).trimEnd('0').trimEnd('.')}x — " +
+                "Nothing slower than ${PolishRules.number(limit)}x — " +
                     "the slowest this footage carries",
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted

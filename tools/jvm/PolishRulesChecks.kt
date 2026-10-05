@@ -132,6 +132,34 @@ fun main() {
         check(!PolishRules.proxyBuildingLine(42, 0, 1).contains("of 1"), "one file is counted")
     }
 
+    // --- Numbers read the same on every phone --------------------------------
+    //
+    // `"%.2f".format(v)` uses the phone's own locale, so on one set to German or
+    // French it writes "2,00" - and the trim that follows takes the zeros and
+    // cannot take the comma, so every speed chip read "2,x", every effect knob
+    // "1,/s" and the Settings transition list "0,5 s". Seven labels were built
+    // that way; they all come through `number` now, which formats against
+    // Locale.ROOT.
+    run {
+        check(PolishRules.number(2f) == "2", "2 reads \"${PolishRules.number(2f)}\"")
+        check(PolishRules.number(0.5f) == "0.5", "0.5 reads \"${PolishRules.number(0.5f)}\"")
+        check(PolishRules.number(0.25f) == "0.25", "0.25 reads \"${PolishRules.number(0.25f)}\"")
+        check(PolishRules.number(1.5f, 1) == "1.5", "1.5 at one place reads \"${PolishRules.number(1.5f, 1)}\"")
+        check(PolishRules.number(10f, 1) == "10", "10 at one place reads \"${PolishRules.number(10f, 1)}\"")
+        check(PolishRules.number(0f) == "0", "nothing reads \"${PolishRules.number(0f)}\"")
+        // The thing itself: under a locale whose separator is a comma.
+        val was = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale.GERMANY)
+            check(PolishRules.number(2f) == "2", "under a comma locale 2 reads \"${PolishRules.number(2f)}\"")
+            check(PolishRules.number(0.5f) == "0.5", "under a comma locale 0.5 reads \"${PolishRules.number(0.5f)}\"")
+            check(PolishRules.rateLabel(2f) == "2x", "under a comma locale the rate reads \"${PolishRules.rateLabel(2f)}\"")
+            check(PolishRules.rateLabel(0.25f) == "0.25x", "under a comma locale a slow rate reads \"${PolishRules.rateLabel(0.25f)}\"")
+        } finally {
+            java.util.Locale.setDefault(was)
+        }
+    }
+
     if (problems.isEmpty()) {
         println("PolishRulesChecks: all checks passed")
     } else {

@@ -144,7 +144,7 @@ private fun DefaultsCard() {
         if (defaults.transition != TransitionType.None) {
             SettingLabel("Transition length", "How long each of those joins takes.")
             ChipRow(
-                options = Preferences.TRANSITION_CHOICES_MS.map { "%.2f".format(it / 1000f).trimEnd('0').trimEnd('.') + " s" },
+                options = Preferences.TRANSITION_CHOICES_MS.map { com.squish.app.editor.PolishRules.number(it / 1000f) + " s" },
                 selected = Preferences.TRANSITION_CHOICES_MS.indexOf(defaults.transitionMs).coerceAtLeast(0),
                 onPick = { Preferences.setDefaultTransitionMs(context, Preferences.TRANSITION_CHOICES_MS[it]); reload() }
             )

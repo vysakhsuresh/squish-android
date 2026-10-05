@@ -397,7 +397,7 @@ object Readout {
     val bandDegrees: (Float) -> String = { v -> degrees(v * com.squish.app.media.effects.HslBand.HUE_SWING_DEGREES) }
 
     /** A size relative to where it started: 1.5 reads "1.5×". */
-    val times: (Float) -> String = { v -> "%.2f".format(v).trimEnd('0').trimEnd('.') + "×" }
+    val times: (Float) -> String = { v -> PolishRules.number(v) + "×" }
 }
 
 @Composable

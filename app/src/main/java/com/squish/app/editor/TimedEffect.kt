@@ -12,7 +12,7 @@ fun punchPerSecond(a: Float): Float = 0.5f + 3f * a.coerceIn(0f, 1f)
 /** Heartbeat's beats a second at knob [a]. Shared the same way. */
 fun heartbeatPerSecond(a: Float): Float = 0.5f + 2f * a.coerceIn(0f, 1f)
 
-private val perSecond: (Float) -> String = { v -> "%.1f".format(v).trimEnd('0').trimEnd('.') + "/s" }
+private val perSecond: (Float) -> String = { v -> PolishRules.number(v, 1) + "/s" }
 
 /**
  * The effects in the library, each a stretch of the video treated a particular

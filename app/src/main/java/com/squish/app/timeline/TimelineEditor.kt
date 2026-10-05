@@ -2185,7 +2185,7 @@ private fun ClipView(
             ) {
                 Text(
                     text = if (clip.speedRamp.isRamped) "ramp"
-                    else "${"%.2f".format(clip.speedRamp.flatSpeed).trimEnd('0').trimEnd('.')}x",
+                    else "${com.squish.app.editor.PolishRules.number(clip.speedRamp.flatSpeed)}x",
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.Cyan,
                     maxLines = 1,

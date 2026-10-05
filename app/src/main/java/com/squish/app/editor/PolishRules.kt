@@ -64,11 +64,23 @@ object PolishRules {
         else -> "Tap a curve to lay it across the whole shot"
     }
 
+    /**
+     * A number with its trailing zeros gone: 2.00 reads "2", 0.50 reads "0.5".
+     *
+     * Formatted against `Locale.ROOT`, so the separator is always a point.
+     * `"%.2f".format(v)` uses the phone's *own* locale: set to German or French
+     * it gives "2,00", and the trim then takes the zeros and cannot take the
+     * comma - so every speed chip read "2,x", every effect knob "1,/s", and the
+     * Settings transition list "0,5 s". Seven labels were built that way.
+     */
+    fun number(value: Float, decimals: Int = 2): String =
+        String.format(java.util.Locale.ROOT, "%.${decimals}f", value).trimEnd('0').trimEnd('.')
+
     /** A rate as the Speed sheet prints it everywhere: "2x", "0.5x", "0.25x", "1.5x". */
     fun rateLabel(speed: Float): String =
-        if (speed < 1f) "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}x"
+        if (speed < 1f) "${number(speed)}x"
         else if (abs(speed - speed.toInt()) < 0.005f) "${speed.toInt()}x"
-        else "${"%.1f".format(speed).trimEnd('0').trimEnd('.')}x"
+        else "${number(speed, 1)}x"
 
     /**
      * How far a key may sit from the clip's start or end, as a fraction of the
