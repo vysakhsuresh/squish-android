@@ -32,12 +32,16 @@ float hash(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
-vec3 sampleAt(vec2 uv) {
-  if (uBlur <= 0.0001) return texture2D(uTexSampler, uv).rgb;
-  vec3 sum = vec3(0.0);
+// The alpha comes back with the colour, averaged over the same ring: a base
+// surface carries a mask's cut and a key's hole as alpha until this pass puts
+// it over black, and reading the alpha from the middle tap alone left a
+// hard-edged hole in a picture that had been softened round it.
+vec4 sampleAt(vec2 uv) {
+  if (uBlur <= 0.0001) return texture2D(uTexSampler, uv);
+  vec4 sum = vec4(0.0);
   for (int i = -1; i <= 1; i++) {
     for (int j = -1; j <= 1; j++) {
-      sum += texture2D(uTexSampler, uv + vec2(float(i), float(j)) * uBlur).rgb;
+      sum += texture2D(uTexSampler, uv + vec2(float(i), float(j)) * uBlur);
     }
   }
   return sum / 9.0;
@@ -67,13 +71,13 @@ void main() {
 
   uv = clamp(uv, 0.0, 1.0);
 
-  vec3 c;
+  // The middle sample carries the alpha whichever way the colour is read: an
+  // RGB split moves the channels and not the shape.
+  vec4 centre = sampleAt(uv);
+  vec3 c = centre.rgb;
   if (uSplit > 0.0001) {
     c.r = sampleAt(clamp(uv + vec2(uSplit, 0.0), 0.0, 1.0)).r;
-    c.g = sampleAt(uv).g;
     c.b = sampleAt(clamp(uv - vec2(uSplit, 0.0), 0.0, 1.0)).b;
-  } else {
-    c = sampleAt(uv);
   }
 
   if (uHue > 0.001) c = hueRotate(c, uHue);
@@ -92,7 +96,8 @@ void main() {
   // outside its shape) goes to black first, which is what the file composites it
   // over. Written opaque as it was, the preview showed the whole picture under a
   // Cutout mask while the file showed the shape alone.
-  // Read where the colour was read, so a cut-out hole moves with a shake or a zoom.
-  float a = mix(1.0, texture2D(uTexSampler, uv).a, uOverBlack);
+  // Read where the colour was read, so a cut-out hole moves with a shake or a
+  // zoom - and softened with it, so a blurred picture does not keep a hard hole.
+  float a = mix(1.0, centre.a, uOverBlack);
   gl_FragColor = vec4(clamp(c, 0.0, 1.0) * a, 1.0);
 }

@@ -398,12 +398,21 @@ object ExportPlan {
     )
 
     /**
-     * As far apart as the nine taps are ever taken. Past this the ring reads as
-     * nine copies rather than as a softening, which is the fault of a box of
-     * nine and not of the number: the effects library's Blur tops out at 0.012
-     * for the same reason.
+     * As far apart as the nine taps are ever taken, anywhere in the app.
+     *
+     * The number is the effects library's own Blur at full: `0.012 * twice`
+     * with `twice` reaching 1.75 (TimedEffect.FxParams.at). That is the widest
+     * ring that has ever been shipped, so it is the one the rest is held to -
+     * a Defocus join peaks at 0.010, well inside it. It was written here as
+     * 0.014 on the day the join was built, which was a guess and was *under*
+     * what the library was already asking for, so the comment claiming a
+     * ceiling described something nothing enforced.
+     *
+     * It is a ceiling because a box of nine stops reading as a softening and
+     * starts reading as nine copies somewhere past here - which is the open
+     * question in docs/DEVICE_FINDINGS.md, and the one a phone settles.
      */
-    const val MAX_BLUR = 0.014f
+    const val MAX_BLUR = 0.021f
 
     val PLAIN = Draw()
     private val HIDDEN = Draw(alpha = 0f)

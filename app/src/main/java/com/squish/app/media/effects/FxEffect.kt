@@ -93,7 +93,13 @@ private class FxShaderProgram(
             glProgram.setFloatsUniform("uInvert", floatArrayOf(p.invert))
             glProgram.setFloatsUniform("uScan", floatArrayOf(p.scan))
             glProgram.setFloatsUniform("uNoise", floatArrayOf(p.noise))
-            glProgram.setFloatsUniform("uBlur", floatArrayOf(maxOf(p.blur, extraBlur())))
+            // Held to the ring's own ceiling, as every other place that sets it
+            // is (ExportPlan.Draw.shaderUniforms). Unclamped, two Blur effects
+            // laid over each other add - and nothing bounded the sum.
+            glProgram.setFloatsUniform(
+                "uBlur",
+                floatArrayOf(maxOf(p.blur, extraBlur()).coerceIn(0f, com.squish.app.media.ExportPlan.MAX_BLUR))
+            )
             glProgram.setFloatsUniform("uHue", floatArrayOf(p.hue))
             glProgram.setFloatsUniform("uTime", floatArrayOf(p.timeSec))
             glProgram.setFloatsUniform("uOverBlack", floatArrayOf(if (overBlack) 1f else 0f))
