@@ -346,6 +346,27 @@ check.
 Note that `BaseGlShaderProgram` was called `SingleFrameGlShaderProgram` before
 Media3 1.2 — if you ever move the module backwards, that is the rename to make.
 
+### The one blur, in four files
+
+A softening anywhere in the app is `uBlur`: a 3x3 ring of taps that far apart as
+a **fraction of the frame**, averaged — so the look does not depend on the
+resolution. Four files hold a copy, because they run in four places and not
+because they do four things:
+
+| file | what it softens |
+|---|---|
+| `assets/squish_fx_es2.glsl` | the effects library's own Blur, per surface in the preview and once on the finished frame in the export |
+| `editor/CanvasFx.kt` (AGSL) | the same library pass drawn over the whole composed canvas, Android 13 and up |
+| `assets/squish_transition_es2.glsl` | a **Blur** join on a base shot, in the file |
+| `assets/squish_premultiply_es2.glsl` | the same join on an overlay, whose chain ends here rather than in the effects pass |
+
+They must stay identical: a placed Blur, a defocus on a shot and a defocus on an
+overlay are meant to look the same, on screen and in the file.
+`tools/jvm/ShaderUniformChecks.kt` holds them to one ring and names any copy that
+drifts. If the ring is ever changed — nine taps undersample at the reach a
+transition uses, which is the open question in `docs/DEVICE_FINDINGS.md` — it is
+changed in all four at once.
+
 ## On-device speech recognition
 
 `media/audio/Transcriber.kt` reaches into a rarely-used corner of the framework:
