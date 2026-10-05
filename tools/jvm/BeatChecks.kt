@@ -1,4 +1,5 @@
 import com.squish.app.media.audio.BeatDetector
+import com.squish.app.media.audio.BeatMap
 import com.squish.app.media.audio.Fft
 import kotlin.math.PI
 import kotlin.math.abs
@@ -206,6 +207,26 @@ fun main() {
 
         check(map.halved().doubled().beatsMs.size >= map.beatsMs.size - 2,
             "halving then doubling lost the grid")
+
+        // A list too short to scale is handed back whole - *including its
+        // tempo and its downbeat*. That is the right answer for the list and a
+        // trap for a caller: AudioEdits.scaleBeats used to take the new bpm and
+        // phase from the camera grid, which is empty whenever the grid was
+        // found on a song, so x2 on a song doubled the dots and left the card's
+        // tempo and "Every bar" exactly where they were. Anything that reads a
+        // scaled map's tempo back must scale a list that has beats in it.
+        val empty = BeatMap(emptyList(), 120f, 0.8f, 2)
+        check(empty.doubled() == empty, "an empty map was changed by doubling: ${empty.doubled()}")
+        check(empty.halved() == empty, "an empty map was changed by halving: ${empty.halved()}")
+        val one = BeatMap(listOf(500L), 120f, 0.8f, 0)
+        check(one.doubled() == one, "a one-beat map was changed by doubling")
+        val three = BeatMap(listOf(0L, 500L, 1000L), 120f, 0.8f, 0)
+        check(three.halved() == three, "a three-beat map was changed by halving")
+        // And a list long enough is scaled in all three fields, which is what
+        // the caller is entitled to read back.
+        val four = BeatMap(listOf(0L, 500L, 1000L, 1500L), 120f, 0.8f, 0)
+        check(four.halved().bpm == 60f && four.halved().beatsMs == listOf(0L, 1000L), "a four-beat map halved to ${four.halved()}")
+        check(four.doubled().bpm == 240f && four.doubled().beatsMs.size == 7, "a four-beat map doubled to ${four.doubled()}")
     }
 
     // --- The bass note must not be what it locks onto. ------------------------

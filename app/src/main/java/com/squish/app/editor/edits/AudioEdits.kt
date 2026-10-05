@@ -794,16 +794,36 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         _state.update { current ->
             val beats = current.beats
             if (!current.hasBeatGrid) return@update current
-            val scaledGrid = BeatMap(beats.beatsMs, beats.bpm, beats.confidence, beats.downbeatOffset).let { if (faster) it.doubled() else it.halved() }
+            fun scaled(list: List<Long>): BeatMap =
+                BeatMap(list, beats.bpm, beats.confidence, beats.downbeatOffset)
+                    .let { if (faster) it.doubled() else it.halved() }
+
+            // The tempo and the bar's phase come from whichever list the grid is
+            // actually on.
+            //
+            // They were taken from `beats.beatsMs` alone - the *camera* grid -
+            // which is empty whenever the grid was found on a sound, and
+            // BeatMap.doubled and .halved both hand a list that short straight
+            // back. So x2 on a song's grid doubled its dots on the strip and
+            // left the bpm on the card, and the phase "Every bar" counts from,
+            // exactly where they were: twice as many dots and every fourth one
+            // still marked, which is every *eighth* beat of the new pulse.
+            val lead = when {
+                beats.beatsMs.isNotEmpty() -> beats.beatsMs
+                else -> current.beatClip?.beats?.takeIf { it.isNotEmpty() }
+                    ?: current.audioClips.firstOrNull { it.beats.isNotEmpty() }?.beats.orEmpty()
+            }
+            val scaledGrid = scaled(lead)
             current.copy(
                 beats = beats.copy(
-                    beatsMs = scaledGrid.beatsMs,
+                    // Only the camera grid is stored here; a sound's list lives
+                    // on the sound, and scaling it must not plant a copy here.
+                    beatsMs = if (beats.beatsMs.isNotEmpty()) scaledGrid.beatsMs else beats.beatsMs,
                     bpm = scaledGrid.bpm,
                     downbeatOffset = scaledGrid.downbeatOffset
                 ),
                 audioClips = current.audioClips.map { clip ->
-                    if (clip.beats.isEmpty()) clip
-                    else clip.copy(beats = BeatMap(clip.beats, beats.bpm, beats.confidence, beats.downbeatOffset).let { if (faster) it.doubled() else it.halved() }.beatsMs)
+                    if (clip.beats.isEmpty()) clip else clip.copy(beats = scaled(clip.beats).beatsMs)
                 }
             )
         }
