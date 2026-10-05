@@ -74,8 +74,13 @@ music, footage and fonts, and translate caption words.
 - 22 Squish Originals (music composed on the phone) by mood, 24 sound effects,
   songs on
   the phone, starred and recent; audition before adding.
-- **Free music online**: 15 genres, thousands of tracks each, Load more (Internet Archive, Creative Commons, video-safe
-  licences only).
+- **Free music online**: 15 genres, thousands of tracks each, Load more
+  (Internet Archive, Creative Commons, video-safe licences only - attribution
+  and share-alike, never non-commercial or no-derivatives, decided by an
+  allow-list rather than by the search's filter).
+- **Free stock footage online**: the Archive's stock_footage collection,
+  searched or browsed by subject, under the same licence rule, downloaded as
+  the smallest usable copy rather than the uploader's master.
 - Voiceover recording with count-in, silent picture, live meter, retakes.
 - Per-clip volume up to 400%, volume keyframes, fades in/out, mute.
 - 14 voice effects: **Enhance** (rumble out, hiss down, voice forward),
