@@ -116,22 +116,24 @@ fun main() {
 
         check(mirrored.timesMs.size == times.size, "mirroring changed the number of times")
         check(mirrored.timesMs == mirrored.timesMs.sorted(), "the mirrored times are out of order: ${mirrored.timesMs}")
-        // The move that arrived at the *second* frame, reversed, arrives at the
-        // first - which on the mirrored clock is the pivot. That key is the one
-        // that used to be missing entirely.
+        // Every time is the plain mirror of one of the originals - no shifting,
+        // no re-pairing. That costs a frame of accuracy (the doc on mirroredAt
+        // says exactly what and why) and buys the exactness below, which is
+        // what Reverse and Reverse again rest on.
         check(
-            mirrored.timesMs.last() == pivot - (times.first() - step),
-            "the last mirrored time is ${mirrored.timesMs.last()}, and the first frame mirrors to ${pivot - (times.first() - step)}"
+            mirrored.timesMs.toSet() == times.map { pivot - it }.toSet(),
+            "the mirrored times are not the mirrors of the originals: ${mirrored.timesMs}"
         )
-        // And the first mirrored key is one frame in from the start, not at it:
-        // nothing arrives at the reversed clip's own first frame.
         check(
-            mirrored.timesMs.first() == pivot - times[times.size - 2],
-            "the first mirrored time is ${mirrored.timesMs.first()}, want ${pivot - times[times.size - 2]}"
+            mirrored.timesMs.all { it in 0L..pivot },
+            "a mirrored time is outside the reversed clip: ${mirrored.timesMs}"
         )
-        check(mirrored.timesMs.first() > 0L, "a mirrored key sits at the very start, where no motion arrives")
-        // Its own inverse, which is what lets a clip be reversed and reversed
-        // again: the step is added once and taken off once.
+        check(
+            mirrored.timesMs.all { it % step == 0L },
+            "a mirrored time is not on a frame: ${mirrored.timesMs}"
+        )
+        // Its own inverse, for any spacing, which is the property the plain
+        // mirror is kept for.
         val back = mirrored.mirroredAt(pivot)
         check(back.timesMs == measured.timesMs, "mirroring twice gave ${back.timesMs}, not ${measured.timesMs}")
         check(
@@ -158,6 +160,18 @@ fun main() {
             StabilizerMeasurement(320, 180, emptyList(), emptyList()).mirroredAt(pivot).timesMs.isEmpty(),
             "an empty measurement gained a time"
         )
+        // And unevenly spaced times - which the stabilizer does not produce,
+        // but a draft from another build might - still round-trip exactly. This
+        // is what a re-pairing guessed from the spacing would have broken, and
+        // the reason it was taken back out.
+        run {
+            val uneven = listOf(2_000L, 4_000L, 6_000L, 9_000L)
+            val rough = StabilizerMeasurement(96, 54, uneven, motions.take(4))
+            check(
+                rough.mirroredAt(10_000L).mirroredAt(10_000L).timesMs == uneven,
+                "unevenly spaced times did not round-trip: ${rough.mirroredAt(10_000L).mirroredAt(10_000L).timesMs}"
+            )
+        }
     }
 
     println()
