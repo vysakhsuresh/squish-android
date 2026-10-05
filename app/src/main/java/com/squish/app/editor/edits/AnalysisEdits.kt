@@ -51,13 +51,41 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
      * Falls back to the original when no proxy has been built yet, which is safe
      * now that the batch size is budgeted against the frame size.
      */
-    private fun analysisSourceFor(uri: Uri, current: EditorUiState): AnalysisSource {
+    private fun analysisUriFor(uri: Uri, current: EditorUiState): Uri {
+        val proxy = current.proxyUri
+        return if (proxy != null && uri == current.sourceUri) proxy else uri
+    }
+
+    /**
+     * The same file, with the frame shape the decode is budgeted against.
+     *
+     * The shape used to be `current.sourceWidth`/`sourceHeight` for everything
+     * but the proxy - and those are the *lead* file's, taken when the project
+     * opened. A 4K shot cut into a project opened on a 1080p file was therefore
+     * batched twelve frames at a time, which is twelve 33-megabyte bitmaps on a
+     * phone also running a decoder: the out-of-memory the budget exists to
+     * prevent. The other way round it read one frame per call and took twelve
+     * times as long for no reason.
+     *
+     * Probed per file and remembered, so a file cut into six shots costs one
+     * probe. Only an answer worth having is kept: a file that cannot be read
+     * right now gives 0x0, which [FrameBatch.framesPerCall] reads as one frame
+     * a call - the safe answer - and is asked again next time.
+     */
+    private suspend fun analysisSourceFor(uri: Uri, current: EditorUiState): AnalysisSource {
         val proxy = current.proxyUri
         if (proxy != null && uri == current.sourceUri) {
             return AnalysisSource(proxy, ProxyEngine.PROXY_WIDTH_HINT, ProxyEngine.PROXY_HEIGHT)
         }
-        return AnalysisSource(uri, current.sourceWidth, current.sourceHeight)
+        if (uri == current.sourceUri) return AnalysisSource(uri, current.sourceWidth, current.sourceHeight)
+        shapes[uri]?.let { (w, h) -> return AnalysisSource(uri, w, h) }
+        val meta = ThumbnailExtractor.probe(app, uri)
+        if (meta.width > 0 && meta.height > 0) shapes[uri] = meta.width to meta.height
+        return AnalysisSource(uri, meta.width, meta.height)
     }
+
+    /** Shapes probed by [analysisSourceFor], so six shots of one file cost one probe. */
+    private val shapes = HashMap<Uri, Pair<Int, Int>>()
 
     // ---- Background removal ---------------------------------------------------------
 
@@ -278,7 +306,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
         val current = _state.value
         val uri = clip.uri ?: current.sourceUri ?: return null
         val inClip = clip.sourceAt(atMs).coerceIn(clip.sourceInMs, clip.sourceOutMs)
-        return ThumbnailExtractor.frameAt(app, analysisSourceFor(uri, current).uri, inClip)
+        return ThumbnailExtractor.frameAt(app, analysisUriFor(uri, current), inClip)
     }
 
     /**
@@ -291,7 +319,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
     fun pictureOf(current: EditorUiState, clip: Clip, timelineMs: Long): Pair<Uri, Long>? {
         if (clip.isStillPicture) return null
         val uri = clip.uri ?: current.sourceUri ?: return null
-        return analysisSourceFor(uri, current).uri to clip.sourceAt(timelineMs).coerceIn(clip.sourceInMs, clip.sourceOutMs)
+        return analysisUriFor(uri, current) to clip.sourceAt(timelineMs).coerceIn(clip.sourceInMs, clip.sourceOutMs)
     }
 
     // ---- Motion tracking ------------------------------------------------------------
