@@ -201,9 +201,15 @@ object PreviewRules {
      * out or a Pop in over a shot that has been moved off centre, the screen put
      * the picture somewhere the file does not.
      *
-     * Offsets come in the units each is written in: the placement's are
-     * fractions of a *half* frame (Transform.offsetXFraction), the transition's
-     * fractions of the whole frame (ExportPlan.Draw.shiftX).
+     * Offsets come in the units each is written in, and the two are *different
+     * frames*. The placement runs before the frame's ratio is cut, so its
+     * offsets are fractions of a half **canvas** ([widthPx]); the transition
+     * runs after, so its shifts are fractions of the whole **output frame**
+     * ([keptWidthPx]) - "a fraction of the frame the file is written at", as
+     * TransitionEffect puts it. Both were taken against the canvas, so with any
+     * crop a slide travelled further on screen than in the file and the
+     * outgoing shot left the picture early. With no crop the two are the same
+     * number and nothing moves.
      */
     fun foldedDraw(
         placementScale: Float,
@@ -213,11 +219,13 @@ object PreviewRules {
         transitionShiftX: Float,
         transitionShiftY: Float,
         widthPx: Float,
-        heightPx: Float
+        heightPx: Float,
+        keptWidthPx: Float = widthPx,
+        keptHeightPx: Float = heightPx
     ): Folded = Folded(
         scale = placementScale * transitionScale,
-        translateX = transitionShiftX * widthPx + transitionScale * placementOffsetXFraction * widthPx / 2f,
-        translateY = transitionShiftY * heightPx + transitionScale * placementOffsetYFraction * heightPx / 2f
+        translateX = transitionShiftX * keptWidthPx + transitionScale * placementOffsetXFraction * widthPx / 2f,
+        translateY = transitionShiftY * keptHeightPx + transitionScale * placementOffsetYFraction * heightPx / 2f
     )
 }
 

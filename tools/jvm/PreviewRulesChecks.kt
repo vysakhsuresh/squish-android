@@ -302,6 +302,24 @@ fun main() {
         }
         // And the scale is simply the two multiplied, which it always was.
         check("the folded scale is the two multiplied", PreviewRules.foldedDraw(1.2f, 0f, 0f, 1.6f, 0f, 0f, w, h).scale == 1.2f * 1.6f)
+
+        // The transition is written in the units of the frame the file *keeps*,
+        // the placement in the canvas's. With a 9:16 frame cut from a landscape
+        // canvas a slide of one frame is far less than a slide of one canvas,
+        // and taken against the canvas the outgoing shot left the picture early.
+        run {
+            val keptW = w * 0.5625f   // a 9:16 cut of a 16:9 canvas
+            val slide = PreviewRules.foldedDraw(1f, 0f, 0f, 1f, 1f, 0f, w, h, keptWidthPx = keptW, keptHeightPx = h)
+            check("a full slide travels the kept frame's width", kotlin.math.abs(slide.translateX - keptW) < 0.01f)
+            // The placement still measures against the canvas, since the file
+            // places before it crops.
+            val placed = PreviewRules.foldedDraw(1f, 1f, 0f, 1f, 0f, 0f, w, h, keptWidthPx = keptW, keptHeightPx = h)
+            check("a placement measures against the canvas", kotlin.math.abs(placed.translateX - w / 2f) < 0.01f)
+            // With no crop the two frames are one and nothing moves at all.
+            val uncropped = PreviewRules.foldedDraw(1.2f, 0.4f, -0.3f, 1.6f, 0.2f, 0.1f, w, h)
+            val explicit = PreviewRules.foldedDraw(1.2f, 0.4f, -0.3f, 1.6f, 0.2f, 0.1f, w, h, keptWidthPx = w, keptHeightPx = h)
+            check("the default kept frame is the whole canvas", uncropped == explicit)
+        }
     }
 
     if (failures.isEmpty()) {

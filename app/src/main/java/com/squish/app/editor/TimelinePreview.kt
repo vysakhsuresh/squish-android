@@ -433,8 +433,8 @@ fun TimelinePreview(
                     // themselves, as the file does, so a padded canvas shows its
                     // background through the dip rather than a black card over it.
                     Box(modifier = Modifier.fillMaxSize().zIndex(1f)) {
-                        VideoSurface(engine, engine.baseA, frame.surfaceA.plainFor(pictureTool), rotationDegrees, pictureSize, pictureFrame)
-                        VideoSurface(engine, engine.baseB, frame.surfaceB.plainFor(pictureTool), rotationDegrees, pictureSize, pictureFrame)
+                        VideoSurface(engine, engine.baseA, frame.surfaceA.plainFor(pictureTool), rotationDegrees, pictureSize, pictureFrame, kept)
+                        VideoSurface(engine, engine.baseB, frame.surfaceB.plainFor(pictureTool), rotationDegrees, pictureSize, pictureFrame, kept)
 
                         // Empty space on the base track is a real part of the edit, and
                         // the exported file goes black here - or, on a padded canvas,
@@ -665,7 +665,8 @@ private fun VideoSurface(
     draw: SurfaceDraw,
     rotationDegrees: Int,
     canvasSize: IntSize,
-    pictureFrame: PreviewBox.Frame
+    pictureFrame: PreviewBox.Frame,
+    kept: PreviewBox.Frame
 ) {
     // The outer box is the canvas: the clip's placement and the transition act
     // on it, in the canvas's own units, after the fit and the rotation - the
@@ -694,7 +695,11 @@ private fun VideoSurface(
                     transitionShiftX = draw.translateXFraction,
                     transitionShiftY = draw.translateYFraction,
                     widthPx = size.width,
-                    heightPx = size.height
+                    heightPx = size.height,
+                    // The transition is written in the units of the frame the
+                    // file keeps, which is this much of the canvas.
+                    keptWidthPx = (kept.right - kept.left) * size.width,
+                    keptHeightPx = (kept.bottom - kept.top) * size.height
                 )
                 scaleX = folded.scale
                 scaleY = folded.scale
@@ -714,11 +719,20 @@ private fun VideoSurface(
                     drawContent()
                     whitened(draw.white)
                 } else {
+                    // Measured on the frame the file keeps, like the slide
+                    // above it: the shader's uKeep is a fraction of the output
+                    // frame, and taken against the whole canvas a wipe uncovered
+                    // the picture at the wrong speed wherever a crop was on.
+                    // With no crop these are the canvas's own edges.
+                    val kx = kept.left * size.width
+                    val ky = kept.top * size.height
+                    val kw = (kept.right - kept.left) * size.width
+                    val kh = (kept.bottom - kept.top) * size.height
                     clipRect(
-                        left = size.width * draw.revealFrom.coerceIn(0f, 1f),
-                        top = size.height * draw.revealFromY.coerceIn(0f, 1f),
-                        right = size.width * draw.revealFraction.coerceIn(0f, 1f),
-                        bottom = size.height * draw.revealToY.coerceIn(0f, 1f)
+                        left = kx + kw * draw.revealFrom.coerceIn(0f, 1f),
+                        top = ky + kh * draw.revealFromY.coerceIn(0f, 1f),
+                        right = kx + kw * draw.revealFraction.coerceIn(0f, 1f),
+                        bottom = ky + kh * draw.revealToY.coerceIn(0f, 1f)
                     ) {
                         this@drawWithContent.drawContent()
                         whitened(draw.white)
