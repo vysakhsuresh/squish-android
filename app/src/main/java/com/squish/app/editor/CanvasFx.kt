@@ -171,7 +171,10 @@ half4 main(float2 coord) {
     c = sampleAt(uv);
   }
 
-  if (uHue > 0.001) c = hueRotate(c, uHue);
+  // On the size of it, not its sign: Dream drifts the hue by a sine, so the
+  // negative half of every swing was skipped and the colour turned one way and
+  // then sat flat. The other two producers (Rainbow, Trippy) only ever climb.
+  if (abs(uHue) > 0.001) c = hueRotate(c, uHue);
   if (uMono > 0.001) c = mix(c, float3(dot(c, LUMA)), uMono);
   if (uInvert > 0.001) c = mix(c, 1.0 - c, uInvert);
   if (uScan > 0.001) {
