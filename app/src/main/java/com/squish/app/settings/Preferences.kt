@@ -105,7 +105,8 @@ object Preferences {
             stillMs = prefs.getLong(KEY_STILL_MS, defaults.stillMs).coerceIn(STILL_CHOICES_MS.first(), STILL_CHOICES_MS.last()),
             transition = prefs.getString(KEY_TRANSITION, null)?.let { name -> TransitionType.entries.firstOrNull { it.name == name } }
                 ?: defaults.transition,
-            transitionMs = prefs.getLong(KEY_TRANSITION_MS, defaults.transitionMs),
+            transitionMs = prefs.getLong(KEY_TRANSITION_MS, defaults.transitionMs)
+                .coerceIn(TRANSITION_CHOICES_MS.first(), TRANSITION_CHOICES_MS.last()),
             haptics = prefs.getBoolean(KEY_HAPTICS, defaults.haptics),
             keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, defaults.keepScreenOn)
         ).also { hapticsOn = it.haptics }
@@ -117,6 +118,7 @@ object Preferences {
     fun setDefaultRatio(context: Context, aspect: CropAspect) = edit(context) { putString(KEY_RATIO, aspect.name) }
     fun setStillMs(context: Context, ms: Long) = edit(context) { putLong(KEY_STILL_MS, ms) }
     fun setDefaultTransition(context: Context, type: TransitionType) = edit(context) { putString(KEY_TRANSITION, type.name) }
+    fun setDefaultTransitionMs(context: Context, ms: Long) = edit(context) { putLong(KEY_TRANSITION_MS, ms) }
     fun setKeepScreenOn(context: Context, on: Boolean) = edit(context) { putBoolean(KEY_KEEP_SCREEN_ON, on) }
 
     /** The voice Read aloud speaks in. */
@@ -157,6 +159,17 @@ object Preferences {
 
     /** A default transition's length: the length the Transition sheet starts one at. */
     const val DEFAULT_TRANSITION_MS = 500L
+
+    /**
+     * The lengths a default transition may be given, on the Settings screen.
+     *
+     * `defaultTransitionMs` was read back with [DEFAULT_TRANSITION_MS] behind
+     * it and nothing ever wrote it, so half a second was the only length a
+     * project made from a pile of clips could have. A quarter second is a cut
+     * with a softened edge and a second is a dissolve you watch; both are
+     * wanted, and which one depends entirely on the footage.
+     */
+    val TRANSITION_CHOICES_MS: List<Long> = listOf(250L, 500L, 750L, 1_000L)
 
     const val COACH_HOME = "home"
     const val COACH_EDITOR = "editor"

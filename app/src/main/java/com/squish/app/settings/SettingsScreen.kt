@@ -137,6 +137,18 @@ private fun DefaultsCard() {
             selected = TRANSITION_CHOICES.indexOf(defaults.transition).coerceAtLeast(0),
             onPick = { Preferences.setDefaultTransition(context, TRANSITION_CHOICES[it]); reload() }
         )
+        // Only under a transition: with Cut chosen there is nothing to be long.
+        // The length was a stored setting with no way to set it - read back with
+        // half a second behind it and never written - so every project made
+        // from a pile of clips had half-second joins whatever the footage was.
+        if (defaults.transition != TransitionType.None) {
+            SettingLabel("Transition length", "How long each of those joins takes.")
+            ChipRow(
+                options = Preferences.TRANSITION_CHOICES_MS.map { "%.2f".format(it / 1000f).trimEnd('0').trimEnd('.') + " s" },
+                selected = Preferences.TRANSITION_CHOICES_MS.indexOf(defaults.transitionMs).coerceAtLeast(0),
+                onPick = { Preferences.setDefaultTransitionMs(context, Preferences.TRANSITION_CHOICES_MS[it]); reload() }
+            )
+        }
 
         SettingLabel("Read-aloud voice", "How a line sounds when Read aloud turns it into speech.")
         var voice by remember { mutableStateOf(Preferences.speechVoice(context)) }

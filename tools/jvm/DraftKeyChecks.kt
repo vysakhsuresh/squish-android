@@ -60,6 +60,24 @@ fun main() {
     (legacy - read).forEach { problems += "\"$it\" is in the legacy list and nothing reads it any more" }
     if (written.size < 150) problems += "only ${written.size} fields written - has the parsing rotted?"
 
+    // ---- The same question of the settings ---------------------------------
+    //
+    // A SharedPreferences key read with a default behind it and never written
+    // is a setting that cannot be set, and one written and never read is a
+    // setting that does not stick. "defaultTransitionMs" was the first kind:
+    // every project made from a pile of clips had half-second joins whatever
+    // the footage, and the code read as though you could choose.
+    val prefs = File("app/src/main/java/com/squish/app/settings/Preferences.kt")
+    if (!prefs.isFile) problems += "Preferences.kt is not there any more" else {
+        val p = prefs.readText()
+        val put = Regex("""put[A-Za-z]+\((KEY_[A-Z_]+)""").findAll(p).map { it.groupValues[1] }.toSortedSet()
+        val got = Regex("""get[A-Za-z]+\((KEY_[A-Z_]+)""").findAll(p).map { it.groupValues[1] }.toSortedSet()
+        (put - got).forEach { problems += "$it is saved and never read - the setting does not stick" }
+        (got - put).forEach { problems += "$it is read and never saved - the setting cannot be set" }
+        if (put.size < 8) problems += "only ${put.size} settings keys written - has the parsing rotted?"
+        println("settings keys: ${put.size} written, ${got.size} read")
+    }
+
     println("draft keys: ${written.size} written, ${read.size} read")
     if (problems.isEmpty()) println("PASS - every field a draft writes is read back, and every field read is written or named as an old one")
     else { println("FAIL (${problems.size})"); problems.forEach { println("  - $it") }; exitProcess(1) }
