@@ -89,6 +89,77 @@ fun main() {
         check(portrait > square, "a portrait frame asks $portrait for a turn a square one asks $square for")
     }
 
+    // ---- The measurement on a reversed render's clock ----------------------
+    //
+    // A time stamps the motion's *later* frame - the frame the move arrives at,
+    // and so the frame the correction belongs to. Played backwards, the move
+    // that arrived at frame k now arrives at frame k-1, so mirroring the times
+    // without re-pairing them stamped every correction on the frame it moved
+    // *from*: every re-solved key on a reversed clip landed one frame early,
+    // the first at the pivot where no measurement reaches, and the reversed
+    // clip's last frame had no key at all.
+    run {
+        val step = 40L
+        val frames = 10
+        // Frames at 0, 40, ..., 400; a motion into each of the nine after the
+        // first, so the times are 40..400.
+        val times = (1..frames - 1).map { it * step }
+        val motions = times.indices.map { FrameMotion(dx = 1f + it, dy = 2f, rotationDegrees = 0.1f, confidence = 1f) }
+        val measured = StabilizerMeasurement(
+            analysisWidth = 320,
+            analysisHeight = 180,
+            timesMs = times,
+            motions = motions
+        )
+        val pivot = (frames - 1) * step   // the render's out point: the last frame
+        val mirrored = measured.mirroredAt(pivot)
+
+        check(mirrored.timesMs.size == times.size, "mirroring changed the number of times")
+        check(mirrored.timesMs == mirrored.timesMs.sorted(), "the mirrored times are out of order: ${mirrored.timesMs}")
+        // The move that arrived at the *second* frame, reversed, arrives at the
+        // first - which on the mirrored clock is the pivot. That key is the one
+        // that used to be missing entirely.
+        check(
+            mirrored.timesMs.last() == pivot - (times.first() - step),
+            "the last mirrored time is ${mirrored.timesMs.last()}, and the first frame mirrors to ${pivot - (times.first() - step)}"
+        )
+        // And the first mirrored key is one frame in from the start, not at it:
+        // nothing arrives at the reversed clip's own first frame.
+        check(
+            mirrored.timesMs.first() == pivot - times[times.size - 2],
+            "the first mirrored time is ${mirrored.timesMs.first()}, want ${pivot - times[times.size - 2]}"
+        )
+        check(mirrored.timesMs.first() > 0L, "a mirrored key sits at the very start, where no motion arrives")
+        // Its own inverse, which is what lets a clip be reversed and reversed
+        // again: the step is added once and taken off once.
+        val back = mirrored.mirroredAt(pivot)
+        check(back.timesMs == measured.timesMs, "mirroring twice gave ${back.timesMs}, not ${measured.timesMs}")
+        check(
+            back.motions.map { it.dx } == measured.motions.map { it.dx },
+            "mirroring twice did not put the motions back"
+        )
+        // The motions are reversed and negated - the same move the other way.
+        check(mirrored.motions.map { it.dx } == motions.reversed().map { -it.dx }, "the mirrored motions are not the negated reverse")
+
+        // Solved, every key lands inside the reversed clip and on a frame.
+        val solved = StabilizerSolve.solve(mirrored, 0.5f)
+        check(solved != null, "a mirrored measurement did not solve")
+        solved?.keyframes?.forEach { key ->
+            check(key.atMs in 0L..pivot, "a mirrored key is at ${key.atMs}, outside 0..$pivot")
+            check(key.atMs % step == 0L, "a mirrored key is at ${key.atMs}, which is not a frame")
+        }
+        // One measured frame short of a full clip, and a measurement with one
+        // motion in it: neither may throw or invent a time.
+        check(
+            StabilizerMeasurement(320, 180, listOf(step), listOf(motions.first())).mirroredAt(pivot).timesMs == listOf(pivot - step),
+            "a single motion mirrored wrongly"
+        )
+        check(
+            StabilizerMeasurement(320, 180, emptyList(), emptyList()).mirroredAt(pivot).timesMs.isEmpty(),
+            "an empty measurement gained a time"
+        )
+    }
+
     println()
     if (problems.isEmpty()) println("PASS - the stabilizer solves the same from its measurement, and strength re-solves")
     else { println("FAIL (${problems.size})"); problems.take(25).forEach { println("  - $it") }; exitProcess(1) }

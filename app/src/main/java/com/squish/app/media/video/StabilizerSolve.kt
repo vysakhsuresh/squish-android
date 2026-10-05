@@ -33,14 +33,35 @@ data class StabilizerMeasurement(
      * shaking harder reversed than raw, which is the thing the mirroring is
      * there to prevent.
      */
-    fun mirroredAt(pivotMs: Long): StabilizerMeasurement = StabilizerMeasurement(
-        analysisWidth = analysisWidth,
-        analysisHeight = analysisHeight,
-        timesMs = timesMs.map { pivotMs - it }.reversed(),
-        motions = motions.reversed().map {
-            it.copy(dx = -it.dx, dy = -it.dy, rotationDegrees = -it.rotationDegrees)
-        }
-    )
+    fun mirroredAt(pivotMs: Long): StabilizerMeasurement {
+        // A frame period, from the spacing of the times themselves. The
+        // stabilizer measures every stride-th frame at a fixed stride, so they
+        // are evenly spaced; with fewer than two there is nothing to shift.
+        val step = if (timesMs.size >= 2) timesMs[1] - timesMs[0] else 0L
+        return StabilizerMeasurement(
+            analysisWidth = analysisWidth,
+            analysisHeight = analysisHeight,
+            // Shifted by a frame, which is the whole of the correction here.
+            //
+            // A time stamps the motion's *later* frame - the frame the move
+            // arrives at, and so the frame the correction belongs to. Played
+            // backwards, the move that arrived at frame k now arrives at frame
+            // k-1, so mirroring the times without re-pairing them stamped
+            // every correction on the frame it moved *from*: every re-solved
+            // key on a reversed clip landed one frame early, the first at the
+            // pivot itself where no measurement reaches, and the last frame of
+            // the reversed clip had no key at all. `+ step` is that re-pairing:
+            // mirror the *earlier* frame of each motion instead of the later
+            // one, which is the later frame of the same motion reversed.
+            //
+            // Still its own inverse: mirroring twice adds and subtracts the
+            // same step.
+            timesMs = timesMs.map { pivotMs - it + step }.reversed(),
+            motions = motions.reversed().map {
+                it.copy(dx = -it.dx, dy = -it.dy, rotationDegrees = -it.rotationDegrees)
+            }
+        )
+    }
 }
 
 /** The correction solved from a measurement at one strength, and what it costs in frame. */
