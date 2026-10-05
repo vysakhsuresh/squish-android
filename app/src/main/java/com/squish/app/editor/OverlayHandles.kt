@@ -101,8 +101,13 @@ class OverlayHandleActions(
      * no-op, because the quick repeat also stood in for the tap that cycles
      * down a stack. Two overlapping PiPs could not be cycled by tapping at a
      * normal speed: the second tap did nothing at all.
+     *
+     * No default. It had one - "there is an onOpen, so yes" - and the wrapper
+     * TimelinePreview builds around these actions forwards every callback by
+     * name, so it quietly took the default and the bug was still there on the
+     * one path the editor uses. A question every caller has to answer.
      */
-    val canOpen: (String) -> Boolean = { onOpen != null },
+    val canOpen: (String) -> Boolean,
     /**
      * A line of text's gesture, in the line's own terms - where it is and how
      * big - worked out by the preview from the box's Transform (TextGeometry);
