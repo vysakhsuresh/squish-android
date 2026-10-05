@@ -1754,7 +1754,12 @@ fun TimelineState.withFrozenFrame(clipId: String, atMs: Long, still: Clip): Time
         kind = ClipKind.Video,
         layer = clip.layer,
         volume = clip.volume,
-        opacity = clip.opacity,
+        // At the frozen moment, like the placement and the mask beside it - not
+        // the static field, which on a clip whose opacity is keyed is not what
+        // was on screen. A shot fading from a keyed 20% to 100% froze at
+        // whatever `opacity` happened to hold, which on a keyed clip is only
+        // the fallback the keys replaced.
+        opacity = clip.valueAt(ValueTrack.Opacity, atMs),
         scale = pose.scale,
         offsetXFraction = pose.offsetXFraction,
         offsetYFraction = pose.offsetYFraction,
@@ -1768,7 +1773,8 @@ fun TimelineState.withFrozenFrame(clipId: String, atMs: Long, still: Clip): Time
         // sliders and crop come along, or the still would not be the frame
         // that was on screen.
         lookId = clip.lookId,
-        lookIntensity = clip.lookIntensity,
+        // And the filter's strength at that moment, for the same reason.
+        lookIntensity = clip.valueAt(ValueTrack.Look, atMs),
         adjust = clip.adjust,
         crop = clip.crop,
         transitionIn = Transition(),

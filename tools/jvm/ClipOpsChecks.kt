@@ -548,6 +548,31 @@ fun main() {
         val frozen = TimelineState(clips = listOf(a)).withFrozenFrame("a", 4_000, still).byId(still.id)
         check(frozen.mask?.track == null && abs((frozen.mask?.centerXFraction ?: 9f) - 0f) < 1e-3f, "freeze: the still's mask is ${frozen.mask}")
 
+        // Every number the still keeps is the one that was on screen, which is
+        // what the function promises - the placement and the mask were read at
+        // the moment and the two keyed levels were not, so a shot halfway
+        // through a keyed fade froze at the static field the keys had replaced.
+        run {
+            val keyed = video("k", 8_000).copy(
+                opacity = 1f,
+                opacityKeys = listOf(ValueKey(0L, 0.2f), ValueKey(8_000L, 1f)),
+                lookId = "noir",
+                lookIntensity = 1f,
+                lookKeys = listOf(ValueKey(0L, 0f), ValueKey(8_000L, 1f))
+            )
+            val half = TimelineState(clips = listOf(keyed)).withFrozenFrame("k", 4_000, still).byId(still.id)
+            check(abs(half.opacity - 0.6f) < 1e-3f, "freeze: the still's opacity is ${half.opacity}, not the 0.6 on screen")
+            check(abs(half.lookIntensity - 0.5f) < 1e-3f, "freeze: the still's filter strength is ${half.lookIntensity}, not the 0.5 on screen")
+            // And the still carries no track of its own: it is one frame.
+            check(half.opacityKeys.isEmpty() && half.lookKeys.isEmpty() && half.keyframes.isEmpty(),
+                "freeze: the still carries keys of its own")
+            // A clip with no keys still freezes at its own levels.
+            val plain = video("p", 8_000).copy(opacity = 0.4f, lookId = "noir", lookIntensity = 0.7f)
+            val still2 = TimelineState(clips = listOf(plain)).withFrozenFrame("p", 4_000, still).byId(still.id)
+            check(abs(still2.opacity - 0.4f) < 1e-3f && abs(still2.lookIntensity - 0.7f) < 1e-3f,
+                "freeze: an unkeyed clip's levels came out ${still2.opacity} and ${still2.lookIntensity}")
+        }
+
         // Copied from a sound, pasted on a picture: the sound of it and nothing else.
         val song = audio("song", 8_000).copy(volume = 0.3f, fadeInMs = 400, voice = VoiceEffect.Robot)
         val pip = video("pip", 4_000, layer = 1, keys = listOf(Keyframe(0, Transform(scale = 0.4f)), Keyframe(4_000, Transform(scale = 0.5f))))
