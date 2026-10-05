@@ -38,7 +38,19 @@ object ThumbnailCache {
 
     private val decoding = Mutex()
 
-    /** The frame of [uri] at [timeMs], from memory, from disk, or decoded and kept; null when the file cannot be read. */
+    /**
+     * The frame of [uri] at [timeMs], from memory, from disk, or decoded and
+     * kept; null when the file cannot be read.
+     *
+     * A null is deliberately *not* remembered. It would save a retriever open
+     * per composition on a file that has gone - the callers all ask from a
+     * `LaunchedEffect` keyed on the uri, so it is one open per entry and not
+     * one per frame - and it would cost correctness: nothing calls [evict] when
+     * a missing file is relinked, so a remembered miss would outlive the thing
+     * that caused it and the picture would stay blank on a project that works
+     * again. If a negative cache is ever wanted, the relink has to clear it
+     * first.
+     */
     suspend fun frame(context: Context, uri: Uri, timeMs: Long): Bitmap? {
         val key = key(uri, timeMs)
         memory.get(key)?.let { return it }
