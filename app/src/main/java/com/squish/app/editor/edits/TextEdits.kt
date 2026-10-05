@@ -977,7 +977,17 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         if (merged.isEmpty()) return
         record(label) {
             merged.forEach { span ->
+                // The lines move only if the footage did.
+                //
+                // `withSpanRemoved` can refuse: a stretch shorter than a frame,
+                // or one with no clip in it at all - a word over a gap, or a
+                // line an old draft left past the end of the edit. The caption
+                // half ran anyway, so the lines came back by the stretch's
+                // length while the picture stayed where it was, and every
+                // caption after that point sat off its footage for good.
+                val before = _state.value.videoClips to _state.value.audioClips
                 mutateTimeline { it.withSpanRemoved(span.first, span.last) }
+                if (_state.value.videoClips to _state.value.audioClips == before) return@forEach
                 _state.update { s ->
                     s.copy(
                         textOverlays = s.textOverlays.mapNotNull { item ->

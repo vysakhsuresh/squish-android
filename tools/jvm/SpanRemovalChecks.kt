@@ -1,5 +1,6 @@
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.MIN_SPAN_MS
 import com.squish.app.timeline.TimelineState
 import com.squish.app.timeline.withClipAdded
 import com.squish.app.timeline.withSpanRemoved
@@ -125,6 +126,29 @@ fun main() {
         check(after.mainLength == 8_000L, "a stretch past the end left ${after.mainLength}")
         val all = before.withSpanRemoved(0, 30_000)
         check(all.baseVideoClips.isEmpty(), "taking everything out left ${all.baseVideoClips.size} shots")
+    }
+
+    // --- When it refuses, it changes nothing at all. ------------------------
+    //
+    // Two cases, and TextEdits.removeSpans has to tell them from a removal: it
+    // moves the lines of words by the stretch's length itself, and used to do
+    // that whether or not the footage moved - so a word over a gap, or a line
+    // an old draft left past the end, slid every caption after it off its
+    // footage for good.
+    run {
+        val before = state(video("a", 10_000))
+        // Shorter than a frame.
+        check(before.withSpanRemoved(3_000, 3_000 + MIN_SPAN_MS - 1) == before, "a stretch under a frame changed the edit")
+        check(before.withSpanRemoved(3_000, 3_000) == before, "an empty stretch changed the edit")
+        // Past the end of everything: nothing is in it.
+        check(before.withSpanRemoved(20_000, 25_000) == before, "a stretch past the end changed the edit")
+        // And in a gap: a clip at 0..4s and another at 8..12s, the stretch between.
+        // Built straight, not through withClipAdded, which would butt the second shot up.
+        val gapped = TimelineState(clips = listOf(video("a", 4_000), video("b", 4_000, start = 8_000)))
+        check(gapped.withSpanRemoved(5_000, 7_000) == gapped, "a stretch inside a gap changed the edit")
+        // While a stretch with something in it does change it, so the test the
+        // caller makes is a test of something.
+        check(gapped.withSpanRemoved(1_000, 3_000) != gapped, "a stretch with a shot in it changed nothing")
     }
 
     println("span removal: picture, sound and overlays, singly and in runs")
