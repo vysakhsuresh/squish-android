@@ -2043,8 +2043,15 @@ And eleven more, each fixed with an executed check or a source one:
 - **A pinned overlay pulsed twelve per cent**: `TrackSample.scale` is re-picked
   every frame from three candidates and was multiplied straight into the layer's
   size at every key.
-- **A reversed clip's stabilizer keys were one frame early**, and its last frame
-  had none: the times were mirrored without re-pairing them with the motions.
+- **A reversed clip's stabilizer keys are one frame early** - the times are
+  mirrored without re-pairing them with the motions they belong to. Found, fixed,
+  and then **taken back**: the re-pairing needs a frame period, and guessing it
+  from the spacing is right only for the evenly spaced times the stabilizer
+  itself produces and wrong for any others, and it stops the mirroring being its
+  own inverse - which Reverse, and Reverse again, depends on. One frame of a
+  smoothed correction is a sub-pixel difference; a mirroring that does not
+  round-trip is not. The cost is written down on `mirroredAt` instead, with what
+  it would take to have both.
 - **A no-derivatives clip was offered as free b-roll.** The licence filter was
   the Archive query alone, and its `*-nd*`/`*-nc*` patterns cannot see the CC
   1.0 codes, which carry no hyphen.
@@ -2077,8 +2084,11 @@ literal text `["A","B"]` on the timeline.
    from outside the panel until the transcript is shorter. The choice must go
    away; it used to take the editor down.
 5. **Track something, pin an overlay to it, and watch the overlay's size.** It
-   must not pulse at the frame rate. Then reverse a stabilized clip and nudge
-   Strength: its keys must not shift by a frame.
+   must not pulse at the frame rate. Then reverse a stabilized clip, nudge
+   Strength, and reverse it back: it must be as steady as it started - the keys
+   sit one frame earlier than the frames they describe on a reversed clip, which
+   is accepted and written down, and what has to hold is that reversing twice
+   returns exactly what went in.
 6. **Auto-reframe a three-minute handheld shot with no face in it** - the window
    is a length of time now, and the duplicate keyframes are skipped, so the crop
    should follow the subject rather than sitting between it and the middle.

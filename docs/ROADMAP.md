@@ -559,7 +559,8 @@ important thing on this whole list: until tonight it could not be done at all.
     panel until the transcript is shorter.** The choice goes away; it used to
     take the editor down.
 27. **Pin an overlay to a track**: its size must not pulse at the frame rate.
-    And reverse a stabilized clip, then nudge Strength: the keys must not shift.
+    And reverse a stabilized clip, nudge Strength, reverse it back: it must be
+    as steady as it started.
 28. **"Keep HDR" on an HLG clip with a caption on it**: off, dim, and saying
     why - Media3 refuses a bitmap overlay in an HDR graph below Android 14.
 
