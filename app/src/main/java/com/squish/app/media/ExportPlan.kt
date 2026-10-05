@@ -957,6 +957,35 @@ object ExportPlan {
         return AudioSlice(lead, sourceIn, sourceOut, skippedSource)
     }
 
+    /**
+     * How many overlays Media3 will put in one pass.
+     *
+     * `OverlayShaderProgram` reads them as samplers and refuses more than
+     * fifteen in one instance - "OverlayShaderProgram does not support more
+     * than 15 SDR overlays in the same instance", a `checkArgument` that fails
+     * the export at its first frame. Every caption, sticker and shape in the
+     * edit used to go into one `OverlayEffect`, so any edit with sixteen or
+     * more of them could not be rendered at all, while the preview - which
+     * draws them on a Compose canvas with no such limit - showed them
+     * perfectly. Auto-captions reach it on ordinary footage: a segment is at
+     * most 4.2 s, so a minute of talking is fifteen lines and two minutes is
+     * thirty.
+     */
+    const val MAX_OVERLAYS_PER_PASS = 15
+
+    /**
+     * [count] overlays in passes of at most [MAX_OVERLAYS_PER_PASS], as
+     * indices.
+     *
+     * Straight along the list, which is both the fewest passes possible -
+     * `ceil(count / 15)`, since the limit counts samplers and not moments, so
+     * two overlays that never share a frame still take two of them - and the
+     * one grouping that keeps the order. Passes run in order and a pass draws
+     * its own in order, so an overlay that was underneath stays underneath.
+     */
+    fun overlayGroups(count: Int): List<List<Int>> =
+        if (count <= 0) emptyList() else (0 until count).chunked(MAX_OVERLAYS_PER_PASS)
+
     /** The most channels an input has a *layout* for; eight is 7.1. */
     const val MAX_INPUT_CHANNELS = 8
 

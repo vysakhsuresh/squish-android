@@ -518,6 +518,43 @@ fun main() {
         check(ExportPlan.audioSlice(audio("file", 0, 60_000, fileMs = 20_000), 60_000)!!.sourceOutMs == 20_000L, "read past the end of the file")
     }
 
+    // --- Overlays in passes of fifteen ------------------------------------------
+    //
+    // Media3's OverlayShaderProgram reads overlays as samplers and refuses more
+    // than fifteen in one instance - a checkArgument that fails the export at
+    // its first frame. Every caption, sticker and shape went into one
+    // OverlayEffect, so an edit with sixteen of them could not be rendered at
+    // all while the preview, which draws them on a Compose canvas, showed them
+    // perfectly. Auto-captions reach it on ordinary footage: a segment is at
+    // most 4.2 s, so two minutes of talking is about thirty lines.
+    run {
+        check(ExportPlan.overlayGroups(0).isEmpty(), "no overlays gave a pass")
+        check(ExportPlan.overlayGroups(-4).isEmpty(), "a negative count gave a pass")
+
+        for (n in listOf(1, 2, 14, 15, 16, 29, 30, 31, 100, 600)) {
+            val groups = ExportPlan.overlayGroups(n)
+            val flat = groups.flatten()
+            // Every overlay once, and in the order it was given in: the passes
+            // run in order and each pass draws its own in order, so that is
+            // what keeps an overlay that was underneath underneath.
+            check(flat == (0 until n).toList(), "$n overlays came back as $flat")
+            check(
+                groups.all { it.size <= ExportPlan.MAX_OVERLAYS_PER_PASS },
+                "$n overlays: a pass holds more than ${ExportPlan.MAX_OVERLAYS_PER_PASS}"
+            )
+            // And in as few passes as that allows. The limit counts samplers,
+            // not moments, so two lines that never share a frame still take two
+            // of them - there is no packing to be cleverer about.
+            val fewest = (n + ExportPlan.MAX_OVERLAYS_PER_PASS - 1) / ExportPlan.MAX_OVERLAYS_PER_PASS
+            check(groups.size == fewest, "$n overlays took ${groups.size} passes, and $fewest would do")
+            check(groups.none { it.isEmpty() }, "$n overlays left an empty pass")
+        }
+        // The numbers that matter: fifteen captions still render in one pass,
+        // sixteen - two minutes of auto-captioned talking - in two.
+        check(ExportPlan.overlayGroups(15).size == 1, "fifteen overlays took more than one pass")
+        check(ExportPlan.overlayGroups(16).size == 2, "sixteen overlays took ${ExportPlan.overlayGroups(16).size} passes")
+    }
+
     // --- Fold-down: mono and stereo untouched, wider never clips, no LFE. --------
     run {
         for (n in 1..ExportPlan.MAX_INPUT_CHANNELS) {

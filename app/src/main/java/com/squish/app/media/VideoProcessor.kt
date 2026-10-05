@@ -426,9 +426,19 @@ class VideoProcessor(private val context: Context) {
             effects.add(FxEffect({ timed }))
         }
         if (state.textOverlays.isNotEmpty()) {
-            // Widened at the declaration: OverlayEffect takes List<TextureOverlay>.
-            val overlays: List<TextureOverlay> = state.textOverlays.map { SquishTextOverlay(it) }
-            effects.add(OverlayEffect(ImmutableList.copyOf(overlays)))
+            // In passes of at most fifteen: Media3's OverlayShaderProgram reads
+            // them as samplers and refuses more in one instance, which failed
+            // the export at its first frame on any edit with sixteen captions -
+            // two minutes of auto-captioned talking. The limit counts samplers
+            // and not moments, so two lines that never share a frame still take
+            // two of them; the passes run in order and so does each pass's own
+            // list, which is what keeps the drawing order (ExportPlan.overlayGroups).
+            val lines = state.textOverlays
+            ExportPlan.overlayGroups(lines.size).forEach { group ->
+                // Widened at the declaration: OverlayEffect takes List<TextureOverlay>.
+                val overlays: List<TextureOverlay> = group.map { SquishTextOverlay(lines[it]) }
+                effects.add(OverlayEffect(ImmutableList.copyOf(overlays)))
+            }
         }
         if (effects.isEmpty()) return Effects.EMPTY
         return Effects(ImmutableList.of(), ImmutableList.copyOf(effects))
