@@ -797,10 +797,16 @@ fun main() {
             !Regex("setRequestMethod|requestMethod\\s*=").containsMatchIn(online),
             "Online.kt sets a request method: every request here is a GET, and a POST is an upload"
         )
-        // And nothing else in the app opens one behind its back.
+        // And nothing else in the app opens one behind its back. The list is
+        // every way out of the process there is, not only the one in use:
+        // checked once against the whole tree, and there is none of it, so
+        // naming them all costs nothing and closes the door.
         readAll(SRC).forEach { (path, text) ->
             if (path.endsWith("online/Online.kt")) return@forEach
-            Regex("openConnection\\(\\)|HttpURLConnection|OkHttpClient|Retrofit").findAll(text).forEach { m ->
+            Regex(
+                "openConnection\\(\\)|HttpURLConnection|URLConnection|OkHttpClient|Retrofit|" +
+                    "io\\.ktor|java\\.net\\.Socket|DatagramSocket|SSLSocket|WebView|RequestQueue"
+            ).findAll(text).forEach { m ->
                 problems += "$path reaches the network directly (${m.value}) - every request goes through " +
                     "Online.get or Online.download, which refuse while the Settings switch is off"
             }
