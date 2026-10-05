@@ -71,6 +71,35 @@ fun rowChecks() {
     val ov = cut.clips.filter { it.isOverlay }
     val clash = ov.any { x -> ov.any { y -> x.id != y.id && x.layer == y.layer && x.timelineStartMs < y.timelineEndMs && y.timelineStartMs < x.timelineEndMs } }
     check(!clash, "two overlays share a row at once: ${ov.map { "${it.id}@${it.layer} ${it.timelineStartMs}-${it.timelineEndMs}" }}")
+
+    // Footage stops at MAX_FOOTAGE_LAYER: each row of it is a decoder in the
+    // preview and in the export. The re-seating asked for the lowest free row
+    // of all six, so a shot pushed off its own row by a removal could land on 5
+    // or 6 - one more decoder than either side budgets for.
+    run {
+        val base = Clip(id = "m", kind = ClipKind.Video, uri = null, label = "m", sourceInMs = 0, sourceOutMs = 20_000, timelineStartMs = 0, sourceDurationMs = 20_000)
+        // Rows 1..MAX_FOOTAGE_LAYER full across the stretch the moved clip lands in.
+        val walls = (1..com.squish.app.timeline.MAX_FOOTAGE_LAYER).map { row ->
+            Clip(id = "w$row", kind = ClipKind.Video, uri = null, label = "w", sourceInMs = 0, sourceOutMs = 20_000, timelineStartMs = 0, sourceDurationMs = 20_000, layer = row)
+        }
+        val mover = Clip(id = "x", kind = ClipKind.Video, uri = null, label = "x", sourceInMs = 0, sourceOutMs = 2_000, timelineStartMs = 16_000, sourceDurationMs = 2_000, layer = 1)
+        val out = TimelineState(clips = listOf(base) + walls + mover).withSilencesRemoved("m", listOf(0L..2_000L, 15_000L..20_000L))
+        val moved = out.clips.firstOrNull { it.id == "x" }
+        check(moved != null && moved.layer <= com.squish.app.timeline.MAX_FOOTAGE_LAYER,
+            "a shot was re-seated on row ${moved?.layer}, past the footage ceiling of ${com.squish.app.timeline.MAX_FOOTAGE_LAYER}")
+    }
+
+    // And a sound is not re-seated at all: its layer is a row *preference* and
+    // the free-row test looks at video clips alone, so a sound tested against
+    // the video rows could be rewritten onto one of their numbers and jump to
+    // another sound row for no reason.
+    run {
+        val base = Clip(id = "m", kind = ClipKind.Video, uri = null, label = "m", sourceInMs = 0, sourceOutMs = 20_000, timelineStartMs = 0, sourceDurationMs = 20_000)
+        val wall = Clip(id = "w", kind = ClipKind.Video, uri = null, label = "w", sourceInMs = 0, sourceOutMs = 20_000, timelineStartMs = 0, sourceDurationMs = 20_000, layer = 1)
+        val sound = Clip(id = "s", kind = ClipKind.Audio, uri = null, label = "s", sourceInMs = 0, sourceOutMs = 2_000, timelineStartMs = 16_000, sourceDurationMs = 2_000, layer = 1)
+        val out = TimelineState(clips = listOf(base, wall, sound)).withSilencesRemoved("m", listOf(0L..2_000L, 15_000L..20_000L))
+        check(out.clips.first { it.id == "s" }.layer == 1, "a sound was moved to row ${out.clips.first { it.id == "s" }.layer} by the overlay re-seating")
+    }
 }
 
 fun tinyTrimChecks() {

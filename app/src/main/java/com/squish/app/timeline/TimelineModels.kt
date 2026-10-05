@@ -2131,9 +2131,23 @@ fun TimelineState.withSilencesRemoved(clipId: String, kept: List<LongRange>): Ti
     // A moved overlay that now meets one left where it was, on the same row,
     // goes up to a row with room: one overlay a row at a time.
     var seated = laid
-    laid.clips.filter { it.isOverlay && it.timelineStartMs != (clips.firstOrNull { o -> o.id == it.id }?.timelineStartMs ?: it.timelineStartMs) }.forEach { o ->
+    // Pictures only: `isOverlay` is `layer > 0` and says nothing about kind, so
+    // this took sound clips too - and a sound's layer is a row *preference*,
+    // which `layerIsFree` and `firstFreeLayer` know nothing about, since both
+    // look at video clips alone. A sound was therefore tested against the video
+    // rows and could be rewritten onto one of their numbers, moving it to a
+    // different sound row for no reason anyone could see.
+    //
+    // And to a row the clip may actually sit on: `firstFreeLayer` defaults its
+    // ceiling to MAX_LAYER, so a footage overlay could be parked on row 5 or 6,
+    // past MAX_FOOTAGE_LAYER - one more video decoder than the preview and the
+    // export budget for (Clip.topLayer says why).
+    laid.clips.filter {
+        it.kind == ClipKind.Video && it.isOverlay &&
+            it.timelineStartMs != (clips.firstOrNull { o -> o.id == it.id }?.timelineStartMs ?: it.timelineStartMs)
+    }.forEach { o ->
         if (!seated.layerIsFree(o.layer, o.timelineStartMs, o.timelineEndMs, o.id)) {
-            val row = seated.firstFreeLayer(o.timelineStartMs, o.timelineEndMs, o.id)
+            val row = seated.firstFreeLayer(o.timelineStartMs, o.timelineEndMs, o.id, top = o.topLayer)
             if (row != null) seated = seated.copy(clips = seated.clips.map { c -> if (c.id == o.id) c.copy(layer = row) else c })
         }
     }
