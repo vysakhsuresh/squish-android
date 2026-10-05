@@ -1185,14 +1185,33 @@ data class EditorUiState(
         get() = ExportPlan.needsCompositing(videoClips, trimmedDurationMs, paddedCanvas)
 
     /**
-     * Whether the file keeps its HDR: asked for, on an HDR source, and not
-     * layered. One answer for the switch, the codec and the render: the switch
-     * used to show itself off on a layered edit while the codec row above it
-     * stayed locked to HEVC "to keep HDR" and the render asked Media3 to keep
-     * it anyway.
+     * Whether the file keeps its HDR: asked for, on an HDR source, not
+     * layered, and with no words or stickers on the picture. One answer for the
+     * switch, the codec and the render: the switch used to show itself off on a
+     * layered edit while the codec row above it stayed locked to HEVC "to keep
+     * HDR" and the render asked Media3 to keep it anyway.
+     *
+     * The captions are in that list because of what Media3 does with an overlay
+     * in an HDR graph. `OverlayShaderProgram.findHdrTypes` sorts each overlay
+     * by its class: a `TextOverlay` is drawn as text, and anything else that is
+     * a `BitmapOverlay` - which `SquishTextOverlay` is - is taken for an Ultra
+     * HDR bitmap behind `checkState(SDK_INT >= 34)`. So an HLG clip with one
+     * caption on it and Keep HDR on fails the render outright below Android 14,
+     * and above it hands a plain ARGB_8888 bitmap with no gainmap to the
+     * gainmap path. `isLayered` could not see this: it reads the video clips,
+     * and a line of words is not one.
      */
     val effectiveKeepHdr: Boolean
-        get() = keepHdr && hasHdrSource && !isLayered
+        get() = keepHdr && canKeepHdr
+
+    /**
+     * Whether this edit *could* keep its HDR if asked - which is what the
+     * switch's own enabled state and tick have to read, or the sheet promises
+     * what the render will not do. See [effectiveKeepHdr] for why a line of
+     * words is in the list.
+     */
+    val canKeepHdr: Boolean
+        get() = hasHdrSource && !isLayered && textOverlays.isEmpty()
 
     /**
      * Whether the file is written in HEVC: asked for as the smaller file, or

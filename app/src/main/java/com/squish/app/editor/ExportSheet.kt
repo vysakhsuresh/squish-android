@@ -413,18 +413,25 @@ private fun PictureRows(state: EditorUiState, viewModel: EditorViewModel) {
     if (state.hasHdrSource) {
         // A layered export is always written in ordinary colour: its first
         // input is the clock still, which sets the file's colour
-        // (CompositionFactory). The switch says so rather than promising.
+        // (CompositionFactory). So is one with words or stickers on it, which
+        // Media3 draws from a plain bitmap with no gainmap - and refuses
+        // outright below Android 14. The switch reads the same `canKeepHdr`
+        // the render reads, rather than its own idea of what blocks it: it used
+        // to read `isLayered` alone, so an HLG clip with one caption on it
+        // showed the switch on and ticked while the render tone-mapped or
+        // failed.
         val layered = state.isLayered
         SwitchRow(
             title = "Keep HDR",
             subtitle = when {
                 layered -> "Transitions, overlays and gaps are written in ordinary colour, which every screen shows the same."
+                state.textOverlays.isNotEmpty() -> "Words and stickers are written in ordinary colour, so an edit with any on it is too."
                 state.keepHdr -> if (state.hevcAvailable == true) "The HDR is kept, in HEVC. Ordinary screens show it dimmer."
                 else "Kept where this phone's encoder can write it; converted otherwise."
                 else -> "Converted to ordinary colour, which every screen shows the same. On, the file keeps its HDR."
             },
-            checked = state.keepHdr && !layered,
-            enabled = !layered,
+            checked = state.keepHdr && state.canKeepHdr,
+            enabled = state.canKeepHdr,
             onCheckedChange = viewModel::setKeepHdr
         )
     }

@@ -104,8 +104,28 @@ class HistoryRepository(context: Context) {
                 val gallery = record.galleryUri
                 if (gallery == null) !File(record.outputPath).exists()
                 else runCatching {
-                    appContext.contentResolver.query(Uri.parse(gallery), arrayOf(android.provider.MediaStore.MediaColumns._ID), null, null, null)
-                        ?.use { it.count == 0 } ?: false
+                    // Trashed rows counted in, which a plain query leaves out.
+                    //
+                    // Since Android 11 the gallery's own Bin is a MediaStore
+                    // flag, and a query with no arguments hides every row that
+                    // carries it. So moving an export to the Bin read here as
+                    // "deleted for good": the library row was forgotten and
+                    // history.json rewritten, and restoring the video from the
+                    // Bin brought the file back with no way to get the row
+                    // back - the one thing this function promises not to do to
+                    // a file that still exists.
+                    val args = android.os.Bundle().apply {
+                        putInt(
+                            android.provider.MediaStore.QUERY_ARG_MATCH_TRASHED,
+                            android.provider.MediaStore.MATCH_INCLUDE
+                        )
+                    }
+                    appContext.contentResolver.query(
+                        Uri.parse(gallery),
+                        arrayOf(android.provider.MediaStore.MediaColumns._ID),
+                        args,
+                        null
+                    )?.use { it.count == 0 } ?: false
                 }.getOrDefault(false)
             }.map { it.id }
         }

@@ -757,6 +757,25 @@ fun main() {
         )
     }
 
+    // ---- "Has the gallery row gone?" is not "is it in the Bin?" ------------
+    //
+    // Since Android 11 the gallery's Bin is a MediaStore flag, and a query with
+    // no arguments hides every row that carries it. So moving an export to the
+    // Bin read as deleted for good: the library row was forgotten and
+    // history.json rewritten, and restoring the video brought the file back
+    // with no way to get the row back - the one thing that function promises
+    // not to do to a file that still exists.
+    run {
+        val history = read("$SRC/data/HistoryRepository.kt")
+        val probe = history.substringAfter("suspend fun forgetDeleted()", "").take(1400)
+        check(probe.isNotEmpty(), "forgetDeleted has moved - this check has rotted")
+        check(
+            probe.contains("QUERY_ARG_MATCH_TRASHED"),
+            "the \"has it gone?\" probe does not count trashed rows, so an export moved to the gallery's Bin " +
+                "is forgotten for good and restoring it cannot bring the row back"
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
