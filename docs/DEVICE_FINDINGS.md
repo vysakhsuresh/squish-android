@@ -1615,7 +1615,10 @@ On the phone, in this order:
    rings instead of the grid - smoother for the same order of cost - and it has
    to be made in all four copies of the kernel at once, or they stop agreeing:
    `squish_fx_es2.glsl`, the AGSL copy of it in `editor/CanvasFx.kt`,
-   `squish_transition_es2.glsl` and `squish_premultiply_es2.glsl`. Judge the
+   `squish_transition_es2.glsl` and `squish_premultiply_es2.glsl`. (The library's
+   own Blur at full is wider still - 0.021, about 23 px apart - which is now the
+   ceiling the rest is held to; it is the widest ring that has ever shipped, so
+   it is also the best evidence of what the grid looks like.) Judge the
    library's placed Blur at full strength at the same time; it has the same
    ring and has never been looked at closely either.
 2. **A Blur scrubbed through rather than played.** The softness is a GL
