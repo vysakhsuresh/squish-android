@@ -7,7 +7,14 @@ object ExportPresets {
         val pixels: Long get() = width.toLong() * height.toLong()
     }
 
-    const val AUDIO_BITRATE_BPS = 128_000
+    /**
+     * What the AAC track is written at: Media3's own `DefaultEncoderFactory
+     * .DEFAULT_AUDIO_BITRATE`, which is 128 * 1024 and not 128,000. Nothing here
+     * asks for an audio bitrate, so that is the number the encoder gets, and a
+     * probe of an export measured 131 kbps in the file. The estimate said
+     * 128,000 and was 2.4% light on every track.
+     */
+    const val AUDIO_BITRATE_BPS = 128 * 1024
 
     /**
      * What the phone's encoder said it will write for the frame it was asked
