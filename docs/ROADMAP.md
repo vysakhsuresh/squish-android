@@ -503,6 +503,24 @@ holds up. Everything in it is unseen.
    blended-still cache, which used to be the shape of an out-of-memory.
 10. **Then §4 from B1**, and `docs/DEVICE_FINDINGS.md`'s own lists.
 
+**Added after sweeps five, six and seven** (same evening). These are cheap, and
+each one is a thing that was plainly broken for anyone who did it:
+
+11. **"Take out every um and uh"** on a talking head with two captioned lines,
+    the first ending "um" and the second beginning "uh": two short cuts, not one
+    long one. The old code cut twenty-nine seconds for two words.
+12. **Delete a word over a gap** on the main track, and **delete a song that
+    runs past the last shot**: in the first nothing moves, in the second the
+    playhead comes back.
+13. **A song's beat grid at ×2**: the dots double, the bpm on the card doubles,
+    and "Every bar" still falls on the bar.
+14. **Blend a still over a shot and change its Blend mode and Opacity**: the
+    picture changes as you change them.
+15. **Trim a sixty-second clip down to two in Snip**: both handles still answer.
+16. **A 9:16 crop on a landscape edit**, with the safe-area guide on: the dashed
+    rectangle is inside the picture the file keeps.
+17. **A slideshow of photos**: no Camera sound row on the Sound sheet.
+
 **Clean-up owed from the 5 October session**, before anything else is added:
 delete MediaStore ids 1001326343, 1001326344 and 1001326345 *by id* (never by a
 `LIKE` pattern - `_` is a wildcard and `sq_%` once matched every `squish_`
