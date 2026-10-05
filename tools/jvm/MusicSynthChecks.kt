@@ -22,6 +22,28 @@ fun measure(file: File): Triple<Double, Double, Double> {
     return Triple(peak / 32768.0, kotlin.math.sqrt(sum / samples.coerceAtLeast(1)) / 32768.0, data / 4.0 / MusicSynth.SAMPLE_RATE)
 }
 
+/** The loudest sample in the last [samples] frames of a WAV, 0..1. */
+fun tailPeak(file: File, samples: Int): Double {
+    val b = file.readBytes()
+    val from = maxOf(44, b.size - samples * 4)
+    var peak = 0
+    var i = from
+    while (i + 1 < b.size) {
+        val v = ((b[i + 1].toInt() shl 8) or (b[i].toInt() and 0xff)).toShort().toInt()
+        peak = maxOf(peak, kotlin.math.abs(v))
+        i += 2
+    }
+    return peak / 32768.0
+}
+
+/** The very last sample of the left channel, 0..1 - the size of the step into silence. */
+fun lastSample(file: File): Double {
+    val b = file.readBytes()
+    if (b.size < 48) return 0.0
+    val i = b.size - 4
+    return kotlin.math.abs(((b[i + 1].toInt() shl 8) or (b[i].toInt() and 0xff)).toShort().toInt()) / 32768.0
+}
+
 fun main() {
     val dir = File(System.getProperty("java.io.tmpdir"), "squish-synth").apply { mkdirs() }
     check(MusicSynth.styles.map { it.id }.toSet().size == MusicSynth.styles.size, "two tracks share an id")
@@ -48,6 +70,18 @@ fun main() {
         check(kotlin.math.abs(secs - e.seconds) < 0.01, "${e.id}: ${secs}s written")
         check(rms > 0.01 && peak > 0.3, "${e.id} is nearly silent (rms $rms, peak $peak)")
         check(peak < 0.99, "${e.id} clips (peak $peak)")
+        // The step into silence, two ways. A sound still at level on its final
+        // sample jumps to nothing, and a jump is a click; "Sound on every cut"
+        // butts these against a join, so that tick lands on every cut in the
+        // edit. MusicSynth.release fades the last three milliseconds to zero -
+        // the last sample says the fade reaches nothing, the last half
+        // millisecond says it is a taper and not a one-sample notch.
+        //
+        // The start is not checked. A transient begins at level because that is
+        // what a transient is - silence to a hit is the sound.
+        val half = MusicSynth.SAMPLE_RATE / 2000
+        check(lastSample(f) < 0.02, "${e.id} ends on a sample at ${lastSample(f)} - it will click on its cut")
+        check(tailPeak(f, half) < 0.25, "${e.id} has no taper (last 0.5 ms peaks at ${tailPeak(f, half)})")
         f.delete()
     }
     if (problems.isEmpty()) println("MusicSynthChecks: all checks passed (${MusicSynth.styles.size} tracks, ${MusicSynth.effects.size} effects)")

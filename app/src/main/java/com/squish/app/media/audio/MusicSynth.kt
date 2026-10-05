@@ -303,7 +303,33 @@ object MusicSynth {
             "sfx-ding" -> ding(left, right)
             else -> ding(left, right)
         }
+        release(left, right)
         write(out, left, right)
+    }
+
+    /**
+     * The last three milliseconds faded to nothing.
+     *
+     * A sound that is still at level on its last sample is a step straight to
+     * silence, and a step is a click. Several of these end loud by design - a
+     * riser rises, a reverse whoosh swells into the cut it is laid against -
+     * and "Sound on every cut" butts them against a join, so the tick landed on
+     * every cut in the edit. Three milliseconds is a hundred and thirty-two
+     * samples: under the ear's resolution for a change of level, and it cannot
+     * take the swell off a riser a second and a half long.
+     *
+     * The start is left alone. A transient begins at level because that is what
+     * a transient is; silence to a hit is the sound, not a fault.
+     */
+    private fun release(l: FloatArray, r: FloatArray) {
+        val fade = minOf(SAMPLE_RATE * 3 / 1000, l.size)
+        if (fade <= 1) return
+        for (i in 0 until fade) {
+            val gain = (fade - 1 - i).toFloat() / (fade - 1)
+            val at = l.size - fade + i
+            l[at] *= gain
+            r[at] *= gain
+        }
     }
 
     /** A deep hit: a sub tone dropping in pitch, a burst of low noise on top. */

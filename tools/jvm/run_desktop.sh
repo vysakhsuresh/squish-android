@@ -92,5 +92,14 @@ run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScree
 run gif        "$SRC/media/gif/GifEncoder.kt" tools/jvm/GifChecks.kt
 run autoadjust "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/ColorWheels.kt" "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
 run translatechunks "$SRC/online/OnlineTranslate.kt" tools/jvm/stub/translate/OnlineStub.kt tools/jvm/stub/translate/ContextStub.kt tools/jvm/stub/translate/JsonStub.kt tools/jvm/TranslateChunkChecks.kt
+# These four were in run.sh and not here, so the desktop - the only machine that
+# compiles anything - never ran them, and musicsynth had stopped compiling. The
+# runners check (tools/jvm/RunnerChecks.kt) now fails if the two lists part again.
+run animoptions $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" \
+               "$SRC/media/audio/SpeechSegmenter.kt" tools/jvm/stub/MonoPcm.kt "$SRC/media/ExportPlan.kt" tools/jvm/AnimationOptionsChecks.kt
+run effectrecipes $TIMELINE tools/jvm/EffectRecipeChecks.kt
+run musicsynth "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/MusicSynthChecks.kt
+run synthtempo "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SynthTempoChecks.kt
+run runners    tools/jvm/RunnerChecks.kt
 
 rm -rf "$OUT"

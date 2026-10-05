@@ -1247,3 +1247,27 @@ Whoever reaches it next should take these off and nothing else:
 - `adb shell settings put system accelerometer_rotation 1` (rotation was
   locked to portrait for the layout test) and `adb shell svc power stayon
   false`.
+
+### Four suites nothing had run, and the click they were hiding (5 October)
+
+`run.sh` is the sandbox's runner and `run_desktop.sh` the desktop's, and each
+keeps its own copy of every suite's file list. Four suites - `animoptions`,
+`effectrecipes`, `musicsynth`, `synthtempo` - were in the first and not the
+second, so the only machine here that compiles anything had never run them,
+and `musicsynth`'s line had not compiled since `MusicSynth.beatMap` started
+returning a `BeatMap` from another file. A suite nothing runs is worse than no
+suite: it reads as cover.
+
+All four are in both runners now, and `tools/jvm/RunnerChecks.kt` fails if the
+two lists part again or if either names a file that is not there.
+
+Run for the first time, `musicsynth` found a real fault: **five sound effects
+ended at level** - `sfx-reverse` at 0.61 of full, `sfx-build` at 0.35,
+`sfx-riser` at 0.34, `sfx-drumroll` at 0.17, `sfx-subdrop` at 0.11. A sound
+still at level on its last sample steps straight to silence, and a step is a
+click. It matters most for exactly the three "Sound on every cut" uses, which
+are butted against a join: the tick would land on every cut in the edit.
+`MusicSynth.release` fades the last three milliseconds of every effect to
+nothing (132 samples - it cannot take the swell off a riser), and the suite
+now asserts both that the final sample is near zero and that the last half
+millisecond is a taper rather than a one-sample notch. Not heard.

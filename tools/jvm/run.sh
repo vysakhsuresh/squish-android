@@ -84,7 +84,10 @@ run tonecurve "$SRC/media/effects/ToneCurve.kt" tools/jvm/ToneCurveChecks.kt
 run transcript "$SRC/editor/Transcript.kt" tools/jvm/TranscriptChecks.kt
 run lut "$SRC/media/effects/Lut.kt" tools/jvm/LutChecks.kt
 run safearea "$SRC/editor/SafeArea.kt" tools/jvm/SafeAreaChecks.kt
-run musicsynth "$SRC/media/audio/MusicSynth.kt" tools/jvm/MusicSynthChecks.kt
+# Fft and BeatDetector because MusicSynth.beatMap returns a BeatMap: this line
+# said MusicSynth.kt alone and had not compiled since, which nobody noticed
+# because the suite was in this file and not in run_desktop.sh.
+run musicsynth "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/MusicSynthChecks.kt
 run synthtempo "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SynthTempoChecks.kt
 run effectrecipes $TIMELINE tools/jvm/EffectRecipeChecks.kt
 run stillrules $TIMELINE "$SRC/editor/StillRules.kt" tools/jvm/StillRulesChecks.kt
@@ -107,6 +110,7 @@ run templates  tools/jvm/TemplateChecks.kt
 run wheels     "$SRC/media/effects/ColorWheels.kt" tools/jvm/WheelChecks.kt
 run cutsounds  $TIMELINE "$SRC/timeline/CutSounds.kt" tools/jvm/CutSoundChecks.kt
 run controls   tools/jvm/ControlChecks.kt
+run runners   tools/jvm/RunnerChecks.kt
 run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScreen.kt" tools/jvm/SplitScreenChecks.kt
 run gif        "$SRC/media/gif/GifEncoder.kt" tools/jvm/GifChecks.kt
 run autoadjust "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/ColorWheels.kt" "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
