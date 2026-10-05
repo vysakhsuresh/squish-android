@@ -414,8 +414,19 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     }
 
     /** Adjust's Reset: every slider back to where it started, as one step. */
+    /**
+     * The Adjust tab's sliders, curves and wheels back to nothing - and only
+     * those.
+     *
+     * The imported LUT is kept. It belongs to the Filters tab's "Your own LUT"
+     * card, whose own Reset (`setLook(null)`) deliberately leaves it alone;
+     * writing `Adjust.NONE` here cleared it too, so Reset on one tab threw away
+     * a cube imported on the other.
+     */
     fun resetAdjust(clipId: String) = record("Adjust") {
-        updateVideoClip(clipId) { it.copy(adjust = Adjust.NONE) }
+        updateVideoClip(clipId) {
+            it.copy(adjust = Adjust.NONE.copy(lutFile = it.adjust.lutFile, lutStrength = it.adjust.lutStrength))
+        }
     }
 
     /**

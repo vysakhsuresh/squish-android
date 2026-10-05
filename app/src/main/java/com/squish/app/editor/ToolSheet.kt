@@ -274,7 +274,17 @@ fun EditorToolSheet(
             item != null -> {
                 {
                     viewModel.text.restyleCaption(item.id, {
-                        it.copy(xFraction = 0.5f, yFraction = 0.5f, sizeSp = TextEdits.STICKER_SIZE_SP, rotationDegrees = 0f, flipped = false)
+                        // Its own neutral size, not the sticker's: a shape lands
+                        // at 110 and Reset put every text item back to a
+                        // sticker's 64, so Reset on a shape shrank it rather
+                        // than restoring it.
+                        it.copy(
+                            xFraction = 0.5f,
+                            yFraction = 0.5f,
+                            sizeSp = if (it.isShape) ShapeGeometry.DEFAULT_SIZE_SP else TextEdits.STICKER_SIZE_SP,
+                            rotationDegrees = 0f,
+                            flipped = false
+                        )
                     })
                 }
             }

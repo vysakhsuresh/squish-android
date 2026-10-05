@@ -173,8 +173,14 @@ fun MaskPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
             LabeledSlider("Across", mask.centerXFraction, -1f..1f, onFinished = viewModel::endGesture) {
                 viewModel.layers.updateMask(clip.id, centerX = it)
             }
-            LabeledSlider("Up / down", mask.centerYFraction, -1f..1f, onFinished = viewModel::endGesture) {
-                viewModel.layers.updateMask(clip.id, centerY = it)
+            // Negated: a mask's own y runs *up* (the shader subtracts the centre
+            // in texture coordinates, and MaskOutline.dragged returns -dy), while
+            // every other "Up / down" on every other sheet - a sticker's, a
+            // shape's, Placement's - runs down. Two identically labelled sliders
+            // that went opposite ways was the complaint; the label reads left to
+            // right, so right is down here as it is everywhere else.
+            LabeledSlider("Up / down", -mask.centerYFraction, -1f..1f, onFinished = viewModel::endGesture) {
+                viewModel.layers.updateMask(clip.id, centerY = -it)
             }
         }
 

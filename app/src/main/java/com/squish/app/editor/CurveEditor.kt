@@ -142,7 +142,17 @@ fun CurveEditor(
                         val points = latest.of(channel).points.toMutableList()
                         if (i >= points.size) return@detectDragGestures
                         val old = points[i]
-                        val x = (old.x + drag.x / size.width).coerceIn(0f, 1f)
+                        // Held between its neighbours, so the sort below can
+                        // never reorder the list under the gesture. [dragging]
+                        // is an index into the sorted points, and a point
+                        // carried past a neighbour in one event used to swap
+                        // with it - from there the finger was dragging the
+                        // other point, and the one it had hold of ran away.
+                        // It can still reach a neighbour, which is what
+                        // [tooClose] below reads as "take this one off".
+                        val floor = if (i > 0) points[i - 1].x else 0f
+                        val ceiling = if (i < points.lastIndex) points[i + 1].x else 1f
+                        val x = (old.x + drag.x / size.width).coerceIn(0f, 1f).coerceIn(floor, ceiling)
                         val y = (old.y - drag.y / size.height).coerceIn(0f, 1f)
                         val ends = i == 0 || i == points.lastIndex
                         // An end keeps its level and only moves up and down; a

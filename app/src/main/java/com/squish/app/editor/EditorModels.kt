@@ -640,6 +640,15 @@ data class EditorUiState(
 
     val syncStatus: SyncStatus = SyncStatus.Idle,
     val syncConfidence: Float = 0f,
+    /**
+     * Which sound the sync result above is about.
+     *
+     * Without it the line was editor-wide and never cleared on a change of
+     * selection, so every sound's Sync sheet reported the last sound's result
+     * as its own - a second take opened saying "Matched · 94% confidence"
+     * before anything had listened to it.
+     */
+    val syncClipId: String? = null,
 
     /** The hand-drawn crop, used when [cropAspect] is [CropAspect.Custom]. */
     val cropRect: CropRect = CropRect(),
@@ -978,6 +987,23 @@ data class EditorUiState(
                     clip.uri?.let { com.squish.app.media.MediaCompat.cached(it) }
                         .let { it == null || (it.hasAudio && it.audioProblem == null) }
             }
+
+    /**
+     * Whether any shot in the edit has camera sound.
+     *
+     * [sourceHasAudio] is the *lead* file's flag, taken once when the project
+     * opens and never recomputed when more shots are added. The Camera sound
+     * panel read it alone, so an edit whose first clip happened to be silent
+     * said "This clip has no audio track" and hid the switch and the level for
+     * every shot that was not. A file whose metadata has not been read yet
+     * counts as having sound, which is the side that leaves the control there.
+     */
+    val anyCameraAudio: Boolean
+        get() = sourceHasAudio || videoClips.any { clip ->
+            clip.isMain && !clip.isStillPicture &&
+                clip.uri?.let { com.squish.app.media.MediaCompat.cached(it) }
+                    .let { it == null || it.hasAudio }
+        }
 
     /** The stand-in for the file first opened, for the analyses that read it. */
     val proxyUri: Uri? get() = sourceUri?.let { proxyUris[it] }

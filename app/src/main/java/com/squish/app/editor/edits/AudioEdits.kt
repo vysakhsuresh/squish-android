@@ -298,6 +298,16 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      *
      * Each tap is its own step: five nudges and one undo steps back one nudge.
      */
+    /**
+     * The sound moved [deltaMs] *later* on the timeline.
+     *
+     * Note the sign against the Sync sheet's readout, which is the offset
+     * `sourceInMs - timelineStartMs - headPictureDeltaMs`: moving the sound
+     * later makes that number *smaller*. The buttons sit directly under the
+     * readout and are labelled "+1 frame" with no noun, so they are read as
+     * "make this number bigger" - [nudgeSyncOffset] is what they call, and it
+     * is the negative of this.
+     */
     fun nudgeAudioOffset(clipId: String, deltaMs: Long) = record("Nudge sound") {
         updateAudioClip(clipId) { clip ->
             val proposed = clip.timelineStartMs + deltaMs
@@ -313,8 +323,20 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         }
     }
 
-    fun nudgeAudioOffsetFrames(clipId: String, frames: Int) =
-        nudgeAudioOffset(clipId, frames * _state.value.frameMs)
+    /**
+     * The Sync sheet's offset readout nudged by [deltaMs] - which moves the
+     * sound the *other* way, because the readout is how far into the sound's
+     * file the picture's first frame falls.
+     *
+     * The buttons used to call [nudgeAudioOffset] straight, so "+1 frame" made
+     * the number above it go down a frame. A stepper that moves the number
+     * printed over it the opposite way to its own label is the same fault as a
+     * strip that scrolls against the finger, and found the same way.
+     */
+    fun nudgeSyncOffset(clipId: String, deltaMs: Long) = nudgeAudioOffset(clipId, -deltaMs)
+
+    fun nudgeSyncOffsetFrames(clipId: String, frames: Int) =
+        nudgeSyncOffset(clipId, frames * _state.value.frameMs)
 
     /**
      * The sound back to the top of its file at the top of the timeline - all of
@@ -337,7 +359,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 )
             }
         }
-        _state.update { it.copy(syncStatus = SyncStatus.Idle, syncConfidence = 0f) }
+        _state.update { it.copy(syncStatus = SyncStatus.Idle, syncConfidence = 0f, syncClipId = null) }
     }
 
     fun setOriginalVolume(volume: Float) = record("Camera level", gesture = "Camera level") {
@@ -367,13 +389,13 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         val audioUri = clip.uri ?: return
 
         syncJob?.cancel()
-        _state.update { it.copy(syncStatus = SyncStatus.Analyzing) }
+        _state.update { it.copy(syncStatus = SyncStatus.Analyzing, syncClipId = clipId) }
 
         syncJob = viewModelScope.launch {
             val result = AudioSyncAnalyzer.detectOffset(app, videoUri, audioUri)
             if (result == null || result.confidence < MIN_SYNC_CONFIDENCE) {
                 _state.update {
-                    it.copy(syncStatus = SyncStatus.NoMatch, syncConfidence = result?.confidence ?: 0f)
+                    it.copy(syncStatus = SyncStatus.NoMatch, syncConfidence = result?.confidence ?: 0f, syncClipId = clipId)
                 }
             } else {
                 // Measured when the answer lands, not when the question was asked:
@@ -395,7 +417,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                             }
                         })
                     },
-                    alongside = { it.copy(syncStatus = SyncStatus.Matched, syncConfidence = result.confidence) }
+                    alongside = { it.copy(syncStatus = SyncStatus.Matched, syncConfidence = result.confidence, syncClipId = clipId) }
                 )
             }
         }

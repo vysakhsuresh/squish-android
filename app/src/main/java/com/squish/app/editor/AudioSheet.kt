@@ -395,18 +395,18 @@ fun CameraSoundPanel(state: EditorUiState, viewModel: EditorViewModel) {
     PanelCard {
         PanelHeading(
             "Camera sound",
-            if (state.sourceHasAudio) "The sound recorded with the video, on every shot"
+            if (state.anyCameraAudio) "The sound recorded with the video, on every shot"
             else "This clip has no audio track",
             icon = Icons.Filled.Mic,
             accent = SquishColors.Cyan,
-            trailing = if (!state.sourceHasAudio) null else ({
+            trailing = if (!state.anyCameraAudio) null else ({
                 SquishToggleSwitch(
                     checked = !state.muteOriginal,
                     onCheckedChange = { viewModel.audio.setMuteOriginal(!it) }
                 )
             })
         )
-        if (!state.muteOriginal && state.sourceHasAudio) {
+        if (!state.muteOriginal && state.anyCameraAudio) {
             LabeledSlider(
                 "Level", state.originalVolume, 0f..1f,
                 onFinished = viewModel::endGesture,
@@ -648,7 +648,7 @@ fun AlignPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
             icon = Icons.Filled.Sync,
             accent = SquishColors.Cyan
         )
-        SyncStatusLine(state)
+        SyncStatusLine(state, clip.id)
         // Against the picture, not against the timeline: the head shot's own
         // trim and position are taken off. Without that a plain trim of the
         // shot read as a sync offset, and a synced sound read as off.
@@ -689,16 +689,16 @@ fun AlignPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
         // across, "−1 frame" wrapped at the larger font sizes while "−10 ms"
         // did not, and the row was two tall buttons and two short.
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-            NudgeButton("−1 frame", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffsetFrames(clip.id, -1) }
-            NudgeButton("+1 frame", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffsetFrames(clip.id, 1) }
+            NudgeButton("−1 frame", Modifier.weight(1f)) { viewModel.audio.nudgeSyncOffsetFrames(clip.id, -1) }
+            NudgeButton("+1 frame", Modifier.weight(1f)) { viewModel.audio.nudgeSyncOffsetFrames(clip.id, 1) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-            NudgeButton("−10 ms", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffset(clip.id, -10) }
-            NudgeButton("+10 ms", Modifier.weight(1f)) { viewModel.audio.nudgeAudioOffset(clip.id, 10) }
+            NudgeButton("−10 ms", Modifier.weight(1f)) { viewModel.audio.nudgeSyncOffset(clip.id, -10) }
+            NudgeButton("+10 ms", Modifier.weight(1f)) { viewModel.audio.nudgeSyncOffset(clip.id, 10) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             SquishOutlinedButton(
-                text = if (state.syncStatus == SyncStatus.Analyzing) "Listening…" else "Auto-sync",
+                text = if (state.syncStatus == SyncStatus.Analyzing && state.syncClipId == clip.id) "Listening…" else "Auto-sync",
                 modifier = Modifier.weight(1f),
                 onClick = { viewModel.audio.runAutoSync(clip.id) }
             )
@@ -776,8 +776,11 @@ private fun PanelCard(content: @Composable ColumnScope.() -> Unit) =
     PanelSurface(accent = SquishColors.Cyan, content = content)
 
 @Composable
-private fun SyncStatusLine(state: EditorUiState) {
-    val (message, color) = when (state.syncStatus) {
+private fun SyncStatusLine(state: EditorUiState, clipId: String) {
+    // Only this sound's own result: the status is editor-wide, so without the
+    // id every sound reported the last one's answer as its own.
+    val mine = if (state.syncClipId == clipId) state.syncStatus else SyncStatus.Idle
+    val (message, color) = when (mine) {
         SyncStatus.Idle -> "Drag it on the strip, or tap auto-sync" to SquishColors.TextMuted
         SyncStatus.Analyzing -> "Matching waveforms…" to SquishColors.TextSecondary
         SyncStatus.Matched -> "Matched · ${(state.syncConfidence * 100).toInt()}% confidence" to SquishColors.Teal
@@ -787,7 +790,7 @@ private fun SyncStatusLine(state: EditorUiState) {
     }
 
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (state.syncStatus == SyncStatus.Analyzing) {
+        if (mine == SyncStatus.Analyzing) {
             CircularProgressIndicator(
                 modifier = Modifier.size(10.dp),
                 color = SquishColors.Teal,

@@ -945,9 +945,18 @@ private fun EditorPreview(
             )
             openTool == Tool.Mask && selectedPicture.mask != null -> PictureTool(
                 selectedPicture.id, PictureTool.Kind.Mask,
+                // The delta is this one event's, so each event has to start from
+                // where the shape stands *now* - and on a keyed mask that is the
+                // shape at the playhead, not the outer one. Read off the outer
+                // mask, whose centre `withShapeAt` never writes once there are
+                // keys, every event wrote frozen_base + one_event_delta: the
+                // shape hopped a few pixels off centre on the first touch and
+                // then sat there jittering for the whole drag.
                 onMaskMove = move@{ dx, dy ->
-                    val mask = viewModel.state.value.videoClips.firstOrNull { it.id == selectedPicture.id }?.mask ?: return@move
-                    viewModel.layers.updateMask(selectedPicture.id, centerX = mask.centerXFraction + dx, centerY = mask.centerYFraction + dy)
+                    val clip = viewModel.state.value.videoClips.firstOrNull { it.id == selectedPicture.id } ?: return@move
+                    val held = clip.mask ?: return@move
+                    val now = held.at(clip.sourceAt(viewModel.state.value.playheadMs))
+                    viewModel.layers.updateMask(selectedPicture.id, centerX = now.centerXFraction + dx, centerY = now.centerYFraction + dy)
                 },
                 onMaskMoveEnd = viewModel::endGesture
             )
@@ -1042,7 +1051,13 @@ private fun EditorPreview(
                         // the view model coalesces, so a gesture is one
                         // undo step rather than one per frame of movement.
                         onChange = viewModel.clips::setCropRect,
-                        onCommit = { viewModel.clips.setCropRect(state.cropRect) },
+                        // The open step closed when the finger lifts, as every
+                        // other gesture does. It used to re-send the rect the
+                        // state already held, which changes nothing and leaves
+                        // the step open - so the next unrelated edit within the
+                        // coalescing window joined this one, and one undo took
+                        // both off.
+                        onCommit = viewModel::endGesture,
                         modifier = Modifier.fillMaxSize()
                     )
                     openTool == Tool.Frame && !state.paddedCanvas ->

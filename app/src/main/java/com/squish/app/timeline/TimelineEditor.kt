@@ -1912,6 +1912,14 @@ private fun ClipView(
             .spanWidth(width)
             .fillMaxHeight()
             .graphicsLayer { alpha = if (lifted) 0.35f else 1f }
+            // Above the transition badges, which are siblings composed after
+            // every clip and so sat on top of them. A badge is drawn exactly on
+            // a join, which is exactly where the trim handles of the two clips
+            // either side are, and it took the press meant for them - on the
+            // main track the head handle of every shot but the first could not
+            // be grabbed at all. Only the selected clip rises: an unselected one
+            // has no handles, and the badge has to stay tappable over it.
+            .zIndex(if (selected) 2f else 0f)
             // Corners only where the clip really ends. A rounded edge in the
             // middle of a long clip would read as a cut that is not there.
             .clip(shape)
@@ -2238,13 +2246,21 @@ private fun BoxScope.KeyDiamond(
     val atTimeline = clip.timelineStartMs + atMs
     if (atTimeline < drawnStartMs || atTimeline > drawnEndMs) return
     val x = window.widthDp(atTimeline - drawnStartMs).dp
+    val tapClip = rememberUpdatedState(latestClip)
+    val tapKey = rememberUpdatedState(onKeyTap)
     Box(
         modifier = Modifier
             .align(Alignment.BottomStart)
             .offset(x = x - KEY_TARGET / 2)
             .size(KEY_TARGET)
+            // The clip and the callback read through rememberUpdatedState, not
+            // captured: pointerInput keys on (clip.id, atMs), so the block does
+            // not restart when the clip merely moves, and `latestClip` captured
+            // by value was the clip's start as it stood when the block last
+            // restarted. A tap then parked the playhead where the diamond used
+            // to be rather than where it is drawn now.
             .pointerInput(clip.id, atMs) {
-                detectTapGestures { onKeyTap(clip.id, latestClip.timelineStartMs + atMs) }
+                detectTapGestures { tapClip.value.let { c -> tapKey.value(c.id, c.timelineStartMs + atMs) } }
             },
         contentAlignment = Alignment.BottomCenter
     ) {
