@@ -224,7 +224,7 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                         key = key,
                         atPlayhead = isUnderPlayhead(clip, key, state),
                         accent = accent,
-                        onGoTo = { viewModel.scrubTo(clip.timelineStartMs + key.atMs) },
+                        onGoTo = { viewModel.seekTo(clip.timelineStartMs + key.atMs) },
                         onEasing = { viewModel.clips.setKeyframeEasing(clip.id, key.atMs, it) },
                         onRemove = { viewModel.clips.removeKeyframe(clip.id, key.atMs) }
                     )

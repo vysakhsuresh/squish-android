@@ -43,6 +43,7 @@ import com.squish.app.timeline.ZOOM_MAX
 import com.squish.app.timeline.ZOOM_MIN
 import com.squish.app.timeline.withSelectionJoined
 import com.squish.app.timeline.withSelectionToggled
+import com.squish.app.timeline.withoutTrack
 import com.squish.app.timeline.withOverlayTransitionsFitted
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
@@ -417,6 +418,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * bar. Snapping there went by the strip's zoom, not the bar's, so on a
      * fitted strip the picture stuck to a cut across a second of bar while the
      * thumb moved on without it.
+     *
+     * Also what every "park on *this*" button uses - a keyframe's Go to, a
+     * placed effect's jump, a line's start. Those know the moment exactly, and
+     * [scrubTo]'s snap pulled them off it onto whatever cut or beat lay within
+     * the threshold (about 190 ms at the default zoom), so the key you tapped
+     * was no longer the key under the playhead and the next slider move wrote a
+     * second key beside the first. The strip's own keyframe tap was moved here
+     * for that reason; the sheets' were not.
      */
     fun seekTo(ms: Long) = _state.update {
         it.copy(playheadMs = ms.coerceIn(0L, it.timelineDurationMs), scrubNonce = it.scrubNonce + 1)
@@ -1365,7 +1374,26 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 if (uri != missing) return this
                 val out = minOf(sourceOutMs, meta.durationMs)
                 val into = minOf(sourceInMs, (out - 1L).coerceAtLeast(0L))
-                return copy(uri = replacement, label = label, sourceInMs = into, sourceOutMs = out, sourceDurationMs = meta.durationMs)
+                return copy(
+                    uri = replacement, label = label,
+                    sourceInMs = into, sourceOutMs = out, sourceDurationMs = meta.durationMs,
+                    // Everything measured *on the old footage* goes, the same
+                    // list Replace drops (TimelineState.withClipReplaced). It
+                    // used to come across: the new file played with the old
+                    // one's stabilizer keys fighting a shake that is not there,
+                    // the old one's person masks blurring the wrong part of the
+                    // picture, the old one's reframe window chasing a subject
+                    // from another film, and - worst, because it is silent - a
+                    // `reversedFrom` pointing at a render of a file that is
+                    // gone, so Reverse again put back nothing.
+                    stabilizer = emptyList(),
+                    stabilizerMeasurement = null,
+                    background = null,
+                    mask = mask?.withoutTrack(),
+                    reframe = null,
+                    reversedFrom = null,
+                    beats = emptyList()
+                )
             }
             record("Relink") {
                 _state.update { current ->

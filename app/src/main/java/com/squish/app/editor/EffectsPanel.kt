@@ -106,7 +106,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             placed.forEach { effect ->
                 PlacedEffect(
                     effect = effect,
-                    onJump = { viewModel.scrubTo(effect.startMs) },
+                    onJump = { viewModel.seekTo(effect.startMs) },
                     onChange = { change -> viewModel.clips.changeEffect(effect.id, change = change) },
                     onRemove = { viewModel.clips.removeEffect(effect.id) },
                     onGestureEnd = viewModel::endGesture

@@ -420,7 +420,7 @@ fun TextPanel(
                     selectedId = state.selectedClipId,
                     onSelect = { line ->
                         viewModel.selectClip(line.id)
-                        viewModel.scrubTo(line.startMs)
+                        viewModel.seekTo(line.startMs)
                     },
                     onEdit = { onEditLine(it.id) },
                     onRemove = { viewModel.text.removeTextOverlay(it.id) }
