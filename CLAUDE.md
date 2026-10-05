@@ -140,6 +140,22 @@ function first; if it can, it can be checked.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **The third sweep's twenty-six fixes (5 October).** A sweep for the class of
+  fault the user found - a control whose direction, sign or label contradicts
+  what you see - over nine groups of files and three lenses, two adversarial
+  refuters each. All twenty-six are fixed and none seen. The ones a device
+  settles in a minute each: Track a face in the *upper* half of a clip and Pin,
+  and the mask must sit on it rather than mirrored below (`Mask.centerAt`); drag
+  a corner bracket of the hand-drawn crop and two edges must move; open Crop on
+  a shot, scrub to the middle, tap a thing and Track - it must follow *that*
+  frame's thing; with the keyboard up, tap bare picture just past a corner of a
+  text box and nothing must be deleted; turn "Snap to markers and beats" off and
+  a drag of the strip must still hold on a cut with a tick; swipe the Curves
+  square and the sheet behind it must scroll; in Snip, trim to three seconds and
+  the *start* bar must still drag; and a keyframe diamond a finger's width
+  inside a selected clip's edge must park the playhead when tapped. The full
+  list is in `docs/DEVICE_FINDINGS.md`.
+
 - **The rest of 5 October, after the phone was unplugged at about 07:00.** All
   of it is executed on the JVM and none of it has been seen or heard: the
   three-millisecond release that stops a sound effect clicking where it meets
