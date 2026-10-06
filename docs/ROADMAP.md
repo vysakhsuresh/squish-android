@@ -608,3 +608,48 @@ export); remove the two scratch projects, "Edit · 5 Oct" from the reel with a
 "Hello" line on it and a three-second one from VID-20261003-WA0186.mp4; and put
 back `adb shell settings put system accelerometer_rotation 1` and
 `adb shell svc power stayon false`.
+
+## 6. Structural work worth doing, in order
+
+Not features. Each of these is a place where the shape of the code is what let
+a fault in, and where fixing the shape is worth more than fixing the fault.
+
+**1. Lift the draft codec out of `ProjectAutosave`.** `data/ProjectAutosave.kt`
+is two things in one file: the file handling - atomic writes, the backup, the
+snapshot rotation, the sidecar, the bin - which needs a `Context`, and about
+nine hundred lines of JSON codec which does not touch one. Eighteen private
+functions in that range reference no `Context`, no `filesDir` and no
+`contentResolver`; the org.json jar is in the Gradle cache, so the moment they
+live in an Android-free object a suite can **round-trip a fully populated
+EditorUiState** - encode it, decode it, and assert the two are equal field by
+field. That is the strongest check this repo could gain, because "no edit is
+ever lost" is one of the app's three guarantees and the way it is broken is
+silent.
+
+`tools/jvm/DraftFieldChecks.kt` is what can be had without the move: it compares
+each model's fields against the keys the codec writes and reads, as text. It
+catches a field nobody persisted, which is the fault that has actually happened.
+It cannot see that the *value* survives - a field written as a Double and read
+as an Int would pass it - and it cannot see a key written in one place and read
+in another that never meet.
+
+Do it as a pure move: cut the eighteen functions and the format-version
+constants into `data/DraftCodec.kt`, change `private fun` to `fun`, change
+nothing inside a body, and have `ProjectAutosave` call them. The compiler
+settles whether the cut was clean; the new suite settles whether the codec is.
+Do not do it in the same sitting as anything else - it is the file that holds
+people's work.
+
+**2. `EditArea.withTimeline` was two private copies until 6 October**, which is
+why two background landings stayed on `record` instead of `recordLate` for a
+day. The lesson generalises: a helper duplicated in two edit areas is a helper
+that belongs in `EditArea`, and the duplication is what stops the next fix
+reaching both. `grep -n "private fun" app/src/main/java/com/squish/app/editor/edits/*.kt`
+and look for pairs.
+
+**3. `EncoderCeiling` does not model Media3's HDR narrowing.** Media3 filters
+the encoder set by HDR editing support *before* it filters by resolution, so a
+"Keep HDR" ceiling is measured against encoders the render may drop. The fix is
+one more filter, but it needs a device with an HDR encoder to be worth trusting
+- the S23, not the moto.
+
