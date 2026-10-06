@@ -162,21 +162,62 @@ data class TimelineWindow(
      */
     fun exactMsAt(xPx: Float): Double = scrollMs + msForPx(xPx)
 
-    /** Where the middle of the strip is, as a moment - the fixed playhead's place. */
-    val centreMs: Double get() = scrollMs + msForPx(viewportPx / 2f)
+    /** The moment under the playhead line; see [PLAYHEAD_FRACTION]. */
+    val lineMs: Double get() = scrollMs + msForPx(viewportPx * PLAYHEAD_FRACTION)
+
+    /** Where the playhead line is drawn, in pixels from the strip's left edge. */
+    val linePx: Float get() = viewportPx * PLAYHEAD_FRACTION
 
     companion object {
         /**
-         * The window with [atMs] under the middle of the strip.
+         * Where the playhead line sits across the strip, as a fraction of its
+         * width. The strip moves under it; it never moves itself.
          *
-         * The playhead is fixed there, as it is in every phone editor: the strip
-         * moves under it, so dragging the strip is scrubbing and playing scrolls
-         * it. It used to be a line that travelled across a strip the finger
-         * scrolled separately, which made finding a frame two jobs - scroll to it,
-         * then catch the line and drag it there - and left the playhead off the
-         * screen after any scroll. The scroll can be negative: at the start of the
-         * edit, the half of the strip left of the playhead shows nothing.
+         * **A quarter in, not the middle, and that is the whole of this
+         * number's story.** The line has to be at a fixed place or the gesture
+         * means two different things: when the strip can scroll, a finger moves
+         * the film and time runs against the finger; when it cannot, a finger
+         * can only move the line and time runs with it. Mixing the two is what
+         * made dragging right move the playhead left near 0:00 - the first
+         * thing a user ever reported here - so the line is fixed and the film
+         * always follows the finger.
+         *
+         * Fixed in the *middle*, though, the scroll at 0:00 is half a screen
+         * before the start: the edit begins half way across the strip with
+         * nothing to its left, and a fit-on-open has only half the width to
+         * draw the whole edit in. That is what CapCut and InShot do and it was
+         * still wrong here - said plainly by the person who uses this: "it is
+         * starting from mid screen not the left end which is terrible".
+         *
+         * A quarter costs a quarter of the strip to what has already played -
+         * about two thumb-widths on a phone, enough to see and grab the cut
+         * just passed - and gives the other three quarters to the edit. An
+         * opened video is drawn half as big again as it was and the strip
+         * scrolls half as fast again under the line, which is the other half of
+         * the same complaint: at a fit-the-whole-edit zoom the strip crept
+         * about six pixels a second and read as frozen.
          */
+        const val PLAYHEAD_FRACTION = 0.25f
+
+        /**
+         * The window with [atMs] at [atPx] pixels from the strip's left edge.
+         *
+         * The one builder, because the strip is drawn from a second, wider
+         * window and the two have to agree to the pixel - see [slideFor], which
+         * needs its line at a place no fraction of its own width would give.
+         */
+        fun scrolledSoThat(
+            atMs: Double,
+            atPx: Float,
+            pixelsPerSecond: Float,
+            density: Float,
+            viewportPx: Int,
+            marginOverridePx: Float? = null
+        ): TimelineWindow {
+            val at = TimelineWindow(pixelsPerSecond, 0.0, density, viewportPx, marginOverridePx)
+            return at.copy(scrollMs = atMs - at.msForPx(atPx))
+        }
+
         /**
          * How the strip is drawn under the live window [live], centred on
          * [centreMs]: from [Slide.drawn] - the same scale, a centre that moves
@@ -187,35 +228,29 @@ data class TimelineWindow(
          * A moment drawn this way lands within half a pixel of where [live]
          * puts it, which is where a finger finds it (checked in WindowChecks).
          */
-        fun slideFor(live: TimelineWindow, centreMs: Double): Slide {
+        fun slideFor(live: TimelineWindow, lineMs: Double): Slide {
             val pad = live.viewportPx / 2
             val step = live.msForPx(live.viewportPx / 4f).coerceAtLeast(1.0)
-            val drawnCentre = Math.round(centreMs / step) * step
-            val drawn = centredOn(drawnCentre, live.pixelsPerSecond, live.density, live.viewportPx + 2 * pad, marginOverridePx = 0f)
+            val drawnCentre = Math.round(lineMs / step) * step
+            // At the *same screen place* as the live window's line, plus the pad
+            // the drawn strip is laid out to the left by. Not a fraction of the
+            // drawn window's own width: the drawn window is twice as wide, so a
+            // quarter of it is nowhere near a quarter of the strip, and the two
+            // would part by an eighth of a screen.
+            val drawn = scrolledSoThat(
+                drawnCentre, live.linePx + pad,
+                live.pixelsPerSecond, live.density, live.viewportPx + 2 * pad, marginOverridePx = 0f
+            )
             val msPerPx = live.msForPx(1f)
             // Whole pixels: a fractional slide blurred the marks inside the rows
             // and set them up to half a pixel off the lines drawn outside them.
-            val shift = if (msPerPx > 0.0) Math.round((drawnCentre - centreMs) / msPerPx).toFloat() else 0f
+            val shift = if (msPerPx > 0.0) Math.round((drawnCentre - lineMs) / msPerPx).toFloat() else 0f
             return Slide(drawn, pad, shift)
         }
 
-        /**
-         * The strip's window: centred on [atMs], except that it never scrolls to
-         * more than [leadPx] before 0:00. Near the start the edit begins at the
-         * strip's left edge and [atMs] sits left of the middle - the playhead
-         * walks right until it reaches the middle and the strip scrolls from
-         * there. Centred always, the first clip began half a screen in.
-         */
-        fun startClamped(atMs: Double, pixelsPerSecond: Float, density: Float, viewportPx: Int, leadPx: Float): TimelineWindow {
-            val centred = centredOn(atMs, pixelsPerSecond, density, viewportPx)
-            val floor = -centred.msForPx(leadPx.coerceAtLeast(0f))
-            return if (centred.scrollMs >= floor) centred else centred.copy(scrollMs = floor)
-        }
-
-        fun centredOn(atMs: Double, pixelsPerSecond: Float, density: Float, viewportPx: Int, marginOverridePx: Float? = null): TimelineWindow {
-            val at = TimelineWindow(pixelsPerSecond, 0.0, density, viewportPx, marginOverridePx)
-            return at.copy(scrollMs = atMs - at.msForPx(viewportPx / 2f))
-        }
+        /** The strip's window: [atMs] under the playhead line. See [PLAYHEAD_FRACTION]. */
+        fun linedOn(atMs: Double, pixelsPerSecond: Float, density: Float, viewportPx: Int): TimelineWindow =
+            scrolledSoThat(atMs, viewportPx * PLAYHEAD_FRACTION, pixelsPerSecond, density, viewportPx)
     }
 }
 

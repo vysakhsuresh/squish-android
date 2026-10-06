@@ -489,22 +489,71 @@ private fun gaps() {
 private fun window() {
     for (density in floatArrayOf(1f, 2.75f)) for (pps in floatArrayOf(ZOOM_MIN, 42f, ZOOM_MAX)) for (vp in intArrayOf(0, 720, 1080)) {
         for (at in doubleArrayOf(0.0, 1_234.5, 3_600_000.0)) {
-            val w = TimelineWindow.centredOn(at, pps, density, vp)
-            val tag = "centred $at at ${pps}pps ${vp}px x$density"
-            check(abs(w.centreMs - at) < 1e-6, "$tag: centre ${w.centreMs}")
+            val w = TimelineWindow.linedOn(at, pps, density, vp)
+            val line = vp * TimelineWindow.PLAYHEAD_FRACTION
+            val tag = "lined $at at ${pps}pps ${vp}px x$density"
+            check(abs(w.lineMs - at) < 1e-6, "$tag: line ${w.lineMs}")
             if (vp > 0) {
-                check(abs(w.xPx(at.toLong()) - vp / 2f) <= 1f + (at - at.toLong()).toFloat() * pps * density / 1000f, "$tag: playhead at ${w.xPx(at.toLong())}")
-                check(abs(w.exactMsAt(vp / 2f) - at) < 1e-6, "$tag: exactMsAt ${w.exactMsAt(vp / 2f)}")
+                check(abs(w.xPx(at.toLong()) - line) <= 1f + (at - at.toLong()).toFloat() * pps * density / 1000f, "$tag: playhead at ${w.xPx(at.toLong())}")
+                check(abs(w.exactMsAt(line) - at) < 1e-6, "$tag: exactMsAt ${w.exactMsAt(line)}")
             }
             // Left of the start: nothing negative is ever sought.
             check(w.msAt(0f) >= 0L, "$tag: msAt below zero")
         }
     }
-    // Fit: the whole edit fits in half the strip, so it is on screen wherever the playhead is.
-    for (len in longArrayOf(1_000, 30_000, 3 * 3_600_000L)) {
+    // Fit: the whole edit lies between the playhead line and the right-hand
+    // edge, which is where it is laid out from with the playhead at 0:00. It
+    // used to be fitted into *half* the strip, because the line used to be in
+    // the middle, and an opened video was drawn two thirds of the size it
+    // needed to be - the strip then crept about six pixels a second under a
+    // line that never moves, and read as frozen.
+    for (len in longArrayOf(1_000, 10_000, 30_000, 3 * 3_600_000L)) {
         val vpDp = 400f
+        val after = vpDp * (1f - TimelineWindow.PLAYHEAD_FRACTION)
         val pps = TimelineLanes.fitZoom(len, vpDp)
         check(pps in ZOOM_MIN..ZOOM_MAX, "fit $len out of range")
-        if (pps > ZOOM_MIN && pps < ZOOM_MAX) check(len / 1000f * pps <= vpDp / 2f, "fit $len: ${len / 1000f * pps}dp > half")
+        val drawn = len / 1000f * pps
+        if (len <= (TimelineLanes.MAX_FIT_SECONDS * 1000).toLong() && pps < ZOOM_MAX) {
+            check(drawn <= after, "fit $len: ${drawn}dp past the right edge ($after available)")
+            // And it must *use* that room, or the fit is just a smaller zoom
+            // with a different name: within the 12 dp the margin costs.
+            check(drawn >= after - 13f, "fit $len: only ${drawn}dp of $after used")
+        }
+    }
+    // Past MAX_FIT_SECONDS the fit stops zooming out, because a fit of the
+    // whole thing is what made the strip creep invisibly under a playhead that
+    // does not move. Checked as a *speed*, which is the thing that was wrong:
+    // at a phone's density the strip has to move by something a person can see.
+    run {
+        val vpDp = 400f
+        // The 12 dp margin is part of what is usable, as fitZoom has it.
+        val usable = vpDp * (1f - TimelineWindow.PLAYHEAD_FRACTION) - 12f
+        val floor = TimelineLanes.fitZoom(10 * 60_000L, vpDp)
+        check(abs(floor - usable / TimelineLanes.MAX_FIT_SECONDS) < 1e-3f,
+            "a ten-minute edit fits at $floor dp/s, not the ${usable / TimelineLanes.MAX_FIT_SECONDS} floor")
+        // 2.5 is this phone's density; 15 real pixels a second is about the
+        // least that reads as motion rather than as a frozen strip. The old
+        // whole-edit fit of a 90-second clip was eight.
+        check(floor * 2.5f >= 15f, "a long edit still only scrolls ${floor * 2.5f} pixels a second")
+        // And a short edit is still fitted whole: the floor must not zoom *in*
+        // on something that already fits.
+        val short = TimelineLanes.fitZoom(5_000L, vpDp)
+        check(abs(short - usable / 5f) < 0.2f, "a five-second edit no longer fits the strip: $short")
+    }
+    // The strip as drawn agrees with the strip a finger lands on, at the line's
+    // new place. The drawn window is twice as wide, so its own quarter is
+    // nowhere near the strip's quarter - the pair below is what catches that.
+    for (pps in floatArrayOf(2f, 42f, 400f)) for (vp in intArrayOf(1080, 1079)) {
+        for (at in doubleArrayOf(0.0, 7_777.0, 600_000.0)) {
+            val live = TimelineWindow.linedOn(at, pps, 2.75f, vp)
+            val s = TimelineWindow.slideFor(live, live.lineMs)
+            for (t in longArrayOf(at.toLong(), at.toLong() + 999, 0L)) {
+                val drawnAt = Math.round(s.drawn.xPx(t)) - s.padPx + s.shiftPx
+                val liveAt = live.xPx(t)
+                if (abs(liveAt) < 3 * vp) {
+                    check(abs(drawnAt - liveAt) <= 1f, "pps $pps vp $vp at $at: $t drawn at $drawnAt, live $liveAt")
+                }
+            }
+        }
     }
 }

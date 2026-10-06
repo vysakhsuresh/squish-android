@@ -353,9 +353,39 @@ object TimelineLanes {
      * width, because the playhead is fixed in the middle and the edit can reach
      * from it to either edge.
      */
+    /**
+     * The most footage a fit will try to show, in seconds.
+     *
+     * A fit of the *whole* edit is only a good opening view while the edit is
+     * short. A minute and a half of video fitted into a phone's strip is about
+     * three pixels a second of zoom, and under a playhead that does not move
+     * the strip then creeps eight pixels a second - which is not slow, it is
+     * invisible. Opening a video and watching it play looked like nothing was
+     * happening at all, and that is how it was reported: "the play head is not
+     * moving".
+     *
+     * Beyond this the fit stops and the edit simply runs off the right-hand
+     * edge, which is what every editor does and what a double tap on the ruler
+     * undoes. Thirty seconds across the strip is about twenty-three pixels a
+     * second on this phone: unmistakably moving, and still enough of the edit
+     * in view to see where you are.
+     */
+    const val MAX_FIT_SECONDS = 30f
+
+    /**
+     * The zoom that lays the whole edit out from the playhead line to the
+     * strip's right edge - or [MAX_FIT_SECONDS] of it, whichever is less.
+     *
+     * What is usable is everything *after* the line, because a fit is asked for
+     * with the playhead at 0:00 and the edit runs to the right of it. That used
+     * to be half the strip, which is where the line used to be; it is three
+     * quarters now, so an opened video is drawn half as big again
+     * (TimelineWindow.PLAYHEAD_FRACTION says why the line moved). The 12 dp is
+     * so the last frame is not flush against the edge.
+     */
     fun fitZoom(durationMs: Long, viewportDp: Float): Float {
         val seconds = (durationMs / 1000f).coerceAtLeast(0.001f)
-        val usable = (viewportDp / 2f - 12f).coerceAtLeast(1f)
-        return (usable / seconds).coerceIn(ZOOM_MIN, ZOOM_MAX)
+        val usable = (viewportDp * (1f - TimelineWindow.PLAYHEAD_FRACTION) - 12f).coerceAtLeast(1f)
+        return maxOf(usable / seconds, usable / MAX_FIT_SECONDS).coerceIn(ZOOM_MIN, ZOOM_MAX)
     }
 }

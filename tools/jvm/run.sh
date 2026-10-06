@@ -23,7 +23,7 @@ run() {
 # What a Clip pulls in: since B12 its own look (Look.kt) and crop (ClipCrop.kt,
 # CropRect.kt) as well as the timeline's own files.
 TIMELINE="$SRC/timeline/SpeedRamp.kt $SRC/timeline/TimelineModels.kt $SRC/timeline/VoiceEffect.kt
-  $SRC/timeline/TimelineLanes.kt $SRC/timeline/Keyframe.kt $SRC/timeline/ValueTracks.kt $SRC/timeline/Mask.kt $SRC/timeline/ChromaKey.kt
+  $SRC/timeline/TimelineLanes.kt $SRC/timeline/TimelineWindow.kt $SRC/timeline/Keyframe.kt $SRC/timeline/ValueTracks.kt $SRC/timeline/Mask.kt $SRC/timeline/ChromaKey.kt
   $SRC/timeline/Background.kt $SRC/timeline/LayerBlend.kt $SRC/editor/TimedEffect.kt $SRC/editor/MotionPreset.kt $SRC/editor/PolishRules.kt
   $SRC/media/effects/ToneCurve.kt $SRC/media/effects/Lut.kt $SRC/media/effects/ColorWheels.kt $SRC/media/effects/SkinTone.kt $SRC/media/effects/Look.kt $SRC/editor/ClipCrop.kt $SRC/editor/CropRect.kt
   tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt
@@ -73,7 +73,7 @@ run layerblend $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/LayerBlendChecks.k
 run editrules  $TIMELINE "$SRC/editor/EditRules.kt" tools/jvm/EditRulesChecks.kt
 run audiorules $TIMELINE "$SRC/editor/AudioRules.kt" tools/jvm/AudioRulesChecks.kt
 run exportplan $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/ExportPlanChecks.kt
-run lanes      $TIMELINE "$SRC/timeline/TimelineWindow.kt" tools/jvm/LaneChecks.kt
+run lanes      $TIMELINE tools/jvm/LaneChecks.kt
 run overlay    $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/media/ExportPlan.kt" tools/jvm/OverlayChecks.kt
 run text       $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" \
                "$SRC/media/audio/SpeechSegmenter.kt" tools/jvm/stub/MonoPcm.kt "$SRC/media/ExportPlan.kt" tools/jvm/TextChecks.kt

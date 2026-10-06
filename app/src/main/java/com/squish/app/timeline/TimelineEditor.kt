@@ -367,26 +367,19 @@ fun TimelineEditor(
      * costs to lay out does not depend on how long the video is, and a three-hour
      * clip zooms to the frame exactly like a three-second one.
      */
-    // Centred on the playhead, always - the strip scrolls under a line that
-    // never moves, as it does in every phone editor.
-    //
-    // It used to be clamped so that the edit began at the strip's left edge
-    // near 0:00 and the line walked right from there to the middle, because an
-    // empty left half read as the timeline starting part way along. The price
-    // of that was far worse and took a user to find: while the line was
-    // walking - which is the whole of a short edit, since a timeline that fits
-    // the screen never scrolls at all - dragging the strip right moved the line
-    // *left*. The gesture meant one thing in one part of the edit and the
-    // opposite in another. A fixed line cannot be dragged the wrong way,
-    // because it does not move; the strip follows the finger everywhere.
-    val window = TimelineWindow.startClamped(
+    // On the playhead, always - the strip scrolls under a line that never moves,
+    // as it does in every phone editor. A quarter of the way across rather than
+    // half: see TimelineWindow.PLAYHEAD_FRACTION, which has the whole of why,
+    // including the one thing the line may never do, which is move while a
+    // finger is dragging the strip.
+    val window = TimelineWindow.linedOn(
         atMs = centre,
         pixelsPerSecond = state.pixelsPerSecond.coerceIn(MIN_PPS, MAX_PPS),
         density = density.density,
-        viewportPx = viewportPx,
-        leadPx = viewportPx / 2f
+        viewportPx = viewportPx
     )
-    // Where the playhead line is drawn: the middle, at every moment of the edit.
+    // Where the playhead line is drawn. A constant, but read off the window
+    // rather than recomputed, so the line and the film cannot part.
     val playheadPx = window.pxForMs(centre - window.scrollMs)
 
     /**
@@ -399,13 +392,15 @@ fun TimelineEditor(
      * frame and every lane took it (a scrub ran at 20 ms a frame on a phone).
      * Gestures and the layout keep [window]: what a finger lands on is exact.
      */
-    val slide = remember(window) { TimelineWindow.slideFor(window, window.centreMs) }
+    val slide = remember(window) { TimelineWindow.slideFor(window, window.lineMs) }
     val drawPadPx = slide.padPx
     val drawWindow = slide.drawn
     val drawShiftPx = slide.shiftPx
     val drawShiftState = rememberUpdatedState(drawShiftPx)
-    // The add button sits on the playhead, which is off the middle near the start.
-    val playheadOffState = rememberUpdatedState(playheadPx - viewportPx / 2f)
+    // The add button sits on the playhead. Zero while the line is where the
+    // window puts it, which is always - kept as the difference so that the two
+    // cannot silently part if either ever moves.
+    val playheadOffState = rememberUpdatedState(playheadPx - window.linePx)
     val counterShift: () -> Float = remember { { -drawShiftState.value + playheadOffState.value } }
 
     // Read fresh inside gestures: the pointerInput blocks are keyed on Unit so
@@ -1790,7 +1785,7 @@ private fun Lane(
             if (clips.isEmpty() && onAddMedia != null) {
                 // Beside the playhead, where the eye is: at zero it was off screen whenever
                 // sound or words ran on past where the picture had been.
-                AddMedia(x = window.xDp(window.centreMs.roundToLong()).dp, counterShiftPx = counterShiftPx, onClick = onAddMedia)
+                AddMedia(x = window.xDp(window.lineMs.roundToLong()).dp, counterShiftPx = counterShiftPx, onClick = onAddMedia)
             }
         }
     }

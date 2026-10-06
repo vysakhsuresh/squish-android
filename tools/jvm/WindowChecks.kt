@@ -122,30 +122,41 @@ fun main() {
         }
     }
 
-    // The playhead line never moves: it is in the middle at every moment of the
-    // edit, at every zoom and on every screen.
+    // The playhead line never moves: it is at PLAYHEAD_FRACTION of the strip at
+    // every moment of the edit, at every zoom and on every screen.
     //
-    // This is the check the inversion bug needed. The lead used to be 14 dp, so
-    // the line walked right from the strip's left edge until it reached the
-    // middle - and over that whole stretch, which is *all* of an edit short
-    // enough to fit the screen, dragging the strip right moved the line left.
-    // One gesture, two opposite meanings. A line that cannot move cannot move
-    // the wrong way.
+    // This is the check the inversion bug needed. The window used to be clamped
+    // near 0:00 so that the line walked right from the strip's left edge until
+    // it reached its place - and over that whole stretch, which is *all* of an
+    // edit short enough to fit the screen, dragging the strip right moved the
+    // line left. One gesture, two opposite meanings. A line that cannot move
+    // cannot move the wrong way, and that is why the answer to "the edit starts
+    // half way across the strip" was to move the line to a quarter rather than
+    // to let it walk again.
     for (pps in floatArrayOf(2f, 42f, 400f, 4_000f)) {
         for (viewport in intArrayOf(1080, 1079, 2400)) {
-            val lead = viewport / 2f
+            val line = viewport * TimelineWindow.PLAYHEAD_FRACTION
             var t = 0.0
             while (t < 30_000.0) {
-                val w = TimelineWindow.startClamped(t, pps, 2.75f, viewport, lead)
+                val w = TimelineWindow.linedOn(t, pps, 2.75f, viewport)
                 val x = w.xPx(t.toLong())
                 check(
-                    "the playhead is in the middle at $t ms (pps $pps, viewport $viewport): $x",
-                    abs(x - viewport / 2f) < 1f
+                    "the playhead is at the line at $t ms (pps $pps, viewport $viewport): $x, wanted $line",
+                    abs(x - line) < 1f
                 )
+                check("the line is where the window says at $t ms", abs(w.linePx - line) < 1e-3f)
                 t += if (t < 2_000.0) 10.0 else 500.0
             }
         }
     }
+
+    // And it is left of the middle, leaving most of the strip to the edit. The
+    // number is a judgement, so what is checked is the two things that make it
+    // one: some of the strip behind the playhead, and most of it ahead.
+    check(
+        "the playhead is between an eighth and a third of the way across (${TimelineWindow.PLAYHEAD_FRACTION})",
+        TimelineWindow.PLAYHEAD_FRACTION in 0.125f..0.34f
+    )
 
     // The strip as drawn (slideFor): every moment within a pixel of where the
     // live window - and so a finger - puts it, at any zoom, length and centre;
@@ -157,10 +168,10 @@ fun main() {
             var rebuilds = 0
             var frames = 0
             var centre = 0.0
-            val live0 = TimelineWindow.centredOn(0.0, pps, 2.75f, viewport)
+            val live0 = TimelineWindow.linedOn(0.0, pps, 2.75f, viewport)
             val stepMs = live0.msForPx(3f)
             while (centre < 3 * 60 * 60_000.0 && frames < 4_000) {
-                val live = TimelineWindow.centredOn(centre, pps, 2.75f, viewport)
+                val live = TimelineWindow.linedOn(centre, pps, 2.75f, viewport)
                 val s = TimelineWindow.slideFor(live, centre)
                 for (t in longArrayOf(centre.toLong(), centre.toLong() + 777, centre.toLong() - 4_321, 0L)) {
                     val drawnAt = Math.round(s.drawn.xPx(t)) - s.padPx + s.shiftPx
