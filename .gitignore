@@ -24,3 +24,6 @@ local.properties
 # Local agent state and the worktrees parallel sessions build in.
 /.claude/
 
+
+# Git Bash leaves one of these behind when a shell crashes.
+*.stackdump
