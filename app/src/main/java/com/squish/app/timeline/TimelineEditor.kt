@@ -57,6 +57,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -315,6 +318,18 @@ fun TimelineEditor(
      */
     rowsHeight: Dp = ROWS_MAX
 ) {
+    // Time runs left to right here whatever the phone's language is, as it does
+    // in every editor. Everything below computes a left-origin pixel from a
+    // moment - TimelineWindow.xDp, the drag deltas, the handles' boxes - and
+    // places it with `offset`, which is the layout-direction-aware modifier:
+    // placeRelative mirrors x to parentWidth - childWidth - x. The manifest
+    // declares supportsRtl and nothing provided a direction, so on an Arabic,
+    // Hebrew, Persian or Urdu phone every clip, handle, diamond and line would
+    // have been drawn mirrored against a playhead and a drag that were not -
+    // which is the same class of fault as a control that moves against the
+    // finger. Held for the subtree rather than per modifier, so the Rows inside
+    // it keep their order too. (The quick tools' TrimStrip does the same.)
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
 
@@ -1104,6 +1119,7 @@ fun TimelineEditor(
                 )
             }
         }
+    }
     }
 }
 

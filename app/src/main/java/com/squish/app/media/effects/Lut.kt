@@ -127,7 +127,17 @@ object LutStore {
      * "Teal.cube" are two different looks and both have to be keepable.
      */
     fun freeName(display: String): String {
-        val stem = display.substringBeforeLast('.').replace(Regex("[^A-Za-z0-9 _-]"), "").trim().ifEmpty { "Look" }
+        // Only what a file name cannot hold, not everything that is not ASCII:
+        // stripping to [A-Za-z0-9 _-] turned "紅葉.cube" and "青空.cube" into
+        // "Look" and "Look 2", and the Looks sheet shows this stem as the
+        // label, so two looks named in the user's own script were
+        // indistinguishable. The same stripping, the same way round, as
+        // CustomFonts.import.
+        val stem = display.substringBeforeLast('.')
+            .replace(Regex("""[/\\:*?"<>|\u0000-\u001f]"""), "")
+            .trim()
+            .take(64)
+            .ifEmpty { "Look" }
         if (!has("$stem.cube")) return "$stem.cube"
         var n = 2
         while (has("$stem $n.cube")) n++

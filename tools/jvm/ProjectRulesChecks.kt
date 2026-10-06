@@ -176,6 +176,51 @@ fun main() {
         }
     }
 
+    // ---- A whole name in two characters is still a name. -------------------
+    //
+    // The floor was three letters flat, counted over UTF-16 chars, and a whole
+    // name in Chinese, Japanese, Korean or Hebrew is routinely two - so it was
+    // taken for a camera's and thrown away for "Edit · 6 Oct", and readableName
+    // then returned null, so the Replace sheet read "the clip you picked" and
+    // Track "the overlay" instead of naming the file. The codebase had met this
+    // once already and written it down for captions ("every one-or-two-
+    // character line in Chinese or Japanese, which is a whole sentence") and
+    // the lesson had not reached here. This suite tested Latin names only.
+    run {
+        val day = 1_790_000_000_000L
+        val utc = java.util.TimeZone.getTimeZone("UTC")
+        listOf(
+            "海滩.mp4" to "海滩",            // beach, Chinese
+            "旅行.mp4" to "旅行",            // travel
+            "2026旅行.mp4" to "2026旅行",    // and with a year on the front
+            "바다.mp4" to "바다",            // sea, Korean
+            "ים.mp4" to "ים",               // sea, Hebrew
+            "海.mp4" to "海",                // one character is a word too
+            "海辺日落.mp4" to "海辺日落"
+        ).forEach { (file, name) ->
+            check(
+                ProjectRules.displayTitle(file, day, utc) == name,
+                "\"$file\" was called \"${ProjectRules.displayTitle(file, day, utc)}\" rather than \"$name\""
+            )
+            check(ProjectRules.readableName(file) == name, "\"$file\" read as ${ProjectRules.readableName(file)}")
+        }
+        // And the floor still does its job on the Latin side, which is the only
+        // reason it is three there: a GoPro's name is two letters wrapped round
+        // six digits, and dropping the floor to two outright would admit it.
+        listOf("GH010123.MP4", "C0001.MP4", "P1000123.JPG", "DJI_0001.MP4").forEach { file ->
+            check(
+                ProjectRules.readableName(file) == null,
+                "the camera name \"$file\" read as a name: ${ProjectRules.readableName(file)}"
+            )
+        }
+        // The made-up patterns still win over the script rule.
+        check(ProjectRules.readableName("VID-20260926-WA0104.mp4") == null, "a WhatsApp name came back")
+        check(ProjectRules.readableName("1001323287.mp4") == null, "a gallery number came back")
+        // A name with no letters at all is not a name.
+        check(ProjectRules.readableName("2026.mp4") == null, "a bare year read as a name")
+        check(ProjectRules.readableName("- .mp4") == null, "punctuation read as a name")
+    }
+
     if (problems.isEmpty()) {
         println("ProjectRulesChecks: all checks passed")
     } else {

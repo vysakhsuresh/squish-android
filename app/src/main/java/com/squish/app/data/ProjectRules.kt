@@ -110,8 +110,7 @@ object ProjectRules {
      */
     fun displayTitle(label: String?, createdAtMillis: Long, zone: TimeZone = TimeZone.getDefault(), prefix: String? = "Edit"): String {
         val stem = label?.trim()?.substringBeforeLast('.')?.trim().orEmpty()
-        val letters = stem.count { it.isLetter() }
-        if (letters >= 3 && !MADE_UP_NAME.matches(stem) && !COPY_NAME.matches(stem)) return stem
+        if (saysSomething(stem)) return stem
         if (createdAtMillis <= 0L) return "Untitled edit"
         val format = SimpleDateFormat(if (prefix == null) "d MMM, h:mm a" else "d MMM", Locale.getDefault()).apply { timeZone = zone }
         val day = format.format(Date(createdAtMillis))
@@ -125,9 +124,60 @@ object ProjectRules {
      */
     fun readableName(label: String?): String? {
         val stem = label?.trim()?.substringBeforeLast('.')?.trim().orEmpty()
-        val letters = stem.count { it.isLetter() }
-        return stem.takeIf { letters >= 3 && !MADE_UP_NAME.matches(it) && !COPY_NAME.matches(it) }
+        return stem.takeIf { saysSomething(it) }
     }
+
+    /**
+     * Whether a file's stem is a name somebody gave rather than one a camera
+     * or the gallery made up.
+     *
+     * Three letters, or one in a script where a word is routinely one or two
+     * characters. The floor used to be three letters flat, counted over UTF-16
+     * chars - so a whole name in Chinese, Japanese, Korean or Hebrew, which is
+     * usually two characters (海滩, 旅行, 바다, ים), was taken for a camera's
+     * and thrown away for "Edit · 6 Oct"; the Replace sheet then read "the clip
+     * you picked" and Track "the overlay" instead of naming the file. The
+     * codebase had already met this once and written it down for captions -
+     * TextEdits.translateCaptions, "every one-or-two-character line in Chinese
+     * or Japanese, which is a whole sentence" - and the lesson had not reached
+     * here.
+     *
+     * The floor stays at three for the Latin and Cyrillic scripts, where it is
+     * what refuses a GoPro's "GH010123" (two letters wrapped round six digits);
+     * dropping it to two outright would have let that through.
+     *
+     * Counted by code point, so a name in a plane past the first is counted at
+     * all: a surrogate half is not a letter.
+     */
+    private fun saysSomething(stem: String): Boolean {
+        if (stem.isEmpty() || MADE_UP_NAME.matches(stem) || COPY_NAME.matches(stem)) return false
+        var letters = 0
+        var compact = false
+        var i = 0
+        while (i < stem.length) {
+            val cp = stem.codePointAt(i)
+            if (Character.isLetter(cp)) {
+                letters++
+                if (isCompactScript(cp)) compact = true
+            }
+            i += Character.charCount(cp)
+        }
+        return letters >= 3 || (compact && letters >= 1)
+    }
+
+    /** A script whose words are routinely one or two characters. */
+    private fun isCompactScript(codePoint: Int): Boolean =
+        when (runCatching { Character.UnicodeScript.of(codePoint) }.getOrNull()) {
+            Character.UnicodeScript.HAN,
+            Character.UnicodeScript.HIRAGANA,
+            Character.UnicodeScript.KATAKANA,
+            Character.UnicodeScript.HANGUL,
+            Character.UnicodeScript.HEBREW,
+            Character.UnicodeScript.THAI,
+            Character.UnicodeScript.LAO,
+            Character.UnicodeScript.KHMER -> true
+            else -> false
+        }
 
     /**
      * Titles told apart. Two projects started the same day with no name were
@@ -159,7 +209,7 @@ object ProjectRules {
     private val COPY_NAME = Regex("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
     private val MADE_UP_NAME = Regex(
-        "(?i)^(vid|img|pxl|mvimg|dsc|dscn|dcim|mov|video|photo|image|picture|screenshot|screen[ _-]?record\\w*|record\\w*|wa|signal|snapchat|inshot|capcut|squish|squish_trim|overlay|voice|still|rec|take)[ _-]*[0-9].*"
+        "(?i)^(vid|img|pxl|mvimg|dsc|dscn|dcim|mov|video|photo|image|picture|screenshot|screen[ _-]?record\\w*|record\\w*|wa|signal|snapchat|inshot|capcut|squish|squish_trim|overlay|voice|still|rec|take|dji|gopro)[ _-]*[0-9].*"
     )
 
     private val COPY_SUFFIX = Regex(" copy \\d+$")

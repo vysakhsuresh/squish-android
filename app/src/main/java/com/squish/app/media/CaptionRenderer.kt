@@ -78,7 +78,17 @@ object CustomFonts {
         val target = dir ?: return null
         val display = displayName(context, uri) ?: "font.ttf"
         val ext = display.substringAfterLast('.', "ttf").lowercase().takeIf { it == "ttf" || it == "otf" } ?: "ttf"
-        val stem = display.substringBeforeLast('.').replace(Regex("[^A-Za-z0-9 _-]"), "").trim().ifEmpty { "font" }
+        // Only what a file name cannot hold is taken out, not everything that
+        // is not ASCII. Stripping to [A-Za-z0-9 _-] destroyed the whole name of
+        // a font named in Cyrillic, Greek, Arabic, Devanagari or CJK - the first
+        // landed as "font", the second as "font 2", and the chips had nothing to
+        // tell them apart. Android's filesystem takes UTF-8 names, so nothing
+        // downstream wanted the stripping; only the label was lost to it.
+        val stem = display.substringBeforeLast('.')
+            .replace(Regex("""[/\\:*?"<>|\u0000-\u001f]"""), "")
+            .trim()
+            .take(64)
+            .ifEmpty { "font" }
         var file = File(target, "$stem.$ext")
         var n = 2
         while (file.exists()) file = File(target, "$stem $n.$ext").also { n++ }

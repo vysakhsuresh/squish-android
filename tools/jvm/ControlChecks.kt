@@ -830,6 +830,54 @@ fun main() {
         )
     }
 
+    // ---- A name the user gave is never reduced to ASCII. -------------------
+    //
+    // An imported font's and an imported LUT's stored name was the picked
+    // file's display name with everything outside [A-Za-z0-9 _-] deleted,
+    // falling back to "font" / "Look" when nothing was left - and that stem is
+    // what the chip shows. So a font named in Cyrillic, Greek, Arabic,
+    // Devanagari or CJK lost its whole name: the first landed as "font", the
+    // second as "font 2", with nothing to tell them apart, and the draft
+    // recorded them under those names. Android's filesystem takes UTF-8 names,
+    // so nothing downstream wanted the stripping. Only what a file name cannot
+    // hold comes out now.
+    // The three exempt files build a cache or download filename out of a
+    // machine id (OnlineMusic's track id, OnlineStock's video id) or a Google
+    // Fonts family name, which is ASCII by definition - and in each the label
+    // someone reads comes from the record, not from the filename. Named here
+    // with the reason rather than quietly passing.
+    run {
+        val asciiNameExempt = listOf("online/OnlineFonts.kt", "online/OnlineMusic.kt", "online/OnlineStock.kt")
+        readAll(SRC).forEach { (path, text) ->
+            if (asciiNameExempt.any { path.endsWith(it) }) return@forEach
+            Regex("""\[\^A-Za-z0-9[^]]*\]""").findAll(text).forEach { m ->
+                problems += "$path reduces a name to ASCII (${m.value}) - a name in Cyrillic, Greek, " +
+                    "Arabic, Devanagari or CJK is deleted outright by that, and the filesystem never " +
+                    "wanted it. Take out only what a file name cannot hold."
+            }
+        }
+    }
+
+    // ---- Time runs left to right, whatever the phone's language is. --------
+    //
+    // Both strips compute a left-origin pixel from a moment and place it with
+    // `offset`, which is the layout-direction-aware modifier: placeRelative
+    // mirrors x to parentWidth - childWidth - x. The manifest declares
+    // supportsRtl and nothing provided a direction, so on an Arabic, Hebrew,
+    // Persian or Urdu phone every clip, handle, diamond and line would have
+    // been drawn mirrored against a playhead and a drag that were not - the
+    // same class as a control that moves against the finger. Held for the
+    // subtree rather than per modifier, so the Rows inside keep their order.
+    run {
+        listOf("timeline/TimelineEditor.kt", "tools/TrimStrip.kt").forEach { name ->
+            check(
+                read("$SRC/$name").contains("CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr)"),
+                "$name does not hold its layout direction - its x is a left-origin pixel and `offset` " +
+                    "mirrors in RTL, so the strip would be drawn against its own playhead and drags"
+            )
+        }
+    }
+
     // ---- A formatted number is never cut up by an ASCII literal. -----------
     //
     // `"...".format(...)` is java.lang.String.format against the default

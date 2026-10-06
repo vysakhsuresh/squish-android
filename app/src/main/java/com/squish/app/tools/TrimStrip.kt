@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -79,6 +82,18 @@ fun TrimStrip(
     // Which handle the frame buttons nudge: the one last touched.
     var active by remember { mutableStateOf(Handle.End) }
 
+    // Time runs left to right here whatever the phone's language is, as it does
+    // in every editor. The manifest declares supportsRtl, and `offset` is the
+    // layout-direction-aware modifier - placeRelative mirrors x to
+    // parentWidth - childWidth - x - while TrimRules.xAtMs computes left-origin
+    // pixels and the drag adds the raw pointer delta. On an Arabic, Hebrew,
+    // Persian or Urdu phone the filmstrip's tiles were laid out right to left,
+    // both handles were placed where the other one's time is, and dragging the
+    // start handle right moved the bar left: the trim that landed was not the
+    // one the strip drew. Held to Ltr for this subtree rather than swapping
+    // each `offset` for `absoluteOffset`, which would leave the Row's own tile
+    // order mirrored.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(STRIP_HEIGHT)) {
             val density = LocalDensity.current
@@ -229,6 +244,7 @@ fun TrimStrip(
                 }
             )
         }
+    }
     }
 }
 
