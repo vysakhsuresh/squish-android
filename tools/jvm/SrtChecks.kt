@@ -1,4 +1,5 @@
 import com.squish.app.data.SrtCue
+import com.squish.app.data.PickedText
 import com.squish.app.data.SrtFile
 import kotlin.system.exitProcess
 
@@ -174,6 +175,78 @@ fun main() {
         check(one("00:00:01,000 --> 00:00:02,000\n\n").isEmpty(), "a cue with no words was kept")
         check(one("00:00:02,000 --> 00:00:01,000\nBackwards\n").isEmpty(), "a backwards cue was kept")
         check(one("00:00:01,000 --> 00:00:01,000\nNo length\n").isEmpty(), "a cue of no length was kept")
+    }
+
+    // ---- A file from elsewhere is read in the encoding it is in. -----------
+    //
+    // It used to go through bufferedReader(), which is UTF-8 and *replaces*
+    // what it cannot read. A subtitle file in a legacy single-byte encoding -
+    // which is what Notepad's "ANSI" writes and what most subtitle archives
+    // hold - has ASCII timing lines, so the cues parsed, the import reported
+    // success, and every accented or non-Latin letter in the words had become
+    // U+FFFD. The app's own round trip was safe, because it writes UTF-8; only
+    // files from elsewhere were corrupted, and nothing warned.
+    run {
+        val line = "1\n00:00:01,000 --> 00:00:04,000\n"
+        fun cue(text: String) = (line + text + "\n").toByteArray(Charsets.UTF_8)
+
+        // UTF-8, with and without a byte-order mark.
+        check(PickedText.decode(cue("Un café très chaud")).contains("café très"), "plain UTF-8 was mangled")
+        val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + cue("Un café")
+        check(
+            PickedText.decode(bom).let { it.contains("café") && !it.startsWith("﻿") },
+            "a UTF-8 BOM was not taken off: ${PickedText.decode(bom).take(8)}"
+        )
+
+        // windows-1252, the one the sweep found: the words come back whole
+        // rather than peppered with U+FFFD, and the cue still parses.
+        val ansi = (line + "Un café très chaud\n").toByteArray(charset("windows-1252"))
+        val read = PickedText.decode(ansi, language = "fr")
+        check(!read.contains('�'), "a windows-1252 file still decoded to replacement characters: $read")
+        check(read.contains("café très chaud"), "a windows-1252 file read as \"$read\"")
+        check(SrtFile.parse(read).size == 1, "the decoded cue did not parse")
+        check(SrtFile.parse(read).first().text == "Un café très chaud", "the cue read \"${SrtFile.parse(read).first().text}\"")
+
+        // Cyrillic and Arabic, each in the encoding its language's files come
+        // in, read on a phone set to that language.
+        listOf(
+            Triple("windows-1251", "ru", "Привет мир"),
+            Triple("windows-1256", "ar", "مرحبا بالعالم"),
+            Triple("windows-1253", "el", "Γειά σου κόσμε")
+        ).forEach { (name, language, words) ->
+            val bytes = (line + words + "\n").toByteArray(charset(name))
+            val out = PickedText.decode(bytes, language = language)
+            check(!out.contains('�'), "$name under $language gave replacement characters: $out")
+            check(out.contains(words), "$name under $language read as \"$out\"")
+            check(SrtFile.parse(out).firstOrNull()?.text == words, "$name under $language did not parse back")
+        }
+
+        // UTF-16, which a "Unicode" save from Notepad writes: both ways round,
+        // and the timing line has to survive - it used to decode to nothing
+        // readable at all, which was at least refused with a message.
+        listOf(Charsets.UTF_16LE to byteArrayOf(0xFF.toByte(), 0xFE.toByte()),
+               Charsets.UTF_16BE to byteArrayOf(0xFE.toByte(), 0xFF.toByte())).forEach { (charset, mark) ->
+            val bytes = mark + (line + "Un café\n").toByteArray(charset)
+            val out = PickedText.decode(bytes)
+            check(SrtFile.parse(out).firstOrNull()?.text == "Un café", "$charset read as \"$out\"")
+        }
+
+        // Plain ASCII is plain ASCII under every language.
+        listOf("en", "ru", "ar", "ja", "zz").forEach { language ->
+            check(
+                PickedText.decode(cue("Hello"), language) == line + "Hello\n",
+                "ASCII under $language read as \"${PickedText.decode(cue("Hello"), language)}\""
+            )
+        }
+        // And nothing at all is nothing, not a crash.
+        check(PickedText.decode(ByteArray(0)) == "", "no bytes gave something")
+        check(PickedText.decode(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())) == "", "a bare BOM gave something")
+        // A file that is valid UTF-8 is never second-guessed, whatever the
+        // phone's language is: UTF-8 is tried first and strictly.
+        check(
+            PickedText.decode(cue("Привет"), language = "ru").contains("Привет"),
+            "a UTF-8 Cyrillic file was re-read as windows-1251"
+        )
     }
 
     println("srt: the subtitle file, read and written")

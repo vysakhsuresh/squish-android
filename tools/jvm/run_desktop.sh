@@ -123,7 +123,7 @@ run draftkeys  tools/jvm/DraftKeyChecks.kt
 run privacy    tools/jvm/PrivacyChecks.kt
 run searchterms "$SRC/online/SearchTerms.kt" tools/jvm/SearchTermChecks.kt
 run envelope  tools/jvm/stub/MonoPcm.kt "$SRC/media/audio/Waveform.kt" tools/jvm/EnvelopeChecks.kt
-run srt "$SRC/data/SrtFile.kt" tools/jvm/SrtChecks.kt
+run srt "$SRC/data/SrtFile.kt" "$SRC/data/PickedText.kt" tools/jvm/SrtChecks.kt
 run shaderuniforms tools/jvm/ShaderUniformChecks.kt
 
 # And the suites that run app code against Media3 itself. They keep their own

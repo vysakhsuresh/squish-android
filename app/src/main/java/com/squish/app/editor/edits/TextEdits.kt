@@ -2,6 +2,7 @@ package com.squish.app.editor.edits
 
 import android.net.Uri
 import com.squish.app.data.SrtCue
+import com.squish.app.data.PickedText
 import com.squish.app.data.SrtFile
 import com.squish.app.media.CustomFonts
 import com.squish.app.media.SquishError
@@ -906,8 +907,12 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         viewModelScope.launch {
             val raw = withContext(Dispatchers.IO) {
                 runCatching {
+                    // Through SrtFile.decode, not bufferedReader(): a file in a
+                    // legacy single-byte encoding has ASCII timing lines, so it
+                    // parsed and reported success while every accented or
+                    // non-Latin letter in the words had become U+FFFD.
                     app.contentResolver.openInputStream(uri)
-                        ?.bufferedReader()?.use { it.readText() }
+                        ?.use { PickedText.decode(it.readBytes()) }
                 }.getOrNull()
             }
             if (raw == null) {

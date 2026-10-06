@@ -830,6 +830,30 @@ fun main() {
         )
     }
 
+    // ---- A picked text file is read in the encoding it is in. --------------
+    //
+    // bufferedReader() is UTF-8 and decodeToString() is UTF-8, and both
+    // *replace* what they cannot read. A subtitle file in a legacy single-byte
+    // encoding - Notepad's "ANSI", and most subtitle archives - has ASCII
+    // timing lines, so the cues parsed, the import reported success, and every
+    // accented or non-Latin letter in the words had quietly become U+FFFD. The
+    // app's own round trip was safe because it writes UTF-8; only files from
+    // elsewhere were corrupted, and nothing warned. PickedText.decode is the
+    // one reader now.
+    run {
+        readAll(SRC).forEach { (path, text) ->
+            if (path.endsWith("data/PickedText.kt")) return@forEach
+            // An HTTP response body is UTF-8 by spec and is not a picked file.
+            if (path.endsWith("online/Online.kt")) return@forEach
+            Regex("""openInputStream\([^)]*\)[\s\S]{0,200}?(bufferedReader\(\)|decodeToString\(\))""")
+                .findAll(text).forEach { m ->
+                    problems += "$path reads a picked file as UTF-8 with replacement (${m.groupValues[1]}) - " +
+                        "a file in a legacy encoding comes back peppered with U+FFFD and nothing says so. " +
+                        "PickedText.decode tries the BOM, then UTF-8 strictly, then the reader's own language."
+                }
+        }
+    }
+
     // ---- A name the user gave is never reduced to ASCII. -------------------
     //
     // An imported font's and an imported LUT's stored name was the picked

@@ -32,7 +32,12 @@ object LutFiles {
         }.getOrNull() ?: "look.cube"
 
         val text: String = runCatching {
-            context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
+            // Through PickedText, not decodeToString(), which replaces what it
+            // cannot read with U+FFFD. The numbers are ASCII either way, so a
+            // cube saved in a legacy encoding still loaded - it was the TITLE
+            // line that was quietly mangled. Same reader as an imported .srt.
+            context.contentResolver.openInputStream(uri)
+                ?.use { com.squish.app.data.PickedText.decode(it.readBytes()) }
         }.getOrNull() ?: run {
             problem("That file could not be opened.")
             return null
