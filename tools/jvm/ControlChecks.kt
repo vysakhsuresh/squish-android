@@ -916,6 +916,23 @@ fun main() {
             "the x that forgets a saved style is unnamed again - a screen reader announces it as " +
                 "\"multiplication sign\", right after the chip it destroys, and there is no undo"
         )
+        // The "More…" pad behind the swatches. Two raw pointer inputs over a
+        // Canvas, and a Box whose only child is a Canvas has no node to focus -
+        // so that route to a colour was not reachable by swipe at all, and the
+        // only readable thing left was the hex readout, which is output rather
+        // than a control.
+        check(
+            text.contains("contentDescription = \"Shade and brightness\"") &&
+                text.contains("contentDescription = \"Colour\""),
+            "the colour picker's square or its hue strip has no name - neither can be focused at all " +
+                "without one, so \"More…\" is not a route to a colour"
+        )
+        check(
+            Regex("""customActions = actions\(\s*\n\s*"Stronger"""").containsMatchIn(text) &&
+                Regex("""customActions = actions\(\s*\n\s*"Next colour"""").containsMatchIn(text),
+            "the colour picker has no actions - a drag on an unlabelled surface is then the only way to " +
+                "reach a colour that is not one of the nine swatches"
+        )
         // The wheel.
         val wheel = read("$SRC/editor/WheelPad.kt")
         check(

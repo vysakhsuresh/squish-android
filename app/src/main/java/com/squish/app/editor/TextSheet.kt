@@ -12,6 +12,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.squish.app.ui.components.ColourName
@@ -1157,6 +1160,22 @@ private fun ColourPicker(argb: Int, onChange: (Int) -> Unit, onFinished: () -> U
         }
     }
     val emit = { latestChange(hsvToArgb(hue, sat, bright)) }
+    // Said out loud, and changeable without a drag.
+    //
+    // The pad and the strip were raw pointer inputs over a Canvas with no
+    // semantics at all, and a Box whose only child is a Canvas has no node to
+    // focus - so the "More…" route to a colour was not reachable by swipe, and
+    // the only readable thing left was the hex readout, which is output rather
+    // than a control. With the nine swatches unnamed as well (fixed), there was
+    // no non-visual route to a caption's colour at all.
+    //
+    // A step is a tenth of the range, which is coarse on purpose: this is for
+    // reaching a colour, not for matching one, and the swatches and the
+    // eyedropper are the precise routes.
+    val step = 0.1f
+    fun actions(vararg pairs: Pair<String, () -> Unit>) = pairs.map { (label, act) ->
+        CustomAccessibilityAction(label) { act(); latestFinished(); true }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(
@@ -1164,6 +1183,16 @@ private fun ColourPicker(argb: Int, onChange: (Int) -> Unit, onFinished: () -> U
                 .fillMaxWidth()
                 .height(120.dp)
                 .clip(RoundedCornerShape(8.dp))
+                .semantics {
+                    contentDescription = "Shade and brightness"
+                    stateDescription = ColourName.of(hsvToArgb(hue, sat, bright))
+                    customActions = actions(
+                        "Stronger" to { sat = (sat + step).coerceAtMost(1f); emit() },
+                        "Weaker" to { sat = (sat - step).coerceAtLeast(0f); emit() },
+                        "Brighter" to { bright = (bright + step).coerceAtMost(1f); emit() },
+                        "Darker" to { bright = (bright - step).coerceAtLeast(0f); emit() }
+                    )
+                }
                 .pointerInput(Unit) {
                     detectDragGestures(onDragEnd = { latestFinished() }) { change, _ ->
                         sat = (change.position.x / size.width).coerceIn(0f, 1f)
@@ -1194,6 +1223,16 @@ private fun ColourPicker(argb: Int, onChange: (Int) -> Unit, onFinished: () -> U
                 .fillMaxWidth()
                 .height(22.dp)
                 .clip(RoundedCornerShape(11.dp))
+                .semantics {
+                    contentDescription = "Colour"
+                    // The hue alone, at full strength, so the name moves with
+                    // the strip rather than with the square above it.
+                    stateDescription = ColourName.of(hsvToArgb(hue, 1f, 1f))
+                    customActions = actions(
+                        "Next colour" to { hue = (hue + 30f) % 360f; emit() },
+                        "Previous colour" to { hue = (hue + 330f) % 360f; emit() }
+                    )
+                }
                 .pointerInput(Unit) {
                     detectDragGestures(onDragEnd = { latestFinished() }) { change, _ ->
                         hue = (change.position.x / size.width).coerceIn(0f, 1f) * 360f
