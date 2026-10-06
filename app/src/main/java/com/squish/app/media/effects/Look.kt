@@ -176,6 +176,18 @@ data class Adjust(
             hsl.all { it.isIdentity } && curve.isIdentity && wheels.isIdentity &&
             (lutFile == null || lutStrength < EPS)
 
+    /**
+     * Whether a draft has to carry this.
+     *
+     * Wider than [isIdentity], which asks whether it changes the picture: a
+     * LUT at strength 0 changes nothing and is still a *choice*, and the write
+     * gate used isIdentity - so picking a cube, dragging Strength to 0 and
+     * reopening the project lost the cube, and dragging Strength back up then
+     * did nothing. The slider moved and the picture did not, which is the
+     * complaint this codebase keeps coming back to.
+     */
+    val worthKeeping: Boolean get() = !isIdentity || lutFile != null
+
     /** This with one band's sliders replaced. */
     fun withBand(band: HueBand, value: HslBand): Adjust {
         val bands = MutableList(HueBand.entries.size) { hsl.getOrElse(it) { HslBand() } }

@@ -1127,7 +1127,9 @@ class ProjectAutosave(context: Context) {
         // document it had, and its edit key with it.
         clip.lookId?.let { put("lookId", it) }
         if (clip.lookIntensity != 1f) put("lookIntensity", clip.lookIntensity.toDouble())
-        if (!clip.adjust.isIdentity) put("adjust", encodeAdjust(clip.adjust))
+        // worthKeeping, not !isIdentity: a LUT at strength 0 changes nothing
+        // and is still a choice, and leaving it out lost the cube on reopen.
+        if (clip.adjust.worthKeeping) put("adjust", encodeAdjust(clip.adjust))
         // A crop that only holds a shape chip - the window still the whole
         // frame - is kept too: the chip is what the next drag of a corner is
         // held to, and it read Free after a reload.

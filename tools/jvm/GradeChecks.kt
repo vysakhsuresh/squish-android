@@ -1,3 +1,4 @@
+import com.squish.app.media.effects.ColorWheels
 import com.squish.app.media.effects.Wheel
 import com.squish.app.media.effects.Adjust
 import com.squish.app.media.effects.AdjustField
@@ -461,6 +462,34 @@ fun main() {
         // A wheel past the reach is not something of() can make, so a draft
         // holding one is corrupt and clamping it is right.
         check(Wheel(5f, 0f, 0f).master > reach / 3f, "the test wheel is not past the reach")
+    }
+
+    // ---- A LUT at strength 0 is still a choice. ----------------------------
+    //
+    // The draft's write gate asked `!adjust.isIdentity`, which is the question
+    // "does this change the picture" - and a cube at strength 0 does not. So
+    // picking a cube, dragging Strength to 0 and reopening the project lost the
+    // cube, and dragging Strength back up then did nothing: the slider moved
+    // and the picture did not. `worthKeeping` is the question the codec wants.
+    run {
+        val none = Adjust()
+        check(none.isIdentity && !none.worthKeeping, "an untouched Adjust is worth keeping")
+        val zeroLut = Adjust(lutFile = "Teal.cube", lutStrength = 0f)
+        check(zeroLut.isIdentity, "a LUT at strength 0 changes the picture")
+        check(zeroLut.worthKeeping, "a LUT at strength 0 is not kept, so the cube is lost on reopen")
+        val liveLut = Adjust(lutFile = "Teal.cube", lutStrength = 1f)
+        check(!liveLut.isIdentity && liveLut.worthKeeping, "a LUT at full strength is not kept")
+        // And every slider still makes it worth keeping on its own.
+        AdjustField.entries.forEach { field ->
+            val one = field.set(Adjust(), if (field.min < 0f) -0.5f else 0.5f)
+            check(one.worthKeeping, "${field.name} alone is not worth keeping")
+        }
+        // As does a wheel, a curve point and an HSL band.
+        check(Adjust(wheels = ColorWheels(lift = Wheel(0.5f, 0f, 0f))).worthKeeping, "a wheel alone is not kept")
+        check(
+            Adjust(hsl = List(HueBand.entries.size) { if (it == 0) HslBand(hue = 0.5f) else HslBand() }).worthKeeping,
+            "an HSL band alone is not kept"
+        )
     }
 
     println("grade: ${AdjustField.entries.size} sliders, ${HueBand.entries.size} bands, ${Looks.catalog.size} looks")

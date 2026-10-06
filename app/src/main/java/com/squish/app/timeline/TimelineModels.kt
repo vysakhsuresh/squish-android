@@ -336,8 +336,15 @@ data class Clip(
         if (lookId == null) copy(lookId = null, lookIntensity = 1f, lookKeys = emptyList())
         else copy(lookId = lookId, lookIntensity = intensity)
 
-    /** Whether anything about this clip's colour has been touched. */
-    val isGraded: Boolean get() = lookId != null || !adjust.isIdentity
+    // `isGraded` was here - "whether anything about this clip's colour has been
+    // touched" - with no callers at all. Dead code shaped like an API says a
+    // path exists that nothing takes, and nobody can test what it would have
+    // done; it is the same fault as a dead `else` shaped like a fallback. If a
+    // caller is ever wanted, note that the colour question has three different
+    // answers already in use and they are not interchangeable:
+    // Adjust.isIdentity (does it change the picture), Adjust.worthKeeping (does
+    // a draft have to carry it - a LUT at strength 0 does nothing and is still
+    // a choice) and Adjust.needsShader (can the built-in effects do it).
 
     /** How much of the file this clip covers. Unaffected by how fast it plays. */
     val sourceSpanMs: Long get() = (sourceOutMs - sourceInMs).coerceAtLeast(0)
