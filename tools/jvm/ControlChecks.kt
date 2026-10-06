@@ -866,6 +866,25 @@ fun main() {
                 "$name draws its own colour circles instead of the named, selectable ColourSwatch"
             )
         }
+        // ColourNameChecks keeps a copy of each palette, because the suites
+        // cannot compile a Compose file. These hold the copies honest: a tenth
+        // colour fails here and points at the suite, rather than quietly
+        // arriving uncovered - and what the suite asserts is that a palette's
+        // names are all *different*, which a new colour can break.
+        listOf(
+            Triple("editor/TextSheet.kt", "CAPTION_COLOURS", 9),
+            Triple("editor/FrameSheet.kt", "CANVAS_COLOURS", 9),
+            Triple("editor/BackgroundPanel.kt", "BACKDROPS", 7)
+        ).forEach { (name, palette, count) ->
+            val body = Regex("""private val $palette = listOf\(([\s\S]*?)\)\s*\n""")
+                .find(read("$SRC/$name"))?.groupValues?.get(1)
+            val n = body?.let { Regex("""0x[0-9A-Fa-f]{8}""").findAll(it).count() }
+            check(
+                n == count,
+                "$palette has ${n ?: "no readable list of"} colours, not $count - add it to " +
+                    "tools/jvm/ColourNameChecks.kt's copy and check the names are still all different"
+            )
+        }
         // The six grids that mark a choice with a border.
         listOf(
             "editor/LooksSheet.kt" to "the Filters tiles",

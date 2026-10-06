@@ -19,12 +19,34 @@ import kotlin.system.exitProcess
 private val problems = mutableListOf<String>()
 private fun check(ok: Boolean, msg: String) { if (!ok) problems += msg }
 
-/** The caption colours (TextSheet), used for text, outline, shadow, bubble and a shape. */
+/*
+ * The app's three palettes, copied here. The copies are held honest by
+ * tools/jvm/ControlChecks.kt, which asserts each palette's length against the
+ * numbers below - so adding a tenth colour fails that check and points here,
+ * rather than quietly leaving the new colour uncovered.
+ */
+
+/** TextSheet's CAPTION_COLOURS: text, outline, shadow, bubble and a shape. */
 private val CAPTION = listOf(
     0xFFFFFFFF.toInt(), 0xFF111111.toInt(), 0xFFFFD166.toInt(), 0xFFFF4FD8.toInt(),
     0xFF5CE1E6.toInt(), 0xFF7CFC8A.toInt(), 0xFFFF6B6B.toInt(), 0xFF4A7BFF.toInt(),
     0xFFFF7A45.toInt()
 )
+
+/** FrameSheet's CANVAS_COLOURS: what fills a ratio's canvas round the picture. */
+private val CANVAS = listOf(
+    0xFF000000.toInt(), 0xFF101828.toInt(), 0xFFFFFFFF.toInt(), 0xFF2563EB.toInt(),
+    0xFF00B140.toInt(), 0xFFF472B6.toInt(), 0xFFFBBF24.toInt(), 0xFF7C3AED.toInt(),
+    0xFFEF4444.toInt()
+)
+
+/** BackgroundPanel's BACKDROPS: what a cut-out's background is painted with. */
+private val BACKDROPS = listOf(
+    0xFF101828.toInt(), 0xFFFFFFFF.toInt(), 0xFF00B140.toInt(), 0xFF2563EB.toInt(),
+    0xFFF472B6.toInt(), 0xFFFBBF24.toInt(), 0xFF7C3AED.toInt()
+)
+
+private val PALETTES = listOf("caption" to CAPTION, "canvas" to CANVAS, "backdrops" to BACKDROPS)
 
 fun main() {
     // ---- The greys, which have no hue to say. ------------------------------
@@ -53,14 +75,14 @@ fun main() {
     //
     // The point of naming them at all: nine swatches that all announce "blue"
     // are no better than nine that announce nothing.
-    run {
-        val names = CAPTION.map { ColourName.of(it) }
+    PALETTES.forEach { (which, palette) ->
+        val names = palette.map { ColourName.of(it) }
         check(
             names.distinct().size == names.size,
-            "two caption colours share a name: ${names.groupBy { it }.filterValues { it.size > 1 }.keys}"
+            "two $which colours share a name: ${names.groupBy { it }.filterValues { it.size > 1 }.keys}"
         )
         // And each is something a person would say, not a hex code.
-        check(names.none { it.contains('#') || it.isBlank() }, "a caption colour has no name: $names")
+        check(names.none { it.contains('#') || it.isBlank() }, "a $which colour has no name: $names")
     }
 
     // ---- Every colour has a name, and it never throws. ---------------------
