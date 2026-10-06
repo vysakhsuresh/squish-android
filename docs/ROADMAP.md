@@ -614,31 +614,68 @@ back `adb shell settings put system accelerometer_rotation 1` and
 Not features. Each of these is a place where the shape of the code is what let
 a fault in, and where fixing the shape is worth more than fixing the fault.
 
-**1. Lift the draft codec out of `ProjectAutosave`.** `data/ProjectAutosave.kt`
-is two things in one file: the file handling - atomic writes, the backup, the
-snapshot rotation, the sidecar, the bin - which needs a `Context`, and about
-nine hundred lines of JSON codec which does not touch one. Eighteen private
-functions in that range reference no `Context`, no `filesDir` and no
-`contentResolver`; the org.json jar is in the Gradle cache, so the moment they
-live in an Android-free object a suite can **round-trip a fully populated
-EditorUiState** - encode it, decode it, and assert the two are equal field by
-field. That is the strongest check this repo could gain, because "no edit is
-ever lost" is one of the app's three guarantees and the way it is broken is
-silent.
+**1. Lift the draft codec out of `ProjectAutosave`. Done, 6 October — and in
+two cuts, not one.** `data/ProjectAutosave.kt` was two things in one file: the
+file handling - atomic writes, the backup, the snapshot rotation, the sidecar,
+the bin - which needs a `Context`, and about nine hundred lines of JSON codec
+which does not touch one. Both cuts were pure moves, each proved by `diff`
+against the captured runs ("MOVED BODIES IDENTICAL") rather than by reading.
 
-`tools/jvm/DraftFieldChecks.kt` is what can be had without the move: it compares
-each model's fields against the keys the codec writes and reads, as text. It
-catches a field nobody persisted, which is the fault that has actually happened.
-It cannot see that the *value* survives - a field written as a Double and read
-as an Int would pass it - and it cannot see a key written in one place and read
-in another that never meet.
+The second cut is the one that was not in the plan. `data/DraftCodec.kt` names
+the editor's own state types, and the file they are declared in
+(`editor/EditorModels.kt`) reaches Compose - `EffectSpan` carries an
+`ImageVector` and a `Color` - so lifting the codec out of the `Context` was not
+enough to run it. What *is* free of Android, but for `Uri`, is everything a
+**clip** holds: the timeline, the colour pipeline and the vision types. So
+`data/DraftClipCodec.kt` came out of `DraftCodec` as well, and that is the half
+`tools/jvm/DraftRoundTripChecks.kt` now runs: a clip with all 50 of its fields
+set and every nested model filled, encoded, written as **text**, parsed and
+read back, compared field by field, then a second time to show the document on
+disk is a fixed point, then a bare clip to show it comes back bare.
 
-Do it as a pure move: cut the eighteen functions and the format-version
-constants into `data/DraftCodec.kt`, change `private fun` to `fun`, change
-nothing inside a body, and have `ProjectAutosave` call them. The compiler
-settles whether the cut was clean; the new suite settles whether the codec is.
-Do not do it in the same sitting as anything else - it is the file that holds
-people's work.
+It held honest two ways, which is the part worth copying. The fixture is
+checked against a default clip by reflection over `Clip`'s own constructor, so
+a field added to the model and not to the fixture fails by name *before* the
+round trip can pass it by default. And it goes through JSON text rather than a
+live `JSONObject`, which is what a draft actually is.
+
+It found, on its first run, a fault no names check could have: **a non-finite
+number anywhere in an edit threw the whole autosave away.** JSON has no NaN,
+`put` throws on one, and `encode` is called *outside* the try that guards the
+write - so the save failed, and every save after it for as long as the number
+was there, with nothing on screen. `data/DraftNumbers.kt` answers it: on an
+object the key is left out, so the value reads back as the default the decoder
+already declares; in an array a zero is written, because the stabilizer's
+measurement is four parallel columns and a dropped element shifts every frame
+after it. Which then exposed the other end of the same mistake:
+**`optDouble(name)` with no second argument answers NaN**, not zero - so
+thirteen fields came back NaN from any draft written before they existed. All
+thirteen now carry their own default, and the suite fails on either mistake
+appearing again, as text.
+
+`tools/jvm/DraftFieldChecks.kt` still carries the half that cannot be run: the
+edit-wide settings and the lines of words. Its own blind spot is now written
+down in it - every file goes into one haystack, so `TextOverlayItem.text` made
+a `Clip`'s own `text` look both written and read when neither was true.
+
+**What is left of this item, and what it actually costs** - measured, not
+guessed. `editor/EditorModels.kt` imports nothing from Compose at all; what
+stops it compiling on the JVM is four names: `ProjectSnapshot` (declared inside
+the `Context`-bound `ProjectAutosave`, which `DraftFieldChecks` already calls
+odd), and `MediaCompat`, `SquishError` and `ExportProgress`, which are Android
+to the core. `EffectSpan` and `EffectKind` are already stubbed for the harness.
+
+So the next cut is the cheap half of that, and it is where most of the
+remaining value is: **`TextOverlayItem` into its own file.** It is declared at
+`EditorModels.kt:98`, beside `EditorUiState`, and it needs only itself and
+`editor/TextStyle.kt`. Move it out, move `encodeText`/`decodeText` and
+`TextStyleJson` into a `DraftTextCodec`, and the lines of words - the second
+largest value surface a draft holds, and the one with the most fields nobody
+would notice losing - come under the same round trip as a clip.
+
+`EditorUiState` itself needs `ProjectSnapshot` lifted into `data/` and three
+stubs, and should not be attempted in the same sitting as anything else - it is
+the file that holds people's work.
 
 **2. `EditArea.withTimeline` was two private copies until 6 October**, which is
 why two background landings stayed on `record` instead of `recordLate` for a

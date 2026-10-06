@@ -1,6 +1,8 @@
 #!/bin/sh
-# Suites that run app code against Media3 itself (desktop only: the jars come
-# from the Gradle cache and the SDK, which the sandbox does not have).
+# Suites that need a jar on the class path (desktop only: the jars come from the
+# Gradle cache and the SDK, and run.sh's kotlinc call has no -classpath at all).
+# Most of them run app code against Media3 itself, which is where the name comes
+# from; the draft round trip at the end needs org.json and kotlin-reflect.
 #   sh tools/jvm/run_media3.sh
 cd "$(dirname "$0")/../.."
 G=/c/Users/vysak/.gradle/caches
@@ -30,3 +32,18 @@ sh tools/jvm/jc.sh ProcessorChecks $TIMELINE "$SRC/editor/AudioRules.kt" "$SRC/m
   "$SRC/media/audio/GainProcessor.kt" "$SRC/media/audio/GainCurveProcessor.kt" \
   "$SRC/media/audio/VoiceProcessor.kt" "$SRC/media/audio/VoiceCleaner.kt" \
   tools/jvm/ProcessorChecks.kt 2>&1 | grep -v "^warning" | tail -8
+
+# The draft round trip: a clip encoded, written as text, parsed and read back,
+# compared field by field. Here rather than in run.sh for two jars - org.json,
+# which the codec is written against, and kotlin-reflect, which is how the
+# comparison walks Clip's own constructor so it cannot fall behind the model.
+JSON=$(first "$G/modules-2/files-2.1/org.json/json/*/*/json-*[0-9].jar")
+# 2.0.20 exactly, the version jc.sh drives the compiler and the stdlib at. The
+# cache holds fifteen other kotlin-reflects and the newest of them resolves
+# nothing against a 2.0.20 stdlib - every reflection call reads as unresolved,
+# which looks exactly like a suite that was written wrong.
+REFLECT=$(first "$G/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-reflect/2.0.20/*/kotlin-reflect-2.0.20.jar")
+EXTRA_CP="$(cygpath -m "$JSON");$(cygpath -m "$REFLECT")" \
+  sh tools/jvm/jc.sh DraftRoundTripChecks $TIMELINE "$SRC/data/ProjectRules.kt" \
+  "$SRC/data/DraftNumbers.kt" "$SRC/data/DraftClipCodec.kt" \
+  tools/jvm/DraftRoundTripChecks.kt 2>&1 | grep -v "^warning" | tail -30

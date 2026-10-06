@@ -116,14 +116,19 @@ function first; if it can, it can be checked.
   change belongs to proves nothing about the other twenty - one new reference
   from `TimedEffect.kt` broke thirteen of them while each one I ran passed.
   After touching anything on that list, run the lot. And
-  `sh tools/jvm/jc.sh <Suite> <files...>` runs one. Suites that run app code against Media3
-  itself (the voice effects and the level processors through its real
-  `BaseAudioProcessor`) are in `sh tools/jvm/run_media3.sh`, which puts
-  media3-common, guava and the SDK's android.jar on the class path through
-  `EXTRA_CP` - and which `run_desktop.sh` now calls at its end, because left
-  out of it "every suite passed" meant every suite but those two, and one of
-  them had stopped compiling for a day when `TimedEffect.kt` grew a
-  `PolishRules` reference that *its* file list did not name.
+  `sh tools/jvm/jc.sh <Suite> <files...>` runs one. Suites that need a **jar**
+  on the class path are in `sh tools/jvm/run_media3.sh`, which passes it
+  through `EXTRA_CP` (every path wants `cygpath -m` first) - the voice effects
+  and the level processors against Media3's real `BaseAudioProcessor`, and the
+  draft round trip against org.json and kotlin-reflect. Pin kotlin-reflect to
+  **2.0.20**, the version `jc.sh` drives the compiler and stdlib at: the cache
+  holds fifteen others and the newest of them resolves nothing against a
+  2.0.20 stdlib, so every reflection call reads as "unresolved reference",
+  which looks exactly like a suite written wrong. `run_desktop.sh` calls
+  `run_media3.sh` at its end, because left out of it "every suite passed" meant
+  every suite but those, and one had stopped compiling for a day when
+  `TimedEffect.kt` grew a `PolishRules` reference that *its* file list did not
+  name.
   **Never edit a runner while one is running**: `sh` reads the script at byte
   offsets as it goes, so inserting a line near the top sends the running shell
   into the middle of a later one.
@@ -1277,6 +1282,17 @@ should work through it and then delete what holds up.
   comments are the only record of a lot of hard-won detail.
 - **Media3's `@UnstableApi` wants `androidx.annotation.OptIn`**, not Kotlin's.
   Both compile; only one is right.
+- **A draft cannot hold every number, and `optDouble` lies about the ones it
+  cannot.** JSON has no NaN and no infinity: `JSONObject.put(String, double)`
+  *throws* on one rather than writing something nothing could read. That throw
+  came out of `DraftCodec.encode`, which `ProjectAutosave.save` calls **before**
+  the try that guards the write, so one non-finite number anywhere in an edit
+  took the whole save with it - and every save after it, silently. Every float
+  now goes through `data/DraftNumbers.kt`'s `putFinite`, and
+  `tools/jvm/DraftRoundTripChecks.kt` fails on a `put(…, x.toDouble())`
+  appearing again. The other end of it: **`optDouble("x")` with no second
+  argument answers `NaN`, not zero**, so a field read that way comes back NaN
+  from any draft written before the field existed. Thirteen were.
 - **Anything downstream of the user's rotation measures against
   `EditorUiState.framedWidth`/`framedHeight`**, never `sourceWidth`/`sourceHeight`.
   Three separate bugs came from that one confusion.

@@ -16,9 +16,20 @@ import kotlin.system.exitProcess
  * suite cannot build one. That makes it a names check rather than a round trip,
  * and the honest limits are: it cannot see that the *value* survives (a field
  * written as a Double and read as an Int would pass), and it cannot see a key
- * written in one place and read in another that never meet. A real round trip
- * wants the codec lifted out of the Context-bound class, which is the next
- * structural job here (docs/ROADMAP.md).
+ * written in one place and read in another that never meet - every file goes
+ * into one haystack, so TextOverlayItem.text makes a Clip's own `text` look
+ * both written and read when neither is true (see NOT_PERSISTED below).
+ * RENAMED has the same shape of hole: it is keyed by field name across every
+ * model, and `rotationDegrees` is a different key in three of them, so one
+ * entry cannot say what any of them is. Those pairings do hold - they were
+ * read - but they pass here by coincidence rather than by assertion.
+ *
+ * The clip half of the codec now *is* run, against real values, in
+ * tools/jvm/DraftRoundTripChecks.kt, which closes both holes for a Clip by
+ * running the thing - and which is what lifting DraftClipCodec out of the
+ * Context-bound class was for. This one still carries the half that cannot be:
+ * the edit-wide settings and the lines of words, whose models are declared
+ * beside EditorUiState. docs/ROADMAP.md §6 has what it would take, measured.
  *
  * What it does catch is the thing that has actually happened: a field nobody
  * remembered to persist.
@@ -30,16 +41,17 @@ private fun flag(msg: String) { problems += msg }
 private const val SRC = "app/src/main/java/com/squish/app"
 
 /**
- * The codec, and the file-handling class beside it.
+ * The codec, its clip half, and the file-handling class beside them.
  *
- * Both, because the sidecar's own keys are written in ProjectAutosave while
- * every model's are in DraftCodec - and because ProjectSnapshot is declared in
- * ProjectAutosave while the functions that fill it are not. When the codec was
- * lifted out, this suite's sanity guard caught the split before any of its real
- * assertions did ("only 45 written keys found - the put( pattern has rotted"),
- * which is what that guard is for.
+ * All three, because the sidecar's own keys are written in ProjectAutosave
+ * while every model's are in the codec - and because ProjectSnapshot is
+ * declared in ProjectAutosave while the functions that fill it are not. Each
+ * time the codec was split, this suite's sanity guard caught it before any of
+ * its real assertions did ("only 45 written keys found - the put( pattern has
+ * rotted"), which is what that guard is for.
  */
 private const val CODEC = "$SRC/data/DraftCodec.kt"
+private const val CLIPS = "$SRC/data/DraftClipCodec.kt"
 private const val FILES = "$SRC/data/ProjectAutosave.kt"
 
 /**
@@ -76,6 +88,12 @@ private val RENAMED = mapOf(
 private val NOT_PERSISTED = mapOf(
     // Which list a clip is in says what kind it is.
     "kind" to "implied by the list the clip is written in (clips / audioClips)",
+    // Only set on the ClipKind.Text clips toTimeline() builds out of the text
+    // overlays for the strip to draw; the overlays are written by encodeText
+    // and no Text clip is ever handed to encodeClip. Listed because this check
+    // read it as persisted - TextOverlayItem.text writes the same key into the
+    // same haystack - which is exactly the blind spot the round trip covers.
+    "text" to "a view-only field of the Text clips toTimeline() builds; the overlay behind it is written",
     // The looks of a line are their own document (TextStyleJson), which has its
     // own symmetry: one function writes it and one reads it.
     "stroke" to "written by TextStyleJson.write and read by TextStyleJson.read",
@@ -119,10 +137,14 @@ private fun fieldsOf(path: String, name: String): List<String> {
 fun main() {
     val codec = read(CODEC)
     val files = read(FILES)
+    val clips = read(CLIPS)
     val style = read("$SRC/editor/TextStyle.kt")
-    val haystack = codec + "\n" + files + "\n" + style
+    val haystack = codec + "\n" + clips + "\n" + files + "\n" + style
 
-    val written = Regex("""put\(\s*"([A-Za-z][A-Za-z0-9]*)"""").findAll(haystack)
+    // putFinite as well as put: every float goes through it now, so that a NaN
+    // leaves its key out rather than taking the whole autosave down with it
+    // (data/DraftNumbers.kt). Reading only `put(` here found 78 fields missing.
+    val written = Regex("""put(?:Finite)?\(\s*"([A-Za-z][A-Za-z0-9]*)"""").findAll(haystack)
         .map { it.groupValues[1] }.toSet()
     val readBack = Regex("""(?:opt[A-Za-z]*|has|getJSONObject|getJSONArray|getString|getLong|getInt|getDouble|getBoolean)\(\s*"([A-Za-z][A-Za-z0-9]*)"""")
         .findAll(haystack).map { it.groupValues[1] }.toSet()
@@ -157,7 +179,7 @@ fun main() {
         if (enumDriven != null) {
             // The loop that makes the symmetry has to still be there.
             enumDriven.second.forEach { marker ->
-                if (marker !in codec) {
+                if (marker !in codec && marker !in clips) {
                     flag("$model is driven by ${enumDriven.first} and the codec no longer has \"$marker\" - " +
                         "its fields are only persisted while that loop writes and reads them both")
                 }

@@ -2,70 +2,18 @@ package com.squish.app.data
 
 import android.content.Context
 import android.net.Uri
-import com.squish.app.editor.AnnotationShape
-import com.squish.app.editor.ShapeGeometry
 import com.squish.app.editor.BeatProgress
 import com.squish.app.editor.CanvasBackground
-import com.squish.app.editor.CanvasFill
 import com.squish.app.editor.CaptionSource
-import com.squish.app.editor.ClipCrop
 import com.squish.app.editor.CropAspect
-import com.squish.app.editor.CropRatio
 import com.squish.app.media.ExportQuality
 import com.squish.app.media.ExportSettings
 import com.squish.app.editor.CropRect
-import com.squish.app.editor.CropRules
 import com.squish.app.editor.EditorUiState
-import com.squish.app.media.effects.Adjust
-import com.squish.app.media.effects.AdjustField
-import com.squish.app.media.effects.HslBand
-import com.squish.app.media.effects.HueBand
-import com.squish.app.editor.OutputSize
-import com.squish.app.editor.OverlayRules
-import com.squish.app.editor.ProjectName
-import com.squish.app.editor.TextAlign
-import com.squish.app.editor.TextAnimation
-import com.squish.app.editor.TextBackground
-import com.squish.app.editor.TextBubble
-import com.squish.app.editor.TextExit
-import com.squish.app.editor.TextFont
-import com.squish.app.editor.TextLook
-import com.squish.app.editor.TextLoop
-import com.squish.app.editor.TextMotion
 import com.squish.app.editor.TextOverlayItem
-import com.squish.app.editor.TextShadow
-import com.squish.app.editor.TextStroke
-import com.squish.app.editor.TextStyleSpec
-import com.squish.app.editor.EffectKind
 import com.squish.app.editor.TimedEffect
-import com.squish.app.timeline.VoiceEffect
-import com.squish.app.media.video.FrameMotion
-import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.Segmenter
-import com.squish.app.media.video.StabilizerMeasurement
-import com.squish.app.media.video.TrackSample
-import com.squish.app.timeline.BackgroundFill
-import com.squish.app.timeline.BackgroundRemoval
-import com.squish.app.timeline.ChromaKey
 import com.squish.app.timeline.Clip
-import com.squish.app.timeline.ClipAnimation
-import com.squish.app.timeline.ClipArrival
-import com.squish.app.timeline.ClipKind
-import com.squish.app.timeline.ClipLeaving
-import com.squish.app.timeline.ClipLoop
-import com.squish.app.timeline.ValueKey
-import com.squish.app.timeline.Mask
-import com.squish.app.timeline.MaskKey
-import com.squish.app.timeline.MaskMode
-import com.squish.app.timeline.MaskShape
-import com.squish.app.timeline.ReversedSource
-import com.squish.app.timeline.Keyframe
-import com.squish.app.timeline.KeyframeEasing
-import com.squish.app.timeline.SpeedPoint
-import com.squish.app.timeline.SpeedRamp
-import com.squish.app.timeline.Transform
-import com.squish.app.timeline.Transition
-import com.squish.app.timeline.TransitionType
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -987,85 +935,3 @@ data class ProjectSnapshot(
  * single edit, such a project is not kept (EditorViewModel.onCleared).
  */
 data class ProjectStart(val uris: List<Uri>, val copyIn: Boolean = false, val openedFromOutside: Boolean = false)
-
-/**
- * A line's style as JSON: the fields of [TextStyleSpec], flat, beside the
- * line's own in a draft and on their own in a saved style. One reader for both,
- * so a style saved from a line reads back exactly as the line would.
- */
-object TextStyleJson {
-    fun write(json: JSONObject, s: TextStyleSpec) {
-        json.put("font", s.font.name)
-        s.fontFile?.let { json.put("fontFile", it) }
-        json.put("bold", s.bold)
-        json.put("italic", s.italic)
-        json.put("underline", s.underline)
-        json.put("align", s.align.name)
-        json.put("letterSpacing", s.letterSpacing.toDouble())
-        json.put("lineSpacing", s.lineSpacing.toDouble())
-        json.put("colorArgb", s.colorArgb)
-        json.put("sizeSp", s.sizeSp)
-        json.put("strokeColor", s.stroke.colorArgb)
-        json.put("strokeWidth", s.stroke.width.toDouble())
-        json.put("shadowColor", s.shadow.colorArgb)
-        json.put("shadowOpacity", s.shadow.opacity.toDouble())
-        json.put("shadowBlur", s.shadow.blur.toDouble())
-        json.put("shadowOffset", s.shadow.offset.toDouble())
-        json.put("shadowAngle", s.shadow.angleDegrees.toDouble())
-        json.put("bgColor", s.background.colorArgb)
-        json.put("bgOpacity", s.background.opacity.toDouble())
-        json.put("bgRadius", s.background.radius.toDouble())
-        json.put("bubble", s.background.bubble.name)
-        json.put("glow", s.glow)
-        json.put("opacity", s.opacity.toDouble())
-    }
-
-    fun encode(s: TextStyleSpec): JSONObject = JSONObject().also { write(it, s) }
-
-    fun read(json: JSONObject): TextStyleSpec {
-        val defaults = TextStyleSpec()
-        // Captions saved before styles existed were plain white letters.
-        val font = enumOrNull<TextFont>(json.optString("font")) ?: TextFont.Sans
-        val colour = json.optInt("colorArgb", defaults.colorArgb)
-        val size = json.optInt("sizeSp", defaults.sizeSp)
-        if (!json.has("glow")) {
-            // Saved before a line's decorations were its own fields: the look named them.
-            val look = enumOrNull<TextLook>(json.optString("look")) ?: TextLook.Plain
-            return look.applied(TextStyleSpec(font = font, colorArgb = colour, sizeSp = size))
-        }
-        return TextStyleSpec(
-            font = font,
-            fontFile = json.optString("fontFile").takeIf { it.isNotBlank() },
-            bold = json.optBoolean("bold", false),
-            italic = json.optBoolean("italic", false),
-            underline = json.optBoolean("underline", false),
-            align = enumOrNull<TextAlign>(json.optString("align")) ?: TextAlign.Center,
-            letterSpacing = json.optDouble("letterSpacing", 0.0).toFloat(),
-            lineSpacing = json.optDouble("lineSpacing", 1.0).toFloat(),
-            colorArgb = colour,
-            sizeSp = size,
-            stroke = TextStroke(
-                json.optInt("strokeColor", TextStroke.NONE.colorArgb),
-                json.optDouble("strokeWidth", 0.0).toFloat()
-            ),
-            shadow = TextShadow(
-                json.optInt("shadowColor", TextShadow.NONE.colorArgb),
-                json.optDouble("shadowOpacity", 0.0).toFloat(),
-                json.optDouble("shadowBlur", TextShadow.NONE.blur.toDouble()).toFloat(),
-                json.optDouble("shadowOffset", TextShadow.NONE.offset.toDouble()).toFloat(),
-                json.optDouble("shadowAngle", TextShadow.NONE.angleDegrees.toDouble()).toFloat()
-            ),
-            background = TextBackground(
-                json.optInt("bgColor", TextBackground.NONE.colorArgb),
-                json.optDouble("bgOpacity", TextBackground.NONE.opacity.toDouble()).toFloat(),
-                json.optDouble("bgRadius", TextBackground.NONE.radius.toDouble()).toFloat(),
-                enumOrNull<TextBubble>(json.optString("bubble")) ?: TextBubble.None
-            ),
-            glow = json.optBoolean("glow", false),
-            opacity = json.optDouble("opacity", 1.0).toFloat()
-        )
-    }
-
-    private inline fun <reified T : Enum<T>> enumOrNull(name: String?): T? =
-        name?.let { runCatching { enumValueOf<T>(it) }.getOrNull() }
-}
