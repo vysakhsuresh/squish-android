@@ -52,6 +52,7 @@ private const val SRC = "app/src/main/java/com/squish/app"
  */
 private const val CODEC = "$SRC/data/DraftCodec.kt"
 private const val CLIPS = "$SRC/data/DraftClipCodec.kt"
+private const val TEXT = "$SRC/data/DraftTextCodec.kt"
 private const val FILES = "$SRC/data/ProjectAutosave.kt"
 
 /**
@@ -138,8 +139,9 @@ fun main() {
     val codec = read(CODEC)
     val files = read(FILES)
     val clips = read(CLIPS)
+    val lines = read(TEXT)
     val style = read("$SRC/editor/TextStyle.kt")
-    val haystack = codec + "\n" + clips + "\n" + files + "\n" + style
+    val haystack = codec + "\n" + clips + "\n" + lines + "\n" + files + "\n" + style
 
     // putFinite as well as put: every float goes through it now, so that a NaN
     // leaves its key out rather than taking the whole autosave down with it
@@ -163,7 +165,7 @@ fun main() {
         // that had just been rebuilt and nothing to see.
         "data/ProjectAutosave.kt" to "ProjectSnapshot",
         "timeline/TimelineModels.kt" to "Clip",
-        "editor/EditorModels.kt" to "TextOverlayItem",
+        "editor/TextOverlay.kt" to "TextOverlayItem",
         "editor/TimedEffect.kt" to "TimedEffect",
         "media/effects/Look.kt" to "Adjust",
         "timeline/Mask.kt" to "Mask",

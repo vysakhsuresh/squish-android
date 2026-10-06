@@ -47,3 +47,11 @@ EXTRA_CP="$(cygpath -m "$JSON");$(cygpath -m "$REFLECT")" \
   sh tools/jvm/jc.sh DraftRoundTripChecks $TIMELINE "$SRC/data/ProjectRules.kt" \
   "$SRC/data/DraftNumbers.kt" "$SRC/data/DraftClipCodec.kt" \
   tools/jvm/DraftRoundTripChecks.kt 2>&1 | grep -v "^warning" | tail -30
+
+# The same for a line of words, a sticker or a shape: 36 fields through text.
+EXTRA_CP="$(cygpath -m "$JSON");$(cygpath -m "$REFLECT")" \
+  sh tools/jvm/jc.sh DraftTextRoundTripChecks $TIMELINE \
+  "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" \
+  "$SRC/editor/Annotation.kt" "$SRC/editor/TextOverlay.kt" \
+  "$SRC/data/DraftNumbers.kt" "$SRC/data/DraftTextCodec.kt" \
+  tools/jvm/DraftTextRoundTripChecks.kt 2>&1 | grep -v "^warning" | tail -30

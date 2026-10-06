@@ -29,7 +29,8 @@ fun main() {
     val paths = listOf(
         "app/src/main/java/com/squish/app/data/ProjectAutosave.kt",
         "app/src/main/java/com/squish/app/data/DraftCodec.kt",
-        "app/src/main/java/com/squish/app/data/DraftClipCodec.kt"
+        "app/src/main/java/com/squish/app/data/DraftClipCodec.kt",
+        "app/src/main/java/com/squish/app/data/DraftTextCodec.kt"
     )
     val missing = paths.filterNot { File(it).isFile }
     if (missing.isNotEmpty()) { println("FAIL - ${missing.joinToString()} is not there"); exitProcess(1) }

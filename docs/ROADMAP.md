@@ -658,24 +658,34 @@ edit-wide settings and the lines of words. Its own blind spot is now written
 down in it - every file goes into one haystack, so `TextOverlayItem.text` made
 a `Clip`'s own `text` look both written and read when neither was true.
 
+**The third cut, done the same day: the lines of words.** `TextOverlayItem` was
+declared at `EditorModels.kt:98`, beside `EditorUiState`, for no reason but
+history - it needs only itself, `editor/TextStyle.kt` and the vision track. It
+is now `editor/TextOverlay.kt`, and `encodeText`, `decodeText` and
+`TextStyleJson` are `data/DraftTextCodec.kt`. Both moves were pure, proved by
+`diff`, and `tools/jvm/DraftTextRoundTripChecks.kt` runs the 36 fields of a
+line the way the clip suite runs the 50 of a shot - plus the one thing a line
+has that a clip does not: `TextStyleJson` has two callers, a line in a draft
+and a saved style in SharedPreferences, and its whole point is that they are
+one document, so the suite asserts that a style saved off a line reads back as
+the line's. Eight negative tests, each watched failing. It passed first time,
+which is worth saying plainly: it found nothing, and now it cannot stop
+looking.
+
 **What is left of this item, and what it actually costs** - measured, not
-guessed. `editor/EditorModels.kt` imports nothing from Compose at all; what
-stops it compiling on the JVM is four names: `ProjectSnapshot` (declared inside
-the `Context`-bound `ProjectAutosave`, which `DraftFieldChecks` already calls
-odd), and `MediaCompat`, `SquishError` and `ExportProgress`, which are Android
-to the core. `EffectSpan` and `EffectKind` are already stubbed for the harness.
+guessed. `editor/EditorModels.kt` imports nothing from Compose at all. What
+stopped it compiling on the JVM was four names, and one of those turned out to
+be a *dead import*: `ProjectSnapshot` had not been referenced in the file since
+some earlier change, and removing it cost nothing. The three that remain are
+`MediaCompat`, `SquishError` and `ExportProgress`, all Android to the core, all
+reached only by `EditorUiState` itself. `EffectSpan` and `EffectKind` are
+already stubbed for the harness.
 
-So the next cut is the cheap half of that, and it is where most of the
-remaining value is: **`TextOverlayItem` into its own file.** It is declared at
-`EditorModels.kt:98`, beside `EditorUiState`, and it needs only itself and
-`editor/TextStyle.kt`. Move it out, move `encodeText`/`decodeText` and
-`TextStyleJson` into a `DraftTextCodec`, and the lines of words - the second
-largest value surface a draft holds, and the one with the most fields nobody
-would notice losing - come under the same round trip as a clip.
-
-`EditorUiState` itself needs `ProjectSnapshot` lifted into `data/` and three
-stubs, and should not be attempted in the same sitting as anything else - it is
-the file that holds people's work.
+So the last step is three stubs and a round trip over the edit-wide handful -
+the ratio, the rotation, the crop, the export settings, the beat grid, the
+caption source and the rest. Smaller than it looked, and still not to be
+attempted in the same sitting as anything else: it is the file that holds
+people's work.
 
 **2. `EditArea.withTimeline` was two private copies until 6 October**, which is
 why two background landings stayed on `record` instead of `recordLate` for a
