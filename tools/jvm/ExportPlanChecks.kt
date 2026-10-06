@@ -800,6 +800,48 @@ fun main() {
         check(ExportPlan.pictureEnd(shot) == 8_000L, "picture end ${ExportPlan.pictureEnd(shot)}")
     }
 
+    // ---- What may open a sequence that declares sound ---------------------
+    //
+    // Media3 refuses to start such a sequence on an asset with only a picture:
+    // it asks its listener for a forced audio consumer and checkNotNulls the
+    // answer, while the listener answers null until every other sequence has
+    // registered. An image has no file to open, so on a composited export it
+    // always wins that race and the export dies with a bare
+    // NullPointerException before its first frame. Seen on the phone on
+    // 6 October, on a photo and a video with a Dissolve between them.
+    run {
+        val photo = Clip(
+            id = "photo", kind = ClipKind.Video, uri = null, label = "Photo",
+            sourceInMs = 0, sourceOutMs = 3_000, timelineStartMs = 0
+        )
+        val shot = photo.copy(id = "shot", label = "Shot", timelineStartMs = 3_000)
+        val opens = listOf(ExportPlan.Piece.Item(photo), ExportPlan.Piece.Item(shot))
+        check(ExportPlan.mustCarrySound(opens, declaresSound = true) === photo,
+            "the clip that opens a sound-declaring sequence was not named")
+        check(ExportPlan.mustCarrySound(opens, declaresSound = false) == null,
+            "a sequence with no sound still asked its first clip for a track")
+        // Only the first. Every photo after it keeps its full size, which is
+        // the whole reason this is narrow rather than "no pictures anywhere".
+        check(ExportPlan.mustCarrySound(opens, declaresSound = true) !== shot, "the wrong clip was named")
+        // A gap opens the sequence: Media3's own, and it reports both tracks
+        // when the sequence names both, so nothing is needed from the clip.
+        check(ExportPlan.mustCarrySound(listOf(ExportPlan.Piece.Gap(33), ExportPlan.Piece.Item(photo)), true) == null,
+            "a sequence opening on a Media3 gap still asked its first clip for a track")
+        // A Clear is a still *picture*, so it has the same hole - but it is not
+        // a clip and nothing can be done to it here; naming nothing is the
+        // honest answer, and the clock is the only layer that opens on one.
+        check(ExportPlan.mustCarrySound(listOf(ExportPlan.Piece.Clear(33), ExportPlan.Piece.Item(photo)), true) == null,
+            "a sequence opening on a clear stretch named a clip that is not first")
+        check(ExportPlan.mustCarrySound(emptyList(), true) == null, "an empty sequence named a clip")
+        // And the clock's own shape, which is what every composited export
+        // opens with: one frame of Media3 gap, then the transparent still.
+        val clock = ExportPlan.pieces(
+            ExportPlan.Layer(ExportPlan.Role.Clock, emptyList()), 5_000, ExportPlan.clockLeadMs(30)
+        )
+        check(ExportPlan.mustCarrySound(clock, declaresSound = true) == null,
+            "the clock layer was told to find a clip with a sound track: $clock")
+    }
+
     if (problems.isEmpty()) {
         println("PASS - layers, transitions, clocks, placement, sound slices and fold-downs all hold")
     } else {

@@ -473,16 +473,36 @@ holds up. Everything in it is unseen.
    strip right - the playhead goes right. This is the fault the owner found on
    5 October and the reason three sweeps happened; it is fixed, and it is the
    first thing to see with your own eyes.
-2. **An export still works, and is a fifth of the size.** Export any short
-   cuts-only edit. The file plays in Photos, in WhatsApp and in Chrome, and it
-   is far smaller than the same edit was before 5 October. Every export in the
-   app went through the change that did this (`media/CompactMuxer.kt`), so if
-   anything here is wrong, everything is.
+2. ~~**An export still works, and is a fifth of the size.**~~ **Done, 6 October.**
+   A three-second cuts-only export: 183 KB, of which `Mp4Probe` accounts for
+   179,388 bytes of sample data - **97.9% of the file**. The 400 KB of
+   streamable-moov padding is gone (`media/CompactMuxer.kt`), which for a file
+   this size was two thirds of it. 91 video frames at exactly 33.33 ms each,
+   30.000 fps even. It plays in the app's own done screen. Not checked: WhatsApp
+   and Chrome - sharing to a person is not something to do from a test.
 3. **The composited export gate**, §4's B5 steps 1 to 4, in that order: a video
    and a photo with a Dissolve on the join, then the photo first, then a video
    overlay at 40%, then a gap. These are the four that failed on Media3 1.5.1
    and the four the whole layered pipeline rests on. If one fails, the log line
    `SquishExport failed: N sequences` names which assumption went.
+
+   **Steps 1 and 2 done, 6 October, and the first run of them found a real
+   failure.** A photo first and a video second with a Dissolve between them died
+   before its first frame: `failed: 3 sequences`, a bare
+   `NullPointerException` out of `SequenceAssetLoader.onOutputFormat`, reached
+   from `ImageAssetLoader`. Media3 will not start a sequence that declares sound
+   on an asset with only a picture - it asks its listener for a forced audio
+   consumer and `checkNotNull`s the answer, while the listener answers null
+   until every *other* sequence has registered its tracks, and an image has no
+   file to open so it always wins that race. `StillClips` has known this since
+   photos were added (its rendered stills carry a track of silence and its
+   comment says why); what reopened it was B14 sending a main-track photo in as
+   the picture it was made from, which has no sound track at all.
+   `ExportPlan.mustCarrySound` now names the one clip that opens such a
+   sequence, and that one goes in as its still. Fixed, re-run, and read frame by
+   frame off the file: the dissolve is there, 2.6 s to 3.0 s, the photo fading
+   out as the video fades in. **Steps 3 and 4 - a video overlay and a gap - are
+   still unseen.**
 4. **The two new joins** (5 October): put a **Blur** and a **Burn out** on a cut
    and look at the preview, then at the file. The Blur is the one place where
    the preview and the file run the same shader on the same number by different

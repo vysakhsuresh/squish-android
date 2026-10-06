@@ -237,6 +237,40 @@ object ExportPlan {
     }
 
     /**
+     * The clip that opens a sequence which declares sound, if one does.
+     *
+     * **Media3 will not start such a sequence on an asset that has only a
+     * picture.** When the first asset reports one track and the sequence names
+     * audio, `SequenceAssetLoader` asks its listener for a forced audio
+     * consumer and `checkNotNull`s the answer - while the listener returns null
+     * for as long as the other sequences have not registered their own tracks
+     * yet. An image loader has no file to open, so on a composited export it
+     * always wins that race, and the export dies with a bare
+     * NullPointerException before its first frame. Seen on the phone, 6
+     * October, on a photo and a video with a Dissolve between them: the case
+     * docs/ROADMAP.md §5 step 3 was written for, the first time anyone ran it.
+     *
+     * `StillClips` has known this since photos were added - its rendered stills
+     * carry a track of silence and its comment says why - and what reopened it
+     * was B14 sending a main-track photo in as the *picture* it was made from,
+     * for sharpness, which has no sound track at all. So the picture is used
+     * everywhere except here, and here the still goes in instead.
+     *
+     * Only the first item: the rule is about the first asset of the sequence,
+     * and every photo after it keeps its full size.
+     */
+    fun mustCarrySound(pieces: List<Piece>, declaresSound: Boolean): Clip? {
+        if (!declaresSound) return null
+        // A Gap is Media3's own, and reports both tracks when the sequence names
+        // both - so a sequence that opens on one needs nothing from here. A
+        // Clear is a still *image*, which has the same hole as a photo.
+        return when (val first = pieces.firstOrNull()) {
+            is Piece.Item -> first.clip
+            else -> null
+        }
+    }
+
+    /**
      * Below this a gap is rounding, not a gap: shorter than a frame at 50 fps, so
      * a blank still for it would be one frame of nothing or none at all. The
      * model's own number, so an overlay's join is butted by the same rule.

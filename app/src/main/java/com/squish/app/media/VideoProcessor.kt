@@ -340,12 +340,15 @@ class VideoProcessor(private val context: Context) {
                     clockLeadMs = ExportPlan.clockLeadMs(rate),
                     mixerSampleRateHz = ExportPlan.mixerSampleRate(soundSampleRates(state, baseAudio)),
                     overlaySound = ::overlayHeard,
-                    editedFor = { clip, layer ->
+                    editedFor = { clip, layer, opensWithSound ->
                         when (layer.role) {
                             ExportPlan.Role.Overlay -> editedOverlay(state, clip, canvas, rate)
                             ExportPlan.Role.Backdrop ->
                                 CompositionFactory.backdropItem(checkNotNull(clip.uri), clip.durationMs, rate, canvas)
-                            else -> editedClip(state, clip, canvas, layers.baseRolls, aspects, blended, stillBitmaps)
+                            else -> editedClip(
+                                state, clip, canvas, layers.baseRolls, aspects, blended, stillBitmaps,
+                                mustCarrySound = opensWithSound
+                            )
                         }
                     }
                 )
@@ -617,7 +620,13 @@ class VideoProcessor(private val context: Context) {
         /** Stills with a blend mode: not layers, drawn into each shot they cover. */
         blendedStills: List<Clip> = emptyList(),
         /** One decoded picture per still for the whole export, not one per shot. */
-        stillBitmaps: MutableMap<String, android.graphics.Bitmap?> = HashMap()
+        stillBitmaps: MutableMap<String, android.graphics.Bitmap?> = HashMap(),
+        /**
+         * This clip opens a sequence that declares sound, so whatever is handed
+         * over has to have an audio track - see [ExportPlan.mustCarrySound].
+         * The only thing here that does not is a photo sent in as its picture.
+         */
+        mustCarrySound: Boolean = false
     ): EditedMediaItem {
         val uri = clip.uri ?: state.sourceUri
         val effects: List<Effect> = if (state.audioOnly) emptyList() else buildList {
@@ -697,9 +706,17 @@ class VideoProcessor(private val context: Context) {
         // (StillClips.originalImage): at up to 4K rather than the 1080p the
         // strip's clip was rendered at, and for however long the clip runs. The
         // clip's own frames are used only where a picture cannot stand in for
-        // them - a sound-only export wants its silent track, and a retimed
-        // still's keys were set on the clip's clock.
-        val picture = if (!state.audioOnly && clip.speedRamp.isIdentity) StillClips.originalImage(clip.uri) else null
+        // them - a sound-only export wants its silent track, a retimed still's
+        // keys were set on the clip's clock, and a photo that *opens* a
+        // composited sequence has to bring a sound track with it or Media3
+        // refuses the whole export (see [ExportPlan.mustCarrySound]; the
+        // rendered still carries a track of silence for exactly this). That
+        // last one costs the opening photo its full size, and only that one.
+        val picture = if (!state.audioOnly && clip.speedRamp.isIdentity && !mustCarrySound) {
+            StillClips.originalImage(clip.uri)
+        } else {
+            null
+        }
         if (picture != null) {
             val still = MediaItem.Builder()
                 .setUri(picture)

@@ -116,7 +116,13 @@ object CompositionFactory {
         clockLeadMs: Long,
         mixerSampleRateHz: Int = ExportPlan.DEFAULT_SAMPLE_RATE_HZ,
         overlaySound: (Clip) -> Boolean = { false },
-        editedFor: (Clip, ExportPlan.Layer) -> EditedMediaItem
+        /**
+         * The third argument is true for the one clip that opens a sequence
+         * declaring sound: it has to come in as something with an audio track,
+         * or the export dies before its first frame. See
+         * [ExportPlan.mustCarrySound], which has the whole of why.
+         */
+        editedFor: (Clip, ExportPlan.Layer, Boolean) -> EditedMediaItem
     ): Composited {
         // LayerSettings hides input 0 as the clock. Anything else there would be
         // a real layer drawn at nothing - a black file - so it is refused here,
@@ -138,12 +144,13 @@ object CompositionFactory {
             val pieces = ExportPlan.pieces(layer, layers.endMs, clockLeadMs)
             if (pieces.isEmpty()) continue
             val builder = EditedMediaItemSequence.Builder(types)
+            val opener = ExportPlan.mustCarrySound(pieces, declared.sound)
             for (piece in pieces) {
                 when (piece) {
                     is ExportPlan.Piece.Item ->
                         // Sound only, an overlay that makes none is a stretch of silence.
                         if (videoOut || layer.role == ExportPlan.Role.Base || overlaySound(piece.clip)) {
-                            builder.addItem(editedFor(piece.clip, layer))
+                            builder.addItem(editedFor(piece.clip, layer, piece.clip === opener))
                         } else {
                             builder.addGap(piece.durationMs * 1_000L)
                         }
