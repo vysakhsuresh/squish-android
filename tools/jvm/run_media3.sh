@@ -55,3 +55,20 @@ EXTRA_CP="$(cygpath -m "$JSON");$(cygpath -m "$REFLECT")" \
   "$SRC/editor/Annotation.kt" "$SRC/editor/TextOverlay.kt" \
   "$SRC/data/DraftNumbers.kt" "$SRC/data/DraftTextCodec.kt" \
   tools/jvm/DraftTextRoundTripChecks.kt 2>&1 | grep -v "^warning" | tail -30
+
+# And the edit-wide half: EditorUiState itself, through DraftCodec, against the
+# ProjectSnapshot a draft gives back. This is the one that compiles
+# editor/EditorModels.kt - read tools/jvm/stub/EditorState.kt before trusting
+# anything it says, and note that the suite's own last assertion is what keeps
+# those three stands-in honest.
+EXTRA_CP="$(cygpath -m "$JSON");$(cygpath -m "$REFLECT")" \
+  sh tools/jvm/jc.sh DraftStateRoundTripChecks $TIMELINE \
+  "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" \
+  "$SRC/editor/Annotation.kt" "$SRC/editor/TextOverlay.kt" "$SRC/media/ExportPresets.kt" \
+  "$SRC/media/ExportSettings.kt" "$SRC/media/ExportPlan.kt" "$SRC/editor/SafeArea.kt" \
+  "$SRC/editor/Timecode.kt" "$SRC/editor/AudioRules.kt" "$SRC/editor/ToolRules.kt" \
+  "$SRC/editor/FrameRules.kt" "$SRC/editor/PreviewBox.kt" "$SRC/editor/EditorModels.kt" \
+  tools/jvm/stub/EditorState.kt "$SRC/data/ProjectRules.kt" "$SRC/data/DraftHousekeeping.kt" \
+  "$SRC/data/ProjectSnapshot.kt" "$SRC/data/DraftNumbers.kt" "$SRC/data/DraftClipCodec.kt" \
+  "$SRC/data/DraftTextCodec.kt" "$SRC/data/DraftCodec.kt" \
+  tools/jvm/DraftStateRoundTripChecks.kt 2>&1 | grep -v "^warning" | tail -30

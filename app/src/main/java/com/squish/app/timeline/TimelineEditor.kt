@@ -90,6 +90,9 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squish.app.editor.Concept
+import com.squish.app.editor.EffectKind
+import com.squish.app.editor.color
+import com.squish.app.editor.icon
 import com.squish.app.editor.EditRules
 import com.squish.app.editor.Timecode
 import com.squish.app.editor.TransitionGlyph
@@ -1278,7 +1281,7 @@ private class StripLayout(
                 ?: return null
             if (onHandle(effect.id, effect.startMs, effect.endMs, effectGripPx)) return null
             return Lift(
-                effect.id, Group.Effects, effect.label, effect.color, effect.startMs,
+                effect.id, Group.Effects, effect.label, effect.kind.color, effect.startMs,
                 effect.endMs - effect.startMs, row.index, ms - effect.startMs, at
             )
         }
@@ -2345,13 +2348,21 @@ private val KEY_TARGET = 22.dp
  * that tell it from its neighbours. The editor fills these in, so the timeline
  * never has to know what an effect does.
  */
+/**
+ * One effect as the strip draws it.
+ *
+ * Carries its [EffectKind] rather than an ImageVector and a Color, which is
+ * what it used to hold. Two Compose values on a model put the whole of
+ * EditorModels.kt - EditorUiState and every rule hanging off it - out of reach
+ * of the JVM harness, for a glyph and a tint that Glyphs.kt derives from the
+ * kind anyway (tools/jvm/DraftStateRoundTripChecks.kt is what that bought).
+ */
 data class EffectSpan(
     val id: String,
     val label: String,
     val startMs: Long,
     val endMs: Long,
-    val icon: ImageVector,
-    val color: Color
+    val kind: EffectKind
 )
 
 /**
@@ -2443,8 +2454,8 @@ private fun EffectBar(
             .fillMaxHeight()
             .graphicsLayer { alpha = if (lifted) 0.35f else 1f }
             .clip(shape)
-            .background(effect.color.copy(alpha = if (selected) 0.5f else 0.3f))
-            .border(if (selected) 2.dp else 1.dp, effect.color.copy(alpha = if (selected) 1f else 0.6f), shape)
+            .background(effect.kind.color.copy(alpha = if (selected) 0.5f else 0.3f))
+            .border(if (selected) 2.dp else 1.dp, effect.kind.color.copy(alpha = if (selected) 1f else 0.6f), shape)
             .pointerInput(effect.id) {
                 detectTapGestures { latestSelect(effect.id) }
             }
@@ -2460,7 +2471,7 @@ private fun EffectBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Icon(effect.icon, contentDescription = null, tint = SquishColors.TextPrimary, modifier = Modifier.size(13.dp))
+                Icon(effect.kind.icon, contentDescription = null, tint = SquishColors.TextPrimary, modifier = Modifier.size(13.dp))
                 if (width > 64.dp) {
                     Text(
                         effect.label,
@@ -2474,7 +2485,7 @@ private fun EffectBar(
             }
         }
         if (selected && headVisible) {
-            TrimHandle(effect.color, grip, Alignment.CenterStart, window,
+            TrimHandle(effect.kind.color, grip, Alignment.CenterStart, window,
                 onStart = { trims.begin(effect.id, true, null) },
                 onTravel = { anchor, travel -> trims.effect(anchor, true, travel) },
                 anchor = { latestEffect },
@@ -2482,7 +2493,7 @@ private fun EffectBar(
             )
         }
         if (selected && tailVisible) {
-            TrimHandle(effect.color, grip, Alignment.CenterEnd, window,
+            TrimHandle(effect.kind.color, grip, Alignment.CenterEnd, window,
                 onStart = { trims.begin(effect.id, false, null) },
                 onTravel = { anchor, travel -> trims.effect(anchor, false, travel) },
                 anchor = { latestEffect },

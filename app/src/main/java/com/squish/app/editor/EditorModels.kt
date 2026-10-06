@@ -1182,7 +1182,7 @@ fun EditorUiState.toTimeline(): TimelineState {
         pixelsPerSecond = pixelsPerSecond,
         waveforms = audioWaveforms,
         effects = effects.map { e ->
-            EffectSpan(e.id, e.kind.label, e.startMs, e.endMs, e.kind.icon, e.kind.color)
+            EffectSpan(e.id, e.kind.label, e.startMs, e.endMs, e.kind)
         },
         pictureEndMs = trimmedDurationMs,
         missingUris = setOfNotNull(missingMedia?.toString())

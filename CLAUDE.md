@@ -120,8 +120,8 @@ function first; if it can, it can be checked.
   on the class path are in `sh tools/jvm/run_media3.sh`, which passes it
   through `EXTRA_CP` (every path wants `cygpath -m` first) - the voice effects
   and the level processors against Media3's real `BaseAudioProcessor`, and the
-  two draft round trips (a clip's and a line's) against org.json and
-  kotlin-reflect. Pin kotlin-reflect to
+  three draft round trips (a clip's, a line's and the edit's) against org.json
+  and kotlin-reflect. Pin kotlin-reflect to
   **2.0.20**, the version `jc.sh` drives the compiler and stdlib at: the cache
   holds fifteen others and the newest of them resolves nothing against a
   2.0.20 stdlib, so every reflection call reads as "unresolved reference",

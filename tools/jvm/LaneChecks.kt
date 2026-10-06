@@ -1,3 +1,4 @@
+import com.squish.app.editor.EffectKind
 import com.squish.app.timeline.Clip
 import com.squish.app.editor.fittedTo
 import com.squish.app.timeline.ClipKind
@@ -231,7 +232,7 @@ private fun snapping() {
     val state = TimelineState(
         clips = listOf(shot("a", 3_000), shot("b", 2_000, start = 3_000), shot("c", 4_000, start = 5_000), sound("s", 1_000, 7_777)),
         playheadMs = 1_234,
-        effects = listOf(EffectSpan("e", "fx", 8_100, 8_900))
+        effects = listOf(EffectSpan("e", "fx", 8_100, 8_900, EffectKind.entries.first()))
     )
     val moving = TimelineLanes.movingWithTail(state, "b")
     check(moving == setOf("b", "c"), "moving with b's tail: $moving")

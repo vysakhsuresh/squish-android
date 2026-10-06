@@ -41,18 +41,23 @@ private fun flag(msg: String) { problems += msg }
 private const val SRC = "app/src/main/java/com/squish/app"
 
 /**
- * The codec, its clip half, and the file-handling class beside them.
+ * The codec's three halves, the contract, and the file-handling class beside
+ * them.
  *
- * All three, because the sidecar's own keys are written in ProjectAutosave
- * while every model's are in the codec - and because ProjectSnapshot is
- * declared in ProjectAutosave while the functions that fill it are not. Each
- * time the codec was split, this suite's sanity guard caught it before any of
- * its real assertions did ("only 45 written keys found - the put( pattern has
+ * All of them, because the sidecar's own keys are written in ProjectAutosave
+ * while every model's are in one of the codec files. ProjectSnapshot - the
+ * contract itself - used to be declared inside ProjectAutosave while the
+ * functions that fill it were not, which this header called odd for two cuts of
+ * the codec before it was moved out.
+ *
+ * Each time the codec was split, this suite's sanity guard caught it before any
+ * of its real assertions did ("only 45 written keys found - the put( pattern has
  * rotted"), which is what that guard is for.
  */
 private const val CODEC = "$SRC/data/DraftCodec.kt"
 private const val CLIPS = "$SRC/data/DraftClipCodec.kt"
 private const val TEXT = "$SRC/data/DraftTextCodec.kt"
+private const val SNAPSHOT = "$SRC/data/ProjectSnapshot.kt"
 private const val FILES = "$SRC/data/ProjectAutosave.kt"
 
 /**
@@ -163,7 +168,7 @@ fun main() {
         // keep - which is how "Listen to" and the caption language went back
         // to their defaults on every reopen, with the panel reading a state
         // that had just been rebuilt and nothing to see.
-        "data/ProjectAutosave.kt" to "ProjectSnapshot",
+        "data/ProjectSnapshot.kt" to "ProjectSnapshot",
         "timeline/TimelineModels.kt" to "Clip",
         "editor/TextOverlay.kt" to "TextOverlayItem",
         "editor/TimedEffect.kt" to "TimedEffect",
@@ -227,7 +232,7 @@ fun main() {
     // ProjectSnapshot fails here. Whoever added it then decides which side it
     // is on, which is the one thing nobody did for those two.
     run {
-        val snapshot = fieldsOf(FILES, "ProjectSnapshot").toSet()
+        val snapshot = fieldsOf(SNAPSHOT, "ProjectSnapshot").toSet()
         val live = fieldsOf("$SRC/editor/EditorModels.kt", "EditorUiState")
         // Deliberately not in a draft. A view setting, a status, a progress
         // count, a session clipboard, or something probed off the file again on

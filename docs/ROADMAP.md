@@ -615,7 +615,7 @@ Not features. Each of these is a place where the shape of the code is what let
 a fault in, and where fixing the shape is worth more than fixing the fault.
 
 **1. Lift the draft codec out of `ProjectAutosave`. Done, 6 October — and in
-two cuts, not one.** `data/ProjectAutosave.kt` was two things in one file: the
+four cuts, not one.** `data/ProjectAutosave.kt` was two things in one file: the
 file handling - atomic writes, the backup, the snapshot rotation, the sidecar,
 the bin - which needs a `Context`, and about nine hundred lines of JSON codec
 which does not touch one. Both cuts were pure moves, each proved by `diff`
@@ -672,20 +672,51 @@ the line's. Eight negative tests, each watched failing. It passed first time,
 which is worth saying plainly: it found nothing, and now it cannot stop
 looking.
 
-**What is left of this item, and what it actually costs** - measured, not
-guessed. `editor/EditorModels.kt` imports nothing from Compose at all. What
-stopped it compiling on the JVM was four names, and one of those turned out to
-be a *dead import*: `ProjectSnapshot` had not been referenced in the file since
-some earlier change, and removing it cost nothing. The three that remain are
-`MediaCompat`, `SquishError` and `ExportProgress`, all Android to the core, all
-reached only by `EditorUiState` itself. `EffectSpan` and `EffectKind` are
-already stubbed for the harness.
+**The fourth cut, and the last: the edit itself. Done the same day.** This was
+the one that was supposed to cost the most, and the cost was not where it
+looked.
 
-So the last step is three stubs and a round trip over the edit-wide handful -
-the ratio, the rotation, the crop, the export settings, the beat grid, the
-caption source and the rest. Smaller than it looked, and still not to be
-attempted in the same sitting as anything else: it is the file that holds
-people's work.
+`editor/EditorModels.kt` imports nothing from Compose at all. It *reached*
+Compose in exactly one place: `EffectSpan` carried an `ImageVector` and a
+`Color`. Two presentation values on a model - for a glyph and a tint that
+`Glyphs.kt` derives from the effect's kind anyway - and they put `EditorUiState`
+and every rule hanging off it out of reach of the harness. `EffectSpan` carries
+the kind now and `Glyphs` is consulted at draw time, which is where it belongs.
+
+`ProjectSnapshot` - the *declared contract* of what a draft holds - was
+declared inside `ProjectAutosave`, the one file in `data/` that needs a
+`Context`, while every function that fills it had already moved out. That is
+`data/ProjectSnapshot.kt` now, which is what `DraftFieldChecks` had been
+calling odd for two cuts.
+
+What is left is three stands-in, in `tools/jvm/stub/EditorState.kt`
+(`MediaCompat`, `SquishError`, `ExportProgress`), and that file's header says
+exactly what a suite over it may and may not claim. The thing that keeps them
+honest is an assertion rather than a promise: `DraftStateRoundTripChecks` reads
+the codec as text and fails if it reads any field of the state that is not a
+plain constructor parameter, because a computed property is what might route
+through `MediaCompat`. All twenty-nine the codec reads are plain.
+
+`tools/jvm/DraftStateRoundTripChecks.kt` then compares the 30 fields of a
+`ProjectSnapshot` against the edit they were written from. It is not a round
+trip of one type but of two - `encode` takes the live state and `decode`
+answers the contract - so the fields are matched by name through a map, and
+**the map is the thing that is checked**: every field of the contract is either
+read off the state there or named as derived, so one added to both the model and
+the codec and to neither list fails by name. It also pins the four refusals a
+draft can meet (no source, no clip *list*, a version below the floor, a version
+above it), the one it must not (every shot deleted is a real edit), and the
+floor itself as a **literal 9** rather than as the codec's own constant - the
+first version read the constant and so could not catch the thing it was for:
+raising the floor narrowed the loop with it and the suite passed while every
+older draft on the phone had been orphaned. Nine negative tests, each watched
+failing.
+
+So all three round trips exist now, and together they cover 116 fields:
+`tools/jvm/DraftRoundTripChecks.kt` (50, a clip), `DraftTextRoundTripChecks.kt`
+(36, a line) and `DraftStateRoundTripChecks.kt` (30, the edit). What
+`DraftFieldChecks` and `DraftKeyChecks` still add over them is the sidecar's own
+keys and the cross-file name symmetry; what they cannot say, the three now say.
 
 **2. `EditArea.withTimeline` was two private copies until 6 October**, which is
 why two background landings stayed on `record` instead of `recordLate` for a
