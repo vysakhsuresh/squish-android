@@ -534,7 +534,7 @@ data class Grade(
      * after this comment was written and was left out by nobody's decision - a
      * slider that did nothing on a photo overlay's screen and something in its
      * file. It is a neighbourhood read, so it cannot run inside this banded
-     * loop; [SurfaceBlur.smoothSkin] does it over the whole picture *before*
+     * loop; [SpatialMoves.spatial] does it over the whole picture *before*
      * this, which is where the shader does it too (before the colour chain),
      * so the two agree rather than nearly agree. Whoever calls this on a
      * picture calls that first.

@@ -19,7 +19,7 @@ package com.squish.app.media.effects
  * and it fails on any one of the eleven numbers parting.
  *
  * Two things read it: the look shader, for everything a player draws, and
- * [SurfaceBlur], for the one surface the preview draws itself - a photo on an
+ * [SpatialMoves], for the one surface the preview draws itself - a photo on an
  * overlay row. The CPU path arrived late, after a slider had been offered on a
  * photo overlay for a while and done nothing there.
  */

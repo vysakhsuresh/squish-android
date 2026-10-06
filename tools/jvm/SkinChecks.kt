@@ -1,5 +1,5 @@
 import com.squish.app.media.effects.SkinTone
-import com.squish.app.media.effects.SurfaceBlur
+import com.squish.app.media.effects.SpatialMoves
 import java.io.File
 import kotlin.math.abs
 import kotlin.math.sqrt
@@ -138,12 +138,12 @@ fun main() {
 
         // And the ring itself: twelve taps, the second six at 0.55, one step
         // apart. Written as literals on both sides, so compared as literals.
-        check(Regex("""for \(int i = 0; i < ${SurfaceBlur.TAPS}; i\+\+\)""").containsMatchIn(text),
-            "the shader's surfaceBlur no longer takes ${SurfaceBlur.TAPS} taps")
-        check(text.contains("float(i) * ${SurfaceBlur.STEP_RADIANS}"),
-            "the shader's taps are no longer ${SurfaceBlur.STEP_RADIANS} radians apart")
-        check(Regex("""\(i < ${SurfaceBlur.OUTER_TAPS}\) \? r : r \* ${SurfaceBlur.INNER_SCALE}""").containsMatchIn(text),
-            "the shader's two rings are no longer ${SurfaceBlur.OUTER_TAPS} out and the rest at ${SurfaceBlur.INNER_SCALE}")
+        check(Regex("""for \(int i = 0; i < ${SpatialMoves.TAPS}; i\+\+\)""").containsMatchIn(text),
+            "the shader's surfaceBlur no longer takes ${SpatialMoves.TAPS} taps")
+        check(text.contains("float(i) * ${SpatialMoves.STEP_RADIANS}"),
+            "the shader's taps are no longer ${SpatialMoves.STEP_RADIANS} radians apart")
+        check(Regex("""\(i < ${SpatialMoves.OUTER_TAPS}\) \? r : r \* ${SpatialMoves.INNER_SCALE}""").containsMatchIn(text),
+            "the shader's two rings are no longer ${SpatialMoves.OUTER_TAPS} out and the rest at ${SpatialMoves.INNER_SCALE}")
 
         // The order matters and is the whole reason the CPU path can be exact:
         // the shader smooths *before* the colour chain, and Grade.graded is the
@@ -152,7 +152,7 @@ fun main() {
         val smoothAt = text.indexOf("uSmooth > 0.001")
         val gainAt = text.indexOf("c *= uGain;")
         check(smoothAt in 1 until gainAt,
-            "the shader no longer smooths before `c *= uGain` - TimelinePreview runs SurfaceBlur before " +
+            "the shader no longer smooths before `c *= uGain` - TimelinePreview runs SpatialMoves before " +
                 "Grade.applyTo precisely because the shader's order is smooth-then-colour, so this moving " +
                 "means the preview and the file have parted on every photo overlay")
     }
@@ -164,16 +164,16 @@ fun main() {
     // picks the other one. Taking the radius in pixels instead would soften a
     // landscape photo more across than down while the file did the opposite.
     run {
-        val wide = SurfaceBlur.radiusUv(1920, 1080, 1f)
+        val wide = SpatialMoves.radiusUv(1920, 1080, 1f)
         check(near(wide, (1f / 1080) * (SkinTone.MIN_RADIUS + SkinTone.RADIUS_REACH)),
             "a 1920x1080 picture's reach at full is $wide, not the shorter side's texel times the reach")
-        val tall = SurfaceBlur.radiusUv(1080, 1920, 1f)
+        val tall = SpatialMoves.radiusUv(1080, 1920, 1f)
         check(near(wide, tall), "a picture and the same picture turned have different reaches: $wide and $tall")
-        check(SurfaceBlur.radiusUv(1000, 1000, 1f) > SurfaceBlur.radiusUv(1000, 1000, 0.25f),
+        check(SpatialMoves.radiusUv(1000, 1000, 1f) > SpatialMoves.radiusUv(1000, 1000, 0.25f),
             "the reach does not grow with the slider")
-        check(near(SurfaceBlur.radiusUv(1000, 1000, 0f), 0.001f * SkinTone.MIN_RADIUS),
+        check(near(SpatialMoves.radiusUv(1000, 1000, 0f), 0.001f * SkinTone.MIN_RADIUS),
             "at nothing on the slider the reach is not the smallest radius")
-        check(SurfaceBlur.radiusUv(0, 0, 1f) == 0f, "a picture with no size answers a reach rather than zero")
+        check(SpatialMoves.radiusUv(0, 0, 1f) == 0f, "a picture with no size answers a reach rather than zero")
     }
 
     // ---- 3. The locus: what is skin and what is not. -----------------------
@@ -201,13 +201,13 @@ fun main() {
         // Nothing on the slider changes nothing.
         val flat = noisy(w, h, SKIN_R, SKIN_G, SKIN_B, 10)
         val untouched = flat.copyOf()
-        SurfaceBlur.smoothSkin(flat, w, h, 0f)
+        SpatialMoves.spatial(flat, w, h, 0f, 0f)
         check(flat.contentEquals(untouched), "the slider at nothing still changed the picture")
 
         // Noise on skin comes down.
         val noisySkin = noisy(w, h, SKIN_R, SKIN_G, SKIN_B, 10)
         val before = spread(noisySkin)
-        SurfaceBlur.smoothSkin(noisySkin, w, h, 1f)
+        SpatialMoves.spatial(noisySkin, w, h, 0f, 1f)
         val after = spread(noisySkin)
         check(after < before * 0.8f,
             "noise on skin only came down from $before to $after - the blur is not reaching, which at a " +
@@ -216,16 +216,16 @@ fun main() {
         // The same noise on something that is not skin is left alone.
         val noisyBlue = noisy(w, h, 60, 90, 220, 10)
         val blueBefore = spread(noisyBlue)
-        SurfaceBlur.smoothSkin(noisyBlue, w, h, 1f)
+        SpatialMoves.spatial(noisyBlue, w, h, 0f, 1f)
         check(near(spread(noisyBlue), blueBefore, 0.01f),
             "a blue patch was smoothed too ($blueBefore to ${spread(noisyBlue)}) - the hold on skin has gone, " +
                 "and Smooth skin would soften a whole picture")
 
         // Half the slider does less than all of it.
         val half = noisy(w, h, SKIN_R, SKIN_G, SKIN_B, 10)
-        SurfaceBlur.smoothSkin(half, w, h, 0.5f)
+        SpatialMoves.spatial(half, w, h, 0f, 0.5f)
         val full = noisy(w, h, SKIN_R, SKIN_G, SKIN_B, 10)
-        SurfaceBlur.smoothSkin(full, w, h, 1f)
+        SpatialMoves.spatial(full, w, h, 0f, 1f)
         check(spread(half) > spread(full), "half the slider smoothed as much as all of it: ${spread(half)} and ${spread(full)}")
         check(spread(half) < before, "half the slider did nothing at all")
     }
@@ -241,7 +241,7 @@ fun main() {
             edge[y * w + x] = if (x < w / 2) argb(SKIN_R, SKIN_G, SKIN_B) else argb(30, 20, 18)
         }
         val before = edge.copyOf()
-        SurfaceBlur.smoothSkin(edge, w, h, 1f)
+        SpatialMoves.spatial(edge, w, h, 0f, 1f)
         // The pixel two in from the edge, on the skin side, must still be skin:
         // the dark taps across the line weigh almost nothing.
         val at = (h / 2) * w + (w / 2 - 2)
@@ -254,8 +254,104 @@ fun main() {
         // middle, so the picture must come back exactly as it went in.
         val plain = IntArray(w * h) { argb(SKIN_R, SKIN_G, SKIN_B) }
         val plainBefore = plain.copyOf()
-        SurfaceBlur.smoothSkin(plain, w, h, 1f)
+        SpatialMoves.spatial(plain, w, h, 0f, 1f)
         check(plain.contentEquals(plainBefore), "an evenly coloured patch of skin was changed by the blur")
+    }
+
+    // ---- 5b. Sharpen, the other move that was doing nothing. --------------
+    //
+    // An unsharp mask against the four neighbours one pixel away. Its own
+    // assertions, because it is a second slider that was offered on a photo
+    // overlay and read by nothing there.
+    run {
+        // A hard step down the middle, dark on the left.
+        //
+        // A step and not a ramp, and the first version of this got it wrong:
+        // an unsharp mask answers *curvature*, not slope, so on a three-column
+        // ramp the middle column's four neighbours average to exactly itself
+        // and nothing happens - which read as "sharpening is broken" when the
+        // picture was the thing that had nothing to sharpen.
+        fun step(): IntArray {
+            val out = IntArray(w * h)
+            for (y in 0 until h) for (x in 0 until w) {
+                val v = if (x < w / 2) 80 else 210
+                out[y * w + x] = argb(v, v, v)
+            }
+            return out
+        }
+        val before = step()
+        val after = step()
+        SpatialMoves.spatial(after, w, h, 1f, 0f)
+        val row = (h / 2) * w
+        // The last dark pixel and the first light one, either side of the step.
+        val lowBefore = red(before[row + w / 2 - 1])
+        val lowAfter = red(after[row + w / 2 - 1])
+        val highBefore = red(before[row + w / 2])
+        val highAfter = red(after[row + w / 2])
+        check(lowAfter < lowBefore, "sharpening did not darken the dark side of an edge ($lowBefore to $lowAfter)")
+        check(highAfter > highBefore, "sharpening did not lighten the light side of an edge ($highBefore to $highAfter)")
+        // A flat picture has nothing to sharpen: every neighbour equals the
+        // middle, so the unsharp mask is zero everywhere.
+        val flat = IntArray(w * h) { argb(120, 130, 140) }
+        val flatBefore = flat.copyOf()
+        SpatialMoves.spatial(flat, w, h, 1f, 0f)
+        check(flat.contentEquals(flatBefore), "sharpening changed an evenly coloured picture")
+        // Nothing on the slider changes nothing.
+        val none = step()
+        SpatialMoves.spatial(none, w, h, 0f, 0f)
+        check(none.contentEquals(before), "both sliders at nothing still changed the picture")
+        // And half does less than all.
+        val half = step()
+        SpatialMoves.spatial(half, w, h, 0.5f, 0f)
+        check(red(half[row + w / 2]) in (highBefore + 1) until highAfter,
+            "half the sharpen slider is not between nothing and all of it: ${red(half[row + w / 2])} " +
+                "against $highBefore and $highAfter")
+
+        // Both at once: the shader sharpens first and then smooths, and the
+        // smooth's taps come from the *untouched* picture while its centre is
+        // the sharpened colour. So on skin, turning both up must land somewhere
+        // other than either alone - the thing that would break silently if the
+        // order were swapped or the taps taken from the sharpened copy.
+        val skinNoise = { noisy(w, h, SKIN_R, SKIN_G, SKIN_B, 10) }
+        val sharpOnly = skinNoise().also { SpatialMoves.spatial(it, w, h, 1f, 0f) }
+        val smoothOnly = skinNoise().also { SpatialMoves.spatial(it, w, h, 0f, 1f) }
+        val both = skinNoise().also { SpatialMoves.spatial(it, w, h, 1f, 1f) }
+        check(!both.contentEquals(sharpOnly), "both sliders up gave the same picture as sharpening alone")
+        check(!both.contentEquals(smoothOnly), "both sliders up gave the same picture as smoothing alone")
+        check(spread(both) < spread(sharpOnly),
+            "with both up, skin is no smoother than sharpened alone (${spread(both)} against ${spread(sharpOnly)}) - " +
+                "turning both up is meant to soften the face and leave everything else crisp")
+    }
+
+    // ---- 5c. The pass must not read its own output. ------------------------
+    //
+    // A neighbourhood read against the array it is writing works partly on its
+    // own output, which is why SpatialMoves copies the source once. This is a
+    // **text** check standing in for a behavioural one, and that is worth
+    // saying rather than hiding, because the behavioural one was written first
+    // and did not work.
+    //
+    // What was expected: the picture getting progressively smoother downwards,
+    // each row blurred from an already blurred row. What was measured, with the
+    // copy taken out: no gradient at all (2.50 / 2.42 / 2.40 top to bottom with
+    // the copy, 2.09 / 2.00 / 2.05 without), only a uniformly slightly softer
+    // picture - 17% softer overall. The detail weighting is why: a neighbour
+    // that has already been pulled towards the middle is *closer* to it, so it
+    // weighs more, and the thing converges in one step instead of compounding.
+    //
+    // So the damage is real but small and shapeless, and a behavioural
+    // assertion would have to pin this implementation's exact output to catch
+    // it. The line of code is checked instead, with the number above as the
+    // reason anyone who deletes it will not see anything obviously wrong.
+    run {
+        val file = File("app/src/main/java/com/squish/app/media/effects/SpatialMoves.kt")
+        if (!file.isFile) flag("SpatialMoves.kt is not there - this check has rotted") else {
+            check(file.readText().contains("val src = pixels.copyOf()"),
+                "SpatialMoves no longer copies the source before reading neighbours, so the pass works partly " +
+                    "on its own output. It does not look broken - a noisy face comes out about 17% softer than " +
+                    "the file's and no more - which is exactly why this is checked as a line of code rather " +
+                    "than measured.")
+        }
     }
 
     // ---- 6. What a photo overlay is drawn this way for. --------------------
@@ -264,7 +360,7 @@ fun main() {
             argb(SKIN_R, SKIN_G, SKIN_B, a = if (i % 3 == 0) 0 else if (i % 3 == 1) 128 else 255)
         }
         val before = withAlpha.copyOf()
-        SurfaceBlur.smoothSkin(withAlpha, w, h, 1f)
+        SpatialMoves.spatial(withAlpha, w, h, 0f, 1f)
         val kept = withAlpha.indices.all { alpha(withAlpha[it]) == alpha(before[it]) }
         check(kept, "the blur changed a pixel's alpha - a photo overlay is drawn pixel by pixel precisely so " +
             "that its transparency survives")
@@ -278,13 +374,13 @@ fun main() {
         // measured.
         listOf(1 to 1, 1 to 64, 64 to 1, 3 to 3).forEach { (pw, ph) ->
             val tiny = IntArray(pw * ph) { argb(SKIN_R, SKIN_G, SKIN_B) }
-            val threw = runCatching { SurfaceBlur.smoothSkin(tiny, pw, ph, 1f) }.exceptionOrNull()
+            val threw = runCatching { SpatialMoves.spatial(tiny, pw, ph, 0f, 1f) }.exceptionOrNull()
             check(threw == null, "a ${pw}x$ph picture threw ${threw?.javaClass?.simpleName}")
         }
         // And a picture whose array is short of its own size is refused rather
         // than read past: the sizes come from a bitmap and an array made apart.
         val short = IntArray(10)
-        val threw = runCatching { SurfaceBlur.smoothSkin(short, 64, 64, 1f) }.exceptionOrNull()
+        val threw = runCatching { SpatialMoves.spatial(short, 64, 64, 0.5f, 1f) }.exceptionOrNull()
         check(threw == null, "a short array threw ${threw?.javaClass?.simpleName} rather than being left alone")
     }
 
@@ -296,10 +392,10 @@ fun main() {
         val preview = File("app/src/main/java/com/squish/app/editor/TimelinePreview.kt")
         if (!preview.isFile) flag("TimelinePreview.kt is not there - this check has rotted") else {
             val text = preview.readText()
-            val callAt = text.indexOf("SurfaceBlur.smoothSkin(")
+            val callAt = text.indexOf("SpatialMoves.spatial(")
             val gradeAt = text.indexOf("grade.applyTo(pixels")
-            check(callAt >= 0, "the preview's photo-overlay grade does not call SurfaceBlur.smoothSkin, so " +
-                "Smooth skin is a slider that does nothing on screen and something in the file")
+            check(callAt >= 0, "the preview's photo-overlay grade does not call SpatialMoves.spatial, so Sharpen " +
+                "and Smooth skin are two sliders that do nothing on screen and something in the file")
             check(gradeAt >= 0, "the preview no longer grades a photo overlay through Grade.applyTo")
             check(callAt in 0 until gradeAt,
                 "the preview smooths *after* grading, where the shader smooths before the colour chain - " +
@@ -307,7 +403,7 @@ fun main() {
         }
     }
 
-    println("skin: ${SurfaceBlur.TAPS} taps, the locus and the reach against the shader's own numbers")
+    println("skin: ${SpatialMoves.TAPS} taps, the locus and the reach against the shader's own numbers")
     if (problems.isEmpty()) {
         println("PASS - Smooth skin holds to skin, keeps an edge, keeps alpha, and the two sides read one set of numbers")
     } else {

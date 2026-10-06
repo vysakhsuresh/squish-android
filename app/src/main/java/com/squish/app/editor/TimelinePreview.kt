@@ -1191,15 +1191,15 @@ private object StillPictures {
             val small = if (scale < 1f) android.graphics.Bitmap.createScaledBitmap(plain, w, h, true) else plain
             small.getPixels(pixels, 0, w, 0, 0, w, h)
             if (small !== plain) small.recycle()
-            // Smooth skin first, on the untouched picture, because that is where
-            // the shader does it - before the colour chain, after the sharpening
-            // it is the only neighbourhood move this path takes. Doing it here
-            // rather than inside applyTo is what makes it the shader's own
-            // order: Grade.graded is the colour chain alone. See SurfaceBlur,
-            // which also says why this one is in while grain, bloom and
-            // sharpening stay out.
+            // Sharpen and Smooth skin first, on the untouched picture, because
+            // that is where the shader does them - before the colour chain,
+            // and they are the only neighbourhood moves this path takes. Doing
+            // them here rather than inside applyTo is what makes the order the
+            // shader's own: Grade.graded is the colour chain alone. See
+            // SpatialMoves, which also says why these two are in while grain
+            // and bloom stay out.
             ensureActive()
-            com.squish.app.media.effects.SurfaceBlur.smoothSkin(pixels, w, h, grade.smooth)
+            com.squish.app.media.effects.SpatialMoves.spatial(pixels, w, h, grade.sharpen, grade.smooth)
             // A band of rows at a time, so a grade overtaken by the next value
             // gives up early rather than finishing a picture nobody will see.
             var y = 0

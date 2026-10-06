@@ -750,12 +750,12 @@ should work through it and then delete what holds up.
   Looks holds its shot while playback runs and re-picks on a scrub or a
   selection; Adjust is one chip row (thirteen sliders, then the eight wheel
   colours) over one control, Apply to all under it; a photo overlay has
-  Filters and Adjust, graded on the CPU in the preview (`Grade.applyTo` on
-  the pixels, vignette included, and **Smooth skin** since 6 October through
-  `SurfaceBlur.smoothSkin` before the colour chain as the shader does it -
-  grain, bloom and sharpening stay out by the decision written down on
-  `applyTo`) and through its image item in the file - check the two agree on a
-  warm look, a vignette and a face smoothed; a
+  Filters and Adjust, graded on the CPU in the preview (`Grade.applyTo` on the
+  pixels, vignette included, and **Sharpen and Smooth skin** since 6 October
+  through `SpatialMoves.spatial`, run before the colour chain because that is
+  where the shader runs them - grain and bloom stay out, by the decision
+  written down on `applyTo`) and through its image item in the file - check the
+  two agree on a warm look, a vignette, a sharpened edge and a face smoothed; a
   crop whose only content is a shape chip survives a reload; a cancelled
   crop drag closes its undo step.
   From the merge of B11 and B12 (built, `ClipOpsChecks.kt` extended, nothing

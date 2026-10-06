@@ -356,17 +356,22 @@ What is left, in the order it is worth doing:
 
    What was finished on 6 October is the half nobody had noticed was missing. A
    photo on an overlay row is graded on the CPU rather than through the shader,
-   and three of the shader's moves are left out of that path by a decision
-   written down in `Grade.applyTo` - grain frozen on a still reads as dirt;
-   bloom and sharpening are a texture the file has and the preview does
-   without. Smooth skin was a fourth, left out by **no decision at all**: it
-   was added after that comment was written. So on a photo overlay the slider
-   did nothing on screen and something in the exported file - and of the four
-   it is the one somebody drags expecting to watch the subject change, which
-   makes it the one that reads as broken rather than as subtle.
-   `media/effects/SurfaceBlur.kt` runs the same twelve-tap ring on the CPU,
-   *before* the colour chain as the shader does (so the two agree rather than
-   nearly agree), and `tools/jvm/SkinChecks.kt` - the suite `SkinTone`'s own
+   and the shader's spatial moves were all left out of that path - the comment
+   on `Grade.applyTo` gives a reason for two of them: grain frozen on a still
+   reads as dirt, and bloom is a texture the file has and the preview does
+   without. **Sharpen and Smooth skin were in that list by accident rather
+   than by decision** - Smooth skin was added after that comment was written,
+   and Sharpen was never thought about. Both are among the thirteen Adjust
+   sliders the panel offers on every clip, so on a photo overlay both did
+   nothing on screen and something in the exported file; and of the four they
+   are the two somebody drags while *watching the subject*, where grain and
+   bloom are atmosphere.
+   `media/effects/SpatialMoves.kt` runs the same unsharp mask and the same
+   twelve-tap ring on the CPU, *before* the colour chain as the shader does -
+   including that the ring's taps come from the untouched picture while its
+   centre is the sharpened colour, which is what makes turning both up soften
+   the face and leave everything else crisp - so the two agree rather than
+   nearly agree. And `tools/jvm/SkinChecks.kt` - the suite `SkinTone`'s own
    header had been promising since the day it was written, and which did not
    exist - parses the eleven numbers back out of the shader and executes the
    blur. Unseen on a phone: that a face on a photo overlay visibly softens as
