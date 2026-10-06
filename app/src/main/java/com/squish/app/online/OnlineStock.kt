@@ -2,12 +2,12 @@ package com.squish.app.online
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import com.squish.app.media.StillClips
 import java.net.URLEncoder
 
 /**
@@ -66,7 +66,14 @@ object OnlineStock {
         val dir = File(context.cacheDir, "stock-thumbs").apply { mkdirs() }
         val file = File(dir, video.id.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".jpg")
         if (file.length() == 0L) Online.download(context, video.thumbnailUrl, file)
-        BitmapFactory.decodeFile(file.absolutePath)
+        // Sampled to the tile, not decoded whole. The Archive's thumbnail for
+        // an item is often the item's own full-size derivative, and
+        // BitmapFactory.decodeFile takes no sample size - so a grid of tiles
+        // each held a multi-megapixel ARGB_8888 bitmap for a picture drawn at
+        // half the screen's width. That is the large-video crash in a scrolling
+        // list, and the tile needs a few hundred pixels. Through
+        // StillClips.previewBitmap, the one sampled decoder in the app.
+        StillClips.previewBitmap(context, Uri.fromFile(file), THUMB_MAX_SIDE)
     } catch (cancelled: CancellationException) {
         // A tile scrolled off cancels this; runCatching caught that with
         // everything else and wrote a null picture back into a state nobody is
@@ -115,6 +122,9 @@ object OnlineStock {
 
     /** The most a tap will fetch: a stock clip, not a feature film, on a phone's data. */
     private const val MAX_DOWNLOAD_BYTES = 80_000_000L
+
+    /** A tile is half the screen wide; a few hundred pixels is the whole of it. */
+    private const val THUMB_MAX_SIDE = 640
 
     const val DIR = "imports/stock"
 

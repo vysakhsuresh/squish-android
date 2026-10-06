@@ -1406,6 +1406,16 @@ fun main() {
                     "(so it is held whole) and no orientation tag (so a camera photo comes back on its " +
                     "side). ImageDecoder does both; StillClips.previewBitmap is the sampled one."
             }
+            // decodeFile is the same thing from a path. ThumbnailCache is the
+            // one honest use: it reads back the small JPEG it wrote itself, so
+            // there is nothing to sample and no tag to apply.
+            if (!path.endsWith("media/ThumbnailCache.kt")) {
+                Regex("""(?m)^[^/\n]*BitmapFactory\.decodeFile\(""").findAll(text).forEach {
+                    problems += "$path decodes a picture with BitmapFactory.decodeFile - no sample size " +
+                        "and no orientation tag. A downloaded thumbnail can be the item's own full-size " +
+                        "derivative, and one per tile in a scrolling grid is the large-video crash in a list."
+                }
+            }
         }
     }
 
