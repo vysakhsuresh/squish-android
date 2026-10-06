@@ -125,36 +125,19 @@ data class TimelineWindow(
     /** How many milliseconds of footage the screen shows at this zoom. */
     val viewportMs: Long get() = if (pxPerMs <= 0.0) 0L else (viewportPx / pxPerMs).toLong()
 
-    /** The furthest the view may be scrolled, as a moment. */
-    fun maxScrollMs(durationMs: Long, tailDp: Float): Double {
-        if (pxPerMs <= 0.0) return 0.0
-        val tailMs = tailDp * density / pxPerMs
-        return (durationMs + tailMs - viewportPx / pxPerMs).coerceAtLeast(0.0)
-    }
-
-    /** The same window, scrolled somewhere else. */
-    fun scrolledTo(ms: Double, durationMs: Long, tailDp: Float): TimelineWindow =
-        copy(scrollMs = ms.coerceIn(0.0, maxScrollMs(durationMs, tailDp)))
-
-    /**
-     * The same window at a new zoom, with [anchorMs] left where it was on screen.
+    /*
+     * There used to be three more here - maxScrollMs, scrolledTo and zoomedTo -
+     * and nothing in the app called any of them. They are from before the
+     * playhead was fixed, when the strip held a scroll of its own and clamped
+     * it; now the window is built from the playhead's moment ([linedOn]) and
+     * the playhead is what is clamped, to the edit, by the scrubber.
      *
-     * A zoom that keeps the left edge still throws whatever you were looking at
-     * off the screen, the further along the edit the worse. Holding a chosen
-     * moment in place is what makes a pinch feel like zooming rather than like
-     * being thrown.
+     * Only WindowChecks exercised them, which is the worst shape a check can
+     * have: it reads as cover for the strip's scrolling and covers nothing, and
+     * their presence told whoever read this file that the scroll is bounded
+     * here. It is not. A pinch holds its anchor for the same reason - the
+     * anchor is the playhead, and the playhead does not move.
      */
-    fun zoomedTo(
-        newPixelsPerSecond: Float,
-        anchorMs: Long,
-        durationMs: Long,
-        tailDp: Float
-    ): TimelineWindow {
-        val anchorPx = xPx(anchorMs)
-        val zoomed = copy(pixelsPerSecond = newPixelsPerSecond)
-        if (zoomed.pxPerMs <= 0.0) return zoomed
-        return zoomed.scrolledTo(anchorMs - anchorPx / zoomed.pxPerMs, durationMs, tailDp)
-    }
 
     /**
      * Which moment is under a point on screen, unrounded and without the floor at

@@ -14,7 +14,6 @@ private val viewports = intArrayOf(720, 1080, 1440)
 /** Ten seconds to eight hours, in milliseconds. */
 private val durations = longArrayOf(10_000, 60_000, 30 * 60_000, 3 * 60 * 60_000, 8 * 60 * 60_000)
 
-private const val TAIL_DP = 240f
 
 /** Compose refuses any dimension at or above this. Nothing drawn may reach it. */
 private const val HARD_LIMIT_PX = 262_143
@@ -26,8 +25,15 @@ fun main() {
         for (pps in zooms) {
             for (viewportPx in viewports) {
                 for (durationMs in durations) {
-                    val maxScroll = TimelineWindow(pps, 0.0, density, viewportPx)
-                        .maxScrollMs(durationMs, TAIL_DP)
+                    // The scroll the strip is actually at when the playhead is
+                    // at the end of the edit: the window is built from the
+                    // playhead's moment, so this is the far end of the range it
+                    // ever takes. (It used to come from maxScrollMs, which
+                    // nothing in the app called - see below.)
+                    val maxScroll = TimelineWindow
+                        .linedOn(durationMs.toDouble(), pps, density, viewportPx)
+                        .scrollMs
+                        .coerceAtLeast(0.0)
 
                     // Three places in the scroll that behave differently: the very
                     // start, the far end, and somewhere in the middle.
@@ -98,12 +104,14 @@ fun main() {
         )
     }
 
-    // Scrolling is bounded at both ends, whatever it is asked for.
-    val long = TimelineWindow(400f, 0.0, 3f, 1080)
-    val cap = long.maxScrollMs(3 * 60 * 60_000, TAIL_DP)
-    check("scroll cannot go negative", long.scrolledTo(-5_000.0, 3 * 60 * 60_000, TAIL_DP).scrollMs == 0.0)
-    check("scroll cannot pass the end", long.scrolledTo(cap * 10.0, 3 * 60 * 60_000, TAIL_DP).scrollMs == cap)
-    check("a short edit does not scroll at all", long.maxScrollMs(100L, TAIL_DP) >= 0.0)
+    // What used to be here: three assertions about maxScrollMs, scrolledTo and
+    // zoomedTo. Nothing in the app called any of them - they are from before
+    // the playhead was fixed, when the strip held a scroll of its own - so the
+    // assertions read as cover for the strip's scrolling and covered nothing.
+    // The scroll is bounded now by the *playhead* being clamped to the edit,
+    // which is the scrubber's business, and a pinch holds its anchor because
+    // the anchor is the playhead and the playhead does not move. Both are
+    // asserted below, on linedOn, which is what the strip actually builds.
 
     // Degenerate input must not produce a NaN position.
     val dead = TimelineWindow(0f, 0.0, 0f, 0)
@@ -111,14 +119,18 @@ fun main() {
     check("a zero window maps to the start", dead.msAt(100f) == 0L)
 
     println("widest thing drawn across the sweep: %.0f px (ceiling %d)".format(widest, HARD_LIMIT_PX))
-    // A pinch must leave the moment under it where it was, at any zoom or length.
+
+    // A pinch leaves the moment under the playhead where it was, at any zoom.
+    // Not an anchor the pinch chooses: the strip rebuilds its window from the
+    // playhead at the new scale, so the moment that is held is the one under
+    // the line - which is the whole of what a fixed playhead buys here.
     for (pps in floatArrayOf(2f, 42f, 400f, 4_000f)) {
         for (factor in floatArrayOf(0.25f, 0.5f, 2f, 8f)) {
-            val before = TimelineWindow(pps, 900_000.0, 2.75f, 1080)
-            val anchor = before.msAt(540f)
-            val after = before.zoomedTo(pps * factor, anchor, 3 * 60 * 60_000, TAIL_DP)
-            val moved = abs(after.xPx(anchor) - before.xPx(anchor))
-            check("a pinch from $pps by $factor holds its anchor (moved $moved px)", moved < 2f)
+            val at = 900_000.0
+            val before = TimelineWindow.linedOn(at, pps, 2.75f, 1080)
+            val after = TimelineWindow.linedOn(at, pps * factor, 2.75f, 1080)
+            val moved = abs(after.xPx(at.toLong()) - before.xPx(at.toLong()))
+            check("a pinch from $pps by $factor holds the playhead (moved $moved px)", moved < 1f)
         }
     }
 
@@ -189,7 +201,9 @@ fun main() {
         }
     }
 
-    println("three hours at 400 px/s now scrolls %.0f ms of content, laid out one screen at a time".format(cap))
+    println("three hours at 400 px/s now scrolls %.0f ms of content, laid out one screen at a time".format(
+        TimelineWindow.linedOn(3.0 * 60 * 60_000, 400f, 3f, 1080).scrollMs
+    ))
     if (failures.isEmpty()) {
         println("PASS - the window maps time to screen both ways and never lays out more than a screenful")
     } else {
