@@ -924,25 +924,33 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                 _state.update { it.copy(failure = SquishError.CaptionsUnreadable()) }
                 return@launch
             }
-            record(if (replace) "Replace subtitles" else "Import subtitles") {
-                _state.update { current ->
-                    val kept = if (replace) current.textOverlays.filter { it.sticker } else current.textOverlays
-                    current.copy(
-                        textOverlays = kept + cues.map { cue ->
-                            TextOverlayItem(
-                                id = UUID.randomUUID().toString(),
-                                text = cue.text,
-                                startMs = cue.startMs,
-                                endMs = cue.endMs,
-                                colorArgb = android.graphics.Color.WHITE
-                            )
-                        },
-                        // An auto-caption run in progress keeps its own progress line.
-                        captions = if (current.captions.running) current.captions
-                        else CaptionProgress(finished = true, imported = cues.size)
-                    )
-                }
+            // The lines made once, outside the edit, so a redo of the step puts
+            // back the same ids rather than a fresh set.
+            val lines = cues.map { cue ->
+                TextOverlayItem(
+                    id = UUID.randomUUID().toString(),
+                    text = cue.text,
+                    startMs = cue.startMs,
+                    endMs = cue.endMs,
+                    colorArgb = android.graphics.Color.WHITE
+                )
             }
+            // recordLate, not record: the file has just been read off disk, so
+            // this lands in the background. Through record it closed whatever
+            // gesture was under the finger and split that drag into two undo
+            // steps with the import between them.
+            recordLate(
+                if (replace) "Replace subtitles" else "Import subtitles",
+                edit = { snapshot ->
+                    val kept = if (replace) snapshot.textOverlays.filter { it.sticker } else snapshot.textOverlays
+                    snapshot.copy(textOverlays = kept + lines)
+                },
+                // An auto-caption run in progress keeps its own progress line.
+                alongside = { current ->
+                    if (current.captions.running) current
+                    else current.copy(captions = CaptionProgress(finished = true, imported = cues.size))
+                }
+            )
         }
     }
 

@@ -1101,16 +1101,12 @@ fun main() {
     // A `record(` inside a coroutine launched from one of the edit areas is the
     // shape of that mistake; the check reads each launch and asks.
     //
-    // Two are still exempt, named here with the reason rather than quietly
-    // passing: both reach the timeline model through `mutateTimeline`, and the
-    // pure `EditSnapshot.withTimeline` that recordLate would need is a private
-    // helper in AudioEdits and in ClipEdits. A third copy of it is worse than
-    // the fault, and hoisting it into EditArea is a wider change than this is.
-    // docs/ROADMAP.md §5 carries them.
-    val recordLateExempt = listOf(
-        "To main track" to "goes through mutateTimeline; needs withTimeline hoisted into EditArea first",
-        "Replace subtitles" to "the same, and its sibling branch (Add subtitles) with it"
-    )
+    // Nothing is exempt any more. The two that were - "To main track" and the
+    // subtitle import - reached the model through `mutateTimeline`, whose pure
+    // equivalent was a private copy in AudioEdits and another in ClipEdits; it
+    // is `EditArea.withTimeline` now, one copy, and both landings go through
+    // recordLate.
+    val recordLateExempt = emptyList<Pair<String, String>>()
     run {
         readAll("$SRC/editor/edits").forEach { (path, text) ->
             // Each `viewModelScope.launch {` body, up to the next declaration
@@ -1129,6 +1125,21 @@ fun main() {
                         "the finger when the result lands becomes two undo steps with the result between " +
                         "them, and the drag cannot be taken back without losing the result"
                 }
+            }
+        }
+    }
+
+    // And one copy of the pure timeline edit, so no landing has an excuse.
+    run {
+        check(
+            read("$SRC/editor/edits/EditArea.kt").contains("protected fun EditSnapshot.withTimeline("),
+            "EditArea has no withTimeline - without it a landing that reaches the timeline model has no " +
+                "pure edit to hand recordLate, which is why two of them stayed on record for a day"
+        )
+        readAll("$SRC/editor/edits").forEach { (path, text) ->
+            if (path.endsWith("EditArea.kt")) return@forEach
+            if (text.contains("fun EditSnapshot.withTimeline(")) {
+                problems += "$path keeps its own copy of withTimeline - there is one in EditArea"
             }
         }
     }

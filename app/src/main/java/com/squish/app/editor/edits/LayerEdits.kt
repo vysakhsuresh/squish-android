@@ -228,12 +228,16 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                     _state.update { it.copy(failure = SquishError.Unknown(null)) }
                     return@launch
                 }
-                record("To main track") {
-                    mutateTimeline { timeline ->
+                // recordLate, not record: the still has just been rendered, so
+                // this lands in the background like every other result, and
+                // through record it closed a gesture still under the finger and
+                // cut that drag into two undo steps with the move between them.
+                recordLate("To main track", edit = { snapshot ->
+                    snapshot.withTimeline { timeline ->
                         // As it is now, not as it was when this began: it may have
                         // been trimmed, moved or deleted while the clip was made.
                         val now = timeline.clips.firstOrNull { it.id == clipId && it.isOverlay }
-                            ?: return@mutateTimeline timeline
+                            ?: return@withTimeline timeline
                         val filmed = now.copy(
                             uri = made,
                             sourceInMs = 0L,
@@ -247,9 +251,9 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                             speedRamp = SpeedRamp()
                         )
                         timeline.copy(clips = timeline.clips.map { if (it.id == clipId) filmed else it })
-                            .withOverlayOnMain(clipId, at, _state.value.originalVolume)
+                            .withOverlayOnMain(clipId, at, snapshot.originalVolume)
                     }
-                }
+                })
                 sayIfSilencedOnMain(clip)
             } finally {
                 _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }

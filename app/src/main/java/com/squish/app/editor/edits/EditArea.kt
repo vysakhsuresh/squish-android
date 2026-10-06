@@ -6,6 +6,10 @@ import com.squish.app.editor.EditSnapshot
 import com.squish.app.editor.EditorUiState
 import com.squish.app.editor.UndoStack
 import com.squish.app.timeline.TimelineState
+import com.squish.app.editor.AudioRules
+import com.squish.app.editor.fittedTo
+import com.squish.app.timeline.ClipKind
+import com.squish.app.timeline.withOverlayTransitionsFitted
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -65,6 +69,37 @@ internal abstract class EditArea(protected val host: EditHost) {
         edit: (EditSnapshot) -> EditSnapshot,
         alongside: (EditorUiState) -> EditorUiState = { it }
     ) = host.recordLate(label, edit, alongside)
+
+    /**
+     * [mutateTimeline]'s work on a snapshot rather than on the live state, so a
+     * result that lands in the background can go through [recordLate] - which
+     * wants a pure snapshot-to-snapshot edit - instead of [record], which
+     * closes whatever gesture is open and cuts a drag under the finger in two.
+     *
+     * The same fitting mutateTimeline does: a clip's fades refitted to the
+     * window it ends up with, an overlay transition dropped when the join it
+     * sat on has gone, and the effects held inside the new end. Without the
+     * transitions' fit, a Reverse that made a ramped overlay a step shorter
+     * left the next overlay's transition on a join that was gone, to vanish
+     * inside some later edit's undo step.
+     *
+     * It was a private copy in AudioEdits and another in ClipEdits, which is
+     * why the two landings that reach the model this way - "To main track" and
+     * the subtitle import - were still on [record]: a third copy was worse than
+     * the fault.
+     */
+    protected fun EditSnapshot.withTimeline(block: (TimelineState) -> TimelineState): EditSnapshot {
+        val next = block(TimelineState(clips = videoClips + audioClips, selectedClipId = selectedClipId))
+            .let { t -> t.copy(clips = t.clips.map(AudioRules::withFittedFades)) }
+            .withOverlayTransitionsFitted()
+        val video = next.clips.filter { it.kind == ClipKind.Video }
+        return copy(
+            videoClips = video,
+            audioClips = next.clips.filter { it.kind == ClipKind.Audio },
+            selectedClipId = next.selectedClipId,
+            effects = effects.fittedTo(video.maxOfOrNull { it.timelineEndMs } ?: 0L)
+        )
+    }
 
     protected fun edited() = host.edited()
     protected fun publishHistory() = host.publishHistory()

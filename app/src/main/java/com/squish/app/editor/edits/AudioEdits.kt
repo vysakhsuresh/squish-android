@@ -1148,20 +1148,6 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      * landing from the background: filed as its own step without splitting a
      * gesture under way, as auto-sync and the beat finder file theirs.
      */
-    private fun EditSnapshot.withTimeline(block: (TimelineState) -> TimelineState): EditSnapshot {
-        // The same fitting mutateTimeline does: fades, overlay transitions, effects.
-        val next = block(TimelineState(clips = videoClips + audioClips, selectedClipId = selectedClipId))
-            .let { t -> t.copy(clips = t.clips.map(AudioRules::withFittedFades)) }
-            .withOverlayTransitionsFitted()
-        val video = next.clips.filter { it.kind == ClipKind.Video }
-        return copy(
-            videoClips = video,
-            audioClips = next.clips.filter { it.kind == ClipKind.Audio },
-            selectedClipId = next.selectedClipId,
-            effects = effects.fittedTo(video.maxOfOrNull { it.timelineEndMs } ?: 0L)
-        )
-    }
-
     /**
      * Turns the sound [clipId] down under every stretch of talking on the
      * timeline - voiceovers, lines read aloud, and the camera sound of the

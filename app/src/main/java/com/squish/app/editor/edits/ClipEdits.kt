@@ -1696,19 +1696,6 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * ramped overlay a step shorter left the next overlay's transition on a
      * join that was gone, to vanish inside some later edit's undo step.
      */
-    private fun EditSnapshot.withTimeline(block: (TimelineState) -> TimelineState): EditSnapshot {
-        val timeline = TimelineState(clips = videoClips + audioClips, selectedClipId = selectedClipId)
-        val next = block(timeline).let { t -> t.copy(clips = t.clips.map(AudioRules::withFittedFades)) }
-            .withOverlayTransitionsFitted()
-        val video = next.clips.filter { it.kind == ClipKind.Video }
-        return copy(
-            videoClips = video,
-            audioClips = next.clips.filter { it.kind == ClipKind.Audio },
-            selectedClipId = next.selectedClipId,
-            effects = effects.fittedTo(video.maxOfOrNull { it.timelineEndMs } ?: 0L)
-        )
-    }
-
     // ---- Replace ------------------------------------------------------------------
 
     /**
