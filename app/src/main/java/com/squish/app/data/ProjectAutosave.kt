@@ -1232,10 +1232,18 @@ class ProjectAutosave(context: Context) {
         json.optJSONObject("wheels")?.let { w ->
             fun wheelOf(key: String): com.squish.app.media.effects.Wheel {
                 val a = w.optJSONArray(key) ?: return com.squish.app.media.effects.Wheel.NONE
+                // To Wheel.COMPONENT_REACH, not to 1. A wheel's component is
+                // `master + the tint`, and the Level slider runs to 1 while the
+                // dot reaches the rim, so Wheel.of produces components to 2 -
+                // which the shader uses, scaled by LIFT_REACH and GAIN_REACH.
+                // Clamping the read to 1 therefore made a strong wheel come
+                // back weaker every time the project was opened, while the
+                // draft on disk held the right number all along.
+                val reach = com.squish.app.media.effects.Wheel.COMPONENT_REACH
                 return com.squish.app.media.effects.Wheel(
-                    a.optDouble(0, 0.0).toFloat().coerceIn(-1f, 1f),
-                    a.optDouble(1, 0.0).toFloat().coerceIn(-1f, 1f),
-                    a.optDouble(2, 0.0).toFloat().coerceIn(-1f, 1f)
+                    a.optDouble(0, 0.0).toFloat().coerceIn(-reach, reach),
+                    a.optDouble(1, 0.0).toFloat().coerceIn(-reach, reach),
+                    a.optDouble(2, 0.0).toFloat().coerceIn(-reach, reach)
                 )
             }
             adjust = adjust.copy(

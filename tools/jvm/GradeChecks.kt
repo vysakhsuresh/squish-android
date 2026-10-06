@@ -1,3 +1,4 @@
+import com.squish.app.media.effects.Wheel
 import com.squish.app.media.effects.Adjust
 import com.squish.app.media.effects.AdjustField
 import com.squish.app.media.effects.Grade
@@ -418,6 +419,48 @@ fun main() {
         val g = Looks.grade(look.id, 1f, Adjust(exposure = 0.3f, highlights = 0.5f, hue = 0.2f))
         val (r, gg, b) = rgb(g.applyTo(skin))
         check(r in 0..255 && gg in 0..255 && b in 0..255, "${look.id} with sliders produced an out-of-range pixel")
+    }
+
+    // ---- A wheel's component reaches 2, and a reader has to clamp to that. -
+    //
+    // A component is `master + the tint`: the Level slider runs to ±1 and the
+    // dot's contribution is a unit vector's projection, so Wheel.of produces
+    // values to ±2 - which the shader uses, scaled by LIFT_REACH and
+    // GAIN_REACH. The draft's decode clamped to ±1, so a wheel with a high
+    // level and a strong tint came back weaker every time the project was
+    // opened while the file on disk held the right number all along. The
+    // reach is Wheel.COMPONENT_REACH now, and this is the assertion that the
+    // number is the right one.
+    run {
+        val reach = Wheel.COMPONENT_REACH
+        var biggest = 0f
+        // The disc, at every level the slider offers.
+        listOf(-1f, -0.5f, 0f, 0.5f, 1f).forEach { master ->
+            for (i in 0..24) {
+                val angle = i / 24.0 * 2 * Math.PI
+                listOf(0f, 0.5f, 1f, 1.5f).forEach { radius ->
+                    val w = Wheel.of((Math.cos(angle) * radius).toFloat(), (Math.sin(angle) * radius).toFloat(), master)
+                    listOf(w.r, w.g, w.b).forEach { c ->
+                        if (kotlin.math.abs(c) > kotlin.math.abs(biggest)) biggest = c
+                        check(
+                            kotlin.math.abs(c) <= reach + 1e-4f,
+                            "a wheel at level $master and radius $radius has a component of $c, past the " +
+                                "declared reach of $reach - a reader that clamps to the reach would lose it"
+                        )
+                    }
+                }
+            }
+        }
+        // And the reach is not slack: something really does pass 1, or clamping
+        // a read to 1 would have cost nothing and this would prove nothing.
+        check(
+            kotlin.math.abs(biggest) > 1.5f,
+            "the biggest component the disc can produce is $biggest - if nothing passes 1 then the old " +
+                "clamp was harmless and this case does not bite"
+        )
+        // A wheel past the reach is not something of() can make, so a draft
+        // holding one is corrupt and clamping it is right.
+        check(Wheel(5f, 0f, 0f).master > reach / 3f, "the test wheel is not past the reach")
     }
 
     println("grade: ${AdjustField.entries.size} sliders, ${HueBand.entries.size} bands, ${Looks.catalog.size} looks")

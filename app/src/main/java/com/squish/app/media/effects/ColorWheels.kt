@@ -57,6 +57,19 @@ data class Wheel(val r: Float = 0f, val g: Float = 0f, val b: Float = 0f) {
         val NONE = Wheel()
         private const val EPS = 1e-4f
 
+        /**
+         * The largest a component can be, either way.
+         *
+         * A component is `master + the tint`: the Level slider runs to ±1 and
+         * the dot's own contribution is a unit vector's projection, so [of]
+         * produces values to ±2 and the shader uses every one of them. Named
+         * here because a reader elsewhere has to clamp to the same number -
+         * ProjectAutosave's decode clamped to 1 and made a strong wheel come
+         * back weaker on every reopen, while the draft on disk held the right
+         * value all along.
+         */
+        const val COMPONENT_REACH = 2f
+
         // Red up, green at seven o'clock, blue at five: the wheel every
         // grading tool draws, so a dot dragged towards orange warms the picture.
         private val COS_R = cos(Math.toRadians(90.0)).toFloat()
