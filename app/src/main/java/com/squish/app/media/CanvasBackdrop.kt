@@ -100,10 +100,12 @@ object CanvasBackdrop {
     private fun decodeImage(context: Context, image: Uri, longSide: Int): Bitmap? = runCatching {
         ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, image)) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-            val long = maxOf(info.size.width, info.size.height).coerceAtLeast(1)
-            var sample = 1
-            while (long / (sample * 2) >= longSide) sample *= 2
-            decoder.setTargetSampleSize(sample)
+            // PictureSample's, so the one sample-size arithmetic in the app is
+            // the one that is executed on the JVM. info.size is the size the
+            // way up it will be handed back, the orientation tag applied.
+            decoder.setTargetSampleSize(
+                PictureSample.forLongSide(info.size.width, info.size.height, longSide)
+            )
         }
     }.getOrNull()
 

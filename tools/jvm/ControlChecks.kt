@@ -1332,6 +1332,24 @@ fun main() {
         )
     }
 
+    // ---- One sample-size arithmetic, and it is the executed one. -----------
+    //
+    // Three loops solved their own, and two of them solved it wrongly - one
+    // against the short side where the kept size is bounded on the long side
+    // too (a panorama decoded whole, 57 MB for a picture kept at 5.9), and one
+    // joined with && so the doubling stopped the moment either side would fall
+    // under the bound. Both are PictureSample's now, which is executed in
+    // tools/jvm/PictureSampleChecks.kt over sixteen shapes.
+    run {
+        readAll(SRC).forEach { (path, text) ->
+            if (path.endsWith("media/PictureSample.kt")) return@forEach
+            if (Regex("""sample \*= 2""").containsMatchIn(text)) {
+                problems += "$path solves its own sample size - PictureSample.forFit and forLongSide " +
+                    "are the two there are, and they are the ones with a suite"
+            }
+        }
+    }
+
     // ---- A picture is decoded the way up it is meant to be seen. -----------
     //
     // BitmapFactory does not apply the camera's orientation tag and ImageDecoder
