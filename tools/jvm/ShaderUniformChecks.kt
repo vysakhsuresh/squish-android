@@ -93,6 +93,26 @@ fun main() {
         val declared = UNIFORM.findAll(text).associate { it.groupValues[2] to it.groupValues[1] }
         val attributes = ATTRIBUTE.findAll(text).map { it.groupValues[2] }.toSet()
 
+        // A uniform declared and set and never *read* is the quietest of the
+        // three ways this can go wrong. The other two fail loudly - a setter
+        // for a name the GLSL does not declare throws when the program links,
+        // and a uniform nothing sets reads as zero - but one the body never
+        // mentions simply does nothing, so the knob on the sheet moves and the
+        // picture does not, which looks like a tuning problem for as long as
+        // anyone is willing to believe it. (A misspelling in the body is a
+        // different thing and louder: GLSL refuses an undeclared identifier,
+        // which fails on the player asynchronously and plays the surface
+        // plain.)
+        val body = text.substringAfter("void main(", "")
+        declared.keys.sorted().forEach { name ->
+            // The whole file past the declarations, so a helper function above
+            // main() counts as a use.
+            val usedAnywhere = Regex("""\b${Regex.escape(name)}\b""").findAll(text).count()
+            if (usedAnywhere <= 1 && name !in body) {
+                flag("${shader.name}: declares '$name' and never reads it - the knob moves and the picture does not")
+            }
+        }
+
         val drivers = usedBy[shader.name].orEmpty()
         if (drivers.isEmpty()) { flag("${shader.name}: nothing references it"); return@forEach }
 
