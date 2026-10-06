@@ -56,6 +56,21 @@ about (and tested) without a device. The view model holds exactly one
 `StateFlow<EditorUiState>`; nothing is mirrored into a second place, which is what
 stops the preview and the export from ever disagreeing about what the edit is.
 
+**And the rule is pulled out of the framework wherever it can be.** Anything that
+is arithmetic or a decision rather than a call into Android lives in an
+Android-free object with a suite over it, because that is the only kind of code
+this machine can *execute*. There are forty-odd of them now, and the pattern is
+worth following for anything new: ask whether the decision can be a pure function
+before writing it inside a composable or a codec callback.
+
+A few that exist only because a fault showed the rule was in the wrong place:
+`media/PictureSample` (how far a picture may be sampled on the way in - three
+loops solved it and two solved it wrongly), `media/StillPrune` (which backdrop
+stills to let go of, and that a render's own are held), `data/PickedText` (a
+picked text file's encoding), `ui/components/ColourName` (a colour said out loud,
+so a swatch can announce itself), `timeline/StripDraw` (where a bar drawn along a
+clip reads its content from), `media/gif/GifSize` and `editor/SilenceRules`.
+
 ## 3. How playback works, and why it was rebuilt
 
 The first version previewed the edit as an ExoPlayer **playlist**: the clips glued
