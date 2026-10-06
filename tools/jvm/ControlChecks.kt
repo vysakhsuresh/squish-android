@@ -1398,6 +1398,14 @@ fun main() {
                     "that decoder ignores the camera's orientation tag, so a portrait photo comes back " +
                     "on its side. ImageDecoder applies it."
             }
+            // And the option-less form, which slipped past the check above
+            // twice - the preview's blended still and the export's copy of it
+            // both decoded whole and tagless with no Options object to notice.
+            Regex("""BitmapFactory\.decodeStream\(\s*it\s*\)""").findAll(text).forEach {
+                problems += "$path decodes a picture with BitmapFactory.decodeStream(it) - no sample size " +
+                    "(so it is held whole) and no orientation tag (so a camera photo comes back on its " +
+                    "side). ImageDecoder does both; StillClips.previewBitmap is the sampled one."
+            }
         }
     }
 

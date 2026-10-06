@@ -322,8 +322,15 @@ object StillClips {
                 runCatching {
                     val partial = File(frame.absolutePath + ".part")
                     val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLACK) }
-                    FileOutputStream(partial).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                    bitmap.recycle()
+                    // In a finally, like keepOriginal and CanvasBackdrop.write:
+                    // the recycle was after the compress, so a full disk left a
+                    // whole frame's ARGB_8888 - eight megabytes at 1080x1920 -
+                    // for the collector instead of giving it back at once.
+                    try {
+                        FileOutputStream(partial).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    } finally {
+                        bitmap.recycle()
+                    }
                     frame.delete()
                     if (!partial.renameTo(frame)) error("could not keep $frame")
                 }.onFailure { File(frame.absolutePath + ".part").delete() }.isSuccess

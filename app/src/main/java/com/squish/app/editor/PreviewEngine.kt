@@ -520,9 +520,17 @@ class PreviewEngine(private val context: Context) {
         // so a still that cannot be read was opened again on every tick and
         // warned about every time. The export's copy of this reads the same way.
         if (!blendBitmaps.containsKey(key)) {
-            blendBitmaps[key] = runCatching {
-                context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
-            }.getOrNull()
+            // Sampled to the screen, not decoded whole. A blended still is an
+            // overlay picture, which overlayFromImage keeps at up to 3840 on
+            // its long side - 16 MB as ARGB_8888 - and the preview draws it at
+            // screen size, as TimelinePreview's own still cache already does at
+            // the same bound. BitmapFactory.decodeStream with no options also
+            // ignores the camera's orientation tag; these are our own PNGs so
+            // there is none to ignore, but StillClips.previewBitmap is the one
+            // decoder that gets both right and there is no reason to have a
+            // second. (The export's copy of this still decodes whole, and
+            // must: the file is written at full resolution.)
+            blendBitmaps[key] = StillClips.previewBitmap(context, uri, BLEND_STILL_MAX_SIDE)
         }
         val bitmap = blendBitmaps[key]
         if (bitmap == null) {
@@ -1404,7 +1412,22 @@ class PreviewEngine(private val context: Context) {
     private fun fileAspect(uri: android.net.Uri?): Float? {
         val key = uri?.toString() ?: return null
         fileAspects[key]?.let { return it }
-        if (aspectsAsked.add(key)) {
+        // Asked once *per attempt*, not once ever. `aspectsAsked` used to be a
+        // set that nothing ever removed from, so a probe that came back with
+        // nothing - a file briefly unreadable while a relink lands, a slow
+        // provider, a grant still being renewed - meant the aspect was never
+        // asked for again for the life of the process, and that clip's surface
+        // and Crop window fell back to the edit's shape for ever. Which is
+        // exactly the fault this function was added to fix: a portrait photo in
+        // a 4:3 edit with its crop drawn over the black bars beside it.
+        //
+        // The retry is held off for ASPECT_RETRY_MS so a file that will never
+        // read costs one thread every two seconds rather than one per tick -
+        // the preview ticks sixty times a second.
+        val now = android.os.SystemClock.uptimeMillis()
+        val asked = aspectsAsked[key]
+        if (asked == null || now - asked > ASPECT_RETRY_MS) {
+            aspectsAsked[key] = now
             Thread {
                 val meta = runCatching { kotlinx.coroutines.runBlocking { com.squish.app.media.ThumbnailExtractor.probe(context, uri) } }.getOrNull()
                 if (meta != null && meta.displayWidth > 0 && meta.displayHeight > 0) {
@@ -1416,7 +1439,9 @@ class PreviewEngine(private val context: Context) {
     }
 
     private val fileAspects = java.util.concurrent.ConcurrentHashMap<String, Float>()
-    private val aspectsAsked: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /** When each file's shape was last asked for, so a failed probe is tried again. */
+    private val aspectsAsked = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     /**
      * Gives one roll's player its work for this tick: the clip under the playhead
@@ -1877,6 +1902,22 @@ class PreviewEngine(private val context: Context) {
         const val ERROR_MEMORY_MS = 30_000L
         /** How long a chain taken off after a fault waits before it is put back on with a load. */
         const val CHAIN_RETRY_MS = 15_000L
+
+        /**
+         * How long before a file's shape is asked for again after a probe came
+         * back with nothing. Short, because until it arrives that clip's
+         * surface and Crop window are laid out on the edit's shape instead of
+         * its own; long enough that a file which will never read costs one
+         * thread every two seconds rather than one per tick.
+         */
+        const val ASPECT_RETRY_MS = 2_000L
+
+        /**
+         * How large a blended still is held for the preview. The same bound
+         * TimelinePreview's own still cache uses, because it is the same
+         * picture drawn at the same size - the export reads the file itself.
+         */
+        const val BLEND_STILL_MAX_SIDE = 1440
 
         /** Generous on purpose: correction is for a jump, not for playback. */
         const val AUDIO_RESYNC_MS = 400L

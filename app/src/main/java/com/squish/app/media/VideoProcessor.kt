@@ -481,8 +481,16 @@ class VideoProcessor(private val context: Context) {
         // shot it covers - the very thing this map is here to stop.
         val key = uri.toString()
         if (!bitmaps.containsKey(key)) {
+            // Whole, unlike the preview's copy of this, which samples to the
+            // screen: the file is written at full resolution, so the picture
+            // has to be. Through ImageDecoder all the same - BitmapFactory
+            // with no options ignores the camera's orientation tag, and a
+            // blended still can be any picture the overlay path accepted.
             bitmaps[key] = runCatching {
-                context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+                val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
+                android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                    decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                }
             }.getOrNull()
         }
         val bitmap = bitmaps[key] ?: return null
