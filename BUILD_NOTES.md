@@ -305,6 +305,53 @@ timed effect is read against, so it is not a swap to make without a phone. Named
 here so the warning is not read as rot: five warnings is the whole build, and
 these two are it.
 
+## Four platform facts the code now leans on (6 October)
+
+Each of these is a documented or read-in-the-source behaviour that a fix made
+load-bearing. If one of them turns out not to hold, the named file is where it
+shows.
+
+**`EncoderSelector.DEFAULT` returns the hardware encoders alone when any
+exist.** Media3's own words: "the selection result contains only hardware
+encoders if they exist, or only software encoders otherwise"
+(`EncoderSelector.java`), and `DefaultEncoderFactory` uses it because
+`VideoProcessor` builds the factory with no `setVideoEncoderSelector`. So the
+set the render will choose from is *not* `EncoderUtil.getSupportedEncoders(mime)`
+- `media/EncoderCeiling.kt` filters it the same way, which is the only thing
+that makes the sheet's promised size the written one. Media3 also narrows the
+set by HDR editing support *before* it filters by resolution
+(`filterEncodersByHdrEditingSupport` then `filterEncodersByResolution`), which
+EncoderCeiling does not model: a "Keep HDR" ceiling is still measured against
+encoders the render may drop.
+
+**`MediaCodec` delivers `INFO_OUTPUT_FORMAT_CHANGED` before the first output
+buffer.** That is what lets `media/audio/PcmDecoder.kt` hold its `onFormat`
+callback until the first buffer arrives and still be sure the sample rate,
+channel count and PCM encoding it hands over are the decoder's own rather than
+the container's. The two are different numbers on HE-AAC, where SBR doubles the
+output rate, and on HE-AACv2, where parametric stereo decodes a mono-signalled
+stream to two channels. The constant is -2, so a loop that only tests
+`outIndex >= 0` drops it in silence - which is how this went unnoticed.
+
+**`ImageDecoder` applies the EXIF orientation tag and `ImageInfo.size` is the
+oriented size; `BitmapFactory` does neither.** Phone cameras write the tag
+rather than rotating the pixels, so the two decoders disagree about which way up
+a portrait photo is. Every pixel decode in `media/StillClips.kt` goes through
+ImageDecoder for that reason, and the sample size is solved on `info.size`, which
+is already turned. A bounds-only `BitmapFactory` read (`inJustDecodeBounds`) is
+fine - it reads the header and nothing else - and `inSampleSize` anywhere is the
+tell that somebody wanted pixels from the wrong decoder;
+`tools/jvm/ControlChecks.kt` refuses it.
+
+**`BitmapFactory.decodeFile` returns a *partial* bitmap for a truncated JPEG
+rather than null.** AOSP's BitmapFactory accepts `kIncompleteInput` and
+`kErrorInInput` alongside `kSuccess`, so a half-written picture is served
+happily, with its undecoded rows as the uninitialised allocation. That is why
+every picture this app writes goes to a `.part` and is renamed - a truncated one
+is not self-healing, and `exists()` is happy with it. `StillClips.blank` records
+having been broken that way for one frame shape until somebody cleared the
+stills by hand.
+
 ## Things that are NOT uncertain
 
 Plain Android framework, no Media3 involved, so these either work or have real
