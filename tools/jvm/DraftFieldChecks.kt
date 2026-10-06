@@ -28,7 +28,19 @@ private val problems = mutableListOf<String>()
 private fun flag(msg: String) { problems += msg }
 
 private const val SRC = "app/src/main/java/com/squish/app"
-private const val CODEC = "$SRC/data/ProjectAutosave.kt"
+
+/**
+ * The codec, and the file-handling class beside it.
+ *
+ * Both, because the sidecar's own keys are written in ProjectAutosave while
+ * every model's are in DraftCodec - and because ProjectSnapshot is declared in
+ * ProjectAutosave while the functions that fill it are not. When the codec was
+ * lifted out, this suite's sanity guard caught the split before any of its real
+ * assertions did ("only 45 written keys found - the put( pattern has rotted"),
+ * which is what that guard is for.
+ */
+private const val CODEC = "$SRC/data/DraftCodec.kt"
+private const val FILES = "$SRC/data/ProjectAutosave.kt"
 
 /**
  * A field whose JSON key is not its own name. Each of these is a deliberate
@@ -106,8 +118,9 @@ private fun fieldsOf(path: String, name: String): List<String> {
 
 fun main() {
     val codec = read(CODEC)
+    val files = read(FILES)
     val style = read("$SRC/editor/TextStyle.kt")
-    val haystack = codec + "\n" + style
+    val haystack = codec + "\n" + files + "\n" + style
 
     val written = Regex("""put\(\s*"([A-Za-z][A-Za-z0-9]*)"""").findAll(haystack)
         .map { it.groupValues[1] }.toSet()
@@ -190,7 +203,7 @@ fun main() {
     // ProjectSnapshot fails here. Whoever added it then decides which side it
     // is on, which is the one thing nobody did for those two.
     run {
-        val snapshot = fieldsOf(CODEC, "ProjectSnapshot").toSet()
+        val snapshot = fieldsOf(FILES, "ProjectSnapshot").toSet()
         val live = fieldsOf("$SRC/editor/EditorModels.kt", "EditorUiState")
         // Deliberately not in a draft. A view setting, a status, a progress
         // count, a session clipboard, or something probed off the file again on
