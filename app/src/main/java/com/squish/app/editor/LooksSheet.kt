@@ -547,7 +547,13 @@ fun TemplatesPanel(viewModel: EditorViewModel) {
                             .clip(RoundedCornerShape(14.dp))
                             .background(SquishColors.Background)
                             .border(1.dp, SquishColors.Border, RoundedCornerShape(14.dp))
-                            .clickable { viewModel.clips.applyTemplate(template) }
+                            // What a tap does is not in the tile: it reads as a
+                            // name and a line of blurb, and tapping it rewrites
+                            // the edit. No selected state, because a template
+                            // is applied rather than chosen out of a set.
+                            .clickable(onClickLabel = "Use this template") {
+                                viewModel.clips.applyTemplate(template)
+                            }
                             .padding(12.dp)
                     ) {
                         GlyphTile(template.glyph, size = 40.dp)

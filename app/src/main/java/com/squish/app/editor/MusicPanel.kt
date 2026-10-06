@@ -5,6 +5,7 @@ package com.squish.app.editor
 import android.Manifest
 import android.net.Uri
 import android.os.Build
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -464,7 +465,9 @@ private fun MusicRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(if (playing) SquishColors.Cyan.copy(alpha = 0.12f) else SquishColors.Background)
-            .clickable(onClick = onListen)
+            // The row reads as a title and a subtitle; what the tap does is
+            // not in either of them.
+            .clickable(onClickLabel = if (playing) "Stop" else "Listen", onClick = onListen)
             .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
         Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
@@ -487,10 +490,14 @@ private fun MusicRow(
             contentDescription = if (starred) "Unstar" else "Star",
             tint = if (starred) SquishColors.Amber else SquishColors.TextMuted,
             modifier = Modifier
-                .size(32.dp)
+                // 44, not 32: the star is the one control on this row that is
+                // not the row itself, and the app's own convention is a
+                // finger's width after "at 37dp they were the most-missed".
+                // The glyph stays 20 - the padding is the reach.
+                .size(44.dp)
                 .clip(RoundedCornerShape(9.dp))
-                .clickable(onClick = onStar)
-                .padding(6.dp)
+                .clickable(role = Role.Button, onClick = onStar)
+                .padding(12.dp)
         )
         Row(
             verticalAlignment = Alignment.CenterVertically,
