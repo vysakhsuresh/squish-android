@@ -59,9 +59,9 @@ stops the preview and the export from ever disagreeing about what the edit is.
 **And the rule is pulled out of the framework wherever it can be.** Anything that
 is arithmetic or a decision rather than a call into Android lives in an
 Android-free object with a suite over it, because that is the only kind of code
-this machine can *execute*. There are forty-odd of them now, and the pattern is
-worth following for anything new: ask whether the decision can be a pure function
-before writing it inside a composable or a codec callback.
+this machine can *execute*. Eighty-eight suites run over them now, and the
+pattern is worth following for anything new: ask whether the decision can be a
+pure function before writing it inside a composable or a codec callback.
 
 A few that exist only because a fault showed the rule was in the wrong place:
 `media/PictureSample` (how far a picture may be sampled on the way in - three
