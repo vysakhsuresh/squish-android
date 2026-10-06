@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
+import com.squish.app.data.ProjectRules
 import java.io.File
 import java.util.UUID
 
@@ -51,22 +52,42 @@ fun Context.canReadMedia(uri: Uri): Boolean =
 fun Context.importCopy(uri: Uri): Uri {
     if (uri.scheme == "file") return uri
     val dir = File(filesDir, IMPORTS_DIR).apply { mkdirs() }
-    val name = runCatching {
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-    }.getOrNull()
+    var name: String? = null
+    var size = -1L
+    runCatching {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    name = cursor.getString(0)
+                    if (!cursor.isNull(1)) size = cursor.getLong(1)
+                }
+            }
+    }
     val extension = name?.substringAfterLast('.', "")?.takeIf { it.isNotBlank() }
         ?: contentResolver.getType(uri)?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
         ?: "mp4"
-    val target = File(dir, "${UUID.randomUUID()}.$extension")
+
+    // The same file opened twice is copied once. Three gigabytes of imports on
+    // the owner's phone were mostly the same few videos over and over - see
+    // ProjectRules.importCopyName, which has the count. The length is checked
+    // rather than trusted: a copy left half-written by a kill is shorter than
+    // the source, and must be made again rather than opened.
+    val kept = ProjectRules.importCopyName(name, size, extension)?.let { File(dir, it) }
+    if (kept != null && kept.length() == size) return Uri.fromFile(kept)
+
+    // Written beside the name it will take, and moved onto it only when the
+    // whole file is there - so a kill mid-copy leaves something that is plainly
+    // not the copy, rather than a short file the next open would trust.
+    val target = kept ?: File(dir, "${UUID.randomUUID()}.$extension")
+    val partial = File(dir, "${target.name}.part")
     val copied = runCatching {
         contentResolver.openInputStream(uri)?.use { input ->
-            target.outputStream().use { output -> input.copyTo(output) }
+            partial.outputStream().use { output -> input.copyTo(output) }
         } ?: error("no stream")
-        target.length() > 0L
+        partial.length() > 0L && (size <= 0L || partial.length() == size)
     }.getOrDefault(false)
-    if (!copied) {
-        target.delete()
+    if (!copied || !partial.renameTo(target)) {
+        partial.delete()
         return uri
     }
     return Uri.fromFile(target)

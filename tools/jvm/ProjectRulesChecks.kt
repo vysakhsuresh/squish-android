@@ -221,6 +221,38 @@ fun main() {
         check(ProjectRules.readableName("- .mp4") == null, "punctuation read as a name")
     }
 
+    // ---- The name a shared file's copy is kept under ----------------------
+    //
+    // Found on the owner's phone: three gigabytes of files/imports, most of it
+    // the same few videos over and over, because every open of a share made a
+    // fresh UUID-named copy. The name is a digest of the file's own name and
+    // length now, so the second open finds the first copy.
+    run {
+        val a = ProjectRules.importCopyName("holiday.mp4", 262_624_564L, "mp4")
+        check(a != null, "a file with a name and a length got no copy name")
+        check(a == ProjectRules.importCopyName("holiday.mp4", 262_624_564L, "mp4"),
+            "the same file got two different copy names - this is the whole bug")
+        // Anything that makes it a different file makes it a different name.
+        check(a != ProjectRules.importCopyName("holiday.mp4", 262_624_565L, "mp4"), "a different length shared a name")
+        check(a != ProjectRules.importCopyName("holiday2.mp4", 262_624_564L, "mp4"), "a different name shared a name")
+        check(a != ProjectRules.importCopyName("holiday.mp4", 262_624_564L, "mov"), "a different extension shared a name")
+        check(a!!.endsWith(".mp4"), "the copy lost its extension: $a")
+        // Null where there is nothing to check a found copy against: without a
+        // length, reusing a file because its *name* matches would open the
+        // wrong film.
+        check(ProjectRules.importCopyName("holiday.mp4", 0L, "mp4") == null, "a zero length still named a copy")
+        check(ProjectRules.importCopyName("holiday.mp4", -1L, "mp4") == null, "an unknown length still named a copy")
+        // A file with no name at all is still deduplicated by its length.
+        check(ProjectRules.importCopyName(null, 1_234L, "mp4") != null, "a nameless share got no copy name")
+
+        // And the stem must stay the kind of thing that is *not* used as a
+        // project's name - a digest says nothing about what is in the file.
+        check(ProjectRules.readableName(a) == null, "the copy's own name became a project name: $a")
+        // The UUID shape anything copied before 7 October carries still counts.
+        check(ProjectRules.readableName("0382556d-e20c-4295-98fe-e5d52461c391.mp4") == null,
+            "an older copy's UUID name became a project name")
+    }
+
     if (problems.isEmpty()) {
         println("ProjectRulesChecks: all checks passed")
     } else {

@@ -205,8 +205,52 @@ object ProjectRules {
         }
     }
 
-    // The name a shared file's copy is kept under (MediaAccess.importCopy): a UUID.
-    private val COPY_NAME = Regex("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+    /**
+     * The name a shared file's copy is kept under (MediaAccess.importCopy):
+     * sixteen bytes of hex now, or a UUID on anything copied before 7 October.
+     * Either says nothing about what is in the file, so neither may become a
+     * project's name.
+     */
+    private val COPY_NAME = Regex(
+        "(?i)^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$"
+    )
+
+    /**
+     * What a shared file's copy is called, so that the *same* file opened twice
+     * is copied once.
+     *
+     * Found on the owner's phone, 7 October: **three gigabytes of
+     * files/imports**, and most of it the same handful of videos over and over
+     * - five copies of one 262 MB file (three of them made in half an hour of
+     * testing, by opening the same clip three times), five of another at 8.6 MB,
+     * and one 1.9 GB copy of an eight-hour recording. A share whose grant cannot
+     * be persisted has to be copied or the draft dies with the process
+     * (MediaAccess.importCopy says why); copying it *again* on the next open
+     * buys nothing.
+     *
+     * The name is a digest of what identifies the file to us - what it is called
+     * and how long it is - so the second open finds the first copy already
+     * there. The caller still checks the copy's length against the source's
+     * before trusting it, which is what makes a collision harmless rather than
+     * wrong: two different files would have to share a name *and* a byte count
+     * to be confused, and then be confused with each other rather than with
+     * anything of the user's.
+     *
+     * Null when the size is unknown, because then there is nothing to check a
+     * found copy against and a fresh name is the honest answer.
+     */
+    fun importCopyName(displayName: String?, sizeBytes: Long, extension: String): String? {
+        if (sizeBytes <= 0L) return null
+        val key = "${displayName.orEmpty()}/$sizeBytes"
+        // A 128-bit digest written as the 32 hex characters COPY_NAME knows.
+        // Not a hashCode: 32 bits over a phone's library is a birthday
+        // collision waiting to happen, and the cost here is a copy of the wrong
+        // film.
+        val digest = java.security.MessageDigest.getInstance("MD5").digest(key.toByteArray())
+        val hex = StringBuilder(32)
+        digest.forEach { b -> hex.append("%02x".format(java.util.Locale.ROOT, b)) }
+        return "$hex.$extension"
+    }
 
     private val MADE_UP_NAME = Regex(
         "(?i)^(vid|img|pxl|mvimg|dsc|dscn|dcim|mov|video|photo|image|picture|screenshot|screen[ _-]?record\\w*|record\\w*|wa|signal|snapchat|inshot|capcut|squish|squish_trim|overlay|voice|still|rec|take|dji|gopro)[ _-]*[0-9].*"

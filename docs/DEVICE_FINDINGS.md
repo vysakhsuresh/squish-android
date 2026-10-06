@@ -2621,3 +2621,46 @@ names the thing it is about and says what is recoverable:
 
 By id, never by a `LIKE` pattern - `_` is a wildcard, and `sq_%` once matched
 every `squish_` export the owner had.
+
+### 8. Three gigabytes of the same few videos (7 October)
+
+**Found by reading Settings → Storage on the owner's phone, and it is the
+largest thing this session turned up.** The card said *Reversed renders, imports
+and downloads · 3.1 GB*. `files/imports` held 23 files and most of the bytes
+were duplicates:
+
+    262624564  22:45   \
+    262624564  22:56    >  the same 86-second clip, opened three times
+    262624564  23:00   /
+    262624564  5 Oct       and again on another day
+      8612222  × 5         the same 8.6 MB clip, five times
+   1921715029  23:38       one eight-hour recording, copied whole
+
+A share whose grant cannot be persisted **has** to be copied, or the draft dies
+with the process - `MediaAccess.importCopy` says why, and it is right. What it
+did not do was look to see whether it had already copied that file: every name
+was a fresh `UUID`, so every open made another copy. Three of those 262 MB
+copies were made in half an hour of testing, by opening the same clip three
+times.
+
+Fixed: the copy is named from a digest of the file's own name and length
+(`ProjectRules.importCopyName`), so the second open finds the first copy. The
+length is checked against the source before a found copy is trusted - a kill
+mid-copy leaves something shorter, and it is made again rather than opened - and
+the copy is now written to a `.part` beside its name and moved onto it only when
+it is whole. Where the size is unknown there is nothing to check against, so it
+falls back to a fresh name, as before.
+
+**Seen on the phone:** opening a video wrote
+`396ed8c4f1bf493166add119c0ddb527.mp4`; opening the *same* video again wrote
+nothing at all - 24 files before and 24 after, same name, same timestamp. Before
+the fix that was a 25th file.
+
+`files/imports` on the phone is back to **402 MB from 2.9 GB** - the 2.7 GB this
+session's own testing had put there is gone, by name.
+
+One knock-on, written down because it is easy to undo by accident: a copy's name
+says nothing about what is in the file, and `ProjectRules.saysSomething` refuses
+such a stem as a project's name. It knew the UUID shape; it knows the digest
+shape too now, or every project opened from a share would have been called
+`396ed8c4f1bf…`.
