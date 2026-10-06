@@ -48,7 +48,12 @@ private val RENAMED = mapOf(
     "rect" to "left",
     "straightenDegrees" to "straighten",
     "flipHorizontal" to "flipH",
-    "flipVertical" to "flipV"
+    "flipVertical" to "flipV",
+    // The canvas behind a padded frame: a fill, a colour and a picture under
+    // three keys rather than one object.
+    "canvasBackground" to "canvasFill",
+    // "quality" is the export's, and the key says so.
+    "quality" to "exportQuality"
 )
 
 /**
@@ -115,6 +120,13 @@ fun main() {
     if (readBack.size < 60) flag("only ${readBack.size} read keys found - the opt( pattern has rotted")
 
     val models = listOf(
+        // First, and the one that matters most: ProjectSnapshot *is* the
+        // declared contract of what a draft holds. A setting of the edit that
+        // reaches EditorUiState and not this list is one nobody decided to
+        // keep - which is how "Listen to" and the caption language went back
+        // to their defaults on every reopen, with the panel reading a state
+        // that had just been rebuilt and nothing to see.
+        "data/ProjectAutosave.kt" to "ProjectSnapshot",
         "timeline/TimelineModels.kt" to "Clip",
         "editor/EditorModels.kt" to "TextOverlayItem",
         "editor/TimedEffect.kt" to "TimedEffect",

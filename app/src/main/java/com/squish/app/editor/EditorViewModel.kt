@@ -1525,6 +1525,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         cropRect = snapshot.cropRect,
         snapToMarkers = snapshot.snapToMarkers,
         stabilizeStrength = snapshot.stabilizeStrength,
+        // What auto-captions listen to, and in which language. Neither was in
+        // the draft at all, so both went back to their defaults on every
+        // reopen: a second caption run listened to the camera however the panel
+        // had been set, and Read aloud spoke in the phone's language.
+        captionSource = snapshot.captionSource,
+        captionLanguage = snapshot.captionLanguage,
         beats = snapshot.beats,
         canvasBackground = snapshot.canvasBackground,
         pixelsPerSecond = snapshot.pixelsPerSecond,

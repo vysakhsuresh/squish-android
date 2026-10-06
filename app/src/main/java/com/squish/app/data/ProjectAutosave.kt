@@ -7,6 +7,7 @@ import com.squish.app.editor.ShapeGeometry
 import com.squish.app.editor.BeatProgress
 import com.squish.app.editor.CanvasBackground
 import com.squish.app.editor.CanvasFill
+import com.squish.app.editor.CaptionSource
 import com.squish.app.editor.ClipCrop
 import com.squish.app.editor.CropAspect
 import com.squish.app.editor.CropRatio
@@ -934,6 +935,17 @@ class ProjectAutosave(context: Context) {
         }
         put("snapToMarkers", state.snapToMarkers)
         put("stabilizeStrength", state.stabilizeStrength.toDouble())
+        // What auto-captions listen to, and in which language. Neither was
+        // written, so both went back to their defaults every time a project was
+        // reopened: a second run on the same edit listened to the camera again
+        // however the Captions panel had been set, and Read aloud spoke in the
+        // phone's language rather than the one chosen. Silent, because the
+        // panel reads the state and the state had just been rebuilt.
+        //
+        // Written only when they are not the defaults, so a draft saved before
+        // this keeps the edit key it had and is not read as changed.
+        if (state.captionSource != CaptionSource.Camera) put("captionSource", state.captionSource.name)
+        state.captionLanguage?.let { put("captionLanguage", it) }
         // Only when there is one, so every draft saved before the canvas had a
         // background keeps the edit key it had.
         if (state.canvasBackground != CanvasBackground.NONE) {
@@ -1494,6 +1506,11 @@ class ProjectAutosave(context: Context) {
             } ?: CropRect(),
             snapToMarkers = json.optBoolean("snapToMarkers", true),
             stabilizeStrength = json.optDouble("stabilizeStrength", 0.5).toFloat().coerceIn(0f, 1f),
+            // A draft from before these were written, or one whose values were
+            // the defaults, reads as the defaults - which is what it did.
+            captionSource = json.optString("captionSource").takeIf { it.isNotBlank() }
+                ?.let { name -> CaptionSource.entries.firstOrNull { it.name == name } } ?: CaptionSource.Camera,
+            captionLanguage = json.optString("captionLanguage").takeIf { it.isNotBlank() },
             beats = json.optJSONObject("beats")?.let { b ->
                 val beatsMs = b.optJSONArray("beatsMs")?.let { array ->
                     (0 until array.length()).map { i -> array.optLong(i) }
@@ -1865,7 +1882,10 @@ data class ProjectSnapshot(
     val outputFps: Int = ExportSettings.SOURCE_FPS,
     val quality: ExportQuality = ExportQuality.Recommended,
     val hevc: Boolean = false,
-    val keepHdr: Boolean = false
+    val keepHdr: Boolean = false,
+    /** What auto-captions listen to, and in which language; see the encoder. */
+    val captionSource: CaptionSource = CaptionSource.Camera,
+    val captionLanguage: String? = null
 ) {
     /**
      * How long the edit runs: where its last picture or sound ends, overlays
