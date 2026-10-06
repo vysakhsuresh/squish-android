@@ -2558,3 +2558,44 @@ All first-time sightings; none of B9's or B10's screens had ever been driven.
 Still not heard: any of it. Nothing here says whether the music, the camera
 sound or a voice effect is right **by ear**; only that the track is there, at
 the right length, and that the file carries it.
+
+### 7. Speed, a shape, rotation, Snip and the library
+
+- **Speed.** 0.61x on a 2.428 s shot: the header went to 0:03.980, the sheet
+  read "0:02.428 of footage · 0:03.980 on the timeline", and the strip grew a
+  **0.61x** badge. The sheet also said **"18 fps out — will step. 40 fps footage
+  would not."** and offered "Keep it smooth · Nothing slower than 0.8x — the
+  slowest this footage carries". The exported file is **73 samples, 3.989 s,
+  18.300 fps, every frame 54.64 ms** - which is exactly 73 source frames
+  stretched over 3.98 s. The warning was true to a tenth of a frame, and the
+  music ran on to the new end (4.063 s of audio).
+- **A Solid shape**, which `CLAUDE.md` listed as unseen. Stickers → Shapes and
+  arrows → Star drops an outlined star at the playhead with its four corner
+  buttons; its Placement sheet has the eight shapes, an **Outline / Solid**
+  toggle and a Line slider. Solid fills it, on screen and **in the exported
+  file** (0.8 s, 1.6 s, 2.4 s), beside the Neon text, both gone by 3.2 s where
+  their spans end.
+- **Rotation.** Portrait → landscape while the editor was open: two panes, the
+  picture carried across **not black**, the strip redrawn with the playhead at
+  its quarter. Back to portrait: the same. This is B6's "check the picture does
+  not go black or stall after rotating".
+- **Snip**, the quick trim. It asks for its picker once, shows the filmstrip
+  with two handles, a frame button either side of each readout, and "1:15.599
+  kept". **A slow drag of the left handle moved it** - to 0:13.992, "1:01.607
+  kept", with the preview jumping to the handle moved. That is
+  `TrimRules.draggedTo`: before it, each event alone was under half a frame and
+  rounded back, so a slow drag never moved at all.
+- **The library** lists 44 exports with their lengths and sizes, and it carries
+  its own evidence for the compact muxer: the *same* three-second edit reads
+  **183 KB (6 October)** against **579 KB and 1.8 MB (5 October)**.
+
+### Still owed to the phone after this session
+
+Nothing here was **heard**. The music, the camera sound, a fade, a voice effect
+and a voiceover are all still unjudged by ear, and no amount of probing a file
+answers them.
+
+Unseen still, from the lists above: a Blur on an overlay's own transition, a
+Burn out over a padded canvas, Track and Stabilize on 60 fps footage in a 30 fps
+project, the beat grid after a head trim, a long export over a light leak, and
+everything in §5 from step 11 down.
