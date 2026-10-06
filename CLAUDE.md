@@ -186,8 +186,9 @@ function first; if it can, it can be checked.
 ## What is currently unverified on a device
 
 The list below is by batch and is long. `docs/ROADMAP.md` §5 says what to do
-**first** when a phone is actually here - ten things in order of risk times
-reach, plus the clean-up this machine owes the phone. Start there, not here.
+**first** when a phone is actually here - thirty-eight things in order of
+risk times reach, plus the clean-up this machine owes the phone. Start there,
+not here.
 
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
@@ -1070,6 +1071,54 @@ should work through it and then delete what holds up.
   softness is a uniform, so `PreviewEngine.remember` asks for a redraw when it
   changes); and that a Burn out over a padded canvas or a keyed overlay whitens
   the picture and not the hole. `docs/COMPETITORS.md` §4 has the reading.
+- **Sweep ten, over undo steps, state after a process death, locale and
+  accessibility (6 October).** Four cross-cutting properties rather than a
+  layer, which is why nothing had looked at them: twenty-seven findings, two
+  refuters each. `docs/DEVICE_FINDINGS.md` lists them and ends with the nine
+  things a device has to answer. The ones that reach furthest: **a pick
+  delivered before the draft was read blanked the whole edit** - killed behind
+  the photo picker, the result is dispatched while the launcher's effect
+  commits, so the add landed on an empty timeline, vanished when the draft was
+  applied, and left an undo step whose "before" was that empty edit, one tap
+  from wiping everything and one autosave tick from writing it to disk (Replace
+  and Relink already waited through `onceOpened`; the other four did not);
+  **a main-track photo's longer rendering was lost to any undo**, because which
+  file plays a clip went into the live state alone and nothing ever asks for the
+  render again (`UndoStack.amendAll` now writes it into every state the history
+  holds); **every ruler tick read nine characters on an Arabic phone**, because
+  five call sites took ".000" off a locale-formatted timecode with an ASCII
+  literal - the inverse of the trap below, and the reason the pair is worth
+  stating twice; **a whole name in two characters was thrown away** (海滩.mp4
+  became "Edit · 6 Oct", the same mistake the captions code had already met and
+  written down); **an imported .srt in anything but UTF-8 came in full of
+  U+FFFD** while reporting success, because the timing lines are ASCII; **both
+  strips would have been drawn mirrored on an RTL phone**, every clip and handle
+  placed by `offset` against a playhead and drag deltas that are not - the same
+  class as the fault that started these sweeps; and **nothing in the app could
+  be coloured, or told what it was set to, without looking** - sixty-one
+  swatches with no name and no state, six picker grids marking a choice with a
+  border alone, and three grading wheels that a screen reader could not focus at
+  all.
+- **Sweep nine, over the audio analysis, the stills and thumbnails, the Compose
+  drawing layer and the export screens (6 October).** Seventy-eight agents;
+  twenty-two distinct faults, all fixed and none seen. `docs/DEVICE_FINDINGS.md`
+  lists them and ends with the eight things a device has to answer. The ones
+  with the longest reach: **the whole waveform layer took the decoder's PCM
+  layout from the container** rather than from the decoder, with no
+  `INFO_OUTPUT_FORMAT_CHANGED` branch at all (that constant is -2, so it fell
+  through `outIndex >= 0` unnoticed) - so on HE-AAC, where SBR doubles the
+  output rate, a minute of audio read as four and the strip drew a quarter of
+  the file stretched across the clip, while `ReverseRenderer` had always read it
+  correctly; **a 30-second talking head trimmed out of a long recording had no
+  speech in it**, because the segmenter's gate measured "loud" as the 95th
+  percentile of every frame, which asks whether a twentieth of the file is loud
+  rather than whether anything is; **an export of a padded canvas with more than
+  49 stretches deleted its own backdrops** while its plan still named them;
+  **Fit to 16 MB could not be met past about five minutes and said nothing but
+  "Try again, tighter"**, which re-rendered the identical file and published
+  another copy to the gallery each time; and **a panorama as a photo overlay was
+  decoded whole** - 57 MB for a picture kept at 5.9 - with the OutOfMemoryError
+  swallowed, so the overlay was silently refused after taking the heap down.
 - **Sweep eight, over the text, vision, online and persistence layers
   (5 October, night).** The four layers no sweep had been over. Ninety-two
   agents over twelve hunts; `docs/DEVICE_FINDINGS.md`'s last section lists what
@@ -1147,7 +1196,7 @@ should work through it and then delete what holds up.
   about a second and the reversed clip's *last* frames are there, which is what
   the two-keyframe margin protects). Both arithmetics, and every other fix in
   the sweep, are executed on the JVM and negative-tested against the old code;
-  eighty suites then; eighty-five files over eighty-three `run` lines now, the
+  eighty suites then; ninety files over eighty-eight `run` lines now, the
   two Media3 ones among them, and `RunnerChecks` holds that every file is named
   by a runner and that `run_desktop.sh` calls `run_media3.sh` at its end.
 - **The fixes to `docs/DEVICE_FINDINGS.md`'s open items, all of them, and the
@@ -1239,6 +1288,54 @@ should work through it and then delete what holds up.
   `"lut_3d_size".uppercase()` is `LUT_3D_SIZE`, `uppercase(tr)` is
   `LUT_3D_SİZE`. `tools/jvm/LutChecks.kt` keeps that honest for the one place it
   would matter.
+- **A locale-formatted string is never cut up by an ASCII literal.** The
+  corollary of the entry above, and it cost five call sites: `Timecode.format`
+  built "0:03.000" with `.format()` and the callers took the fraction off with
+  `.removeSuffix(".000")`, which matches nothing once the digits are Arabic -
+  so every ruler tick, clip chip, draft row and library row grew from four
+  characters to nine, and the ruler, which lays a label a second with no width
+  given, ran into itself. Leave the part out of the format string instead
+  (`Timecode.format(ms, withMillis = false)`). The sibling call sites that use
+  `substringBefore('.')` were always safe, because the '.' is a literal in the
+  format string. `tools/jvm/ControlChecks.kt` refuses the pattern anywhere.
+- **A picked text file is read with `PickedText.decode`**, never
+  `bufferedReader()` or `decodeToString()`. Both of those are UTF-8 and both
+  *replace* what they cannot read, so an .srt in a legacy single-byte encoding -
+  Notepad's "ANSI", and most subtitle archives - parsed its ASCII timing lines,
+  reported success, and put U+FFFD where every accented letter had been. The
+  decoder tries the BOM, then UTF-8 strictly, then the encoding the reader's own
+  language suggests.
+- **Only what a file name cannot hold is taken out of a name somebody gave.**
+  Stripping to `[A-Za-z0-9 _-]` deletes a whole name in Cyrillic, Greek, Arabic,
+  Devanagari or CJK, and that stem is what the chip shows - two imported fonts
+  became "font" and "font 2". Android's filesystem takes UTF-8; nothing
+  downstream ever wanted it.
+- **Three letters is a Latin rule.** A whole name in Chinese, Japanese, Korean
+  or Hebrew is routinely two characters, so a floor counted in letters throws
+  real names away (`ProjectRules.saysSomething`, and the same lesson already
+  written down in `TextEdits.translateCaptions`). The floor stays at three where
+  it earns its keep - it is what refuses a GoPro's "GH010123" - and one letter
+  is enough from a script whose words are that short. Count code points, not
+  chars: a surrogate half is not a letter.
+- **Time runs left to right.** Both strips compute a left-origin pixel from a
+  moment and place it with `offset`, which mirrors in RTL (`absoluteOffset` is
+  the one that does not), while the playhead and the drag deltas do not - so on
+  an Arabic, Hebrew, Persian or Urdu phone the strip would be drawn against its
+  own gestures. `TimelineEditor` and `TrimStrip` hold their subtree to
+  `LayoutDirection.Ltr`, which keeps the Rows inside them in order too.
+- **A result that lands in the background goes in with `recordLate`.** `record`
+  closes whatever gesture is open, so a slider under the finger when a
+  measurement, a synthesis or a probe finishes becomes two undo steps with the
+  result wedged between them - and the drag cannot be taken back without losing
+  the result. And a one-shot command carries **no** gesture id: a gesture id is
+  for folding a per-frame stream, and on a command the strip calls once it just
+  merges two deliberate actions into one undo.
+- **A thing you choose says it is chosen.** `Modifier.selectable`, not
+  `clickable`, wherever a border colour or a tint is the only mark of the
+  current option - and `enabled` for one that cannot be taken, or the node reads
+  "not selected" while drawn dead and swallows the tap. A control whose only
+  content is a colour needs a name as well (`ColourName.of`), because a fill
+  announces nothing.
 
 ## Longer form
 

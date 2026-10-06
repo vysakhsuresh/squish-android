@@ -563,6 +563,43 @@ important thing on this whole list: until tonight it could not be done at all.
     as steady as it started.
 28. **"Keep HDR" on an HLG clip with a caption on it**: off, dim, and saying
     why - Media3 refuses a bitmap overlay in an HDR graph below Android 14.
+29. **Open "Add media", `am kill` the app behind the picker, then pick two
+    clips.** They must land at the playhead, or nothing must happen - and in
+    either case one tap on Undo afterwards must not blank the edit. The same
+    with Add sound, Add overlay and Frame → Background → a picture. (Sweep ten:
+    the pick used to run against the default empty state and leave an undo step
+    whose "before" was an empty timeline, which the next autosave wrote to disk.)
+30. **Drag a main-track photo's tail out to 40 s, drop a marker while the
+    longer still is rendering, then undo the marker and redo it.** The photo
+    must still play all forty seconds, not hold its tenth-second frame while the
+    clock runs on.
+31. **Set the phone to Arabic and open a project.** The ruler's ticks must read
+    four characters rather than nine; the strip must still run left to right,
+    with a drag moving the picture the way the finger goes; and a quick trim's
+    two handles must sit where their own times are.
+32. **Auto-caption a 30-second talking head trimmed out of a long recording**
+    (the out-point several minutes into the file). Lines, not "no speech found" -
+    and then Remove silences on the same shot, whose card must name the time it
+    actually cuts.
+33. **Render a padded-canvas edit of sixty shots with Blur as the background.**
+    It must complete with no black stretches, and `files/stills/backdrops` must
+    be back to 48 files afterwards.
+34. **Fit a ten-minute edit to 16 MB.** The sheet must say the edit is too long
+    for that size and what the least it can be is, and the overshoot card must
+    offer only "Keep this one". Then fit a one-minute edit, overshoot it, and
+    tap "Try again, tighter": the second file must be *smaller*.
+35. **Add a panorama as a photo overlay**, and start a project from a portrait
+    photo straight off the camera. The overlay must appear rather than be
+    silently refused, and the project's card must be upright.
+36. **Put a Bullet curve on a shot and look at its filmstrip tiles**, then put a
+    curve on a song and look at the wave under its beat dots. Both must agree
+    with what the playhead shows.
+37. **Turn TalkBack on and set a caption's colour, pick a filter, and tilt the
+    Shadows wheel.** Each must say what it is and which one is chosen; the wheel
+    must be reachable at all, and its four actions must move the dot.
+38. **Open a gallery video with "Open with", change nothing, swipe the app off
+    recents.** The dashboard must not gain a card for it.
+
 
 **Clean-up owed from the 5 October session**, before anything else is added:
 delete MediaStore ids 1001326343, 1001326344 and 1001326345 *by id* (never by a

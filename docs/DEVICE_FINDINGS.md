@@ -2096,3 +2096,250 @@ literal text `["A","B"]` on the timeline.
    and say why.
 8. **Settings → Storage → Clear "Reversed renders, imports and downloads"**
    after downloading a stock clip and a song: the number must go to nothing.
+
+## Sweep nine: the audio analysis, the stills, the drawing layer, the export screens (6 October)
+
+Twenty-two distinct faults, each confirmed by two adversarial refuters, all
+fixed and **none seen** - this machine has had no phone attached since 5 October
+at about 07:00. Each has an executed JVM assertion or a source assertion in
+`tools/jvm/ControlChecks.kt`, and almost all are negative-tested against the old
+code.
+
+The ones with the longest reach:
+
+- **The whole waveform layer took the decoder's PCM layout from the container.**
+  `PcmDecoder.decodeFrames` read the sample rate and channel count off the
+  MediaExtractor's track format, handed the rate to its caller before
+  `codec.start()`, and had no `INFO_OUTPUT_FORMAT_CHANGED` branch at all - that
+  constant is -2, so it fell straight through `if (outIndex >= 0)` and was
+  dropped in silence. HE-AAC's SBR doubles the output rate over the esds's, and
+  HE-AACv2's parametric stereo decodes a mono-signalled stream to two channels;
+  where they disagree, every length this layer reports is wrong by that factor.
+  `decodePeaks` reported a minute of audio as four, so the strip drew the
+  waveform against a length four times the file's and showed the first quarter
+  of it stretched across the clip; the beat detector was handed audio that slow;
+  the auto-sync offset was scaled. `ReverseRenderer` had always re-read all
+  three values, so the project's two readers of one file disagreed about what a
+  frame is.
+- **A talking shot cut out of a long recording had no speech in it.** The speech
+  finder's dynamic-range gate measured "loud" as the 95th percentile of every
+  frame, which answers "is more than a twentieth of this loud" rather than "is
+  there a loud part". Every caller decodes the whole file and applies the clip's
+  window afterwards, so a 30 s talking head trimmed out of a fifteen-minute
+  recording is 3% of what the segmenter sees: under about 5% the 95th percentile
+  *was* room tone, the gate fired, and auto-captions reported no speech found on
+  a clip that is nothing but speech - as did Remove silences and Duck under
+  speech.
+- **An export of a padded canvas deleted its own backdrops.** The blurred stills
+  are capped at 48 files and the prune ran after every write, including the
+  writes the export itself was making, so an export with more than 49 stretches
+  unlinked the earliest of its own backdrops while the plan still named them.
+  The whole defence was a sixty-second grace on the file's age, which is a wall
+  clock. The cap was a silent ceiling on how many shots a blurred canvas could
+  export.
+- **Fit to 16 MB could not be met at all past about five minutes, and said
+  nothing but "Try again, tighter".** The solved budget was floored at the
+  smallest usable bitrate *before* the retry scale was applied, so once the
+  floor bit the scale was arithmetically discarded: every retry re-rendered at a
+  byte-identical bitrate, published another copy to the gallery, added another
+  library row and showed the same card. And `retryFit` cleared the card before
+  calling `export()`, which has five refusals that come back without rendering -
+  the likeliest being the space check, which the first run's own gallery copy
+  has just made more likely - after which the oversize file in the gallery could
+  never reach the done screen and "Keep this one" could not be reached at all.
+- **A panorama as a photo overlay was decoded whole.** The sample size was
+  solved against the picture's short side while the kept size is bounded on the
+  long side too, so a 12000x1200 panorama was allocated whole as ARGB_8888 -
+  57 MB - for a picture kept at 5.9 MB, with the OutOfMemoryError swallowed by
+  the `runCatching` round the decode, so the overlay was silently refused after
+  taking the heap down with it.
+- **A portrait photo straight off the camera was shown lying on its side**, on
+  the project's cover card and in the library, and written to `cache/thumbs` at
+  that angle where it outlived the next restart: `previewBitmap` went through
+  BitmapFactory, which ignores the orientation tag, while every sibling in the
+  same file goes through ImageDecoder, which applies it.
+- **Filmstrip tiles showed the wrong moment on a retimed clip.** The tiles
+  divide the drawn width equally while their source times divided the *source*
+  span equally - the same mapping only at a flat rate. On a Bullet curve the
+  eighth of ten tiles asked for 6.8 s of the file where the moment under it is
+  5.6.
+- **The waveform came off the beat dots on a retimed sound** by the same
+  mistake, in the same file: the bars were placed in timeline time and their
+  peaks picked in source time, while the dots drawn on top of them have always
+  gone through `timelineAtSource`.
+- **Dragging the hand-drawn crop's left or top bracket past its opposite pushed
+  that edge along** instead of stopping, so an eight-percent-wide window slid
+  across the whole frame and parked against the far side. `CropRect.of` clamps
+  the low edges first and derives the high ones from them, so right and bottom
+  were stopped correctly - which is what made the other two read as working.
+- **A filmstrip row lost its asks and never asked again.** The queue's cap
+  dropped the oldest, which is right for a scroll and wrong for a first layout:
+  four rows of footage compose in one pass and ask for twenty tiles each, so at
+  48 the top overlay row's asks were all thrown away and that row drew as bare
+  lane colour until a scroll changed its times.
+- **"Find the beat" could succeed and say nothing**: the listen covers the first
+  six minutes of a file while the grid is read through the clip's window, so a
+  sound trimmed to play from 6:10 came back with a full BeatMap of which no dot
+  was reachable - and the success path ran, wiping every other sound's grid
+  under an undo step while the panel showed the words it had before the tap.
+- **A listen that landed after its sound had gone wiped the grid.** Nothing
+  matched the target's uri, so every remaining sound took the `else` branch and
+  lost the dots it already had; `removeAudioClip` cancels the auto-sync job for
+  exactly this reason and nothing cancelled the beat job. Auto-sync had the
+  other half of it, writing "Matched" for a clip that is not there whenever the
+  clip went by undo or a multi-delete rather than through that function.
+- **Remove silences counted pauses it was not going to cut**, and where nothing
+  survived the minimum it reported seconds cut over a byte-identical timeline,
+  with an undo step filed for it.
+- **The thumbnail cache had no way to say "tried this and got nothing"**, so an
+  undecodable file was re-probed on every pass of the list inside the one
+  process-wide lane; it was also the one picture in the app compressed straight
+  to its final path, and a truncated JPEG is not self-healing, because
+  `decodeFile` returns a *partial* bitmap rather than null.
+- **FilmstripLoader.evictAll left its queue and worker running** on a
+  process-lifetime scope, so the worker carried on decoding the closed project's
+  tiles back into the cache it had just been told to empty.
+- **The encoder ceiling asked the wrong encoders** - the unfiltered list, where
+  Media3 takes the hardware ones whenever any exist - so on a phone whose
+  software AVC encoder advertises a larger frame than its hardware one the sheet
+  promised 4K and the render wrote 1920x1088, which is the exact failure that
+  file was written to prevent.
+- **An abandoned proxy left its `.part` behind for ever**: a cancellation threw
+  past the delete, and a cancellation is the ordinary case, because the only
+  thing that cancels it is leaving the editor.
+- **The done screen decoded ten minutes of audio to draw ninety bars**, about
+  38 MB live at the peak, where `decodePeaks` reads one float per 50 ms - and on
+  a tight heap `decodeMono` gives up by design, so the wave silently never
+  appeared. The quick tools' preview card and Read aloud's waveform had it too.
+- **"Save as GIF" decoded frame zero at full resolution to read two numbers**:
+  33 MB as one bitmap for a 4K edit, in a scope that outlives the screen.
+- **The strip's speed badge printed 1.25x where the Speed sheet says 1.3x**,
+  because it used the lower-level formatter rather than the one the rest of the
+  app shares.
+
+### What a device has to answer from sweep nine
+
+1. **Add an HE-AAC or HE-AACv2 .m4a and look at its waveform.** It should be
+   drawn to the end of the clip, not the first quarter stretched across it, and
+   Find the beat should put dots on the music. (This machine has no such file;
+   the fault is that the code had no way to notice the mismatch.)
+2. **Auto-caption a 30-second talking head trimmed out of a long recording.**
+   Lines, not "no speech found". Then Remove silences on the same shot.
+3. **Render a padded-canvas edit with sixty shots on Blur.** It must complete,
+   with no black stretches, and the backdrops folder must be back to 48 files
+   afterwards.
+4. **Fit a ten-minute edit to 16 MB.** The sheet must say it cannot be met and
+   what the least is, and the overshoot card must offer only "Keep this one".
+   Then fit a one-minute edit to 16 MB, overshoot it, and tap "Try again,
+   tighter": the second file must be smaller than the first.
+5. **Add a panorama as a photo overlay**, and a portrait photo straight off the
+   camera as a new project: the overlay must appear, and the card must be
+   upright.
+6. **Put a Bullet curve on a shot and look at its tiles**, and on a song look at
+   the wave under its beat dots: both must line up with what the playhead shows.
+7. **Open an edit with four rows of footage** and leave the strip still: every
+   row's filmstrip must fill in without a scroll.
+8. **Drag the hand-drawn crop's left bracket right, slowly, past its own right
+   edge.** The window must narrow and stop, not run away.
+
+## Sweep ten: undo steps, state after a process death, locale, accessibility (6 October)
+
+Twenty-seven findings, two refuters each, all fixed and none seen. These are
+cross-cutting properties rather than one layer, and most of them are invisible
+until the one thing that triggers them happens.
+
+- **A photo's longer rendering was lost to any undo.** A main-track photo is a
+  short video rendered from the picture, and dragging its tail out renders a
+  longer file and swaps it under the clip. The swap went into the live state
+  alone, so an undo or a redo of *any* edit made while the render ran put the
+  long clip back on top of the short file - and nothing ever asks for the
+  longer render again, so the preview held the picture's last frame while the
+  clock ran on, for the rest of the session and in the saved draft. It needs no
+  race on the undo: an edit made during the render captured the stale pair, and
+  undoing it at any later time brought it back.
+- **A pick delivered before the draft was read blanked the edit.** Killed behind
+  the photo picker, the app comes back and the result is dispatched while the
+  launcher's effect commits - before `open()` has read a byte. Replace and
+  Relink wait for the edit; Add media, Add overlay, Add sound and Background
+  image did not, so the add landed at playhead 0 on an empty timeline, the pick
+  vanished when the draft was applied, and the undo step *survived* - so one tap
+  on Undo restored the empty snapshot and blanked the whole edit, which the next
+  autosave tick wrote over the draft.
+- **A caption added and never typed into was kept for good** after a process
+  kill: the discard effect fired against the default empty state, found no such
+  line, and cleared the handle that pointed at it - so when the draft was
+  applied the line came back with nothing left to take it off, and no undo step
+  for it either.
+- **Every ruler tick read nine characters on an Arabic phone.** `Timecode.format`
+  is locale-sensitive (`"...".format()` is `String.format` against the default
+  locale), and five call sites took the milliseconds off with the ASCII literal
+  `".000"`, which matches nothing under Arabic, Persian, Bengali, Nepali or
+  Burmese. The ruler lays a tick label a second with no width given, so the
+  labels ran into one another. This is the inverse of 5 October's lesson:
+  `uppercase()` with no locale is locale-*independent*, `format()` with no
+  locale is not.
+- **A whole name in two characters was thrown away.** A picked file's name was
+  kept only with three letters, and a name in Chinese, Japanese, Korean or
+  Hebrew is routinely two - so a two-character name became "Edit · 6 Oct", and
+  the Replace sheet and Track lost the name with it. The codebase had met this
+  once already and written it down for captions.
+- **An imported font or LUT named in any other script became "font" and
+  "font 2".** The stored name was the display name with everything outside
+  `[A-Za-z0-9 _-]` deleted - and that stem is what the chip shows.
+- **An imported .srt in any encoding but UTF-8 came in full of replacement
+  characters.** The timing lines are ASCII, so the cues parsed and the import
+  reported success while every accented or non-Latin letter had become U+FFFD.
+  The .cube reader had the same fault.
+- **Both strips would have been drawn mirrored on an Arabic, Hebrew, Persian or
+  Urdu phone.** Everything in them computes a left-origin pixel from a moment
+  and places it with `offset`, which is the layout-direction-aware modifier,
+  while the playhead and the drag deltas are not - the same class as a control
+  that moves against the finger. (The quick trim was the confirmed one; the
+  editor's own strip is the same code shape sixteen times over.)
+- **Nothing in Squish could be coloured without looking.** Sixty-one colour
+  swatches were bare circles whose only content was their fill and whose only
+  state was a border colour, and `ColourRow` is the only colour control there
+  is. Six picker grids marked a choice with a border and nothing else. The three
+  grading wheels were a Canvas inside a Box, which has no node to focus at all,
+  so the disc was skipped and its value could neither be read nor changed
+  without a drag.
+- **A size chip that cannot be used was drawn dead and wired live**, announcing
+  "not selected" rather than "disabled" and swallowing the tap; in Squeeze
+  neither explanatory note could fire for it, so the dimming was the only signal
+  that existed.
+- **The control that permanently forgets a saved text style announced itself as
+  "multiplication sign"**, sat immediately after the chip it destroys, and has
+  no confirmation and no undo.
+- **An effect's two carries inside 700 ms became one undo step**, because a
+  one-shot command carried a coalescing gesture id and nothing closed it.
+- **Four background results were filed with `record` rather than `recordLate`**,
+  so a slider under the finger when one landed became two undo steps with the
+  result wedged between them, and the drag could not be taken back without
+  losing the result. Read aloud was the one the sweep named; the class check
+  found three more.
+- **A video opened from another app just to look stayed on the grid for good**
+  if the process went rather than a back press being pressed - which is what
+  swiping the app off recents does. The rule was an in-memory field whose one
+  durable record is deleted by the first save, inside the function that sets it.
+
+### What a device has to answer from sweep ten
+
+1. **Drag a main-track photo's tail out to 40 s, add a marker while it renders,
+   then undo the marker and redo it.** The photo must still play to 40 s.
+2. **Open "Add media", kill the app behind the picker (`am kill`), pick two
+   clips.** They must land, or nothing must happen - the edit must not be
+   blankable by one tap on Undo afterwards.
+3. **Tap "Add text", press Home without typing, `am kill`, reopen.** No caption
+   reading "Your text" anywhere.
+4. **Set the phone to Arabic and open any project.** The ruler's ticks must read
+   four characters, not nine, and the clip chips with them.
+5. **Rename a gallery video to a two-character CJK name and start a project from
+   it.** The card must show that name.
+6. **Import an .srt saved as ANSI from Notepad.** The accented letters must be
+   there.
+7. **Set the phone to Arabic and open the editor's strip and a quick trim.** Time
+   must still run left to right and a drag must move the picture with the finger.
+8. **Turn TalkBack on and set a caption's colour, pick a filter, and tilt the
+   Shadows wheel.** Each must announce what it is and which one is on.
+9. **Open with a video from the gallery, change nothing, swipe the app off
+   recents.** The dashboard must not gain a card.
