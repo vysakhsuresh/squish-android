@@ -329,6 +329,10 @@ fun TimelineEditor(
     // which is the same class of fault as a control that moves against the
     // finger. Held for the subtree rather than per modifier, so the Rows inside
     // it keep their order too. (The quick tools' TrimStrip does the same.)
+    //
+    // The body below is deliberately *not* re-indented under this: it is eight
+    // hundred lines, and a whitespace diff over all of them would bury the one
+    // line that matters here and in every later blame.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current

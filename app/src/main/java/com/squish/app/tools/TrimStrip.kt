@@ -92,7 +92,9 @@ fun TrimStrip(
     // start handle right moved the bar left: the trim that landed was not the
     // one the strip drew. Held to Ltr for this subtree rather than swapping
     // each `offset` for `absoluteOffset`, which would leave the Row's own tile
-    // order mirrored.
+    // order mirrored. The body below is deliberately not re-indented under it,
+    // as TimelineEditor's is not: a whitespace diff over the whole composable
+    // would bury the one line that matters.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(STRIP_HEIGHT)) {

@@ -1082,16 +1082,23 @@ internal fun ColourRow(
                 .clickable { onEyedropper(onPick) },
             contentAlignment = Alignment.Center
         ) {
-        Box(
-            modifier = Modifier
-                .size(30.dp)
-                .clip(CircleShape)
-                .background(SquishColors.SurfaceElevated)
-                .border(1.dp, SquishColors.Border, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Filled.Colorize, contentDescription = "Pick a colour from the picture", tint = SquishColors.TextPrimary, modifier = Modifier.size(16.dp))
-        }
+            // The painted circle is 30, as the swatches are; the 44 round it is
+            // the reach, so the eyedropper is the same target as its neighbours.
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(SquishColors.SurfaceElevated)
+                    .border(1.dp, SquishColors.Border, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.Colorize,
+                    contentDescription = "Pick a colour from the picture",
+                    tint = SquishColors.TextPrimary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
     if (open) ColourPicker(argb = argb, onChange = onDrag, onFinished = onFinished)
