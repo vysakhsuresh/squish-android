@@ -9,6 +9,8 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -622,7 +624,9 @@ fun VoicePanel(clip: Clip, viewModel: EditorViewModel) {
                                 if (on) accent else SquishColors.Border,
                                 RoundedCornerShape(14.dp)
                             )
-                            .clickable {
+                            // selectable, not clickable: which voice the clip
+                            // carries was a border colour and nothing else.
+                            .selectable(selected = on, role = Role.RadioButton) {
                                 viewModel.audio.setClipVoice(clip.id, effect)
                                 // Heard once, two seconds of it: a voice is chosen by ear,
                                 // and the tap otherwise changed nothing that could be told.
@@ -757,7 +761,9 @@ private fun TrackRow(clip: Clip, selected: Boolean, onSelect: () -> Unit, onRemo
                 color = if (selected) SquishColors.Teal else SquishColors.Border,
                 shape = RoundedCornerShape(10.dp)
             )
-            .clickable(onClick = onSelect)
+            // selectable, not clickable: a track row was marked selected by a
+            // border colour and nothing else.
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)

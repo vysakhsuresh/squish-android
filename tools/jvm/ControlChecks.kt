@@ -830,6 +830,64 @@ fun main() {
         )
     }
 
+    // ---- A thing you choose says it is chosen, and says what it is. --------
+    //
+    // Every colour swatch in the app was a bare circle whose only content was
+    // its own fill and whose only state was a border colour: no name, no
+    // selected semantics, and under the 44 dp the rest of the app uses. With a
+    // screen reader on, a colour row was nine identical nameless targets and
+    // nothing said which one was applied - and ColourRow is the only colour
+    // control there is, so there was no non-visual route to a caption's, an
+    // outline's, a shadow's, a bubble's, a shape's, the canvas background's or
+    // a cut-out's colour at all. The eyedropper beside them has always carried
+    // "Pick a colour from the picture", which is how you can tell this was a
+    // gap and not the house style.
+    //
+    // Six picker grids outside Chips.kt had the same shape: a plain clickable
+    // marked chosen by a border, so a reader read the applied filter exactly as
+    // it read the other twenty-nine. And the three grading wheels were a Canvas
+    // in a Box with two pointer inputs - a Box whose only child is a Canvas has
+    // no node to focus, so the disc was skipped entirely and its value could
+    // neither be read nor changed without a drag.
+    run {
+        // One swatch, used by every palette.
+        val text = read("$SRC/editor/TextSheet.kt")
+        check(
+            Regex("""internal fun ColourSwatch\([\s\S]{0,800}?\.selectable\(selected = selected, role = Role\.RadioButton[\s\S]{0,400}?contentDescription = ColourName\.of\(colour\)""")
+                .containsMatchIn(text),
+            "the colour swatch is not named and selectable - a circle whose only content is its fill " +
+                "announces nothing, and a border colour is not a state"
+        )
+        // And no palette draws its own any more.
+        listOf("editor/FrameSheet.kt", "editor/BackgroundPanel.kt").forEach { name ->
+            val panel = read("$SRC/$name")
+            check(
+                panel.contains("ColourSwatch("),
+                "$name draws its own colour circles instead of the named, selectable ColourSwatch"
+            )
+        }
+        // The six grids that mark a choice with a border.
+        listOf(
+            "editor/LooksSheet.kt" to "the Filters tiles",
+            "editor/TransitionSheet.kt" to "the transition tiles",
+            "editor/AudioSheet.kt" to "the voice tiles and the track rows"
+        ).forEach { (name, what) ->
+            check(
+                read("$SRC/$name").contains(".selectable(selected = "),
+                "$what carry no selected state, so nothing says which one is on ($name)"
+            )
+        }
+        val styleTiles = Regex("""\.selectable\(selected = selected, role = Role\.RadioButton""").findAll(text).count()
+        check(styleTiles >= 3, "TextSheet has $styleTiles selectable tiles - the style presets and the lines list need theirs")
+        // The wheel.
+        val wheel = read("$SRC/editor/WheelPad.kt")
+        check(
+            wheel.contains("stateDescription = spokenTint(wheel)") && wheel.contains("customActions = actions"),
+            "the grading wheel has no spoken state or no actions - it is a Canvas in a Box, which a " +
+                "screen reader cannot focus at all, and a drag is the only way to change it"
+        )
+    }
+
     // ---- A picked text file is read in the encoding it is in. --------------
     //
     // bufferedReader() is UTF-8 and decodeToString() is UTF-8, and both

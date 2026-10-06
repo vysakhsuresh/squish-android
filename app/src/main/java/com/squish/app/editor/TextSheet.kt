@@ -10,6 +10,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.squish.app.ui.components.ColourName
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -467,7 +472,7 @@ private fun LinesList(
                     .clip(RoundedCornerShape(10.dp))
                     .background(if (under) SquishColors.Amber.copy(alpha = 0.12f) else SquishColors.Background)
                     .border(1.dp, if (selected) SquishColors.Amber else SquishColors.Border, RoundedCornerShape(10.dp))
-                    .clickable { onSelect(line) }
+                    .selectable(selected = selected, role = Role.RadioButton) { onSelect(line) }
                     .padding(horizontal = 10.dp, vertical = 8.dp)
             ) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -502,7 +507,10 @@ private fun StyleTile(label: String, sample: String, style: TextStyleSpec, selec
             .clip(RoundedCornerShape(12.dp))
             .background(SquishColors.Background)
             .border(1.dp, if (selected) SquishColors.Amber else SquishColors.Border, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            // selectable, not clickable: the chosen preset was marked by a
+            // border colour and nothing else, so nothing said which style the
+            // line was on.
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(vertical = 12.dp, horizontal = 6.dp)
     ) {
         val background = style.background
@@ -1040,35 +1048,70 @@ internal fun ColourRow(
             modifier = Modifier.clickable { onOpen(!open) }
         )
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
         CAPTION_COLOURS.forEach { colour ->
-            val selected = (argb or ALPHA_MASK) == (colour or ALPHA_MASK)
-            Box(
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(Color(colour))
-                    .border(
-                        if (selected) 3.dp else 1.dp,
-                        if (selected) SquishColors.Primary else SquishColors.Border,
-                        CircleShape
-                    )
-                    .clickable { onPick(colour) }
+            ColourSwatch(
+                colour = colour,
+                selected = (argb or ALPHA_MASK) == (colour or ALPHA_MASK),
+                onPick = { onPick(colour) }
             )
         }
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .clickable { onEyedropper(onPick) },
+            contentAlignment = Alignment.Center
+        ) {
         Box(
             modifier = Modifier
                 .size(30.dp)
                 .clip(CircleShape)
                 .background(SquishColors.SurfaceElevated)
-                .border(1.dp, SquishColors.Border, CircleShape)
-                .clickable { onEyedropper(onPick) },
+                .border(1.dp, SquishColors.Border, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(Icons.Filled.Colorize, contentDescription = "Pick a colour from the picture", tint = SquishColors.TextPrimary, modifier = Modifier.size(16.dp))
         }
+        }
     }
     if (open) ColourPicker(argb = argb, onChange = onDrag, onFinished = onFinished)
+}
+
+/**
+ * One colour to choose, named out loud.
+ *
+ * It was a bare 30 dp circle whose only content was its own fill: no name, no
+ * selected state, and under the 44 dp the rest of the app uses after "at 37dp
+ * they were the most-missed". With a screen reader on, a colour row was nine
+ * identical nameless targets and nothing said which one was applied - and this
+ * is the only colour control in the app, so there was no non-visual route to a
+ * caption's, an outline's, a shadow's, a bubble's or a shape's colour at all.
+ * The name comes from the colour itself (ColourName), so a palette gains names
+ * the moment it gains a colour.
+ */
+@Composable
+internal fun ColourSwatch(colour: Int, selected: Boolean, onPick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onPick)
+            .semantics { contentDescription = ColourName.of(colour) },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(Color(colour))
+                .border(
+                    if (selected) 3.dp else 1.dp,
+                    if (selected) SquishColors.Primary else SquishColors.Border,
+                    CircleShape
+                )
+        )
+    }
 }
 
 /**

@@ -2,6 +2,8 @@ package com.squish.app.editor
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -576,7 +578,11 @@ private fun LookChip(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(5.dp),
-        modifier = Modifier.width(IntrinsicChipWidth).clickable(onClick = onClick)
+        modifier = Modifier.width(IntrinsicChipWidth)
+            // selectable, not clickable: the chosen look was marked by a
+            // border colour and nothing else, so a screen reader read the
+            // applied filter exactly as it read the other twenty-nine.
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
     ) {
         Box(
             modifier = Modifier

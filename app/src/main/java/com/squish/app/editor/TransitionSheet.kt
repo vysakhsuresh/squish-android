@@ -6,6 +6,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -216,7 +218,7 @@ private fun TransitionTile(
             .clip(RoundedCornerShape(12.dp))
             .background(if (selected) accent.copy(alpha = 0.16f) else SquishColors.Background)
             .border(1.dp, if (selected) accent else SquishColors.Border, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(6.dp)
     ) {
         val at = p.coerceIn(0f, 1f)

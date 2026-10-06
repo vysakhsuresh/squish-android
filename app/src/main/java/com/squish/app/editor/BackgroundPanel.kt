@@ -86,17 +86,11 @@ fun BackgroundPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                 ) {
                     BACKDROPS.forEach { argb ->
-                        Box(
-                            Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(Color(argb))
-                                .border(
-                                    if (removal.colorArgb == argb) 3.dp else 1.dp,
-                                    if (removal.colorArgb == argb) SquishColors.Primary else SquishColors.Border,
-                                    CircleShape
-                                )
-                                .clickable { viewModel.analysis.setBackgroundFill(clip.id, BackgroundFill.Colour, argb) }
+                        // Named and selectable, like every swatch in the app.
+                        ColourSwatch(
+                            colour = argb,
+                            selected = removal.colorArgb == argb,
+                            onPick = { viewModel.analysis.setBackgroundFill(clip.id, BackgroundFill.Colour, argb) }
                         )
                     }
                 }

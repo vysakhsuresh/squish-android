@@ -318,18 +318,13 @@ fun CanvasPanel(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
             ) {
                 CANVAS_COLOURS.forEach { argb ->
-                    val selected = background.colorArgb == argb
-                    Box(
-                        Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(Color(argb))
-                            .border(
-                                if (selected) 3.dp else 1.dp,
-                                if (selected) SquishColors.Primary else SquishColors.Border,
-                                CircleShape
-                            )
-                            .clickable { viewModel.clips.setCanvasColour(argb) }
+                    // Named and selectable, like every swatch in the app: a
+                    // bare circle whose only content is its fill says nothing
+                    // to a screen reader, and nothing said which one was on.
+                    ColourSwatch(
+                        colour = argb,
+                        selected = background.colorArgb == argb,
+                        onPick = { viewModel.clips.setCanvasColour(argb) }
                     )
                 }
                 Box(

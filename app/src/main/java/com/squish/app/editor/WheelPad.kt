@@ -31,6 +31,12 @@ import com.squish.app.ui.components.SquishSlider
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.TextAction
 import com.squish.app.ui.theme.SquishColors
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import com.squish.app.ui.components.ColourName
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -147,8 +153,53 @@ private fun WheelDisc(
 ) {
     val latestPad by rememberUpdatedState(onPad)
     val latestDone by rememberUpdatedState(onFinished)
+    // Said out loud, and changeable without a drag.
+    //
+    // The disc was a Canvas in a Box with two pointer inputs and nothing else:
+    // no name, no readout, no actions. A Box whose only child is a Canvas has
+    // no semantics to focus, so a screen reader skipped it entirely - the three
+    // wheels could be reached and named by their chips, and their actual value
+    // could be neither read nor changed by anything but a drag on an unlabelled
+    // surface. The sheet shows no number for it either; the chip gains a bullet,
+    // which says touched, not which way. Reset all was the only way back.
+    //
+    // The spokes come from the model rather than from the drawing: Wheel's own
+    // pad() of a pure primary is where that primary sits in the disc, so these
+    // cannot drift from what a finger would do.
+    val nudge: (Wheel, Float, Float) -> Unit = { w, dx, dy ->
+        val (x, y) = w.pad()
+        latestPad(x + dx, y + dy)
+        latestDone()
+    }
+    val actions = buildList {
+        listOf(
+            "Towards red" to Wheel(r = 1f),
+            "Towards green" to Wheel(g = 1f),
+            "Towards blue" to Wheel(b = 1f)
+        ).forEach { (label, primary) ->
+            val (sx, sy) = primary.pad()
+            val length = kotlin.math.hypot(sx.toDouble(), sy.toDouble()).toFloat().coerceAtLeast(1e-4f)
+            add(
+                CustomAccessibilityAction(label) {
+                    nudge(wheel, sx / length * PAD_STEP, sy / length * PAD_STEP)
+                    true
+                }
+            )
+        }
+        add(
+            CustomAccessibilityAction("Back to neutral") {
+                latestPad(0f, 0f)
+                latestDone()
+                true
+            }
+        )
+    }
     Box(
-        modifier = modifier.pointerInput(Unit) {
+        modifier = modifier.semantics {
+            contentDescription = "Colour wheel"
+            stateDescription = spokenTint(wheel)
+            customActions = actions
+        }.pointerInput(Unit) {
             // Both gestures on one pointer input, so a tap and a drag cannot
             // each claim the first touch.
             detectDragGestures(
@@ -213,4 +264,22 @@ private fun WheelDisc(
             drawCircle(color = Color.Black, radius = 9f, center = at, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
         }
     }
+}
+
+/** How far one accessibility nudge moves the dot, out of the disc's radius of 1. */
+private const val PAD_STEP = 0.2f
+
+/**
+ * Where the wheel's dot sits, said out loud: the tint's own name and how far
+ * out it is. Named from the tint itself (ColourName), so it says the same thing
+ * a swatch of that colour would.
+ */
+private fun spokenTint(wheel: Wheel): String {
+    val out = wheel.radius
+    if (out < 0.03f) return "neutral"
+    val (x, y) = wheel.pad()
+    val tint = Wheel.of(x, y, 0f)
+    fun channel(v: Float) = ((0.5f + v) * 255f).roundToInt().coerceIn(0, 255)
+    val argb = (0xFF shl 24) or (channel(tint.r) shl 16) or (channel(tint.g) shl 8) or channel(tint.b)
+    return "${ColourName.of(argb)}, ${(out * 100f).roundToInt()}% out"
 }
