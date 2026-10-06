@@ -2418,3 +2418,95 @@ deliberately unclamped because a level goes past 1.
 5. **Reverse a 4K clip on a phone whose encoder stops at 1080**, twice. The
    second attempt must fail the same way as the first, not worse.
 6. **Open the stock-footage grid and scroll it.** No growth, no crash.
+
+## On the phone again, after a fortnight of building blind (6 October, night)
+
+The owner plugged the phone back in with two sentences: *"when a new video is
+selected, it is starting from mid screen not the left end which is terrible"*
+and *"further the play head is not moving"*. Both were true, both were about the
+same screen, and neither was the whole of what was wrong there. Working down
+`docs/ROADMAP.md` §5 from the top then found an export that could not run at
+all.
+
+### 1. The strip opened half way across, and crept
+
+**Seen.** The playhead line was fixed in the *middle* of the strip, so the
+window at 0:00 is scrolled half a screen before the start and the edit begins
+half way across with nothing to its left. The fit-on-open matched it - the whole
+edit laid out in *half* the strip - so an opened video was drawn at two thirds
+of the size it needed and crammed into the right-hand half. Measured: 1.9
+seconds of playback moved the strip twelve pixels, which is not slow, it is
+invisible.
+
+Fixed by moving the line to a quarter of the way across
+(`TimelineWindow.PLAYHEAD_FRACTION`) and stopping the fit at thirty seconds of
+footage (`TimelineLanes.MAX_FIT_SECONDS`). **Seen after:** the clip starts a
+third of the way across the screen instead of past the middle and is drawn half
+as big again; the ruler reads 0:00/0:10/0:20/0:30 where it read
+0:00/0:30/1:00; playback scrolls about sixteen pixels a second, plainly moving.
+
+**The line is still fixed, and that is deliberate.** Letting it walk again is
+what the first version did, and near 0:00 the strip is clamped, so a finger has
+nothing to pull and the code moved the *time* instead: dragging right moved the
+line left, which is the first thing the owner ever reported about this app. One
+gesture cannot mean two opposite things.
+
+**Seen and correct:** a drag to the right still takes the edit backwards
+(0:36.9 to 0:25.6), the film following the finger.
+
+### 2. The compact muxer, on the path of every export
+
+**Seen.** A three-second cuts-only export is 183,266 bytes, of which
+`tools/jvm/Mp4Probe.kt` accounts for 179,388 bytes of sample data - **97.9% of
+the file**. The 400 KB of streamable-moov padding is gone; at this size it had
+been two thirds of the file. 91 video frames at exactly 33.33 ms, 30.000 fps
+even. Plays in the app's own done screen. Not checked: WhatsApp and Chrome -
+sharing to a person is not a thing to do from a test.
+
+### 3. A photo first in a composited export killed it — the gate's first run
+
+**Found, fixed, seen fixed.** A photo, a video, a Dissolve on the join:
+
+    SquishExport failed: 3 sequences
+    ExportException: Asset loader error
+    Caused by: NullPointerException
+      at SequenceAssetLoader.onOutputFormat(:344)
+      at ImageAssetLoader.queueBitmapInternal(:205)
+
+Media3 will not start a sequence that declares sound on an asset with only a
+picture: it asks its listener for a forced audio consumer and `checkNotNull`s
+the answer, while `TransformerInternal` answers null until every *other*
+sequence has registered its tracks. An image loader has no file to open, so on a
+composited export it always wins that race.
+
+`StillClips` has known this since photos were added - its rendered stills carry
+a track of silence and its comment says so. What reopened it was B14 sending a
+main-track photo in as the picture it was made from, for sharpness, which has no
+sound track at all. `ExportPlan.mustCarrySound` now names the one clip that
+opens such a sequence; that clip goes in as its still and every photo after it
+keeps its full size.
+
+**Seen after:** the same edit exports (`frames=166 size=309988`), and read frame
+by frame off the pulled file the dissolve is there from 2.6 s to 3.0 s, the
+photo fading out as the video fades in.
+
+### 4. The rest of the composited gate, and the two new joins
+
+All seen in exported files, read frame by frame with `tools/desktop/frames.ps1`
+and `contact_sheet.ps1`:
+
+- **A video overlay at 40%, starting at 2 s, over a dissolve** (§5 step 3, and
+  the gap of step 4 on the overlay row): exports, and the PiP is top-right from
+  2.0 s, over the dissolve at 2.5 s, gone after 5 s with nothing left behind.
+- **Blur** (5 October's first new join): the base picture softens through the
+  cut and comes back sharp, 2.6 s to 3.0 s — **and the preview agrees**, which
+  is what this one was for: the preview softens the decoded picture and the file
+  softens the finished canvas, by different routes. The overlay stays sharp in
+  both.
+- **Burn out**: the outgoing shot blows out white at 2.6 s and hangs over the
+  new one as a thinning ghost to 3.0 s, with the new shot whole underneath from
+  its first frame - not hidden, which is what makes it different from the Flash.
+  The overlay is not whitened.
+
+Still unseen of these: a Blur on an overlay's *own* transition (the softness
+through the premultiply pass), and a Burn out over a padded canvas.

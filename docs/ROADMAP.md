@@ -469,10 +469,14 @@ holds up. Everything in it is unseen.
 `adb -s ZY32J8HF2S`, `adb logcat -G 16M` first, `JAVA_HOME=$HOME/.jdks/jbr-21.0.11
 ./gradlew clean assembleDebug` (clean, because `TimelinePreview.kt` has changed).
 
-1. **It opens, plays and scrubs the right way.** Open a clip, play, drag the
-   strip right - the playhead goes right. This is the fault the owner found on
-   5 October and the reason three sweeps happened; it is fixed, and it is the
-   first thing to see with your own eyes.
+1. ~~**It opens, plays and scrubs the right way.**~~ **Done, 6 October.** A drag
+   to the right takes the edit backwards (0:36.9 to 0:25.6) with the film
+   following the finger, and the playhead line does not move - which is the
+   whole of the fix for the fault the owner found on 5 October. What the same
+   session *did* find wrong there: the strip opened half way across the screen
+   and crept too slowly to see. Both fixed - see
+   `TimelineWindow.PLAYHEAD_FRACTION` and `TimelineLanes.MAX_FIT_SECONDS`, and
+   `docs/DEVICE_FINDINGS.md`'s last section.
 2. ~~**An export still works, and is a fifth of the size.**~~ **Done, 6 October.**
    A three-second cuts-only export: 183 KB, of which `Mp4Probe` accounts for
    179,388 bytes of sample data - **97.9% of the file**. The 400 KB of
@@ -501,14 +505,22 @@ holds up. Everything in it is unseen.
    `ExportPlan.mustCarrySound` now names the one clip that opens such a
    sequence, and that one goes in as its still. Fixed, re-run, and read frame by
    frame off the file: the dissolve is there, 2.6 s to 3.0 s, the photo fading
-   out as the video fades in. **Steps 3 and 4 - a video overlay and a gap - are
-   still unseen.**
-4. **The two new joins** (5 October): put a **Blur** and a **Burn out** on a cut
-   and look at the preview, then at the file. The Blur is the one place where
-   the preview and the file run the same shader on the same number by different
-   routes; the Burn out should leave the new shot whole underneath from the
-   first frame. Also put a Blur on an overlay, where the softness goes through
-   the premultiply pass instead.
+   out as the video fades in. **Steps 3 and 4 done too**: a video overlay at 40%
+   starting at 2 s, over the dissolve, with an empty stretch at the head of its
+   row - it exports, the PiP is top-right from 2.0 s, over the dissolve at
+   2.5 s, and gone after 5 s with nothing left behind.
+4. ~~**The two new joins** (5 October): put a **Blur** and a **Burn out** on a
+   cut and look at the preview, then at the file.~~ **Done, 6 October**, read
+   frame by frame off the exported files. **Blur**: the base picture softens
+   through the cut and comes back sharp, 2.6 s to 3.0 s - and the preview
+   agrees, which is what this one was for, since the preview softens the decoded
+   picture and the file softens the finished canvas by different routes. **Burn
+   out**: the outgoing shot blows out white at 2.6 s and hangs over the new one
+   as a thinning ghost to 3.0 s, with the new shot whole underneath from its
+   first frame. In both, an overlay over the join stays sharp and unwhitened.
+   Still to do: a Blur on an **overlay's own** transition, where the softness
+   goes through the premultiply pass instead, and a Burn out over a padded
+   canvas.
 5. **Reverse a short window of a long recording.** Trim three seconds off the
    head of a twenty-minute file and Reverse: about a second, not minutes - and
    the reversed clip's *last* frames must be there.
