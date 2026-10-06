@@ -36,6 +36,17 @@ fun SelectableChip(
     // Blue, not the orange of the primary action: a chip left on its default
     // was a second orange in a sheet whose Done is the orange one.
     accentColor: Color = SquishColors.Blue,
+    /**
+     * False for a choice that cannot be taken - a size past the encoder's
+     * ceiling, a size larger than the file being squeezed.
+     *
+     * There was no such parameter, so a chip drawn dead (alpha 0.35) was still
+     * wired live: it kept a real `selectable`, announced "not selected" rather
+     * than "disabled", and swallowed a tap with no feedback at all. The drawn
+     * state and the announced state disagreed. ToolBar.ToolItem has always
+     * passed `enabled` into its clickable, one screen away.
+     */
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     // A flat fill reads as a button that happens to be on; a sweep reads as the
@@ -71,7 +82,7 @@ fun SelectableChip(
             // value out of several, the next is a set of toggles, and the
             // state - which `selectable` speaks either way - is the thing that
             // was missing. A role would name two of the three wrongly.
-            .selectable(selected = selected, onClick = onClick)
+            .selectable(selected = selected, enabled = enabled, onClick = onClick)
             // 8 at the sides: at 12, four to a row on a 360dp phone cut "Camera"
             // and "Bottom" short.
             .padding(vertical = 8.dp, horizontal = 8.dp),
@@ -79,7 +90,13 @@ fun SelectableChip(
     ) {
         // Ellipsis rather than the default clip: a label a few pixels too
         // wide for a narrow phone lost its last letter mid-glyph.
-        Text(label, color = content, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            label,
+            color = if (enabled) content else content.copy(alpha = 0.4f),
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

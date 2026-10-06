@@ -879,6 +879,24 @@ fun main() {
         }
         val styleTiles = Regex("""\.selectable\(selected = selected, role = Role\.RadioButton""").findAll(text).count()
         check(styleTiles >= 3, "TextSheet has $styleTiles selectable tiles - the style presets and the lines list need theirs")
+        // A choice that cannot be taken says it cannot, rather than reading as
+        // merely not chosen and swallowing the tap.
+        val chips = read("$SRC/ui/components/Chips.kt")
+        check(
+            chips.contains(".selectable(selected = selected, enabled = enabled, onClick = onClick)"),
+            "SelectableChip has no enabled again - a chip drawn dead at alpha 0.35 then keeps a live " +
+                "selectable, announces \"not selected\" rather than \"disabled\", and eats the tap"
+        )
+        check(
+            read("$SRC/ui/components/OutputSizePicker.kt").contains("enabled = !beyond,"),
+            "the size picker draws a size dead without saying so to a reader"
+        )
+        // And the one control that permanently forgets something is named.
+        check(
+            text.contains("contentDescription = \"Forget the style \$name\""),
+            "the x that forgets a saved style is unnamed again - a screen reader announces it as " +
+                "\"multiplication sign\", right after the chip it destroys, and there is no undo"
+        )
         // The wheel.
         val wheel = read("$SRC/editor/WheelPad.kt")
         check(

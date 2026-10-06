@@ -4,6 +4,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -345,23 +347,48 @@ fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                 HueBand.entries.forEachIndexed { i, entry ->
                     val index = fields.size + i
                     val touched = !clip.adjust.band(entry).isIdentity
+                    // Named and selectable, and the chosen ring in white.
+                    //
+                    // clickable(onClickLabel) labels the *action*, not the
+                    // node, so a screen reader landed on eight unlabelled
+                    // circles whose state was announced nowhere - in a row
+                    // whose other twenty members read "Exposure, selected".
+                    // And the chosen ring was Primary, which on the Orange band
+                    // is the swatch's own colour to within a shade, so nobody
+                    // of any kind could see which band was open. The touched
+                    // ring keeps the band's own colour at 2 dp; chosen is white
+                    // at 3 dp, which reads on all eight.
                     Box(
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(44.dp)
                             .clip(CircleShape)
-                            .background(Color(entry.swatch))
-                            .border(
-                                if (chosen == index) 3.dp else if (touched) 2.dp else 1.dp,
-                                when {
-                                    chosen == index -> SquishColors.Primary
-                                    touched -> SquishColors.TextPrimary
-                                    else -> SquishColors.Border
-                                },
-                                CircleShape
-                            )
-                            .clickable(onClickLabel = entry.label) { chosen = index }
-                            .then(noteChip(index))
-                    )
+                            .selectable(
+                                selected = chosen == index,
+                                role = Role.RadioButton
+                            ) { chosen = index }
+                            .semantics {
+                                contentDescription =
+                                    if (touched) "${entry.label}, adjusted" else entry.label
+                            }
+                            .then(noteChip(index)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(entry.swatch))
+                                .border(
+                                    if (chosen == index) 3.dp else if (touched) 2.dp else 1.dp,
+                                    when {
+                                        chosen == index -> Color.White
+                                        touched -> SquishColors.TextPrimary
+                                        else -> SquishColors.Border
+                                    },
+                                    CircleShape
+                                )
+                        )
+                    }
                 }
                 SelectableChip(
                     label = if (clip.adjust.curve.isIdentity) "Curves" else "Curves •",

@@ -817,17 +817,33 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
                                 accentColor = SquishColors.Amber,
                                 onClick = { viewModel.text.applyStyle(item.id, saved, "Style $name") }
                             )
-                            Text(
-                                "×",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = SquishColors.TextMuted,
+                            // The control that permanently forgets a saved
+                            // style was a bare Text whose whole content was
+                            // "×", with no role and about 20 dp of reach - so
+                            // a screen reader announced it as "multiplication
+                            // sign, double tap to activate", immediately after
+                            // the chip it destroys, and a tap forgets the style
+                            // with no confirmation and no undo. Named, given a
+                            // button's role and a 48 dp target, which is what
+                            // TextAction exists for ("a word that does
+                            // something … but with a button's reach").
+                            Box(
+                                contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .clickable {
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .clickable(role = Role.Button) {
                                         UserStyles.remove(context, name)
                                         savedStyles = UserStyles.list(context)
                                     }
-                                    .padding(horizontal = 4.dp)
-                            )
+                                    .semantics { contentDescription = "Forget the style $name" }
+                            ) {
+                                Text(
+                                    "×",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = SquishColors.TextMuted
+                                )
+                            }
                         }
                     }
                 }

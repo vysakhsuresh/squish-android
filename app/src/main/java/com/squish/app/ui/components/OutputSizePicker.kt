@@ -117,6 +117,18 @@ fun OutputSizePicker(
                 color = SquishColors.Amber
             )
         }
+        // Squeeze never grows the frame, so the note above cannot fire for it -
+        // it is gated on outputP > sourceP, which allowUpscale = false makes
+        // unreachable. Without this one the 0.35 alpha was the only signal that
+        // existed for a dimmed size, and nothing anywhere said why.
+        if (!allowUpscale && sourceP > 0 && OutputSize.PRESETS.any { it > sourceP }) {
+            Text(
+                "Sizes above ${OutputSize.label(sourceP)} aren't offered: this is already a " +
+                    "${sourceP}p file, and making the frame bigger can't add detail.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SquishColors.TextMuted
+            )
+        }
         if (OutputSize.PRESETS.any { ExportSettings.aboveCeiling(it, ceilingP) }) {
             Text(
                 "Sizes above ${OutputSize.label(ceilingP)} are beyond this phone's encoder.",
@@ -158,6 +170,11 @@ fun OutputSizePicker(
                         accentColor = accent,
                         // Dimmed and inert, rather than gone: the row keeps its
                         // shape, so a tap aimed from memory lands where it did.
+                        // `enabled` as well as the alpha, so what is announced
+                        // agrees with what is drawn: without it the chip kept a
+                        // live `selectable`, read "not selected" rather than
+                        // "disabled", and swallowed a tap with no feedback.
+                        enabled = !beyond,
                         modifier = Modifier.weight(1f).alpha(if (beyond) 0.35f else 1f),
                         onClick = {
                             when {

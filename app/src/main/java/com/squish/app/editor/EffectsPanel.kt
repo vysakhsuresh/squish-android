@@ -137,7 +137,11 @@ private fun EffectTile(kind: EffectKind, frame: ImageBitmap?, modifier: Modifier
             .clip(RoundedCornerShape(12.dp))
             .background(SquishColors.Background)
             .border(1.dp, SquishColors.Border, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            // A tile in a picker grid, so its name is enough: an effect is
+            // *added* by a tap rather than chosen out of a set, so there is no
+            // selected state to announce - unlike the filter, transition and
+            // voice grids, which carry one now.
+            .clickable(onClick = onClick, onClickLabel = "Add this effect")
             .padding(6.dp)
     ) {
         Canvas(
