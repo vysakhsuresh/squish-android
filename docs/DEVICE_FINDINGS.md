@@ -1231,10 +1231,12 @@ for frames that do not exist. `ExportSettings.defaultOutputFps` now falls back
 to Auto, by the same rule as `defaultOutputP`. Seen on the phone: the next
 project opened on **Auto**, "Auto keeps the footage's 30 fps."
 
-### Left on the phone, 5 October - clean up on the next session
+### Left on the phone, 5 October - **cleared on 7 October, 00:05**
 
 The phone was unplugged mid-test, so this round's scratch did not get cleared.
-Whoever reaches it next should take these off and nothing else:
+It has been now, through the app's own Library and card menus, which name each
+file in the dialog. Kept here because the *list* is the lesson - a session that
+leaves scratch behind has to write down exactly what, by id:
 
 - three test exports in the gallery, MediaStore ids **1001326343**,
   **1001326344** and **1001326345** (`squish_1791168783188.mp4`,
@@ -2599,3 +2601,23 @@ Unseen still, from the lists above: a Blur on an overlay's own transition, a
 Burn out over a padded canvas, Track and Stabilize on 60 fps footage in a 30 fps
 project, the beat grid after a head trim, a long export over a light leak, and
 everything in §5 from step 11 down.
+
+### What this session left on the phone: nothing
+
+Cleared before the session ended, all through the app's own screens rather than
+by reaching round them - which is itself worth one line, because each dialog
+names the thing it is about and says what is recoverable:
+
+- **Ten exports** out of the gallery through Library → delete: the seven made
+  tonight for the gate and the two joins, and the three MediaStore ids
+  (1001326343/44/45) owed since 5 October. The dialog names the file and says
+  plainly "There is no undo and no bin to fetch it back from."
+- **Five projects** binned through the card menu: the eight-hour ASTERIA split,
+  the photo-and-video one, and three openings of the same 86-second clip. "They
+  move to Recently deleted for 30 days… Your original videos are untouched
+  either way."
+- **One Snip session** binned the same way.
+- `accelerometer_rotation` back to 1.
+
+By id, never by a `LIKE` pattern - `_` is a wildcard, and `sq_%` once matched
+every `squish_` export the owner had.

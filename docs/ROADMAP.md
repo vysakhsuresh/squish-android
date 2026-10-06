@@ -635,13 +635,21 @@ important thing on this whole list: until tonight it could not be done at all.
     recents.** The dashboard must not gain a card for it.
 
 
-**Clean-up owed from the 5 October session**, before anything else is added:
-delete MediaStore ids 1001326343, 1001326344 and 1001326345 *by id* (never by a
+~~**Clean-up owed from the 5 October session**~~ **Done, 7 October 00:05.**
+MediaStore ids 1001326343, 1001326344 and 1001326345 deleted *by id* through the
+app's own Library, which names the file in the dialog and says there is no undo;
+the scratch projects binned. `accelerometer_rotation` is back at 1.
+
+**And the 6 October session's own scratch, cleared the same way before it
+ended:** seven exports made for the gate and the joins, five projects (the
+eight-hour ASTERIA split, the photo-and-video one, and three openings of the
+same 86-second clip), and one Snip session. Projects and tool sessions go to
+Recently deleted for thirty days rather than being destroyed, which is what made
+clearing them safe to do from a script.
+
+**The rule, since it keeps being the thing that matters:** by id, never by a
 `LIKE` pattern - `_` is a wildcard and `sq_%` once matched every `squish_`
-export); remove the two scratch projects, "Edit · 5 Oct" from the reel with a
-"Hello" line on it and a three-second one from VID-20261003-WA0186.mp4; and put
-back `adb shell settings put system accelerometer_rotation 1` and
-`adb shell svc power stayon false`.
+export the owner had.
 
 ## 6. Structural work worth doing, in order
 
