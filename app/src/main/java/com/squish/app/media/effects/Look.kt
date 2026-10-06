@@ -529,6 +529,15 @@ data class Grade(
      * chips leave them out (LookPreview): grain frozen on a still reads as
      * dirt, and the other two are a texture the file has and the preview
      * does without.
+     *
+     * **Smooth skin is not left out, and is not done here either.** It arrived
+     * after this comment was written and was left out by nobody's decision - a
+     * slider that did nothing on a photo overlay's screen and something in its
+     * file. It is a neighbourhood read, so it cannot run inside this banded
+     * loop; [SurfaceBlur.smoothSkin] does it over the whole picture *before*
+     * this, which is where the shader does it too (before the colour chain),
+     * so the two agree rather than nearly agree. Whoever calls this on a
+     * picture calls that first.
      */
     fun applyTo(pixels: IntArray, width: Int, height: Int, fromRow: Int = 0, toRow: Int = height) {
         if (width <= 0 || height <= 0 || isIdentity) return

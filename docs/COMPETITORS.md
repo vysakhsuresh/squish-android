@@ -346,9 +346,31 @@ What is left, in the order it is worth doing:
    in `CLAUDE.md`.
 2. ~~**G6's other half**: lift/gamma/gain wheels.~~ **Done, 4 October 06:50**,
    and driven - see the item and `docs/DEVICE_FINDINGS.md`.
-3. Then **G9 skin smoothing**: one Strength slider, a bilateral blur inside the
-   face mask MediaPipe already finds. The cheapest of what is left and the one
-   with real demand in this audience.
+3. ~~Then **G9 skin smoothing**: one Strength slider, a bilateral blur inside
+   the face mask MediaPipe already finds.~~ **Built, and finished on 6 October.**
+   Not a face mask after all: a surface blur held to the skin by its
+   *chrominance*, which is what makes it work from the palest tone to the
+   darkest and needs no model, no face to find and nothing uploaded
+   (`media/effects/SkinTone.kt`, the shader's `skinWeight` and `surfaceBlur`).
+   It arrived as B12's thirteenth Adjust slider, "Smooth skin".
+
+   What was finished on 6 October is the half nobody had noticed was missing. A
+   photo on an overlay row is graded on the CPU rather than through the shader,
+   and three of the shader's moves are left out of that path by a decision
+   written down in `Grade.applyTo` - grain frozen on a still reads as dirt;
+   bloom and sharpening are a texture the file has and the preview does
+   without. Smooth skin was a fourth, left out by **no decision at all**: it
+   was added after that comment was written. So on a photo overlay the slider
+   did nothing on screen and something in the exported file - and of the four
+   it is the one somebody drags expecting to watch the subject change, which
+   makes it the one that reads as broken rather than as subtle.
+   `media/effects/SurfaceBlur.kt` runs the same twelve-tap ring on the CPU,
+   *before* the colour chain as the shader does (so the two agree rather than
+   nearly agree), and `tools/jvm/SkinChecks.kt` - the suite `SkinTone`'s own
+   header had been promising since the day it was written, and which did not
+   exist - parses the eleven numbers back out of the shader and executes the
+   blur. Unseen on a phone: that a face on a photo overlay visibly softens as
+   the slider moves, and that it matches the video beside it.
 4. **G8 optical flow**, which is what would make slow motion genuinely smooth.
 5. **G1 for video overlays**, if the week of compositor work is judged worth it.
 

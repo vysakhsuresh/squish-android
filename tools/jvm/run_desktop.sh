@@ -104,6 +104,7 @@ run maskkeys   $TIMELINE tools/jvm/MaskKeyChecks.kt
 run shapes     "$SRC/editor/Annotation.kt" tools/jvm/ShapeChecks.kt
 run soundstickers "$SRC/editor/SoundStickers.kt" "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SoundStickerChecks.kt
 run templates  tools/jvm/TemplateChecks.kt
+run skin       "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/SurfaceBlur.kt" tools/jvm/SkinChecks.kt
 run wheels     "$SRC/media/effects/ColorWheels.kt" tools/jvm/WheelChecks.kt
 run cutsounds  $TIMELINE "$SRC/timeline/CutSounds.kt" tools/jvm/CutSoundChecks.kt
 run controls   tools/jvm/ControlChecks.kt

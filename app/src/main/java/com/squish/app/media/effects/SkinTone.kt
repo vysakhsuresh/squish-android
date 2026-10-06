@@ -11,8 +11,17 @@ package com.squish.app.media.effects
  *
  * Nothing here touches Android: the numbers are the shader's own, parsed back
  * out of squish_look_es2.glsl by tools/jvm/SkinChecks.kt, so the two cannot
- * drift. The shader is the only thing that uses it today; this is the
- * description it is written from, and the one a CPU path would read.
+ * drift.
+ *
+ * That suite did not exist for the first weeks this line claimed it did, which
+ * is worth one sentence of warning: a check named in a comment and never
+ * written says a drift is impossible while nothing is watching. It exists now,
+ * and it fails on any one of the eleven numbers parting.
+ *
+ * Two things read it: the look shader, for everything a player draws, and
+ * [SurfaceBlur], for the one surface the preview draws itself - a photo on an
+ * overlay row. The CPU path arrived late, after a slider had been offered on a
+ * photo overlay for a while and done nothing there.
  */
 object SkinTone {
 
