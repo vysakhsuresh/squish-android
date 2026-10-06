@@ -278,6 +278,19 @@ class ProjectAutosave(context: Context) {
             // The sidecar goes first, atomically. It used to be a plain truncating
             // write after the rename, so a kill in the gap left a draft that was
             // whole on disk and missing from the list.
+            //
+            // What that order costs, so nobody reverses it hoping to win: a kill
+            // in *this* gap leaves the sidecar describing the edit the scratch
+            // file holds while the live file is still the previous one, so the
+            // card shows the new length, cover and clip count over the old
+            // draft until the next save puts them back in step. The draft
+            // itself is whole either way - the live file is only ever replaced
+            // atomically - and a card a save behind is a smaller fault than a
+            // project missing from the grid, which is what the other order
+            // produced. Note the backup copy above is deliberately not atomic
+            // and need not be: it runs before the live file is touched, so a
+            // kill during it leaves the good live file in place and only the
+            // backup stale, and the next save rewrites it.
             writeMeta(slot, state, uri, now, fingerprint, previous, snapshots)
             DraftFiles.replace(scratchFile(slot), live)
             // The project has a draft now; what it started from is in it.
