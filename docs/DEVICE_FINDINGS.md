@@ -2343,3 +2343,78 @@ until the one thing that triggers them happens.
    Shadows wheel.** Each must announce what it is and which one is on.
 9. **Open with a video from the gallery, change nothing, swipe the app off
    recents.** The dashboard must not gain a card.
+
+## Nine fixes, each read in the source before it was changed (6 October, late)
+
+No sweep behind these: a list of places to look at, each one read, the arithmetic
+done by hand, and nine of seventeen found real. The eight that were not are named
+at the end, because "looked at and sound" is worth as much to the next session as
+"found and fixed".
+
+- **Importing a hand-edited .cube could take the app down.** A 1D LUT's declared
+  length is the file's own number and nothing bounds it. `size1 * 3` overflows
+  Int above 715,827,882 and comes out negative, so the `values.size < need`
+  guard was false and passed - and reading an entry of a table that holds three
+  numbers ran off the end of the list. That is an IndexOutOfBoundsException,
+  neither of the two exceptions LutFiles catches, inside a launched coroutine.
+  The length is computed in Long now, and LutFiles catches RuntimeException as a
+  last net so the next shape nobody thought of in a user-supplied file is a
+  message rather than a crash.
+- **A failed Reverse leaked its codec, and the failure then compounded.** Two of
+  the three codecs were created as `createCodec(...).also { configure(); start() }`,
+  so a throw from either call lost the instance - the assignment never happens
+  and the caller's `finally` sees null - while a configured hardware session was
+  held until the process died. The *next* Reverse then could not get an encoder
+  at all. configure really does throw here: a frame size the AVC encoder will
+  not take, or no free session because of exactly this leak.
+- **A strong colour wheel came back weaker every time the project was opened.**
+  A component is `master + the tint`, and the Level slider runs to ±1 while the
+  dot reaches the rim, so Wheel.of produces components to ±2 - which the shader
+  uses. The draft's decode clamped each to ±1. The file on disk was right the
+  whole time, which is why nothing about it looked broken.
+- **"Listen to" and the caption language went back to their defaults on every
+  reopen.** Neither was written, read, or in ProjectSnapshot at all, so a second
+  auto-caption run listened to the camera however the panel had been set and
+  Read aloud spoke in the phone's own language.
+- **A LUT dragged to strength 0 was forgotten.** The write gate asked
+  `!adjust.isIdentity`, which is "does this change the picture" - and a cube at
+  strength 0 does not. Reopening lost the cube, and dragging Strength back up
+  then did nothing.
+- **A clip whose shape failed to probe once never got it again.**
+  PreviewEngine.fileAspect kept a set it never removed from, so one failed probe
+  - a file briefly unreadable while a relink lands - meant that clip's surface
+  and Crop window fell back to the edit's shape for the life of the process,
+  which is the exact fault the function was added to fix.
+- **A blended still was decoded whole and tagless**, in the preview and in the
+  export. The preview samples to the screen now; the export still decodes whole,
+  because the file is written at full resolution, but through ImageDecoder so the
+  orientation tag is applied there too.
+- **A stock thumbnail was decoded whole, one per tile in a scrolling grid** - and
+  the Archive's thumbnail for an item is often the item's own full-size
+  derivative.
+- **`Clip.isGraded` had no callers**, and `StillClips.blank` recycled its frame
+  after the compress rather than in a finally.
+
+Read and found sound, so not changed: VoiceRecorder.start (releases the
+recorder, the platform effects and the file on every failure path);
+ProjectAutosave.revertToEarlier and ToolAutosave.revertToEarlier (bin, write
+atomically, restore on failure); ProjectAutosave.save's backup copy and its
+sidecar-before-replace order (the order is deliberate and the residual is a
+one-save cosmetic mismatch on the card, where the alternative loses the draft
+from the list); CanvasBackdrop.fromImage, write and solid; the preview's
+StillPictures cache (an LruCache with a real sizeOf); the canvasFx layer's place
+inside the frame clip; and every other clamp in the draft decoder, each of which
+matches its model's own range - while volume, opacity and the value keys are
+deliberately unclamped because a level goes past 1.
+
+### What a device has to answer from these
+
+1. **Pick a LUT, drag Strength to 0, reopen the project, drag Strength up.** The
+   cube must still be there.
+2. **Tilt a wheel to the rim with Level at 1, reopen.** The grade must not move.
+3. **Set "Listen to" to something other than the camera, reopen, auto-caption
+   again.** It must listen to what was chosen.
+4. **Import a .cube with `LUT_1D_SIZE 800000000` in it.** A message, not a crash.
+5. **Reverse a 4K clip on a phone whose encoder stops at 1080**, twice. The
+   second attempt must fail the same way as the first, not worse.
+6. **Open the stock-footage grid and scroll it.** No growth, no crash.
