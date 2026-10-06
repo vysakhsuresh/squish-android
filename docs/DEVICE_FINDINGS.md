@@ -2510,3 +2510,51 @@ and `contact_sheet.ps1`:
 
 Still unseen of these: a Blur on an overlay's *own* transition (the softness
 through the premultiply pass), and a Burn out over a padded canvas.
+
+### 5. Reverse, on an eight-hour recording
+
+**Seen, and it is the strongest form of §5 step 5 there is.** The longest file
+on the phone is a school annual day: **7 hours 58 minutes**, 360p. It opened in
+the editor in under twenty seconds, with the strip drawn at the new thirty-
+second fit - which is itself worth noting, because the *old* fit would have laid
+eight hours across half a strip.
+
+Split at 2.428 s, the tail deleted, Reverse on what was left: the card said
+"Reversing … 9% · it lands on the strip when done" with a Cancel, and it was
+done within about fifteen seconds. The render is **525,095 bytes**, and
+`Mp4Probe` reads **73 video samples, 2.433 s, 30.000 fps, every frame exactly
+33.33 ms**, with 107 AAC samples beside them. 73 frames is exactly what 2.428 s
+at 30 fps should be: the run window is bounded and nothing is missing from
+either end. Had `media/ReverseRuns.kt` still fed the last run to the end of the
+file, this would have decoded the remaining eight hours.
+
+Read off the render: it plays backwards (the person walking in front of the
+stage in the original's first frame is in the *last* frame of the reverse).
+**No `.part` file left behind.**
+
+### 6. Music, text and a style, added and exported
+
+All first-time sightings; none of B9's or B10's screens had ever been driven.
+
+- **The Sound sheet** is Music · Mic & camera · Sync, and the Music card's four
+  categories are a two-by-two grid in sight on a phone - both as B9 decided.
+  "Lo-fi Sunset · Chill · 78 BPM · 49s" added from Squish originals, synthesised
+  on the phone, and landed as a sound clip with its waveform drawn. With the
+  playhead parked on the last moment it was **backed up to end with the edit**,
+  which is `EditRules.soundLanding` doing what its comment says.
+- **Add text** puts "Your text" in the middle of the picture with the keyboard
+  up and **the sample words selected** - typing replaced them rather than
+  appending. The tabs are Keyboard · Style · Bubble · Animation, the keyboard
+  folds when another tab is picked, and the strip folds away while typing. The
+  line landed 0:00.428 → 0:02.428, two seconds ending at the playhead.
+- **Style** offers presets, "Save this style", the five Looks with **Outline**
+  already on (`TextStyleSpec.NEW_LINE`), eight fonts, "Free fonts online…",
+  bold/italic/underline and the three alignments. Picking **Neon** turned the
+  words pink and glowing on the picture at once.
+- **Exported**: the line is in the file, pink Neon, in the middle, from 0.5 s to
+  2.4 s and *not* at 0.0 s - which is the line's own span, so the timing holds
+  as well as the drawing.
+
+Still not heard: any of it. Nothing here says whether the music, the camera
+sound or a voice effect is right **by ear**; only that the track is there, at
+the right length, and that the file carries it.

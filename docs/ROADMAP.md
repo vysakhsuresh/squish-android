@@ -521,9 +521,11 @@ holds up. Everything in it is unseen.
    Still to do: a Blur on an **overlay's own** transition, where the softness
    goes through the premultiply pass instead, and a Burn out over a padded
    canvas.
-5. **Reverse a short window of a long recording.** Trim three seconds off the
-   head of a twenty-minute file and Reverse: about a second, not minutes - and
-   the reversed clip's *last* frames must be there.
+5. ~~**Reverse a short window of a long recording.**~~ **Done, 6 October, on an
+   eight-hour one.** 2.428 s off the head of a 7:58:30 recording: about fifteen
+   seconds, and the render is 525 KB holding exactly 73 frames at 30.000 fps,
+   every one 33.33 ms. The window is bounded; nothing is missing from either
+   end; it plays backwards; no `.part` file left.
 6. **Track and Stabilize on a 60 fps clip in a 30 fps project**, and a Track
    aimed at the clip's last frame, which used to throw and say nothing.
 7. **The beat grid after a head trim.** Find the beat on the camera sound, trim
