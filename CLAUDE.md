@@ -127,6 +127,14 @@ function first; if it can, it can be checked.
   **Never edit a runner while one is running**: `sh` reads the script at byte
   offsets as it goes, so inserting a line near the top sends the running shell
   into the middle of a later one.
+- **An APK older than a source file is not necessarily stale.** Gradle keys its
+  tasks on content, not on time, so restoring a file byte-for-byte - which is
+  what every negative test here does, `cp` the backup back after watching the
+  check fail - leaves the source newer than the APK while the APK already holds
+  that exact code. `find app/src/main -newer <apk> -name '*.kt'` is therefore a
+  *hint* and not an answer; `git status --short` being empty plus a build that
+  reports no work is the answer. The rule it protects is still right: never
+  install and test without a build after the last real edit.
 - **Measure speed on a release build, never a debug one.** `./gradlew
   assemblePerf` is the release build signed with the debug key; it installs
   over a debug build and keeps the drafts (but `run-as` stops working until a
