@@ -1232,12 +1232,19 @@ fun main() {
         // rethrows, and the delete has to sit between the two.
         listOf(
             Triple("media/ProxyEngine.kt", "val outcome = runCatching {", "outcome.exceptionOrNull()"),
-            Triple("media/ReverseRenderer.kt", "if (result.isFailure)", "result.exceptionOrNull()?.let")
+            Triple("media/ReverseRenderer.kt", "if (result.isFailure)", "result.exceptionOrNull()?.let"),
+            // The download already had the shape, and is here so the check
+            // covers three rather than the two that were wrong: an interrupted
+            // download would otherwise leave a *partial* file that the caller's
+            // `length() == 0L` test reads as complete, which is the same
+            // mistake as a truncated JPEG that `exists()` is happy with.
+            Triple("online/Online.kt", "catch (t: Throwable) {", "throw t")
         ).forEach { (name, from, to) ->
             val text = read("$SRC/$name")
             val begins = text.indexOf(from)
-            val rethrows = text.indexOf(to)
-            val deleted = text.lastIndexOf("partial.delete()")
+            val rethrows = text.indexOf(to, maxOf(begins, 0))
+            val deleted = Regex("""part(?:ial)?\.delete\(\)""").findAll(text)
+                .map { it.range.first }.lastOrNull { it > begins && it < rethrows } ?: -1
             check(
                 begins >= 0 && rethrows > begins && deleted in (begins + 1) until rethrows,
                 "$name writes a .part and does not delete it on the way out of a cancellation - catch " +
