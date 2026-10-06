@@ -51,6 +51,16 @@ object LutFiles {
         } catch (e: IllegalArgumentException) {
             problem(e.message ?: "That file is not a .cube.")
             return null
+        } catch (e: RuntimeException) {
+            // Anything else a hand-edited or corrupt file can produce. The two
+            // catches above were the whole net, and an IndexOutOfBounds from a
+            // declared length that overflowed Int went past both of them,
+            // inside a launched coroutine - so the app went down on importing
+            // a file rather than saying it could not read it. The arithmetic
+            // that caused that one is fixed in CubeFile; this is so the next
+            // shape nobody thought of is a message as well.
+            problem("That file is not a .cube this can read.")
+            return null
         }
 
         val name = LutStore.freeName(display)

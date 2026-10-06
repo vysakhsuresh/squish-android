@@ -380,11 +380,8 @@ object ReverseRenderer {
             val syncs = runs.syncs
             if (syncs.isEmpty()) error("no keyframe before the window")
 
-            decoder = MediaCodec.createDecoderByType(mime).also {
-                format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-                it.configure(format, null, null, 0)
-                it.start()
-            }
+            format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+            decoder = MediaCodec.createDecoderByType(mime).started { configure(format, null, null, 0) }
 
             var videoTrack = -1
             var audioTrack = -1
@@ -606,10 +603,32 @@ object ReverseRenderer {
             setInteger(MediaFormat.KEY_FRAME_RATE, fps.coerceIn(1, 120))
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
         }
-        return MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).apply {
-            configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        return MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            .started { configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE) }
+    }
+
+    /**
+     * Configured and started, or nothing left behind.
+     *
+     * `createCodec(...).also { configure(); start() }` loses the codec when
+     * either call throws: the assignment never happens, so the caller's
+     * `finally` sees null while a configured hardware session is held until the
+     * process dies - and the next Reverse then cannot get one at all, so the
+     * failure compounds rather than repeating. configure really does throw on
+     * this path: a frame size the AVC encoder will not take (a 4K reverse on a
+     * phone whose encoder stops at 1080), or no free session because of exactly
+     * this leak. The audio encoder in this file has always created first and
+     * configured inside a try; the two video codecs had not.
+     */
+    private fun MediaCodec.started(configure: MediaCodec.() -> Unit): MediaCodec {
+        try {
+            configure()
             start()
+        } catch (t: Throwable) {
+            runCatching { release() }
+            throw t
         }
+        return this
     }
 
     /** The decoder's picture into plain planar I420 - Y, then U, then V, each tightly packed. */

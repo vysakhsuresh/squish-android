@@ -129,6 +129,35 @@ fun main() {
         check(oneEntry.isFailure, "a 1D table of one entry was accepted")
     }
 
+    // --- A declared length nothing bounds. ----------------------------------
+    //
+    // The length is the file's own number, and `size1 * 3` overflows Int above
+    // 715,827,882 and comes out *negative* - so `values.size < need` was false,
+    // the guard passed, and reading an entry of a table that holds three
+    // numbers ran off the end of the list. That is an IndexOutOfBounds, which
+    // is neither of the two exceptions LutFiles catches, inside a launched
+    // coroutine: the app went down on importing a hand-edited .cube. It has to
+    // come back as a refusal with a message - the Problem the guard throws -
+    // rather than as anything else.
+    for (declared in longArrayOf(715_827_883L, 800_000_000L, 1_000_000_000L, 2_147_483_647L)) {
+        val text = "LUT_1D_SIZE $declared\n0.0 0.0 0.0\n1.0 1.0 1.0\n"
+        val out = runCatching { CubeFile.parse(text) }
+        val why = out.exceptionOrNull()
+        check(out.isFailure, "a 1D table declaring $declared entries and holding two was accepted")
+        check(
+            why is CubeFile.Problem,
+            "a 1D table declaring $declared came back as ${why?.let { it::class.simpleName }} rather than " +
+                "a Problem - LutFiles catches Problem and IllegalArgumentException, and nothing else " +
+                "reaches the user as a message"
+        )
+    }
+    // And the same for a 3D size, which is bounded before it is cubed - so this
+    // is the assertion that the bound stays *before* the multiplication.
+    for (declared in intArrayOf(1_000_000, 2_000_000_000)) {
+        val out = runCatching { CubeFile.parse("LUT_3D_SIZE $declared\n0.0 0.0 0.0\n") }
+        check(out.exceptionOrNull() is CubeFile.Problem, "a 3D size of $declared came back as ${out.exceptionOrNull()}")
+    }
+
     // --- A domain other than 0..1 is brought back to it. --------------------
     run {
         val text = buildString {

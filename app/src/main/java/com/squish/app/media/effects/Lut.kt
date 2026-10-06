@@ -219,7 +219,15 @@ object CubeFile {
             // of the same three curves, so the cube is built at the size this
             // can use and the curves are read across it.
             if (size1 < 2) throw Problem("That .cube says it is $size1 long, which is not a table.")
-            val need = size1 * 3
+            // In Long. `size1 * 3` overflows Int above 715,827,882 and comes
+            // out negative, so `values.size < need` was false and the guard
+            // passed - and then reading values[at * 3 + c] for an `at` coerced
+            // into 0..size1-1 ran off the end of a list that holds a handful of
+            // entries. That is an IndexOutOfBoundsException, which is neither
+            // of the two LutFiles catches, inside a launched coroutine: the app
+            // goes down on importing a hand-edited or corrupt .cube. The
+            // declared length is the file's own number and nothing bounds it.
+            val need = size1.toLong() * 3L
             if (values.size < need) throw Problem("That .cube says it is $size1 long but holds ${values.size / 3} of the $size1 entries.")
             val side = size1.coerceAtMost(Lut3D.MAX_SIZE)
             return fromCurves(side) { i, c ->

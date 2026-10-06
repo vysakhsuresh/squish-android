@@ -175,6 +175,53 @@ fun main() {
         }
     }
 
+    // ---- A new setting has to be decided about, one way or the other. ------
+    //
+    // ProjectSnapshot is the contract, and the gap between it and
+    // EditorUiState is where a setting goes missing: captionSource and
+    // captionLanguage sat in the live state and in no draft, so "Listen to" and
+    // the caption language went back to their defaults on every reopen with
+    // nothing to see. Most of the gap is transient and belongs there - progress
+    // counters, a failure, the clipboard, what is selected, what was probed off
+    // the file - and no check can tell a setting from a status by looking.
+    //
+    // So this is a tripwire rather than a judgement: the names in the gap are
+    // listed, and a field that joins EditorUiState and neither this list nor
+    // ProjectSnapshot fails here. Whoever added it then decides which side it
+    // is on, which is the one thing nobody did for those two.
+    run {
+        val snapshot = fieldsOf(CODEC, "ProjectSnapshot").toSet()
+        val live = fieldsOf("$SRC/editor/EditorModels.kt", "EditorUiState")
+        // Deliberately not in a draft. A view setting, a status, a progress
+        // count, a session clipboard, or something probed off the file again on
+        // every open.
+        val transient = setOf(
+            "attributeClipboard", "audioWaveforms", "backgroundProgress", "bestBitsProgress",
+            "captions", "durationMs", "encoderAnswer", "encoderCeilingP", "estimatedOutputBytes",
+            "exportProgress", "failure", "fitNonce", "fitOvershoot", "fitScale", "fps",
+            "hevcAvailable", "isExporting", "isLoadingSource", "isPlaying", "missingMedia",
+            "originalSizeBytes", "preparingStills", "projectId", "projectName", "proxyPercent",
+            "proxyStatuses", "proxyUris", "recording", "redoLabel", "reframeProgress",
+            "replacing", "reversing", "safeArea", "scrubNonce", "selectedClipId",
+            "selectedClipIds", "selectingMore", "sourceHasAudio", "sourceHeight", "sourceName",
+            "sourceVideoBps", "sourceWidth", "speakingId", "stabilize", "startedAtMillis",
+            "styleClipboard", "syncClipId", "syncConfidence", "syncStatus", "tracking",
+            "transportRequest", "trimEndMs", "trimStartMs", "undoLabel", "videoClips"
+        )
+        val undecided = live.filterNot { it in snapshot || it in transient }
+        undecided.forEach { field ->
+            flag("EditorUiState.$field is in neither ProjectSnapshot nor the transient list - decide " +
+                "which it is. If it is a setting of the edit it belongs in the draft (and the codec); " +
+                "if it is a status or a view preference, add it to the list in this suite with the " +
+                "reason, the way safeArea's own comment gives one.")
+        }
+        // And the other way: a name that has left EditorUiState should leave
+        // the list, or the list becomes a record of fields that no longer exist.
+        transient.filterNot { it in live }.forEach {
+            flag("\"$it\" is in this suite's transient list and no longer a field of EditorUiState")
+        }
+    }
+
     // The codec says which versions it reads; a field added without a bump is
     // read by an older build as its new meaning. Not a thing a names check can
     // judge, but the constants must at least still be there to be reasoned about.
