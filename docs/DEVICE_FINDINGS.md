@@ -2859,7 +2859,14 @@ timestamped sources being absorbed over about four frames rather than frames
 being lost - the total is right. Worth keeping as the shape of a healthy join:
 a regression here would be a much wider spread.
 
-**Not a fault, but worth knowing:** a quick tool's export does not get a Library
-row. The Library stayed at 35 through four tool exports. They are reachable from
-Tool sessions instead, which is defensible - but if the Library is meant to be
-"every file Squish made", it is not that.
+**And one thing read wrong, then read again.** The Library stayed at 35 through
+four tool exports, which looked like tool runs not getting a row at all. They do:
+`LibraryScreen` calls `HistoryRepository.forgetDeleted` as it opens, which drops
+any row whose gallery file is gone, and the four test files had been deleted by
+MediaStore id before the Library was ever opened. 35 to 39 and back to 35.
+
+So nothing is missing - and the detour settles something that was not on any
+list: **`forgetDeleted` on a real gallery deletion**, four rows with their files
+taken out from under them, all four forgotten, every other row left alone. That
+is the function's whole risk, since forgetting a row whose file still exists
+loses it for good.

@@ -557,8 +557,18 @@ a. **Squeeze's "Fit to a size"** - the chip was never tapped, so B14's "Keep
    whole job is hitting a size.
 b. **"Save as GIF" and "Copy to Files"** on a done screen, both offered on every
    tool and neither pressed.
-c. **A quick tool's export gets no Library row.** The Library held at 35 through
-   four tool exports. Decide whether that is right; if it is, nothing to do.
+c. ~~**A quick tool's export gets no Library row.**~~ **Wrong, and the mistake
+   is worth keeping.** The Library held at 35 through four tool exports, so it
+   looked as though `historyRepository.add` was not reached. It is: the four
+   rows were there, and `LibraryScreen` forgets a row whose gallery file is gone
+   the moment it opens (`HistoryRepository.forgetDeleted`). The test files had
+   been deleted by MediaStore id first, so all four were forgotten before the
+   count was read. 35 to 39 and back to 35.
+
+   What that accidentally settles: **`forgetDeleted` does what it says on a real
+   gallery deletion** - four rows, four files taken out from under them, four
+   rows gone and the rest untouched, which is the path that must never take a
+   row whose file still exists.
 d. **A tool session resumed from the list** - the row's play opens it, and that
    path (restore a slot, re-probe the files, put the handles back) has only been
    seen by accident, when a stray tap reopened a Stitch and it came back with
