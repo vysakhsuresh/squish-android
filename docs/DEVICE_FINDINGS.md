@@ -3228,3 +3228,20 @@ What the sweep found beyond the switches, the sliders and the picture:
 **Still open:** one node on the Sound sheet, an `android.view.View` at the very
 bottom of the panel and partly below the fold, which I could not identify without
 scrolling it into view. Worth a minute from whoever is next.
+
+### 24. The Frame tool, and the safe-area guide on a crop (8 October)
+
+9:16 on a portrait edit draws its crop window as a violet rectangle over the
+picture with thirds guides inside it, and a line appears under the chips naming
+where that shape is posted - "TikTok, Reels, Shorts, Stories".
+
+**The safe-area guide is drawn inside the crop, not on the canvas.** Turning on
+"TikTok" under "Show where the app's buttons will be" draws a green dashed
+rectangle labelled *"TikTok · the clear part"* **within** the 9:16 window, with
+the hint "A guide only - it is never in the file." That is sweep six's fault
+fixed and seen: it used to be drawn on the canvas, so it was right only while
+nothing was cropped.
+
+Also seen on the way: **the Looks sheet's filters reach the preview and the
+strip's own thumbnails** - Vivid redrew both - and **Undo clears a filter**
+cleanly, leaving Original selected, Redo live and Undo dim.
