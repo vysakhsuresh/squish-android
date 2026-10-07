@@ -3002,3 +3002,31 @@ playhead sitting on the overlay's own first frame; and the **Layer** sheet's
 empty state, which is better than most - "Row 1 of 1 · Higher rows are drawn over
 lower ones · No other overlay is on screen at the same time as this one, so there
 is nothing to put it in front of or behind."
+
+### 19. Item 17, and a cause I had got wrong (7 October)
+
+**ROADMAP §5 item 17, done**, and it is the device's answer to a change made
+today: on a slideshow of two photos, Sound → **"Mic & camera" offers the Record
+card alone** - no Camera sound row, no level slider. That is the case this
+morning's `ToolRules.hasCameraAudio` had to keep working while making the
+clip-less quick-tool state answer from the lead file. Clips present, none of them
+able to carry camera sound, so the answer is no. The executed check holds it over
+one to eight clips; the phone agrees.
+
+**And a correction.** §13 above said the owner's 29 September project re-dated
+itself because today's codec encodes differently, so the fingerprint moved and
+any old project would be re-saved on its first open by a new build. That is
+wrong, and the test was free: opening "Edit · 5 Oct, 7:11 AM" - also written by
+an older build - and leaving it left it reading **"Edit · 5 Oct, 7:11 AM · 1 d
+ago", in the same place in the grid**. Not re-dated, not re-saved, `untouched`
+held.
+
+So the trigger is not the codec. It is what is special about the other project:
+**its media is missing**, and opening it runs the relink path, where `applyDraft`
+re-probes the edit's shape from the first main shot that reads (B15). That
+changes the state, the fingerprint moves with it, and the save follows.
+
+The fix committed this morning is unaffected and still worth having - a re-save,
+whatever provokes it, may not invent a creation date - but the reason given for
+the re-save was a guess dressed as a finding, and the thing that would have
+caught it was one tap.
