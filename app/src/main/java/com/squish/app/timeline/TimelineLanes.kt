@@ -373,19 +373,24 @@ object TimelineLanes {
     const val MAX_FIT_SECONDS = 30f
 
     /**
-     * The zoom that lays the whole edit out from the playhead line to the
-     * strip's right edge - or [MAX_FIT_SECONDS] of it, whichever is less.
+     * The zoom that lays the whole edit across the strip - or
+     * [MAX_FIT_SECONDS] of it, whichever is less.
      *
-     * What is usable is everything *after* the line, because a fit is asked for
-     * with the playhead at 0:00 and the edit runs to the right of it. That used
-     * to be half the strip, which is where the line used to be; it is three
-     * quarters now, so an opened video is drawn half as big again
-     * (TimelineWindow.PLAYHEAD_FRACTION says why the line moved). The 12 dp is
-     * so the last frame is not flush against the edge.
+     * **The whole strip, not the part after the playhead.** A fit is asked for
+     * with the playhead at 0:00, and `TimelineWindow.linedOn` clamps its scroll
+     * there, so the edit is laid out from the strip's *left edge* and every
+     * pixel of it is usable. This was half the strip when the line sat in the
+     * middle and three quarters when it moved to a quarter; both were working
+     * around a window that scrolled before the start of the edit, and it does
+     * not any more. An opened video is drawn a third bigger again than it was,
+     * which is the rest of the answer to the strip reading as frozen - at a
+     * fit-the-whole-edit zoom it used to creep about six pixels a second.
+     *
+     * The 12 dp is so the last frame is not flush against the edge.
      */
     fun fitZoom(durationMs: Long, viewportDp: Float): Float {
         val seconds = (durationMs / 1000f).coerceAtLeast(0.001f)
-        val usable = (viewportDp * (1f - TimelineWindow.PLAYHEAD_FRACTION) - 12f).coerceAtLeast(1f)
+        val usable = (viewportDp - 12f).coerceAtLeast(1f)
         return maxOf(usable / seconds, usable / MAX_FIT_SECONDS).coerceIn(ZOOM_MIN, ZOOM_MAX)
     }
 }

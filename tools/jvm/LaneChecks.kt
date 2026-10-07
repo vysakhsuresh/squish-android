@@ -492,24 +492,39 @@ private fun window() {
             val w = TimelineWindow.linedOn(at, pps, density, vp)
             val line = vp * TimelineWindow.PLAYHEAD_FRACTION
             val tag = "lined $at at ${pps}pps ${vp}px x$density"
-            check(abs(w.lineMs - at) < 1e-6, "$tag: line ${w.lineMs}")
+            // The window is clamped at the start of the edit now, so the
+            // playhead is at the line only once it has got that far. Before
+            // that the strip is laid out from the left edge and the playhead
+            // walks across it - which is what stops a quarter-screen of the
+            // strip being wasted, and what lets the playhead move at all.
+            // These assertions used to say "at the line, always", which is the
+            // bug stated as a requirement; see WindowChecks for the same lesson.
+            check(w.scrollMs >= -1e-6, "$tag: scrolled before 0:00 (${w.scrollMs})")
             if (vp > 0) {
-                check(abs(w.xPx(at.toLong()) - line) <= 1f + (at - at.toLong()).toFloat() * pps * density / 1000f, "$tag: playhead at ${w.xPx(at.toLong())}")
-                check(abs(w.exactMsAt(line) - at) < 1e-6, "$tag: exactMsAt ${w.exactMsAt(line)}")
+                val x = w.xPx(at.toLong())
+                val slack = 1f + (at - at.toLong()).toFloat() * pps * density / 1000f
+                check(x <= line + slack, "$tag: playhead past the line at $x")
+                check(x >= -slack, "$tag: playhead off the left edge at $x")
+                check(w.xPx(0L) <= slack, "$tag: the start of the edit is right of the left edge")
+                // Where it is not clamped, the old equalities still hold exactly.
+                if (w.scrollMs > 1e-6) {
+                    check(abs(w.lineMs - at) < 1e-6, "$tag: line ${w.lineMs}")
+                    check(abs(x - line) <= slack, "$tag: playhead at $x")
+                    check(abs(w.exactMsAt(line) - at) < 1e-6, "$tag: exactMsAt ${w.exactMsAt(line)}")
+                }
             }
             // Left of the start: nothing negative is ever sought.
             check(w.msAt(0f) >= 0L, "$tag: msAt below zero")
         }
     }
-    // Fit: the whole edit lies between the playhead line and the right-hand
-    // edge, which is where it is laid out from with the playhead at 0:00. It
-    // used to be fitted into *half* the strip, because the line used to be in
-    // the middle, and an opened video was drawn two thirds of the size it
-    // needed to be - the strip then crept about six pixels a second under a
-    // line that never moves, and read as frozen.
+    // Fit: the whole edit lies across the whole strip, because with the window
+    // clamped at 0:00 it is laid out from the left edge. It was fitted into
+    // *half* the strip when the line sat in the middle, and three quarters when
+    // the line moved to a quarter; both were working around a window that
+    // scrolled before the start of the edit, which it no longer does.
     for (len in longArrayOf(1_000, 10_000, 30_000, 3 * 3_600_000L)) {
         val vpDp = 400f
-        val after = vpDp * (1f - TimelineWindow.PLAYHEAD_FRACTION)
+        val after = vpDp
         val pps = TimelineLanes.fitZoom(len, vpDp)
         check(pps in ZOOM_MIN..ZOOM_MAX, "fit $len out of range")
         val drawn = len / 1000f * pps
@@ -526,8 +541,10 @@ private fun window() {
     // at a phone's density the strip has to move by something a person can see.
     run {
         val vpDp = 400f
-        // The 12 dp margin is part of what is usable, as fitZoom has it.
-        val usable = vpDp * (1f - TimelineWindow.PLAYHEAD_FRACTION) - 12f
+        // The whole strip less the 12 dp margin, as fitZoom has it - the
+        // playhead fraction is no longer subtracted, because the window is
+        // clamped at 0:00 and the edit is laid out from the left edge.
+        val usable = vpDp - 12f
         val floor = TimelineLanes.fitZoom(10 * 60_000L, vpDp)
         check(abs(floor - usable / TimelineLanes.MAX_FIT_SECONDS) < 1e-3f,
             "a ten-minute edit fits at $floor dp/s, not the ${usable / TimelineLanes.MAX_FIT_SECONDS} floor")
@@ -540,13 +557,15 @@ private fun window() {
         val short = TimelineLanes.fitZoom(5_000L, vpDp)
         check(abs(short - usable / 5f) < 0.2f, "a five-second edit no longer fits the strip: $short")
     }
-    // The strip as drawn agrees with the strip a finger lands on, at the line's
-    // new place. The drawn window is twice as wide, so its own quarter is
-    // nowhere near the strip's quarter - the pair below is what catches that.
+    // The strip as drawn agrees with the strip a finger lands on - including at
+    // 0:00, where the window is clamped against the left edge and the playhead
+    // is *not* at its fraction. slideFor was written on that assumption and had
+    // to be rephrased on the window's own scroll; this is the pair that catches
+    // the two parting.
     for (pps in floatArrayOf(2f, 42f, 400f)) for (vp in intArrayOf(1080, 1079)) {
         for (at in doubleArrayOf(0.0, 7_777.0, 600_000.0)) {
             val live = TimelineWindow.linedOn(at, pps, 2.75f, vp)
-            val s = TimelineWindow.slideFor(live, live.lineMs)
+            val s = TimelineWindow.slideFor(live)
             for (t in longArrayOf(at.toLong(), at.toLong() + 999, 0L)) {
                 val drawnAt = Math.round(s.drawn.xPx(t)) - s.padPx + s.shiftPx
                 val liveAt = live.xPx(t)
