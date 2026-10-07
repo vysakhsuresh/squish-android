@@ -3030,3 +3030,30 @@ The fix committed this morning is unaffected and still worth having - a re-save,
 whatever provokes it, may not invent a creation date - but the reason given for
 the re-save was a guess dressed as a finding, and the thing that would have
 caught it was one tap.
+
+### 20. The playhead moves, and nothing is wasted at the start (7 October, night)
+
+The third report of one thing, and the first two "fixes" were the cause of the
+second and third. See the commit for why; this is what the phone showed after it.
+
+- **The clip starts flush at the left edge**, with the ruler's 0:00 under it.
+  It used to begin a quarter of a screen in, every time: "the new video added is
+  starting after wasting space at start".
+- **A drag to the right takes the playhead to the right.** 450 px of drag:
+  0:00.000 → **0:13.751**, with the playhead visibly walking across the strip
+  from the left edge. Dragging back left: **0:02.060**, and the strip back
+  against the left edge with no rubber-band and no overshoot. Dragging further
+  left stops dead at 0:00.000.
+- **Both halves of the window are real.** At a fit zoom the whole edit is on
+  screen and the playhead walks the whole way. Pinched in to about a second and
+  a half on screen, the playhead holds at the quarter and the film scrolls under
+  it - which is what keeps the rest of a long edit in front of you.
+- **Playback agrees**: playing from 0:00 the playhead holds at the quarter, the
+  film scrolls, and the preview advances (0:10.499 at four seconds in).
+- A pinch at 0:00 leaves the strip against the left edge rather than jumping.
+
+What this cost elsewhere: `slideFor` had been written assuming the playhead is
+always at `linePx`, and with the clamp it is not, so the drawn strip would have
+been laid a quarter-screen from where a finger finds it. It is phrased on the
+window's own scroll now. Executed in WindowChecks over every zoom, viewport and
+moment.
