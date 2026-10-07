@@ -3694,3 +3694,48 @@ quality, H.264.
 Also seen on the way: sizes above 1080p are **greyed** on the Export sheet with
 "Sizes above 1080p are beyond this phone's encoder" (B14's `EncoderCeiling`), and
 the transition sheet's tiles animate the *outgoing* shot's own picture.
+
+### 39. Three more of B5's export gates, read off the files (8 October)
+
+Same edit as §38 (photo 0-3 s, video after it), driven on from there.
+
+**Gate (3) - a video overlay over the base.** A 0:21 video overlay landed at the
+playhead (3.494 s), trimmed back to 0:10 by dragging its tail, drawn by the
+preview in the upper right at about 40% of the width. Rendered at 480p
+(`frames=743 size=1956885`, 10 s of render) and read at one-second steps:
+
+- 1.0 s and 2.0 s: the photo alone;
+- 3.0 s: the base video alone - the overlay has not started;
+- **4.0 s through 13.0 s: the PiP, upper right, at the size and place the preview
+  drew it**, running its own picture;
+- **14.0 s onward: the base alone - nothing left on screen after it ends.**
+
+That is the whole of gate (3), and it is the composited path, so the clock still
+and the transparent still are on it. `Mp4Probe`: 743 samples, 24.766 s, 30.000
+per second, 33.33 ms ×742 - the same clean clock as the cuts-only render, which
+is what `clockLeadMs` is for (a whole-gap clock used to write 30 fps over 60 fps
+footage).
+
+**Gate (5), the half that could have been upside down.** B13: *"every vertical
+transition (Slide up, Slide down, and any kept band) is the same way up in the
+file as in the preview (`Draw.shaderUniforms` turns the draw over for the
+texture)"*. Set the join to **Slide up**, parked the playhead at 0:02.766 - inside
+the half-second - and screenshotted the preview: the outgoing photo **above**, the
+incoming video **below**, both travelling up. Then rendered and pulled the same
+moment out of the file: at 2.5 s the photo fills the frame, by 2.6 the video has
+appeared along the **bottom**, at 2.8 the photo is squeezed into the top third,
+at 3.0 the video fills it. **The same way up.** Not flipped, not mirrored.
+
+**Gate (6) - 9:16 at 720p.** Frame → 9:16, size 720p: the sheet says **720 × 1280**
+before rendering, the done screen says 720 × 1280 after, and the frames are
+upright and portrait with **no pillars** on the video (the landscape photo at 1 s
+is letterboxed, which is what a landscape picture in a 9:16 frame should do).
+
+**One thing to know about every file this writes, not a fault but worth
+recording.** MediaStore reports all four exports *landscape* - `width=852
+height=480`, `width=1280 height=720` - because the encoder writes the frame
+sideways with a 90° rotation tag, which is what Media3 does to stay off encoders
+that will not take a portrait surface. Everything that honours the tag (the
+gallery, the done screen's own player, Windows' `MediaComposition`) shows it
+upright; anything that reads only the track header would show it on its side. The
+done screen is right because it measures through `MediaMetadataRetriever`.
