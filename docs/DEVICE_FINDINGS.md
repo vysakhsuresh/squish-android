@@ -3376,3 +3376,20 @@ crash happened and left the surface dead for good, that the code would now take
 the chain off and let the picture back, and that repeated live swaps no longer
 produce it. Whoever sees `player error` with a `media3.effect` frame again should
 find `dropping effects` beside it and a picture on the screen.
+
+### 28. The phone on its side (8 October)
+
+B6 listed the landscape layout as built and unseen. Both halves hold.
+
+**Rotated to landscape while paused**: two panes - the header, the picture and
+the transport on the left, the strip with its four track heads, its ruler, Split
+and the level-0 toolbar on the right. The picture **carried across**: the frame
+that was on screen is still on screen, not black and not stalled.
+
+**Rotated back to portrait while playing**: still playing, at 0:09.593, with the
+picture live and advanced past where it was - so the player came across the
+rotation without a reload. The strip re-laid with the playhead at its place and
+the film scrolled under it.
+
+(`accelerometer_rotation` and `user_rotation` restored afterwards, as was
+`always_finish_activities` from §25.)
