@@ -556,7 +556,16 @@ class ProjectAutosave(context: Context) {
             // The sidecar first, as a save writes it.
             val meta = JSONObject().apply {
                 put("id", slot)
-                keep?.optLong("createdAtMillis", 0L)?.takeIf { it > 0L }?.let { put("createdAtMillis", it) }
+                // Through ProjectRules.createdAt for the same reason the ordinary
+                // save is: a project older than the field has no stored start,
+                // and leaving the key out here hands the card the *snapshot's*
+                // day instead - which is the thing the paragraph above says a
+                // revert must not do.
+                ProjectRules.createdAt(
+                    keep?.optLong("createdAtMillis", 0L) ?: 0L,
+                    keep?.optLong("savedAtMillis", 0L) ?: 0L,
+                    0L
+                ).takeIf { it > 0L }?.let { put("createdAtMillis", it) }
                 keep?.optLong("exportedAtMillis", 0L)?.takeIf { it > 0L }?.let { put("exportedAtMillis", it) }
                 keep?.optString("exportedFingerprint")?.takeIf { it.isNotBlank() }?.let { put("exportedFingerprint", it) }
                 put("title", earlier.name ?: earlier.clips.firstOrNull()?.label ?: "Untitled edit")
@@ -771,8 +780,19 @@ class ProjectAutosave(context: Context) {
             put("durationMs", state.trimmedDurationMs)
             put("clipCount", state.videoClips.size)
             put("savedAtMillis", savedAtMillis)
-            // When the project was started, for the name an unnamed one is shown by.
-            put("createdAtMillis", previous?.optLong("createdAtMillis", 0L)?.takeIf { it > 0L } ?: savedAtMillis)
+            // When the project was started, for the name an unnamed one is shown
+            // by and the order of the grid. Through the previous sidecar's *save*
+            // time, not straight to now - see ProjectRules.createdAt: a project
+            // older than the field would otherwise be stamped as made today the
+            // first time a build that knows the field saved it.
+            put(
+                "createdAtMillis",
+                ProjectRules.createdAt(
+                    previous?.optLong("createdAtMillis", 0L) ?: 0L,
+                    previous?.optLong("savedAtMillis", 0L) ?: 0L,
+                    savedAtMillis
+                )
+            )
             put("editFingerprint", fingerprint)
             // "Opened from another app just to look", kept across a process
             // death. Its only record used to be the .start file that this very

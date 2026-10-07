@@ -253,6 +253,64 @@ fun main() {
             "an older copy's UUID name became a project name")
     }
 
+    // ---- A re-save is not a re-creation. -----------------------------------
+    //
+    // createdAtMillis is newer than the app, so a project made before it has
+    // only a savedAtMillis - and the readers already fall back to it. The
+    // writer did not: with no stored creation date it took the moment it was
+    // writing. Seen on the owner's phone on 7 October, where a project from 29
+    // September, opened and left untouched, came back named "Edit · 7 Oct,
+    // 5:32 AM" at the top of the grid, because the codec had changed under it
+    // and the fingerprint no longer matched.
+    run {
+        val sep29 = 1_790_654_802_001L
+        val oct7 = 1_791_336_768_544L
+
+        // The case that bit: a sidecar with a save time and no creation date.
+        check(
+            ProjectRules.createdAt(storedCreated = 0L, storedSaved = sep29, now = oct7) == sep29,
+            "an old project's first save under a new build re-dated it to today"
+        )
+        // A project the field already knows keeps its own start, whatever is
+        // saved over it and however many times.
+        check(
+            ProjectRules.createdAt(storedCreated = sep29, storedSaved = oct7, now = oct7) == sep29,
+            "a stored creation date was overwritten by a later save"
+        )
+        // A project genuinely being made now has neither, and takes now.
+        check(
+            ProjectRules.createdAt(storedCreated = 0L, storedSaved = 0L, now = oct7) == oct7,
+            "a brand new project was given no start at all"
+        )
+        // Nothing on disk at all - no sidecar to read - is the same case.
+        check(
+            ProjectRules.createdAt(0L, 0L, 0L) == 0L,
+            "an unknown start was invented out of nothing"
+        )
+        // Never later than the save it is carried through, which is the
+        // property the grid's order and the "N ago" line both lean on.
+        for (created in listOf(0L, sep29, oct7)) {
+            for (saved in listOf(0L, sep29, oct7)) {
+                val at = ProjectRules.createdAt(created, saved, oct7)
+                check(at <= oct7, "createdAt(, , ) came back in the future: ")
+                check(at > 0L, "createdAt(, , ) came back as no date at all")
+                // And it is always one of the three it was given - it never
+                // invents a moment of its own.
+                check(at == created || at == saved || at == oct7, "createdAt(, ) invented ")
+            }
+        }
+        // The one that makes it monotone: given the same sidecar twice, the
+        // answer does not drift. (The second save reads back what the first
+        // wrote, so this is the real loop on the phone.)
+        var sidecarCreated = 0L
+        var sidecarSaved = sep29
+        repeat(5) { i ->
+            sidecarCreated = ProjectRules.createdAt(sidecarCreated, sidecarSaved, oct7 + i)
+            sidecarSaved = oct7 + i
+        }
+        check(sidecarCreated == sep29, "five saves walked the start date to $sidecarCreated")
+    }
+
     if (problems.isEmpty()) {
         println("ProjectRulesChecks: all checks passed")
     } else {

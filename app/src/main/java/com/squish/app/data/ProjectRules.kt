@@ -97,6 +97,34 @@ object ProjectRules {
         else -> "%.2f GB".format(bytes / 1_000_000_000.0)
     }
 
+    /**
+     * When a project was started, for the sidecar a save is about to write.
+     * [storedCreated] and [storedSaved] are what the sidecar on disk holds (0
+     * for a key that is not there) and [now] is the moment this save carries.
+     *
+     * The middle step is the whole of it. `createdAtMillis` is newer than the
+     * app, so every project made before it exists only as a `savedAtMillis` -
+     * and the readers already know that, falling back to it in four places to
+     * decide what an unnamed project is called ("Edit · 29 Sep") and how the
+     * grid is sorted. The writer did not: with no stored creation date it took
+     * the moment it was writing, so the **first save by a build that knows the
+     * field** stamped a project as made today and renamed it after today.
+     *
+     * Seen on the owner's phone, 7 October: a project from 29 September,
+     * opened and left without a change, came back as "Edit · 7 Oct, 5:32 AM"
+     * at the top of the grid. The save itself was right - the codec had
+     * changed, so the edit encoded differently and the fingerprint moved - but
+     * a re-save is not a re-creation, and a project's age is not something a
+     * save may invent. Falling back to the stored save time first makes the
+     * writer agree with the readers: the oldest moment the project can be
+     * shown to have existed.
+     */
+    fun createdAt(storedCreated: Long, storedSaved: Long, now: Long): Long = when {
+        storedCreated > 0L -> storedCreated
+        storedSaved > 0L -> storedSaved
+        else -> now
+    }
+
     /** How far into a shot a cover is taken, at most. */
     const val COVER_LEAD_MS = 1_000L
 
