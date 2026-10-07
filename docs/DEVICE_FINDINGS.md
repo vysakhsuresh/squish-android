@@ -2787,3 +2787,43 @@ Benign in normal use - it happens once per project per format change - but it
 means **after any update that touches the codec, every project the owner opens
 jumps to the top of the grid with today's date**. If that is not wanted, the
 fingerprint would have to be of the *edit* rather than of its encoding.
+
+### 14. The Fast lane driven, and the compact muxer settled (7 October)
+
+**Extract audio was dead and is now seen working.** The fault and its fix are in
+the commit; what the phone showed afterwards: the whole clip gives 5.6 s / 95 KB,
+and the start handle dragged to 0:01.353 for "0:04.179 kept" gives 4.2 s / 73 KB
+- the length measured off the written file, and the done screen's waveform
+missing the transient the handle cut off. Which also puts **B15's
+`TrimRules.draggedTo` in a file for the first time**: a 1.6-second drag moved the
+handle and it stayed, where before the fix each event was under half a frame and
+rounded back to nothing.
+
+The screen itself, never driven before: a waveform decoded from the file, the
+part outside the kept stretch drawn dim in both the waveform and the filmstrip,
+±5 s transport, a scrub bar whose knob sits at the handle, and the frame nudges
+either side reading the two edges.
+
+**Squeeze, also never driven.** A 0:22.266, 3.5 MB, 720p portrait clip at 480p:
+the sheet greyed 1080p, 1440p and 4K and said why - "this is already a 720p file,
+and making the frame bigger can't add detail" - estimated 1.8 MB, and the done
+screen reported Frame 480 x 852, Length 22.3 s, Rate 30 fps, Size 1.7 MB, "51%
+smaller · was 3.5 MB", saved to Movies > Squish. The estimate was out by 6%.
+
+**And the file settles the compact muxer**, which `CLAUDE.md` put first on the
+device list because it is on the path of every export and no file had been
+written with it. `Mp4Probe` on the pulled file:
+
+    track soun mp4a: 962 samples, 22.338 s, 365,980 bytes, 131 kbps
+    track vide avc1: 664 samples, 22.133 s, 30.000 per second, 1,352,092 bytes
+      frame durations: 33.33 ms x664 - shortest 33.33, longest 33.33
+
+1,738,850 bytes in all against 1,718,072 of samples: **20,778 bytes of container,
+1.2% of the file.** Media3's streamable-moov reservation is 400 KB flat, which on
+this file would have been 23%. The frame durations are also perfectly even over
+all 664 frames, so nothing was dropped or doubled on the way through.
+
+Still not answered for the muxer: that such a file plays in WhatsApp and in a
+browser (it plays in the gallery and in the app's own done screen, which is a
+`VideoPreviewSheet` on the MediaStore URI - so B15's "a MediaStore URI plays in
+VideoPreviewSheet" holds).
