@@ -44,6 +44,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -120,7 +122,7 @@ fun StockVideoSheet(onPicked: (Uri) -> Unit, onDismiss: () -> Unit) {
                         singleLine = true,
                         textStyle = MaterialTheme.typography.bodyMedium.copy(color = SquishColors.TextPrimary),
                         cursorBrush = SolidColor(SquishColors.Cyan),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search stock video" }
                     )
                 }
             }

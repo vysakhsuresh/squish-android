@@ -32,6 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.squish.app.media.keepReadAccess
@@ -96,7 +98,10 @@ fun StickersPanel(viewModel: EditorViewModel) {
                     focusedTextColor = SquishColors.TextPrimary,
                     unfocusedTextColor = SquishColors.TextPrimary
                 ),
-                modifier = Modifier.fillMaxWidth()
+                // A placeholder is not a label: it is gone the moment anything
+                // is typed, and uiautomator flags the field `NAF` for having no
+                // name at all.
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search stickers" }
             )
             val searching = query.isNotBlank()
             if (!searching) {

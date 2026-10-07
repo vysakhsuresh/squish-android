@@ -716,7 +716,10 @@ fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel, selectAl
                 .onFocusChanged {
                     if (hadFocus && !it.isFocused) viewModel.text.endCaptionTyping(caption.id)
                     hadFocus = it.isFocused
-                },
+                }
+                // The placeholder goes the moment anything is typed, which on
+                // this field is immediately - it holds the words of the line.
+                .semantics { contentDescription = "Your words" },
             placeholder = { Text("Type your text", color = SquishColors.TextMuted) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = SquishColors.Amber,

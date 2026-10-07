@@ -163,6 +163,27 @@ fun main() {
             }
         }
         check(sliders >= 6, "only $sliders sliders found - the pattern that finds them has rotted")
+
+        // And every text field, for the third time over. A placeholder is not a
+        // label: it is drawn only while the field is empty, so the moment
+        // anything is typed the field has no name at all - and `uiautomator`
+        // flags it `NAF` even while it is empty, because a placeholder drawn as
+        // a *sibling* `Text` is not the field's own.
+        //
+        // Five `BasicTextField`s and three `OutlinedTextField`s, every one of
+        // them a search box or a number entry whose words sit beside it.
+        var fields = 0
+        readAll("$SRC").forEach { (path, text) ->
+            Regex("""(BasicTextField|OutlinedTextField)\(""").findAll(text).forEach { m ->
+                fields++
+                check(
+                    argsAt(text, m.range.last).contains("contentDescription"),
+                    "$path has a text field with no contentDescription - a placeholder is not a name, " +
+                        "and it is gone the moment anything is typed"
+                )
+            }
+        }
+        check(fields >= 8, "only $fields text fields found - the pattern that finds them has rotted")
     }
 
     // ---- A screen that renders says what the render will drop. -------------

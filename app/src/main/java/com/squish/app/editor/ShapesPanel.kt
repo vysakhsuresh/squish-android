@@ -29,6 +29,8 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.theme.SquishColors
@@ -65,6 +67,12 @@ fun ShapesCard(viewModel: EditorViewModel) {
                             .weight(1f)
                             .clip(RoundedCornerShape(12.dp))
                             .background(SquishColors.Background)
+                            // The name as well as the action label: `onClickLabel`
+                            // is announced as part of the gesture ("double tap to
+                            // Rectangle"), and leaves the tile itself nameless -
+                            // eight identical blank buttons to a screen reader,
+                            // since what tells them apart is a drawn glyph.
+                            .semantics { contentDescription = shape.label }
                             .clickable(onClickLabel = shape.label) { viewModel.text.addShape(shape) }
                             .padding(10.dp),
                         contentAlignment = Alignment.Center

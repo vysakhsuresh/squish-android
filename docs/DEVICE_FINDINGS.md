@@ -3197,3 +3197,34 @@ sites** rather than over the component, so a third wrapper cannot skip it, and
 balances each call's parentheses rather than matching a regex - every one of
 these carries a lambda with calls inside it, and a pattern that stops at the
 first `)` reads the arguments as empty and passes everything.
+
+**The same sweep over the other sheets.** Dumping the tree on each screen in turn
+and counting what `uiautomator` flags:
+
+| screen | before | after |
+|---|---|---|
+| editor | 2 | **0** |
+| Settings | 2 | **0** |
+| Stickers | 1 | **0** |
+| Text | 0 | 0 |
+| dashboard | 0 | 0 |
+| Sound | 1 | 1 |
+
+What the sweep found beyond the switches, the sliders and the picture:
+
+- **Eight shape tiles** - rectangle, ellipse, triangle, diamond, star, line,
+  arrow, double arrow - carried an `onClickLabel` and no name. An action label is
+  announced as part of the gesture ("double tap to Rectangle") and leaves the
+  tile itself nameless, which for eight tiles told apart only by a drawn glyph is
+  eight identical blank buttons. They read their own names now.
+- **Every text field in the app**: five `BasicTextField`s and three
+  `OutlinedTextField`s, all of them a search box or a number entry whose words
+  are a *placeholder*. A placeholder is not a label - it is drawn only while the
+  field is empty, so the moment anything is typed the field has no name at all,
+  and a placeholder drawn as a sibling `Text` is not the field's own even while
+  it shows. The check found two of these that the tree had not: the caption
+  editor's own field, which is never empty, and the rename dialog's.
+
+**Still open:** one node on the Sound sheet, an `android.view.View` at the very
+bottom of the panel and partly below the fold, which I could not identify without
+scrolling it into view. Worth a minute from whoever is next.

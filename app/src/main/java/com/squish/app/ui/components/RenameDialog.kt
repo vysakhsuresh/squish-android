@@ -30,6 +30,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -87,6 +89,7 @@ fun RenameDialog(current: String, placeholder: String, onSave: (String) -> Unit,
                     unfocusedTextColor = SquishColors.TextPrimary
                 ),
                 modifier = Modifier.fillMaxWidth().focusRequester(focus)
+                    .semantics { contentDescription = "A name for this project" }
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SquishOutlinedButton(text = "Cancel", modifier = Modifier.weight(1f), onClick = onDismiss)

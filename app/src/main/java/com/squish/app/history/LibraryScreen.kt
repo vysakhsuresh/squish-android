@@ -53,6 +53,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.SquishRepositories
@@ -263,7 +265,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
                     TextStyle(color = SquishColors.TextPrimary)
                 ),
                 cursorBrush = SolidColor(SquishColors.Violet),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search your exports" }
             )
         }
         if (query.isNotEmpty()) {

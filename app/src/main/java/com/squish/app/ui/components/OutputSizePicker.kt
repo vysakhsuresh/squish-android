@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.squish.app.editor.OutputSize
 import com.squish.app.home.formatSize
@@ -291,7 +293,7 @@ private fun CustomSizeField(initial: Int, maxP: Int, accent: Color, onSet: (Int)
             cursorBrush = SolidColor(accent),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { commit() }),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f).semantics { contentDescription = "Short edge, in pixels" }
         )
         Text("p", style = MaterialTheme.typography.titleSmall, color = SquishColors.TextMuted)
         Spacer(modifier = Modifier.width(12.dp))
