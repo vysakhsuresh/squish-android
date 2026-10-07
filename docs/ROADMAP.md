@@ -619,11 +619,18 @@ things on this list that can only be judged *by ear*, so they want quiet:
 **Added after sweep eight** (5 October, night). The first is the single most
 important thing on this whole list: until tonight it could not be done at all.
 
-23. **Auto-caption two minutes of talking and render it.** Sixteen or more
-    captions went into one Media3 overlay pass, which refuses more than fifteen
-    and fails the render at its first frame - while the preview showed every
-    one. Check they are all in the file, in order, with the right one on top
-    where two overlap.
+23. ~~**Auto-caption two minutes of talking and render it.**~~ **The overlay-pass
+    half is done, 7 October**, with an imported .srt rather than the recogniser -
+    the fault was in the pass, not in speech, and twenty cues by hand crosses the
+    fifteen-overlay limit deterministically. Twenty lines imported with their
+    milliseconds kept, the render completed (`frames=664`), and twenty frames
+    pulled from the file show the right line at every point inside a cue, lines
+    16 to 20 among them. `docs/DEVICE_FINDINGS.md` §17 has the table.
+
+    **Still to do here:** the recogniser itself - word timings, and the Words
+    arrival landing each word on its own rather than a third of a second early
+    (item 25) - and two captions that *overlap*, where the question is which is
+    on top. The .srt used had no overlaps.
 24. **Set the phone to Arabic, export subtitles, import the file back.** The
     timing lines must be ASCII digits; they used to come out in Eastern
     Arabic-Indic numerals that no tool reads, this app's own parser included.
