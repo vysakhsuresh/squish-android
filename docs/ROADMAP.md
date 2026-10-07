@@ -594,7 +594,10 @@ each one is a thing that was plainly broken for anyone who did it:
 14. ~~**Blend a still over a shot and change its Blend mode and Opacity**~~
     **Done, 7 October.** Multiply redrew on the tap and Opacity faded under the
     finger, with the shot never touched. `docs/DEVICE_FINDINGS.md` §18.
-15. **Trim a sixty-second clip down to two in Snip**: both handles still answer.
+15. ~~**Trim a sixty-second clip down to two in Snip**: both handles still
+    answer.~~ **Done, 8 October**, tighter than asked: trimmed to 0:01.485 and
+    the start handle still moved, 0:00.000 to 0:00.363, with the end held.
+    `docs/DEVICE_FINDINGS.md` §30.
 16. **A 9:16 crop on a landscape edit**, with the safe-area guide on: the dashed
     rectangle is inside the picture the file keeps.
 17. ~~**A slideshow of photos**: no Camera sound row on the Sound sheet.~~
