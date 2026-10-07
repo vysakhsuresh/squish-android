@@ -2664,3 +2664,32 @@ says nothing about what is in the file, and `ProjectRules.saysSomething` refuses
 such a stem as a project's name. It knew the UUID shape; it knows the digest
 shape too now, or every project opened from a share would have been called
 `396ed8c4f1bf…`.
+
+### 9. The padded canvas, the safe-area guide and the beat grid (7 October)
+
+All first sightings, in a one-hour window on the phone.
+
+- **A beat grid on the camera sound, and a head trim.** Find the beat on an
+  86-second recording of a stage: **135 beats, 94.3 BPM, "Some pulse", bar
+  starts on beat 3, 34 bars**, with the card saying "Found on the camera sound,
+  so there is no clip to draw the dots on". Mark every beat drew 135 lines
+  across the whole strip. Trimming 3.7 s off the head of the shot left the card
+  reading exactly the same - 135 beats, 94.3 BPM, bar on beat 3, 34 bars -
+  which is `AudioRules.chosenInWindow` counting the bar over the *file's* list
+  rather than the window's. §5 step 7, as far as a screen can answer it; whether
+  the dots are still on the music needs ears.
+- **A 9:16 frame on landscape footage.** The picture is cut to 9:16 in the
+  preview, and the Export sheet offers **720 × 1280** at Original - B5 gate step
+  6's number, from the sheet rather than from a file.
+- **The safe-area guide is drawn on the crop, not on the canvas.** With Reels
+  chosen, the dashed "Reels · the clear part" rectangle sits inside the 9:16
+  frame. That is the sweep-six fix seen: it used to be drawn on the canvas, so
+  it was only right while nothing was cropped.
+- **Frame → Background → Blur: the padded canvas, B12's biggest unseen item.**
+  The landscape shot is kept whole in the middle of the 9:16 frame over a
+  blurred copy of itself, on screen **and in the exported file** - 360×640,
+  2486 frames at exactly 30.000 fps, every frame 33.33 ms, the backdrop filling
+  above and below. Read frame by frame at 2 s, 14.7 s, 27.3 s and 40 s.
+- **Filters** draw their swatches from a real frame of the shot (Original,
+  Vivid, Punch, Soft, Clean), and applying Vivid reached the picture at once -
+  the blurred backdrop with it, so the canvas is graded as one picture.
