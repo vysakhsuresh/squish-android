@@ -3739,3 +3739,55 @@ that will not take a portrait surface. Everything that honours the tag (the
 gallery, the done screen's own player, Windows' `MediaComposition`) shows it
 upright; anything that reads only the track header would show it on its side. The
 done screen is right because it measures through `MediaMetadataRetriever`.
+
+### 40. The storage card, and the Clear that looked broken (8 October)
+
+B15's storage card, measured against `du` on the phone - **every row is right**:
+
+| Row | Card | `du -sk` |
+|---|---|---|
+| Exports kept inside Squish | 354 MB | 346,576 KB (30 private copies, in `getExternalFilesDir/exports`) |
+| Photos and freezes | 397 MB | 387,840 KB |
+| Reversed renders, imports and downloads | 694 MB | 677,975 KB (reversed + imports + music/online) |
+| Voice and speech | 5 MB | 4,692 KB |
+
+And `files/exports/` **inside** the private dir does not exist at all, which is
+B15's "exports are stored once" seen: four exports rendered this session each
+left the gallery copy and nothing else (`GallerySaver.retire`).
+
+**The sweep keeps exactly what it should.** Before clearing, I listed the 23
+files under the three render folders and worked out by hand which a draft names.
+Clear then deleted `imports/stock/*` and both files under `reversed/`, and kept
+every top-level import - which looked wrong until I noticed my own list had
+globbed `files/projects/trash/*.json` while the bin's drafts live one level
+deeper, in `trash/<entry>/`. They are named by **binned** drafts, and a binned
+draft keeping its files is the rule Restore leans on. `StorageRules` is right;
+my reading of it was not.
+
+**What is wrong is what the card says about it.** A row reading 694 MB, tapped,
+went to 673 MB and said nothing: 21 MB freed out of 694, with no way to tell
+whether the Clear had worked, what was kept, or why. The blurb's "Only ones no
+project uses are cleared" is true and answers none of that. The second tap -
+nothing left to free - moved the number not at all.
+
+**Fixed:** `StorageRules.clearedLine` (executed in `tools/jvm/ProjectRulesChecks.kt`,
+negative-tested three ways), shown under the row that was cleared:
+
+- a cache, which goes whole: **"Freed 21 MB."**
+- a kind that keeps what drafts name, with some gone and some held:
+  **"Freed 21 MB. 673 MB belongs to projects, 12 of them in the bin."**
+- nothing moved at all: **"Nothing to clear - every file here belongs to a
+  project, 12 of them in the bin."** - never "Freed 0 MB", which reads as a
+  failure.
+- everything moved: **"Freed 694 MB."** with no "0 MB belongs to projects" tail.
+
+Seen on the phone: the renders row, already swept, now answers **"Nothing to
+clear - every file here belongs to a project, 70 of them in the bin."** Which is
+the true story, and it is one nothing in the app could say before: 673 MB of this
+phone is held by seventy binned projects (all of them this month's test debris;
+`DraftHousekeeping.TRASH_KEEP_MS` lets them go after thirty days).
+
+Negative tests, each watched to fail against a copy of the file with the fault
+put back: the bin clause dropped ("did not name the bin"), the
+nothing-happened branch dropped ("said it freed something when it freed
+nothing"), and `keepsReferenced` ignored ("a cache Clear blamed the bin").

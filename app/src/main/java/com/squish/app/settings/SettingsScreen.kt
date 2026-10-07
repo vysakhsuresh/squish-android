@@ -74,6 +74,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     // Measured off the main thread: seven folders walked at composition was a
     // visible hitch on the way in.
     var storage by remember { mutableStateOf<List<StorageEntry>>(emptyList()) }
+    // What the last Clear did, said under its own row: see StorageRules.clearedLine.
+    var cleared by remember { mutableStateOf<ClearResult?>(null) }
     LaunchedEffect(Unit) { storage = StorageCleaner.measure(context) }
 
     SquishPage(
@@ -87,7 +89,14 @@ fun SettingsScreen(onBack: () -> Unit) {
         OnlineCard()
         StorageCard(
             entries = storage,
-            onClear = { kind -> scope.launch { storage = StorageCleaner.clear(context, kind) } }
+            cleared = cleared,
+            onClear = { kind ->
+                scope.launch {
+                    val result = StorageCleaner.clear(context, kind)
+                    storage = result.entries
+                    cleared = result
+                }
+            }
         )
         AboutCard()
         MakerCard()
@@ -547,7 +556,7 @@ private fun WhatItDoesCard() {
  * and stills sat in folders nothing measured.
  */
 @Composable
-private fun StorageCard(entries: List<StorageEntry>, onClear: (StorageKind) -> Unit) {
+private fun StorageCard(entries: List<StorageEntry>, cleared: ClearResult?, onClear: (StorageKind) -> Unit) {
     val total = entries.sumOf { it.bytes }
     SquishCard(accent = SquishColors.Amber) {
         SectionHeading(
@@ -578,6 +587,22 @@ private fun StorageCard(entries: List<StorageEntry>, onClear: (StorageKind) -> U
                         .clickable(enabled = entry.bytes > 0L, role = Role.Button) { onClear(entry.kind) }
                         .heightIn(min = 44.dp)
                         .padding(horizontal = 12.dp, vertical = 12.dp)
+                )
+            }
+            // Under the row it belongs to: a 694 MB row that frees 21 of them
+            // reads as a Clear that did not work, and the blurb cannot say how
+            // much is held or that the bin is holding it.
+            cleared?.takeIf { it.kind == entry.kind }?.let { result ->
+                Text(
+                    StorageRules.clearedLine(
+                        freedBytes = result.freedBytes,
+                        keptBytes = result.keptBytes,
+                        binnedProjects = result.binnedProjects,
+                        keepsReferenced = result.kind.keepsReferenced,
+                        format = { SquishError.formatBytes(it) }
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.Amber
                 )
             }
         }

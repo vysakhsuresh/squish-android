@@ -311,6 +311,47 @@ fun main() {
         check(sidecarCreated == sep29, "five saves walked the start date to $sidecarCreated")
     }
 
+    // ---- The line the storage card says after a Clear -----------------------
+    //
+    // On this phone a 694 MB row freed 21 MB and said nothing about the other
+    // 673, which are held by nineteen live projects and a bin full of old ones.
+    run {
+        val mb = { b: Long -> "${b / 1_000_000} MB" }
+
+        // A cache goes whole: there is nothing kept, so nothing to explain.
+        check(
+            StorageRules.clearedLine(21_000_000L, 0L, 0, keepsReferenced = false, format = mb) == "Freed 21 MB.",
+            "a cache Clear said: " + StorageRules.clearedLine(21_000_000L, 0L, 0, false, mb)
+        )
+        // A cache with files left over - the bin count is never quoted for it,
+        // because a cache does not keep anything for a project.
+        check(
+            !StorageRules.clearedLine(1L, 9_000_000L, 12, keepsReferenced = false, format = mb).contains("bin"),
+            "a cache Clear blamed the bin"
+        )
+
+        // The case that started it: most of the row stays, and the bin is why.
+        val held = StorageRules.clearedLine(21_000_000L, 673_000_000L, 12, keepsReferenced = true, format = mb)
+        check(held.contains("Freed 21 MB"), "did not say what it freed: $held")
+        check(held.contains("673 MB"), "did not say what it kept: $held")
+        check(held.contains("12 of them in the bin"), "did not name the bin: $held")
+
+        // Nothing moved at all: say that, rather than "Freed 0 MB", which
+        // reads as a failure.
+        val none = StorageRules.clearedLine(0L, 673_000_000L, 12, keepsReferenced = true, format = mb)
+        check(!none.contains("Freed"), "said it freed something when it freed nothing: $none")
+        check(none.contains("belongs to a project"), "did not say why nothing went: $none")
+
+        // Everything went: no "0 MB belongs to projects" tail, and no bin
+        // clause, because nothing is being held.
+        val all = StorageRules.clearedLine(694_000_000L, 0L, 12, keepsReferenced = true, format = mb)
+        check(all == "Freed 694 MB.", "a clean sweep said: $all")
+
+        // No bin: no bin clause.
+        val noBin = StorageRules.clearedLine(21_000_000L, 673_000_000L, 0, keepsReferenced = true, format = mb)
+        check(!noBin.contains("bin"), "named a bin that is empty: $noBin")
+    }
+
     if (problems.isEmpty()) {
         println("ProjectRulesChecks: all checks passed")
     } else {

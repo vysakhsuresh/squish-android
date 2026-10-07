@@ -23,21 +23,43 @@ import java.io.File
  * outright. Exports here are the private copies: since exports are stored
  * once, only a copy whose gallery publish failed is still in this folder.
  */
-enum class StorageKind(val title: String, val blurb: String) {
+enum class StorageKind(
+    val title: String,
+    val blurb: String,
+    /**
+     * Whether a Clear of this kind leaves behind what a draft still names. For
+     * these the card has to say what it kept and why; the caches go whole.
+     */
+    val keepsReferenced: Boolean = false
+) {
     Exports("Exports kept inside Squish", "Renders whose copy to the gallery did not land. The library plays these; clearing removes them from it."),
-    Stills("Photos and freezes", "Clips rendered from pictures. Only ones no project uses are cleared."),
+    Stills("Photos and freezes", "Clips rendered from pictures. Only ones no project uses are cleared.", keepsReferenced = true),
     Renders(
         "Reversed renders, imports and downloads",
         "Files made for Reverse, videos shared into Squish, and the stock clips and music it downloaded. " +
-            "Only ones no project uses are cleared."
+            "Only ones no project uses are cleared.",
+        keepsReferenced = true
     ),
-    Takes("Voice and speech", "Voiceover takes and lines read aloud. Only ones no project uses are cleared."),
-    Masks("Person masks", "What Cutout found in each shot. Only ones no project uses are cleared."),
+    Takes("Voice and speech", "Voiceover takes and lines read aloud. Only ones no project uses are cleared.", keepsReferenced = true),
+    Masks("Person masks", "What Cutout found in each shot. Only ones no project uses are cleared.", keepsReferenced = true),
     Proxies("Preview cache", "Light 540p copies of large clips, kept only to keep scrubbing smooth. Exports always read the original."),
     Thumbnails("Thumbnails", "The pictures on the dashboard and in the library, made again as needed.")
 }
 
 data class StorageEntry(val kind: StorageKind, val bytes: Long)
+
+/**
+ * What one Clear did: the new measurements, and - for a kind that keeps what
+ * drafts name - how much went, how much stayed, and how many of the projects
+ * holding it are in the bin.
+ */
+data class ClearResult(
+    val entries: List<StorageEntry>,
+    val kind: StorageKind,
+    val freedBytes: Long,
+    val keptBytes: Long,
+    val binnedProjects: Int
+)
 
 object StorageCleaner {
 
@@ -45,8 +67,9 @@ object StorageCleaner {
         StorageKind.entries.map { kind -> StorageEntry(kind, bytesOf(context, kind)) }
     }
 
-    /** Clears one kind and returns what every kind measures afterwards. */
-    suspend fun clear(context: Context, kind: StorageKind): List<StorageEntry> = withContext(Dispatchers.IO) {
+    /** Clears one kind and returns what every kind measures afterwards, and what it did. */
+    suspend fun clear(context: Context, kind: StorageKind): ClearResult = withContext(Dispatchers.IO) {
+        val before = bytesOf(context, kind)
         when (kind) {
             StorageKind.Exports -> clearExports(context)
             // Into the backdrops too, because the row *counts* them: it measures
@@ -62,7 +85,19 @@ object StorageCleaner {
             StorageKind.Proxies -> ProxyEngine.clearCache(context)
             StorageKind.Thumbnails -> ThumbnailCache.clearDisk(context)
         }
-        StorageKind.entries.map { k -> StorageEntry(k, bytesOf(context, k)) }
+        val entries = StorageKind.entries.map { k -> StorageEntry(k, bytesOf(context, k)) }
+        val after = entries.first { it.kind == kind }.bytes
+        ClearResult(
+            entries = entries,
+            kind = kind,
+            freedBytes = (before - after).coerceAtLeast(0L),
+            keptBytes = after,
+            // Counted only where it explains something: a bin entry's draft
+            // names its files like any other, which is what Restore leans on.
+            binnedProjects = if (kind.keepsReferenced && after > 0L) {
+                runCatching { SquishRepositories.autosave(context).trashed().size }.getOrDefault(0)
+            } else 0
+        )
     }
 
     private fun bytesOf(context: Context, kind: StorageKind): Long = when (kind) {

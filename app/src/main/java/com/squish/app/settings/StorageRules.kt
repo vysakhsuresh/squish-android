@@ -37,4 +37,32 @@ object StorageRules {
     /** The absolute path a file:// URI names, or null for anything else. */
     fun pathOf(uri: String): String? =
         if (uri.startsWith("file://")) uri.removePrefix("file://").substringBefore('?').substringBefore('#') else null
+
+    /**
+     * What the storage card says after a Clear.
+     *
+     * A row that reads 694 MB and frees 21 of them looks broken, and the
+     * blurb's "only ones no project uses" does not say which, or how many,
+     * or that a project in the bin still counts - which on a phone with a
+     * month of editing on it is most of what is held. So the card says it
+     * in numbers after the fact.
+     *
+     * [keepsReferenced] is false for the caches, which go whole: there is
+     * nothing kept to explain.
+     */
+    fun clearedLine(
+        freedBytes: Long,
+        keptBytes: Long,
+        binnedProjects: Int,
+        keepsReferenced: Boolean,
+        format: (Long) -> String
+    ): String {
+        if (!keepsReferenced) return "Freed ${format(freedBytes)}."
+        val bin = if (binnedProjects > 0) ", $binnedProjects of them in the bin" else ""
+        return when {
+            keptBytes <= 0L -> "Freed ${format(freedBytes)}."
+            freedBytes <= 0L -> "Nothing to clear - every file here belongs to a project$bin."
+            else -> "Freed ${format(freedBytes)}. ${format(keptBytes)} belongs to projects$bin."
+        }
+    }
 }
