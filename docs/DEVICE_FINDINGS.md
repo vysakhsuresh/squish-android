@@ -2716,3 +2716,23 @@ window on the picture with the outside dimmed, *in place* - the canvas stays
 9:16 and the shot stays where it is, which is B12's review-round fix ("the Mask
 tool edits in place again… a 9:16 frame stays 9:16"). Crop's two Flip buttons
 carry the swap icons B16 gave them.
+
+### 11. A template, a mask, and the heart and star shaders (7 October)
+
+- **A template applied**, which `CLAUDE.md` listed as unseen. Looks →
+  Templates → Social → **Party** put a neon pink "Let's go!" title on the
+  picture and changed the grade in one step, with Undo offering to take it off.
+  **In the exported file**: the picture fades up from white at 0.0 s (the
+  template's arrival), the title is there at 1.0 s and 2.0 s, and it is gone at
+  3.0 s where its span ends. Look, title and animation all reach the file.
+- **Mirror** flips the footage and leaves a text overlay the right way round -
+  the WhatsApp text in the shot reads backwards while "Let's go!" reads
+  forwards, which is the layer order doing what it should.
+- **A mask**, never driven. Add a mask drops an ellipse with a dashed outline
+  and a centre handle; everything outside it is hidden. The sheet offers Cut out
+  / Pixelate / Blur, "Add a key here to animate this", and the six shapes.
+- **The heart and the star compile and draw on this phone's ES2 driver** -
+  listed in `CLAUDE.md` as needing a device, because a shader that does not
+  compile fails asynchronously on the player and the surface then plays plain.
+  Both are clean distance-field shapes with soft edges and the outline follows
+  them exactly.
