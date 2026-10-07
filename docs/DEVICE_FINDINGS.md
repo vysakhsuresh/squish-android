@@ -2902,3 +2902,19 @@ tight enough for the encoder to miss by more than two per cent, which is busy
 footage near the five-minute boundary, and a real encode to find out. The arithmetic
 behind it is executed (`ExportSettingsChecks`, including the scale-through-the-floor
 composition that bit once); the card on this screen is not.
+
+**And the fit itself, rendered.** A 1:26.536, **262.6 MB** clip of a lit stage -
+busy footage, a video wall moving behind the singers - fitted to 16 MB. The sheet
+said "852 x 480 · sized to fit · ≈ 16.0 MB"; the file came out at
+
+    15,990,560 bytes against a 16,000,000 limit - 9,440 bytes under, 0.06%.
+
+852 x 480, 1:26, 30 fps, 94% smaller than the source. So the overshoot card did
+not show, and that is the right answer rather than a gap in the test: the run did
+not overshoot. `ExportPresets.solvedBitrateForTargetSize` has been executed on the
+JVM since B14 and this is the first time its answer has been put through a real
+encoder, on the kind of footage the two-per-cent tolerance exists for. It landed
+inside a sixteenth of one per cent.
+
+The card is therefore still unseen, and wants a run that genuinely misses. On this
+evidence that is not easy to arrange on purpose, which is worth knowing too.
