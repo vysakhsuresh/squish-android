@@ -3245,3 +3245,21 @@ nothing was cropped.
 Also seen on the way: **the Looks sheet's filters reach the preview and the
 strip's own thumbnails** - Vivid redrew both - and **Undo clears a filter**
 cleanly, leaving Original selected, Redo live and Undo dim.
+
+**And something the testing itself exposed: every "Open with" makes a new
+project.** Opening the same video nine times over an evening - which is what
+driving the editor from `adb` does - left nine projects on the grid, identical
+but for their age. That is the designed behaviour since B15, where a project
+became its own id so that two cuts of one clip could both exist, and the
+`OpenEditors` rule that used to reopen the editor already on that video went with
+it. It is right for two deliberate cuts; it is clutter for a person who opens the
+same clip from the gallery twice and does nothing to it either time.
+
+Worth a decision rather than a fix: an "Open with" that finds an **untouched**
+project on that same file could reopen it rather than make another, which is the
+old `untouched` rule in a new place and would leave the two-cuts case alone.
+
+The multi-select delete handled the clean-up well - "Delete 7 projects? This sets
+aside every project selected, with every cut, look and caption on each ... Your
+original videos are untouched either way", then "Deleted 7 projects" with an
+Undo, which is B15's rule seen.
