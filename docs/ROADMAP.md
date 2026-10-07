@@ -617,9 +617,12 @@ things on this list that can only be judged *by ear*, so they want quiet:
 21. **The Curves tool with a point pulled below the one before it** - a highlight
     rolled off. Nothing between two points may be brighter than the higher of
     them, on screen and in the file.
-22. **TalkBack on, Settings open.** "Ticks when snapping" must say "on" or "off",
-    and so must the privacy switch, Mute on a clip and Keep HDR. Nine switches,
-    one control, and until tonight none of them said which way it was.
+22. ~~**TalkBack on, Settings open.**~~ **Done, 7 October**, by dumping the
+    accessibility tree rather than listening - exact and scriptable. The state
+    was there (sweep seven's `toggleable`); the **name** was not, on any of the
+    nine, and uiautomator flagged both Settings switches `NAF`. Fixed and seen:
+    zero NAF nodes, and the switches read "Ticks when snapping" and "Keep the
+    screen on while editing" with their state. `docs/DEVICE_FINDINGS.md` §22.
 
 **Added after sweep eight** (5 October, night). The first is the single most
 important thing on this whole list: until tonight it could not be done at all.
