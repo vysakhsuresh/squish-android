@@ -3534,3 +3534,28 @@ never fire until now -
 Executed in `tools/jvm/LaneChecks.kt` over the four cases and the negative
 window; negative-tested by taking the `stillLoading` arm out, which fails with
 "an emptied edit still reports the length of the file it was opened on".
+
+### 34. The Curves square, and a swipe that has to scroll past it (8 October)
+
+The third sweep's list has *"swipe the Curves square and the sheet behind it must
+scroll"*. **It does.** A vertical swipe starting inside the square, away from a
+point, scrolls the sheet - verified after a false start where the swipe began a
+few pixels above the square, in the tab row, and so moved nothing. (That false
+start is worth recording: it looked exactly like the bug.)
+
+**Not a bug, though it reads as one at first.** The square is
+`fillMaxWidth().aspectRatio(1f)`, so about 1000 px on a side, inside a sheet
+whose scroll area measures 643 px (from the accessibility tree). So the whole
+curve is never on screen at once: the identity line appears to leave the top of
+its box part-way across, which looks like a curve drawn at the wrong aspect until
+you realise you are seeing a window onto a square taller than the window.
+
+**The design point stands even though the code is right:** a tone curve is judged
+by its *shape*, and on this phone you cannot see the shadows end and the
+highlights end together - reaching the highlights means scrolling the shadows off.
+Worth a decision: cap the square's height to what the sheet can show, and let it
+be wider than tall, or keep it square and accept the scroll.
+
+ROADMAP §5 item 21 - a point pulled below the one before it, and nothing between
+two points brighter than the higher of them - is **not** settled by this. It needs
+the curve's shape read off the screen, which wants the square fully visible first.
