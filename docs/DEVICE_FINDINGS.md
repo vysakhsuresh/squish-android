@@ -3498,3 +3498,39 @@ clearing takes 354 MB back and removes those rows from the library. And
 *Reversed renders, imports and downloads* is **694 MB** - mostly `files/imports`,
 which is copies of shared videos. Both are one tap each and neither touches a
 project's own files.
+
+### 33. An emptied edit said it was twenty-two seconds long (8 October)
+
+Found by a stray tap, reproduced deliberately. Delete every clip and the editor
+showed **two numbers for one thing, at the same time**:
+
+- header: **"0 clips · 0:22.266"**
+- transport under it: **0:00.000 / 0:00.000**
+
+`EditorUiState.trimmedDurationMs` falls back to the source file's own window
+whenever nothing is laid on the tracks. That fallback is for a project *before
+its clips are made* - but an edit whose clips have all been **deleted** looks
+exactly the same to it, and reported the length of a file it was no longer
+playing.
+
+**And it was worse than a wrong label.** `SquishError.preflight` refuses an
+export on `trimmedDurationMs <= 0`. At 22.266 the emptied edit sailed past that
+check - so Render would have gone ahead and written twenty-two seconds of
+nothing.
+
+`TimelineLanes.timelineLength(laidMs, sourceWindowMs, stillLoading)` keeps the
+fallback where it belongs: a project staged and not yet read has no clips either,
+and the editor is on its spinner then, so that is what the flag asks. Loaded and
+empty is empty.
+
+Seen after: the header reads **"0 clips · 0:00.000"** beside a transport reading
+the same, and Render answers with a card that was written long ago and could
+never fire until now -
+
+> **Nothing on the timeline**
+> Every clip has been trimmed to zero or deleted, so there are no frames to write.
+> *Add a clip, or widen a trim handle.*
+
+Executed in `tools/jvm/LaneChecks.kt` over the four cases and the negative
+window; negative-tested by taking the `stillLoading` arm out, which fails with
+"an emptied edit still reports the length of the file it was opened on".

@@ -388,6 +388,35 @@ object TimelineLanes {
      *
      * The 12 dp is so the last frame is not flush against the edge.
      */
+    /**
+     * How long the edit is: what is laid on the tracks, or - only while the
+     * clips are still being made - the source file's own window.
+     *
+     * [laidMs] is the furthest any clip or sound reaches, [sourceWindowMs] the
+     * kept stretch of the file the project was opened on, and [stillLoading]
+     * whether the editor is on its spinner.
+     *
+     * **The `stillLoading` guard is the whole of this.** Without it, an edit
+     * whose clips have all been deleted falls back to the source's window and
+     * reports the length of a file it is no longer playing. Seen on the phone,
+     * 8 October, with both numbers on screen at once: the header read
+     * **"0 clips · 0:22.266"** while the transport under it read **0:00.000 /
+     * 0:00.000**.
+     *
+     * Worse than a wrong label, because `SquishError.preflight` refuses an
+     * export on `trimmedDurationMs <= 0`: at 22.266 the emptied edit sailed
+     * past that check and would have rendered twenty-two seconds of nothing.
+     *
+     * The fallback is kept, not dropped: a project staged and not yet read has
+     * no clips either, and its length is the file's. That is what the loading
+     * screen is up for, so that is what the flag asks.
+     */
+    fun timelineLength(laidMs: Long, sourceWindowMs: Long, stillLoading: Boolean): Long = when {
+        laidMs > 0L -> laidMs
+        stillLoading -> sourceWindowMs.coerceAtLeast(0L)
+        else -> 0L
+    }
+
     fun fitZoom(durationMs: Long, viewportDp: Float): Float {
         val seconds = (durationMs / 1000f).coerceAtLeast(0.001f)
         val usable = (viewportDp - 12f).coerceAtLeast(1f)

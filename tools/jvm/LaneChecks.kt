@@ -557,6 +557,39 @@ private fun window() {
         val short = TimelineLanes.fitZoom(5_000L, vpDp)
         check(abs(short - usable / 5f) < 0.2f, "a five-second edit no longer fits the strip: $short")
     }
+
+    // ---- An emptied edit is empty. -----------------------------------------
+    //
+    // Seen on the phone on 8 October with both numbers on screen at once: the
+    // header read "0 clips · 0:22.266" while the transport under it read
+    // 0:00.000 / 0:00.000. The length fell back to the source file's own window
+    // whenever nothing was laid down - which is a project still loading, and
+    // also an edit whose clips have all been deleted.
+    //
+    // And `SquishError.preflight` refuses an export on `trimmedDurationMs <= 0`,
+    // so at 22.266 the emptied edit sailed past that and would have rendered
+    // twenty-two seconds of nothing.
+    run {
+        val window = 22_266L
+        // Loaded and empty is empty - the header, and the export's refusal.
+        check(TimelineLanes.timelineLength(0L, window, stillLoading = false) == 0L,
+            "an emptied edit still reports the length of the file it was opened on")
+        // Still loading and empty is the file's window - a project staged and
+        // not yet read has no clips either, and the spinner is up.
+        check(TimelineLanes.timelineLength(0L, window, stillLoading = true) == window,
+            "a project still loading lost the length it was opened on")
+        // Anything laid down wins, loading or not.
+        check(TimelineLanes.timelineLength(9_000L, window, stillLoading = false) == 9_000L,
+            "a laid-out edit did not report what is on its tracks")
+        check(TimelineLanes.timelineLength(9_000L, window, stillLoading = true) == 9_000L,
+            "a laid-out edit took the source's window while loading")
+        // A sound past the last shot is laid down too, so it is the length.
+        check(TimelineLanes.timelineLength(25_257L, window, stillLoading = false) == 25_257L,
+            "a song past the last shot stopped counting")
+        // Never negative, whatever the window reads.
+        check(TimelineLanes.timelineLength(0L, -5L, stillLoading = true) == 0L,
+            "a negative source window came back negative")
+    }
     // The strip as drawn agrees with the strip a finger lands on - including at
     // 0:00, where the window is clamped against the left edge and the playhead
     // is *not* at its fraction. slideFor was written on that assumption and had
