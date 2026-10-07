@@ -878,11 +878,15 @@ data class EditorUiState(
      * answering for a file that may not be in the edit at all.
      */
     val anyCameraAudio: Boolean
-        get() = videoClips.any { clip ->
-            clip.isMain && !clip.isStillPicture && !com.squish.app.timeline.isRenderedStill(clip.uri?.toString()) &&
-                clip.uri?.let { com.squish.app.media.MediaCompat.cached(it) }
-                    .let { it == null || it.hasAudio }
-        }
+        get() = com.squish.app.editor.hasCameraAudio(
+            clipCount = videoClips.size,
+            shotsWithSound = videoClips.count { clip ->
+                clip.isMain && !clip.isStillPicture && !com.squish.app.timeline.isRenderedStill(clip.uri?.toString()) &&
+                    clip.uri?.let { com.squish.app.media.MediaCompat.cached(it) }
+                        .let { it == null || it.hasAudio }
+            },
+            sourceHasAudio = sourceHasAudio
+        )
 
     /** The stand-in for the file first opened, for the analyses that read it. */
     val proxyUri: Uri? get() = sourceUri?.let { proxyUris[it] }

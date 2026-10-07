@@ -9,6 +9,7 @@ import com.squish.app.editor.ShotSpan
 import com.squish.app.editor.Tool
 import com.squish.app.editor.backStep
 import com.squish.app.editor.cutTarget
+import com.squish.app.editor.hasCameraAudio
 import com.squish.app.editor.sheetSurvives
 import com.squish.app.editor.toolsFor
 import kotlin.system.exitProcess
@@ -263,6 +264,41 @@ fun main() {
         // Level 0's Looks and Frame stay: they work on the edit, or the shot under the playhead.
         check(sheetSurvives(Tool.Looks, SelectionKind.MainVideo, false), "Looks closed when a shot was selected")
         check(sheetSurvives(Tool.Frame, SelectionKind.None, false), "Frame closed on deselect")
+    }
+
+    // ---- A session with no clips is a quick tool, not a silent edit. -------
+    //
+    // Extract audio could not run on any file at all: the preflight asks
+    // anyCameraAudio, which counted the clips, and QuickToolViewModel hands it
+    // an empty list on purpose - one file and a window on it, with the file's
+    // own flag in sourceHasAudio. Seen on the phone on 7 October refusing a
+    // clip whose waveform the same screen had just drawn.
+    run {
+        // The case that bit: no clips, and the file has sound.
+        check(hasCameraAudio(clipCount = 0, shotsWithSound = 0, sourceHasAudio = true),
+            "a quick tool on a clip with sound was told the clip had none")
+        // And a quick tool on a genuinely silent file still says so.
+        check(!hasCameraAudio(clipCount = 0, shotsWithSound = 0, sourceHasAudio = false),
+            "a silent file passed the audio-only check")
+
+        // An edit answers from its shots, whatever the lead file says. Both
+        // ways round, because the lead file's flag is the thing that must not
+        // get a vote once there are clips.
+        check(hasCameraAudio(clipCount = 3, shotsWithSound = 1, sourceHasAudio = false),
+            "an edit whose first shot was silent said the whole edit was")
+        check(!hasCameraAudio(clipCount = 4, shotsWithSound = 0, sourceHasAudio = true),
+            "a slideshow of photos was offered camera sound by the lead file's flag")
+
+        // The slideshow is the one worth saying twice: every clip is a
+        // rendered still, each with the silent AAC track this app writes, so
+        // shotsWithSound is 0 while sourceHasAudio is true. Reaching for the
+        // flag there is exactly the bug the clip-reading version fixed.
+        for (clips in 1..8) {
+            check(!hasCameraAudio(clips, 0, sourceHasAudio = true),
+                "$clips photos and no shots with sound still said the edit had camera sound")
+            check(hasCameraAudio(clips, 1, sourceHasAudio = false),
+                "$clips clips with one sounding shot said the edit had none")
+        }
     }
 
     println("tool rules: toolbar levels, sheets, back, cut target, project names")

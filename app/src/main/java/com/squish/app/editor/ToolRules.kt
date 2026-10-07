@@ -204,6 +204,34 @@ fun toolsFor(kind: SelectionKind, canTransition: Boolean = false, multi: Boolean
     return kept.filterNot { it == Tool.Delete }.toMutableList().apply { if (Tool.Delete in kept) add(at, Tool.Delete) }
 }
 
+/**
+ * Whether an edit has camera sound, from how many clips it holds at all
+ * ([clipCount]), how many of those are shots a camera track could be on and
+ * that have one ([shotsWithSound]), and whether the file the session was
+ * opened on does ([sourceHasAudio]).
+ *
+ * The first branch is the whole of it. `EditorUiState.anyCameraAudio` used to
+ * read the clips and nothing else, which is right for an edit and wrong for
+ * the one state that has no clips on purpose: a quick tool's session is one
+ * file and a window on it, and QuickToolViewModel.editorStateOf hands the
+ * export `videoClips = emptyList()` with the file's own flag in
+ * `sourceHasAudio`.
+ *
+ * So `anyCameraAudio` was false for every quick tool, and the preflight's
+ * `audioOnly && !anyCameraAudio` refused **Extract audio on every file there
+ * is** - seen on the phone, 7 October, on a clip whose sound the same screen
+ * had just drawn a waveform of. The tool could not work at all.
+ *
+ * The fallback is only for *no clips at all*, never for clips none of which
+ * qualify: an edit of nothing but photos has shots that cannot carry camera
+ * sound, and `sourceHasAudio` is true there anyway (a rendered still has a
+ * silent AAC track), so reaching for it would put the Camera sound switch and
+ * a dead level slider back on a slideshow - which is the bug the clip-reading
+ * version was written to fix.
+ */
+fun hasCameraAudio(clipCount: Int, shotsWithSound: Int, sourceHasAudio: Boolean): Boolean =
+    if (clipCount == 0) sourceHasAudio else shotsWithSound > 0
+
 /** The tools that act on a clip's own sound or its timing, offered on footage only. */
 val NEEDS_SOUND: Set<Tool> = setOf(Tool.Speed, Tool.Volume, Tool.Voice, Tool.ExtractAudio)
 

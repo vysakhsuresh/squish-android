@@ -241,6 +241,19 @@ sealed class SquishError(
         fix = "Turn off audio-only, or add a separate audio track first."
     )
 
+    /**
+     * The same fact as [NoAudioTrack] from the quick tool's side, where that
+     * one's fix cannot be acted on: Extract audio has no audio-only switch to
+     * turn off - being audio-only is the whole tool - and no timeline to add a
+     * track to. Seen on the phone on 7 October reading "Turn off audio-only, or
+     * add a separate audio track first" on a screen with neither.
+     */
+    class NothingToExtract : SquishError(
+        title = "This video has no sound",
+        detail = "Extract audio takes the sound out of a video, and this file carries no audio track at all.",
+        fix = "Pick a video with sound."
+    )
+
     class NoSoundToExtract(val name: String) : SquishError(
         title = "Nothing to extract from $name",
         detail = "This clip carries no sound to take out: it is a photo, or its file has no audio track.",
@@ -384,7 +397,13 @@ sealed class SquishError(
             // no audio track (a screen recording, a stripped share) and then
             // given shots that do have sound was refused with "This clip has no
             // sound" for sound the file would have carried.
-            if (state.audioOnly && !state.anyCameraAudio && !state.hasSeparateAudio) return NoAudioTrack()
+            // Two sentences for one fact, because the fix differs: in the
+            // editor there is a Sound only switch to turn off and a track to
+            // add, and on a quick tool - the state with no clips at all -
+            // there is neither.
+            if (state.audioOnly && !state.anyCameraAudio && !state.hasSeparateAudio) {
+                return if (state.videoClips.isEmpty()) NothingToExtract() else NoAudioTrack()
+            }
             // A photo still being made into a clip is not on the timeline yet, so
             // an export now would silently leave it out and it would turn up in
             // the edit a moment after the file was written without it.
