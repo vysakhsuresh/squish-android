@@ -652,8 +652,11 @@ important thing on this whole list: until tonight it could not be done at all.
     as steady as it started.
 28. **"Keep HDR" on an HLG clip with a caption on it**: off, dim, and saying
     why - Media3 refuses a bitmap overlay in an HDR graph below Android 14.
-29. **Open "Add media", `am kill` the app behind the picker, then pick two
-    clips.** They must land at the playhead, or nothing must happen - and in
+29. ~~**Open "Add media", `am kill` the app behind the picker, then pick two
+    clips.**~~ **Done, 8 October** - with "Don't keep activities", since `am kill`
+    will not take the app while it hosts the picker's result receiver. The pick
+    landed at the playhead with the edit whole, and one Undo gave back exactly
+    the edit before it. `docs/DEVICE_FINDINGS.md` §25. They must land at the playhead, or nothing must happen - and in
     either case one tap on Undo afterwards must not blank the edit. The same
     with Add sound, Add overlay and Frame → Background → a picture. (Sweep ten:
     the pick used to run against the default empty state and leave an undo step

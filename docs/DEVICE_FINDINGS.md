@@ -3278,3 +3278,32 @@ It also settled a question the clean-up had left open. One "Thankyou 400k" card
 was ambiguous - mine or the owner's? - so it was left alone. The three opens
 *reused* it, which is proof it was opened from outside and never edited: mine.
 Deleted on that evidence rather than on a guess.
+
+### 25. A pick delivered to a destroyed editor (8 October)
+
+ROADMAP §5 item 29, and sweep ten's worst finding: **a pick delivered before the
+draft was read blanked the whole edit** - killed behind the photo picker, the
+result is dispatched while the launcher's effect commits, so the add landed on an
+empty timeline, vanished when the draft was applied, and left an undo step whose
+"before" was that empty edit, one tap from wiping everything and one autosave
+tick from writing it to disk.
+
+**Driven with "Don't keep activities"** rather than `am kill`, which will not take
+the app while it is hosting the picker's result receiver - the setting destroys
+the activity the moment it stops being visible, which is exactly the condition.
+Restored to 0 afterwards.
+
+A 2-clip edit (one shot split at 0:06.365), the video track's **+ → Video or
+photo**, the activity destroyed behind the picker, then a photo picked:
+
+- the editor came back with **3 clips · 0:25.266** - both original shots *and*
+  the picked photo;
+- the photo landed **at the playhead**, between the two shots, selected, with its
+  own toolbar (Split correctly dim on a still at its own edge);
+- nothing was blanked.
+
+And the half that matters most: **one tap on Undo gave back exactly 2 clips ·
+0:22.266**, the split edit with its cut, with Redo live. Not an empty timeline.
+
+The menu behind that + is worth recording too: "Video or photo · Blank · Free
+stock video".
