@@ -81,6 +81,32 @@ fun main() {
         )
     }
 
+    // ---- A screen that renders says what the render will drop. -------------
+    //
+    // `SquishError.exportable` mutes a source whose sound no decoder here takes,
+    // on its way into the renderer, so the file comes out silent. The editor's
+    // sheet has said so since the sweep that found it. The quick tools passed
+    // their state through the same function, wrote the same silent file, and
+    // said nothing - the done screen reports a frame, a length and a size, none
+    // of which is wrong, and the sound is simply gone.
+    //
+    // There is no shared composable to make this structural - it is one sentence
+    // in two different layouts - so the check is the guard. Both screens ask the
+    // one function; what this holds is that both still ask it.
+    run {
+        val renders = listOf(
+            "$SRC/editor/ExportSheet.kt" to "the editor's export sheet",
+            "$SRC/tools/QuickToolScreen.kt" to "the quick tools' screen"
+        )
+        renders.forEach { (path, what) ->
+            check(
+                read(path).contains("soundLeftOut"),
+                "$what no longer says when the sound will be left out - a render that drops the " +
+                    "camera track has to be announced before it runs, not discovered in the file"
+            )
+        }
+    }
+
     // ---- "Up / down" means the same thing on every sheet. -------------------
     run {
         // A mask's own y runs up; every other vertical placement value runs

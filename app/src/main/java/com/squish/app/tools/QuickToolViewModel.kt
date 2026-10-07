@@ -83,6 +83,19 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
          * silence until 7 October.
          */
         val fitOvershoot: FitOvershoot? = null,
+        /**
+         * The format of the first file in this session whose sound no decoder on
+         * this phone takes, or null when there is none - the sentence the screen
+         * shows before the render rather than after it.
+         *
+         * The sound really is lost, not merely at risk: `SquishError.exportable`
+         * mutes a source with an `audioProblem` on its way into the renderer, and
+         * every tool passes its state through that. The editor has said so on its
+         * sheet since the sweep that found it; the tools wrote the silent file
+         * and reported "Squeezed · N% smaller". Found by reading on 7 October,
+         * the third of the same shape that day.
+         */
+        val soundLeftOut: String? = null,
         val trimStartMs: Long = 0,
         val trimEndMs: Long = 0,
         /**
@@ -502,8 +515,13 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
 
         viewModelScope.launch {
             val meta = ThumbnailExtractor.probe(getApplication(), uri)
-            // Answered in the background, for the export's preflight to read.
-            launch { MediaCompat.check(getApplication(), uri) }
+            // Answered in the background, for the export's preflight to read -
+            // and read back onto the screen now as well, since the answer decides
+            // whether the file comes out silent.
+            launch {
+                MediaCompat.check(getApplication(), uri)
+                refreshSoundLeftOut()
+            }
             val size = fileSizeOf(uri)
 
             _state.update {
@@ -554,7 +572,10 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val firstPick = _state.value.mergeClips.isEmpty()
         val added = uris.map { uri ->
             val meta = ThumbnailExtractor.probe(getApplication(), uri)
-            viewModelScope.launch { MediaCompat.check(getApplication(), uri) }
+            viewModelScope.launch {
+                MediaCompat.check(getApplication(), uri)
+                refreshSoundLeftOut()
+            }
             val clip = Clip(
                 kind = ClipKind.Video,
                 uri = uri,
@@ -679,6 +700,23 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      * number on screen and the file that comes out are worked out by one piece
      * of code rather than two that have to be kept agreeing.
      */
+    /**
+     * The sound this run would leave out, from the same function the editor's
+     * sheet asks (`SquishError.soundLeftOut`) against the same state the render
+     * is handed. One definition, two screens - which is the lesson of the two
+     * faults found before this one on 7 October, both of them a safeguard the
+     * editor had and the tool did not.
+     *
+     * Called when a probe lands rather than computed on the fly, because
+     * `MediaCompat.cached` only answers once the background check has finished
+     * and nothing else would bring the screen back to ask.
+     */
+    private fun refreshSoundLeftOut() {
+        val tool = tool ?: return
+        val lost = SquishError.soundLeftOut(editorStateOf(tool, _state.value))
+        if (lost != _state.value.soundLeftOut) _state.update { it.copy(soundLeftOut = lost) }
+    }
+
     private fun recomputeEstimate() {
         val tool = tool ?: QuickTool.Squeeze
         val editor = editorStateOf(tool, _state.value)

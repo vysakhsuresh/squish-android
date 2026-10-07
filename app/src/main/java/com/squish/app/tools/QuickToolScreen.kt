@@ -288,6 +288,17 @@ fun QuickToolScreen(
                     }
                 }
 
+                // Said here, before the render, exactly as the editor's sheet
+                // says it: the file will be silent, and nothing afterwards
+                // mentions it - the done screen reports a size and a saving.
+                state.soundLeftOut?.let { codec ->
+                    Text(
+                        "Sound left out: $codec isn't supported on this phone. The video is kept, without it.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SquishColors.Amber
+                    )
+                }
+
                 errorMessage?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.Pink)
                 }
