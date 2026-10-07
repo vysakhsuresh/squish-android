@@ -3951,3 +3951,34 @@ brought back"). There is nothing to bring back: the rule only fires when
 for thirty days. Deleting outright instead would have to release the picker
 grant in the same breath, which `onCleared` is the wrong place to do, so it is
 left as it is and said here.
+
+### 45. A clip's crop under a project frame: the preview and the file (8 October)
+
+B12's merge claim - *"a base shot's export chain is now the preview's layer for
+layer"* - on the combination most likely to come apart: **a 1:1 crop on the shot
+under a 16:9 project frame**.
+
+**They agree.** The preview at 0:12.023 and the exported frame at 12.1 s are the
+same picture: the same band of the source (a leaf, a red sari, the top of the
+timeline below it), full width, no pillars, same framing to the pixel. Pulled off
+the phone and read with `tools/desktop/frames.ps1`.
+
+**And the rule is not what CLAUDE.md said it was.** That paragraph read *"Frame
+16:9 over a 1:1 crop pillarboxes the square rather than cutting a band from it"*.
+It cuts a band, and it should: `composeResolution` is the picture's **own framed
+shape** when there is no padded canvas, so the 1:1 square cropped out of a
+portrait 1080×1920 source is fitted to 1080×1920 - full width, bars above and
+below - and the frame's 16:9 is then cut from that canvas, landing *inside* the
+square. No pillars are possible. What the review round actually fixed is that the
+band comes out of the **canvas** rather than out of the **window** (a 16:9 cut
+from a 1:1 window is a different, zoomed band). The sentence is corrected in
+CLAUDE.md; the behaviour is right and is now seen.
+
+Also on the way: the Effects library's tiles each show **this clip's own frame**
+with the effect on it (Flash bright, VHS and Glitch visibly different), applying
+one puts it on its own **effects row** on the strip with a cassette glyph and
+starts playback so it can be seen, and **VHS reaches the live picture** -
+scanlines, noise and a colour shift. The **Reel template** lays a crop, a look
+and a bold "WATCH THIS" title on at once, as one step named "Undo: Template
+Reel". **Full screen** fills the screen with a scrub bar; a drag on it goes
+0:02.045 → 0:12.023 and closing full screen **keeps the frame**.

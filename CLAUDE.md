@@ -752,8 +752,16 @@ should work through it and then delete what holds up.
   turned, fitted whole onto the compose canvas (`composeResolution`), *then*
   placed and *then* the frame's ratio or rectangle cut from that canvas - so
   a 1:1 crop plus Placement 1.6x grows past the fitted square in the file as
-  on screen, and Frame 16:9 over a 1:1 crop pillarboxes the square rather
-  than cutting a band from it; the pass count is unchanged, since Media3
+  on screen, and Frame 16:9 over a 1:1 crop takes its band out of the *fitted
+  square on the canvas* rather than out of the 1:1 window itself. **Driven on
+  8 October. This sentence used to say "pillarboxes the square", which is not
+  what it does and not what the canvas it fits to could give**: the canvas is
+  the picture's own framed shape (`composeResolution`), so a square cropped
+  out of a portrait source lands full width with bars above and below it, and
+  the frame's 16:9 then falls *inside* the square - a band, with no pillars.
+  What was being fixed is that the band comes out of the canvas and not out of
+  the window. The preview and the file agree on it to the pixel
+  (`docs/DEVICE_FINDINGS.md` §45); the pass count is unchanged, since Media3
   folds consecutive matrix transformations into one program; auto-reframe's
   window follows `FrameRules.subjectOnCanvas` in both (the subject carried
   through the crop, the quarter turn and the placement - the export probes
