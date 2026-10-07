@@ -390,7 +390,31 @@ class PreviewEngine(private val context: Context) {
                     // so two decoder hiccups during a fast scroll took the mask, the
                     // look and the key off this surface for the rest of the session -
                     // seen on the phone as a Cut out mask that cut nothing.
-                    val chainFault = error.errorCode == PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSOR_INIT_FAILED ||
+                    // Media3 1.11.1 can also fail *inside* the effects pipeline
+                    // with a bare ERROR_CODE_UNSPECIFIED, and then the two codes
+                    // above do not catch it and the chain is never dropped - so
+                    // every reload builds the same broken frame processor and
+                    // fails again, for ever, with the surface black.
+                    //
+                    // Seen on the phone, 8 October: drag a main-track photo's
+                    // tail out, and when the longer rendering is swapped in
+                    // ExternalTextureManager.removeAllSurfaceTextureFrames calls
+                    // AbstractQueue.remove() on an empty queue and throws
+                    // NoSuchElementException rather than returning null. The
+                    // photo was on the strip, its filmstrip drawn, and the
+                    // picture was black - thirteen errors in a row on the one
+                    // surface, not one of them dropping the chain.
+                    //
+                    // The error code carries nothing, so the stack is read
+                    // instead: a throw from androidx.media3.effect is the
+                    // chain's, whatever the code says. A picture without its
+                    // look beats no picture.
+                    val fromTheChain = generateSequence(error as Throwable) { it.cause }
+                        .any { thrown ->
+                            thrown.stackTrace.any { it.className.startsWith("androidx.media3.effect.") }
+                        }
+                    val chainFault = fromTheChain ||
+                        error.errorCode == PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSOR_INIT_FAILED ||
                         error.errorCode == PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED
                     if (effectsOn && chainFault) {
                         effectsOn = false

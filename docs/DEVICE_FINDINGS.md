@@ -3332,3 +3332,47 @@ a few pixels of a clip's edge catches the **trim handle**, not the strip, and
 trims instead of scrubbing. That is the handle doing its job - it is a target -
 but it made one earlier reading of the strip's drag look wrong until the same
 gesture started further in and scrubbed exactly as it should.
+
+### 27. The preview going black on a photo dragged longer (8 October)
+
+Dragging a main-track photo's tail out and scrubbing into it left the **picture
+black** while the photo sat plainly on the strip with its filmstrip drawn. Not
+just past the first rendering's end - black from three seconds in.
+
+**The cause, from logcat**, and it is a Media3 1.11.1 fault reached through our
+own code:
+
+    W SquishPreview: player error on base-a: ERROR_CODE_UNSPECIFIED
+    ExoPlaybackException: Unexpected runtime error
+    Caused by: java.util.NoSuchElementException
+      at java.util.AbstractQueue.remove(AbstractQueue.java:117)
+      at androidx.media3.effect.ExternalTextureManager.removeAllSurfaceTextureFrames
+      at ExternalTextureManager.lambda$releaseAllRegisteredFrames$6
+
+`removeAllSurfaceTextureFrames` calls `AbstractQueue.remove()` on an empty queue,
+which throws rather than returning null. It runs while registered frames are
+released - which is what swapping the photo's longer rendering into a prepared
+player does.
+
+**What made it permanent was ours.** `PreviewEngine`'s error listener drops the
+effects chain for two *typed* codes, and this arrives as a bare
+`ERROR_CODE_UNSPECIFIED`. So the chain was never dropped, every reload built the
+same broken frame processor, and it failed again: **thirteen errors on the one
+surface, not one of them dropping the chain**, with the picture black throughout.
+
+The error code carries nothing, so the **stack** is read instead: a throw from
+`androidx.media3.effect` is the chain's fault whatever the code says, and the
+chain comes off. A picture without its look beats no picture.
+
+**What the re-run shows, and what it does not.** With the fix in: the photo
+dragged out to make the edit **1:42.607**, the playhead at **1:21.424** deep
+inside it, the picture showing throughout, and the stills folder filling with
+renders swapped in live (a 34 MB one landed, another `.part` in flight) - so the
+exact condition was repeated several times. **Zero player errors.**
+
+That is the honest limit of it: the fix is *reactive*, so zero errors means the
+crash did not recur, not that the fix caught it. What can be said is that the
+crash happened and left the surface dead for good, that the code would now take
+the chain off and let the picture back, and that repeated live swaps no longer
+produce it. Whoever sees `player error` with a `media3.effect` frame again should
+find `dropping effects` beside it and a picture on the screen.
