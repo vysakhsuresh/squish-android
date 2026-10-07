@@ -200,6 +200,15 @@ function first; if it can, it can be checked.
   anything is typed. None of that is visible in a screenshot. Dump each screen
   and count: `tr ">" "
 " < ui.xml | grep -c NAF`.
+- **And it lies when it fails.** `uiautomator dump` waits for the window to go
+  idle, and the editor rarely does - an effect tile, a transition tile or a
+  waveform animating is enough. It then prints `ERROR: could not get idle state`
+  on stderr, writes nothing, and **leaves the previous dump on the device**, so a
+  pipeline that redirects stderr reads a stale tree and believes it. That cost
+  half an hour on 8 October: the Transition sheet was declared broken (a tap on
+  the strip's join badge "did nothing" three times) when it had opened every
+  time. `rm -f /sdcard/ui.xml` first, never redirect the dump's stderr, and
+  confirm anything surprising with `screencap` before writing it down.
 - **Logcat is small and the media server floods it.** `adb logcat -G 16M` before
   reproducing anything, or the app's own lines are gone by the time you look.
 - **Drafts can be read on the device** because the build is debuggable:
@@ -256,15 +265,14 @@ should work through it and then delete what holds up.
   that the cut sounds no longer tick, that a fitted export lands under its
   limit now that the track is in the budget, and that the Settings row behaves.
 
-- **The compact muxer (5 October), first on this list because it is on the path
-  of every export.** `media/CompactMuxer.kt` turns Media3's streamable output
-  off, because the in-app muxer's 400 KB reserved moov space is never trimmed
-  and was 69% of a measured three-second export (`docs/DEVICE_FINDINGS.md`).
-  The change is one builder call and `DefaultMuxer` is a pure delegate over the
-  same factory, but **no file has been written with it**. First thing on a
-  device: render anything, check it plays in the gallery and in a share, and
-  that `Mp4Probe` now accounts for nearly the whole file. The same factory is
-  on the proxy copy and on every rendered still.
+- **The compact muxer: done, seen (8 October).** `media/CompactMuxer.kt` turns
+  Media3's streamable output off, because the in-app muxer's 400 KB reserved
+  moov space is never trimmed and was 69% of a measured three-second export. A
+  480p export of a photo + a video with a Dissolve now comes out **1.2%
+  container** (video 1,530,066 B + audio 406,686 B of 1,959,778), plays in the
+  gallery and in the done screen's player, and `Mp4Probe` accounts for it -
+  `docs/DEVICE_FINDINGS.md` §38. The same factory is on the proxy copy and on
+  every rendered still; those two are still unseen.
 
 - **Batch B4 of the roadmap (preview engine), all of it.** Built with no phone
   attached; `docs/ROADMAP.md` §4 has the script. The decisions are executed on
@@ -358,11 +366,14 @@ should work through it and then delete what holds up.
   against it there; the Blend sliders on an animated
   overlay stay where they are put; Cut on beats leaves the song whole; a draft
   saved with gaps on the main track keeps them through a trim or a cut.
-- **Batch B5 (the export pipeline on Media3 1.11.1), all of it.** Built on the
-  desktop with no phone attached; the stacking, transition, keyframe-clock,
-  sizing, sound-slice and fold-down arithmetic is executed on the JVM
-  (`tools/jvm/ExportPlanChecks.kt`, `FramingChecks.kt`). Nothing has been
-  rendered. The device gate, in this order, before anything is built on it:
+- **Batch B5 (the export pipeline on Media3 1.11.1), all but its first gate.**
+  Built on the desktop with no phone attached; the stacking, transition,
+  keyframe-clock, sizing, sound-slice and fold-down arithmetic is executed on the
+  JVM (`tools/jvm/ExportPlanChecks.kt`, `FramingChecks.kt`). **Gates (1) and (2)
+  are now seen** - a photo first, a video second and a Dissolve on the join,
+  rendered at 480p, read frame by frame off the file (`docs/DEVICE_FINDINGS.md`
+  §38): it completes, the dissolve is there, the sound runs throughout and the
+  rate is exactly 30. The rest is still unrendered. The device gate, in order:
   (1) video + photo with a Dissolve on the join, 480p - the export that failed
   on 1.5.1 with "The preceding MediaItem does not contain any track" must now
   complete, with the dissolve visible and sound throughout; (2) the same with the

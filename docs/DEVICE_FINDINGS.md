@@ -3591,3 +3591,106 @@ And the chips:
 - the line beneath: **"One rate, 1.6x. Tap a curve to lay it across the whole
   shot, or Normal for 1x"**, which also says what Normal *would* do, so tapping
   it is a choice rather than a surprise.
+
+### 36. Cutout on a main-track shot, and "Float this clip" (8 October)
+
+B16's claim, verbatim: *"Cutout on a main-track shot offers neither Key green nor
+Cut out - a hole in the base shows black in the preview even over a padded
+canvas ... but 'Float this clip' (`FloatOffer`), which is
+`switchToOverlay(keepPlacement = true)` ... check it lands the shot on an overlay
+row selected, full frame where it was, and the Cutout sheet then shows the key
+buttons."* **All of it holds, seen.**
+
+On a one-clip edit, Cutout → Chroma key reads:
+
+> Chroma key · Cut a green or blue screen out of this shot
+> Nothing is under the video track, so the keyed colour shows black here. Put a
+> shot after this one and float this clip over it.
+
+- no Key green, no Key blue, no "Pick the screen from the picture";
+- **no Float button either** - `OverlayRules.floatsOverAShot` is false on the only
+  shot, and the sentence changes to say what to do about it instead. That is the
+  half of the rule that is easiest to get wrong and it is right;
+- the panel is headed **"Chroma key"**, not "Green screen" (B16's rename).
+
+Duplicate the shot so a second follows it, and the same panel grows the button
+and the other sentence (*"...Float this clip over the next shot for that shot to
+show through: it keeps its place and its moves."*). Tapping it:
+
+- the edit goes 2 clips · 0:44.532 → 2 clips · **0:22.266** - the floated shot now
+  lies *over* the one that slid under it, which is the whole point;
+- the strip hint reads **"Overlay"**, the box is drawn **full frame** (not dropped
+  into a corner, which is what the toolbar's To overlay does), with its four
+  buttons - Delete, Duplicate, Edit, resize - at the picture's corners;
+- the sheet stays open and **now shows Key green / Key blue / Pick the screen from
+  the picture**, and its subtitle becomes "...out of this overlay";
+- the undo step is named **"Undo: Float"**.
+
+### 37. The playhead, and where a picked photo lands (8 October)
+
+The two things the owner reported by hand. Both are **fixed in the build on the
+phone**, seen:
+
+- **The playhead moves, and it moves with the finger.** Drag the strip right and
+  time runs forward (0:00.566 → 0:10.754 on one drag); drag left and it runs back,
+  stopping at 0:00. The line walks right across the screen as it goes - at this
+  zoom the whole edit fits, so there is nothing to scroll and the playhead is what
+  moves. It sticks: the readout is the same three dumps later.
+- **No wasted space at the start.** At 0:00 the first clip's left edge is at the
+  strip's own left edge (x≈105 of 1080, which is the track-head column) and the
+  ruler's 0:00 tick is under the playhead. `TimelineWindow.linedOn`'s clamp is
+  doing its job.
+- **The frame buttons step exactly one frame**, forward and back, on 30 fps
+  footage: 0:00.500 → .533 → .566 → .600 → .633 → .666, then back .633 → .600 →
+  .566. Symmetric, no drift. (B6's claim, on an untrimmed, unretimed shot; the
+  trimmed and retimed cases are still unseen.)
+
+**Where a picked photo lands, which looked wrong and is not.** With the playhead
+at 0:10.754 inside a 0:22 shot, "Add to the video track → Video or photo" put the
+photo at **0:00**, not under the playhead. That is
+`ClipEdits.insertSourcesAtPlayhead`'s documented rule - *"on the nearer cut of the
+shot under it, never inside one"* - and 10.754 is nearer the shot's head than its
+tail. The strip then shows the video filling the viewport with its head off
+screen, which reads as a clip drawn at the wrong width until you scroll back to
+0:00 and find the photo sitting there with its handles.
+
+**A slow drag that starts on a clip scrubs; it does not lift it.** An 800 ms drag
+across the selected shot moved the playhead 0:14.989 → 0:07.014 and left **no undo
+step**. The lift wants a press that stays still.
+
+### 38. The export gate: a photo, a video and a Dissolve (8 October)
+
+B5's device gate, items (1) and (2) - *"the export that failed on 1.5.1 with 'The
+preceding MediaItem does not contain any track' must now complete, with the
+dissolve visible and sound throughout"*, and *"the same with the photo first and
+the video second"*. **Rendered, pulled off the phone and read frame by frame.**
+
+The edit: a picked photo at 0:00 (3 s, Settings' photo length), a 0:22.266 video
+after it, **Dissolve 0.5 s** on the join - so the photo is first and the video
+second, which is the harder of the two orders. 480p, Auto frame rate, Standard
+quality, H.264.
+
+- `SquishExport: done trimOnly=false optimization=0 video=c2.qti.avc.encoder
+  mime=video/avc bitrate=496634 asked=500081 frames=743 colour=ColorInfo(BT709,
+  Limited range, SDR SMPTE 170M...) size=1959778`. **It completes.**
+- The done screen states **480 × 852 · 24.8 s · 30 fps · 2.0 MB**, and "Saved to
+  your gallery · Movies > Squish · squish_1791411626295.mp4". The MediaStore row
+  is byte-for-byte the same size, and the pull is byte-exact.
+- `Mp4Probe`: **743 video samples, 24.766 s, 30.000 per second**, frame durations
+  33.33 ms ×742 and 33.00 ms ×1 - no drops, no stutter. Sound runs the whole way:
+  1069 AAC samples, 24.822 s, 44.1 kHz (the source's own rate), 131 kbps.
+- **The compact muxer, measured for the first time.** Video 1,530,066 B + audio
+  406,686 B = 1,936,752 of a 1,959,778 B file: **1.2% container overhead**. The
+  400 KB `moov` reservation `media/CompactMuxer.kt` turns off would have been
+  **20%** of this file. First item on the unverified list, now off it - and the
+  file plays in the gallery and in the done screen's own player.
+- **The dissolve is in the file.** Frames 2.3 s → 3.3 s (`tools/desktop/frames.ps1`
+  + `contact_sheet.ps1`): pure photo to 2.4 s, the video fading up from 2.5 s,
+  the photo nearly gone by 2.9 s, pure video at 3.0 s. A clean half-second
+  cross-fade, photo under video, the same way round as the preview drew it.
+- The edit's length dropped 0:25.266 → 0:24.766 when the Dissolve went on, which is
+  the overlap the sheet says it takes.
+
+Also seen on the way: sizes above 1080p are **greyed** on the Export sheet with
+"Sizes above 1080p are beyond this phone's encoder" (B14's `EncoderCeiling`), and
+the transition sheet's tiles animate the *outgoing* shot's own picture.
