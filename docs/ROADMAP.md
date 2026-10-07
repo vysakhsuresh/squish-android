@@ -585,15 +585,17 @@ each one is a thing that was plainly broken for anyone who did it:
     playhead comes back.
 13. **A song's beat grid at ×2**: the dots double, the bpm on the card doubles,
     and "Every bar" still falls on the bar.
-14. **Blend a still over a shot and change its Blend mode and Opacity**: the
-    picture changes as you change them.
+14. ~~**Blend a still over a shot and change its Blend mode and Opacity**~~
+    **Done, 7 October.** Multiply redrew on the tap and Opacity faded under the
+    finger, with the shot never touched. `docs/DEVICE_FINDINGS.md` §18.
 15. **Trim a sixty-second clip down to two in Snip**: both handles still answer.
 16. **A 9:16 crop on a landscape edit**, with the safe-area guide on: the dashed
     rectangle is inside the picture the file keeps.
-17. **A slideshow of photos**: no Camera sound row on the Sound sheet. (Now
-    also held by an executed check - `ToolRules.hasCameraAudio` in
-    `tools/jvm/ToolRulesChecks.kt` - because the 7 October fix for Extract
-    audio touched the same decision and this is the case it must not break.)
+17. ~~**A slideshow of photos**: no Camera sound row on the Sound sheet.~~
+    **Done, 7 October** - two photos, and "Mic & camera" offers the Record card
+    alone. Also held by an executed check now (`ToolRules.hasCameraAudio` in
+    `tools/jvm/ToolRulesChecks.kt`), because that day's fix for Extract audio
+    touched the same decision and this is the case it must not break.
 
 **Added after sweep seven** (5 October, night). The first two are the only
 things on this list that can only be judged *by ear*, so they want quiet:
