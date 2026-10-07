@@ -3159,3 +3159,41 @@ everything. Negative-tested by taking one label off.
 Every ratio, duration, transition and voice chip came back `checkable="true"` with
 `checked="true"` on exactly the chosen one - so "six picker grids marking a choice
 with a border alone" is fixed where it can be seen, not just where it was written.
+
+### 23. Everything on the editor screen can now be named (7-8 October, night)
+
+Carrying on from §22 with the same method - dump the accessibility tree, read
+what `uiautomator` flags - over the editor rather than Settings.
+
+**What was already right**, and is worth recording because it is easy to break:
+Undo and Redo name the step they would take (`"Nothing to undo"`, `"Redo: Look"`)
+and go `enabled="false"` when there is none; the transport reads "Back one
+frame", "Play", "Forward one frame", "Full screen"; the strip's own buttons read
+"Add to the video track" and "Split at the playhead", the latter disabled with
+the playhead on a clip's edge; and every chip on Looks, Adjust and Settings is
+`checkable` with `checked` on exactly the chosen one.
+
+**Three things were not.**
+
+1. **Every slider in the app** came back a bare `SeekBar` with no name, for the
+   same reason the switches had none: the label and the readout are sibling
+   `Text`s. Thirteen of them in a row on the Adjust tab. `SquishSlider` carries
+   both now - and the first attempt at the fix is the lesson, because it went
+   into `LabeledSlider` and the Adjust tab has a wrapper of its own, so half the
+   app stayed unnamed and the tree said so.
+2. **`OptionToggle`** - "Facing the other way", on shapes and stickers - showed
+   its state in a tint and was a plain `clickable`, so its node carried no state
+   at all.
+3. **The picture itself**, the biggest target in the editor, was `clickable` with
+   no description and no action label, while the two other `clickable`s in the
+   same file already had one.
+
+After: **zero `NAF` nodes on the editor screen**, the Adjust slider reads
+`content-desc="Brightness"`, and the preview reads `content-desc="The picture"`
+with an action label that follows the transport ("Play" / "Pause").
+
+`tools/jvm/ControlChecks.kt` holds the switches and the sliders over their **call
+sites** rather than over the component, so a third wrapper cannot skip it, and
+balances each call's parentheses rather than matching a regex - every one of
+these carries a lambda with calls inside it, and a pattern that stops at the
+first `)` reads the arguments as empty and passes everything.

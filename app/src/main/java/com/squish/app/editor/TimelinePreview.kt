@@ -60,6 +60,8 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
@@ -327,12 +329,25 @@ fun TimelinePreview(
             // frame is scaled up and shifted, and without this it spilled over
             // the transport below and covered the play button.
             .clipToBounds()
+            // The one thing on this screen a screen reader could not name.
+            // `uiautomator` flags it `NAF` - clickable, no text, no description
+            // - and it is the biggest target in the editor. The two other
+            // `clickable`s in this file already carry an `onClickLabel`; this
+            // one was missed. Found by dumping the tree on 7 October, with the
+            // switches and the sliders.
+            //
+            // The label is play/pause rather than "deselect", which is what the
+            // tap does when something is selected: that is the exception, the
+            // node is read far more often than it is in that state, and naming
+            // the exception would be wrong nearly always.
+            .semantics { contentDescription = "The picture" }
             .clickable(
                 // The player's own controller is off, so the picture itself is the
                 // play button - which is what people reach for anyway - unless
                 // something is selected, when a tap on it is the way out.
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
+                onClickLabel = if (frame.isPlaying) "Pause" else "Play",
                 onClick = { if (!onPictureTap()) engine.togglePlay() }
             ),
         contentAlignment = Alignment.Center
