@@ -3567,3 +3567,27 @@ left **no project on the grid at all** - the count stayed at the owner's own 19.
 its first pick, so a look costs nothing. Together with §(the Open-with fix) that
 is the whole of it: a look leaves nothing, a second look reuses the first, and
 only an edit makes a project.
+
+### 35. The Speed sheet at a flat rate (8 October)
+
+B16's fix: *"Normal lights at 1x only - a lit chip must be one a tap leaves
+alone, and it lit for any flat rate, so a 2x shot read as 'Normal' and a tap on
+the lit chip dropped it to 1x, rippling the track."* Verified.
+
+The sheet opens with the rate curve on a **logarithmic** axis (100x / 10x / 1x /
+0.1x) - which is what makes the range below 1x usable at all - and the card reads
+"Shot 1 · 0:22.266 on the timeline".
+
+Dragging Rate to **1.6x**:
+- the clip on the strip shrinks and carries a **"1.6x" badge**;
+- its length goes 0:22 to **0:13**, and the edit's total 0:22.266 to 0:13.660;
+- the card becomes **"0:22.266 of footage · 0:13.660 on the timeline"** - both
+  numbers, which is the pair a retimed clip is confusing without.
+
+And the chips:
+- the six preset rates (0.25x … 10x): **none lit**, since 1.6x is not one of them;
+- the nine curves (Normal, Montage, Hero, Bullet, Jump cut, Flash in, Flash out,
+  Slow in, Slow out): **none lit** - the fix exactly;
+- the line beneath: **"One rate, 1.6x. Tap a curve to lay it across the whole
+  shot, or Normal for 1x"**, which also says what Normal *would* do, so tapping
+  it is a choice rather than a surprise.
