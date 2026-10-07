@@ -3393,3 +3393,10 @@ the film scrolled under it.
 
 (`accelerometer_rotation` and `user_rotation` restored afterwards, as was
 `always_finish_activities` from §25.)
+
+**Full screen, from the same session.** The picture fills the screen with its own
+scrub bar, transport and timecode. Scrubbing there to 0:14.044 and closing it
+lands back in the editor **on that frame**, with the strip scrolled to it and
+nothing playing - so the frame is kept and no scrub is left running. (The exact
+case B6 names, closing *mid-drag*, cannot be driven over adb: the close has to
+happen while a finger is down.)
