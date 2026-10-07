@@ -3112,3 +3112,12 @@ reading 0:00 under the first frame and 0:20 near the last. Before the clamp the
 fit left a quarter of the strip for what had already played, so the same clip was
 drawn into three quarters of the width and the ruler ran past 0:25. The edit is a
 third bigger again on screen, and every pixel of the strip is edit.
+
+**A tap on the ruler brings that moment to the playhead** - tapped at about 0:23
+on a 0:22.266 edit and the playhead went to 0:22.266, clamped at the end, with
+the strip re-laid around it. **The double tap that fits could not be tested over
+adb**: every `input tap` and `input motionevent` is its own process, so two of
+them land further apart than Compose's double-tap window however they are
+batched, and the single tap fires twice instead. The handler is wired
+(`Ruler`'s `detectTapGestures(onDoubleTap = ...)` to `fitZoom`); whether a
+finger triggers it is unseen, and this is the honest reason why.
