@@ -2736,3 +2736,24 @@ carry the swap icons B16 gave them.
   compile fails asynchronously on the player and the surface then plays plain.
   Both are clean distance-field shapes with soft edges and the outline follows
   them exactly.
+
+### 12. The person mask runs on the phone (7 October)
+
+**Cutout → Background → Remove background**, never driven before. MediaPipe's
+vision JNI and TensorFlow Lite loaded (`Created TensorFlow Lite XNNPACK delegate
+for CPU`, 246 of 246 nodes delegated), the card counted up - "Finding the
+person — 34%" with a Stop - and it finished an 86-second clip in about a minute
+without a crash.
+
+What it found on *this* footage is nothing, and the app says why: a wide stage
+shot with a dozen small figures is not what a selfie segmenter is for, so
+everything read as background and the whole picture came back blurred, under the
+line **"Works best with one person facing the camera."** Worth writing down as
+the honest result rather than as a pass: the path runs, the model loads, the
+progress is real, and on this shot the answer is useless and labelled as such.
+
+Two rules of B16's held at the same time, both by not showing something:
+on a main-track shot the sheet offers **only** Background and Chroma key - no
+"Cut out", because a hole in the base would show black in the preview and the
+backdrop in the file - and **no "Float this clip"**, because this is the only
+shot and `OverlayRules.floatsOverAShot` says nothing would be under it.
