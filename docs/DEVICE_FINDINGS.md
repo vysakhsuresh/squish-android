@@ -3087,3 +3087,21 @@ The explanatory line under the chips is worth keeping as written - "A slow track
 with busy hi-hats has two defensible tempos, and two people tapping along will
 disagree. If it counted at the wrong level, move it an octave." That is what
 ÷2 and x2 are for, said without jargon.
+
+**The scrub scale, measured rather than eyeballed.** At the zoom a video opens
+at, a 450 px drag took 0:00.000 to 0:13.751 where the ruler reads 25 s across
+795 px - 31.8 px/s, so 14.15 s expected, 13.751 measured, inside the snap
+distance. Pinched five times deeper, 300 px moved 60 ms and **the playhead landed
+exactly on a beat dot at 0:13.424**, the song's beats running 10.924 + 0.5n from
+a 120 BPM grid. Both are right, and the second doubles as a check that the beats
+are in `scrubTargets` and that the snap lands on the dot rather than near it.
+
+(I doubted this for a while on a bad estimate of an effect clip's length, and the
+beat dot settled it. Worth writing down that the landmark to measure a strip
+against is the beat grid, not a clip's drawn width.)
+
+**One thing that is not a regression but is worth knowing:** at a very deep zoom
+the ruler draws no labels at all, because it lays one a second and less than a
+second is on screen. The timecode above the strip still reads, so nothing is
+lost, but the strip itself has no time reference once you pinch past about a
+second a screen.
