@@ -3470,3 +3470,31 @@ pulled from the file: clean photo 1 at 2.2 s and 2.6 s, **both necklaces
 superimposed at 3.0 s**, clean photo 2 from 3.3 s on. The dissolve is there, in
 the right place, through the composited path - which is B5's gate in its
 photo-to-photo form.
+
+### 32. Settings, and the storage card (8 October)
+
+**Settings matched what a new project actually did**, which is the point of it:
+Frame Original, Photos run for 3 s, Transition Cut, and the project made from
+three photos came out three 3 s clips with no transition applied.
+
+**The Export card states what it remembered**: "New projects open on 480p, the
+footage's rate, standard quality - as the last export was set", with "Start new
+projects at Original again" beside it. B14's remembered defaults, said in
+words rather than left to be discovered.
+
+**The storage card.** Seven kinds, each with its size, a plain sentence and a
+Clear. The sizes add up: 354 + 391 + 694 + 5 + 14 + 0 + 4 = 1462 MB against the
+header's "Using 1.5 GB". **Preview cache at 0 KB has its Clear greyed** - a
+control that cannot do anything saying so, which is the convention this codebase
+writes down and does not always follow.
+
+Clearing **Thumbnails** took it 4 MB → 0 KB, greyed its own Clear on the spot,
+and the dashboard came back with **every cover drawn** - regenerated from the
+sources, as its blurb promises. Nothing blank.
+
+**Worth telling the owner:** *Exports kept inside Squish* is **354 MB**. Those
+are renders whose copy to the gallery did not land, which the library plays;
+clearing takes 354 MB back and removes those rows from the library. And
+*Reversed renders, imports and downloads* is **694 MB** - mostly `files/imports`,
+which is copies of shared videos. Both are one tap each and neither touches a
+project's own files.
