@@ -2870,3 +2870,35 @@ list: **`forgetDeleted` on a real gallery deletion**, four rows with their files
 taken out from under them, all four forgotten, every other row left alone. That
 is the function's whole risk, since forgetting a row whose file still exists
 loses it for good.
+
+### 16. "Fit to a size" on Squeeze, and what it never said (7 October)
+
+Squeeze offers **"Fit to a size · For a strict upload limit"** with 16 / 25 / 50 /
+100 MB chips, and until today had none of B14's machinery behind it: a run that
+came out over the limit published the file and reported "Squeezed · N% smaller"
+with nothing saying the number had been missed, and a limit that could not be met
+at all was only discoverable by spending the encode. See the commit for why - the
+card was private to `ExportSheet.kt`, so the editor had it and the tool did not.
+
+**Seen on the phone, the half that costs no encode.** A 2:35:13.280, 1.69 GB film,
+Fit to a size on, 16 MB:
+
+> **Fit to a size**
+> *This video is too long for 16 MB - the smallest it can be made is about
+> 501.8 MB. Trim it, or pick a larger size.*
+
+in amber, before anything is rendered. The size card above it, computed by a
+different route (the estimate, not `smallestFittedBytes`), independently reads
+**858 x 360 · sized to fit · ≈ 501.8 MB · 70% smaller than the original · was
+1.69 GB** - the same 501.8 MB, which is a cross-check on the floor worth more
+than either number alone.
+
+Tapping 100 MB re-words the line to "too long for 100 MB" and leaves the floor at
+501.8 MB, where it belongs - the floor is the video's, not the target's - and the
+three-line sentence lays out without pushing the chips or the button anywhere.
+
+**Still unseen: the overshoot card itself.** It wants a fit that is reachable but
+tight enough for the encoder to miss by more than two per cent, which is busy
+footage near the five-minute boundary, and a real encode to find out. The arithmetic
+behind it is executed (`ExportSettingsChecks`, including the scale-through-the-floor
+composition that bit once); the card on this screen is not.
