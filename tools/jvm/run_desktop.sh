@@ -46,7 +46,7 @@ run preview    "$SRC/editor/PreviewBox.kt" tools/jvm/PreviewChecks.kt
 run previewrules "$SRC/editor/PreviewRules.kt" tools/jvm/PreviewRulesChecks.kt
 run probegate  "$SRC/editor/ProbeGate.kt" tools/jvm/ProbeGateChecks.kt
 run toolrules  "$SRC/editor/ToolRules.kt" tools/jvm/ToolRulesChecks.kt
-run polish     $TIMELINE tools/jvm/PolishRulesChecks.kt
+run polish     $TIMELINE "$SRC/editor/SheetRules.kt" tools/jvm/PolishRulesChecks.kt
 run textfit    "$SRC/ui/components/TextFit.kt" tools/jvm/TextFitChecks.kt
 run colourname "$SRC/ui/components/ColourName.kt" tools/jvm/ColourNameChecks.kt
 run previewspan "$SRC/ui/components/PreviewSpan.kt" tools/jvm/PreviewSpanChecks.kt

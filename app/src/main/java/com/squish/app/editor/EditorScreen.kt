@@ -103,6 +103,7 @@ import com.squish.app.ui.components.CoachMark
 import com.squish.app.settings.Preferences
 import com.squish.app.ui.components.StopExportDialog
 import com.squish.app.ui.theme.SquishColors
+import kotlinx.coroutines.delay
 
 /**
  * The editor, laid out as docs/ROADMAP.md section 2 decided:
@@ -148,10 +149,26 @@ fun EditorScreen(
     // The project was then left carrying a caption reading "Your text" for
     // good, on the strip, in the draft and in every render, with no undo step
     // for it either.
-    LaunchedEffect(openTool, state.selectedClipId, state.isLoadingSource) {
+    LaunchedEffect(openTool, state.selectedClipId, state.isLoadingSource, newLineId) {
         if (state.isLoadingSource) return@LaunchedEffect
         val id = newLineId ?: return@LaunchedEffect
-        if (openTool == Tool.Edit && state.selectedClipId == id) return@LaunchedEffect
+        // And not before the line itself has arrived. `addText` sets newLineId
+        // and opens the sheet from the tap handler, while the line and its
+        // selection come back through the view model's flow a composition
+        // later - so this could run with openTool already Edit and a state
+        // that has neither. It then found no such line, discarded nothing, and
+        // cleared newLineId: Done had nothing left to take the sample line off
+        // with, and a caption reading "Your text" was kept for good. Seen once
+        // in five tries on 8 October, with the stray line in the draft to show
+        // for it; keyed on newLineId as well, so setting it starts the wait
+        // over rather than leaving this early return to stand.
+        val letGo = NewLineRules.lettingGo(
+            lineExists = state.textOverlays.any { it.id == id },
+            draftStillLoading = state.isLoadingSource,
+            editSheetOpen = openTool == Tool.Edit,
+            selectionIsTheLine = state.selectedClipId == id
+        )
+        if (!letGo) return@LaunchedEffect
         newLineId = null
         viewModel.text.discardIfBlank(id)
     }
@@ -478,20 +495,43 @@ fun EditorScreen(
                 val density = LocalDensity.current
                 val imePx = WindowInsets.ime.getBottom(density)
                 val typing = imePx > 0
-                // The keyboard's height, from the last time it was up. The Edit
-                // sheet's tabs fold the keyboard, and the sheet then takes the
-                // keyboard's room so its tab row stays where the finger found it
-                // - as CapCut holds its text panel. It used to change to the
+                // The room the keyboard left, from the last time it was up. The
+                // Edit sheet's tabs fold the keyboard, and the sheet then takes
+                // the keyboard's room so its tab row stays where the finger found
+                // it - as CapCut holds its text panel. It used to change to the
                 // sheet's own height with the strip unfolding above it, so the
                 // tabs jumped on every tab tapped and fast taps landed on the strip.
-                var keyboardPx by rememberSaveable { mutableIntStateOf(0) }
+                //
+                // The room, not the keyboard's own inset: imePadding() applies
+                // only what the navigation bar does not already cover, so the raw
+                // ime inset is a navigation bar too big. Held, it made the sheet
+                // half a navigation bar taller than the one it replaced and the
+                // tab row still rose - by 59 px on a moto g84, 1017 to 958 off the
+                // accessibility tree, which is this jump all over again at half the
+                // size. Measured as what was there while typing, the arithmetic
+                // never looks at an inset and cannot be wrong about one
+                // (SheetRules.heldSheetHeight).
+                var typingRoomPx by rememberSaveable { mutableIntStateOf(0) }
                 var editChip by rememberSaveable { mutableIntStateOf(0) }
-                LaunchedEffect(imePx) { if (imePx > keyboardPx) keyboardPx = imePx }
+                val availablePx = with(density) { available.roundToPx() }
+                // Taken once the keyboard has come to rest rather than at the
+                // tallest moment it passes through: Gboard changes height on its
+                // way up. Keyed on both numbers, so each change cancels the wait
+                // the one before it started and only what it settles on is kept;
+                // the dismissal's last step is cancelled by the 0 that follows it.
+                // The first reading is taken at once as well, so a tab tapped
+                // inside the settling time still has a room to hold.
+                LaunchedEffect(imePx, availablePx) {
+                    if (imePx <= 0) return@LaunchedEffect
+                    if (typingRoomPx == 0) typingRoomPx = availablePx
+                    delay(IME_SETTLE_MS)
+                    typingRoomPx = availablePx
+                }
                 // Only on a tab that is not for typing. Dismissing the keyboard on the
                 // Keyboard tab itself used to hold its room too: an empty block where
                 // the keys had been, the strip gone, and Done moving under the thumb.
-                val holding = openTool == Tool.Edit && editChip != 0 && !typing && keyboardPx > 0
-                val keyboardDp = with(density) { keyboardPx.toDp() }
+                val holding = openTool == Tool.Edit && editChip != 0 && !typing && typingRoomPx > 0
+                val typingRoom = with(density) { typingRoomPx.toDp() }
                 val cardsScroll = rememberScrollState()
                 val stripScroll = rememberScrollState()
 
@@ -749,8 +789,9 @@ fun EditorScreen(
                                 Modifier.height(
                                     when {
                                         typing -> typingSheetHeightFor(available)
-                                        // The keyboard's room and the height it had over the keyboard: the same top edge.
-                                        holding -> typingSheetHeightFor(available - keyboardDp) + keyboardDp
+                                        // What it had over the keyboard, plus everything the
+                                        // keyboard has given back: the same top edge.
+                                        holding -> SheetRules.heldSheetHeight(available.value, typingRoom.value).dp
                                         else -> sheetHeight
                                     }
                                 )
@@ -835,11 +876,10 @@ private fun sheetHeightFor(available: Dp): Dp {
 /**
  * The sheet's height with the keyboard up: half of what the keyboard leaves,
  * so the picture keeps the other half and the words can be watched landing.
+ * The arithmetic is [SheetRules.typingSheetHeight], which the held height is
+ * measured from too and which is executed on the JVM.
  */
-private fun typingSheetHeightFor(available: Dp): Dp {
-    val floor = minOf(TYPING_SHEET_MIN, available * 0.8f)
-    return (available * 0.5f).coerceIn(floor, maxOf(floor, SHEET_MAX))
-}
+private fun typingSheetHeightFor(available: Dp): Dp = SheetRules.typingSheetHeight(available.value).dp
 
 /** The window the editor is drawn in, for its keyboard behaviour. */
 private tailrec fun Context.findWindow(): Window? = when (this) {
@@ -1325,8 +1365,14 @@ private val SHEET_MIN = 260.dp
 /** On a tall screen, past this the sheet is only taking room from the picture. */
 private val SHEET_MAX = 460.dp
 
-/** With the keyboard up: the sheet's heading and a line or two of field. */
-private val TYPING_SHEET_MIN = 160.dp
+
+/**
+ * How long the keyboard is given to come to rest before its height is kept.
+ * Long enough for Gboard's arrival, which changes height part way through;
+ * short enough that a tab tapped straight after typing is already holding the
+ * settled number rather than the first reading.
+ */
+private const val IME_SETTLE_MS = 200L
 
 /** The most of the editor's height the strip takes, before it scrolls. */
 private const val STRIP_SHARE = 0.4f

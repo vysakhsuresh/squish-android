@@ -3791,3 +3791,59 @@ Negative tests, each watched to fail against a copy of the file with the fault
 put back: the bin clause dropped ("did not name the bin"), the
 nothing-happened branch dropped ("said it freed something when it freed
 nothing"), and `keepsReferenced` ignored ("a cache Clear blamed the bin").
+
+### 41. The text sheet: the tab row's 59 px, and a sample line kept for good (8 October)
+
+B10's Edit sheet, driven for the first time. What held straight away: **Add text
+puts "Your text" in the middle of the picture with the keyboard up and the words
+selected** (type and they are replaced, not appended), the tabs read **Keyboard ·
+Style · Bubble · Animation** and sit over the keyboard, picking any tab but
+Keyboard folds the keyboard, the strip folds away while typing and **comes back
+when the sheet closes**, and a line added and left blank is gone again after Done
+with no undo step. Two faults, both fixed and both seen fixed.
+
+**The tab row jumped 59 px on every tab tapped**, which is the exact thing the
+mechanism holding the keyboard's room exists to stop. Off the accessibility tree:
+the row's labels at `[…,1017][…,1060]` with the keyboard up and `[…,958][…,999]`
+after folding it. The held sheet was taking the keyboard's **own inset**, and
+`imePadding()` applies only what the navigation bar does not already cover - so
+the number held was a navigation bar too big, the sheet came out half a navigation
+bar taller than the one it replaced, and the top edge (where the tabs are) rose by
+half of that. 59 × 2 = 118 px = this phone's gesture bar.
+
+Fixed by measuring **the room the keyboard left** rather than the inset it
+reported (`SheetRules.heldSheetHeight`), which never looks at an inset and so
+cannot be wrong about one. Also taken once the keyboard has **settled** rather
+than at the tallest moment it passes through, since Gboard changes height on its
+way up. After: `[…,1017][…,1060]` on all four tabs and back again - not one pixel.
+
+*The check*: `tools/jvm/PolishRulesChecks.kt` now asserts the sheet's **top edge**
+is the same number typing and holding, over six box heights and seven keyboard
+heights. Negative-tested by writing the old inset-based shape back (with a 48 dp
+navigation bar in it) and watching five of the cases fail by exactly half a
+navigation bar.
+
+**And a sample line kept for good.** Once in five tries, Add text → walk the tabs
+→ Done left a caption reading "Your text" in the project - on the strip, in the
+draft, and it would have been in every render. The draft had three text overlays
+where it should have had one.
+
+The race: `addText` sets the editor's handle on the new line and opens the sheet
+from the tap handler, while the line and its selection come back through the view
+model's flow a composition later. In between the sheet is open on a state that has
+neither, and a rule phrased only as *"the sheet is no longer on this line"* says
+**let go** at that moment: it finds no such line, discards nothing, and spends the
+handle. Done then has nothing left to take the line off with. The same class as
+the comment already sitting above that effect for the loading case - the guard
+was there, it just did not cover this gap.
+
+Fixed as `NewLineRules.lettingGo`, which cannot let go of a line that is not there
+yet, with the handle in the effect's keys so setting it starts the wait over.
+Negative-tested by dropping `lineExists` and watching the two cases that matter
+fail. Then six Add text / Done cycles from a cold start: the draft stayed at two
+overlays every time.
+
+**Still open from this round:** the preview was **black at 0:00 for a moment
+after the text sheet closed**, with the two lines drawn over nothing, and came
+back on a scrub. The first clip there is a photo, so it is the still that was not
+redrawn rather than a player. Not yet reproduced deliberately.

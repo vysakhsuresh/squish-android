@@ -1,3 +1,5 @@
+import com.squish.app.editor.NewLineRules
+import com.squish.app.editor.SheetRules
 import com.squish.app.editor.MotionPreset
 import com.squish.app.editor.PolishRules
 import com.squish.app.timeline.Keyframe
@@ -182,6 +184,92 @@ fun main() {
         check(PolishRules.rateLabel(3.14f) == "3.1x", "3.14x reads \"${PolishRules.rateLabel(3.14f)}\"")
         check(PolishRules.rateLabel(0.78f) == "0.78x", "0.78x reads \"${PolishRules.rateLabel(0.78f)}\"")
         check(PolishRules.rateLabel(2f) == "2x", "a whole rate carries a decimal")
+    }
+
+    // --- The text sheet's top edge does not move when the keyboard folds. -------
+    //
+    // The tabs sit at the top of the sheet, so a top edge that moves is a tab
+    // row that jumps under the finger. The model, in dp, measuring up from the
+    // bottom of the box the editor is laid out in:
+    //
+    //   F  the room there is with no keyboard
+    //   E  the room the keyboard takes from it - the ime inset less whatever
+    //      the navigation bar already covered, which is what imePadding()
+    //      applies and therefore what the layout actually loses
+    //
+    // While typing the box is E shorter and its bottom is E higher, so the
+    // sheet's top sits at  -E - typingSheetHeight(F - E)  from the box's own
+    // bottom. Holding the room, the box is back to F and the sheet's top sits
+    // at  -heldSheetHeight(F, F - E). Those two have to be the same number.
+    run {
+        val rooms = listOf(300f, 420f, 560f, 700f, 900f, 1200f)
+        val keyboards = listOf(0f, 40f, 120f, 240f, 300f, 360f, 420f)
+        rooms.forEach { f ->
+            keyboards.filter { it < f }.forEach { e ->
+                val typingTop = -e - SheetRules.typingSheetHeight(f - e)
+                val heldTop = -SheetRules.heldSheetHeight(f, f - e)
+                check(
+                    kotlin.math.abs(typingTop - heldTop) < 0.01f,
+                    "the sheet's top moved on a $f dp box with a $e dp keyboard: $typingTop then $heldTop"
+                )
+            }
+        }
+    }
+
+    // --- And it never asks for a height the box cannot give. --------------------
+    run {
+        val f = 700f
+        listOf(0f, 100f, 350f, 600f).forEach { e ->
+            val held = SheetRules.heldSheetHeight(f, f - e)
+            check(held <= f + 0.01f, "the held sheet wanted $held dp of a $f dp box")
+            check(held >= SheetRules.typingSheetHeight(f - e) - 0.01f, "the held sheet was shorter than the one it replaced")
+        }
+        // A room that is somehow larger than what there is now - a rotation
+        // while the keyboard was up - takes nothing away rather than going
+        // negative.
+        check(
+            SheetRules.heldSheetHeight(400f, 900f) == SheetRules.typingSheetHeight(900f),
+            "a stale room larger than the box took height off the sheet"
+        )
+    }
+
+    // --- The line Add text just made, and when it may be taken back off. -------
+    //
+    // The race it is for: between the tap and the next composition the sheet is
+    // open on a state that has neither the line nor its selection. A rule that
+    // looks only at the sheet says "let go" there, discards nothing, and spends
+    // the handle - so Done has nothing left to take the sample line off with.
+    run {
+        // The instant after the tap: sheet open, line not there yet. Nothing is
+        // let go of, because there is nothing to let go of.
+        check(
+            !NewLineRules.lettingGo(lineExists = false, draftStillLoading = false, editSheetOpen = true, selectionIsTheLine = false),
+            "let go of a line that had not arrived yet"
+        )
+        check(
+            !NewLineRules.lettingGo(lineExists = false, draftStillLoading = false, editSheetOpen = false, selectionIsTheLine = false),
+            "let go of a line that does not exist at all"
+        )
+        // Landed, selected, sheet open: being typed into. Held.
+        check(
+            !NewLineRules.lettingGo(lineExists = true, draftStillLoading = false, editSheetOpen = true, selectionIsTheLine = true),
+            "took the line off while it was being typed into"
+        )
+        // Done, back, or another selection: let go.
+        check(
+            NewLineRules.lettingGo(lineExists = true, draftStillLoading = false, editSheetOpen = false, selectionIsTheLine = true),
+            "the sheet closed and the line was kept"
+        )
+        check(
+            NewLineRules.lettingGo(lineExists = true, draftStillLoading = false, editSheetOpen = true, selectionIsTheLine = false),
+            "the selection moved off the line and it was kept"
+        )
+        // A draft still being read holds everything: the line will be there
+        // when it has finished.
+        check(
+            !NewLineRules.lettingGo(lineExists = true, draftStillLoading = true, editSheetOpen = false, selectionIsTheLine = false),
+            "let go while the draft was still being read"
+        )
     }
 
     if (problems.isEmpty()) {
