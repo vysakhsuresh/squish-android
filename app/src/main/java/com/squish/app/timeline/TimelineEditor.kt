@@ -367,11 +367,11 @@ fun TimelineEditor(
      * costs to lay out does not depend on how long the video is, and a three-hour
      * clip zooms to the frame exactly like a three-second one.
      */
-    // On the playhead, always - the strip scrolls under a line that never moves,
-    // as it does in every phone editor. A quarter of the way across rather than
-    // half: see TimelineWindow.PLAYHEAD_FRACTION, which has the whole of why,
-    // including the one thing the line may never do, which is move while a
-    // finger is dragging the strip.
+    // On the playhead, clamped at the start of the edit: before the playhead
+    // has got a quarter of the way across, the strip is left-aligned and the
+    // playhead walks; after that the playhead holds and the film moves. See
+    // TimelineWindow.PLAYHEAD_FRACTION and linedOn, which carry the whole of
+    // why - and the two complaints the old "line that never moves" earned.
     val window = TimelineWindow.linedOn(
         atMs = centre,
         pixelsPerSecond = state.pixelsPerSecond.coerceIn(MIN_PPS, MAX_PPS),
@@ -392,7 +392,7 @@ fun TimelineEditor(
      * frame and every lane took it (a scrub ran at 20 ms a frame on a phone).
      * Gestures and the layout keep [window]: what a finger lands on is exact.
      */
-    val slide = remember(window) { TimelineWindow.slideFor(window, window.lineMs) }
+    val slide = remember(window) { TimelineWindow.slideFor(window) }
     val drawPadPx = slide.padPx
     val drawWindow = slide.drawn
     val drawShiftPx = slide.shiftPx
@@ -430,10 +430,11 @@ fun TimelineEditor(
     var scrubSnapMs by remember { mutableStateOf<Long?>(null) }
 
     /**
-     * Dragging the strip is scrubbing. Its own scroll rather than
-     * `horizontalScroll`, because that needs content as wide as the timeline,
-     * which is what could not be laid out; this turns the drag into time and
-     * moves the playhead, stopping at either end of the edit.
+     * Dragging the strip is scrubbing, and the playhead goes **with** the
+     * finger. Its own scroll rather than `horizontalScroll`, because that needs
+     * content as wide as the timeline, which is what could not be laid out;
+     * this turns the drag into time and moves the playhead, stopping at either
+     * end of the edit.
      *
      * Snapped here, and the playhead sent exactly where the strip is drawn, so
      * the line down the middle and the picture always agree and the view has
@@ -446,7 +447,22 @@ fun TimelineEditor(
         // From the edit as it is: a playhead left past the end of a shortened
         // edit would otherwise report a step the opposite way to the finger.
         val from = (scrubRawMs ?: heldMs ?: s.playheadMs.toDouble()).coerceIn(0.0, end)
-        val to = (from - w.msForPx(deltaPx)).coerceIn(0.0, end)
+        // **Plus, not minus, and this is the fix for the thing that was reported
+        // three times.** It used to subtract: the finger moved the film and time
+        // ran the other way, so a drag to the right took the playhead left. That
+        // is the gesture every desktop editor uses for a *scroll bar*, and the
+        // reason it was chosen here was that near 0:00 the strip could not
+        // scroll, so the same drag had to mean the opposite thing - the fix then
+        // was to nail the line down so the strip could always scroll, which
+        // bought consistency at the price of a quarter-screen of wasted space
+        // and a playhead that by construction could not move.
+        //
+        // The honest answer is that the finger is on the playhead, not on a
+        // scroll bar: drag right, the playhead goes right, time goes forward,
+        // at 0:00 and at the end and everywhere between. Nothing has to be
+        // nailed down for that to hold, so the window is free to sit against
+        // the left edge at the start (TimelineWindow.linedOn).
+        val to = (from + w.msForPx(deltaPx)).coerceIn(0.0, end)
         scrubRawMs = to
         // Not gated on the switch. "Snap to markers and beats" empties
         // [snapMarks], which is the whole of what it is for; scrubTargets adds
@@ -464,7 +480,11 @@ fun TimelineEditor(
         val before = heldMs
         heldMs = shown
         if (before == null || shown.toLong() != before.toLong()) latestSeek(shown.toLong())
-        w.pxForMs(from - to)
+        // What the drag consumed, in the same direction it was given: `to - from`
+        // now that time runs with the finger. Returned the other way round it
+        // reads as a fling that never settles, because the state is told it
+        // consumed the opposite of what it did.
+        w.pxForMs(to - from)
     }
     val scrolling = scrollable.isScrollInProgress
     LaunchedEffect(scrubSnapMs) {

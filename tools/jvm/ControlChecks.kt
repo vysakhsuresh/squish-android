@@ -34,50 +34,57 @@ private fun readAll(dir: String): List<Pair<String, String>> =
         .map { it.path.replace('\\', '/') to it.readText() }.toList()
 
 fun main() {
-    // ---- The playhead cannot move, so it cannot move the wrong way. --------
+    // ---- A drag means one thing, and the edit starts at the left edge. -----
+    //
+    // The third rewrite of this block, and the first two are the lesson. It
+    // began as a grep for `leadPx = viewportPx / 2f` and failed the day that
+    // was fixed; it then asserted the line sits at PLAYHEAD_FRACTION always,
+    // which *was* the next bug - placing the line by a constant scrolls the
+    // window a quarter-screen before 0:00, so the strip opens a quarter empty
+    // and the playhead cannot move at all. Both were reported in those words:
+    // "the new video added is starting after wasting space at start" and "the
+    // play head is still not movable".
+    //
+    // Twice now this check has asserted the *shape* of an implementation. What
+    // it should always have held is the two things a person can actually see:
+    // the drag goes the way the finger goes, and nothing is wasted at the start.
+    // The second is arithmetic and is executed in WindowChecks. The first is
+    // one character in one expression, and is here.
     run {
         val editor = read("$SRC/timeline/TimelineEditor.kt")
         val window = read("$SRC/timeline/TimelineWindow.kt")
-        // This check used to grep for `leadPx = viewportPx / 2f` and it failed
-        // the day the fault it was written for was properly fixed - which is
-        // the worst thing a check can do, and the second time this codebase has
-        // caught itself at it.
-        //
-        // What it was actually protecting is that the playhead does not move,
-        // so that a drag cannot mean two opposite things. It encoded that as
-        // "the line is centred", which was only ever one way of achieving it -
-        // and the wrong way, because centred puts the start of the edit half a
-        // screen in. The person who uses this said so: "it is starting from mid
-        // screen not the left end which is terrible". The line is at a quarter
-        // now (TimelineWindow.PLAYHEAD_FRACTION) and still does not move.
-        //
-        // So what is asserted here is the thing that cannot be got wrong by
-        // changing a number: the strip has **one** place that decides where the
-        // line goes, and the editor asks it rather than working out a lead of
-        // its own. That the line then holds still is executed, over every
-        // moment, zoom and viewport, in WindowChecks - which is where a
-        // property belongs.
+        // Time runs **with** the finger: a positive delta (the finger going
+        // right) takes the time forward. Written `from - ...` the film followed
+        // the finger and the playhead ran backwards against it, which is what
+        // was reported three separate times.
+        // Literal text, not a pattern: each of these is one expression, and a
+        // regex over them would be all escaping and no meaning.
         check(
-            Regex("""TimelineWindow\.linedOn\(""").containsMatchIn(editor),
-            "the strip no longer builds its window with TimelineWindow.linedOn - a lead worked out " +
-                "in the editor is a line that can walk, and a line that walks is one a drag moves against the finger"
+            editor.contains("val to = (from + w.msForPx(deltaPx))"),
+            "the strip's scrub no longer adds the drag delta - a finger to the right has to take the " +
+                "playhead to the right, at 0:00 and everywhere else"
+        )
+        // And what it reports consuming is in the same direction, or the
+        // scrollable state reads a fling that never settles.
+        check(
+            editor.contains("w.pxForMs(to - from)"),
+            "the strip reports consuming the opposite of the drag it was given"
+        )
+        // The window is clamped, so the edit sits against the left edge at the
+        // start rather than a quarter of a screen in.
+        check(
+            window.contains("if (lined.scrollMs > 0.0) lined else lined.copy(scrollMs = 0.0)"),
+            "TimelineWindow.linedOn no longer clamps its scroll at the start of the edit - the strip " +
+                "will open with a quarter of itself empty and the playhead nailed where it cannot move"
+        )
+        // One builder still, so the drawn strip and the live one cannot part.
+        check(
+            editor.contains("TimelineWindow.linedOn("),
+            "the strip no longer builds its window with TimelineWindow.linedOn"
         )
         check(
-            !Regex("""\bleadPx\b""").containsMatchIn(editor),
-            "the strip is working out a playhead lead of its own again (leadPx) - there is one place " +
-                "where the line's position is decided, TimelineWindow.PLAYHEAD_FRACTION, and this is not it"
-        )
-        check(
-            Regex("""fun linedOn\([^)]*\)[^=]*=\s*scrolledSoThat\(\s*atMs,\s*viewportPx\s*\*\s*PLAYHEAD_FRACTION""")
-                .containsMatchIn(window),
-            "TimelineWindow.linedOn no longer places the moment at PLAYHEAD_FRACTION of the strip - " +
-                "the one builder and the one constant have come apart"
-        )
-        // And the drag is content-follows-finger: a positive delta (the finger
-        // going right) takes the time *back*.
-        check(
-            Regex("""val to = \(from - w\.msForPx\(deltaPx\)\)""").containsMatchIn(editor),
-            "the strip's scrub no longer subtracts the drag delta - the strip must follow the finger"
+            !editor.contains("leadPx"),
+            "the strip is working out a playhead lead of its own again (leadPx)"
         )
     }
 
@@ -1548,6 +1555,6 @@ fun main() {
     }
 
     println("controls: the conventions that, broken, make a control lie")
-    if (problems.isEmpty()) println("PASS - the playhead is fixed, the strip follows the finger, and every list has a branch for every entry")
+    if (problems.isEmpty()) println("PASS - a drag takes the playhead the way the finger goes, the edit starts at the left edge, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
 }
