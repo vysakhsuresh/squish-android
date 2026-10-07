@@ -2757,3 +2757,33 @@ on a main-track shot the sheet offers **only** Background and Chroma key - no
 "Cut out", because a hole in the base would show black in the preview and the
 backdrop in the file - and **no "Float this clip"**, because this is the only
 shot and `OverlayRules.floatsOverAShot` says nothing would be under it.
+
+### 13. The Relink card, seen on a real missing file (7 October)
+
+Not staged: one of the owner's own projects from 29 September opens on a file
+that is no longer there, and the editor says so properly - **"Can't open
+'VID-20260926-WA0104.mp4' · The file moved, was deleted, or the app lost
+permission to read it since you picked it"**, with "Relink, below, puts another
+file under every clip that played it, with every cut and setting kept", a
+Dismiss, and the clip drawn **hatched with a "Missing" badge** on the strip
+while the rest of the edit plays. That is B15's design, working on a case nobody
+arranged.
+
+**And one thing it showed by accident, worth writing down.** That project's card
+changed from "Edit · 29 Sep" to "Edit · 7 Oct, 5:32 AM" simply by being opened
+and left. Opening *another* project - one saved by today's build - and leaving
+it did **not** re-date it, which is `ProjectAutosave.save`'s `untouched` rule
+working: the save time is kept when the edit fingerprint matches what is on
+disk.
+
+So the re-dating is not a fault in that rule; it is what happens the **first
+time a project written by an older build is opened by a newer one**. The
+fingerprint is of the encoded document, and today's codec encodes differently
+(three splits, `putFinite`, thirteen `optDouble` defaults), so the key differs,
+the draft is rewritten, and a project whose fallback name is "Edit · <saved
+date>" is renamed with it.
+
+Benign in normal use - it happens once per project per format change - but it
+means **after any update that touches the codec, every project the owner opens
+jumps to the top of the grid with today's date**. If that is not wanted, the
+fingerprint would have to be of the *edit* rather than of its encoding.
