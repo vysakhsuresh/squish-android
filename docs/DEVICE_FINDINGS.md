@@ -3439,3 +3439,34 @@ is B15's review working on two counts at once - the 48 dp targets reaching
 *inward* so neither is swallowed when they close up, and `TrimRules.draggedTo`
 measuring from where the handle stood plus the whole travel, so a slow drag
 moves at all.
+
+### 31. The whole journey, from New project to a file (8 October)
+
+The canonical thing a person does, driven start to finish with fresh picks.
+
+**New project → three photos.** They land end to end, three clips of 0:03 each
+(Settings' photo length), 0:09.000 in all, drawn from the strip's left edge, and
+the project is called "Edit · 8 Oct" because the filenames say nothing. That is
+B15's `loadFresh` doing what it says.
+
+**The join markers are an offer, not a transition.** Settings has Transition set
+to Cut, and each join carries a ⧓ marker - which turns out to be the place to
+*add* one: tapping it selects the incoming shot and opens the Transition sheet
+with nothing chosen. Worth writing down because it reads at first glance like a
+transition that Settings said not to apply.
+
+**Dissolve.** The sheet offers Basic / Camera / Glitch / Light with tiles
+rendered from the edit's own frames. Picking Dissolve lights the tile, names it
+("Dissolve · how shot 2 arrives"), shows a **Length** of 0.5 s - and the header
+goes **0:09.000 → 0:08.500** on the spot, because the shots overlap by that much.
+The consequence is stated and shown rather than discovered later.
+
+**And it exports.**
+
+    SquishExport: done ... frames=255 size=925433
+
+255 frames at 30 fps is **8.500 s exactly**, the number the header gave. Frames
+pulled from the file: clean photo 1 at 2.2 s and 2.6 s, **both necklaces
+superimposed at 3.0 s**, clean photo 2 from 3.3 s on. The dissolve is there, in
+the right place, through the composited path - which is B5's gate in its
+photo-to-photo form.
