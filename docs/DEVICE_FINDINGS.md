@@ -2918,3 +2918,60 @@ inside a sixteenth of one per cent.
 
 The card is therefore still unseen, and wants a run that genuinely misses. On this
 evidence that is not easy to arrange on purpose, which is worth knowing too.
+
+### 17. Twenty captions in one file (7 October)
+
+**The thing `docs/ROADMAP.md` §5 calls "the single most important thing on this
+whole list", done.** Sweep eight found that every caption, sticker and shape went
+into one Media3 `OverlayEffect`, and `OverlayShaderProgram` refuses more than
+fifteen in one instance - so sixteen or more captions failed the render at its
+first frame while the preview showed every one. Two minutes of auto-captioned
+talking is thirty lines.
+
+Driven with an **imported .srt rather than the recogniser**, deliberately: the
+fault is in the overlay pass, not in speech, and twenty cues by hand is a
+deterministic way to cross the limit. A 20-cue file pushed to Downloads, Text →
+Import .srt, picked from the file browser.
+
+**The import.** Twenty lines, and the sheet lists them with their exact moments -
+0:06.100, 0:07.100, 0:08.100, 0:09.100 against the file's `00:00:06,100` and so
+on, the millisecond fraction kept. No "Replace or Add beside" prompt, which is
+right: there was nothing to replace. Undo went live, the Translate card appeared,
+and the Lines card counted them.
+
+**The render.** 480p, Auto rate, Standard:
+
+    SquishExport: done trimOnly=false optimization=0 video=c2.qti.avc.encoder
+    mime=video/avc bitrate=493350 asked=500081 frames=664 size=1744659
+
+No `VideoFrameProcessingException`, no refusal, 664 frames at 30 fps over
+22.3 s. **This export was impossible before the fix.**
+
+**And they are in the picture.** Twenty frames pulled at even intervals and laid
+in a contact sheet (`tools/desktop`):
+
+| at | shows | | at | shows |
+|---|---|---|---|---|
+| 1.2 s | Line 2 | | 12.9 s | Line 13 |
+| 2.3 s | Line 3 | | 14.1 s | *(none)* |
+| 3.5 s | Line 4 | | 15.3 s | Line 16 |
+| 4.7 s | Line 5 | | 16.4 s | Line 17 |
+| 5.9 s | Line 6 | | 17.6 s | Line 18 |
+| 7.0 s | *(none)* | | 18.8 s | Line 19 |
+| 8.2 s | Line 9 | | 20.0 s | Line 20 |
+| 9.4 s | Line 10 | | 21.1 s | *(none)* |
+| 10.6 s | Line 11 | | 22.2 s | *(none)* |
+| 11.7 s | Line 12 | | 0.0 s | *(none)* |
+
+**Lines 16 to 20 are all there** - the five past the limit, and the ones whose
+presence used to mean no file at all.
+
+Every blank is the sampler landing between cues, not a dropped line: the frame at
+7.043 s is 57 ms before cue 8 opens at 7.100, the one at 14.085 s is 15 ms before
+cue 15, the two at the end are past cue 20's close at 20.000, and 0.000 is before
+cue 1 opens at 0.100. Under two frames in every case, which is also a check on the
+timing: the captions start on the millisecond the file asked for.
+
+Still unseen from this area: **auto-captions from the recogniser** (word timings,
+the Words arrival landing each word on its own), and an **.srt in a legacy
+single-byte encoding**, which `PickedText.decode` exists for. This one was UTF-8.
