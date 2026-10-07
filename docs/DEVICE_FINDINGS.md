@@ -2975,3 +2975,30 @@ timing: the captions start on the millisecond the file asked for.
 Still unseen from this area: **auto-captions from the recogniser** (word timings,
 the Words arrival landing each word on its own), and an **.srt in a legacy
 single-byte encoding**, which `PickedText.decode` exists for. This one was UTF-8.
+
+### 18. A blended still changing under your hand (7 October)
+
+ROADMAP §5 item 14, from sweep six: **changing a blended still's mode or opacity
+did not reach the preview** until the shot under it changed, because the held
+still was keyed on clip *ids* and an edit makes a new clip with the same id.
+Fixed then, unseen until now.
+
+A photo put on an overlay row over a 22 s shot, Opacity sheet open:
+
+- **Blend → Multiply**: the picture changed on the tap. The poster, which had
+  been an opaque rectangle in the top-right corner, became a full-frame multiply
+  - its whites letting the video through, its dark type staying dark - and a line
+  appeared under the chips saying why: *"A blended picture covers the whole frame
+  - that is what a light leak or a dust overlay is for. Place it, or turn it,
+  with Blend off."* The box's outline stayed where the placement put it, which is
+  right: the placement did not change, only what is drawn.
+- **Opacity 100% → 49%**, dragged: the multiplied picture faded under the finger,
+  the video beneath coming up. Nothing else was touched and the shot never
+  changed.
+
+Also seen on the way, unprompted: the overlay's own toolbar row (Back, Split,
+Opacity, Layer, Animation, Delete, Placement) with **Split correctly dim** at the
+playhead sitting on the overlay's own first frame; and the **Layer** sheet's
+empty state, which is better than most - "Row 1 of 1 · Higher rows are drawn over
+lower ones · No other overlay is on screen at the same time as this one, so there
+is nothing to put it in front of or behind."
