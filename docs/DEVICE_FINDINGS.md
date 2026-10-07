@@ -3121,3 +3121,41 @@ them land further apart than Compose's double-tap window however they are
 batched, and the single tap fires twice instead. The handler is wired
 (`Ruler`'s `detectTapGestures(onDoubleTap = ...)` to `fitZoom`); whether a
 finger triggers it is unseen, and this is the honest reason why.
+
+### 22. Nine switches that said which way they were and never what they were (7 October, night)
+
+ROADMAP §5 item 22 asked for TalkBack on the Settings screen. Driven instead by
+**dumping the accessibility tree**, which is better than listening: it is exact,
+it is scriptable, and `uiautomator` has an opinion of its own.
+
+Sweep seven gave `SquishToggleSwitch` a `toggleable` so its node carries a state
+- before that every switch in the app announced itself as "switch" and never as
+on or off. The tree says that half works: both switches on Settings came back
+`checkable="true"` with the right `checked`.
+
+Both were also **`NAF="true"`** - uiautomator's flag for a node that is clickable
+with no text and no content description. The words beside a switch are a sibling
+`Text`, and sibling text is not merged into a control's node, so a screen reader
+landing on one said *"on, switch, double tap to toggle"* and never which setting
+it had hold of. Nine switches, none of them named.
+
+`SquishToggleSwitch` takes a `label` now and sets it as the node's content
+description; all nine call sites pass the words that are already beside them
+("Ticks when snapping", "Camera sound", "Blend frames", "Pitch follows speed",
+"Fit to a size", "Snap to markers and beats", "Clip sound" / "Overlay sound", and
+the mask inversion row, whose words change with the mode so the name does too).
+
+After, on the phone: **zero NAF nodes on the screen**, and
+
+    content-desc="Ticks when snapping"            checkable=true checked=true
+    content-desc="Keep the screen on while editing" checkable=true checked=false
+
+`tools/jvm/ControlChecks.kt` holds it, by balancing the parentheses of each call
+rather than by regex - every one of these carries a lambda with calls inside it,
+and a pattern that stops at the first `)` reads the arguments as empty and passes
+everything. Negative-tested by taking one label off.
+
+**The same dump also clears the other half of item 22 and part of sweep ten's.**
+Every ratio, duration, transition and voice chip came back `checkable="true"` with
+`checked="true"` on exactly the chosen one - so "six picker grids marking a choice
+with a border alone" is fixed where it can be seen, not just where it was written.

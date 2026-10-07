@@ -538,7 +538,7 @@ private fun CompressControls(state: QuickToolViewModel.UiState, viewModel: Quick
                     color = if (state.fitUnreachable) SquishColors.Amber else SquishColors.TextMuted
                 )
             }
-            SquishToggleSwitch(checked = state.fitToSize, onCheckedChange = viewModel::setFitToSize)
+            SquishToggleSwitch(checked = state.fitToSize, onCheckedChange = viewModel::setFitToSize, label = "Fit to a size")
         }
 
         if (state.fitToSize) {

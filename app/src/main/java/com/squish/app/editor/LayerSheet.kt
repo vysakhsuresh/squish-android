@@ -201,7 +201,8 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
             trailing = {
                 SquishToggleSwitch(
                     checked = !muted,
-                    onCheckedChange = { on -> viewModel.clips.setClipMuted(clip.id, muted = !on, restoreTo = lastHeard) }
+                    onCheckedChange = { on -> viewModel.clips.setClipMuted(clip.id, muted = !on, restoreTo = lastHeard) },
+                    label = if (clip.isOverlay) "Overlay sound" else "Clip sound"
                 )
             }
         )

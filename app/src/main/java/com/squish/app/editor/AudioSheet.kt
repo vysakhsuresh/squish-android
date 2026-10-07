@@ -415,7 +415,8 @@ fun CameraSoundPanel(state: EditorUiState, viewModel: EditorViewModel) {
             trailing = if (!state.anyCameraAudio) null else ({
                 SquishToggleSwitch(
                     checked = !state.muteOriginal,
-                    onCheckedChange = { viewModel.audio.setMuteOriginal(!it) }
+                    onCheckedChange = { viewModel.audio.setMuteOriginal(!it) },
+                    label = "Camera sound"
                 )
             })
         )

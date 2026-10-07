@@ -306,7 +306,8 @@ private fun PitchRow(clip: Clip, viewModel: EditorViewModel) {
         }
         SquishToggleSwitch(
             checked = clip.pitchFollowsSpeed,
-            onCheckedChange = { viewModel.clips.setPitchFollowsSpeed(clip.id, it) }
+            onCheckedChange = { viewModel.clips.setPitchFollowsSpeed(clip.id, it) },
+            label = "Pitch follows speed"
         )
     }
 }
@@ -337,7 +338,8 @@ private fun FrameBlendRow(clip: Clip, sourceFps: Float, viewModel: EditorViewMod
         }
         SquishToggleSwitch(
             checked = clip.frameBlend,
-            onCheckedChange = { viewModel.clips.setFrameBlend(clip.id, it) }
+            onCheckedChange = { viewModel.clips.setFrameBlend(clip.id, it) },
+            label = "Blend frames"
         )
     }
 }

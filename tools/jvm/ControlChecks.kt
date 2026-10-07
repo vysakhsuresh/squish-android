@@ -88,6 +88,57 @@ fun main() {
         )
     }
 
+    // ---- A switch says what it is, not only which way it is. ---------------
+    //
+    // `SquishToggleSwitch` is `toggleable`, so its node carries a state - that
+    // was sweep seven's fix, for switches that announced themselves as
+    // "switch" and never as on or off. What none of them carried was a *name*:
+    // the words beside a switch are a sibling `Text`, and sibling text is not
+    // merged into a control's node, so a screen reader landing on one said
+    // "on, switch, double tap to toggle" and never which setting it had hold
+    // of.
+    //
+    // Found on the phone on 7 October by dumping the accessibility tree rather
+    // than by listening: `uiautomator` marks exactly this as `NAF="true"` -
+    // clickable, no text, no content-desc - and marked both switches on the
+    // Settings screen. The two faults are siblings and neither is any use
+    // alone, which is why the check holds them together.
+    run {
+        val switches = readAll("$SRC").filter { (path, _) ->
+            !path.endsWith("ui/components/Chips.kt")
+        }
+        // One call's arguments, by balancing its parentheses. A regex cannot do
+        // this: every one of these carries a lambda with calls of its own inside
+        // it, and a pattern that stops at the first ')' reads the call as empty.
+        fun argsAt(text: String, openAt: Int): String {
+            var depth = 0
+            var i = openAt
+            while (i < text.length) {
+                when (text[i]) {
+                    '(' -> depth++
+                    ')' -> {
+                        depth--
+                        if (depth == 0) return text.substring(openAt + 1, i)
+                    }
+                }
+                i++
+            }
+            return text.substring(openAt)
+        }
+        var seen = 0
+        switches.forEach { (path, text) ->
+            Regex("""SquishToggleSwitch\(""").findAll(text).forEach { m ->
+                seen++
+                check(
+                    argsAt(text, m.range.last).contains("label"),
+                    "$path has a SquishToggleSwitch with no label - its node would carry a state and " +
+                        "no name, so a screen reader says \"on\" without saying what is on"
+                )
+            }
+        }
+        check(seen >= 9, "only $seen switches found - the pattern that finds them has rotted")
+    }
+
     // ---- A screen that renders says what the render will drop. -------------
     //
     // `SquishError.exportable` mutes a source whose sound no decoder here takes,

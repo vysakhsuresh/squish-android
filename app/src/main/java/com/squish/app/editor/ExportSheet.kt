@@ -508,7 +508,8 @@ private fun SwitchRow(
         }
         SquishToggleSwitch(
             checked = checked,
-            onCheckedChange = { if (enabled) onCheckedChange(it) }
+            onCheckedChange = { if (enabled) onCheckedChange(it) },
+            label = title
         )
     }
 }

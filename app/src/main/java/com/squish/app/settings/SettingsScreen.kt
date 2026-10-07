@@ -253,7 +253,7 @@ private fun SwitchRow(title: String, blurb: String, checked: Boolean, onChange: 
             Text(title, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
             Text(blurb, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
         }
-        SquishToggleSwitch(checked = checked, onCheckedChange = onChange)
+        SquishToggleSwitch(checked = checked, onCheckedChange = onChange, label = title)
     }
 }
 

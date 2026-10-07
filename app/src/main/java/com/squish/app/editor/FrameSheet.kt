@@ -105,7 +105,7 @@ fun MarkersPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 color = SquishColors.TextPrimary,
                 modifier = Modifier.weight(1f)
             )
-            SquishToggleSwitch(checked = state.snapToMarkers, onCheckedChange = viewModel.clips::setSnapToMarkers)
+            SquishToggleSwitch(checked = state.snapToMarkers, onCheckedChange = viewModel.clips::setSnapToMarkers, label = "Snap to markers and beats")
         }
     }
 }

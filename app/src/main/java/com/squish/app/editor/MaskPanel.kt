@@ -172,7 +172,12 @@ fun MaskPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
             )
             SquishToggleSwitch(
                 checked = mask.inverted,
-                onCheckedChange = { viewModel.layers.updateMask(clip.id, inverted = it) }
+                onCheckedChange = { viewModel.layers.updateMask(clip.id, inverted = it) },
+                // The words beside it change with the mode, so the name does too.
+                label = when (mask.mode) {
+                    MaskMode.Cutout -> "Hide the shape instead of keeping it"
+                    else -> "Everything but the shape"
+                }
             )
         }
 

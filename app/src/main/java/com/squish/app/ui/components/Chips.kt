@@ -24,6 +24,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.squish.app.ui.theme.SquishColors
@@ -105,6 +107,21 @@ fun SquishToggleSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * What this switch is for, in the words next to it - "Ticks when snapping",
+     * "Keep HDR". Without it the node has a state and no name.
+     *
+     * The label is a sibling `Text` in every row that uses this, and sibling
+     * text is not merged into a control's node, so a screen reader landing on
+     * the switch said "on, switch, double tap to toggle" and never which
+     * setting it had hold of. `uiautomator` flags exactly that as `NAF="true"`
+     * - clickable, no text, no description - and did, on both switches of the
+     * Settings screen, on 7 October.
+     *
+     * The sibling fix to the one above it: that one gave these nodes a *state*
+     * where they had none, this gives them a *name*. Neither is any use alone.
+     */
+    label: String? = null,
     /** The track when on: a switch inside a tool takes that tool's colour. */
     accent: Color = SquishColors.Primary
 ) {
@@ -125,6 +142,10 @@ fun SquishToggleSwitch(
             // using TalkBack. Nine controls go through here and not one of
             // them carried semantics of its own.
             .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .then(
+                if (label == null) Modifier
+                else Modifier.semantics { contentDescription = label }
+            )
             .padding(3.dp),
         contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
     ) {
