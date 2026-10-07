@@ -86,13 +86,26 @@ fun SquishNavHost(
     LaunchedEffect(open, exporting) {
         if (open == null || exporting || actedOn == open.stamp) return@LaunchedEffect
         actedOn = open.stamp
-        // A project of its own, every time: two cuts of one video are two
-        // projects now, so there is no editor to go back to. Over whatever is
-        // showing - the dashboard on a fresh start, another edit when the app
-        // was already running - which stays underneath, its draft saved as any
-        // edit's is on leaving.
-        val id = ProjectRules.newId()
-        withContext(Dispatchers.IO) { autosave.stageStart(id, listOf(open.uri), copyIn = !open.persisted, openedFromOutside = true) }
+        // A project of its own for every *edit*: two cuts of one video are two
+        // projects, which is what the per-video keying was dropped for. But a
+        // file opened from outside and then left alone is not an edit, and
+        // opening it again used to make another identical card - nine of them
+        // after an evening of driving the editor on one clip, and two for
+        // anyone who taps "Open with" twice without doing anything.
+        //
+        // So: back to the one that is still just a look, if there is one. The
+        // flag goes false the moment the edit differs from the one it was
+        // opened with (ProjectAutosave.writeMeta), so this can never reopen
+        // something that has been worked on.
+        //
+        // Over whatever is showing - the dashboard on a fresh start, another
+        // edit when the app was already running - which stays underneath, its
+        // draft saved as any edit's is on leaving.
+        val id = withContext(Dispatchers.IO) {
+            autosave.openedJustToLookOn(open.uri) ?: ProjectRules.newId().also {
+                autosave.stageStart(it, listOf(open.uri), copyIn = !open.persisted, openedFromOutside = true)
+            }
+        }
         navController.navigate(Destination.Editor.buildRoute(id))
     }
 

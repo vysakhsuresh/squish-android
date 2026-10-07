@@ -290,6 +290,32 @@ class ProjectAutosave(context: Context) {
     }
 
     /**
+     * The project this same file was already opened into from outside and that
+     * nobody has edited since, if there is one - for "Open with" to go back to
+     * rather than make another.
+     *
+     * Opening a video from the gallery used to make a project every time, so
+     * opening the same clip twice and doing nothing to it either time left two
+     * identical cards on the grid. Nine of them, after an evening of driving
+     * the editor from `adb` on one file; a person who taps "Open with" twice
+     * gets two.
+     *
+     * The two-cuts case the per-video keying was dropped for is untouched,
+     * because [openedJustToLook] goes false the moment the edit differs from
+     * the one the project was opened with ([writeMeta] drops the flag): an
+     * opened-and-edited project is never returned here, so the next "Open with"
+     * on that file starts a fresh one, as it should.
+     */
+    fun openedJustToLookOn(uri: Uri): String? = synchronized(lock) {
+        val wanted = uri.toString()
+        drafts().firstOrNull { summary ->
+            summary.toolId == null &&
+                summary.sourceUri.toString() == wanted &&
+                openedJustToLook(summary.id)
+        }?.id
+    }
+
+    /**
      * Gives the project a name, or with null takes it away. Written into the
      * draft as a save writes it, and into the sidecar the list reads; an
      * editor open on the project is never the caller - the dashboard is

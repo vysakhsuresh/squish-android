@@ -3263,3 +3263,18 @@ The multi-select delete handled the clean-up well - "Delete 7 projects? This set
 aside every project selected, with every cut, look and caption on each ... Your
 original videos are untouched either way", then "Deleted 7 projects" with an
 Undo, which is B15's rule seen.
+
+**Fixed, and seen.** `SquishNavHost` now reuses a project that is still *just a
+look* on the same file - `ProjectAutosave.openedJustToLookOn` - rather than
+staging another. The flag it reads goes false the moment the edit differs from
+the one the project was opened with (`writeMeta`), so an opened-and-edited
+project is never returned and the two-cuts case is untouched.
+
+On the phone: the same video opened three times in a row left the grid at **20
+projects, the number it started at**. Before the fix the same three opens left
+three more cards.
+
+It also settled a question the clean-up had left open. One "Thankyou 400k" card
+was ambiguous - mine or the owner's? - so it was left alone. The three opens
+*reused* it, which is proof it was opened from outside and never edited: mine.
+Deleted on that evidence rather than on a guess.
