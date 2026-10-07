@@ -3912,3 +3912,42 @@ which is the function the new one loops.
 And the storage line from §40, now with something to say:
 **"Freed 14 MB. 2 MB belongs to projects, 70 of them in the bin."** - the four
 orphaned voiceover takes from §42 gone, the one a project still names kept.
+
+### 44. The editor on its side, and the look shader on this driver (8 October)
+
+Two of B6's and B12's never-seen claims, both held.
+
+**Two panes on its side.** `user_rotation 1` with the editor open: the header,
+the picture and the transport take the left half, the strip with its four track
+heads and the level-0 toolbar take the right. Nothing is cut off and the ruler
+is readable. **The players carry across**: started playing in landscape, rotated
+to portrait (still playing, 0:04.288, picture live), rotated back (still playing,
+0:07.373, picture live) - no black frame, no stall, no restart. That is B6's
+"the preview is movable content", seen. (The rotation settings were put back to
+`accelerometer_rotation 1`, `user_rotation 0` afterwards.)
+
+**The look shader compiles and runs on the moto g84's ES2 driver** - B12's
+biggest single risk, since a shader that fails to compile fails *asynchronously*
+on the player and the surface then just plays plain, with nothing said:
+
+- **Filters → Vivid** visibly deepens the reds and greens and darkens the
+  shadows, at once, on the live picture;
+- **Adjust → Wheels** gives Shadows · Midtones · Highlights over a real colour
+  wheel with a puck; dragging the Shadows puck toward red turns the dark half of
+  the frame red and leaves the highlights alone, which is what a shadows wheel
+  is for. So the eight `uHsl` vec3s are bound and read.
+- nothing in logcat about a shader, a program or a link.
+
+The eight band swatches carry their names for a screen reader (`content-desc`
+"Green", "Cyan", "Blue", "Purple", "Magenta"), which is sweep ten's fix seen.
+
+**One wart worth writing down, not a fault.** A video opened with "Open with",
+looked at and left without an edit leaves no project on the grid (§34) - but it
+*does* leave an entry in Recently deleted, by the decision written on
+`EditorViewModel.onCleared` ("To the bin, not deleted, so it can still be
+brought back"). There is nothing to bring back: the rule only fires when
+`!history.canUndo`. On this phone that is where several of the "Untitled edit ·
+0 clips" entries in the bin came from, and each goes on holding its import copy
+for thirty days. Deleting outright instead would have to release the picker
+grant in the same breath, which `onCleared` is the wrong place to do, so it is
+left as it is and said here.
