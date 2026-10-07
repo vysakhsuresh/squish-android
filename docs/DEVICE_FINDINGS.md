@@ -3400,3 +3400,22 @@ lands back in the editor **on that frame**, with the strip scrolled to it and
 nothing playing - so the frame is kept and no scrub is left running. (The exact
 case B6 names, closing *mid-drag*, cannot be driven over adb: the close has to
 happen while a finger is down.)
+
+### 29. A title from the grid, to the file (8 October)
+
+The Titles grid renders each preset in its own style (BIG NEWS, Say it here,
+Your name, Neon, Big number, Chapter one, Day 1 in Goa, GG). Tapping one:
+
+- it lands **at the playhead**, 0:14.044 → 0:17.044, a three-second title;
+- the **keyboard comes up with the sample words selected**, so typing replaces
+  them - which it does, and the picture updates letter by letter;
+- the Edit sheet's tabs (Keyboard · Style · Bubble · Animation) sit **over** the
+  keyboard with the picture above them, and the strip folds away while typing -
+  B6's layout, seen;
+- the card reads "drag it on the picture, its ends on the strip".
+
+**And it exports.** Sixteen frames pulled from the rendered file at even
+intervals: "HELLO" is on the frames at **14.9 s and 16.4 s** and on no other -
+not at 13.4 s, not at 17.8 s. Against a placement of 14.044 → 17.044 that is the
+span to the frame, in the title's own style, in the lower third where the preview
+put it.
