@@ -137,6 +137,32 @@ fun main() {
             }
         }
         check(seen >= 9, "only $seen switches found - the pattern that finds them has rotted")
+
+        // And the same for every slider, which had the same gap for the same
+        // reason: the label and the readout are sibling `Text`s above the
+        // track, so `uiautomator` returned a bare `SeekBar` with no name, and
+        // on the Adjust tab that is thirteen of them in a row.
+        //
+        // The first attempt at this fix went into `LabeledSlider` and the
+        // Adjust tab's sliders came back unnamed anyway, because there are two
+        // wrappers. It is in `SquishSlider` now, which is the one place they
+        // all pass through - and this check is over the call sites, so a third
+        // wrapper cannot quietly skip it.
+        var sliders = 0
+        val sliderFiles = readAll("$SRC").filter { (path, _) ->
+            !path.endsWith("ui/components/SquishSlider.kt")
+        }
+        sliderFiles.forEach { (path, text) ->
+            Regex("""SquishSlider\(""").findAll(text).forEach { m ->
+                sliders++
+                check(
+                    argsAt(text, m.range.last).contains("label"),
+                    "$path has a SquishSlider with no label - a screen reader reads its value and " +
+                        "never says what it is the value of"
+                )
+            }
+        }
+        check(sliders >= 6, "only $sliders sliders found - the pattern that finds them has rotted")
     }
 
     // ---- A screen that renders says what the render will drop. -------------

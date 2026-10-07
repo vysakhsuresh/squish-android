@@ -5,6 +5,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.Color
 import com.squish.app.ui.theme.SquishColors
 
@@ -32,7 +35,29 @@ fun SquishSlider(
     accent: Color = SquishColors.Teal,
     /** The thumb, where it is not the accent - the scrub bar's is white over orange. */
     thumbColor: Color = accent,
-    onValueChangeFinished: (() -> Unit)? = null
+    onValueChangeFinished: (() -> Unit)? = null,
+    /**
+     * What this slider is for, in the words above it - "Brightness", "Volume",
+     * "Strength" - and what it currently reads, in the same words the readout
+     * beside it shows ("+0%", "1.5x").
+     *
+     * Both are sibling `Text`s in every wrapper that uses this, and sibling
+     * text is not merged into a control's node, so every slider in the app came
+     * back from `uiautomator` as a bare `SeekBar` with no name at all. On the
+     * Adjust tab that is thirteen of them in a row, and a screen reader would
+     * read a percentage without ever saying of what.
+     *
+     * The state is the *readout* rather than the raw value, because the readout
+     * is what is on screen: the float behind "+0%" is 0.5 on a -1..1 range, and
+     * announcing 0.5 would disagree with the number printed beside it.
+     *
+     * Put here rather than in a wrapper because there are two wrappers -
+     * `LabeledSlider` and the Adjust tab's own - and a fix in one of them is a
+     * fix in half the app. Found that way: the first attempt went into
+     * `LabeledSlider`, and the Adjust tab's sliders came back unnamed anyway.
+     */
+    label: String? = null,
+    readout: String? = null
 ) {
     val colors = SliderDefaults.colors(
         thumbColor = thumbColor,
@@ -52,6 +77,9 @@ fun SquishSlider(
                 drawStopIndicator = null
             )
         },
-        modifier = modifier
+        modifier = modifier.semantics {
+            label?.let { contentDescription = it }
+            readout?.let { stateDescription = it }
+        }
     )
 }

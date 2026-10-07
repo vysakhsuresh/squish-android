@@ -160,7 +160,9 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
                     onValueChange = { viewModel.clips.setClipSpeed(clip.id, sliderToSpeed(it), dragging = true) },
                     onValueChangeFinished = viewModel::endGesture,
                     valueRange = 0f..1f,
-                    accent = accent
+                    accent = accent,
+                    label = "Rate",
+                    readout = PolishRules.number(ramp.flatSpeed) + "x"
                 )
                 // Two rows of three, as the Curves chips are: six across cut
                 // "0.25x" to ".25" on a narrow phone.

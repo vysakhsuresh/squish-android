@@ -494,7 +494,9 @@ private fun AdjustSlider(
             value = value,
             onValueChange = onChange,
             onValueChangeFinished = onFinished,
-            valueRange = range
+            valueRange = range,
+            label = label,
+            readout = readout(value)
         )
     }
 }

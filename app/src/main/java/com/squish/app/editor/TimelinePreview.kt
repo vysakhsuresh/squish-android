@@ -1406,6 +1406,7 @@ private fun Transport(
                     onBarScrubbing(false)
                 },
                 accent = SquishColors.Primary,
+                label = "Scrub",
                 thumbColor = SquishColors.TextPrimary,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
             )

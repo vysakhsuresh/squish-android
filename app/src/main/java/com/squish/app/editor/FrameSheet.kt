@@ -1,5 +1,6 @@
 package com.squish.app.editor
 
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,6 +30,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.squish.app.ui.components.SquishSlider
 import com.squish.app.ui.components.SelectableChip
@@ -428,7 +432,9 @@ fun LabeledSlider(
             value = value,
             onValueChange = onChange,
             onValueChangeFinished = onFinished,
-            valueRange = range
+            valueRange = range,
+            label = label,
+            readout = readout(value)
         )
     }
 }
@@ -440,7 +446,13 @@ fun OptionToggle(label: String, active: Boolean, modifier: Modifier = Modifier, 
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(if (active) SquishColors.Primary.copy(alpha = 0.15f) else SquishColors.Surface)
-            .clickable { onClick(!active) }
+            // `toggleable`, not `clickable`: the only mark of this being on is
+            // the tint behind it, so on a `clickable` the node carried no state
+            // at all and a screen reader read it as a plain button whichever
+            // way it was. The convention is written down in CLAUDE.md - "a
+            // thing you choose says it is chosen" - and this one had been
+            // missed, which is what an accessibility-tree dump is for.
+            .toggleable(value = active, onValueChange = onClick)
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center
     ) {

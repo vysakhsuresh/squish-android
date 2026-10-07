@@ -591,7 +591,9 @@ private fun TextSlider(
             onValueChange = onChange,
             onValueChangeFinished = onFinished,
             valueRange = range,
-            accent = SquishColors.Amber
+            accent = SquishColors.Amber,
+            label = label,
+            readout = readout(value)
         )
     }
 }

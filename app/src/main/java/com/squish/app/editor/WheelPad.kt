@@ -131,7 +131,9 @@ fun ColorWheelsEditor(
             value = wheel.master.coerceIn(-1f, 1f),
             onValueChange = { write(wheel.withMaster(it)) },
             onValueChangeFinished = onFinished,
-            valueRange = -1f..1f
+            valueRange = -1f..1f,
+            label = "${part.label} level",
+            readout = "${(wheel.master * 100).roundToInt()}%"
         )
     }
 }
