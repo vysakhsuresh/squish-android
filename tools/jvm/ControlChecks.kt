@@ -37,10 +37,41 @@ fun main() {
     // ---- The playhead cannot move, so it cannot move the wrong way. --------
     run {
         val editor = read("$SRC/timeline/TimelineEditor.kt")
+        val window = read("$SRC/timeline/TimelineWindow.kt")
+        // This check used to grep for `leadPx = viewportPx / 2f` and it failed
+        // the day the fault it was written for was properly fixed - which is
+        // the worst thing a check can do, and the second time this codebase has
+        // caught itself at it.
+        //
+        // What it was actually protecting is that the playhead does not move,
+        // so that a drag cannot mean two opposite things. It encoded that as
+        // "the line is centred", which was only ever one way of achieving it -
+        // and the wrong way, because centred puts the start of the edit half a
+        // screen in. The person who uses this said so: "it is starting from mid
+        // screen not the left end which is terrible". The line is at a quarter
+        // now (TimelineWindow.PLAYHEAD_FRACTION) and still does not move.
+        //
+        // So what is asserted here is the thing that cannot be got wrong by
+        // changing a number: the strip has **one** place that decides where the
+        // line goes, and the editor asks it rather than working out a lead of
+        // its own. That the line then holds still is executed, over every
+        // moment, zoom and viewport, in WindowChecks - which is where a
+        // property belongs.
         check(
-            Regex("""leadPx\s*=\s*viewportPx\s*/\s*2f""").containsMatchIn(editor),
-            "the strip's window no longer centres the playhead (leadPx is not half the viewport) - " +
-                "a line that walks is a line a drag can move against the finger"
+            Regex("""TimelineWindow\.linedOn\(""").containsMatchIn(editor),
+            "the strip no longer builds its window with TimelineWindow.linedOn - a lead worked out " +
+                "in the editor is a line that can walk, and a line that walks is one a drag moves against the finger"
+        )
+        check(
+            !Regex("""\bleadPx\b""").containsMatchIn(editor),
+            "the strip is working out a playhead lead of its own again (leadPx) - there is one place " +
+                "where the line's position is decided, TimelineWindow.PLAYHEAD_FRACTION, and this is not it"
+        )
+        check(
+            Regex("""fun linedOn\([^)]*\)[^=]*=\s*scrolledSoThat\(\s*atMs,\s*viewportPx\s*\*\s*PLAYHEAD_FRACTION""")
+                .containsMatchIn(window),
+            "TimelineWindow.linedOn no longer places the moment at PLAYHEAD_FRACTION of the strip - " +
+                "the one builder and the one constant have come apart"
         )
         // And the drag is content-follows-finger: a positive delta (the finger
         // going right) takes the time *back*.
