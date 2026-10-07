@@ -3559,3 +3559,11 @@ be wider than tall, or keep it square and accept the scroll.
 ROADMAP §5 item 21 - a point pulled below the one before it, and nothing between
 two points brighter than the higher of them - is **not** settled by this. It needs
 the curve's shape read off the screen, which wants the square fully visible first.
+
+**And the complement of the "Open with" fix, seen by accident.** Opening a video
+from the gallery, looking through several sheets, changing nothing and leaving
+left **no project on the grid at all** - the count stayed at the owner's own 19.
+`persist`'s `untouched` rule retracts a project whose draft never differed from
+its first pick, so a look costs nothing. Together with §(the Open-with fix) that
+is the whole of it: a look leaves nothing, a second look reuses the first, and
+only an edit makes a project.
