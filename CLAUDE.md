@@ -182,6 +182,24 @@ function first; if it can, it can be checked.
   `type= raw events` / `count= 1` / `speed= 1.0` / `start data >>` /
   `PinchZoom(x1a,y,x1b,y,x2a,y,x2b,y,15)`, run with
   `monkey -p com.squish.app -f /data/local/tmp/<file> 1`.
+- **Never chain taps blind past a dialog.** A confirm dialog is taller or
+  shorter depending on how long the name in it is, so a tap sequence worked out
+  for one of them lands somewhere else on the next - and what is underneath is
+  the project grid, where a stray tap opens whatever is at those coordinates.
+  That has now opened the owner's own projects twice, once leaving one of them
+  re-dated. Screenshot between every step that follows a dialog, and read it
+  before the next tap. The accessibility tree (`uiautomator dump`) is better
+  still where it works: it gives bounds by name rather than by guess.
+- **`uiautomator dump` is the cheapest bug-finder here.** It reads out every
+  node with its name, its state and whether `NAF` - "not accessibility friendly",
+  which is Android's own word for a control that can be tapped and cannot be
+  named. On 7 October it found, in about an hour: nine switches with a state and
+  no name, every slider in the app unnamed, the preview itself unnamed, eight
+  shape tiles telling themselves apart only by a drawn glyph, and every text
+  field in the app naming itself with a placeholder that is gone the moment
+  anything is typed. None of that is visible in a screenshot. Dump each screen
+  and count: `tr ">" "
+" < ui.xml | grep -c NAF`.
 - **Logcat is small and the media server floods it.** `adb logcat -G 16M` before
   reproducing anything, or the app's own lines are gone by the time you look.
 - **Drafts can be read on the device** because the build is debuggable:
