@@ -583,8 +583,11 @@ each one is a thing that was plainly broken for anyone who did it:
 12. **Delete a word over a gap** on the main track, and **delete a song that
     runs past the last shot**: in the first nothing moves, in the second the
     playhead comes back.
-13. **A song's beat grid at ×2**: the dots double, the bpm on the card doubles,
-    and "Every bar" still falls on the bar.
+13. ~~**A song's beat grid at x2**: the dots double, the bpm on the card
+    doubles, and "Every bar" still falls on the bar.~~ **Done, 7 October.** 23
+    beats / 120.0 BPM / 6 bars found on a 120 BPM track, x2 gives 46 / 240.0 /
+    12 with the phase held, and ÷2 lands back exactly. `docs/DEVICE_FINDINGS.md`
+    §21.
 14. ~~**Blend a still over a shot and change its Blend mode and Opacity**~~
     **Done, 7 October.** Multiply redrew on the tap and Opacity faded under the
     finger, with the shot never touched. `docs/DEVICE_FINDINGS.md` §18.

@@ -3057,3 +3057,33 @@ always at `linePx`, and with the clamp it is not, so the drawn strip would have
 been laid a quarter-screen from where a finger finds it. It is phrased on the
 window's own scroll now. Executed in WindowChecks over every zoom, viewport and
 moment.
+
+### 21. The beat grid at an octave (7 October, night)
+
+ROADMAP §5 item 13, from sweep five: **"x2 on a song's beat grid doubled the dots
+and left the tempo and the bar phase where they were."** Fixed then, unseen.
+
+Chill House (a Squish original, declared 120 BPM) on an 11.3 s stretch. **"Find
+the beat" read 120.0 BPM exactly** - "23 beats on Chill House · they move with
+it", "Strong pulse", "Bar starts on beat 1 · 6 bars". 11.34 s at two beats a
+second is 22.7, and six bars of four is 24, so both numbers are right.
+
+**x2 moves all three together:**
+
+| | beats | BPM | bars | phase |
+|---|---|---|---|---|
+| found | 23 | 120.0 | 6 | beat 1 |
+| x2 | **46** | **240.0** | **12** | beat 1 |
+| back with ÷2 | 23 | 120.0 | 6 | beat 1 |
+
+So it is a true octave move and a reversible one - ÷2 lands back on the found
+grid rather than accumulating. The dots on the clip double and halve with it.
+
+**"Every bar"** lights and thins the dots on the strip while the card still reads
+120.0 BPM and 6 bars, which is right: the chip chooses which dots are used, not
+what the tempo is.
+
+The explanatory line under the chips is worth keeping as written - "A slow track
+with busy hi-hats has two defensible tempos, and two people tapping along will
+disagree. If it counted at the wrong level, move it an octave." That is what
+÷2 and x2 are for, said without jargon.
