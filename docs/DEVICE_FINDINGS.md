@@ -3419,3 +3419,23 @@ intervals: "HELLO" is on the frames at **14.9 s and 16.4 s** and on no other -
 not at 13.4 s, not at 17.8 s. Against a placement of 14.044 → 17.044 that is the
 span to the frame, in the title's own style, in the lower third where the preview
 put it.
+
+### 30. Snip trimmed to a second and a half (8 October)
+
+ROADMAP §5 item 15, from the third sweep: *"in Snip, trim to three seconds and
+the **start** bar must still drag."*
+
+Driven tighter than that. A 0:05.532 clip, the **end** handle dragged from the
+right edge almost to the left: **0:01.485 kept**, the handle following the whole
+way, the kept band redrawn narrow at the left with the rest dimmed, and the
+preview jumping to the frame at the handle that moved.
+
+Then the **start** handle, with the two now a finger's width apart: it moved
+**0:00.000 → 0:00.363**, the span reading 0:01.122, the end unchanged at
+0:01.485, and the preview jumping to the new start's frame.
+
+So both handles answer at a trim tighter than the one the item asks about. That
+is B15's review working on two counts at once - the 48 dp targets reaching
+*inward* so neither is swallowed when they close up, and `TrimRules.draggedTo`
+measuring from where the handle stood plus the whole travel, so a slow drag
+moves at all.
