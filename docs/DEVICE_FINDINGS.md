@@ -3847,3 +3847,37 @@ overlays every time.
 after the text sheet closed**, with the two lines drawn over nothing, and came
 back on a scrub. The first clip there is a photo, so it is the still that was not
 redrawn rather than a player. Not yet reproduced deliberately.
+
+### 42. Record a voiceover, driven and heard of for the first time (8 October)
+
+B9's Record, which nothing had ever pressed. **Every claim in the batch's
+first paragraph holds**, seen:
+
+- the Sound sheet's middle chip is **"Mic & camera"**, and the card under it is
+  Record · *"A voiceover over the picture, from the playhead"* with *"Tap to
+  start after a count of three. Stop, or the end of the edit, ends the take."*;
+- the big red button starts a **count-in: 3 · 3 · 2 · 2 · 1** across five
+  screenshots, headed "Get ready…", with **Cancel** beside it;
+- then **"Listening - the picture plays silently"**, the take's own clock
+  (0:20.300 at one point, which is the mic's count, not the playhead's), a
+  **level meter** that moves, and the button turned into a stop square;
+- the picture **plays** while it listens, and the strip draws a **"Recording…"
+  clip growing on a sound row** - a plain teal box, no label, not selectable;
+- **Stop ends the take**: a take stopped after about two seconds wrote
+  `files/voice/take-….wav` at **197,164 bytes**, which is 2.2 s of 44.1 kHz
+  16-bit mono. (Four earlier takes came out 24.6 s each and had me believing
+  Stop was broken; they were all *my* latency - a take left alone runs to the
+  end of the edit and ends itself, which is the other half of the same
+  sentence, and by the time I pressed "Stop" the button was Record again. The
+  file sizes are what settled it, not the screen.)
+- it lands as a **"Voiceover" clip with a mic glyph and its waveform drawn**, on
+  a sound row, **at the moment it started**, **selected**, with the **playhead
+  back at its start**, and the undo step reads **"Undo: Record voiceover"**;
+- the card then offers **"Record this take again"** under *"The new take lands
+  where 'Voiceover' starts, and that one goes"* - which is B9's rule that this
+  is the only way one take replaces another. Plain Record always added a new
+  one.
+
+**Not answered here:** the take by ear, in the preview or the file (the room was
+silent at 3am, so the waveform is room noise), the mic indicator going out on a
+Cancel, and the heavy-project "picture never starts" path.
