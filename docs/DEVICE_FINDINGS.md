@@ -3105,3 +3105,10 @@ the ruler draws no labels at all, because it lays one a second and less than a
 second is on screen. The timecode above the strip still reads, so nothing is
 lost, but the strip itself has no time reference once you pinch past about a
 second a screen.
+
+**And the fit, after the clamp.** Opening the same 22.266 s clip fresh: the
+filmstrip now runs from the strip's left edge to its right edge, with the ruler
+reading 0:00 under the first frame and 0:20 near the last. Before the clamp the
+fit left a quarter of the strip for what had already played, so the same clip was
+drawn into three quarters of the width and the ruler ran past 0:25. The edit is a
+third bigger again on screen, and every pixel of the strip is edit.
