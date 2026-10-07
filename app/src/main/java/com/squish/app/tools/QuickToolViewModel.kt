@@ -12,10 +12,12 @@ import com.squish.app.data.SquishRepositories
 import com.squish.app.data.ToolAutosave
 import com.squish.app.data.ToolDraft
 import com.squish.app.editor.EditorUiState
+import com.squish.app.editor.FitOvershoot
 import com.squish.app.editor.OutputSize
 import com.squish.app.editor.ProbeGate
 import com.squish.app.media.EncoderCeiling
 import com.squish.app.media.ExportPresets
+import com.squish.app.media.ExportSettings
 import com.squish.app.media.ExportProgress
 import com.squish.app.media.ExportService
 import com.squish.app.media.ExportStage
@@ -65,6 +67,22 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val fps: Float = 30f,
         val fitToSize: Boolean = false,
         val targetSizeMb: Int = 16,
+        /**
+         * The bitrate budget's multiplier for the next fitted run, pulled down
+         * by however much the last one missed (ExportSettings.retryScale). 1 for
+         * a size that has not been missed yet, and back to 1 whenever the target
+         * changes - see [setTargetSizeMb].
+         */
+        val fitScale: Float = 1f,
+        /**
+         * Set when a fitted run came out over its limit. The file is kept - it is
+         * in the gallery and in the library already - but the screen says by how
+         * much and offers a tighter run rather than handing it over as if it had
+         * fitted. The editor has had this since B14; Squeeze, which is the screen
+         * whose whole job is hitting a size, published the oversize file in
+         * silence until 7 October.
+         */
+        val fitOvershoot: FitOvershoot? = null,
         val trimStartMs: Long = 0,
         val trimEndMs: Long = 0,
         /**
@@ -84,6 +102,31 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         val encoderAnswer: ExportPresets.EncoderAnswer? = null
     ) {
         val hasSource: Boolean get() = sourceUri != null
+
+        /**
+         * Whether the size a squeeze is fitted to can be met at all. Below the
+         * smallest bitrate anything is written at it cannot, and aiming lower
+         * changes nothing - so the overshoot card drops its retry rather than
+         * publishing another identical copy to the gallery on every tap. The
+         * editor's own [com.squish.app.editor.EditorUiState.fitUnreachable],
+         * against the length a squeeze actually writes.
+         */
+        val fitUnreachable: Boolean
+            get() = fitToSize && !ExportPresets.fitReachable(
+                targetSizeMb * 1_000_000L, squeezedDurationMs, includeAudio = true
+            )
+
+        /** The least this video can be made, for the sentence [fitUnreachable] turns on. */
+        val smallestFittedBytes: Long
+            get() = ExportPresets.smallestFittedBytes(squeezedDurationMs, includeAudio = true)
+
+        /**
+         * What a squeeze writes: Squeeze does not use the range (QuickTool.usesRange
+         * is Snip and Extract audio), so it is the whole file - but read from the
+         * handles where they are set, so this stays right if that ever changes.
+         */
+        private val squeezedDurationMs: Long
+            get() = (trimEndMs - trimStartMs).takeIf { it > 0L } ?: durationMs
         val mergeDurationMs: Long get() = mergeClips.sumOf { it.durationMs }
         val selectedDurationMs: Long get() = (trimEndMs - trimStartMs).coerceAtLeast(0)
 
@@ -598,18 +641,26 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         )
     }
 
+    // The overshoot card goes with any of the three, because the settings rows
+    // stay on screen under it here (the editor's sheet hides them behind the
+    // card, so the question never came up there). Touching a size is choosing a
+    // different answer to "what should this file be", and leaving the card up
+    // would aim "Try again, tighter" at a target the person has just changed.
+    // The file it is about is in the gallery either way.
     fun setOutputP(p: Int) {
-        _state.update { it.copy(outputP = p, fitToSize = false) }
+        _state.update { it.copy(outputP = p, fitToSize = false, fitOvershoot = null) }
         recomputeEstimate()
     }
 
     fun setFitToSize(enabled: Boolean) {
-        _state.update { it.copy(fitToSize = enabled) }
+        _state.update { it.copy(fitToSize = enabled, fitOvershoot = null) }
         recomputeEstimate()
     }
 
     fun setTargetSizeMb(mb: Int) {
-        _state.update { it.copy(targetSizeMb = mb) }
+        // The scale goes back to 1 with it: it is how far the *previous* target
+        // was missed by, and means nothing against a new one.
+        _state.update { it.copy(targetSizeMb = mb, fitScale = 1f, fitOvershoot = null) }
         recomputeEstimate()
     }
 
@@ -688,6 +739,9 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             outputP = if (tool == QuickTool.Squeeze) current.outputP else OutputSize.ORIGINAL,
             fitToSize = tool == QuickTool.Squeeze && current.fitToSize,
             targetSizeMb = current.targetSizeMb,
+            // Carried, or a second run at a tightened budget would be rendered
+            // at the first run's rate and come out the same size again.
+            fitScale = current.fitScale,
             encoderAnswer = current.encoderAnswer,
             audioOnly = tool == QuickTool.Rip,
             // Checked rather than assumed, so extracting audio from a silent clip
@@ -724,7 +778,24 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         return ProjectRules.displayTitle(name, taken, prefix = "Video").takeIf { it != "Untitled edit" } ?: name
     }
 
-    fun export(tool: QuickTool, onResult: (String) -> Unit, onError: (String) -> Unit) {
+    /**
+     * [tightened] is only true for the second run after a missed fit (see
+     * [retryFit]). Every other render starts from the plain budget: the scale is
+     * how far *that* run missed by, and the editor's copy of this had it outlive
+     * its run, so an edit cut down to a quarter of its length was still rendered
+     * a fifth under what it was allowed. The same trap here, where the size chip
+     * and the Fit switch are a tap away from each other.
+     */
+    fun export(
+        tool: QuickTool,
+        onResult: (String) -> Unit,
+        onError: (String) -> Unit,
+        tightened: Boolean = false
+    ) {
+        if (!tightened && _state.value.fitScale != 1f) {
+            _state.update { it.copy(fitScale = 1f) }
+            recomputeEstimate()
+        }
         val current = _state.value
         if (current.sourceUri == null) return
 
@@ -796,6 +867,10 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             if (exportJob === coroutineContext[Job]) exportJob = null
 
             result.onSuccess { file ->
+                // Read here, while the private copy is still on disk: it is gone
+                // by the end of this block (GallerySaver.retire), and the fitted
+                // check below needs the number.
+                val size = file.length()
                 // Still exporting until the copy is in the gallery, so the button
                 // cannot start a second export over this one's hand-over.
                 val saving = _state.value.exportProgress.copy(stage = ExportStage.Saving)
@@ -837,6 +912,34 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                     GallerySaver.retire(getApplication(), file, published)
                 }
                 ExportService.end(getApplication())
+                // A fitted squeeze is measured against the limit that was asked
+                // for. The file is kept whatever the answer - it is in the
+                // gallery and in the library already - but one that missed is
+                // not handed over as if it had fitted.
+                //
+                // This is the editor's rule (B14), and Squeeze is the screen it
+                // matters most on: choosing a limit is the whole of what "Fit to
+                // a size" is for, and until 7 October a run that came out over it
+                // published the file and said "Squeezed · N% smaller" with no
+                // word that the number asked for had been missed.
+                //
+                // `size` is read above, before GallerySaver.retire deletes the
+                // private copy - measured after, every overshoot reads as nothing
+                // and the card can never show. That is not a hypothetical: it is
+                // the fault B15's review round found in the editor's copy of this.
+                val target = current.targetSizeMb * 1_000_000L
+                if (editorState.fitToSize && !audioOnly && ExportSettings.overshoots(size, target)) {
+                    _state.update {
+                        it.copy(
+                            isExporting = false,
+                            exportProgress = ExportProgress(),
+                            fitOvershoot = FitOvershoot(file.absolutePath, size, target),
+                            fitScale = ExportSettings.retryScale(it.fitScale, size, target)
+                        )
+                    }
+                    recomputeEstimate()
+                    return@onSuccess
+                }
                 _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
                 onResult(file.absolutePath)
             }.onFailure { throwable ->
@@ -847,6 +950,35 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                 val problem = SquishError.from(throwable)
                 onError("${problem.title}. ${problem.fix}")
             }
+        }
+    }
+
+    /** The oversize file is the one wanted after all: handed over as any export is. */
+    fun keepOversize(onResult: (String) -> Unit) {
+        val kept = _state.value.fitOvershoot ?: return
+        _state.update { it.copy(fitOvershoot = null) }
+        onResult(kept.path)
+    }
+
+    /**
+     * Runs the squeeze again at the tightened budget; the oversize file stays in
+     * the gallery and in the library.
+     *
+     * The card is held rather than dropped, for the editor's reason: [export]
+     * has refusals that come back without starting a render - the likeliest
+     * being the space check, which this run's own gallery copy has just made
+     * more likely - and with the card already cleared, the oversize file could
+     * never reach the done screen and "Keep this one" could not be reached at
+     * all. Every refusal happens before the render starts, so the card goes
+     * back up.
+     */
+    fun retryFit(tool: QuickTool, onResult: (String) -> Unit, onError: (String) -> Unit) {
+        val held = _state.value.fitOvershoot
+        _state.update { it.copy(fitOvershoot = null) }
+        export(tool, onResult, onError, tightened = true)
+        val after = _state.value
+        if (held != null && !after.isExporting && after.fitOvershoot == null) {
+            _state.update { it.copy(fitOvershoot = held) }
         }
     }
 

@@ -73,6 +73,7 @@ import com.squish.app.home.formatSize
 import com.squish.app.timeline.Clip
 import com.squish.app.ui.components.ClipPreview
 import com.squish.app.ui.components.ExportProgressCard
+import com.squish.app.ui.components.OvershootCard
 import com.squish.app.ui.components.OrderBadge
 import com.squish.app.ui.components.PreviewSource
 import com.squish.app.ui.components.SectionHeading
@@ -299,11 +300,29 @@ fun QuickToolScreen(
                         .background(SquishColors.Surface)
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
+                    val missed = state.fitOvershoot
                     if (state.isExporting) {
                         ExportProgressCard(
                             progress = state.exportProgress,
                             accent = tool.accent,
                             onCancel = { confirmStopExport = true }
+                        )
+                    } else if (missed != null) {
+                        // In place of the action, not beside it: the question is
+                        // which of the two things to do with the file that was
+                        // just written, and a live "Squeeze it" under it would
+                        // be a third answer that publishes a third copy.
+                        OvershootCard(
+                            actualBytes = missed.actualBytes,
+                            targetBytes = missed.targetBytes,
+                            unreachable = state.fitUnreachable,
+                            smallestBytes = state.smallestFittedBytes,
+                            subject = "video",
+                            onKeep = { viewModel.keepOversize(onExported) },
+                            onRetry = {
+                                errorMessage = null
+                                viewModel.retryFit(tool, onResult = onExported, onError = { errorMessage = it })
+                            }
                         )
                     } else {
                         SquishPrimaryButton(
@@ -492,7 +511,21 @@ private fun CompressControls(state: QuickToolViewModel.UiState, viewModel: Quick
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("Fit to a size", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
-                Text("For a strict upload limit", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
+                // Said here rather than discovered after the render, as the
+                // editor's sheet says it: under the smallest bitrate anything
+                // is written at, the limit cannot be met at all, and that is
+                // every video over about five minutes at 16 MB. Without this
+                // line the only way to learn it was to spend the encode.
+                Text(
+                    if (state.fitUnreachable) {
+                        "This video is too long for ${state.targetSizeMb} MB - the smallest it can be " +
+                            "made is about ${formatSize(state.smallestFittedBytes)}. Trim it, or pick a larger size."
+                    } else {
+                        "For a strict upload limit"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (state.fitUnreachable) SquishColors.Amber else SquishColors.TextMuted
+                )
             }
             SquishToggleSwitch(checked = state.fitToSize, onCheckedChange = viewModel::setFitToSize)
         }

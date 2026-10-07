@@ -63,6 +63,7 @@ import com.squish.app.media.SquishError
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.ui.components.ExportProgressCard
 import com.squish.app.ui.components.OutputSizePicker
+import com.squish.app.ui.components.OvershootCard
 import com.squish.app.ui.components.SectionHeading
 import com.squish.app.ui.components.SelectableChip
 import com.squish.app.ui.components.SquishCard
@@ -197,6 +198,7 @@ fun ExportSheet(
                         targetBytes = missed.targetBytes,
                         unreachable = state.fitUnreachable,
                         smallestBytes = state.smallestFittedBytes,
+                        subject = "edit",
                         onKeep = { viewModel.keepOversize(onExported) },
                         onRetry = { viewModel.retryFit(onExported) }
                     )
@@ -507,57 +509,6 @@ private fun SwitchRow(
         SquishToggleSwitch(
             checked = checked,
             onCheckedChange = { if (enabled) onCheckedChange(it) }
-        )
-    }
-}
-
-/**
- * A fitted export that came out over its limit. The file is whole and saved;
- * the question is whether to keep it as it is or run once more, aimed lower.
- */
-@Composable
-private fun OvershootCard(
-    actualBytes: Long,
-    targetBytes: Long,
-    unreachable: Boolean,
-    smallestBytes: Long,
-    onKeep: () -> Unit,
-    onRetry: () -> Unit
-) {
-    SquishCard(accent = SquishColors.Amber) {
-        Text(
-            "Came out at ${formatSize(actualBytes)} - over the ${formatSize(targetBytes)} limit",
-            style = MaterialTheme.typography.titleSmall,
-            color = SquishColors.TextPrimary
-        )
-        Text(
-            // No retry where a retry cannot work. Below the smallest bitrate
-            // anything is written at, every run lands on the same size, and
-            // each one published another copy to the gallery and showed this
-            // card again.
-            if (unreachable) {
-                "This edit is too long to be made that small - about ${formatSize(smallestBytes)} is the " +
-                    "least it can be. The file is saved in your gallery as it is; to go smaller, trim the " +
-                    "edit or pick a larger size."
-            } else {
-                "Encoders overshoot on busy footage. This file is saved in your gallery as it is. " +
-                    "A second run aims lower and should land under the limit."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = SquishColors.TextSecondary
-        )
-        // Stacked: side by side at half width "Try again, tighter" was cut short.
-        if (!unreachable) {
-            SquishPrimaryButton(
-                text = "Try again, tighter",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onRetry
-            )
-        }
-        SquishOutlinedButton(
-            text = "Keep this one",
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onKeep
         )
     }
 }
