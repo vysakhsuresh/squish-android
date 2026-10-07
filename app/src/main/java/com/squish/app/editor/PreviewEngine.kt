@@ -1607,6 +1607,20 @@ class PreviewEngine(private val context: Context) {
                     s.effectsOn = runCatching { player.setVideoEffects(s.chain) }.isSuccess
                     if (s.effectsOn) Log.i(TAG, "effects back on ${s.key}")
                 }
+                // This is the swap that tripped Media3's
+                // ExternalTextureManager on 8 October: a new file set on a
+                // player that is already prepared and holding registered
+                // frames, which is what a main-track photo's longer rendering
+                // landing does. See onPlayerError - the chain comes off now
+                // and the picture comes back.
+                //
+                // A `player.stop()` first would release the pipeline in order
+                // and might stop it happening at all, rather than recovering
+                // from it. Deliberately *not* done here: this line runs on
+                // every clip change in the preview, it is the most exercised
+                // code in the app, and the crash could not be reproduced on
+                // demand to show the guard helps. Worth doing by whoever can
+                // make it happen twice.
                 player.setMediaItem(MediaItem.fromUri(source))
                 player.prepare()
                 s.loadedUri = source.toString()
