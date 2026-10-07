@@ -2693,3 +2693,26 @@ All first sightings, in a one-hour window on the phone.
 - **Filters** draw their swatches from a real frame of the shot (Original,
   Vivid, Punch, Soft, Clean), and applying Vivid reached the picture at once -
   the blurred backdrop with it, so the canvas is graded as one picture.
+
+### 10. Stabilize, Track and a clip's own crop (7 October)
+
+**Stabilize**, §5 step 6's first half, never driven before. On a three-second
+clip it measured in about five seconds and the card read **"Shake removed · 90
+measurements · Measured 91 frames. Zoomed in 0% to hide the edges the correction
+exposes."** - 91 frames and 90 motions is one motion per *pair*, which is the
+arithmetic right; and 0% zoom is the honest answer for a screen recording with
+no shake in it. Dragging **Strength from 50% to 82% re-solved with no
+"Measuring…"** and the card still read 90 measurements, which is B13's "this
+clip is solved again from its measurement as the slider moves; other clips keep
+theirs", seen.
+
+**Track**, the other half. Tap a thing in the frame, Box size 14%, "Track from
+the playhead": **"Followed 91 frames, held on for 100% of them."** No crash, no
+silence. (Not yet on 60 fps footage in a 30 fps project, which is what step 6
+asks for.)
+
+**A clip's own Crop, inside a 9:16 padded canvas.** The 1:1 chip draws a square
+window on the picture with the outside dimmed, *in place* - the canvas stays
+9:16 and the shot stays where it is, which is B12's review-round fix ("the Mask
+tool edits in place again… a 9:16 frame stays 9:16"). Crop's two Flip buttons
+carry the swap icons B16 gave them.
