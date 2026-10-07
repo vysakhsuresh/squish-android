@@ -189,6 +189,24 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
     private var wroteDraft = false
 
     /**
+     * Whether this session has written a file. It retires "untouched" (see
+     * [persist]), because an export is a deliberate act on the session even
+     * when nothing was moved to get there.
+     *
+     * Found on the phone, 7 October: a Squeeze on a clip whose suggested size
+     * was already the one wanted is one tap and no change at all, so the draft
+     * never differed from its first pick and nothing was saved - and the run
+     * that followed, which took an encode and published a file, left no row on
+     * Tool sessions, while the Snip and Stitch beside it (where picking a clip
+     * or dragging a handle *is* the work) both had one. The list's own reason
+     * for being - go back and fix the one thing that came out wrong rather than
+     * choose the files again - is strongest for exactly this case: the thing to
+     * change is the size chip, and the session holding it was the one thrown
+     * away.
+     */
+    private var exportedSomething = false
+
+    /**
      * True from the moment a saved session starts coming back until all of it is
      * on screen; nothing is saved in between. Stays true if the file turned out
      * unreadable, so the empty result of that never replaces the saved session -
@@ -257,7 +275,8 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
         // model before the trim could land at all.
         if (current.isLoading || restoring) return
         val draft = draftOf(tool, current)
-        val untouched = !resumed && (baseline == null || autosave.keyOf(draft) == baseline)
+        val untouched = !resumed && !exportedSomething &&
+            (baseline == null || autosave.keyOf(draft) == baseline)
         // A session with nothing in it is nothing to keep, and `save` refuses
         // it - so emptying a Stitch list left the three-clip file it had already
         // written sitting on disk, and the drafts screen went on offering "3
@@ -365,12 +384,17 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
      * The session produced a file. It stays, stamped as exported, so "back to
      * the tool" from the done screen finds it as it was - a merge that came out
      * with one clip in the wrong place is fixed by moving that clip, not by
-     * choosing six files again. Nothing is stamped for a session that never
-     * differed from its first pick, since no draft was written for it.
-     * [exported] is the session the file was made from.
+     * choosing six files again. [exported] is the session the file was made
+     * from.
+     *
+     * [exportedSomething] goes up *before* the save, because the save is the
+     * one that has to see it: a session that never differed from its first
+     * pick used to be dropped there, so a run that took an encode and
+     * published a file left nothing behind at all.
      */
     private fun markExported(exported: ToolDraft) {
         val slot = slot ?: return
+        exportedSomething = true
         persist()
         autosave.markCompleted(slot, exported)
     }
