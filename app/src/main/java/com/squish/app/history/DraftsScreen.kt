@@ -65,6 +65,7 @@ import kotlinx.coroutines.withContext
 import com.squish.app.tools.QuickTool
 import com.squish.app.ui.components.BackOrb
 import com.squish.app.ui.components.ConfirmDialog
+import com.squish.app.ui.components.TextAction
 import com.squish.app.ui.components.VideoPreviewSheet
 import com.squish.app.ui.theme.SquishColors
 
@@ -94,12 +95,15 @@ fun DraftsScreen(
     onRevert: (DraftSummary) -> Unit,
     onRestore: (TrashedDraft) -> Unit,
     onPurge: (TrashedDraft) -> Unit,
+    /** Everything in Recently deleted, for good, from one confirmed tap. */
+    onPurgeAll: () -> Unit,
     onDismissUndoOffer: () -> Unit
 ) {
     var previewing by remember { mutableStateOf<DraftSummary?>(null) }
     var pendingDiscard by remember { mutableStateOf<DraftSummary?>(null) }
     var pendingRevert by remember { mutableStateOf<DraftSummary?>(null) }
     var pendingPurge by remember { mutableStateOf<TrashedDraft?>(null) }
+    var emptyingBin by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     fun open(draft: DraftSummary) {
@@ -189,20 +193,32 @@ fun DraftsScreen(
 
                         if (trashed.isNotEmpty()) {
                             item(key = "trash-heading") {
-                                Column(
-                                    modifier = Modifier.padding(top = 14.dp, bottom = 2.dp),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        "Recently deleted",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = SquishColors.TextPrimary
-                                    )
-                                    Text(
-                                        "Kept for 30 days, then gone for good",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = SquishColors.TextMuted
-                                    )
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(
+                                            "Recently deleted",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = SquishColors.TextPrimary
+                                        )
+                                        Text(
+                                            "Kept for 30 days, then gone for good",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = SquishColors.TextMuted
+                                        )
+                                    }
+                                    // Every entry here goes on holding the stills, imports
+                                    // and takes it named - which is what Settings' storage
+                                    // card means by "belongs to projects, 70 of them in the
+                                    // bin". Emptying it a card at a time was a hundred and
+                                    // forty taps, so the card could say where the space had
+                                    // gone and there was nothing to do about it.
+                                    TextAction("Empty it now", color = SquishColors.Pink) { emptyingBin = true }
                                 }
                             }
                             items(trashed, key = { "trash/${it.trashId}" }) { entry ->
@@ -297,6 +313,23 @@ fun DraftsScreen(
                 pendingPurge = null
             },
             onDismiss = { pendingPurge = null }
+        )
+    }
+
+    if (emptyingBin) {
+        ConfirmDialog(
+            title = "Empty Recently deleted?",
+            body = "All ${trashed.size} ${if (trashed.size == 1) "entry goes" else "entries go"} now, " +
+                "before their 30 days are up — and with them the stills, imports and takes they were " +
+                "the last to name, which is what frees the space.",
+            caution = "There is no undo and nowhere to fetch any of it back from. " +
+                "Your original videos are untouched; the work built on them is not.",
+            confirmLabel = "Delete all",
+            onConfirm = {
+                onPurgeAll()
+                emptyingBin = false
+            },
+            onDismiss = { emptyingBin = false }
         )
     }
 }

@@ -199,6 +199,7 @@ fun SquishNavHost(
                 onRevert = homeViewModel::revertDraft,
                 onRestore = homeViewModel::restoreDraft,
                 onPurge = homeViewModel::purgeDraft,
+                onPurgeAll = homeViewModel::purgeAllTrashed,
                 onDismissUndoOffer = homeViewModel::dismissUndoOffer
             )
         }

@@ -237,23 +237,49 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun purgeDraft(entry: TrashedDraft) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                // A quick-tool session's files were not named at all here - the
-                // set was simply empty for one - so purging a binned Trim or
-                // Squeeze held its picker grant until the app was uninstalled,
-                // which is the same leak the bin's own expiry had.
-                val named = if (entry.draft.toolId != null) {
-                    toolAutosave.trashed().firstOrNull { (id, _) -> id == entry.trashId }
-                        ?.second?.uris?.map { it.toString() }?.toSet().orEmpty()
-                } else {
-                    autosave.urisInTrash(entry.trashId)
-                }
-                if (entry.draft.toolId != null) toolAutosave.purge(entry.trashId) else autosave.purge(entry.trashId)
-                releaseUnnamed(named)
-            }
+            withContext(Dispatchers.IO) { purgeOne(entry) }
             if (_undoOffer.value?.entries?.any { it.trashId == entry.trashId } == true) _undoOffer.value = null
             refreshDrafts()
         }
+    }
+
+    /**
+     * The whole bin, for good, from one confirmed tap.
+     *
+     * A month of editing leaves dozens of entries, and each of them goes on
+     * holding the stills, imports and takes it named - which is what Settings'
+     * storage card says when a Clear frees almost nothing ("673 MB belongs to
+     * projects, 70 of them in the bin"). Emptying it one card at a time was a
+     * hundred and forty taps, so the card could say where the space went and
+     * nothing could be done about it.
+     *
+     * One entry at a time through the same path, so a grant is released exactly
+     * when no other draft - live or binned - still names its files, and a
+     * single entry that cannot be read does not stop the rest.
+     */
+    fun purgeAllTrashed() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                trashed.value.forEach { entry -> runCatching { purgeOne(entry) } }
+            }
+            _undoOffer.value = null
+            refreshDrafts()
+        }
+    }
+
+    private fun purgeOne(entry: TrashedDraft) {
+        // A quick-tool session's files were not named at all here - the
+        // set was simply empty for one - so purging a binned Trim or
+        // Squeeze held its picker grant until the app was uninstalled,
+        // which is the same leak the bin's own expiry had.
+        val named = if (entry.draft.toolId != null) {
+            toolAutosave.trashed().firstOrNull { (id, _) -> id == entry.trashId }
+                ?.second?.uris?.map { it.toString() }?.toSet().orEmpty()
+        } else {
+            autosave.urisInTrash(entry.trashId)
+        }
+        if (entry.draft.toolId != null) toolAutosave.purge(entry.trashId) else autosave.purge(entry.trashId)
+        releaseUnnamed(named)
     }
 
     fun dismissUndoOffer() {

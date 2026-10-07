@@ -3881,3 +3881,34 @@ first paragraph holds**, seen:
 **Not answered here:** the take by ear, in the preview or the file (the room was
 silent at 3am, so the waveform is room noise), the mic indicator going out on a
 Cancel, and the heavy-project "picture never starts" path.
+
+### 43. Emptying Recently deleted (8 October)
+
+The other half of §40. The storage card now says *"673 MB belongs to projects,
+70 of them in the bin"* - and there was nothing to do about it: the bin's only
+action is per card, Restore or Delete, so **seventy entries was a hundred and
+forty taps**, each behind its own confirm. A phone that is full and an app that
+says where the space went and offers no way to get it back is worse than one
+that says nothing.
+
+**"Empty it now"** now sits on the Recently deleted heading, in pink beside it.
+It asks first, with the count and what goes with it: *"All 79 entries go now,
+before their 30 days are up — and with them the stills, imports and takes they
+were the last to name, which is what frees the space."* and the usual caution,
+*"There is no undo and nowhere to fetch any of it back from. Your original
+videos are untouched; the work built on them is not."*
+
+It purges **one entry at a time through the same path** a single card uses
+(`HomeViewModel.purgeOne`, lifted out of `purgeDraft`), so a picker grant is
+released exactly when no other draft - live or binned - still names its files,
+and one unreadable entry does not stop the rest.
+
+**Seen:** the action and its dialog on the phone, with the right count. The
+sweep itself was verified through a *single* card rather than the whole bin -
+the seventy entries on this phone are the owner's, not mine to destroy - and
+that one purge took the bin from 71 to 70 through the refactored `purgeOne`,
+which is the function the new one loops.
+
+And the storage line from §40, now with something to say:
+**"Freed 14 MB. 2 MB belongs to projects, 70 of them in the bin."** - the four
+orphaned voiceover takes from §42 gone, the one a project still names kept.
