@@ -2827,3 +2827,39 @@ Still not answered for the muxer: that such a file plays in WhatsApp and in a
 browser (it plays in the gallery and in the app's own done screen, which is a
 `VideoPreviewSheet` on the MediaStore URI - so B15's "a MediaStore URI plays in
 VideoPreviewSheet" holds).
+
+### 15. Tool sessions, and what a one-tap run leaves behind (7 October)
+
+The sessions list itself, driven for the first time. Each row is a thumbnail,
+the tool, the clip count, the age, the length, an "Exported" badge and - where
+there is a ten-minute snapshot - "Earlier version · N ago", with a play and a
+delete. The delete asks first, naming the tool in the sentence ("This sets aside
+the **stitch** you had set up - 2 files, and the settings on them", "the
+**squeeze** you had set up - 1 file"), says it keeps it for 30 days and that the
+original video is untouched, and the row moves to "Recently deleted" below with
+a restore button of its own and an Undo on the snackbar. All of that held.
+
+**What it was missing was Squeeze.** See the commit: a run that changed nothing
+before exporting saved no session. Fixed and seen.
+
+**Stitch, driven.** Two clips picked at once; the rows number themselves, show
+"0:05 · at 0:00" and "0:03 · at 0:05", and grey the up arrow on the first row
+and the down arrow on the last. Moving the first row down renumbers both,
+recomputes both "at" times to 0:00 and 0:03, re-greys the arrows for the new
+positions, and **changes the player's poster frame to the new first clip** - so
+everything downstream of the order followed it. The file is 8.566 s, which is
+what the sheet promised to the millisecond, and its first frames are the
+reordered clip's.
+
+`Mp4Probe` on it: 257 video samples at 30.004 per second, 371 AAC samples, and
+9,115 bytes of container on 813,904 - 1.1%, the compact muxer again. The frame
+durations are 33.32/33.33 ms except for four at the join (23.56 x2, 34.00,
+52.67, 33.54), which is a sub-frame mismatch between two independently
+timestamped sources being absorbed over about four frames rather than frames
+being lost - the total is right. Worth keeping as the shape of a healthy join:
+a regression here would be a much wider spread.
+
+**Not a fault, but worth knowing:** a quick tool's export does not get a Library
+row. The Library stayed at 35 through four tool exports. They are reachable from
+Tool sessions instead, which is defensible - but if the Library is meant to be
+"every file Squish made", it is not that.
