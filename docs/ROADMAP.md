@@ -537,6 +537,33 @@ holds up. Everything in it is unseen.
    blended-still cache, which used to be the shape of an out-of-memory.
 10. **Then §4 from B1**, and `docs/DEVICE_FINDINGS.md`'s own lists.
 
+**The Fast lane, added and done on 7 October.** It was on none of these lists at
+all, which is how **Extract audio came to be broken for every file there is** and
+stayed that way: the export preflight asks `anyCameraAudio`, which counts the
+clips on the timeline, and a quick tool deliberately has none - so an audio-only
+render was refused on every file, with a sentence telling the user to turn off a
+switch the screen does not have. Nobody had ever tapped the button.
+
+Squeeze, Snip, Extract audio and Stitch have all now been driven end to end and
+their files probed; see `docs/DEVICE_FINDINGS.md` §14 and §15. **The lesson for
+this list: a whole screen nobody has opened is worse than a feature nobody has
+checked, because the second at least fails in a way somebody would see.** What
+is still unopened anywhere in the app belongs here.
+
+Left from that round:
+
+a. **Squeeze's "Fit to a size"** - the chip was never tapped, so B14's "Keep
+   this one / Try again, tighter" card is still unseen on the one screen whose
+   whole job is hitting a size.
+b. **"Save as GIF" and "Copy to Files"** on a done screen, both offered on every
+   tool and neither pressed.
+c. **A quick tool's export gets no Library row.** The Library held at 35 through
+   four tool exports. Decide whether that is right; if it is, nothing to do.
+d. **A tool session resumed from the list** - the row's play opens it, and that
+   path (restore a slot, re-probe the files, put the handles back) has only been
+   seen by accident, when a stray tap reopened a Stitch and it came back with
+   its order intact.
+
 **Added after sweeps five, six and seven** (same evening). These are cheap, and
 each one is a thing that was plainly broken for anyone who did it:
 
@@ -553,7 +580,10 @@ each one is a thing that was plainly broken for anyone who did it:
 15. **Trim a sixty-second clip down to two in Snip**: both handles still answer.
 16. **A 9:16 crop on a landscape edit**, with the safe-area guide on: the dashed
     rectangle is inside the picture the file keeps.
-17. **A slideshow of photos**: no Camera sound row on the Sound sheet.
+17. **A slideshow of photos**: no Camera sound row on the Sound sheet. (Now
+    also held by an executed check - `ToolRules.hasCameraAudio` in
+    `tools/jvm/ToolRulesChecks.kt` - because the 7 October fix for Extract
+    audio touched the same decision and this is the case it must not break.)
 
 **Added after sweep seven** (5 October, night). The first two are the only
 things on this list that can only be judged *by ear*, so they want quiet:
