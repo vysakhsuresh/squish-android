@@ -3307,3 +3307,28 @@ And the half that matters most: **one tap on Undo gave back exactly 2 clips ·
 
 The menu behind that + is worth recording too: "Video or photo · Blank · Free
 stock video".
+
+### 26. A song past the last shot, and the playhead coming back (8 October)
+
+ROADMAP §5 item 12's second half, from sweep five.
+
+A 22.266 s edit with Lo-fi Sunset added at 0:00 - which lands **trimmed to the
+picture**, 0:22, as `EditRules.soundLanding` says it should. Dragging the song's
+tail out takes the **edit** to 0:25.257: a song past the last shot makes the file
+that long, which is what `BUILD_NOTES` says the compositor does.
+
+**Scrubbing into that stretch shows "End of picture"** on black, with the clock
+running on to 0:25.257 and stopping there. That is `PreviewRules.baseTime`
+crossing the stretch after the last shot and stopping at the true end - listed as
+unseen, now seen, and it says so in words rather than holding a frozen frame.
+
+**Deleting the song brings both back.** The total returns to 0:22.266 and **the
+playhead, which was at 0:25.257, comes back to 0:22.266** rather than being left
+out past the end of an edit that no longer goes that far. The preview shows the
+last frame again.
+
+One thing to be careful of when driving this from `adb`: a drag that starts within
+a few pixels of a clip's edge catches the **trim handle**, not the strip, and
+trims instead of scrubbing. That is the handle doing its job - it is a target -
+but it made one earlier reading of the strip's drag look wrong until the same
+gesture started further in and scrubbed exactly as it should.

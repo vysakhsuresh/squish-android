@@ -580,9 +580,12 @@ each one is a thing that was plainly broken for anyone who did it:
 11. **"Take out every um and uh"** on a talking head with two captioned lines,
     the first ending "um" and the second beginning "uh": two short cuts, not one
     long one. The old code cut twenty-nine seconds for two words.
-12. **Delete a word over a gap** on the main track, and **delete a song that
-    runs past the last shot**: in the first nothing moves, in the second the
-    playhead comes back.
+12. **Delete a word over a gap** on the main track, and ~~**delete a song that
+    runs past the last shot**~~: in the first nothing moves, in the second the
+    playhead comes back. **The song half is done, 8 October** - the edit went to
+    0:25.257, "End of picture" showed past 22.266, and deleting the song brought
+    both the length and the playhead back to 0:22.266.
+    `docs/DEVICE_FINDINGS.md` §26. The word-over-a-gap half still wants speech.
 13. ~~**A song's beat grid at x2**: the dots double, the bpm on the card
     doubles, and "Every bar" still falls on the bar.~~ **Done, 7 October.** 23
     beats / 120.0 BPM / 6 bars found on a 120 BPM track, x2 gives 46 / 240.0 /
