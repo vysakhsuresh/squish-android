@@ -4129,3 +4129,31 @@ changed one from a broken one.
   glyph and starts playback, and VHS reaches the live picture.
 - **Templates → Reel**: a crop, a look and a bold "WATCH THIS" title at once, as
   one step named "Undo: Template Reel".
+
+### 50. Music and the beat detector (8 October)
+
+B9's music and beats, driven for the first time.
+
+- The Music card's four categories - **Squish originals · Sound effects · On
+  this phone · Starred & recent** - are a **two-by-two grid, all in sight on a
+  phone**, which is what B9 asks.
+- **Squish originals** lists its tracks with "Chill · 78 BPM · 49s",
+  "Happy · 112 BPM · 51s" and so on, each with its own **Add**. Adding one lands
+  it on a sound row, selected, with a real waveform drawn, as
+  **"Undo: Add Good Vibes"**.
+- **Find the beat** on it answers **"42 beats on Good Vibes - they move with
+  it"**, **112.0 BPM**, *"Strong pulse"*, *"Bar starts on beat 1"*, **11 bars**,
+  over the density chips (Every beat · Every 2 · Every bar) and ÷2 · ×2 · Shift
+  bar with the octave explanation under them. The track is *labelled* 112 BPM by
+  the card that offered it, and the detector answered 112.0 - and 22.266 s at
+  112 BPM is 41.6 beats, so 42 is right too.
+- The **dots are drawn on the song**, evenly, along the bottom of the clip under
+  its waveform.
+- **"Every bar" thins them to one per bar** - ten or eleven across the same
+  stretch - so the chip reaches the dots.
+- **Slowing the song spreads them.** At 0.5x the clip reads 0:44, the waveform
+  is redrawn over the new length, and the bar dots are **twice as far apart**:
+  five across the same 22-second window where there were ten. That is B9's
+  "beats on the clip carried through its position and speed curve", seen.
+
+Not answered: any of it **by ear**, and whether a cut snaps to a dot.
