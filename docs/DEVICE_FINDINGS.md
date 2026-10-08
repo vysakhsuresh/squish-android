@@ -4319,3 +4319,13 @@ The 0% is the one thing left open: the shot is handheld and some correction
 would be expected, where the earlier 1080p reel (§49) asked for 1%. Whether 0%
 means "nothing needed" or "nothing found" wants the stabilized playback read
 frame by frame, which this session did not have the time for.
+
+**Closing state (8 October, 06:45).** Cold start to the dashboard in **1.76 s**,
+nothing in the crash buffer for `com.squish.app` over the whole night. Build
+green, **lint 0 errors**, all ninety JVM suites green. The phone: 19 projects,
+35 exports, 3 tool sessions, nothing of mine left in the gallery or in Music,
+rotation settings as found. Also seen on the way out: **Auto adjust** lifts the
+picture at once and is one undo step ("Undo: Auto adjust"), and **Split** cuts
+the clip under the playhead (1 clip → 2, same total length, "Undo: Cut") while
+refusing to make a sliver at the very end ("Too close to the end of the clip to
+split here").
