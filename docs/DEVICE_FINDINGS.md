@@ -4023,3 +4023,43 @@ which the fix had to change. It now asserts the effect goes through
 `NewLineRules.lettingGo` and tells it both of the things that matter, which is
 what the rule is. That is the cost of not running the suites after an editor
 change, written down.
+
+### 47. The whole Fast lane was dead, and I killed it (8 October)
+
+**Found on the phone, and it is mine.** Yesterday's fix for "an emptied edit said
+it was twenty-two seconds long, and would have exported them" made
+`EditorUiState.trimmedDurationMs` fall back to the source's window *only while
+the editor is loading*. Every quick tool - **Snip, Squeeze, Extract audio, Save
+as GIF** - builds its state with `videoClips = emptyList()` on purpose
+(`QuickToolViewModel.editorStateOf`; only a merge has clips), and is never
+loading. So all four reported a length of **0**, `SquishError.preflight` refused
+them on `trimmedDurationMs <= 0`, and:
+
+> **Snip it** on a video with two handles 6.5 s apart →
+> **"Nothing on the timeline. Add a clip, or widen a trim handle."**
+
+Four of the six things on the dashboard's Fast lane, for a day.
+
+The rule needed to tell *"this edit was emptied"* from *"this kind never had
+clips"*, and nothing in the state said which. `EditorUiState.clipsAreTheEdit`
+does now - true for the editor, `= merging` for a quick tool - and the length
+asks `isLoadingSource || !clipsAreTheEdit`.
+
+*The checks*: `LaneChecks` gains the quick-tool case on the rule itself, and -
+since the rule was never wrong, the caller was - **`ControlChecks` reads the two
+lines that join them**: the `sourceWindowStands = isLoadingSource ||
+!clipsAreTheEdit` in `EditorModels.kt` and the `clipsAreTheEdit = merging` in
+`QuickToolViewModel.kt`. Negative-tested by breaking each in turn and watching
+its own message come back.
+
+**Seen fixed on the phone**: Snip of a 0:22.301 clip, handles at 6.633 and
+17.655 → *"Snipped · 854 × 480 · 11.0 s · 30 fps · 890 KB · Movies › Squish"*,
+and the size is a stream copy's share of the source's. Extract audio on that →
+*"Extracted · 11.1 s · 189 KB · Music › Squish"*.
+
+**What this cost and what it teaches.** Snip and Extract audio were *driven and
+seen working* earlier the same night - before this fix landed. A fix made in the
+editor broke four screens that share one state class and were not reopened
+afterwards. `trimmedDurationMs` is read by the header, the export sheet, the
+file's length, the recovery card and the sidecar, and by five screens; a change
+to it is a change to all of them.

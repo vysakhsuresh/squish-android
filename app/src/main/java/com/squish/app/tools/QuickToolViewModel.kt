@@ -789,7 +789,12 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             // Already in order and already sequenced, so the export is simply the
             // list as shown - there is no second place for the order to be decided.
             videoClips = if (!merging) emptyList()
-            else current.mergeClips.filter { it.sourceSpanMs > 0 }
+            else current.mergeClips.filter { it.sourceSpanMs > 0 },
+            // And say so: every other tool is a file and a window, with no clips
+            // at all, so "nothing laid down" must not read as "emptied" - which
+            // is what refused every Snip, Squeeze, Extract audio and GIF for a
+            // day (TimelineLanes.timelineLength).
+            clipsAreTheEdit = merging
         )
     }
 

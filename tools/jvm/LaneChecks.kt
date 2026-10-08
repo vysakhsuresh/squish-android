@@ -572,22 +572,30 @@ private fun window() {
     run {
         val window = 22_266L
         // Loaded and empty is empty - the header, and the export's refusal.
-        check(TimelineLanes.timelineLength(0L, window, stillLoading = false) == 0L,
+        check(TimelineLanes.timelineLength(0L, window, sourceWindowStands = false) == 0L,
             "an emptied edit still reports the length of the file it was opened on")
         // Still loading and empty is the file's window - a project staged and
         // not yet read has no clips either, and the spinner is up.
-        check(TimelineLanes.timelineLength(0L, window, stillLoading = true) == window,
+        check(TimelineLanes.timelineLength(0L, window, sourceWindowStands = true) == window,
             "a project still loading lost the length it was opened on")
+        // And a quick tool: a file and a window, with no clips at all and
+        // nothing loading. It is not an emptied edit, and treating it as one
+        // refused every Snip, Squeeze, Extract audio and GIF with "Nothing on
+        // the timeline. Add a clip, or widen a trim handle." - seen on the
+        // phone on 8 October, the day after the rule above landed. Its state
+        // says `clipsAreTheEdit = false`, which is what the flag now carries.
+        check(TimelineLanes.timelineLength(0L, 6_501L, sourceWindowStands = true) == 6_501L,
+            "a quick tool's kept window reads as nothing, so its export is refused before it starts")
         // Anything laid down wins, loading or not.
-        check(TimelineLanes.timelineLength(9_000L, window, stillLoading = false) == 9_000L,
+        check(TimelineLanes.timelineLength(9_000L, window, sourceWindowStands = false) == 9_000L,
             "a laid-out edit did not report what is on its tracks")
-        check(TimelineLanes.timelineLength(9_000L, window, stillLoading = true) == 9_000L,
+        check(TimelineLanes.timelineLength(9_000L, window, sourceWindowStands = true) == 9_000L,
             "a laid-out edit took the source's window while loading")
         // A sound past the last shot is laid down too, so it is the length.
-        check(TimelineLanes.timelineLength(25_257L, window, stillLoading = false) == 25_257L,
+        check(TimelineLanes.timelineLength(25_257L, window, sourceWindowStands = false) == 25_257L,
             "a song past the last shot stopped counting")
         // Never negative, whatever the window reads.
-        check(TimelineLanes.timelineLength(0L, -5L, stillLoading = true) == 0L,
+        check(TimelineLanes.timelineLength(0L, -5L, sourceWindowStands = true) == 0L,
             "a negative source window came back negative")
     }
     // The strip as drawn agrees with the strip a finger lands on - including at

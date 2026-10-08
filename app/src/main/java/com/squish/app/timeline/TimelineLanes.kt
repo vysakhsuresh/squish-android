@@ -408,12 +408,22 @@ object TimelineLanes {
      * past that check and would have rendered twenty-two seconds of nothing.
      *
      * The fallback is kept, not dropped: a project staged and not yet read has
-     * no clips either, and its length is the file's. That is what the loading
-     * screen is up for, so that is what the flag asks.
+     * no clips either, and its length is the file's.
+     *
+     * **And so has a quick tool, for good.** Snip, Squeeze, Extract audio and
+     * Save as GIF are a file and a window; `QuickToolViewModel.editorStateOf`
+     * builds their state with `videoClips = emptyList()` on purpose, and only a
+     * merge has clips. Asking `stillLoading` alone therefore answered 0 for all
+     * four, `preflight` refused them on `trimmedDurationMs <= 0`, and **"Snip
+     * it" on a perfectly good six-second keep said "Nothing on the timeline.
+     * Add a clip, or widen a trim handle."** - the Fast lane dead, by the fix
+     * above, the day after it landed (8 October). So the flag is "the source's
+     * window is what this is", which is true while the editor loads *and* for
+     * every tool whose length never comes from clips.
      */
-    fun timelineLength(laidMs: Long, sourceWindowMs: Long, stillLoading: Boolean): Long = when {
+    fun timelineLength(laidMs: Long, sourceWindowMs: Long, sourceWindowStands: Boolean): Long = when {
         laidMs > 0L -> laidMs
-        stillLoading -> sourceWindowMs.coerceAtLeast(0L)
+        sourceWindowStands -> sourceWindowMs.coerceAtLeast(0L)
         else -> 0L
     }
 

@@ -372,6 +372,18 @@ data class EditorUiState(
     /** When the project was started, for the name it shows until it is given one. */
     val startedAtMillis: Long = 0L,
     val isLoadingSource: Boolean = true,
+    /**
+     * Whether the clips are what this edit is made of.
+     *
+     * True for the editor, which always has them once the draft is read. False
+     * for a quick tool - Snip, Squeeze, Extract audio, Save as GIF - which is a
+     * file and a window into it and carries no clips at all by design
+     * (`QuickToolViewModel.editorStateOf`); only a merge has them. The length
+     * rule needs to tell "this edit was emptied" from "this kind never had
+     * clips" and nothing else could: see [TimelineLanes.timelineLength], and
+     * the day the Fast lane spent refusing itself.
+     */
+    val clipsAreTheEdit: Boolean = true,
     val durationMs: Long = 0,
     val sourceWidth: Int = 0,
     val sourceHeight: Int = 0,
@@ -597,7 +609,7 @@ data class EditorUiState(
             return com.squish.app.timeline.TimelineLanes.timelineLength(
                 laidMs = laid,
                 sourceWindowMs = trimEndMs - trimStartMs,
-                stillLoading = isLoadingSource
+                sourceWindowStands = isLoadingSource || !clipsAreTheEdit
             )
         }
 

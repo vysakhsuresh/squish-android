@@ -1197,6 +1197,33 @@ fun main() {
         }
     }
 
+    // ---- A quick tool has no clips, and that is not an empty edit. ---------
+    //
+    // Snip, Squeeze, Extract audio and Save as GIF are a file and a window;
+    // their state carries `videoClips = emptyList()` on purpose and only a
+    // merge has clips. The length rule falls back to the source's window when
+    // nothing is laid down, and the fallback was gated on "still loading"
+    // alone - so all four read 0, `SquishError.preflight` refused them on
+    // `trimmedDurationMs <= 0`, and "Snip it" on a good six-second keep
+    // answered "Nothing on the timeline. Add a clip, or widen a trim handle."
+    // The whole Fast lane, dead for a day, by the fix that stopped an *emptied*
+    // edit claiming the file's length. Seen on a phone on 8 October.
+    //
+    // Nothing executed could catch it: the rule is right and the caller was
+    // wrong, so this reads the two lines that join them.
+    run {
+        check(
+            read("$SRC/editor/EditorModels.kt").contains("sourceWindowStands = isLoadingSource || !clipsAreTheEdit"),
+            "the edit's length no longer asks whether clips are what it is made of - a quick tool, " +
+                "which never has any, reads as an emptied edit and its export is refused before it starts"
+        )
+        check(
+            read("$SRC/tools/QuickToolViewModel.kt").contains("clipsAreTheEdit = merging"),
+            "a quick tool's state no longer says its length comes from the file rather than from clips " +
+                "(only a merge has clips) - every Snip, Squeeze, Extract audio and GIF is then refused"
+        )
+    }
+
     // ---- A frame that will be aimed at is the frame, not the nearest keyframe.
     //
     // ThumbnailExtractor.frameAt seeks with OPTION_CLOSEST_SYNC by default,
