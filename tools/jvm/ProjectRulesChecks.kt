@@ -1,4 +1,6 @@
 import com.squish.app.data.ProjectRules
+import com.squish.app.home.HomeTab
+import com.squish.app.home.HomeTabRules
 import com.squish.app.settings.StorageRules
 import kotlin.system.exitProcess
 
@@ -350,6 +352,51 @@ fun main() {
         // No bin: no bin clause.
         val noBin = StorageRules.clearedLine(21_000_000L, 673_000_000L, 0, keepsReferenced = true, format = mb)
         check(!noBin.contains("bin"), "named a bin that is empty: $noBin")
+    }
+
+    // --- The dashboard's three places. ---------------------------------------
+    // The fault these answer: the Fast lane tiles and the library sat after the
+    // projects grid in one scroll, so at nineteen projects they were four swipes
+    // down and got further away with every project added.
+    run {
+        // Back leaves the pane before it leaves the app, and leaves the app from
+        // Home. Anything else strands someone on Library with no way out but the
+        // bar - or, worse, makes back a no-op on Home.
+        check(HomeTabRules.backLandsOn(HomeTab.Tools) == HomeTab.Home, "back from Tools did not land on Home")
+        check(HomeTabRules.backLandsOn(HomeTab.Library) == HomeTab.Home, "back from Library did not land on Home")
+        check(HomeTabRules.backLandsOn(HomeTab.Home) == null, "back on Home did not leave the app")
+
+        // Three, and Home first: the pane a tap on the app lands in.
+        check(HomeTab.entries.size == 3, "the bar grew a place: ${HomeTab.entries.map { it.label }}")
+        check(HomeTab.entries.first() == HomeTab.Home, "Home was not the first place in the bar")
+        check(HomeTab.entries.map { it.label }.none { it.isBlank() }, "a place in the bar had no name")
+        check(
+            HomeTab.entries.map { it.label }.toSet().size == 3,
+            "two places in the bar read the same, so neither can be told from the other by a screen reader"
+        )
+
+        // A tap on the place you are already in scrolls it back to the top; a tap
+        // on another one switches. Were the first false, the only way back to the
+        // top of ten rows of cards would be a long swipe.
+        HomeTab.entries.forEach { tab ->
+            check(HomeTabRules.retapScrollsToTop(tab, tab), "a re-tap on ${tab.label} did nothing")
+            HomeTab.entries.filter { it != tab }.forEach { other ->
+                check(!HomeTabRules.retapScrollsToTop(tab, other), "a tap from ${tab.label} on ${other.label} scrolled instead of switching")
+            }
+        }
+
+        // The dot marks Tools, and only when something is behind it. It stood for
+        // the old door's subtitle, which showed only when there was something.
+        check(HomeTabRules.markedTab(0, 0) == null, "a dot showed with nothing waiting")
+        check(HomeTabRules.markedTab(1, 0) == HomeTab.Tools, "an unfinished session was not marked")
+        check(HomeTabRules.markedTab(0, 1) == HomeTab.Tools, "something in the bin was not marked")
+        check(HomeTabRules.markedTab(3, 92) == HomeTab.Tools, "both at once was not marked")
+        // Never Home or Library: Home is where a tap already lands, and an export
+        // is finished work rather than something to come back to.
+        check(
+            HomeTabRules.markedTab(3, 92) != HomeTab.Home && HomeTabRules.markedTab(3, 92) != HomeTab.Library,
+            "the dot landed on the wrong place"
+        )
     }
 
     if (problems.isEmpty()) {

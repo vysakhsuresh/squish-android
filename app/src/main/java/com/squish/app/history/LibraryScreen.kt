@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -55,6 +57,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.squish.app.data.ExportRecord
 import com.squish.app.data.SquishRepositories
@@ -84,7 +87,18 @@ import kotlinx.coroutines.withContext
  * copy went once the gallery copy was verified.
  */
 @Composable
-fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
+fun LibraryScreen(
+    /**
+     * Null when this is the dashboard's Library tab rather than a screen of its
+     * own: the shell's bar is where the way out is, and a back orb beside it
+     * would be two answers to the same question.
+     */
+    onBack: (() -> Unit)?,
+    onOpen: (String) -> Unit,
+    listState: LazyListState = rememberLazyListState(),
+    /** Room for the shell's floating bar, or for the back orb when it is here. */
+    bottomRoom: Dp = 108.dp
+) {
     val context = LocalContext.current
     val repository = remember(context) { SquishRepositories.history(context) }
     val records by repository.records.collectAsState()
@@ -144,7 +158,8 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                         "Nothing here is called \"$query\"."
                     )
                     else -> LazyColumn(
-                        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 108.dp),
+                        state = listState,
+                        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = bottomRoom),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(shown, key = { it.id }) { record ->
@@ -160,11 +175,13 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 }
             }
 
-            BackOrb(
-                accent = SquishColors.Violet,
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 24.dp)
-            )
+            if (onBack != null) {
+                BackOrb(
+                    accent = SquishColors.Violet,
+                    onClick = onBack,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 24.dp)
+                )
+            }
         }
     }
 

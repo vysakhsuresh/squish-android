@@ -1,8 +1,8 @@
 package com.squish.app.navigation
 
 sealed class Destination(val route: String) {
+    /** Home, Tools and Library in one: HomeShell, and HomeTab for why. */
     data object Home : Destination("home")
-    data object Library : Destination("library")
     data object Drafts : Destination("drafts")
     data object Settings : Destination("settings")
 

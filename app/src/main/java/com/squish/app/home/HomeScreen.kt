@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -45,7 +47,6 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -76,6 +77,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -131,16 +133,13 @@ fun countOf(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${nou
 @Composable
 fun HomeScreen(
     onOpenProject: (String) -> Unit,
-    onOpenTool: (QuickTool) -> Unit,
-    onOpenLibrary: () -> Unit,
-    onOpenDrafts: () -> Unit,
     onOpenSettings: () -> Unit,
+    /** Room kept clear at the foot of the list for the shell's floating bar. */
+    bottomRoom: Dp = 28.dp,
+    listState: LazyListState = rememberLazyListState(),
     viewModel: HomeViewModel = viewModel()
 ) {
-    val recent by viewModel.recentExports.collectAsState()
     val projects by viewModel.projects.collectAsState()
-    val toolDrafts by viewModel.toolDrafts.collectAsState()
-    val trashed by viewModel.trashed.collectAsState()
     val undoOffer by viewModel.undoOffer.collectAsState()
     // Re-read on every return to the dashboard, so an edit left five minutes ago
     // is here rather than whatever the list happened to hold at launch.
@@ -195,7 +194,12 @@ fun HomeScreen(
     }
     DisposableEffect(Unit) { onDispose { viewModel.dismissUndoOffer() } }
 
-    Scaffold(containerColor = SquishColors.Background, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+    Scaffold(
+        containerColor = SquishColors.Background,
+        // Above the bar, not behind it: the Undo offer after a delete is the one
+        // message on this screen that has to be reachable.
+        snackbarHost = { SnackbarHost(snackbar, modifier = Modifier.padding(bottom = bottomRoom)) }
+    ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             // Above the scrolling grid, not at the top of it: a selection
             // started on row four used to put the count and Delete wherever
@@ -209,8 +213,9 @@ fun HomeScreen(
                 )
             }
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 28.dp),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = bottomRoom),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (!selecting) {
@@ -320,49 +325,10 @@ fun HomeScreen(
                     }
                 }
 
-                item(key = "tools") {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = SECTION_GAP)) {
-                        Header("Fast lane", "One job, one tap")
-                        QuickTool.entries.chunked(2).forEach { pair ->
-                            // As tall as the taller of the two, never fixed: at a large
-                            // font the blurb used to be cut off at a hard-coded height.
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)
-                            ) {
-                                pair.forEach { tool ->
-                                    ToolTile(
-                                        tool = tool,
-                                        modifier = Modifier.weight(1f).fillMaxHeight()
-                                    ) { onOpenTool(tool) }
-                                }
-                                if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
-                            }
-                        }
-                    }
-                }
-
-                // The quick tools' unfinished sessions and what was deleted have
-                // a screen of their own; the door shows only when there is
-                // something behind it.
-                if (toolDrafts.isNotEmpty() || trashed.isNotEmpty()) {
-                    item(key = "drafts-door") {
-                        DraftsDoor(
-                            tools = toolDrafts.size,
-                            binned = trashed.size,
-                            onClick = onOpenDrafts,
-                            modifier = Modifier.padding(top = SECTION_GAP)
-                        )
-                    }
-                }
-
-                item(key = "library-door") {
-                    LibraryDoor(
-                        count = recent.size,
-                        onClick = onOpenLibrary,
-                        modifier = Modifier.padding(top = SECTION_GAP)
-                    )
-                }
+                // The Fast lane tiles, the tool sessions and the library used to
+                // sit here, after the grid. See HomeTab: behind nineteen
+                // projects they were four swipes away, so they are the shell's
+                // other two tabs now and this screen is the projects alone.
             }
         }
     }
@@ -445,7 +411,7 @@ fun HomeScreen(
 private fun Set<String>.toggled(id: String): Set<String> = if (id in this) this - id else this + id
 
 @Composable
-private fun Header(title: String, subtitle: String, modifier: Modifier = Modifier) {
+internal fun Header(title: String, subtitle: String, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         Text(title, style = MaterialTheme.typography.titleLarge, color = SquishColors.TextPrimary)
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
@@ -748,7 +714,7 @@ private fun SelectionBar(count: Int, onDelete: () -> Unit, onCancel: () -> Unit,
 
 /** One shortcut. Its own colour, its own glyph, recognisable before it is read. */
 @Composable
-private fun ToolTile(tool: QuickTool, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun ToolTile(tool: QuickTool, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(
         modifier = modifier
             .heightIn(min = TILE_MIN_HEIGHT)
@@ -769,31 +735,9 @@ private fun ToolTile(tool: QuickTool, modifier: Modifier = Modifier, onClick: ()
     }
 }
 
-/**
- * The way into the library, as one row rather than a list that grows forever.
- *
- * It says how many are in there, which is the only thing the dashboard needs to
- * tell you about work you have already finished.
- */
-@Composable
-private fun LibraryDoor(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Door(
-        icon = Icons.Filled.VideoLibrary,
-        accent = SquishColors.Violet,
-        title = "Library",
-        subtitle = when (count) {
-            0 -> "Everything you export lands here"
-            1 -> "1 export · search and share"
-            else -> "$count exports · search and share"
-        },
-        onClick = onClick,
-        modifier = modifier
-    )
-}
-
 /** The way in to the quick tools' half-done sessions and what was deleted. */
 @Composable
-private fun DraftsDoor(tools: Int, binned: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun DraftsDoor(tools: Int, binned: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Door(
         icon = Icons.Filled.Edit,
         accent = SquishColors.Cyan,

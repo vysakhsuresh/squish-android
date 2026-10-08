@@ -27,8 +27,7 @@ import com.squish.app.export.ExportScreen
 import com.squish.app.media.ExportsInFlight
 import com.squish.app.history.DraftsScreen
 import com.squish.app.history.LibraryDetailScreen
-import com.squish.app.history.LibraryScreen
-import com.squish.app.home.HomeScreen
+import com.squish.app.home.HomeShell
 import com.squish.app.home.HomeViewModel
 import com.squish.app.settings.SettingsScreen
 import com.squish.app.tools.QuickTool
@@ -125,7 +124,10 @@ fun SquishNavHost(
     NavHost(navController = navController, startDestination = Destination.Home.route) {
 
         composable(Destination.Home.route) { entry ->
-            HomeScreen(
+            // Home, Tools and Library are three panes of one destination, not
+            // three destinations: see HomeTab for why. The library had a route of
+            // its own until then, and nothing navigates to it any more.
+            HomeShell(
                 onOpenProject = { id ->
                     navController.fromTopOf(entry) { navController.navigate(Destination.Editor.buildRoute(id)) }
                 },
@@ -139,18 +141,11 @@ fun SquishNavHost(
                         )
                     }
                 },
-                onOpenLibrary = { navController.fromTopOf(entry) { navController.navigate(Destination.Library.route) } },
                 onOpenDrafts = { navController.fromTopOf(entry) { navController.navigate(Destination.Drafts.route) } },
-                onOpenSettings = { navController.fromTopOf(entry) { navController.navigate(Destination.Settings.route) } }
-            )
-        }
-
-        composable(Destination.Library.route) { entry ->
-            LibraryScreen(
-                onBack = { navController.fromTopOf(entry) { navController.popBackStack() } },
-                onOpen = { recordId ->
+                onOpenExport = { recordId ->
                     navController.fromTopOf(entry) { navController.navigate(Destination.LibraryItem.buildRoute(recordId)) }
-                }
+                },
+                onOpenSettings = { navController.fromTopOf(entry) { navController.navigate(Destination.Settings.route) } }
             )
         }
 

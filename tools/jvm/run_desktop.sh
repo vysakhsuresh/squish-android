@@ -56,7 +56,7 @@ run filmstrip  $TIMELINE "$SRC/media/video/Filmstrip.kt" tools/jvm/FilmstripChec
 run stripdraw  $TIMELINE "$SRC/timeline/StripDraw.kt" tools/jvm/StripDrawChecks.kt
 run undo       "$SRC/editor/UndoStack.kt" tools/jvm/UndoChecks.kt
 run housekeeping "$SRC/data/DraftHousekeeping.kt" "$SRC/data/DraftFiles.kt" tools/jvm/HousekeepingChecks.kt
-run projectrules "$SRC/data/ProjectRules.kt" "$SRC/settings/StorageRules.kt" tools/jvm/ProjectRulesChecks.kt
+run projectrules "$SRC/data/ProjectRules.kt" "$SRC/settings/StorageRules.kt" "$SRC/home/HomeTabRules.kt" tools/jvm/ProjectRulesChecks.kt
 run trimrules  "$SRC/tools/TrimRules.kt" tools/jvm/TrimRulesChecks.kt
 run slowmo     "$SRC/timeline/SpeedRamp.kt" "$SRC/timeline/SlowMotion.kt" tools/jvm/SlowMotionChecks.kt
 run ramp       "$SRC/timeline/SpeedRamp.kt" tools/jvm/RampChecks.kt

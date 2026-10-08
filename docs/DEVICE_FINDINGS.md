@@ -4329,3 +4329,67 @@ picture at once and is one undo step ("Undo: Auto adjust"), and **Split** cuts
 the clip under the playhead (1 clip → 2, same total length, "Undo: Cut") while
 refusing to make a sliver at the very end ("Too close to the end of the clip to
 split here").
+
+### 57. The dashboard's three places, and the bar between them (8 October)
+
+The fault was the dashboard's shape, not a bug in it. It was one scroll - the
+way in, then every project, then the Fast lane tiles, then a door to the tool
+sessions and a door to the library - so the tools and the library sat *behind*
+the projects, and the projects grow. At twenty of them "One job, one tap" was
+four full swipes down and the Library door was past those. The things that
+should never move were the ones that moved most, and the longer the app was
+used the further away its own tools got.
+
+Home, Tools and Library are three panes of one destination now (`HomeShell`,
+and `HomeTab` for why), with a floating bar at the thumb's end of the phone.
+The bar is only ever on those three: the editor, the quick tools, the tool
+sessions, a library item, the export flow and Settings - where vertical room is
+actually short - never see it. The library's own route is gone with it, and its
+back orb draws only when it is a screen of its own.
+
+The arithmetic is executed in `tools/jvm/ProjectRulesChecks.kt` (where back
+lands, the re-tap, and which place the waiting dot marks) and the shape of it
+is held by `tools/jvm/ControlChecks.kt`; all nine checks were negative-tested
+against the broken code.
+
+**Seen on the phone:**
+
+- The bar stands on all three panes, orange on Home, cyan on Tools, violet on
+  Library, with the cyan dot on Tools for the 3 tool sessions and 93 binned.
+- Every pane is one tap from the other two, at twenty projects.
+- A re-tap on Home, four swipes down the grid, flies back to the top.
+- Back from Tools and from Library lands on Home; back on Home leaves the app.
+- The pane survives the back stack: Library → an export → back lands on
+  **Library**, not Home. That is what `rememberSaveable` on the nav entry buys.
+- Snip opens its picker from the Tools pane and two backs return to Tools; the
+  tool-sessions door opens and returns to Tools; a project opens from Home and
+  back returns to Home.
+- `uiautomator dump`: **NAF 0**. Each place is a focusable node naming itself
+  ("Home", "Tools", "Library"), the current one carries `selected="true"`, and
+  the dot carries `content-desc="something waiting"` - a drawn circle with no
+  text in it otherwise announces nothing.
+
+**Two faults it found, both fixed and both seen fixed:**
+
+1. The Tools pane is the one with no `Scaffold` to hand it the window insets,
+   and without them its title was drawn **under the clock**. `statusBarsPadding`
+   outside the scroll.
+2. On the phone **on its side** the bar spread the full 2400 px and the three
+   places sat a hand apart, reachable by no thumb. Capped at `BAR_MAX_WIDTH`
+   and centred; full width upright, a pill on its side.
+
+And one thing the first build got right only by accident of looking: a floating
+bar over a list **slices** the row under it, which reads as a drawing fault - a
+project card cut in two by a strip. A gradient scrim under the bar makes the
+list fade out instead.
+
+**Still open on this:** a screen reader cannot activate the place it is already
+in - Compose reports `clickable="false"` on a selected `Role.Tab` node by
+design, so the re-tap-to-scroll-to-top is a touch gesture only. Whether that is
+worth working around (an explicit `onClick` action in `semantics`) is not
+settled; nothing else is lost by it, since the pane is already the one showing.
+
+**Left on the phone:** one project of mine, `Edit · 8 Oct` (three photos end to
+end, created 05:59, draft `j5d64602…`) - a leftover of the night's testing. It
+was not deleted, because deleting somebody's project unasked is not this
+session's call to make.

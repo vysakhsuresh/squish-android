@@ -18,6 +18,9 @@ import kotlin.system.exitProcess
  */
 
 private val problems = mutableListOf<String>()
+
+/** The dashboard bar's three places, by name: this suite greps sources rather than compiling the app. */
+private val HomeTabNames = listOf("Home", "Tools", "Library")
 private fun check(ok: Boolean, msg: String) { if (!ok) problems += msg }
 
 private const val SRC = "app/src/main/java/com/squish/app"
@@ -1729,6 +1732,88 @@ fun main() {
                 problems += "$path has the INFO_OUTPUT_FORMAT_CHANGED branch but never reads outputFormat"
             }
         }
+    }
+
+    // --- The dashboard's bar, and what it must not go back to being. ---------
+    // The fault: the Fast lane tiles, the tool-session door and the library door
+    // sat after the projects grid in one scroll, so they moved further away with
+    // every project added - nineteen of them put "One job, one tap" four full
+    // swipes down. They are the shell's other two panes now, and the only way
+    // that regresses is by someone laying them back into HomeScreen's list.
+    run {
+        val home = read("$SRC/home/HomeScreen.kt")
+        listOf(
+            "ToolTile(" to "the Fast lane tiles",
+            "DraftsDoor(" to "the tool-session door",
+            "LibraryDoor(" to "the library door"
+        ).forEach { (call, what) ->
+            // The composables themselves live in this file; what must not come
+            // back is a *call* from inside the LazyColumn, after the grid.
+            val inList = Regex("""item\(key = "[^"]*"\) \{[\s\S]{0,400}?${Regex.escape(call)}""")
+            check(
+                !inList.containsMatchIn(home),
+                "$what is back in HomeScreen's list, behind every project card - see HomeTab"
+            )
+        }
+        check(
+            home.contains("bottomRoom: Dp") && home.contains("bottom = bottomRoom"),
+            "HomeScreen's list no longer keeps the shell's bar out of its last row"
+        )
+
+        val shell = read("$SRC/home/HomeShell.kt")
+        // A tint and a brighter glyph are the only marks of which pane you are
+        // in, and neither announces anything on a clickable.
+        check(
+            shell.contains(".selectable(selected = selected, role = Role.Tab"),
+            "the dashboard bar's places are not selectable with Role.Tab, so a screen reader " +
+                "cannot say which one you are in - the lesson every chip row in this app already carries"
+        )
+        check(
+            !Regex("""\.clickable\(.{0,40}onClick = onClick""").containsMatchIn(shell),
+            "a place in the dashboard bar went back to clickable"
+        )
+        // The dot is a drawn circle with no text in it at all.
+        check(
+            Regex("""if \(marked\)[\s\S]{0,400}?semantics \{ contentDescription""").containsMatchIn(shell),
+            "the bar's waiting dot has no name, so it does not exist to a screen reader"
+        )
+        // Three panes, and the bar is on all three and only those.
+        HomeTabNames.forEach { tab ->
+            check(shell.contains("HomeTab.$tab ->"), "the shell has no pane for HomeTab.$tab")
+        }
+        // The Tools pane is the one with no Scaffold to hand it the insets, and
+        // without them its title was drawn under the clock - seen on the phone.
+        check(
+            Regex("""fun ToolsPane\([\s\S]{0,900}?\.statusBarsPadding\(\)""").containsMatchIn(shell),
+            "the Tools pane takes no status-bar inset, so its title is drawn under the clock"
+        )
+        check(
+            Regex("""fun ToolsPane\([\s\S]{0,900}?\.navigationBarsPadding\(\)""").containsMatchIn(shell),
+            "the Tools pane takes no navigation-bar inset"
+        )
+        // And the bar is capped, or on a phone on its side the three places sit
+        // a hand apart and a thumb reaches none of them.
+        check(
+            Regex("""\.widthIn\(max = BAR_MAX_WIDTH\)[\s\S]{0,60}\.fillMaxWidth\(\)""").containsMatchIn(shell),
+            "the dashboard bar is not capped, so it spreads across a landscape screen"
+        )
+
+        // The library is a pane now as well as nothing else; its back orb must
+        // not draw beside the bar, which is two answers to one question.
+        val library = read("$SRC/history/LibraryScreen.kt")
+        check(
+            library.contains("onBack: (() -> Unit)?") && Regex("""if \(onBack != null\)[\s\S]{0,120}BackOrb\(""").containsMatchIn(library),
+            "LibraryScreen draws a back orb whether or not it is a screen of its own"
+        )
+        check(
+            library.contains("bottom = bottomRoom"),
+            "the library's last row sits under the dashboard bar"
+        )
+        // And nothing navigates to a route that no longer exists.
+        check(
+            !read("$SRC/navigation/SquishNavHost.kt").contains("Destination.Library.route"),
+            "something still navigates to the library's old route, which HomeShell replaced"
+        )
     }
 
     println("controls: the conventions that, broken, make a control lie")
