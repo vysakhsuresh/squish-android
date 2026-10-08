@@ -4063,3 +4063,35 @@ editor broke four screens that share one state class and were not reopened
 afterwards. `trimmedDurationMs` is read by the header, the export sheet, the
 file's length, the recovery card and the sidecar, and by five screens; a change
 to it is a change to all of them.
+
+### 48. The rest of the Fast lane, and Fit to a size (8 October)
+
+After §47's fix, the three tools that were refusing themselves, driven end to
+end on the phone:
+
+- **Snip**: handles at 6.633 and 17.655 of a 0:22.301 clip →
+  *"Snipped · 854 × 480 · 11.0 s · 30 fps · 890 KB · Movies › Squish"*. The
+  frame is the source's own and the size is a stream copy's share of it, so the
+  plain path still copies rather than re-encodes. The handles themselves are
+  B15's fix seen: a **1500 ms** drag moved the start 0:00.000 → 0:05.544 and a
+  **200 ms** drag moved it on to 0:09.933 - the slow drag that used to move
+  nothing and the fast one that used to snap back. Moving the end handle put the
+  player on it.
+- **Extract audio** on that → *"Extracted · 11.1 s · 189 KB · Music › Squish"*,
+  an .m4a.
+- **Squeeze** of it → *"Squeezed · 640 × 360 · 600 KB · **33% smaller · was
+  890 KB**"*, with the before/after pill that B14 says belongs only to Squeeze.
+- **Squeeze with Fit to a size**, which had never been run: a 1:15.599, 17.8 MB
+  clip at a **16 MB** target came out **478 × 850 · 1:15 · 30 fps ·
+  15,954,353 bytes** - 15.95 MB, **under the limit by 0.3%**, and the done
+  screen reads "16.0 MB · 11% smaller · was 17.8 MB". A strict upload limit
+  solved tight and not missed; the "Keep this one / Try again, tighter" card
+  therefore did not show, and remains unseen.
+- **Stitch** (which has clips, so §47 never touched it): two files picked at
+  once read *"2 clips joined · 1:37.865"* with a Playing order list; the row
+  arrows reorder and the positions recompute (0:22 at 0:00, 1:15 at 0:22), and
+  Clear empties it.
+- And a nice one that was never written down: a tool session whose source has
+  since been deleted from the gallery says so on its own card - **"The video
+  can't be opened any more — remove this with ✕"** - rather than failing when
+  it is opened.
