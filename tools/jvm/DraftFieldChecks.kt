@@ -237,7 +237,15 @@ fun main() {
         // Deliberately not in a draft. A view setting, a status, a progress
         // count, a session clipboard, or something probed off the file again on
         // every open.
+        // `clipsAreTheEdit` is a property of the *screen that built this state*,
+        // not of the edit: true in the editor, false for a quick tool, which is
+        // a file and a window and carries no clips at all. Nothing in a draft
+        // could carry it, because a quick tool's state is rebuilt from its own
+        // session every time - and putting it in one would mean a draft could
+        // claim its clips are not what it is made of, which is nonsense. See
+        // TimelineLanes.timelineLength and the day the Fast lane refused itself.
         val transient = setOf(
+            "clipsAreTheEdit",
             "attributeClipboard", "audioWaveforms", "backgroundProgress", "bestBitsProgress",
             "captions", "durationMs", "encoderAnswer", "encoderCeilingP", "estimatedOutputBytes",
             "exportProgress", "failure", "fitNonce", "fitOvershoot", "fitScale", "fps",

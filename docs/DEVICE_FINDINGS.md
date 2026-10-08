@@ -4173,3 +4173,12 @@ Not answered: any of it **by ear**, and whether a cut snaps to a dot.
   the Star a clean five-pointed one - each with the dashed outline and its drag
   handle drawn over it. That is the mask shader's own distance field
   (`MaskOutlineChecks`' arithmetic) arriving on the screen.
+
+**Postscript to §47.** Running the whole suite set afterwards - which the §46
+lesson says to do and which CLAUDE.md says to do whenever a file on the shared
+`$TIMELINE` list is touched - turned up one failure in ninety, and it was this
+repo catching me: `DraftFieldChecks` refuses any new `EditorUiState` field that
+is in neither the draft nor an explicit transient list. `clipsAreTheEdit` is a
+property of the **screen that built the state**, not of the edit, so it goes on
+the transient list with that reason written beside it. Negative-tested by taking
+it off again.
