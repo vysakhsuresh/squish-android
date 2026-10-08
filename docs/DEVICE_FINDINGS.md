@@ -4295,3 +4295,27 @@ no test file in the gallery or in Music, `accelerometer_rotation 1`,
 gigabyte, almost all of it this month's test debris held by 77 entries in
 Recently deleted - **"Empty it now" on that heading frees it** (§43), which is
 the owner's call to make, not mine.
+
+### 56. ROADMAP §5 item 6: Track and Stabilize on a high-rate clip (8 October)
+
+The item: *"Track and Stabilize on a 60 fps clip in a 30 fps project, and a
+Track aimed at the clip's last frame, which used to throw and say nothing."*
+Run on a **120 fps** capture (1280×720, 23.746 s) - a harder case than 60.
+
+- **Track aimed at the clip's last frames**: the playhead parked at **0:23.666**
+  of a 0:23.746 clip, the shot selected, Track opened. **No throw, nothing
+  silent**: the picker drew the frame, and it is the frame the preview beside it
+  is showing. (On the way: Split at 0:23.666 says *"Too close to the end of the
+  clip to split here"* rather than making a sliver, and opening the clip tools
+  with the playhead *past* the last clip parks it inside - which is why reaching
+  this case takes stepping back a frame at a time rather than scrubbing to the
+  end.)
+- **Stabilize**: *"Measured **710 frames**. Zoomed in 0% to hide the edges the
+  correction exposes."* 710 frames over 23.746 s is 29.9 a second - the
+  **project's** clock, not the file's 120 - which is what this item is asking.
+  No failure, nothing in logcat.
+
+The 0% is the one thing left open: the shot is handheld and some correction
+would be expected, where the earlier 1080p reel (§49) asked for 1%. Whether 0%
+means "nothing needed" or "nothing found" wants the stabilized playback read
+frame by frame, which this session did not have the time for.
