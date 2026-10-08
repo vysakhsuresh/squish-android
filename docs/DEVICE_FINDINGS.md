@@ -4095,3 +4095,37 @@ end on the phone:
   since been deleted from the gallery says so on its own card - **"The video
   can't be opened any more — remove this with ✕"** - rather than failing when
   it is opened.
+
+### 49. A walk round the clip toolbar (8 October)
+
+Opening each tool and looking, which is how §46 was found. Nothing else broken;
+what is here is what each sheet actually says, so the next session can tell a
+changed one from a broken one.
+
+- **Volume**: "Clip sound · This clip's own sound, mixed with the rest", a
+  keyframe offer ("Add a key here to animate this"), Level 100%, and **Remove
+  silences** with its own sentence ("Cuts the pauses longer than 0.7 s out of
+  this shot, keeping a little air round every word").
+- **Animation**: In (None · Fade · Zoom in · Zoom out · Slide left · Slide
+  right), Out, Loop (None · Pulse · Swing · Bob · Flicker · Drift), then Moves,
+  "Across the whole clip, over the arrival and leaving". The heading reads
+  "Sitting still — pick an arrival, or a move below".
+- **Placement**: Scale 1×, Across +0%, Up / down +0%, with the keyframe offer.
+- **Rotate**: turns the picture a quarter **clockwise on screen** - the top of
+  the frame goes to the right - and the turned shape is letterboxed inside the
+  frame rather than cropped. (B11's claim is "clockwise on screen *and* in the
+  file"; the file half still wants an export.)
+- **Mirror** on top of that flips it, and the two compose the way B11 says they
+  do (the mirror before the turn).
+- **Stabilize**: "Measuring – frame 30 of 664 · Measuring… 4%" with a bar, then
+  **"Measured 664 frames. Zoomed in 1% to hide the edges the correction
+  exposes."** and the button becomes "Measure again". 664 frames of 1080p in
+  well under a minute. Dragging **Strength** 50% → 92% re-solved with **no
+  "Measuring…"** and the same "Measured 664 frames" line - B13's claim exactly.
+  (1% is the right answer here: the footage is a screen recording with no shake,
+  and a deliberate pan is what the stabilizer is supposed to leave alone.)
+- **Effects**: the library's tiles each carry *this clip's own frame* with the
+  effect on it, applying one puts it on its own **effects row** with a cassette
+  glyph and starts playback, and VHS reaches the live picture.
+- **Templates → Reel**: a crop, a look and a bold "WATCH THIS" title at once, as
+  one step named "Undo: Template Reel".
