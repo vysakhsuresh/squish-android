@@ -4193,3 +4193,32 @@ two different programs on two different paths, and on this phone they agree.
 With §51 that is B12's mask shape work settled on both sides for the shapes most
 likely to come apart - though a mask **tracked** onto something moving, and a
 keyed mask on a **retimed** clip, are still unseen.
+
+### 53. The beat grid on the camera sound, and what a head trim does to it (8 October)
+
+ROADMAP §5 item **7**, which had never been run: *"Find the beat on the camera
+sound, trim five seconds off the head shot, and the dots must still be on the
+music."*
+
+**Find the beat with no song on the timeline listens to the camera**, as the
+panel says it will: **"68 beats on the camera audio · 186.8 BPM · Some pulse ·
+Bar starts on beat 1 · 17 bars"**, with the right explanation under it -
+*"Found on the camera sound, so there is no clip to draw the dots on. Mark below
+puts a line across the strip on each one."* (186.8 is double-time of this reel's
+real pulse, which is why the confidence reads *Some* rather than *Strong* and
+why ÷2 is on the panel.)
+
+**Mark every beat** then draws all 68 as teal lines across the whole strip.
+Trimming **4.76 s off the head** of the shot - the clip goes 0:22.266 → 0:17.506
+and the track closes up to 0:00 - leaves **the lines exactly where they were**.
+
+**This is probably right and the roadmap line is probably wrong, and it should be
+settled rather than left.** A *marker* is a timeline moment, and the Sync panel
+says so in as many words: *"Markers you placed yourself stay."* "Mark every beat"
+turns the grid into markers, and markers do not ripple. What §5 item 7 is really
+about is the **grid** (`state.beatGrid`, read through `AudioRules.chosenInWindow`,
+which maps the file's own beats through the clip's window) - that one should
+follow the audio, and this test did not look at it because with camera sound
+there are no dots to look at. Either the item wants rewording to name the grid,
+or Mark should re-run after a ripple. Not a fault seen; a question the test as
+written cannot answer.
