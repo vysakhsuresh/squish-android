@@ -4222,3 +4222,32 @@ follow the audio, and this test did not look at it because with camera sound
 there are no dots to look at. Either the item wants rewording to name the grid,
 or Mark should re-run after a ripple. Not a fault seen; a question the test as
 written cannot answer.
+
+### 54. Opening a project moves its date - once per build that changes the edit's shape (8 October)
+
+Found by a stray tap that opened one of the owner's own projects. Nothing was
+edited (Undo and Redo both read "Nothing to…" on the way in and on the way out),
+but leaving it **re-dated it**: the card went from *"1 clip · 8 d ago"* to
+*"1 clip · 1 min ago"* and jumped to the top of the dashboard. Its
+`savedAtMillis` moved from 30 September to now.
+
+**That is §34's "a project looked at and left is not taken for one just edited",
+and it holds - but only from the second open on.** Opening and closing the same
+project again left `savedAtMillis` **exactly where it was**. So the rule works;
+what fired once was the *fingerprint* changing.
+
+`ProjectAutosave.persist` keeps the old date when
+`previous.editFingerprint == fingerprint`, and the fingerprint is taken over the
+edit's own shape. **Any build that changes that shape - a new field, a renamed
+key - makes every project's stored fingerprint stale, so the first time each one
+is opened its date moves and the dashboard reorders itself once.** The *created*
+date is safe (`createdAtMillis` stayed at 30 September, which is
+`ProjectRules.createdAt` doing its job).
+
+**Not fixed, deliberately.** The honest fix is to compare the **document** the
+save is about to write against the one already on disk (minus its own
+`savedAtMillis`) rather than a fingerprint of the edit's shape - then a format
+change cannot look like an edit. That is a change to `persist`, which is the
+single most dangerous function in the app, and the symptom is one cosmetic
+reordering per such build. Written down with the facts so it can be decided in
+daylight rather than at 05:45.
