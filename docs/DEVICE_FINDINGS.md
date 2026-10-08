@@ -4157,3 +4157,19 @@ B9's music and beats, driven for the first time.
   "beats on the clip carried through its position and speed curve", seen.
 
 Not answered: any of it **by ear**, and whether a cut snaps to a dot.
+
+### 51. Shapes and the mask shader's heart and star (8 October)
+
+- **Stickers → Shapes and arrows** offers Rectangle · Ellipse · Triangle ·
+  Diamond · Star · Line · Arrow · Double arrow, each named for a screen reader.
+  A **Star** goes on at the playhead as **"Undo: Add star"**, drawn as a red
+  **outline** on the picture - which is what the card promises ("outlined, so
+  what it marks still shows") and what the whole point of a marker shape is -
+  with its own box and the four corner buttons. It lives on the text track.
+- **Mask → Add a mask** offers Rectangle · Ellipse · Linear · Mirror · **Heart**
+  · **Star** over Cut out · Pixelate · Blur, with a keyframe offer.
+  **Both of B12's awkward shapes render on this phone's ES2 driver**: the Heart
+  cuts a clean heart out of the picture with a soft, even feathered edge, and
+  the Star a clean five-pointed one - each with the dashed outline and its drag
+  handle drawn over it. That is the mask shader's own distance field
+  (`MaskOutlineChecks`' arithmetic) arriving on the screen.
