@@ -1197,6 +1197,41 @@ fun main() {
         }
     }
 
+    // ---- A frame that will be aimed at is the frame, not the nearest keyframe.
+    //
+    // ThumbnailExtractor.frameAt seeks with OPTION_CLOSEST_SYNC by default,
+    // which is right for a chip, a tile or a blurred backdrop: no decoding
+    // after the seek, and a picture a second out does not matter there. It is
+    // wrong wherever what is shown is then *acted on at the playhead*. The
+    // Track picker drew the box you were about to track on a keyframe and the
+    // tracker then started from the playhead's own frame; on a long-GOP file
+    // those were a whole shot apart (seen on a phone, 8 October, 0:12.023:
+    // the picker showed a different scene from the preview beside it).
+    //
+    // So these two call sites must ask for the exact frame, and this is here
+    // because the default is the dangerous one and nothing else would say so.
+    run {
+        val mustBeExact = listOf(
+            "AnalysisEdits.kt" to "sampleFrame",
+            "TransitionSheet.kt" to "the transition tiles"
+        )
+        val all = readAll(SRC)
+        mustBeExact.forEach { (suffix, what) ->
+            val text = all.firstOrNull { (path, _) -> path.endsWith(suffix) }?.second
+            if (text == null) {
+                problems += "$suffix is gone - $what used to read a frame that is aimed at; check it still does"
+                return@forEach
+            }
+            Regex("""ThumbnailExtractor\.frameAt\((?:[^()]|\([^()]*\))*\)""").findAll(text).forEach { m ->
+                if (!m.value.contains("exact = true")) {
+                    problems += "$suffix reads a frame without `exact = true` ($what): " +
+                        "the default is the nearest keyframe, which on a long-GOP file is a different picture " +
+                        "from the one at the playhead - and this one is aimed at."
+                }
+            }
+        }
+    }
+
     // ---- "Opened just to look" outlives the process. -----------------------
     //
     // A video opened by another app and never edited is binned when the editor
@@ -1275,11 +1310,28 @@ fun main() {
     // - so when the draft was applied the line came back with nothing left
     // pointing at it, and the project carried a caption reading "Your text" for
     // good, with no undo step for it either.
+    // The same gap, one composition wide rather than a whole draft read, was
+    // then found on a phone (8 October): `addText` sets the handle and opens
+    // the sheet from the tap handler while the line comes back through the view
+    // model a composition later, so the effect could still run against a state
+    // with no such line in it. The rule is `NewLineRules.lettingGo` now, which
+    // cannot let go of a line that is not there, and is executed in
+    // PolishRulesChecks - so this asserts the effect goes through it rather
+    // than spelling the condition out a second time.
     run {
         val screen = read("$SRC/editor/EditorScreen.kt")
         check(
-            Regex("""LaunchedEffect\(openTool, state\.selectedClipId, state\.isLoadingSource\) \{\s*\n\s*if \(state\.isLoadingSource\) return@LaunchedEffect""")
-                .containsMatchIn(screen),
+            screen.contains("NewLineRules.lettingGo("),
+            "the blank-line discard no longer goes through NewLineRules.lettingGo - it can clear newLineId " +
+                "against a state the line has not reached yet, and the line then comes back with nothing " +
+                "left to take it off"
+        )
+        check(
+            screen.contains("lineExists = state.textOverlays.any { it.id == id }"),
+            "the blank-line discard does not tell lettingGo whether the line is there, which is the whole of it"
+        )
+        check(
+            screen.contains("draftStillLoading = state.isLoadingSource"),
             "the blank-line discard runs before the draft has been read - it clears newLineId against an " +
                 "empty edit, and the line comes back with nothing left to take it off"
         )

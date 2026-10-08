@@ -158,14 +158,33 @@ object ThumbnailExtractor {
      * smooths the sensor noise that would otherwise make two adjacent taps on the
      * same green give two different answers.
      */
-    suspend fun frameAt(context: Context, uri: Uri, timeMs: Long): Bitmap? =
+    suspend fun frameAt(
+        context: Context,
+        uri: Uri,
+        timeMs: Long,
+        /**
+         * **The frame at that moment, not the nearest keyframe.** The default is
+         * the nearest keyframe, which is what a chip, a tile or a blurred
+         * backdrop wants: it is a seek with no decoding after it, and a picture
+         * a second out does not matter there.
+         *
+         * It matters very much where what is shown is then *acted on* at the
+         * playhead. The Track picker draws the box you are about to track on
+         * this frame and the tracker then starts from the playhead's own frame;
+         * on a long-GOP file those were seconds and a whole shot apart, so you
+         * aimed at one thing and tracked another. Seen on the phone on 8 October
+         * (`docs/DEVICE_FINDINGS.md` §46): at 0:00 the picker matched the
+         * preview, at 0:12.023 it showed a different shot entirely.
+         */
+        exact: Boolean = false
+    ): Bitmap? =
         withContext(Dispatchers.IO) {
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(context, uri)
                 retriever.getScaledFrameAtTime(
                     timeMs * 1000L,
-                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    if (exact) MediaMetadataRetriever.OPTION_CLOSEST else MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
                     SAMPLE_WIDTH_PX,
                     SAMPLE_HEIGHT_PX
                 )

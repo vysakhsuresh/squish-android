@@ -301,12 +301,16 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
      * was sampled from somewhere else. From the proxy when there is one - the
      * answer is scaled down to a few hundred pixels anyway, and decoding a 4K
      * frame to get there was most of the wait.
+     *
+     * **Exactly that frame**, not the nearest keyframe: what this returns is
+     * aimed at - a colour tapped out of it, a tracking box drawn on it - and
+     * then acted on at the playhead. See ThumbnailExtractor.frameAt's `exact`.
      */
     suspend fun sampleFrame(clip: Clip, atMs: Long): android.graphics.Bitmap? {
         val current = _state.value
         val uri = clip.uri ?: current.sourceUri ?: return null
         val inClip = clip.sourceAt(atMs).coerceIn(clip.sourceInMs, clip.sourceOutMs)
-        return ThumbnailExtractor.frameAt(app, analysisUriFor(uri, current), inClip)
+        return ThumbnailExtractor.frameAt(app, analysisUriFor(uri, current), inClip, exact = true)
     }
 
     /**

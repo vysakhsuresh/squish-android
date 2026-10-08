@@ -3982,3 +3982,44 @@ scanlines, noise and a colour shift. The **Reel template** lays a crop, a look
 and a bold "WATCH THIS" title on at once, as one step named "Undo: Template
 Reel". **Full screen** fills the screen with a scrub bar; a drag on it goes
 0:02.045 → 0:12.023 and closing full screen **keeps the frame**.
+
+### 46. The Track picker showed a different frame from the one you were aiming at (8 October)
+
+**Found on the phone, fixed, and seen fixed.** The Track panel's whole purpose is
+in its own comment: *"The picker shows the frame under the playhead with the box
+you are about to track drawn on it. That matters more than it sounds - tracking
+succeeds or fails almost entirely on what you select."*
+
+It did not show the frame under the playhead. `ThumbnailExtractor.frameAt` seeks
+with **`OPTION_CLOSEST_SYNC`** - the nearest *keyframe* - and on a long-GOP file
+that is seconds away. Driven:
+
+- playhead **0:00.000**: the picker and the preview agree (0 is a keyframe);
+- playhead **0:12.023**: the preview shows a woman in an orange sari among
+  leaves; **the picker shows a different shot entirely** - a woman in red by a
+  wooden door. You aim at a thing in one picture and the tracker, which starts
+  from the playhead's own frame, goes looking for it in another.
+
+Fixed by giving `frameAt` an `exact` flag (`OPTION_CLOSEST`, which decodes
+forward from the keyframe) and passing it from `AnalysisEdits.sampleFrame` - the
+Track picker and the eyedropper's sample - and from the **transition tiles**,
+which had the same hole: the tile is meant to be "the end of the one before, the
+start of this one", and a keyframe before a join can be a whole shot earlier.
+The default stays the fast seek, which is right for a filmstrip tile, a filter
+chip or a blurred backdrop.
+
+After, at **0:20.567** - deliberately not a keyframe - the picker and the preview
+are the same frame: same subject, same swing rope, same pose.
+
+*The check*: `tools/jvm/ControlChecks.kt` now refuses a `ThumbnailExtractor.frameAt`
+in either of those two files without `exact = true`, with the reason in the
+message. Negative-tested by taking the flag off `sampleFrame` and watching it
+fail.
+
+**And one I had let rot.** Running `ControlChecks` here turned up that §41's fix
+had broken its own guard: the check asserted the exact text of the
+`LaunchedEffect(openTool, state.selectedClipId, state.isLoadingSource)` line,
+which the fix had to change. It now asserts the effect goes through
+`NewLineRules.lettingGo` and tells it both of the things that matter, which is
+what the rule is. That is the cost of not running the suites after an editor
+change, written down.

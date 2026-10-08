@@ -90,15 +90,20 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
     // The tiles play each transition between the two real shots - the end of
     // the one before, the start of this one - instead of two grey boxes. Read
     // once per join; until they arrive the drawn shots stand in.
+    //
+    // Exactly those two frames, not the nearest keyframes: on a long-GOP file
+    // the keyframe before a join can be a whole shot earlier, so the tile would
+    // show a transition between two pictures that never meet (the same fault
+    // the Track picker had - ThumbnailExtractor.frameAt's `exact`).
     val context = LocalContext.current
     // See EffectsPanel: the lint check does not see these assignments.
     @Suppress("ProduceStateDoesNotAssignValue")
     val incomingFrame by produceState<ImageBitmap?>(null, clip.uri, clip.sourceInMs) {
-        value = clip.uri?.let { ThumbnailExtractor.frameAt(context, it, clip.sourceInMs + FRAME_INSET_MS)?.asImageBitmap() }
+        value = clip.uri?.let { ThumbnailExtractor.frameAt(context, it, clip.sourceInMs + FRAME_INSET_MS, exact = true)?.asImageBitmap() }
     }
     @Suppress("ProduceStateDoesNotAssignValue")
     val outgoingFrame by produceState<ImageBitmap?>(null, previous?.uri, previous?.sourceOutMs) {
-        value = previous?.let { p -> p.uri?.let { ThumbnailExtractor.frameAt(context, it, (p.sourceOutMs - FRAME_INSET_MS).coerceAtLeast(p.sourceInMs))?.asImageBitmap() } }
+        value = previous?.let { p -> p.uri?.let { ThumbnailExtractor.frameAt(context, it, (p.sourceOutMs - FRAME_INSET_MS).coerceAtLeast(p.sourceInMs), exact = true)?.asImageBitmap() } }
     }
     val shotName = state.shotName(clip)
 
