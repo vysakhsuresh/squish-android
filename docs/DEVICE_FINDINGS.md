@@ -4182,3 +4182,14 @@ is in neither the draft nor an explicit transient list. `clipsAreTheEdit` is a
 property of the **screen that built the state**, not of the edit, so it goes on
 the transient list with that reason written beside it. Negative-tested by taking
 it off again.
+
+### 52. The mask in the exported file (8 October)
+
+A **Heart** mask on the shot, rendered at 480p and the file read back: the
+exported frame carries **the same heart, the same soft feathered edge and black
+outside it** as the preview drew. The preview's mask shader and the export's are
+two different programs on two different paths, and on this phone they agree.
+
+With §51 that is B12's mask shape work settled on both sides for the shapes most
+likely to come apart - though a mask **tracked** onto something moving, and a
+keyed mask on a **retimed** clip, are still unseen.
