@@ -4251,3 +4251,47 @@ change cannot look like an edit. That is a change to `persist`, which is the
 single most dangerous function in the app, and the symptom is one cosmetic
 reordering per such build. Written down with the facts so it can be decided in
 daylight rather than at 05:45.
+
+### 55. What the night of 7-8 October settled, and what it did not
+
+**Fixed and seen fixed, in the order they were found:**
+
+| | |
+|---|---|
+| §47 | **The whole Fast lane was dead** - Snip, Squeeze, Extract audio and Save as GIF all refused themselves with "Nothing on the timeline", by yesterday's fix for an emptied edit. The worst thing here, and mine. |
+| §46 | **The Track picker showed a different frame** from the one being aimed at - `OPTION_CLOSEST_SYNC`, a whole shot away on a long-GOP file. The transition tiles had the same hole. |
+| §41 | **The text sheet's tab row jumped 59 px** on every tab tapped - the held sheet took the keyboard's inset where it needed the room the keyboard left - and **a sample line was kept for good** once in five tries, by a one-composition race. |
+| §40, §43 | **The storage card freed 21 MB of 694 and said nothing**; it now says what it freed and what the bin is holding, and the bin can be emptied. |
+
+**Verified, unchanged:** B5's export gates 1, 2, 3, 5 (Slide up) and 6 (§38, §39);
+the compact muxer at **1.2% container** (§38); a clip crop under a project frame,
+preview against file, to the pixel (§45); the look shader and its eight HSL band
+uniforms, and the mask shader's **heart and star**, on this phone's ES2 driver,
+in the preview *and* in the file (§44, §51, §52); **Record a voiceover** end to
+end (§42); the **beat detector** answering 112.0 BPM on a track labelled 112
+(§50); landscape's two panes carrying their players across a rotation while
+playing (§44); the editor on its side, full screen, frame stepping, Split,
+Rotate, Mirror, Stabilize, Templates and the effects library (§49); the owner's
+two reported faults - **the playhead moves with the finger and sticks, and the
+first clip starts at the left edge** (§37); Snip's trim handles, slow drag and
+fast (§48); **Fit to 16 MB** landing at 15,954,353 bytes (§48).
+
+**Written down, not fixed:** a project's date moves once per build that changes
+the edit's shape (§54), and ROADMAP §5 item 7 asks about the grid and tests the
+markers (§53).
+
+**Still unseen, and these are the ones a device still owes:** anything **by ear**
+- a voiceover heard back, a 300% sound, a fade, a voice effect; **auto-captions**
+from the recogniser, and everything downstream of them (the Words arrival, the
+transcript panel, "um and uh"); the **overshoot card** ("Keep this one / Try
+again, tighter"), which could not be made to show because the fit landed inside
+its limit; **Track and Stabilize on 60 fps footage** (ROADMAP §5 item 6); a
+**long export** for the blended-still cache (item 9); and an SRT written on a
+phone set to Arabic.
+
+**The phone was left as it was found**: 19 projects, 35 exports, 3 tool sessions,
+no test file in the gallery or in Music, `accelerometer_rotation 1`,
+`user_rotation 0`, `always_finish_activities 0`. The app still holds about a
+gigabyte, almost all of it this month's test debris held by 77 entries in
+Recently deleted - **"Empty it now" on that heading frees it** (§43), which is
+the owner's call to make, not mine.
