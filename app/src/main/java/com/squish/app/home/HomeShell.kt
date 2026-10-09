@@ -28,7 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -83,7 +83,7 @@ fun HomeShell(
     // Saved state, not remembered: the pane survives this screen going into the
     // back stack, so coming back from a library item lands on Library rather
     // than silently on Home.
-    var tab by rememberSaveable { mutableStateOf(HomeTab.Home) }
+    var tab by rememberSaveable { mutableStateOf(HomeTab.Projects) }
     val toolDrafts by viewModel.toolDrafts.collectAsState()
     val trashed by viewModel.trashed.collectAsState()
     val marked = HomeTabRules.markedTab(toolDrafts.size, trashed.size)
@@ -101,7 +101,7 @@ fun HomeShell(
 
     Box(modifier = Modifier.fillMaxSize().background(SquishColors.Background)) {
         when (tab) {
-            HomeTab.Home -> HomeScreen(
+            HomeTab.Projects -> HomeScreen(
                 onOpenProject = onOpenProject,
                 onOpenSettings = onOpenSettings,
                 bottomRoom = BAR_ROOM,
@@ -144,7 +144,7 @@ fun HomeShell(
                 if (HomeTabRules.retapScrollsToTop(tab, tapped)) {
                     scope.launch {
                         when (tapped) {
-                            HomeTab.Home -> homeList.animateScrollToItem(0)
+                            HomeTab.Projects -> homeList.animateScrollToItem(0)
                             HomeTab.Library -> libraryList.animateScrollToItem(0)
                             // One screen of tiles; there is nothing to scroll back.
                             HomeTab.Tools -> Unit
@@ -301,13 +301,13 @@ private fun BarItem(
 }
 
 private fun accentOf(tab: HomeTab): Color = when (tab) {
-    HomeTab.Home -> SquishColors.Primary
+    HomeTab.Projects -> SquishColors.Primary
     HomeTab.Tools -> SquishColors.Cyan
     HomeTab.Library -> SquishColors.Violet
 }
 
 private fun glyphOf(tab: HomeTab): ImageVector = when (tab) {
-    HomeTab.Home -> Icons.Filled.Home
+    HomeTab.Projects -> Icons.Filled.GridView
     HomeTab.Tools -> Icons.Filled.Bolt
     HomeTab.Library -> Icons.Filled.VideoLibrary
 }

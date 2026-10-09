@@ -360,15 +360,15 @@ fun main() {
     // down and got further away with every project added.
     run {
         // Back leaves the pane before it leaves the app, and leaves the app from
-        // Home. Anything else strands someone on Library with no way out but the
-        // bar - or, worse, makes back a no-op on Home.
-        check(HomeTabRules.backLandsOn(HomeTab.Tools) == HomeTab.Home, "back from Tools did not land on Home")
-        check(HomeTabRules.backLandsOn(HomeTab.Library) == HomeTab.Home, "back from Library did not land on Home")
-        check(HomeTabRules.backLandsOn(HomeTab.Home) == null, "back on Home did not leave the app")
+        // Projects. Anything else strands someone on Library with no way out but
+        // the bar - or, worse, makes back a no-op on the first pane.
+        check(HomeTabRules.backLandsOn(HomeTab.Tools) == HomeTab.Projects, "back from Tools did not land on Projects")
+        check(HomeTabRules.backLandsOn(HomeTab.Library) == HomeTab.Projects, "back from Library did not land on Projects")
+        check(HomeTabRules.backLandsOn(HomeTab.Projects) == null, "back on Projects did not leave the app")
 
-        // Three, and Home first: the pane a tap on the app lands in.
+        // Three, and Projects first: the pane a tap on the app lands in.
         check(HomeTab.entries.size == 3, "the bar grew a place: ${HomeTab.entries.map { it.label }}")
-        check(HomeTab.entries.first() == HomeTab.Home, "Home was not the first place in the bar")
+        check(HomeTab.entries.first() == HomeTab.Projects, "Projects was not the first place in the bar")
         check(HomeTab.entries.map { it.label }.none { it.isBlank() }, "a place in the bar had no name")
         check(
             HomeTab.entries.map { it.label }.toSet().size == 3,
@@ -391,10 +391,10 @@ fun main() {
         check(HomeTabRules.markedTab(1, 0) == HomeTab.Tools, "an unfinished session was not marked")
         check(HomeTabRules.markedTab(0, 1) == HomeTab.Tools, "something in the bin was not marked")
         check(HomeTabRules.markedTab(3, 92) == HomeTab.Tools, "both at once was not marked")
-        // Never Home or Library: Home is where a tap already lands, and an export
-        // is finished work rather than something to come back to.
+        // Never Projects or Library: Projects is where a tap already lands, and
+        // an export is finished work rather than something to come back to.
         check(
-            HomeTabRules.markedTab(3, 92) != HomeTab.Home && HomeTabRules.markedTab(3, 92) != HomeTab.Library,
+            HomeTabRules.markedTab(3, 92) != HomeTab.Projects && HomeTabRules.markedTab(3, 92) != HomeTab.Library,
             "the dot landed on the wrong place"
         )
     }

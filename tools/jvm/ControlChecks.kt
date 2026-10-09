@@ -20,7 +20,7 @@ import kotlin.system.exitProcess
 private val problems = mutableListOf<String>()
 
 /** The dashboard bar's three places, by name: this suite greps sources rather than compiling the app. */
-private val HomeTabNames = listOf("Home", "Tools", "Library")
+private val HomeTabNames = listOf("Projects", "Tools", "Library")
 private fun check(ok: Boolean, msg: String) { if (!ok) problems += msg }
 
 private const val SRC = "app/src/main/java/com/squish/app"

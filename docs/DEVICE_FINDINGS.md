@@ -4340,7 +4340,7 @@ four full swipes down and the Library door was past those. The things that
 should never move were the ones that moved most, and the longer the app was
 used the further away its own tools got.
 
-Home, Tools and Library are three panes of one destination now (`HomeShell`,
+Projects, Tools and Library are three panes of one destination now (`HomeShell`,
 and `HomeTab` for why), with a floating bar at the thumb's end of the phone.
 The bar is only ever on those three: the editor, the quick tools, the tool
 sessions, a library item, the export flow and Settings - where vertical room is
@@ -4354,18 +4354,18 @@ against the broken code.
 
 **Seen on the phone:**
 
-- The bar stands on all three panes, orange on Home, cyan on Tools, violet on
-  Library, with the cyan dot on Tools for the 3 tool sessions and 93 binned.
+- The bar stands on all three panes, orange on Projects, cyan on Tools, violet
+  on Library, with the cyan dot on Tools for the 3 tool sessions and 93 binned.
 - Every pane is one tap from the other two, at twenty projects.
-- A re-tap on Home, four swipes down the grid, flies back to the top.
-- Back from Tools and from Library lands on Home; back on Home leaves the app.
+- A re-tap on Projects, four swipes down the grid, flies back to the top.
+- Back from Tools and from Library lands on Projects; back there leaves the app.
 - The pane survives the back stack: Library → an export → back lands on
-  **Library**, not Home. That is what `rememberSaveable` on the nav entry buys.
+  **Library**, not Projects. That is what `rememberSaveable` on the nav entry buys.
 - Snip opens its picker from the Tools pane and two backs return to Tools; the
-  tool-sessions door opens and returns to Tools; a project opens from Home and
-  back returns to Home.
+  tool-sessions door opens and returns to Tools; a project opens from Projects
+  and back returns there.
 - `uiautomator dump`: **NAF 0**. Each place is a focusable node naming itself
-  ("Home", "Tools", "Library"), the current one carries `selected="true"`, and
+  ("Projects", "Tools", "Library"), the current one carries `selected="true"`, and
   the dot carries `content-desc="something waiting"` - a drawn circle with no
   text in it otherwise announces nothing.
 
@@ -4393,3 +4393,11 @@ settled; nothing else is lost by it, since the pane is already the one showing.
 end, created 05:59, draft `j5d64602…`) - a leftover of the night's testing. It
 was not deleted, because deleting somebody's project unasked is not this
 session's call to make.
+
+The first pane was called **Home** with a house glyph for its first day. It was
+renamed on 9 October: "Home" names where you are, which a bar already tells
+you, while **Projects** names what is behind it - and it makes the triad say
+something, work in progress · tools · finished work. Its glyph is a 2x2 grid
+(`Icons.Filled.GridView`), which is the grid of cards it opens onto. Seen on
+the phone, with the accessibility tree reading "Projects" on a node carrying
+`selected="true"` and NAF still 0.

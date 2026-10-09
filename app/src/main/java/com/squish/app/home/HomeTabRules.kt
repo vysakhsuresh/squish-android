@@ -18,7 +18,7 @@ package com.squish.app.home
  * short - never see it.
  */
 enum class HomeTab(val label: String) {
-    Home("Home"),
+    Projects("Projects"),
     Tools("Tools"),
     Library("Library")
 }
@@ -26,7 +26,7 @@ enum class HomeTab(val label: String) {
 object HomeTabRules {
     /** Where the system back gesture lands, or null to leave the app. */
     fun backLandsOn(current: HomeTab): HomeTab? =
-        if (current == HomeTab.Home) null else HomeTab.Home
+        if (current == HomeTab.Projects) null else HomeTab.Projects
 
     /**
      * A tap on the place you are already in scrolls that list back to the top
@@ -41,7 +41,7 @@ object HomeTabRules {
      * be clutter: what matters is only whether there is anything at all, since
      * that is the whole question the old door's subtitle answered.
      *
-     * Nothing is marked on Home or Library. Home is where a tap already lands,
+     * Nothing is marked on Projects or Library. Projects is where a tap lands,
      * and an export is finished work rather than a thing to come back to.
      */
     fun markedTab(unfinishedSessions: Int, binned: Int): HomeTab? =
