@@ -52,7 +52,17 @@ object ThumbnailExtractor {
             // access ran out - is a video with nothing known about it, not a crash.
             // This threw straight through to the main thread and took the whole
             // app down when an old draft was reopened.
-            return@withContext VideoMeta(durationMs = 0L, width = 0, height = 0, rotationDegrees = 0, fps = 30f)
+            //
+            // Or a file the *platform* cannot parse and the player can: the
+            // retriever and MediaExtractor share one set of container readers
+            // (MP4, Matroska, TS, Ogg…), and an AVI, an FLV, or an MKV whose
+            // first track is something odd returns nothing from them. The
+            // editor took "no length" for "no file" and dropped the clip without
+            // a word, while ExoPlayer and the export would have played it -
+            // its readers are Media3's own and cover more. So the player's own
+            // reader is asked before giving up.
+            return@withContext probeWithMedia3(context, uri)
+                ?: VideoMeta(durationMs = 0L, width = 0, height = 0, rotationDegrees = 0, fps = 30f)
         } finally {
             retriever.release()
         }
@@ -63,14 +73,68 @@ object ThumbnailExtractor {
         // backwards silently rotates every export. The extractor's width, height
         // and rotation-degrees are unambiguous: coded, and the tag separately.
         val track = probeVideoTrack(context, uri)
-        base.copy(
+        val merged = base.copy(
             width = track?.width?.takeIf { it > 0 } ?: base.width,
             height = track?.height?.takeIf { it > 0 } ?: base.height,
             rotationDegrees = track?.rotation ?: base.rotationDegrees,
             fps = track?.fps ?: 30f,
             hasAudio = track?.hasAudio ?: true
         )
+        // Opened but with no length or no picture measured: the same gap, met
+        // half way - a container the platform reads the header of and no more.
+        if (merged.durationMs <= 0L || merged.width <= 0 || merged.height <= 0) {
+            probeWithMedia3(context, uri)?.let { m3 ->
+                return@withContext merged.copy(
+                    durationMs = if (merged.durationMs > 0L) merged.durationMs else m3.durationMs,
+                    width = if (merged.width > 0) merged.width else m3.width,
+                    height = if (merged.height > 0) merged.height else m3.height,
+                    rotationDegrees = if (track?.rotation != null) merged.rotationDegrees else m3.rotationDegrees,
+                    fps = track?.fps ?: m3.fps,
+                    hasAudio = track?.hasAudio ?: m3.hasAudio
+                )
+            }
+        }
+        merged
     }
+
+    /**
+     * The file as the player reads it: length from the timeline, shape, turn
+     * and rate from the first video track's format, sound from any audio
+     * track. Null when Media3 cannot read it either, which is the real "no
+     * file". A width of zero is possible for a stream that declares none;
+     * the caller treats that as unknown, as it does the retriever's.
+     */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun probeWithMedia3(context: Context, uri: Uri): VideoMeta? = runCatching {
+        androidx.media3.inspector.MetadataRetriever.Builder(context, androidx.media3.common.MediaItem.fromUri(uri))
+            .build().use { retriever ->
+                val durationUs = retriever.retrieveDurationUs().get(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)
+                val groups = retriever.retrieveTrackGroups().get(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)
+                var video: androidx.media3.common.Format? = null
+                var hasAudio = false
+                for (g in 0 until groups.length) {
+                    val group = groups[g]
+                    for (t in 0 until group.length) {
+                        val format = group.getFormat(t)
+                        val mime = format.sampleMimeType ?: continue
+                        if (video == null && androidx.media3.common.MimeTypes.isVideo(mime)) video = format
+                        if (androidx.media3.common.MimeTypes.isAudio(mime)) hasAudio = true
+                    }
+                }
+                val durationMs = if (durationUs > 0L && durationUs != androidx.media3.common.C.TIME_UNSET) durationUs / 1000L else 0L
+                if (durationMs <= 0L && video == null && !hasAudio) return@use null
+                VideoMeta(
+                    durationMs = durationMs,
+                    width = video?.width?.takeIf { it > 0 } ?: 0,
+                    height = video?.height?.takeIf { it > 0 } ?: 0,
+                    rotationDegrees = video?.rotationDegrees ?: 0,
+                    fps = video?.frameRate?.takeIf { it > 1f && it < 1000f } ?: 30f,
+                    hasAudio = hasAudio
+                )
+            }
+    }.getOrNull()
+
+    private const val PROBE_TIMEOUT_S = 10L
 
     private data class TrackInfo(
         val width: Int,

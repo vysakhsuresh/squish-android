@@ -37,48 +37,50 @@ private fun readAll(dir: String): List<Pair<String, String>> =
         .map { it.path.replace('\\', '/') to it.readText() }.toList()
 
 fun main() {
-    // ---- A drag means one thing, and the edit starts at the left edge. -----
+    // ---- The film goes where the finger goes, under a playhead that holds. --
     //
-    // The third rewrite of this block, and the first two are the lesson. It
-    // began as a grep for `leadPx = viewportPx / 2f` and failed the day that
-    // was fixed; it then asserted the line sits at PLAYHEAD_FRACTION always,
-    // which *was* the next bug - placing the line by a constant scrolls the
-    // window a quarter-screen before 0:00, so the strip opens a quarter empty
-    // and the playhead cannot move at all. Both were reported in those words:
-    // "the new video added is starting after wasting space at start" and "the
-    // play head is still not movable".
+    // The fourth rewrite of this block. It began as a grep for `leadPx =
+    // viewportPx / 2f`; then asserted the line sits at a quarter always; then
+    // asserted the window is *clamped* at 0:00 and the drag *adds* its travel -
+    // and that last one passed for a week while the strip ran against every
+    // finger laid on it: "when I swipe to the left, video strip go right and
+    // vice versa". Each time it asserted the shape of the current fix, and
+    // each time the shape was the next bug.
     //
-    // Twice now this check has asserted the *shape* of an implementation. What
-    // it should always have held is the two things a person can actually see:
-    // the drag goes the way the finger goes, and nothing is wasted at the start.
-    // The second is arithmetic and is executed in WindowChecks. The first is
-    // one character in one expression, and is here.
+    // What a person can see, and what this now holds: the playhead is a fixed
+    // line in the middle (arithmetic, executed in WindowChecks), and the film
+    // moves **with** the finger, which with a fixed line means time runs
+    // *against* the finger's travel - the drag subtracts. That sign is one
+    // character in one expression, and the only way to hold it from outside a
+    // Compose gesture is to read it.
     run {
         val editor = read("$SRC/timeline/TimelineEditor.kt")
         val window = read("$SRC/timeline/TimelineWindow.kt")
-        // Time runs **with** the finger: a positive delta (the finger going
-        // right) takes the time forward. Written `from - ...` the film followed
-        // the finger and the playhead ran backwards against it, which is what
-        // was reported three separate times.
         // Literal text, not a pattern: each of these is one expression, and a
         // regex over them would be all escaping and no meaning.
         check(
-            editor.contains("val to = (from + w.msForPx(deltaPx))"),
-            "the strip's scrub no longer adds the drag delta - a finger to the right has to take the " +
-                "playhead to the right, at 0:00 and everywhere else"
+            editor.contains("val to = (from - w.msForPx(deltaPx))"),
+            "the strip's scrub no longer subtracts the drag delta - with the playhead fixed in the " +
+                "middle, a swipe to the left has to carry the film left and the time forward"
         )
-        // And what it reports consuming is in the same direction, or the
+        // And what it reports consuming is in the finger's direction, or the
         // scrollable state reads a fling that never settles.
         check(
-            editor.contains("w.pxForMs(to - from)"),
+            editor.contains("w.pxForMs(from - to)"),
             "the strip reports consuming the opposite of the drag it was given"
         )
-        // The window is clamped, so the edit sits against the left edge at the
-        // start rather than a quarter of a screen in.
+        // No clamp at 0:00: the clamp made the first quarter of every drag move
+        // the playhead across a still strip and the rest move the strip under a
+        // still playhead - two gestures for one thing, and the sign could only
+        // be right for one of them.
         check(
-            window.contains("if (lined.scrollMs > 0.0) lined else lined.copy(scrollMs = 0.0)"),
-            "TimelineWindow.linedOn no longer clamps its scroll at the start of the edit - the strip " +
-                "will open with a quarter of itself empty and the playhead nailed where it cannot move"
+            !window.contains("lined.copy(scrollMs = 0.0)"),
+            "TimelineWindow.linedOn clamps its scroll at the start of the edit again - the playhead " +
+                "will walk near 0:00 and hold after, and no drag sign is right for both"
+        )
+        check(
+            window.contains("const val PLAYHEAD_FRACTION = 0.5f"),
+            "the playhead has left the middle of the strip"
         )
         // One builder still, so the drawn strip and the live one cannot part.
         check(
@@ -1817,6 +1819,6 @@ fun main() {
     }
 
     println("controls: the conventions that, broken, make a control lie")
-    if (problems.isEmpty()) println("PASS - a drag takes the playhead the way the finger goes, the edit starts at the left edge, and every list has a branch for every entry")
+    if (problems.isEmpty()) println("PASS - the film goes where the finger goes under a playhead that holds in the middle, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }
 }

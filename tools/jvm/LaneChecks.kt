@@ -492,26 +492,19 @@ private fun window() {
             val w = TimelineWindow.linedOn(at, pps, density, vp)
             val line = vp * TimelineWindow.PLAYHEAD_FRACTION
             val tag = "lined $at at ${pps}pps ${vp}px x$density"
-            // The window is clamped at the start of the edit now, so the
-            // playhead is at the line only once it has got that far. Before
-            // that the strip is laid out from the left edge and the playhead
-            // walks across it - which is what stops a quarter-screen of the
-            // strip being wasted, and what lets the playhead move at all.
-            // These assertions used to say "at the line, always", which is the
-            // bug stated as a requirement; see WindowChecks for the same lesson.
-            check(w.scrollMs >= -1e-6, "$tag: scrolled before 0:00 (${w.scrollMs})")
+            // At the line, always - the middle, at 0:00 as at an hour in. The
+            // window was clamped at the start of the edit for a while, with the
+            // playhead walking across the first quarter; these assertions then
+            // held the walk, and the walk was the bug (WindowChecks has the
+            // whole of it). Below zero the scroll goes, and must: at 0:00 the
+            // strip is drawn from half a screen before the edit.
             if (vp > 0) {
                 val x = w.xPx(at.toLong())
                 val slack = 1f + (at - at.toLong()).toFloat() * pps * density / 1000f
-                check(x <= line + slack, "$tag: playhead past the line at $x")
-                check(x >= -slack, "$tag: playhead off the left edge at $x")
-                check(w.xPx(0L) <= slack, "$tag: the start of the edit is right of the left edge")
-                // Where it is not clamped, the old equalities still hold exactly.
-                if (w.scrollMs > 1e-6) {
-                    check(abs(w.lineMs - at) < 1e-6, "$tag: line ${w.lineMs}")
-                    check(abs(x - line) <= slack, "$tag: playhead at $x")
-                    check(abs(w.exactMsAt(line) - at) < 1e-6, "$tag: exactMsAt ${w.exactMsAt(line)}")
-                }
+                check(abs(w.lineMs - at) < 1e-6, "$tag: line ${w.lineMs}")
+                check(abs(x - line) <= slack, "$tag: playhead at $x, line $line")
+                check(abs(w.exactMsAt(line) - at) < 1e-6, "$tag: exactMsAt ${w.exactMsAt(line)}")
+                if (at == 0.0) check(w.scrollMs < 0.0, "$tag: the strip at 0:00 is not scrolled before the edit")
             }
             // Left of the start: nothing negative is ever sought.
             check(w.msAt(0f) >= 0L, "$tag: msAt below zero")

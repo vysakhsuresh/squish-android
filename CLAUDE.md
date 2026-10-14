@@ -133,6 +133,15 @@ function first; if it can, it can be checked.
   **Never edit a runner while one is running**: `sh` reads the script at byte
   offsets as it goes, so inserting a line near the top sends the running shell
   into the middle of a later one.
+- **Never touch a source file while a Gradle build is running** - not an edit,
+  not a `sed`-and-restore negative test of a check. On 14 October a negative
+  test put a clamp back into `TimelineWindow.kt` while a background build was
+  compiling and restored it after; the APK came out with the clamp and
+  `compileDebugKotlin` then reported UP-TO-DATE against the restored source, so
+  a second build changed nothing. Two installs and two device tests were spent
+  on a fix that was never in the APK. `dexdump` (in build-tools) on the APK's
+  class is how that was found; `./gradlew clean assembleDebug` is the cure.
+  Negative-test on a copy in the scratchpad - `jc.sh` takes any path.
 - **An APK older than a source file is not necessarily stale.** Gradle keys its
   tasks on content, not on time, so restoring a file byte-for-byte - which is
   what every negative test here does, `cp` the backup back after watching the
@@ -234,6 +243,18 @@ not here.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **14 October: the strip's model, the media library, the live playhead and
+  two widened gates.** Most of it was seen on the moto that night
+  (`docs/DEVICE_FINDINGS.md` §58): the playhead fixed in the middle with the
+  film following the finger and keeping its momentum; the in-app media grid
+  over MediaStore reading 54,486 items with album chips and tap-ordered
+  picking; scrubbing at 16 ms a frame and playback at about 46 strip updates
+  a second on the release build; frame steps right after a pause. Not seen:
+  an iPhone HDR clip through `MediaCompat`'s new alternative-decoder path, an
+  AVI through `ThumbnailExtractor.probe`'s Media3 fallback, the strip carried
+  between ticks on a retimed shot, Add an overlay and Replace through the
+  library, Android 14's partial access, and whether `StockVideoSheet`, still
+  a `Dialog`, sits under the navigation bar the way the library did.
 - **The third sweep's twenty-six fixes (5 October).** A sweep for the class of
   fault the user found - a control whose direction, sign or label contradicts
   what you see - over nine groups of files and three lenses, two adversarial
@@ -1382,6 +1403,16 @@ should work through it and then delete what holds up.
   it earns its keep - it is what refuses a GoPro's "GH010123" - and one letter
   is enough from a script whose words are that short. Count code points, not
   chars: a surrogate half is not a letter.
+- **The playhead is a fixed line in the middle of the strip, and the film goes
+  where the finger goes.** `TimelineWindow.PLAYHEAD_FRACTION` is 0.5, `linedOn`
+  does not clamp at 0:00 (the first clip starts at the line with half a screen
+  empty to its left, as in InShot and CapCut), and the drag *subtracts* its
+  travel so a swipe left takes time forward. This number has been set four
+  times and the comment on it says what each of the other three was reported
+  as; the fourth report was "when I swipe to the left, video strip go right".
+  `WindowChecks` executes the model and `ControlChecks` reads the sign. Do not
+  reintroduce a walking playhead near the start: with a line that walks and
+  then holds, no one drag sign is right for both halves.
 - **Time runs left to right.** Both strips compute a left-origin pixel from a
   moment and place it with `offset`, which mirrors in RTL (`absoluteOffset` is
   the one that does not), while the playhead and the drag deltas do not - so on

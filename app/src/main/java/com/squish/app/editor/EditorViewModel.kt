@@ -52,7 +52,10 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -376,8 +379,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** The playhead advancing under playback. Never moves the players. */
-    fun setPlayhead(ms: Long) =
+    fun setPlayhead(ms: Long) {
+        liveScrubMs = null
         _state.update { it.copy(playheadMs = ms.coerceIn(0L, it.timelineDurationMs)) }
+    }
 
     /**
      * A deliberate jump - scrubbing the ruler, a nudge, a snap to a marker. The
@@ -393,7 +398,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * start of a shot, the end of one, a beat, a marker — free, and a drag of
      * more than the threshold still goes wherever it is put.
      */
-    fun scrubTo(ms: Long) = _state.update { current ->
+    fun scrubTo(ms: Long) {
+        liveScrubMs = null
+        scrubToSnapped(ms)
+    }
+
+    private fun scrubToSnapped(ms: Long) = _state.update { current ->
         val target = ms.coerceIn(0L, current.timelineDurationMs)
         // Always: the switch is "Snap to markers and beats", and cuts, 0:00 and
         // the end are not markers - the strip's own rule, stated twice in
@@ -410,7 +420,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * [Timecode.frameStep]. Not snapped, unlike a scrub: a step that landed on
      * a nearby cut instead would not be a frame.
      */
-    fun stepFrames(frames: Int) = _state.update {
+    fun stepFrames(frames: Int) {
+        liveScrubMs = null
+        stepFramesNow(frames)
+    }
+
+    private fun stepFramesNow(frames: Int) = _state.update {
         val shot = it.baseClipAt(it.playheadMs)
         val target = if (shot == null) Timecode.frameStep(it.playheadMs, frames, it.fps)
         else Timecode.frameStep(
@@ -434,8 +449,58 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * second key beside the first. The strip's own keyframe tap was moved here
      * for that reason; the sheets' were not.
      */
-    fun seekTo(ms: Long) = _state.update {
-        it.copy(playheadMs = ms.coerceIn(0L, it.timelineDurationMs), scrubNonce = it.scrubNonce + 1)
+    fun seekTo(ms: Long) {
+        liveScrubMs = null
+        _state.update { it.copy(playheadMs = ms.coerceIn(0L, it.timelineDurationMs), scrubNonce = it.scrubNonce + 1) }
+    }
+
+    /**
+     * The strip's drag, outside [state]: every pointer event's moment goes to
+     * the preview through [liveScrub] and the edit's own playhead is written
+     * at most every [LIVE_COMMIT_MS], then exactly once more when the finger
+     * lifts ([commitScrub]).
+     *
+     * Through [seekTo] a scrub cost a whole-editor recomposition per frame -
+     * every child of the screen takes [state] and a new playhead is a new
+     * state - and a release build measured 21 ms a frame under the finger on
+     * a 120 Hz phone (`docs/DEVICE_FINDINGS.md` §58). The strip draws itself
+     * from its own held moment while a finger is on it, and the preview seeks
+     * from this flow; nothing else needs the playhead more than a few times a
+     * second until the drag is over. Latest-wins: a seek that was overtaken
+     * before the preview collected it was never worth making.
+     */
+    private val _liveScrub = MutableSharedFlow<Long>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val liveScrub: SharedFlow<Long> = _liveScrub
+    /**
+     * The last live moment, waiting to be committed - and **cleared by every
+     * other writer of the playhead** (setPlayhead, seekTo, scrubTo, stepFrames),
+     * so a commit that arrives after a later deliberate move cannot put the
+     * drag's moment back over it. The strip reports its release through a
+     * LaunchedEffect, a frame or more after the finger, and the first version
+     * of this let a stale commit land on top of a frame step.
+     */
+    private var liveScrubMs: Long? = null
+    private var liveCommittedAt = 0L
+
+    fun scrubLive(ms: Long) {
+        val target = ms.coerceIn(0L, _state.value.timelineDurationMs)
+        liveScrubMs = target
+        _liveScrub.tryEmit(target)
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - liveCommittedAt >= LIVE_COMMIT_MS) {
+            liveCommittedAt = now
+            // No nonce: the preview has already gone there through the flow, and a
+            // nonce would seek it a second time to the same place.
+            _state.update { it.copy(playheadMs = target) }
+        }
+    }
+
+    /** The finger has left the strip: the last live moment becomes the edit's playhead. */
+    fun commitScrub() {
+        val target = liveScrubMs ?: return
+        liveScrubMs = null
+        liveCommittedAt = android.os.SystemClock.uptimeMillis()
+        _state.update { it.copy(playheadMs = target.coerceIn(0L, it.timelineDurationMs)) }
     }
 
     private var showJob: Job? = null
@@ -1648,5 +1713,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         const val SHOW_START_SLACK_MS = 2_500L
         /** Played before and after a shown transition, so the cut it smooths is seen. */
         const val SHOW_AROUND_MS = 400L
+        /** How often a drag of the strip writes the playhead into the edit; see scrubLive. */
+        const val LIVE_COMMIT_MS = 250L
     }
 }

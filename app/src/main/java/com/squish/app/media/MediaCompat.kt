@@ -10,6 +10,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.inspector.MetadataRetriever
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -104,7 +105,21 @@ object MediaCompat {
         // Already samples; the sink plays them without a decoder.
         if (mime == MimeTypes.AUDIO_RAW) return true
         val decoders = runCatching { MediaCodecUtil.getDecoderInfos(mime, false, false) }.getOrDefault(emptyList())
-        return decoders.any { runCatching { it.isFormatSupported(context, format) }.getOrDefault(false) }
+        if (decoders.any { runCatching { it.isFormatSupported(context, format) }.getOrDefault(false) }) return true
+        // **The decoders the player itself would fall back to.** An iPhone's HDR
+        // video - the default on every iPhone since the 12 - is Dolby Vision
+        // profile 8.4, which the MP4 reader labels `video/dolby-vision`; almost
+        // no phone has a decoder by that name, and the player plays the file
+        // anyway, through its HEVC decoder, because profiles 8 and 9 carry a
+        // plain HEVC or H.264 base layer (MediaCodecVideoRenderer asks
+        // getAlternativeDecoderInfos exactly as this does). Asking only for
+        // the named decoder refused every one of those files with "Dolby
+        // Vision cannot be decoded" while the phone's own gallery played them.
+        // Same for E-AC-3 JOC (Atmos) falling back to E-AC-3.
+        val alternatives = runCatching {
+            MediaCodecUtil.getAlternativeDecoderInfos(MediaCodecSelector.DEFAULT, format, false, false)
+        }.getOrDefault(emptyList())
+        return alternatives.any { runCatching { it.isFormatSupported(context, format) }.getOrDefault(false) }
     }
 
     /** The format as someone holding the file would know it - the name on a release, not a MIME type. */

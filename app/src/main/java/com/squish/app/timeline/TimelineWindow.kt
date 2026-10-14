@@ -153,41 +153,39 @@ data class TimelineWindow(
 
     companion object {
         /**
-         * How far across the strip the playhead is allowed to get before the
-         * film starts moving under it instead.
+         * Where the playhead line sits, as a fraction of the strip's width:
+         * **the middle, at every moment, 0:00 included.**
          *
-         * **Read that again, because it is not what this number used to mean.**
-         * It was "where the line sits, always", and the window was built so that
-         * the playhead was at a quarter at *every* moment - including 0:00,
-         * where that means scrolling a quarter of a screen *before the start of
-         * the edit*. Two things followed, and the person who uses this reported
-         * both, twice:
+         * This is the fourth setting of this number and the model behind it is
+         * the one every phone editor uses - InShot, CapCut, VN, KineMaster: the
+         * line is fixed in the centre, the film moves under it, and at the start
+         * of the edit the left half of the strip is empty, with the first clip
+         * beginning at the line. The three earlier settings and what each one
+         * earned, so nobody tries them again:
          *
-         *  - "the new video added is starting after wasting space at start" -
-         *    a quarter of the strip empty, every time, with the clip pushed off
-         *    the left edge;
-         *  - "the play head is still not movable" - of course it was not. It was
-         *    nailed to a quarter by construction. Dragging moved the film and
-         *    the line stayed put, which is not what anyone means by moving the
-         *    playhead.
+         *  - **a quarter, fixed**, with the strip scrolled before 0:00 at the
+         *    start: "the new video added is starting after wasting space at
+         *    start" and "the play head is still not movable";
+         *  - **a quarter, walking** - the window clamped at 0:00 so the strip was
+         *    left-aligned and the playhead walked across the first quarter before
+         *    holding: the strip stood still under the first quarter of every
+         *    drag and then moved for the rest of it, two gestures for one thing;
+         *  - and with that, **time running with the finger** (TimelineEditor's
+         *    drag *added* the travel): the playhead walking right under a finger
+         *    going right was consistent with itself, but once the line held the
+         *    *film* ran against the finger - "when I swipe to the left, video
+         *    strip go right and vice versa", reported after the model had been
+         *    reported three times already.
          *
-         * So the window is clamped at zero now ([linedOn]). Before the playhead
-         * reaches this fraction the strip is **left-aligned** - the edit starts
-         * at the left edge, nothing is wasted - and the playhead walks right
-         * across it. From there on the playhead holds at this fraction and the
-         * film scrolls under it, which is what keeps the rest of the edit in
-         * front of you on a long timeline.
-         *
-         * The inversion that started all of this - drag right, playhead goes
-         * left - is *not* fixed by nailing the line down. It was the drag's
-         * sign: the strip subtracted the finger's travel from the time, so the
-         * film followed the finger and time ran backwards against it. It adds
-         * now (see TimelineEditor's `scrollable`), so a finger to the right is
-         * always time forward, whether the strip can scroll or not. One meaning,
-         * everywhere, which is what the old comment here was reaching for and
-         * got at the cost of both complaints above.
+         * What holds now, and what WindowChecks executes: the line is at the
+         * centre at every moment and zoom; the film moves exactly with the
+         * finger (the drag *subtracts* its travel from the time, see
+         * TimelineEditor's `scrollable`) and keeps its momentum; and the start
+         * of the edit is drawn at the line when the playhead is at 0:00. The
+         * empty half-screen before 0:00 is not waste: it is what lets the first
+         * frame sit under the playhead like every other frame.
          */
-        const val PLAYHEAD_FRACTION = 0.25f
+        const val PLAYHEAD_FRACTION = 0.5f
 
         /**
          * The window with [atMs] at [atPx] pixels from the strip's left edge.
@@ -248,26 +246,20 @@ data class TimelineWindow(
         }
 
         /**
-         * The strip's window: [atMs] under the playhead line, **or the start of
-         * the edit against the left edge, whichever leaves nothing wasted**.
+         * The strip's window: [atMs] under the playhead line, always.
          *
-         * The clamp is the whole fix for "the new video added is starting after
-         * wasting space at start". Without it the scroll at 0:00 is a quarter of
-         * a screen *before* zero, so the strip opens with a quarter of itself
-         * empty and the clip pushed off the left edge - and the playhead can
-         * never move, because it is placed by construction at a fraction that
-         * does not depend on the time.
-         *
-         * With it, the first quarter-screen of an edit is drawn from the left
-         * edge and the playhead walks across it; after that the playhead holds
-         * and the film moves. Both halves map time to x monotonically, which is
-         * the property that makes a drag mean one thing (WindowChecks executes
-         * it over every zoom, viewport and moment).
+         * Not clamped at the start of the edit. It was, for a while (see
+         * [PLAYHEAD_FRACTION] for what that cost), and the clamp meant the first
+         * quarter of every drag moved the playhead instead of the film. With the
+         * scroll free to go negative, the strip at 0:00 is drawn from half a
+         * screen before the edit, the first clip starts at the line, and one
+         * finger movement means one thing from the first frame to the last.
+         * Nothing before zero is ever *sought* - [msAt] floors at zero, and the
+         * scrubber clamps the playhead to the edit - so the empty half is only
+         * ever looked at.
          */
-        fun linedOn(atMs: Double, pixelsPerSecond: Float, density: Float, viewportPx: Int): TimelineWindow {
-            val lined = scrolledSoThat(atMs, viewportPx * PLAYHEAD_FRACTION, pixelsPerSecond, density, viewportPx)
-            return if (lined.scrollMs > 0.0) lined else lined.copy(scrollMs = 0.0)
-        }
+        fun linedOn(atMs: Double, pixelsPerSecond: Float, density: Float, viewportPx: Int): TimelineWindow =
+            scrolledSoThat(atMs, viewportPx * PLAYHEAD_FRACTION, pixelsPerSecond, density, viewportPx)
     }
 }
 

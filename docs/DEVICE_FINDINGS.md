@@ -4401,3 +4401,164 @@ something, work in progress · tools · finished work. Its glyph is a 2x2 grid
 (`Icons.Filled.GridView`), which is the grid of cards it opens onto. Seen on
 the phone, with the accessibility tree reading "Projects" on a node carrying
 `selected="true"` and NAF still 0.
+
+### 58. The strip ran against the finger, and the picker hid the videos (14 October)
+
+The first person to cut a real event on this app - an editor by trade, an Onam
+celebration, filmed on his own phone - came back with three things, and then
+used InShot instead: some of the videos he had just shot were **not in the
+library**, some **gave errors**, and the timeline **moved the wrong way**:
+"when I swipe to the left, video strip go right and vice versa". The owner
+added that the playhead had been reported more than once already.
+
+**The strip.** Seen on the moto, this build. The model is now the one every
+phone editor has and the one he was comparing against:
+
+- the playhead is a fixed line **in the middle** of the strip at every moment,
+  0:00 included - the first clip begins at the line, with half a screen of
+  empty strip to its left (`TimelineWindow.PLAYHEAD_FRACTION = 0.5f`, and
+  `linedOn` no longer clamps the scroll at the start);
+- the **film goes where the finger goes**: a swipe left carries the strip left
+  and the time forward (the drag *subtracts* its travel, `TimelineEditor`'s
+  `scrollable`), and a 400 px swipe left took the playhead from 0:00 to 0:11.8
+  with the ruler and the clip moving under the line;
+- a fast swipe keeps its **momentum**: a 600 px fling right from 0:11.8 carried
+  the strip back to 0:00 and stopped there, on the edit's start.
+
+What it was: the window was clamped at 0:00 so the strip sat left-aligned and
+the playhead *walked* across the first quarter before holding, and the drag
+*added* its travel - right for the walk, wrong for the whole of the rest of the
+edit, where the line holds and the film moves. Two regimes, one sign, and the
+sign had been flipped twice before. The three earlier settings and what each
+was reported as are written at `PLAYHEAD_FRACTION`, so nobody tries them a
+fourth time. `WindowChecks` now holds the line at the centre at every zoom and
+moment and executes the drag's arithmetic (a swipe left takes time forward, a
+swipe past either end owns up to the pixels it could not use, which is what
+stops a fling there); `ControlChecks` reads the sign; both were broken on a copy
+and watched fail.
+
+**And a lesson that cost two installs:** the first build after the fix still
+walked the playhead. The negative test had put the clamp back into the real
+file while a background Gradle build was compiling, and restored it after; the
+APK carried the clamp and `compileDebugKotlin` reported UP-TO-DATE against the
+restored source. `dexdump` on the APK's `linedOn` showed the `cmpl-double`, and
+`clean assembleDebug` cleared it. Never touch a source file while a build runs;
+negative-test on a copy.
+
+**The library.** The only way in was the system photo picker, which lists what
+the phone's media provider chooses to list - a curated subset that differs by
+phone and leaves out files in folders it does not count as galleries, types it
+does not recognise, and whatever the OEM's build decided. InShot and CapCut
+draw their own grid from MediaStore, the index itself. So does Squish now
+(`media/MediaLibrary.kt`, `ui/components/MediaLibrarySheet.kt`): every photo
+and video the phone has scanned, newest first, with album chips by size
+("WhatsApp Images · 46516", "Screenshots"…), Videos / Photos filters (an
+editor opens on Videos), tap order as the order they land, an order badge on
+each, "Add N", and the system picker and the file browser as two doors at the
+foot of the sheet. Seen on the moto: **54,486 items** read in under four
+seconds, tiles through the provider's own thumbnail store, two videos picked
+and landed as a two-clip project. New project on the dashboard, Add media,
+Add an overlay and Replace in the editor all open it.
+
+Two things it taught about the screen itself: in a Compose `Dialog` here the
+navigation bar's inset was never reported, with or without
+`decorFitsSystemWindows`, so the grid's last row and both doors sat under the
+bar - the sheet is laid in the screen's own tree now, over everything, and
+tells the dashboard's shell to take its floating bar away while it is up
+(`HomeScreen.onCovered`). The permissions are `READ_MEDIA_IMAGES` and
+`READ_MEDIA_VIDEO`, with `READ_MEDIA_VISUAL_USER_SELECTED` declared so Android
+14's "Select photos" answer reads as partial access with a "Select more" row
+rather than as a refusal; on this Android 15 phone the prompt offered limited
+access, all, or none, and "Allow all" filled the grid.
+
+**The errors.** Nobody remembers the files, so the cause is reasoned, not seen,
+and two gates were widened for the classes that fit an event filmed on a
+modern phone:
+
+1. `MediaCompat.decodable` asked only for a decoder *named* for the track's
+   type. An iPhone's HDR video - the default on every iPhone since the 12 - is
+   Dolby Vision profile 8.4, which the MP4 reader labels `video/dolby-vision`;
+   almost no Android phone has a decoder by that name, and the player plays
+   the file anyway through its HEVC decoder, because profile 8 carries a plain
+   HEVC base layer. The gate refused every such file with "Dolby Vision cannot
+   be decoded" while the phone's own gallery played it. It now asks for the
+   decoders the player itself falls back to (`getAlternativeDecoderInfos`),
+   which also covers Atmos (E-AC-3 JOC) falling back to E-AC-3.
+2. `ThumbnailExtractor.probe` read a file with the platform's
+   `MediaMetadataRetriever` and `MediaExtractor` alone, and a file they cannot
+   parse - an AVI, an FLV, a Matroska with an odd first track - came back with
+   no length, which the editor took for "no file" and **dropped without a
+   word** (`loadFresh` filters on `durationMs > 0`), while ExoPlayer and the
+   export, whose container readers are Media3's own and cover more, would have
+   played it. The probe now asks Media3's `MetadataRetriever` when the platform
+   gives nothing or no shape.
+
+What a device with such files still has to answer: an iPhone HDR clip opening
+and playing on a phone with a 10-bit HEVC decoder (the moto has none, hardware
+or software, so it is the wrong phone for this), and an AVI landing on the
+track and exporting. What no gate can fix is a phone that has no decoder for a
+format at all - HEVC Main 10 on this moto - and that is said to the user by
+`MediaCompat` as before. A software decoder would close that (nextlib's
+`media3ext` ships FFmpeg decoders for H.264, HEVC, VP8, VP9 and AV1 as Media3
+renderers, published for exactly this Media3 version, 1.11.1-0.16.0), but it
+is **GPL-3.0**, which is a licence decision for the owner and not this
+session's to make - and it would carry the preview only; the export decodes
+through MediaCodec.
+
+**Speed, measured on the release-signed build** (`assemblePerf`, the phone at
+120 Hz, `dumpsys gfxinfo` over three slow drags of the strip and over four
+seconds of playback):
+
+| | before | after |
+|---|---|---|
+| scrub, median frame | 21 ms | 16 ms |
+| scrub, 90th percentile | 38 ms | 25-30 ms |
+| scrub, janky frames | 36% | 16-28% |
+| playback, median frame | 10 ms, 30 strip updates/s | 12 ms, ~46 strip updates/s |
+
+What was spent where, read off `am profile --sampling` on the release build
+(the manifest now carries `<profileable android:shell="true"/>` so a release
+frame can be sampled at all, and the R8 mapping translates the names): a drag
+went through `seekTo` into the one big `EditorUiState`, every child of the
+screen takes that state, and a new playhead is a new state - so each pointer
+event recomposed the whole editor, 27% of the main thread. Now the strip's
+per-frame seeks go to the preview through a latest-wins flow
+(`EditorViewModel.scrubLive`, `liveScrub`) and the edit's playhead is written
+every 250 ms and once on release (`commitScrub`); and the playhead the preview
+reports tick by tick goes to the strip alone through a `MutableLongState`
+(`EditorScreen`'s `livePlayhead`, read by `TimelineEditor.livePlayheadMs`),
+with the state echoed every 250 ms while playing and at once when paused -
+the echo used to recompose the whole editor thirty times a second whenever
+anything played. Between the engine's 33 ms ticks the strip is carried at the
+rate the last two ticks measured (`PlayAnchor`, `withFrameNanos`), which is
+what took playback from 30 strip updates a second to about 46. What is left
+is the strip's own recomposition each frame - its window is new each frame
+and its body re-runs - plus Compose pointer dispatch through the lanes'
+handlers (7%) and the draw (4%). Getting from 16 ms to the 8 ms a 120 Hz
+screen wants means the window moving by a layer translation only, with the
+body not re-run; not done.
+
+**One fault this introduced and the device caught**: the first frame step
+after a pause went *backwards* by a frame (paused at 8.753, stepped forward to
+8.724), because the stopping echo sat inside "if the position moved" and a
+pause lands on a tick whose position is the previous tick's - so the edit's
+playhead stayed up to a quarter-second behind the picture and the step was
+counted from there. Echoed on stopping regardless now; and every other writer
+of the playhead clears a pending drag commit, so a release that reports late
+cannot put the drag's moment back over a later step. Seen right after: pause
+3.067 → 3.103 → 3.137 → back 3.103; swipe to 18.113 → step 18.172.
+
+**Not seen, from this session:** an iPhone HDR (Dolby Vision 8.4) clip
+opening through the widened gate; an AVI or FLV landing through the Media3
+probe; the strip carried between ticks on a *retimed* shot (the rate is
+measured, so a 2x shot should move at 2x with no jitter at a tick); Add an
+overlay and Replace through the library (New project and Add media were
+driven); Android 14's partial access and its "Select more" row; and whether
+the stock-footage sheet, still a `Dialog`, has the same navigation-bar
+problem the library had.
+
+**Left on the phone:** the media permission granted. The ten `Edit · 14 Oct`
+projects the tests made (nine on the 29-second squish export, one two-clip)
+were binned through the app's own multi-select Delete - "Deleted 10 projects"
+with Undo - so they are in Recently deleted for 30 days, and the owner's own
+projects are as they were.

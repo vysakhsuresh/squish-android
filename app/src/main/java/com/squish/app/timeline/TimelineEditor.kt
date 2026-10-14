@@ -276,6 +276,15 @@ fun TimelineEditor(
      */
     onScrubbingChange: (Boolean) -> Unit = {},
     /**
+     * The moment under the playhead as the preview reports it, tick by tick -
+     * read here, where the film has to move every frame, and nowhere else at
+     * that rate. The edit's own playhead ([state]) follows a few times a second
+     * while playing, which is all the toolbar and the sheets need; routing the
+     * per-tick position through it recomposed the whole editor thirty times a
+     * second (`docs/DEVICE_FINDINGS.md` §58). Null reads [state] instead.
+     */
+    livePlayheadMs: (() -> Long)? = null,
+    /**
      * Only the ruler and the row the selection is on, while a tool's sheet has
      * the room below.
      */
@@ -360,18 +369,16 @@ fun TimelineEditor(
      * strip because the playhead moves.
      */
     var heldMs by remember { mutableStateOf<Double?>(null) }
-    val centre = heldMs ?: state.playheadMs.toDouble()
+    val centre = heldMs ?: (livePlayheadMs?.invoke() ?: state.playheadMs).toDouble()
 
     /**
      * The window onto the edit. Only what is on screen is built, so what the strip
      * costs to lay out does not depend on how long the video is, and a three-hour
      * clip zooms to the frame exactly like a three-second one.
      */
-    // On the playhead, clamped at the start of the edit: before the playhead
-    // has got a quarter of the way across, the strip is left-aligned and the
-    // playhead walks; after that the playhead holds and the film moves. See
-    // TimelineWindow.PLAYHEAD_FRACTION and linedOn, which carry the whole of
-    // why - and the two complaints the old "line that never moves" earned.
+    // The playhead in the middle at every moment and the film moving under it,
+    // 0:00 included. See TimelineWindow.PLAYHEAD_FRACTION for the three earlier
+    // models and what each was reported as.
     val window = TimelineWindow.linedOn(
         atMs = centre,
         pixelsPerSecond = state.pixelsPerSecond.coerceIn(MIN_PPS, MAX_PPS),
@@ -408,6 +415,9 @@ fun TimelineEditor(
     val latestZoomTo by rememberUpdatedState(onZoomTo)
     val latestWindow by rememberUpdatedState(window)
     val latestState by rememberUpdatedState(state)
+    val latestLive by rememberUpdatedState(livePlayheadMs)
+    /** Where the playhead is right now, for a gesture that starts from it. */
+    fun playheadNow(): Long = latestLive?.invoke() ?: latestState.playheadMs
     // What a drag snaps to: the markers and the beat dots alike - and neither
     // with the switch off. Cuts and the playhead always snap; the marks were
     // folded in whatever the switch said, so at "Every beat" on a 120 BPM song
@@ -446,23 +456,19 @@ fun TimelineEditor(
         val end = s.durationMs.coerceAtLeast(0L).toDouble()
         // From the edit as it is: a playhead left past the end of a shortened
         // edit would otherwise report a step the opposite way to the finger.
-        val from = (scrubRawMs ?: heldMs ?: s.playheadMs.toDouble()).coerceIn(0.0, end)
-        // **Plus, not minus, and this is the fix for the thing that was reported
-        // three times.** It used to subtract: the finger moved the film and time
-        // ran the other way, so a drag to the right took the playhead left. That
-        // is the gesture every desktop editor uses for a *scroll bar*, and the
-        // reason it was chosen here was that near 0:00 the strip could not
-        // scroll, so the same drag had to mean the opposite thing - the fix then
-        // was to nail the line down so the strip could always scroll, which
-        // bought consistency at the price of a quarter-screen of wasted space
-        // and a playhead that by construction could not move.
-        //
-        // The honest answer is that the finger is on the playhead, not on a
-        // scroll bar: drag right, the playhead goes right, time goes forward,
-        // at 0:00 and at the end and everywhere between. Nothing has to be
-        // nailed down for that to hold, so the window is free to sit against
-        // the left edge at the start (TimelineWindow.linedOn).
-        val to = (from + w.msForPx(deltaPx)).coerceIn(0.0, end)
+        val from = (scrubRawMs ?: heldMs ?: playheadNow().toDouble()).coerceIn(0.0, end)
+        // **Minus. The finger is on the film, and the film goes where the finger
+        // goes.** The playhead is a fixed line in the middle of the strip
+        // (TimelineWindow.PLAYHEAD_FRACTION), so a swipe to the left carries the
+        // film left and the moment under the line moves *later*: time runs
+        // against the finger's travel, exactly as in every phone editor. This
+        // sign has been flipped twice. It was minus, then plus - "the finger is
+        // on the playhead" - which was right only while the playhead walked
+        // across a left-aligned strip near 0:00 and wrong for the whole of the
+        // rest of the edit, where the line holds and the film moves: "when I
+        // swipe to the left, video strip go right and vice versa". The walk is
+        // gone (linedOn no longer clamps), so there is one regime and one sign.
+        val to = (from - w.msForPx(deltaPx)).coerceIn(0.0, end)
         scrubRawMs = to
         // Not gated on the switch. "Snap to markers and beats" empties
         // [snapMarks], which is the whole of what it is for; scrubTargets adds
@@ -480,11 +486,13 @@ fun TimelineEditor(
         val before = heldMs
         heldMs = shown
         if (before == null || shown.toLong() != before.toLong()) latestSeek(shown.toLong())
-        // What the drag consumed, in the same direction it was given: `to - from`
-        // now that time runs with the finger. Returned the other way round it
-        // reads as a fling that never settles, because the state is told it
-        // consumed the opposite of what it did.
-        w.pxForMs(to - from)
+        // What the drag consumed, in the finger's own pixels and direction: the
+        // film moved by `from - to` worth of time, which is `deltaPx` until the
+        // edit's end or start is reached and less after. Less is what stops a
+        // fling at the ends; the opposite sign would read as a fling that never
+        // settles, since the state would be told it consumed the reverse of
+        // what it was given.
+        w.pxForMs(from - to)
     }
     val scrolling = scrollable.isScrollInProgress
     LaunchedEffect(scrubSnapMs) {
@@ -752,7 +760,7 @@ fun TimelineEditor(
             val w = latestWindow
             val step = TimelineLanes.edgeScrollMs(held.finger.x, viewportPx, zonePx, w.viewportMs / 60.0)
             if (step == 0.0) continue
-            val from = heldMs ?: latestState.playheadMs.toDouble()
+            val from = heldMs ?: playheadNow().toDouble()
             val to = (from + step).coerceIn(0.0, latestState.durationMs.coerceAtLeast(0L).toDouble())
             if (to == from) continue
             heldMs = to
@@ -789,7 +797,7 @@ fun TimelineEditor(
                 trimming = TrimMark(id, head, anchor?.takeIf { head && it.isMain })
                 frozenRows = latestLiveRows
                 // The view holds still under the handle - see fingerOnStrip.
-                heldMs = heldMs ?: latestState.playheadMs.toDouble()
+                heldMs = heldMs ?: playheadNow().toDouble()
             },
             clip = { anchor, head, travelMs ->
                 if (!guard.active) {
@@ -918,7 +926,7 @@ fun TimelineEditor(
                         canLift = { at -> latestLayout.liftableAt(at) != null },
                         onLift = { at ->
                             latestLayout.liftableAt(at)?.let { picked ->
-                                heldMs = heldMs ?: latestState.playheadMs.toDouble()
+                                heldMs = heldMs ?: playheadNow().toDouble()
                                 lift = picked.copy(foldFor = latestFoldFor, compact = latestCompactShown)
                                 rawLift(picked.id)
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)

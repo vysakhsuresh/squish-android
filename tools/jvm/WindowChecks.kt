@@ -134,80 +134,104 @@ fun main() {
         }
     }
 
-    // ---- Time to screen runs one way, and the edit starts at the left edge. --
+    // ---- The playhead holds in the middle; the film moves under it. ---------
     //
-    // This replaces a check that asserted the playhead is at PLAYHEAD_FRACTION
-    // at *every* moment. That was true, and it was the bug: placing the line by
-    // a constant means the window at 0:00 is scrolled a quarter of a screen
-    // before the start of the edit, so the strip opens a quarter empty with the
-    // clip pushed off the left edge, and the playhead cannot move because its
-    // position does not depend on the time. Both were reported, twice:
-    // "the new video added is starting after wasting space at start" and
-    // "the play head is still not movable".
+    // The third form of this block. The first asserted the line at a quarter
+    // at every moment, the second asserted a window *clamped* at 0:00 with the
+    // playhead walking across the first quarter and holding after. The second
+    // is the one to remember: it gave a strip that stood still under the first
+    // quarter of every drag and then moved - and because TimelineEditor's drag
+    // sign could be right for only one of those two regimes, it was set for
+    // the walk and wrong for the whole of the rest of the edit ("when I swipe
+    // to the left, video strip go right and vice versa").
     //
-    // What actually has to hold - and what the inversion bug was really about -
-    // is that **a later moment is never drawn further left than an earlier one**.
-    // That makes a drag mean one thing whether the strip can scroll or not, and
-    // it is true of both halves of the clamped window: the playhead walking
-    // across a left-aligned strip, and the strip scrolling under a held
-    // playhead.
+    // One regime now, the one every phone editor has: the line is in the
+    // middle at every moment and zoom, 0:00 included, and the start of the edit
+    // is drawn *at the line* when the playhead is there - half a screen of
+    // empty strip to its left, which is the price of the first frame sitting
+    // under the playhead like every other frame. Swept over the same zooms,
+    // viewports and moments as before; what is asked is what the eye can see.
     for (pps in floatArrayOf(2f, 42f, 400f, 4_000f)) {
         for (viewport in intArrayOf(1080, 1079, 2400)) {
             val line = viewport * TimelineWindow.PLAYHEAD_FRACTION
             var t = 0.0
-            var lastX = Float.NEGATIVE_INFINITY
-            var walked = false
-            var held = false
+            var lastStartX = Float.POSITIVE_INFINITY
             while (t < 30_000.0) {
                 val w = TimelineWindow.linedOn(t, pps, 2.75f, viewport)
                 val x = w.xPx(t.toLong())
-
-                // The one that matters: forward in time is never leftward on screen.
-                check(
-                    "the playhead went backwards at $t ms (pps $pps, viewport $viewport): $x after $lastX",
-                    x >= lastX - 0.01f
-                )
-                lastX = x
-
-                // Never past the line, and never off the left edge.
-                check("the playhead ran past the line at $t ms: $x > $line", x <= line + 1f)
-                check("the playhead went off the left edge at $t ms: $x", x >= -0.01f)
-                // And nothing is ever drawn before the start of the edit - which
-                // is the wasted space, stated as arithmetic.
-                check("the strip is scrolled before 0:00 at $t ms: ${w.scrollMs}", w.scrollMs >= -1e-6)
-                check("the start of the edit is off the left edge at $t ms", w.xPx(0L) <= 0.01f)
-
-                if (x < line - 1f) walked = true else held = true
+                // At the line, always - within the fraction of a pixel that
+                // truncating t to a whole millisecond is worth.
+                val slack = 0.01f + (t - t.toLong()).toFloat() * pps * 2.75f / 1000f
+                check("the playhead left the line at $t ms (pps $pps, viewport $viewport): $x, line $line", abs(x - line) <= slack)
+                check("lineMs is not the moment at $t ms: ${w.lineMs}", abs(w.lineMs - t) < 1e-6)
+                // And the film moves one way as time goes on: the start of the
+                // edit is never drawn further *right* at a later moment. This is
+                // the whole of what makes a drag mean one thing.
+                val startX = w.xPx(0L)
+                check("the film moved backwards at $t ms (pps $pps, viewport $viewport): 0:00 at $startX after $lastStartX", startX <= lastStartX + 0.01f)
+                lastStartX = startX
                 t += if (t < 2_000.0) 10.0 else 500.0
-            }
-            // Both halves are real: the playhead walks at the start, and holds
-            // once it has got that far - which at the shallowest zoom takes
-            // longer than the 30 s swept here (at 2 px/s the line is 270 px, or
-            // 49 seconds in), so the second is only asked where it is reachable.
-            check("the playhead never walked (pps $pps, viewport $viewport)", walked)
-            val reachableMs = TimelineWindow(pps, 0.0, 2.75f, viewport).msForPx(line)
-            if (reachableMs < 29_000.0) {
-                check("the playhead never reached the line (pps $pps, viewport $viewport)", held)
             }
         }
     }
 
-    // At the very start the edit is flush with the left edge - no gap at all.
+    // At the very start the edit begins under the playhead - not at the left
+    // edge, not a quarter in. The half-screen before it is empty by design.
     for (pps in floatArrayOf(2f, 42f, 400f, 4_000f)) {
         for (viewport in intArrayOf(1080, 1079, 2400)) {
             val w = TimelineWindow.linedOn(0.0, pps, 2.75f, viewport)
-            check("0:00 is not at the left edge (pps $pps, viewport $viewport): ${w.xPx(0L)}", abs(w.xPx(0L)) < 0.01f)
-            check("the playhead is not at the left edge at 0:00", abs(w.xPx(0L)) < 0.01f)
+            val line = viewport * TimelineWindow.PLAYHEAD_FRACTION
+            check("0:00 is not under the playhead (pps $pps, viewport $viewport): ${w.xPx(0L)} vs $line", abs(w.xPx(0L) - line) < 0.01f)
+            check("the strip at 0:00 is not scrolled half a screen before the edit", w.scrollMs < 0.0)
+            // Looked at, never sought: nothing before the edit is ever a moment.
+            check("a tap in the empty half seeks before 0:00", w.msAt(0f) == 0L && w.msAt(line / 2) == 0L)
+            check("firstDrawnMs is not before the edit at 0:00", w.firstDrawnMs < 0L)
         }
     }
 
-    // And the line is left of the middle, leaving most of the strip to the edit.
-    // The number is a judgement, so what is checked is the two things that make
-    // it one: some of the strip behind the playhead, and most of it ahead.
+    // The middle. Not a judgement any more: a quarter was tried twice and the
+    // reasons it was wrong are at TimelineWindow.PLAYHEAD_FRACTION.
     check(
-        "the playhead is between an eighth and a third of the way across (${TimelineWindow.PLAYHEAD_FRACTION})",
-        TimelineWindow.PLAYHEAD_FRACTION in 0.125f..0.34f
+        "the playhead is not in the middle of the strip (${TimelineWindow.PLAYHEAD_FRACTION})",
+        TimelineWindow.PLAYHEAD_FRACTION == 0.5f
     )
+
+    // ---- The drag's arithmetic, as the strip's scrollable runs it. ---------
+    //
+    // TimelineEditor turns a finger's pixels into a new moment with
+    // `to = from - msForPx(deltaPx)` and reports `pxForMs(from - to)` consumed.
+    // Run here on the window alone, so the two properties the sign buys are
+    // executed rather than read: a swipe to the *left* (negative pixels) takes
+    // time *forward* and the film with it, and at either end of the edit the
+    // consumed distance falls short of the finger's - which is what stops a
+    // fling at the ends.
+    run {
+        val w = TimelineWindow.linedOn(5_000.0, 42f, 2.75f, 1080)
+        val end = 10_000.0
+        fun step(from: Double, deltaPx: Float): Pair<Double, Float> {
+            val to = (from - w.msForPx(deltaPx)).coerceIn(0.0, end)
+            return to to w.pxForMs(from - to)
+        }
+        val (left, leftUsed) = step(5_000.0, -100f)
+        check("a swipe left did not take time forward: $left", left > 5_000.0)
+        check("a swipe left was not consumed whole: $leftUsed", abs(leftUsed - (-100f)) < 0.01f)
+        // The film under the line: the clip that began at 0:00 is drawn further
+        // left after the swipe, so it moved with the finger.
+        val before = TimelineWindow.linedOn(5_000.0, 42f, 2.75f, 1080).xPx(0L)
+        val after = TimelineWindow.linedOn(left, 42f, 2.75f, 1080).xPx(0L)
+        check("the film did not follow a swipe left: 0:00 at $after after $before", after < before)
+        val (right, rightUsed) = step(5_000.0, 100f)
+        check("a swipe right did not take time back: $right", right < 5_000.0)
+        check("a swipe right was not consumed whole: $rightUsed", abs(rightUsed - 100f) < 0.01f)
+        // Against the end: the finger asks for more than the edit has, and the
+        // strip owns up to the part it could use.
+        val (atEnd, endUsed) = step(9_990.0, -1_000f)
+        check("a swipe past the end left the edit: $atEnd", atEnd == end)
+        check("a swipe past the end claimed the whole finger: $endUsed", endUsed < 0f && endUsed > -1_000f)
+        val (atStart, startUsed) = step(10.0, 1_000f)
+        check("a swipe past the start left the edit: $atStart", atStart == 0.0)
+        check("a swipe past the start claimed the whole finger: $startUsed", startUsed > 0f && startUsed < 1_000f)
+    }
 
     // The strip as drawn (slideFor): every moment within a pixel of where the
     // live window - and so a finger - puts it, at any zoom, length and centre;

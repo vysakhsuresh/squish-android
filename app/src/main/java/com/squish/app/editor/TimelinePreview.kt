@@ -39,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -143,6 +144,10 @@ fun TimelinePreview(
     canvasBackground: CanvasBackground = CanvasBackground.NONE,
     playheadMs: Long,
     scrubNonce: Long,
+    /** The strip's per-frame seeks while a finger is on it; see EditorViewModel.scrubLive. */
+    liveSeeks: kotlinx.coroutines.flow.Flow<Long>? = null,
+    /** Written every tick with the position shown; the strip reads it. See EditorScreen's livePlayhead. */
+    livePosition: androidx.compose.runtime.MutableLongState? = null,
     onPositionChange: (Long) -> Unit,
     onPlayingChange: (Boolean) -> Unit,
     /**
@@ -271,6 +276,9 @@ fun TimelinePreview(
     // A deliberate jump - scrubbing the ruler, a nudge - as opposed to the playhead
     // simply advancing. Only the former should move the players.
     LaunchedEffect(scrubNonce) { engine.seekTo(playheadMs) }
+    // The strip's drag, moment by moment, without a recomposition per moment:
+    // see EditorViewModel.scrubLive. Collected, not composed.
+    LaunchedEffect(liveSeeks) { liveSeeks?.collect { engine.seekTo(it) } }
 
     // Nothing plays behind the user's back. Home, the lock button, a call, the
     // photo picker: the transport stops, and it is where it was on the way back.
@@ -297,13 +305,63 @@ fun TimelinePreview(
         engine.redraw()
     }
 
+    val latestScrubbing by rememberUpdatedState(scrubbing)
+    // Between the engine's ticks - 33 ms apart, which is 30 frames a second on
+    // a 120 Hz screen - the strip is carried at the measured rate from the last
+    // tick's position, so the film moves every frame while playing rather than
+    // in 30 steps a second. Each tick re-anchors it, so nothing drifts.
+    var playAnchor by remember { mutableStateOf<PlayAnchor?>(null) }
+    LaunchedEffect(playAnchor != null, livePosition) {
+        val live = livePosition ?: return@LaunchedEffect
+        if (playAnchor == null) return@LaunchedEffect
+        while (true) {
+            withFrameNanos { now ->
+                playAnchor?.let { a -> live.longValue = a.positionMs + ((now - a.atNanos) / 1_000_000.0 * a.rate).toLong() }
+            }
+        }
+    }
     LaunchedEffect(engine) {
+        var lastEcho = 0L
         while (true) {
             val next = engine.tick()
             if (next != frame) {
-                if (next.positionMs != frame.positionMs) latestPosition(next.positionMs)
+                // The strip reads livePosition every tick; the edit's own playhead
+                // gets the position a few times a second while playing, at once
+                // when paused or stopping, and never under a finger on the strip
+                // (that position is the strip's, written on release by
+                // commitScrub). Every tick into the state recomposed the whole
+                // editor thirty times a second, playing or scrubbing.
+                //
+                // Stopping is echoed whether or not the position moved on that
+                // tick: a pause lands on a tick whose position is the previous
+                // tick's, and gated on a change the edit kept a playhead up to a
+                // quarter-second stale - the first frame step after a pause went
+                // *backwards* by a frame on the phone (14 October).
+                val moved = next.positionMs != frame.positionMs
+                val stopping = next.isPlaying != frame.isPlaying
+                if (moved || stopping) {
+                    livePosition?.longValue = next.positionMs
+                    // The anchor the strip is carried from between ticks, with the
+                    // rate the last two ticks ran at (a retimed shot plays faster
+                    // or slower than the wall); null when not playing, and the
+                    // strip then holds the tick's own position.
+                    val at = System.nanoTime()
+                    playAnchor = if (next.isPlaying) {
+                        val last = playAnchor
+                        val rate = if (last != null && at > last.atNanos) {
+                            ((next.positionMs - last.positionMs) * 1_000_000.0 / (at - last.atNanos)).coerceIn(0.1, 8.0)
+                        } else 1.0
+                        PlayAnchor(next.positionMs, at, rate)
+                    } else null
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (!latestScrubbing && (!next.isPlaying || now - lastEcho >= ECHO_MS)) {
+                        lastEcho = now
+                        latestPosition(next.positionMs)
+                    }
+                }
                 if (next.isPlaying != frame.isPlaying) latestPlaying(next.isPlaying)
                 frame = next
+                if (!next.isPlaying) playAnchor = null
             }
             delay(TICK)
         }
@@ -1501,6 +1559,12 @@ private fun TransportButton(icon: ImageVector, label: String, onClick: () -> Uni
 
 /** A frame at 30fps: fast enough that the playhead does not visibly step. */
 private val TICK = 33.milliseconds
+
+/** How often the playhead shown is written into the edit while playing; see the tick loop. */
+private const val ECHO_MS = 250L
+
+/** Where playback was at a tick, when, and how fast it was going; see the tick loop. */
+private class PlayAnchor(val positionMs: Long, val atNanos: Long, val rate: Double)
 
 /** Long enough for the view system to finish a resize the layout pass started. */
 private val REDRAW_SETTLE = 150.milliseconds

@@ -376,15 +376,13 @@ object TimelineLanes {
      * The zoom that lays the whole edit across the strip - or
      * [MAX_FIT_SECONDS] of it, whichever is less.
      *
-     * **The whole strip, not the part after the playhead.** A fit is asked for
-     * with the playhead at 0:00, and `TimelineWindow.linedOn` clamps its scroll
-     * there, so the edit is laid out from the strip's *left edge* and every
-     * pixel of it is usable. This was half the strip when the line sat in the
-     * middle and three quarters when it moved to a quarter; both were working
-     * around a window that scrolled before the start of the edit, and it does
-     * not any more. An opened video is drawn a third bigger again than it was,
-     * which is the rest of the answer to the strip reading as frozen - at a
-     * fit-the-whole-edit zoom it used to creep about six pixels a second.
+     * **The whole strip's width**, so that the edit is one screen wide: with
+     * the playhead fixed in the middle, that is the whole edit in view when
+     * the playhead is halfway through it and half of it in view at either end.
+     * It was fitted into half the strip once, so that all of it showed from
+     * 0:00, and at that zoom a 90-second clip crept about six pixels a second
+     * under the playhead and read as a strip that did not move; the floor
+     * below ([MAX_FIT_SECONDS]) and the full width together are the answer.
      *
      * The 12 dp is so the last frame is not flush against the edge.
      */

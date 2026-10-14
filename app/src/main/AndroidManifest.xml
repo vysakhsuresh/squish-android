@@ -21,6 +21,15 @@
     <!-- The music browser lists songs already on the phone. Read-only, and only
          asked for when that tab is opened. -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- The app's own media library (MediaLibrarySheet) reads the phone's
+         photos and videos out of MediaStore, because the system photo picker
+         shows a curated subset that left out videos a person had just shot.
+         Read-only; asked for the first time the library is opened. The
+         visual-user-selected one is what Android 14's "Select photos" grants,
+         and must be declared or that answer reads as a refusal. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -44,6 +53,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Squish">
+
+        <!-- Lets `am profile` sample a release build from the shell, which is
+             the only way to see where a *release* frame's time goes: a debug
+             build of Compose runs the editor three times slower and lies about
+             what is heavy. Shell only; nothing on the phone but adb can use it. -->
+        <profileable android:shell="true" />
 
         <!-- One task, one copy: "Open with" while Squish is running reaches the
              running copy through onNewIntent instead of stacking a second one

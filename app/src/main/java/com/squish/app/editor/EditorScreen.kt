@@ -184,6 +184,11 @@ fun EditorScreen(
     // A finger on the playhead, told to the preview so it can serve the drag from
     // sync samples and land exactly when the finger lifts.
     var timelineScrubbing by remember { mutableStateOf(false) }
+    // The playhead as the preview shows it, tick by tick, for the strip alone:
+    // the edit's own playhead follows a few times a second. Reset on every
+    // deliberate jump so the strip never waits a tick for the engine to echo it.
+    val livePlayhead = remember { androidx.compose.runtime.mutableLongStateOf(state.playheadMs) }
+    LaunchedEffect(state.scrubNonce) { livePlayhead.longValue = state.playheadMs }
     // A colour being picked off the picture, and who asked for it - the text
     // sheet's colour picker. While set, the picture takes one tap and answers.
     var eyedropper by remember { mutableStateOf<((Int) -> Unit)?>(null) }
@@ -333,18 +338,25 @@ fun EditorScreen(
         uris.forEach { context.keepReadAccess(it) }
         viewModel.insertWhenOpened(uris)
     }
-    val addVideos = {
-        pickExtraClips.launch(
-            PickVisualMediaRequest.Builder()
-                .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                .build()
-        )
-    }
+    // The app's own grid over the phone's index, for the main track, an overlay
+    // row and a replacement alike; the system picker and the file browser are
+    // doors at the foot of it. See MediaLibrarySheet for what the picker left out.
+    var library by remember { mutableStateOf<LibraryUse?>(null) }
+    val addVideos = { library = LibraryUse.Main }
     // Photos and videos, several at once: a logo, a cut-out and a reaction clip
     // are all overlays. It was one video at a time.
     val pickOverlayClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
         uris.forEach { context.keepReadAccess(it) }
         viewModel.addOverlaysWhenOpened(uris)
+    }
+    // The file manager, for what no index shows: an MKV in Downloads, a folder
+    // on a card. Which track it lands on is set as the browser is opened.
+    var browseFor by rememberSaveable { mutableStateOf(LibraryUse.Main) }
+    val browseClips = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        uris.forEach { context.keepReadAccess(it) }
+        if (uris.isNotEmpty()) {
+            if (browseFor == LibraryUse.Overlay) viewModel.addOverlaysWhenOpened(uris) else viewModel.insertWhenOpened(uris)
+        }
     }
     // Free stock footage: asked for online first, then a grid; the pick lands at the playhead.
     val stockGate = com.squish.app.online.rememberOnlineGate()
@@ -355,12 +367,45 @@ fun EditorScreen(
             onDismiss = { showStock = false }
         )
     }
-    val addOverlay = {
-        pickOverlayClips.launch(
-            PickVisualMediaRequest.Builder()
-                .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                .build()
+    val addOverlay = { library = LibraryUse.Overlay }
+    val libraryOverlay: @Composable () -> Unit = { library?.let { use ->
+        com.squish.app.ui.components.MediaLibrarySheet(
+            title = when (use) {
+                LibraryUse.Main -> "Add to the edit"
+                LibraryUse.Overlay -> "Add an overlay"
+                LibraryUse.Replace -> "Replace with"
+            },
+            kinds = setOf(com.squish.app.media.MediaLibrary.Kind.Video, com.squish.app.media.MediaLibrary.Kind.Photo),
+            maxPick = if (use == LibraryUse.Replace) 1 else MAX_PICK,
+            onPicked = { uris ->
+                library = null
+                uris.forEach { context.keepReadAccess(it) }
+                when (use) {
+                    LibraryUse.Main -> viewModel.insertWhenOpened(uris)
+                    LibraryUse.Overlay -> viewModel.addOverlaysWhenOpened(uris)
+                    LibraryUse.Replace -> {
+                        val target = replaceTarget ?: viewModel.state.value.selectedClipId
+                        replaceTarget = null
+                        uris.firstOrNull()?.let { uri -> target?.let { viewModel.replaceWhenOpened(it, uri) } }
+                    }
+                }
+            },
+            onDismiss = { library = null; if (use == LibraryUse.Replace) replaceTarget = null },
+            onSystemPicker = {
+                val request = PickVisualMediaRequest.Builder()
+                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                    .build()
+                when (use) {
+                    LibraryUse.Main -> pickExtraClips.launch(request)
+                    LibraryUse.Overlay -> pickOverlayClips.launch(request)
+                    LibraryUse.Replace -> pickReplacement.launch(request)
+                }
+            },
+            onBrowseFiles = if (use == LibraryUse.Replace) null else {
+                { browseFor = use; browseClips.launch(arrayOf("video/*", "image/*")) }
+            }
         )
+    }
     }
     // A picture for the canvas's background, behind footage that does not
     // fill the frame's shape.
@@ -399,11 +444,7 @@ fun EditorScreen(
             Tool.Reverse -> state.selectedClipId?.let(viewModel.clips::reverseClip)
             Tool.Replace -> {
                 replaceTarget = state.selectedClipId
-                pickReplacement.launch(
-                    PickVisualMediaRequest.Builder()
-                        .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                        .build()
-                )
+                library = LibraryUse.Replace
             }
             Tool.CopyAttributes -> state.selectedClipId?.let(viewModel.clips::copyAttributes)
             Tool.PasteAttributes -> state.selectedClipId?.let(viewModel.clips::pasteAttributes)
@@ -458,6 +499,7 @@ fun EditorScreen(
         movableContentOf { modifier: Modifier ->
             EditorPreview(
                 state = state,
+                livePosition = livePlayhead,
                 viewModel = viewModel,
                 // Read here too: the file first opened is known only once the
                 // project has loaded, after this lambda was remembered.
@@ -477,6 +519,7 @@ fun EditorScreen(
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(containerColor = SquishColors.Background) { padding ->
         // Which way up is decided before the keyboard takes its share: a short
         // phone with the keyboard up is not a phone on its side, and switching
@@ -580,7 +623,7 @@ fun EditorScreen(
                         onTrimEnd = viewModel.clips::trimEnded,
                         onScrub = viewModel::scrubTo,
                         // The strip snaps a drag itself, and draws where it snapped to.
-                        onSeek = viewModel::seekTo,
+                        onSeek = viewModel::scrubLive,
                         snapScrub = state.snapToMarkers,
                         rowsHeight = rowsHeight,
                         onTransitionTap = { clipId ->
@@ -612,7 +655,8 @@ fun EditorScreen(
                         // the toolbar. It opened the sheet, and a second "Add
                         // text" was needed there.
                         onOpenWords = addText,
-                        onScrubbingChange = { timelineScrubbing = it },
+                        onScrubbingChange = { timelineScrubbing = it; if (!it) viewModel.commitScrub() },
+                        livePlayheadMs = { livePlayhead.longValue },
                         compact = compactStrip,
                         onFit = viewModel::fitTimeline
                     )
@@ -862,6 +906,8 @@ fun EditorScreen(
             onDismiss = { renaming = false }
         )
     }
+    libraryOverlay()
+    }
 }
 
 /**
@@ -897,6 +943,8 @@ private fun EditorPreview(
     openTool: Tool?,
     fullscreen: Boolean,
     timelineScrubbing: Boolean,
+    /** See EditorScreen's livePlayhead. */
+    livePosition: androidx.compose.runtime.MutableLongState,
     onFullscreen: (Boolean) -> Unit,
     /** Closes whatever sheet is open. */
     onCloseSheet: () -> Unit,
@@ -1049,6 +1097,8 @@ private fun EditorPreview(
             canvasBackground = state.canvasBackground,
             playheadMs = state.playheadMs,
             scrubNonce = state.scrubNonce,
+            liveSeeks = viewModel.liveScrub,
+            livePosition = livePosition,
             onPositionChange = viewModel::setPlayhead,
             onPlayingChange = viewModel::setPlaying,
             onStep = viewModel::stepFrames,
@@ -1355,6 +1405,9 @@ private fun RelinkCard(name: String?, sound: Boolean, onRelink: () -> Unit, onBr
 
 /** The most videos one pick adds. The picker needs a number; this is well past a normal batch. */
 private const val MAX_PICK = 30
+
+/** Which track the media library is open for. */
+enum class LibraryUse { Main, Overlay, Replace }
 
 /** A tool's sheet takes this much of the editor's height, within the two limits below. */
 private const val SHEET_SHARE = 0.42f

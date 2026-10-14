@@ -61,6 +61,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
@@ -136,6 +137,8 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     /** Room kept clear at the foot of the list for the shell's floating bar. */
     bottomRoom: Dp = 28.dp,
+    /** Told when a sheet covers the whole screen, so the shell takes its floating bar away. */
+    onCovered: (Boolean) -> Unit = {},
     listState: LazyListState = rememberLazyListState(),
     viewModel: HomeViewModel = viewModel()
 ) {
@@ -159,6 +162,34 @@ fun HomeScreen(
         uris.forEach { context.keepReadAccess(it) }
         viewModel.startProject(uris, onOpenProject)
     }
+    // The app's own grid over the phone's index is the front door now; the
+    // system picker is a door at the foot of it. See MediaLibrarySheet for
+    // the videos the picker left out.
+    var showLibrary by remember { mutableStateOf(false) }
+    val latestCovered by rememberUpdatedState(onCovered)
+    LaunchedEffect(showLibrary) { latestCovered(showLibrary) }
+    DisposableEffect(Unit) { onDispose { latestCovered(false) } }
+    val libraryOverlay: @Composable () -> Unit = { if (showLibrary) {
+        com.squish.app.ui.components.MediaLibrarySheet(
+            title = "New project",
+            kinds = setOf(com.squish.app.media.MediaLibrary.Kind.Video, com.squish.app.media.MediaLibrary.Kind.Photo),
+            maxPick = MAX_PICK,
+            onPicked = { uris ->
+                showLibrary = false
+                uris.forEach { context.keepReadAccess(it) }
+                viewModel.startProject(uris, onOpenProject)
+            },
+            onDismiss = { showLibrary = false },
+            onSystemPicker = {
+                pickMedia.launch(
+                    PickVisualMediaRequest.Builder()
+                        .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                        .build()
+                )
+            },
+            onBrowseFiles = { browseFiles.launch(arrayOf("video/*", "image/*")) }
+        )
+    } }
     // The camera, straight into a project: the take is written under the
     // app's own storage (files/imports), so it is the project's from the start.
     // The path is saved state, not remembered: the camera is the one app most
@@ -194,6 +225,7 @@ fun HomeScreen(
     }
     DisposableEffect(Unit) { onDispose { viewModel.dismissUndoOffer() } }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = SquishColors.Background,
         // Above the bar, not behind it: the Undo offer after a delete is the one
@@ -255,13 +287,7 @@ fun HomeScreen(
 
                 item(key = "new-project") {
                     NewProjectCard(
-                        onPick = {
-                            pickMedia.launch(
-                                PickVisualMediaRequest.Builder()
-                                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                                    .build()
-                            )
-                        },
+                        onPick = { showLibrary = true },
                         onBrowse = { browseFiles.launch(arrayOf("video/*", "image/*")) },
                         onRecord = {
                             val dir = File(context.filesDir, IMPORTS_DIR).apply { mkdirs() }
@@ -405,6 +431,8 @@ fun HomeScreen(
             },
             onDismiss = { deleting = emptyList() }
         )
+    }
+    libraryOverlay()
     }
 }
 

@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -84,6 +85,7 @@ fun HomeShell(
     // back stack, so coming back from a library item lands on Library rather
     // than silently on Home.
     var tab by rememberSaveable { mutableStateOf(HomeTab.Projects) }
+    var covered by remember { mutableStateOf(false) }
     val toolDrafts by viewModel.toolDrafts.collectAsState()
     val trashed by viewModel.trashed.collectAsState()
     val marked = HomeTabRules.markedTab(toolDrafts.size, trashed.size)
@@ -105,6 +107,7 @@ fun HomeShell(
                 onOpenProject = onOpenProject,
                 onOpenSettings = onOpenSettings,
                 bottomRoom = BAR_ROOM,
+                onCovered = { covered = it },
                 listState = homeList,
                 viewModel = viewModel
             )
@@ -121,6 +124,9 @@ fun HomeShell(
                 bottomRoom = BAR_ROOM
             )
         }
+        // Not while a sheet covers the pane - the media library is laid over
+        // the whole screen and the bar drew over its last row and its doors.
+        if (!covered) {
         // Under the bar, so a list fades out rather than being sliced by it. A
         // floating bar over a list has to do this or the row half under it reads
         // as a drawing fault - a project card cut in two by a strip.
@@ -156,6 +162,7 @@ fun HomeShell(
             },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
+        }
     }
 }
 
