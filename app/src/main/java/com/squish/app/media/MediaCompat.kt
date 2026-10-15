@@ -42,13 +42,20 @@ object MediaCompat {
      * file does not say - for the rate a layered export mixes at
      * (ExportPlan.mixerSampleRate). [hdr] says whether the picture is HDR -
      * HLG or PQ - which decides whether the export sheet offers to keep it.
+     * [videoSoftware] and [audioSoftware] say a part decodes here *only*
+     * through the app's own FFmpeg decoders (SoftwareDecoders) - fine for the
+     * preview, and the reason the file is converted on import
+     * (ConversionRules). A part no decoder takes has its problem named and
+     * neither flag set.
      */
     data class Report(
         val videoProblem: String?,
         val audioProblem: String?,
         val hasAudio: Boolean = true,
         val sampleRateHz: Int = 0,
-        val hdr: Boolean = false
+        val hdr: Boolean = false,
+        val videoSoftware: Boolean = false,
+        val audioSoftware: Boolean = false
     )
 
     private val reports = ConcurrentHashMap<String, Report>()
@@ -94,13 +101,27 @@ object MediaCompat {
             audioProblem = if (audio.isNotEmpty() && audio.none { decodable(context, it) }) describe(audio.first()) else null,
             hasAudio = audio.isNotEmpty(),
             sampleRateHz = audio.filter { decodable(context, it) }.maxOfOrNull { it.sampleRate }?.coerceAtLeast(0) ?: 0,
-            hdr = video.any { ColorInfo.isTransferHdr(it.colorInfo) }
+            hdr = video.any { ColorInfo.isTransferHdr(it.colorInfo) },
+            // Software only when no track of the part goes through the
+            // platform and some track goes through FFmpeg - the same "any
+            // track will do" the player applies.
+            videoSoftware = video.isNotEmpty() && video.none { platformDecodes(context, it) } && video.any { SoftwareDecoders.decodes(it) },
+            audioSoftware = audio.isNotEmpty() && audio.none { platformDecodes(context, it) } && audio.any { SoftwareDecoders.decodes(it) }
         )
         reports[uri.toString()] = report
         return report
     }
 
-    private fun decodable(context: Context, format: Format): Boolean {
+    /** Whether anything here decodes [format]: the phone's own decoders, or the app's FFmpeg ones. */
+    private fun decodable(context: Context, format: Format): Boolean =
+        platformDecodes(context, format) || SoftwareDecoders.decodes(format)
+
+    /**
+     * Whether one of the phone's own decoders (MediaCodec, hardware or the
+     * platform's software ones) takes [format]. What the export's decoder
+     * factory asks before falling to FFmpeg (SoftwareDecoders).
+     */
+    fun platformDecodes(context: Context, format: Format): Boolean {
         val mime = format.sampleMimeType ?: return false
         // Already samples; the sink plays them without a decoder.
         if (mime == MimeTypes.AUDIO_RAW) return true

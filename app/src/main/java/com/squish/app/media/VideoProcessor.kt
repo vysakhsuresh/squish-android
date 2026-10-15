@@ -228,6 +228,11 @@ class VideoProcessor(private val context: Context) {
             val videoMime = EncoderCeiling.mimeFor(state.exportCodecHevc)
 
             val transformer = Transformer.Builder(context)
+                // The FFmpeg decoders where the platform has none, so a file
+                // that reached the export unconverted - a conversion that
+                // failed, a quick tool on a file rip - still decodes
+                // (SoftwareDecoders; SquishFfmpegCodecs has that path's limit).
+                .setAssetLoaderFactory(SoftwareDecoders.assetLoaderFactory(context))
                 .apply {
                     if (trimOnly) {
                         // No codec is asked for, audio or video: a copied stream

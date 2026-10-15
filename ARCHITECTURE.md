@@ -43,6 +43,8 @@ app/src/main/java/com/squish/app/
 │   ├── VideoProcessor      export orchestration
 │   ├── CompositionFactory  A/B-roll sequences, transitions, overlay geometry
 │   ├── ProxyEngine         background 540p proxies for smooth scrubbing
+│   ├── SoftwareDecoders    FFmpeg (nextlib) behind every player and Transformer
+│   ├── MediaConversion     a file only FFmpeg takes, converted once on import
 │   ├── SquishError         every failure the user can hit, in their language
 │   └── audio/              PCM decode, waveforms, cross-correlation sync
 ├── data/          HistoryRepository, ProjectAutosave — plain JSON, no database
@@ -439,6 +441,19 @@ never sees it and always reads the camera original. The proxy is a straight
 transcode sharing the source timebase, so every trim point still lands on the same
 frame. Proxies live in the cache directory — derived data, safe for Android to
 evict, rebuilt on demand.
+
+### (And the thing that makes footage the phone cannot decode usable)
+`SoftwareDecoders` puts nextlib's FFmpeg renderers behind Media3's own in every
+player, so a file no decoder on the phone takes - HEVC 10-bit on a phone
+without Main 10, DTS, TrueHD, DivX, MPEG-2 - plays in the preview at once; and
+a `Codec` adapter (`SquishFfmpegCodecs`, with `YuvImagePainter` carrying each
+frame onto the surface at its size and with its time, through `ImageWriter`)
+puts the same decoders behind MediaCodec in every Transformer. Because the rest of the app reads files through the
+platform's decoders, and because that path cannot deliver a stream's last
+frames, such a file is converted **once, whole, on import** into H.264/AAC
+under `files/converted` (`MediaConversion`, the rule in `ConversionRules`),
+and the project keeps the copy. Only the converted copy is proxied, probed,
+frozen, reversed, exported.
 
 ## 5. Built
 

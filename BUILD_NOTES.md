@@ -305,6 +305,70 @@ timed effect is read against, so it is not a swap to make without a phone. Named
 here so the warning is not read as rot: five warnings is the whole build, and
 these two are it.
 
+## What the software decoders lean on (15 October)
+
+`SquishFfmpegCodecs` implements Transformer's `Codec` over nextlib's FFmpeg
+decoders, and it was written against the 1.11.1 bytecode of
+`ExoAssetLoaderBaseRenderer`, `ExoAssetLoaderAudioRenderer` and
+`ExoAssetLoaderVideoRenderer`, which is where the contract actually lives:
+
+- The renderer's own `DecoderInputBuffer` is constructed with
+  `BUFFER_REPLACEMENT_MODE_DISABLED` (an `iconst_0` into its constructor), so
+  the ByteBuffer `maybeDequeueInputBuffer` hands out must already be big
+  enough for any sample; `readSource` throws rather than grows. The adapters
+  size it from `Format.maxInputSize` with a floor. A later version that
+  switches the mode makes the floor unnecessary, not wrong.
+- `render()` calls `ensureSampleConsumerInitialized()` - and through it the
+  audio codec's `getOutputFormat()` - *before* `feedDecoderFromInput()`, and
+  keeps feeding input while it answers null. FFmpeg only knows an audio
+  stream's channel count and rate after its first frame, so null-until-known
+  is what makes this work; a version that stops feeding input until the
+  format is known would deadlock the audio adapter.
+- For video, `initDecoder` is called after the sample consumer exists and
+  takes `sampleConsumer.getInputSurface()`, so the consumer is registered from
+  the *input* format and the codec's `getOutputFormat()` is never used for the
+  frame's size. The frame's presentation time reaches the frame processor
+  through the Surface buffer's timestamp, which `YuvImagePainter` sets with
+  `Image.setTimestamp` on an `ImageWriter` image - the one place the time is
+  carried. `DefaultCodec` does the same through
+  `MediaCodec.releaseOutputBuffer(index, renderTimeNs)`.
+- **Transformer never sizes its input Surface.** `ExternalTextureManager.
+  setInputFrameInfo` calls `SurfaceTexture.setDefaultBufferSize` only when
+  `automaticReregistration` is true, which is ExoPlayer's playback path, not
+  Transformer's (read in the 1.11.1 bytecode: `iload_2; ifeq` straight past
+  the call). MediaCodec never needed it - it sets the buffer geometry from
+  the producer's side. A Java producer has one public way to do the same,
+  `ImageWriter.Builder.setWidthAndHeight` (API 33); an EGL window surface on
+  that Surface is 1x1 and, per SurfaceTexture's own documentation, stays the
+  size it was made at. Found on the phone on 15 October: a nine-minute
+  conversion drawn through EGL came out as one flat colour per frame, and
+  the probe in the painter read the window back as 1x1 for two seconds of
+  recreating it. That is why the software video path needs API 33.
+- **`ImageWriter.Builder` wants the HAL format named too.** On the moto
+  (Android 15) a builder given `setWidthAndHeight`, `setImageFormat(
+  YUV_420_888)` and `setDataSpace` handed back RGBA_8888 images (format 1,
+  one plane); adding `setHardwareBufferFormat(HardwareBuffer.YCBCR_420_888)`
+  gave YUV_420_888 (format 35, three planes), and the conversion then ran
+  at about 0.8 minutes per minute of 1080p HEVC 10-bit with FFmpeg on four
+  threads. `YuvImagePainter` logs the writer's format and keeps a CPU
+  YUV-to-RGBA path for a phone that still answers with one plane.
+- `Codec.getMaxPendingFrameCount()` defaults to 5 and the video renderer stops
+  releasing frames while that many are pending; the adapter says 3 so the
+  painter's `eglSwapBuffers` is rarely asked to block on a full queue.
+- `DefaultAssetLoaderFactory(context, decoderFactory, clock, logSessionId)`
+  is the constructor that keeps image items working through
+  `setAssetLoaderFactory`; the plain `ExoPlayerAssetLoader.Factory` would
+  not load the stills.
+- nextlib `1.11.1-0.16.0`: `FfmpegVideoDecoder(numIn, numOut, inputSize,
+  threads, format)` and `FfmpegAudioDecoder(format, numIn, numOut,
+  inputSize, outputFloat)`, both package-private; YUV output mode delivers
+  8-bit 4:2:0 whatever the source (sws_scale in `ffvideo.cpp`), with the
+  stride and colorspace through `VideoDecoderOutputBuffer.initForYuvFrame`,
+  and `ffmpegSendPacket` refuses a NULL buffer while FFmpeg refuses an empty
+  one, so there is no drain at end of stream. Its POM pins
+  `media3-exoplayer` to the same Media3 version as the first number of its
+  own; the two must move together.
+
 ## Four platform facts the code now leans on (6 October)
 
 Each of these is a documented or read-in-the-source behaviour that a fix made

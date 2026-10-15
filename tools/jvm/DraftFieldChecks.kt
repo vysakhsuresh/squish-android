@@ -244,8 +244,11 @@ fun main() {
         // session every time - and putting it in one would mean a draft could
         // claim its clips are not what it is made of, which is nonsense. See
         // TimelineLanes.timelineLength and the day the Fast lane refused itself.
+        // `converting` is the notice for a file being converted on its way in
+        // (MediaConversion): a status of this session's import, gone the
+        // moment the copy lands, and the clip the draft keeps names the copy.
         val transient = setOf(
-            "clipsAreTheEdit",
+            "clipsAreTheEdit", "converting",
             "attributeClipboard", "audioWaveforms", "backgroundProgress", "bestBitsProgress",
             "captions", "durationMs", "encoderAnswer", "encoderCeilingP", "estimatedOutputBytes",
             "exportProgress", "failure", "fitNonce", "fitOvershoot", "fitScale", "fps",

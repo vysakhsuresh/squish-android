@@ -91,6 +91,19 @@ fun main() {
             !editor.contains("leadPx"),
             "the strip is working out a playhead lead of its own again (leadPx)"
         )
+        // And the line is a bare line. It carried a rounded cap on the ruler
+        // for a while, the shape of a seek bar's thumb - which says "drag
+        // me" about the one thing on the strip that never moves. InShot and
+        // CapCut draw a plain line, and the owner asked for the same after
+        // seeing them side by side (15 October).
+        check(
+            !editor.contains("PLAYHEAD_HEAD"),
+            "the playhead has a head again (PLAYHEAD_HEAD): it is a bare line, as in InShot"
+        )
+        check(
+            editor.contains("private val PLAYHEAD_WIDTH = 2.dp"),
+            "the playhead's width is no longer the 2 dp line it was set to"
+        )
     }
 
     // ---- A switch says what it is, not only which way it is. ---------------

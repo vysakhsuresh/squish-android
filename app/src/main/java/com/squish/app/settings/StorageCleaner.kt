@@ -3,6 +3,7 @@ package com.squish.app.settings
 import android.content.Context
 import com.squish.app.data.SquishRepositories
 import com.squish.app.media.IMPORTS_DIR
+import com.squish.app.media.MediaConversion
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.SquishError
 import com.squish.app.media.ThumbnailCache
@@ -140,7 +141,11 @@ object StorageCleaner {
     private fun renderDirs(context: Context): List<File> = listOf(
         File(context.filesDir, "reversed"),
         File(context.filesDir, IMPORTS_DIR),
-        File(context.filesDir, OnlineMusic.DIR)
+        File(context.filesDir, OnlineMusic.DIR),
+        // The copies made of files only the software decoders take
+        // (MediaConversion): a project's clips point at them, so they are
+        // swept like any render, only once no draft names them.
+        File(context.filesDir, MediaConversion.DIR)
     )
 
     private fun sizeOf(dir: File): Long =

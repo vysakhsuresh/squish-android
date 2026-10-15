@@ -10,6 +10,7 @@
     <exclude domain="file" path="tooldrafts" />
     <exclude domain="file" path="stills" />
     <exclude domain="file" path="reversed" />
+    <exclude domain="file" path="converted" />
     <exclude domain="file" path="voice" />
     <exclude domain="file" path="speech" />
     <exclude domain="file" path="segments" />

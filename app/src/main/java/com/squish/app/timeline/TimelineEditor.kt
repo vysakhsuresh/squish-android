@@ -1481,36 +1481,31 @@ private fun hintName(clip: Clip, state: TimelineState): String = when {
 }
 
 /**
- * The playhead: a line down the middle of the strip with a head on the ruler.
+ * The playhead: a bare line down the middle of the strip, top to bottom.
  * Fixed - the strip moves under it - and never a touch target, so nothing it
  * crosses is ever hidden from a finger.
+ *
+ * No head on it. It had a rounded cap on the ruler for a while, the shape of
+ * a system seek bar's thumb, and the cap said the wrong thing: a thumb is
+ * something you drag, and this line is the one thing on the strip that never
+ * moves. InShot and CapCut draw a plain line here, and that is what the owner
+ * asked for after seeing them side by side. The line is the width of a
+ * trim handle's edge, 2 dp, so it reads over a thumbnail without covering
+ * the frame under it.
  */
 @Composable
 private fun BoxScope.Playhead(x: Dp, height: Dp) {
-    Column(
+    Box(
         modifier = Modifier
-            .offset(x = x - PLAYHEAD_HEAD / 2)
-            .width(PLAYHEAD_HEAD)
-            .zIndex(4f),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            modifier = Modifier
-                .width(PLAYHEAD_HEAD)
-                .height(PLAYHEAD_HEAD * 0.62f)
-                .clip(RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp, bottomStart = 2.dp, bottomEnd = 7.dp))
-                .background(SquishColors.TextPrimary)
-        )
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .height((height - PLAYHEAD_HEAD * 0.62f).coerceAtLeast(0.dp))
-                .background(SquishColors.TextPrimary)
-        )
-    }
+            .offset(x = x - PLAYHEAD_WIDTH / 2)
+            .width(PLAYHEAD_WIDTH)
+            .height(height)
+            .background(SquishColors.TextPrimary)
+            .zIndex(4f)
+    )
 }
 
-private val PLAYHEAD_HEAD = 14.dp
+private val PLAYHEAD_WIDTH = 2.dp
 
 /**
  * A track's head on its first row: its glyph in its colour, framed as a button

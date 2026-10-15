@@ -619,8 +619,9 @@ private fun LicencesCard() {
             accent = SquishColors.Magenta
         )
         Text(
-            "Jetpack Compose and AndroidX Media3, both Apache 2.0. The typeface is Space Grotesk " +
-                "under the SIL Open Font License. Full notices ship with the source in " +
+            "Jetpack Compose and AndroidX Media3, both Apache 2.0. The software decoders for files " +
+                "this phone cannot play are FFmpeg, through nextlib, under the GPL 3.0. The typeface is " +
+                "Space Grotesk under the SIL Open Font License. Full notices ship with the source in " +
                 "THIRD_PARTY_NOTICES.md.",
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextMuted

@@ -27,6 +27,7 @@ import com.squish.app.media.ExportPlan
 import com.squish.app.media.StillClips
 import com.squish.app.media.audio.GainProcessor
 import com.squish.app.media.audio.VoiceProcessor
+import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory
 import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.FxEffect
@@ -653,8 +654,19 @@ class PreviewEngine(private val context: Context) {
      * [VoiceProcessor] reading the clip's voice, and for a sound player a
      * [GainProcessor] before it - so robot, echo, radio and a boost past full
      * are heard in the preview and change without the player being rebuilt.
+     *
+     * Built on nextlib's factory rather than Media3's so the FFmpeg renderers
+     * stand behind the platform's (SoftwareDecoders.renderers says why and in
+     * what order): a file no decoder on the phone takes plays here anyway. The
+     * FFmpeg audio renderer is handed the same sink, so the processors below
+     * are in its path too.
      */
-    private fun processedRenderers(vararg processors: AudioProcessor) = object : DefaultRenderersFactory(context) {
+    private fun processedRenderers(vararg processors: AudioProcessor) = object : NextRenderersFactory(context) {
+        init {
+            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            setEnableDecoderFallback(true)
+        }
+
         override fun buildAudioSink(
             context: Context,
             enableFloatOutput: Boolean,

@@ -109,6 +109,28 @@ fun ProxyIndicator(
     }
 }
 
+/**
+ * A file only the software decoders take is converted before it lands
+ * (MediaConversion) - minutes, for minutes of 4K - and this says which file
+ * and how far, with the encoder's own percentage once it has one.
+ */
+@Composable
+fun ConvertingIndicator(converting: Converting?, modifier: Modifier = Modifier) {
+    val current = converting ?: return
+    Row(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        CircularProgressIndicator(color = SquishColors.Cyan, strokeWidth = 2.dp, modifier = Modifier.size(12.dp))
+        Text(
+            PolishRules.convertingLine(current.name, current.percent),
+            style = MaterialTheme.typography.labelSmall,
+            color = SquishColors.Cyan
+        )
+    }
+}
+
 /** Photos and blanks take a few seconds to become clips; this says they are coming. */
 @Composable
 fun PreparingIndicator(count: Int, modifier: Modifier = Modifier) {

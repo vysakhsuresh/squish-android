@@ -243,6 +243,30 @@ not here.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **15 October: the software decoders, the import conversion and the bare
+  playhead.** Built with no phone attached (`docs/DEVICE_FINDINGS.md` §59).
+  nextlib's FFmpeg decoders now stand behind the platform's in every player
+  (`SoftwareDecoders.renderers`) and behind MediaCodec in every Transformer
+  (`SoftwareDecoders.assetLoaderFactory`, through the `Codec` adapters in
+  `SquishFfmpegCodecs` and the `ImageWriter` painter `YuvImagePainter`), and a
+  file only they take is converted whole on import (`MediaConversion`, the
+  rule in `ConversionRules`). The arithmetic is executed (`ConversionChecks`:
+  plan, frame, bitrate, and the colour space a frame is handed over in).
+  Seen on the moto that morning (`docs/DEVICE_FINDINGS.md` §59): a 9-minute
+  1080p HEVC Main 10 MKV opened from "Open with", the notice "Converting
+  Novelistic.mkv for this phone · 5%" climbing, the copy landing under
+  `files/converted/` in 7.2 minutes with all but the last 5 frames, and the
+  clip playing and scrubbing in the preview with the picture right - grass
+  green, skin skin-coloured, letterbox black; and two faults of the first
+  versions found on the phone and replaced (an EGL surface left at 1x1,
+  then an ImageWriter answering RGBA until the HAL format was named). Not
+  seen: a frame of the copy against a frame of the source (the desktop
+  reader refuses the copy's 6-channel AAC), a portrait file, an HDR 10-bit
+  file through the tone-mapper, a DTS or TrueHD track becoming AAC with the
+  picture copied untouched, a file with no maxInputSize in its container,
+  the RGBA fallback in the painter, and the cost per minute of 4K. The
+  playhead is a bare 2 dp line with no cap (ControlChecks refuses the cap
+  back), seen on the phone.
 - **14 October: the strip's model, the media library, the live playhead and
   two widened gates.** Most of it was seen on the moto that night
   (`docs/DEVICE_FINDINGS.md` §58): the playhead fixed in the middle with the
@@ -1413,6 +1437,17 @@ should work through it and then delete what holds up.
   `WindowChecks` executes the model and `ControlChecks` reads the sign. Do not
   reintroduce a walking playhead near the start: with a line that walks and
   then holds, no one drag sign is right for both halves.
+- **A file the phone cannot decode is converted on import, not decoded in
+  place.** The app carries FFmpeg (nextlib, GPL-3.0, `SoftwareDecoders`) and
+  every player and every Transformer falls back to it - but the filmstrip,
+  the waveform, Freeze, Reverse and Stabilize read files through MediaCodec
+  and MediaMetadataRetriever, and the FFmpeg path cannot hand back the last
+  frames of a stream (nextlib has no drain; `SquishFfmpegCodecs` says why).
+  So `MediaConversion.prepare` runs wherever a video enters a project
+  (`EditHost.prepareMedia`) and the clip keeps the H.264/AAC copy. A new
+  door for footage into the editor must go through it. The `Codec` adapters
+  live in nextlib's own package under `app/src/main/java/io/github/...`
+  because the decoders are package-private; do not move that file.
 - **Time runs left to right.** Both strips compute a left-origin pixel from a
   moment and place it with `offset`, which mirrors in RTL (`absoluteOffset` is
   the one that does not), while the playhead and the drag deltas do not - so on

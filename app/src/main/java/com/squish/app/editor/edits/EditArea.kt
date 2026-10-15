@@ -37,6 +37,12 @@ internal interface EditHost {
     fun recomputeEstimate()
     fun displayNameOf(uri: Uri): String?
     fun checkDecodable(uri: Uri)
+    /**
+     * The file the project should hold for a picked video: itself, or the
+     * copy made when only the software decoders take it (MediaConversion),
+     * with the notice shown under [name] meanwhile.
+     */
+    suspend fun prepareMedia(uri: Uri, name: String?): Uri
     /** Starts a light preview copy of each heavy video file among [uris] that has none yet. */
     fun ensureProxies(uris: Collection<Uri>)
     /** The one-clip selection, as a tap makes it (see the view model's own). */

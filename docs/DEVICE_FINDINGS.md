@@ -4562,3 +4562,129 @@ projects the tests made (nine on the 29-second squish export, one two-clip)
 were binned through the app's own multi-select Delete - "Deleted 10 projects"
 with Undo - so they are in Recently deleted for 30 days, and the owner's own
 projects are as they were.
+
+### 59. The software decoders, the import conversion and the bare playhead (15 October)
+
+The owner's two requests of the morning: "add the nextlib software decoder" -
+the GPL-3.0 call the night before had left to them - and, having installed
+InShot to compare, a playhead that is "a pro straight line itself without
+that head". Built first with no phone; then the phone came, and the section
+at the end says what it showed, including two faults it found.
+
+**The playhead** is a bare 2 dp line, top of the ruler to the bottom of the
+rows, no cap (`TimelineEditor.Playhead`). `ControlChecks` refuses
+`PLAYHEAD_HEAD` back and wants the 2 dp width; negative-tested on a copy of
+the tree with the cap restored - it bit.
+
+**The decoders.** `io.github.anilbeesetti:nextlib-media3ext:1.11.1-0.16.0`
+(FFmpeg for Media3 1.11.1 exactly: H.264, HEVC, VP8, VP9, AV1 via dav1d,
+MPEG-1/2 video; AAC, MP3, AC-3, E-AC-3, TrueHD, DTS, Vorbis, Opus, FLAC,
+ALAC, AMR, µ-law, A-law). Three doors, each with the platform first:
+
+- every ExoPlayer (`PreviewEngine`'s video and sound players, `ClipPreview`,
+  the music audition) is built on `NextRenderersFactory` in
+  EXTENSION_RENDERER_MODE_ON - a file the phone refuses plays through FFmpeg
+  the moment it is opened, before anything is converted;
+- every Transformer (export, proxy, stills, and the conversion itself) reads
+  through `DefaultAssetLoaderFactory` over a decoder factory that hands
+  MediaCodec what it takes and `SquishFfmpegCodecs` the rest. Those are
+  Transformer `Codec`s over nextlib's package-private `FfmpegVideoDecoder`
+  and `FfmpegAudioDecoder` (the adapter file is declared in nextlib's
+  package for that reason), written against the 1.11.1 bytecode of the
+  asset-loader renderers - `BUILD_NOTES.md` lists what was read. The video
+  one takes FFmpeg's 8-bit 4:2:0 planes and queues them onto Transformer's
+  Surface as YUV images through `ImageWriter` (`YuvImagePainter`), sized to
+  the picture and stamped with the frame's time, carrying the DataSpace the
+  frame was encoded in (`YuvDataSpace`) for the GPU to convert - nextlib's
+  own Surface path sets no timestamp, which the frame processor needs;
+- `MediaCompat` counts a part decodable when either takes it, and marks a
+  part only FFmpeg takes (`videoSoftware`, `audioSoftware`).
+
+**The conversion.** The rest of the app - filmstrip, waveform, Freeze,
+Reverse, Stabilize, Track - reads through MediaCodec and
+MediaMetadataRetriever, and the FFmpeg path cannot deliver a stream's last
+frames: SimpleDecoder never calls decode for the end-of-stream buffer and
+nextlib's JNI cannot send FFmpeg a flush packet (read in `ffvideo.cpp`:
+`ffmpegSendPacket` refuses a NULL buffer, FFmpeg refuses an empty one). So a
+file only FFmpeg takes is converted once, whole, as it enters a project
+(`MediaConversion.prepare`, called from every door: New project, Add media,
+Add an overlay, Replace, Relink) into H.264 at the source's own frame -
+scaled only past the encoder's ceiling - at twice a clean encode's bits per
+pixel and never under the source's rate, with AAC sound; a track the phone
+decodes is copied byte for byte; an HDR picture is tone-mapped to SDR. The
+copy lives under `files/converted`, named by source and size, counted and
+swept by the storage card, excluded from backup. The notice over the strip
+(or on the loading screen for a new project) reads "Converting <name> for
+this phone · 37% - its format needs a software decoder, so a copy is made
+once". A conversion that fails keeps the original, which the preview still
+plays and the export still decodes in software. The rule is pure
+(`ConversionRules`) and executed with the matrices (`ConversionChecks`:
+BT.601/709/2020 in both ranges round-trip black, white, the primaries and a
+mid grey; BT.709 red through the BT.601 matrix is visibly wrong; limited
+black through the full matrix is lifted); negative-tested with the range
+scale and the frame rule broken on copies.
+
+**What a device has to answer, in order.** That `FfmpegLibrary.isAvailable()`
+is true on the moto (an arm64 build; the AAR carries all four ABIs). That an
+HEVC Main 10 file - the one format the moto has no decoder for at all -
+plays in the preview at once and then lands converted, the notice climbing.
+That the converted picture is right: blacks black (range), reds without a
+cast (matrix), the right way up on a portrait file (the decoder is given no
+rotation; Transformer applies the container's), and an HDR file neither
+grey nor blown (8-bit HLG code values into Media3's GL tone-mapper is a
+reasoned path, not a seen one). That a DTS or TrueHD file comes out with AAC
+and its picture untouched. That an MKV with no maxInputSize does not stop
+with "Buffer too small" (the floors are a guess at the largest sample). How
+many minutes a minute of 4K costs on the moto, with four decoding threads.
+And the one thing that may be wrong by design: the last few frames of the
+converted file are missing (FFmpeg's reorder and thread delay, never
+drained) - check how many, at the file's end, and that nothing shows it.
+
+**Also unseen:** the quick tools on such a file (Snip's trim-only copy should
+need no decode at all; Squeeze decodes in software directly, and loses the
+file's last frames); the storage card counting `converted`; and the music
+audition on FLAC and ALAC.
+
+**On the phone, later that morning.** The test file was the owner's own
+`Novelistic.mkv`: 1920x1080 HEVC Main 10 (`hvc1.2.4.L120.90`, 10-bit luma
+and chroma - the format the moto has no decoder for at all), 6-channel
+sound, 534 s, 287 MB. Opened through "Open with" on its MediaStore URI, so
+the project copied it in first and then converted the copy.
+
+- The notice read "Converting Novelistic.mkv for this phone · 23% — its
+  format needs a software decoder, so a copy is made once" over the loading
+  spinner, the percentage climbing; the FFmpeg renderers loaded in the
+  preview's players ("Loaded FfmpegVideoRenderer / FfmpegAudioRenderer").
+- **First fault: every frame one flat colour.** The first conversion landed
+  in 4.6 minutes (12798 frames, 466 kbps) and the clip played - as one
+  uniform olive, then tan, then brown, a colour per shot, in the preview
+  and in every filmstrip tile. A probe written into the EGL painter read
+  the window back as **1x1**, and stayed 1x1 through two seconds of
+  recreating the surface. Read in the 1.11.1 bytecode: Transformer never
+  sizes its input SurfaceTexture (`ExternalTextureManager.setInputFrameInfo`
+  only does so under `automaticReregistration`, ExoPlayer's path), because
+  MediaCodec sizes its buffers from the producer's side - and an EGL window
+  surface keeps the consumer's 1x1 default. Every frame had been drawn into
+  one pixel and that pixel's colour stretched over the picture.
+- **Second fault: the ImageWriter answered RGBA.** The painter was rewritten
+  over `ImageWriter`, whose builder is the one public producer-side way to
+  set a size (API 33). With `setImageFormat(YUV_420_888)` alone it handed
+  back format 1 images with one plane, and the planes copy threw. With
+  `setHardwareBufferFormat(YCBCR_420_888)` named as well it gave format 35
+  with three planes.
+- **Then it worked.** The second real conversion took 7.2 minutes for 8.9
+  minutes of footage (about 0.8 minutes per minute of 1080p, FFmpeg on four
+  threads), 12800 frames of the source's 12805 (the last five lost to the
+  drain nextlib does not have, as predicted), 13.6 Mbps H.264 with AAC at
+  131 kbps, 915 MB. The clip played in the preview and scrubbed to 0:41 with
+  the picture right: a field green, a road grey, a bus white, skin skin, the
+  2.39:1 letterbox black, the "NOVELISTIC" title legible - and the filmstrip
+  full of real frames. BT.709 limited, chosen from the decoder's colorspace
+  word, which is the matrix such a file is in.
+- The desktop frame reader (`tools/desktop/frames.ps1`) refuses the copy
+  ("One or more errors occurred"), presumably its 6-channel AAC; every
+  picture judgement above is off the phone's screen.
+
+**Left on the phone:** the test projects were binned through the app and
+the import copy and the converted copy removed; the owner's MKV is as it
+was.

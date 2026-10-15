@@ -68,11 +68,15 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                         withContext(Dispatchers.IO) { StillClips.overlayFromImage(app, uri) }
                             ?.let { Picked(it, displayNameOf(uri) ?: "Photo", OverlayRules.STILL_LANDING_MS, still = true) }
                     } else {
-                        val meta = ThumbnailExtractor.probe(app, uri)
+                        // Named before a conversion (MediaConversion) gives it a
+                        // copy's address.
+                        val name = displayNameOf(uri) ?: "Overlay"
+                        val ready = host.prepareMedia(uri, name)
+                        val meta = ThumbnailExtractor.probe(app, ready)
                         // Refused with a reason rather than added as an invisible
                         // layer with no length, the way an unreadable sound used to be.
                         if (meta.durationMs <= 0L) null
-                        else Picked(uri, displayNameOf(uri) ?: "Overlay", meta.durationMs, still = false)
+                        else Picked(ready, name, meta.durationMs, still = false)
                     }
                 }
                 val ready = picked.filterNotNull()

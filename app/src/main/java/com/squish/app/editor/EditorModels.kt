@@ -303,6 +303,13 @@ data class CaptionProgress(
 enum class ProxyStatus { NotNeeded, Building, Ready, Failed }
 
 /**
+ * A file being converted on its way into the project because only the
+ * app's own software decoders take it (MediaConversion): what it is called,
+ * and the encoder's percentage once it has said one.
+ */
+data class Converting(val name: String, val percent: Int?)
+
+/**
  * The part of the editor an undo should put back.
  *
  * Deliberately not the whole [EditorUiState]. Restoring that would drag the
@@ -555,6 +562,8 @@ data class EditorUiState(
     val proxyPercent: Int? = null,
     /** How many photos or blanks are being made into clips right now. */
     val preparingStills: Int = 0,
+    /** A file being converted for this phone before it lands (MediaConversion); null when none is. */
+    val converting: Converting? = null,
 
     /**
      * A file in the edit that can no longer be opened - deleted from the

@@ -176,6 +176,8 @@ object ProxyEngine {
             }
 
             val session = Transformer.Builder(context)
+                // The FFmpeg decoders where the platform has none (SoftwareDecoders).
+                .setAssetLoaderFactory(SoftwareDecoders.assetLoaderFactory(context))
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
                 .setAudioMimeType(MimeTypes.AUDIO_AAC)
                 .setEncoderFactory(encoderFactory)

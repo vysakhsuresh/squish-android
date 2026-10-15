@@ -25,6 +25,7 @@ import com.squish.app.settings.Preferences
 import com.squish.app.settings.withExportDefaults
 import com.squish.app.media.ExportsInFlight
 import com.squish.app.media.MediaCompat
+import com.squish.app.media.MediaConversion
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.SquishError
 import com.squish.app.media.StillClips
@@ -114,6 +115,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         override fun recomputeEstimate() = this@EditorViewModel.recomputeEstimate()
         override fun displayNameOf(uri: Uri): String? = this@EditorViewModel.displayNameOf(uri)
         override fun checkDecodable(uri: Uri) = this@EditorViewModel.checkDecodable(uri)
+        override suspend fun prepareMedia(uri: Uri, name: String?): Uri = this@EditorViewModel.prepareMedia(uri, name)
         override fun ensureProxies(uris: Collection<Uri>) = this@EditorViewModel.ensureProxies(uris)
         override fun selectClip(clipId: String?) = this@EditorViewModel.selectClip(clipId)
         override fun joinSelection(clipId: String) = this@EditorViewModel.joinSelection(clipId)
@@ -275,7 +277,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
                     still?.let { Triple(it, name ?: displayNameOf(uri) ?: "Photo", true) }
                 } else {
-                    Triple(uri, name ?: displayNameOf(uri) ?: "Clip", false)
+                    // A file only the software decoders take is converted
+                    // here, before the editor opens on it (MediaConversion).
+                    Triple(prepareMedia(uri, name), name ?: displayNameOf(uri) ?: "Clip", false)
                 }
             }
         } finally {
@@ -706,6 +710,23 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * rather than showing a black preview, or letting an export start that cannot
      * finish. The answer is kept for the export's preflight. See [MediaCompat].
      */
+    /**
+     * The file the project holds for a picked video: itself, or - when only
+     * the app's software decoders take it - the copy MediaConversion makes,
+     * with the notice over the strip (or on the loading screen) saying which
+     * file and how far while it is made. ConversionRules says why a copy.
+     */
+    private suspend fun prepareMedia(uri: Uri, name: String?): Uri {
+        val shown = name ?: displayNameOf(uri) ?: "this file"
+        return try {
+            MediaConversion.prepare(getApplication(), uri) { percent ->
+                _state.update { it.copy(converting = Converting(shown, percent)) }
+            }
+        } finally {
+            _state.update { if (it.converting == null) it else it.copy(converting = null) }
+        }
+    }
+
     private fun checkDecodable(uri: Uri) {
         viewModelScope.launch {
             val report = MediaCompat.check(getApplication(), uri) ?: return@launch
@@ -1471,7 +1492,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 } finally {
                     _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
                 }
-            } else picked
+            } else prepareMedia(picked, displayNameOf(picked))
             val meta = replacement?.let { ThumbnailExtractor.probe(app, it) }
             if (replacement == null || meta == null || meta.durationMs <= 0L) {
                 _state.update { it.copy(failure = SquishError.FileUnreadable(name = displayNameOf(picked))) }

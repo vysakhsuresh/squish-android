@@ -723,6 +723,14 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     private data class StillSource(val uri: Uri, val label: String?)
 
     /**
+     * A source as probed: the file the clip will play (a converted copy, for
+     * one only the software decoders took), its measurements, the still's
+     * [label] or null for a video, and the video's [name] - read off the file
+     * that was picked, not off the copy.
+     */
+    private data class Probed(val uri: Uri, val meta: com.squish.app.media.VideoMeta, val label: String?, val name: String?)
+
+    /**
      * Puts probed files on the main track: at the end, or with [at] set, into the
      * track at the cut nearest that moment, with every later main-track clip
      * moved along by what was added.
@@ -735,17 +743,22 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         if (failedAny) _state.update { it.copy(failure = SquishError.FileUnreadable()) }
         run {
             val probed = sources.map { src ->
-                val meta = ThumbnailExtractor.probe(app, src.uri)
-                Triple(src.uri, meta, src.label)
-            }.filter { (_, meta, _) -> meta.durationMs > 0L }
+                // A video only the software decoders take is converted on its
+                // way in (MediaConversion); it is then known by the copy's
+                // address, so its name is taken before.
+                val name = if (src.label == null) displayNameOf(src.uri) else null
+                val uri = if (src.label == null) host.prepareMedia(src.uri, name) else src.uri
+                val meta = ThumbnailExtractor.probe(app, uri)
+                Probed(uri, meta, src.label, name)
+            }.filter { it.meta.durationMs > 0L }
             if (probed.isEmpty()) {
                 _state.update { it.copy(failure = SquishError.FileUnreadable()) }
                 return
             }
             val what = when {
                 probed.size > 1 -> "${probed.size} clips"
-                probed[0].third == "Blank" -> "blank"
-                probed[0].third != null -> "photo"
+                probed[0].label == "Blank" -> "blank"
+                probed[0].label != null -> "photo"
                 else -> "clip"
             }
             record("Add $what") {
@@ -759,12 +772,12 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     else EditRules.insertion(base.map { Span(it.timelineStartMs, it.timelineEndMs) }, at, lengths)
                     val insertAt = insertion?.atMs ?: base.maxOfOrNull { c -> c.timelineEndMs } ?: 0L
                     var start = insertAt
-                    val added = probed.mapIndexed { i, (uri, meta, label) ->
+                    val added = probed.mapIndexed { i, (uri, meta, label, name) ->
                         val placed = lengths[i]
                         Clip(
                             kind = ClipKind.Video,
                             uri = uri,
-                            label = label ?: displayNameOf(uri) ?: "Clip ${current.videoClips.size + i + 1}",
+                            label = label ?: name ?: displayNameOf(uri) ?: "Clip ${current.videoClips.size + i + 1}",
                             sourceInMs = 0,
                             sourceOutMs = placed,
                             timelineStartMs = start,
@@ -788,7 +801,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             }
             recomputeEstimate()
             probed.forEach { (uri, _, label) -> if (label == null) checkDecodable(uri) }
-            ensureProxies(probed.filter { it.third == null }.map { it.first })
+            ensureProxies(probed.filter { it.label == null }.map { it.uri })
         }
     }
 
@@ -1725,7 +1738,10 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 }
                 return@launch
             }
-            val meta = ThumbnailExtractor.probe(app, uri)
+            // Converted first when only the software decoders take it
+            // (MediaConversion), so the replacement is a file every path reads.
+            val source = host.prepareMedia(uri, name)
+            val meta = ThumbnailExtractor.probe(app, source)
             if (meta.durationMs <= 0L) {
                 _state.update { it.copy(failure = SquishError.FileUnreadable(name = name)) }
                 return@launch
@@ -1734,7 +1750,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 _state.update { it.copy(failure = SquishError.ReplacementTooShort(name, meta.durationMs, needed)) }
                 return@launch
             }
-            val request = ReplaceRequest(clipId, uri, name, meta.durationMs, needed)
+            val request = ReplaceRequest(clipId, source, name, meta.durationMs, needed)
             // Where the old clip started in its file, if the new one has that much: the
             // likeliest match for a retake, and what the sheet's Reset goes back to.
             val opensAt = clip.sourceInMs.coerceIn(0L, request.latestInMs)

@@ -438,6 +438,9 @@ object StillClips {
             ).build()
 
             val transformer = Transformer.Builder(context)
+                // Every Transformer in the app reads through the same decoders
+                // (SoftwareDecoders), a still's render included for uniformity.
+                .setAssetLoaderFactory(SoftwareDecoders.assetLoaderFactory(context))
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
                 .apply { if (withSound) setAudioMimeType(MimeTypes.AUDIO_AAC) }
                 // A still is a few kilobytes of picture; the muxer's reserved

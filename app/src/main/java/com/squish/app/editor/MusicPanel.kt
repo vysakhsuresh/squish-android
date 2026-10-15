@@ -57,6 +57,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.squish.app.media.SoftwareDecoders
 import com.squish.app.online.Online
 import com.squish.app.online.OnlineMusic
 import com.squish.app.online.rememberOnlineGate
@@ -95,7 +96,10 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
     // One small player for listening before adding, released with the panel.
     var playingKey by remember { mutableStateOf<String?>(null) }
     val player = remember {
-        ExoPlayer.Builder(context)
+        // The FFmpeg decoders behind the platform's: a FLAC, an ALAC or an
+        // Opus file in a phone's music folder auditions whatever the phone's
+        // own decoders make of it (SoftwareDecoders).
+        ExoPlayer.Builder(context, SoftwareDecoders.renderers(context))
             .setAudioAttributes(
                 AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
                 /* handleAudioFocus = */ true

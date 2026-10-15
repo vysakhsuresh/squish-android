@@ -128,6 +128,7 @@ run searchterms "$SRC/online/SearchTerms.kt" tools/jvm/SearchTermChecks.kt
 run envelope  tools/jvm/stub/MonoPcm.kt "$SRC/media/audio/Waveform.kt" tools/jvm/EnvelopeChecks.kt
 run srt "$SRC/data/SrtFile.kt" "$SRC/data/PickedText.kt" tools/jvm/SrtChecks.kt
 run shaderuniforms tools/jvm/ShaderUniformChecks.kt
+run conversion "$SRC/media/ConversionRules.kt" "$SRC/media/YuvDataSpace.kt" tools/jvm/ConversionChecks.kt
 
 # And the suites that run app code against Media3 itself. They keep their own
 # file lists, and this is the only machine that can compile them at all - so

@@ -756,6 +756,17 @@ fun EditorScreen(
                                         color = SquishColors.Violet
                                     )
                                 }
+                                // A file only the software decoders take is
+                                // converted before the editor opens on it
+                                // (MediaConversion); minutes, named and counted.
+                                state.converting?.let { converting ->
+                                    Text(
+                                        PolishRules.convertingLine(converting.name, converting.percent),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SquishColors.Cyan,
+                                        modifier = Modifier.padding(horizontal = 24.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -1327,6 +1338,7 @@ private fun StatusCards(
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
     )
     PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+    ConvertingIndicator(converting = state.converting, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
     SpeakingIndicator(speaking = state.speakingId != null, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
     ReversingIndicator(
         reversing = state.reversing,
