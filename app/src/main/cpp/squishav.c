@@ -791,6 +791,30 @@ JNIEXPORT jint JNICALL FN(decReceive)(JNIEnv *env, jclass cls, jlong h, jlongArr
 }
 
 /**
+ * Takes the frame last received out of the decoder as a handle of its own -
+ * a reference, not a copy - so a player can hold several until it is time
+ * to show each. Freed with frameFree.
+ */
+JNIEXPORT jlong JNICALL FN(decTakeFrame)(JNIEnv *env, jclass cls, jlong h) {
+    (void) env; (void) cls;
+    SqDec *d = (SqDec *) (intptr_t) h;
+    AVFrame *held = av_frame_alloc();
+    if (!held) return 0;
+    av_frame_move_ref(held, d->frame);
+    return (jlong) (intptr_t) held;
+}
+
+JNIEXPORT void JNICALL FN(frameFree)(JNIEnv *env, jclass cls, jlong frame) {
+    (void) env; (void) cls;
+    AVFrame *f = (AVFrame *) (intptr_t) frame;
+    av_frame_free(&f);
+}
+
+static AVFrame *frame_of(SqDec *d, jlong frame) {
+    return frame ? (AVFrame *) (intptr_t) frame : d->frame;
+}
+
+/**
  * Reads [file]'s packets of [stream] into [dec] until a frame comes out,
  * draining at the end of the file. SQ_OK with the frame's [meta], SQ_EOF, or
  * a negative error. The packets of other streams are passed over.
@@ -859,8 +883,7 @@ static int is_rgb(enum AVPixelFormat f) {
  * A scaler from the frame to [dw]x[dh] of [dst], with the frame's own matrix
  * and range on the way in and [dst_full] on the way out.
  */
-static struct SwsContext *scaler(SqDec *d, int dw, int dh, enum AVPixelFormat dst, int dst_full, int flags) {
-    AVFrame *fr = d->frame;
+static struct SwsContext *scaler(SqDec *d, AVFrame *fr, int dw, int dh, enum AVPixelFormat dst, int dst_full, int flags) {
     int full = fr->color_range == AVCOL_RANGE_JPEG;
     enum AVPixelFormat src = plain((enum AVPixelFormat) fr->format, &full);
     d->sws = sws_getCachedContext(d->sws, fr->width, fr->height, src, dw, dh, dst, flags, NULL, NULL, NULL);
@@ -876,8 +899,7 @@ static struct SwsContext *scaler(SqDec *d, int dw, int dh, enum AVPixelFormat ds
 }
 
 /** Makes [d->tmp] a planar 8-bit 4:2:0 copy of the frame at its own size; null planes on failure. */
-static int to_i420(SqDec *d, const uint8_t **planes, int *lines) {
-    AVFrame *fr = d->frame;
+static int to_i420(SqDec *d, AVFrame *fr, const uint8_t **planes, int *lines) {
     int full = fr->color_range == AVCOL_RANGE_JPEG;
     enum AVPixelFormat src = plain((enum AVPixelFormat) fr->format, &full);
     if (src == AV_PIX_FMT_YUV420P) {
@@ -897,7 +919,7 @@ static int to_i420(SqDec *d, const uint8_t **planes, int *lines) {
     // An RGB source is written out limited range, as a camera's YUV would be;
     // a YUV source keeps its own range so the DataSpace named for it is true.
     int dst_full = is_rgb(src) ? 0 : full;
-    struct SwsContext *sws = scaler(d, fr->width, fr->height, AV_PIX_FMT_YUV420P, dst_full, SWS_BILINEAR);
+    struct SwsContext *sws = scaler(d, fr, fr->width, fr->height, AV_PIX_FMT_YUV420P, dst_full, SWS_BILINEAR);
     if (!sws) return AVERROR(EINVAL);
     sws_scale(sws, (const uint8_t *const *) fr->data, fr->linesize, 0, fr->height, d->tmp, d->tmp_lines);
     for (int i = 0; i < 3; i++) {
@@ -925,41 +947,43 @@ static void copy_plane(uint8_t *dst, int dst_row, int dst_pixel, const uint8_t *
  * the frame was written full range is returned (1) or not (0), or a
  * negative error.
  */
-JNIEXPORT jint JNICALL FN(decFrameToYuv)(JNIEnv *env, jclass cls, jlong h,
+JNIEXPORT jint JNICALL FN(decFrameToYuv)(JNIEnv *env, jclass cls, jlong h, jlong frame,
                                          jobject y, jint yRow, jobject u, jint uRow, jint uPixel,
                                          jobject v, jint vRow, jint vPixel) {
     (void) cls;
     SqDec *d = (SqDec *) (intptr_t) h;
+    AVFrame *fr = frame_of(d, frame);
     const uint8_t *planes[3];
     int lines[3];
-    int r = to_i420(d, planes, lines);
+    int r = to_i420(d, fr, planes, lines);
     if (r < 0) return r;
     uint8_t *yd = (*env)->GetDirectBufferAddress(env, y);
     uint8_t *ud = (*env)->GetDirectBufferAddress(env, u);
     uint8_t *vd = (*env)->GetDirectBufferAddress(env, v);
     if (!yd || !ud || !vd) return AVERROR(EINVAL);
-    int w = d->frame->width, hh = d->frame->height;
+    int w = fr->width, hh = fr->height;
     int cw = (w + 1) / 2, ch = (hh + 1) / 2;
     copy_plane(yd, yRow, 1, planes[0], lines[0], w, hh);
     copy_plane(ud, uRow, uPixel, planes[1], lines[1], cw, ch);
     copy_plane(vd, vRow, vPixel, planes[2], lines[2], cw, ch);
-    int full = d->frame->color_range == AVCOL_RANGE_JPEG;
-    enum AVPixelFormat src = plain((enum AVPixelFormat) d->frame->format, &full);
+    int full = fr->color_range == AVCOL_RANGE_JPEG;
+    enum AVPixelFormat src = plain((enum AVPixelFormat) fr->format, &full);
     return is_rgb(src) ? 0 : full;
 }
 
 /** Writes the frame as RGBA into [buffer] (rows [rowStride] bytes apart) at [w]x[h]. */
-JNIEXPORT jint JNICALL FN(decFrameToRgbaBuffer)(JNIEnv *env, jclass cls, jlong h, jobject buffer, jint rowStride,
-                                                jint w, jint hh) {
+JNIEXPORT jint JNICALL FN(decFrameToRgbaBuffer)(JNIEnv *env, jclass cls, jlong h, jlong frame, jobject buffer,
+                                                jint rowStride, jint w, jint hh) {
     (void) cls;
     SqDec *d = (SqDec *) (intptr_t) h;
+    AVFrame *fr = frame_of(d, frame);
     uint8_t *dst = (*env)->GetDirectBufferAddress(env, buffer);
     if (!dst) return AVERROR(EINVAL);
-    struct SwsContext *sws = scaler(d, w, hh, AV_PIX_FMT_RGBA, 1, SWS_BILINEAR);
+    struct SwsContext *sws = scaler(d, fr, w, hh, AV_PIX_FMT_RGBA, 1, SWS_BILINEAR);
     if (!sws) return AVERROR(EINVAL);
     uint8_t *out[4] = {dst, NULL, NULL, NULL};
     int lines[4] = {rowStride, 0, 0, 0};
-    sws_scale(sws, (const uint8_t *const *) d->frame->data, d->frame->linesize, 0, d->frame->height, out, lines);
+    sws_scale(sws, (const uint8_t *const *) fr->data, fr->linesize, 0, fr->height, out, lines);
     return 0;
 }
 
@@ -967,9 +991,10 @@ JNIEXPORT jint JNICALL FN(decFrameToRgbaBuffer)(JNIEnv *env, jclass cls, jlong h
  * Draws the frame into an ARGB_8888 [bitmap], scaled to the bitmap's size.
  * The bitmap's own size decides the scale; the caller turns it upright.
  */
-JNIEXPORT jint JNICALL FN(decFrameToBitmap)(JNIEnv *env, jclass cls, jlong h, jobject bitmap) {
+JNIEXPORT jint JNICALL FN(decFrameToBitmap)(JNIEnv *env, jclass cls, jlong h, jlong frame, jobject bitmap) {
     (void) cls;
     SqDec *d = (SqDec *) (intptr_t) h;
+    AVFrame *fr = frame_of(d, frame);
     AndroidBitmapInfo info;
     if (AndroidBitmap_getInfo(env, bitmap, &info) < 0 || info.format != ANDROID_BITMAP_FORMAT_RGBA_8888)
         return AVERROR(EINVAL);
@@ -977,19 +1002,19 @@ JNIEXPORT jint JNICALL FN(decFrameToBitmap)(JNIEnv *env, jclass cls, jlong h, jo
     if (AndroidBitmap_lockPixels(env, bitmap, &pixels) < 0) return AVERROR(EINVAL);
     int r = 0;
     // Area averaging when shrinking a lot (thumbnails of 4K), bilinear otherwise.
-    int flags = (d->frame->width > (int) info.width * 2) ? SWS_AREA : SWS_BILINEAR;
+    int flags = (fr->width > (int) info.width * 2) ? SWS_AREA : SWS_BILINEAR;
     enum AVPixelFormat dst = AV_PIX_FMT_RGBA;
-    struct SwsContext *sws = scaler(d, (int) info.width, (int) info.height, dst, 1, flags);
+    struct SwsContext *sws = scaler(d, fr, (int) info.width, (int) info.height, dst, 1, flags);
     if (!sws) {
         r = AVERROR(EINVAL);
     } else {
         uint8_t *out[4] = {pixels, NULL, NULL, NULL};
         int lines[4] = {(int) info.stride, 0, 0, 0};
-        sws_scale(sws, (const uint8_t *const *) d->frame->data, d->frame->linesize, 0, d->frame->height, out, lines);
+        sws_scale(sws, (const uint8_t *const *) fr->data, fr->linesize, 0, fr->height, out, lines);
         // A picture with no alpha of its own comes out opaque from swscale
         // already; one with alpha is left straight, and Android bitmaps are
         // premultiplied, so it is multiplied through here.
-        const AVPixFmtDescriptor *pd = av_pix_fmt_desc_get((enum AVPixelFormat) d->frame->format);
+        const AVPixFmtDescriptor *pd = av_pix_fmt_desc_get((enum AVPixelFormat) fr->format);
         if (pd && (pd->flags & AV_PIX_FMT_FLAG_ALPHA) && !(info.flags & ANDROID_BITMAP_FLAGS_ALPHA_UNPREMUL)) {
             for (uint32_t yy = 0; yy < info.height; yy++) {
                 uint8_t *p = (uint8_t *) pixels + (size_t) yy * info.stride;
@@ -1008,17 +1033,19 @@ JNIEXPORT jint JNICALL FN(decFrameToBitmap)(JNIEnv *env, jclass cls, jlong h, jo
 }
 
 /** The frame's luma, scaled to [w]x[h], into [out] (w*h bytes, full range). */
-JNIEXPORT jint JNICALL FN(decFrameToGray)(JNIEnv *env, jclass cls, jlong h, jbyteArray out, jint w, jint hh) {
+JNIEXPORT jint JNICALL FN(decFrameToGray)(JNIEnv *env, jclass cls, jlong h, jlong frame, jbyteArray out,
+                                          jint w, jint hh) {
     (void) cls;
     SqDec *d = (SqDec *) (intptr_t) h;
+    AVFrame *fr = frame_of(d, frame);
     if ((*env)->GetArrayLength(env, out) < w * hh) return AVERROR(ENOSPC);
-    struct SwsContext *sws = scaler(d, w, hh, AV_PIX_FMT_GRAY8, 1, SWS_AREA);
+    struct SwsContext *sws = scaler(d, fr, w, hh, AV_PIX_FMT_GRAY8, 1, SWS_AREA);
     if (!sws) return AVERROR(EINVAL);
     jbyte *bytes = (*env)->GetByteArrayElements(env, out, NULL);
     if (!bytes) return AVERROR(ENOMEM);
     uint8_t *dst[4] = {(uint8_t *) bytes, NULL, NULL, NULL};
     int lines[4] = {w, 0, 0, 0};
-    sws_scale(sws, (const uint8_t *const *) d->frame->data, d->frame->linesize, 0, d->frame->height, dst, lines);
+    sws_scale(sws, (const uint8_t *const *) fr->data, fr->linesize, 0, fr->height, dst, lines);
     (*env)->ReleaseByteArrayElements(env, out, bytes, 0);
     return 0;
 }
@@ -1030,10 +1057,11 @@ JNIEXPORT jint JNICALL FN(decFrameToGray)(JNIEnv *env, jclass cls, jlong h, jbyt
  * Returns the bytes written, or a negative error (ENOSPC: give more room;
  * a frame's samples times its channels times two, plus a little, is enough).
  */
-JNIEXPORT jint JNICALL FN(decFrameToPcm16)(JNIEnv *env, jclass cls, jlong h, jobject buffer, jint offset, jint capacity) {
+JNIEXPORT jint JNICALL FN(decFrameToPcm16)(JNIEnv *env, jclass cls, jlong h, jlong frame, jobject buffer,
+                                           jint offset, jint capacity) {
     (void) cls;
     SqDec *d = (SqDec *) (intptr_t) h;
-    AVFrame *fr = d->frame;
+    AVFrame *fr = frame_of(d, frame);
     if (fr->nb_samples <= 0 || fr->ch_layout.nb_channels <= 0) return 0;
     uint8_t *dst = (*env)->GetDirectBufferAddress(env, buffer);
     if (!dst) return AVERROR(EINVAL);
