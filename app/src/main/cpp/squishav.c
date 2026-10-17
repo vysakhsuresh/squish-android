@@ -752,7 +752,7 @@ JNIEXPORT jint JNICALL FN(decSend)(JNIEnv *env, jclass cls, jlong h, jobject buf
 
 static void frame_meta(SqDec *d, JNIEnv *env, jlongArray jmeta) {
     AVFrame *fr = d->frame;
-    jlong meta[12];
+    jlong meta[13];
     int64_t pts = fr->best_effort_timestamp != AV_NOPTS_VALUE ? fr->best_effort_timestamp : fr->pts;
     meta[0] = pts == AV_NOPTS_VALUE ? INT64_MIN : pts;
     meta[1] = fr->width;
@@ -766,7 +766,9 @@ static void frame_meta(SqDec *d, JNIEnv *env, jlongArray jmeta) {
     meta[9] = (fr->flags & AV_FRAME_FLAG_KEY) ? 1 : 0;
     meta[10] = fr->duration > 0 ? fr->duration : 0;
     meta[11] = fr->format;
-    (*env)->SetLongArrayRegion(env, jmeta, 0, 12, meta);
+    const AVPixFmtDescriptor *pd = fr->format >= 0 ? av_pix_fmt_desc_get((enum AVPixelFormat) fr->format) : NULL;
+    meta[12] = pd && (pd->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_PAL)) ? 1 : 0;
+    (*env)->SetLongArrayRegion(env, jmeta, 0, 13, meta);
 }
 
 static int receive(SqDec *d) {
@@ -876,7 +878,7 @@ static enum AVPixelFormat plain(enum AVPixelFormat f, int *full) {
 
 static int is_rgb(enum AVPixelFormat f) {
     const AVPixFmtDescriptor *d = av_pix_fmt_desc_get(f);
-    return d && (d->flags & AV_PIX_FMT_FLAG_RGB);
+    return d && (d->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_PAL));
 }
 
 /**
