@@ -1,0 +1,7 @@
+{
+  global:
+    JNI_OnLoad;
+    Java_com_squish_app_av_AvNative_*;
+  local:
+    *;
+};
