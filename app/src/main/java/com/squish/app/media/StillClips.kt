@@ -78,9 +78,19 @@ object StillClips {
      */
     suspend fun fromImage(context: Context, image: Uri, minMs: Long = RENDER_MS): Uri? {
         val name = uniqueName("photo")
-        val clip = render(context, image, name, maxOf(RENDER_MS, minMs)) ?: return null
-        withContext(Dispatchers.IO) { keepOriginal(context, image, name) }
-        return clip
+        // A picture Android's decoders refuse - a camera RAW, a TIFF, a PSD, an
+        // SVG - is decoded by the app's own (AvImages) into a file they read,
+        // which both the render and the kept picture below are made from.
+        val readable = withContext(Dispatchers.IO) {
+            com.squish.app.av.AvImages.readableFile(context, image, dir(context), name, MAX_EXPORT_SIDE)
+        } ?: return null
+        try {
+            val clip = render(context, readable, name, maxOf(RENDER_MS, minMs)) ?: return null
+            withContext(Dispatchers.IO) { keepOriginal(context, readable, name) }
+            return clip
+        } finally {
+            if (readable != image) withContext(Dispatchers.IO) { runCatching { File(readable.path!!).delete() } }
+        }
     }
 
     /**
@@ -173,8 +183,30 @@ object StillClips {
      * for it. Blocking; call it off the main thread. Null if it could not be read.
      */
     fun overlayFromImage(context: Context, image: Uri): Uri? = runCatching {
+        val decoded = platformOverlayBitmap(context, image)
+            // A picture Android's decoders refuse, through the app's own.
+            ?: com.squish.app.av.AvImages.decode(context, image, MAX_LONG_SIDE, MAX_SHORT_SIDE)
+            ?: error("nothing reads $image")
+        val (w, h) = overlayFit(decoded.width, decoded.height)
+        val bitmap = if (w == decoded.width && h == decoded.height) decoded
+        else Bitmap.createScaledBitmap(decoded, w, h, true).also { if (it !== decoded) decoded.recycle() }
+        val target = File(dir(context), uniqueName("overlay", "png"))
+        val partial = File(target.absolutePath + ".part")
+        try {
+            FileOutputStream(partial).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        } finally {
+            bitmap.recycle()
+        }
+        if (partial.length() <= 0L || !partial.renameTo(target)) {
+            partial.delete()
+            error("could not keep $target")
+        }
+        Uri.fromFile(target)
+    }.onFailure { android.util.Log.w("SquishStill", "could not make an overlay of $image", it) }.getOrNull()
+
+    private fun platformOverlayBitmap(context: Context, image: Uri): Bitmap? = runCatching {
         val source = ImageDecoder.createSource(context.contentResolver, image)
-        val decoded = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+        ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             // Software, so it can be scaled and written; sampled down on the way
             // in, so a 50-megapixel photo never sits whole in memory.
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
@@ -197,22 +229,7 @@ object StillClips {
                 PictureSample.forFit(info.size.width, info.size.height, MAX_SHORT_SIDE, MAX_LONG_SIDE)
             )
         }
-        val (w, h) = overlayFit(decoded.width, decoded.height)
-        val bitmap = if (w == decoded.width && h == decoded.height) decoded
-        else Bitmap.createScaledBitmap(decoded, w, h, true).also { if (it !== decoded) decoded.recycle() }
-        val target = File(dir(context), uniqueName("overlay", "png"))
-        val partial = File(target.absolutePath + ".part")
-        try {
-            FileOutputStream(partial).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        } finally {
-            bitmap.recycle()
-        }
-        if (partial.length() <= 0L || !partial.renameTo(target)) {
-            partial.delete()
-            error("could not keep $target")
-        }
-        Uri.fromFile(target)
-    }.onFailure { android.util.Log.w("SquishStill", "could not make an overlay of $image", it) }.getOrNull()
+    }.getOrNull()
 
     /**
      * Whether a clip's file is a picture kept as a picture - an overlay made by
@@ -226,7 +243,10 @@ object StillClips {
     fun aspectOf(context: Context, uri: Uri): Float? = runCatching {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) null else bounds.outWidth.toFloat() / bounds.outHeight
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            // A picture only the app's own decoders read (AvImages).
+            com.squish.app.av.AvImages.uprightSize(context, uri)?.let { (w, h) -> w.toFloat() / h }
+        } else bounds.outWidth.toFloat() / bounds.outHeight
     }.getOrNull()
 
     /**
@@ -256,6 +276,9 @@ object StillClips {
             )
         }
     }.getOrNull()
+        // A picture only the app's own decoders read (AvImages): a RAW's
+        // embedded preview, or the picture itself.
+        ?: com.squish.app.av.AvImages.thumbnail(context, uri, maxSide)
 
     /**
      * An overlay picture's size: its short side at most [MAX_SHORT_SIDE] and its
@@ -277,7 +300,7 @@ object StillClips {
     suspend fun freezeFrame(context: Context, video: Uri, sourceMs: Long): Uri? {
         val picture = withContext(Dispatchers.IO) {
             runCatching {
-                val retriever = android.media.MediaMetadataRetriever()
+                val retriever = com.squish.app.av.AvRetriever()
                 val grabbed: Bitmap? = try {
                     retriever.setDataSource(context, video)
                     // The frame itself, not the nearest keyframe: a freeze a second

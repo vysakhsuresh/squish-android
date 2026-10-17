@@ -103,8 +103,7 @@ dependencies {
     implementation(libs.media3.common)
     implementation(libs.media3.inspector)
     implementation(libs.mediapipe.tasks.vision)
-    // The FFmpeg decoders behind every player and every Transformer, for files
-    // no decoder on the phone takes (media/SoftwareDecoders.kt). GPL-3.0 - see
-    // THIRD_PARTY_NOTICES.md.
-    implementation(libs.nextlib.media3ext)
+    // SVG pictures, drawn for the photo path where Android has no decoder
+    // (av/AvImages.kt). Apache 2.0.
+    implementation(libs.androidsvg)
 }

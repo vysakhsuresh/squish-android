@@ -27,7 +27,8 @@ import com.squish.app.media.ExportPlan
 import com.squish.app.media.StillClips
 import com.squish.app.media.audio.GainProcessor
 import com.squish.app.media.audio.VoiceProcessor
-import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory
+import com.squish.app.av.AvRenderersFactory
+import com.squish.app.media.SoftwareDecoders
 import com.squish.app.media.effects.BackgroundEffect
 import com.squish.app.media.effects.ChromaKeyEffect
 import com.squish.app.media.effects.FxEffect
@@ -655,17 +656,12 @@ class PreviewEngine(private val context: Context) {
      * [GainProcessor] before it - so robot, echo, radio and a boost past full
      * are heard in the preview and change without the player being rebuilt.
      *
-     * Built on nextlib's factory rather than Media3's so the FFmpeg renderers
-     * stand behind the platform's (SoftwareDecoders.renderers says why and in
-     * what order): a file no decoder on the phone takes plays here anyway. The
-     * FFmpeg audio renderer is handed the same sink, so the processors below
-     * are in its path too.
+     * Built on Squish's factory rather than Media3's so FFmpeg stands behind
+     * the phone's decoders (AvRenderersFactory says why and in what order): a
+     * file no decoder on the phone takes plays here anyway, through the same
+     * MediaCodec renderers and so through the same sink and processors.
      */
-    private fun processedRenderers(vararg processors: AudioProcessor) = object : NextRenderersFactory(context) {
-        init {
-            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-            setEnableDecoderFallback(true)
-        }
+    private fun processedRenderers(vararg processors: AudioProcessor) = object : AvRenderersFactory(context) {
 
         override fun buildAudioSink(
             context: Context,
@@ -692,6 +688,8 @@ class PreviewEngine(private val context: Context) {
         // AudioMixing.processor. At unity on a mono or stereo file it makes
         // itself inactive and costs nothing.
         ExoPlayer.Builder(context, processedRenderers(AudioMixing.processor(1f), VoiceProcessor(voiceNow)))
+        // Media3's readers, or FFmpeg's for a file they do not read whole (AvRoute).
+        .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(context))
         // Ready on half a second of buffer rather than the default two and a half.
         // A shot parked ahead of a cut has to be ready before the cut, and on a
         // heavy original the default was a large part of the stall at every one.
@@ -748,6 +746,7 @@ class PreviewEngine(private val context: Context) {
             GainProcessor { chain.gain.get() }
         )
     )
+        .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(context))
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(

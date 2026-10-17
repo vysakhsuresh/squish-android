@@ -77,7 +77,11 @@ object MediaCompat {
             runCatching {
                 // An instance per file since Media3 1.8, closed when done with, and
                 // in its own module (media3-inspector) rather than in ExoPlayer.
-                MetadataRetriever.Builder(context, MediaItem.fromUri(uri)).build().use { retriever ->
+                MetadataRetriever.Builder(context, MediaItem.fromUri(uri))
+                    // Through the same readers the players use, so a file only
+                    // FFmpeg reads whole is judged on the tracks FFmpeg finds.
+                    .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(context))
+                    .build().use { retriever ->
                     retriever.retrieveTrackGroups().get(TIMEOUT_S, TimeUnit.SECONDS)
                 }
             }.getOrNull()
@@ -171,6 +175,10 @@ object MediaCompat {
             MimeTypes.AUDIO_VORBIS -> "Vorbis"
             MimeTypes.AUDIO_FLAC -> "FLAC"
             MimeTypes.AUDIO_ALAC -> "ALAC"
+            // Squish's own tracks carry FFmpeg's codec name; they reach here only
+            // on a phone below Android 13, where a picture FFmpeg decodes has no
+            // way onto a surface (AvCodecs.decodes).
+            com.squish.app.av.AvCodecMap.MIME_VIDEO, com.squish.app.av.AvCodecMap.MIME_AUDIO -> codecs.ifEmpty { "an unknown format" }
             else -> format.sampleMimeType ?: "an unknown format"
         }
     }

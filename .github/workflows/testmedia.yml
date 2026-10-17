@@ -1,0 +1,28 @@
+# Makes the test media set (tools/native/make_test_media.sh) on Linux, where
+# a full ffmpeg is one apt-get away, for checking on a phone that Squish
+# reads every one of them itself.
+name: testmedia
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/native/make_test_media.sh'
+      - '.github/workflows/testmedia.yml'
+
+jobs:
+  make:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -hide_banner -version | head -1
+      - name: Make
+        run: bash tools/native/make_test_media.sh "$PWD/testmedia"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: testmedia
+          path: testmedia/

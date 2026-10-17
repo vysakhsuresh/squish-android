@@ -57,7 +57,7 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
         val at = _state.value.playheadMs
         viewModelScope.launch {
             val resolver = app.contentResolver
-            val photo = uris.associateWith { resolver.getType(it)?.startsWith("image/") == true }
+            val photo = uris.associateWith { com.squish.app.av.AvImages.isPicture(app, it) }
             val photos = photo.count { it.value }
             if (photos > 0) _state.update { it.copy(preparingStills = it.preparingStills + photos) }
             // Counted down once the overlays are on the timeline, not as each photo
@@ -68,8 +68,6 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                         withContext(Dispatchers.IO) { StillClips.overlayFromImage(app, uri) }
                             ?.let { Picked(it, displayNameOf(uri) ?: "Photo", OverlayRules.STILL_LANDING_MS, still = true) }
                     } else {
-                        // Named before a conversion (MediaConversion) gives it a
-                        // copy's address.
                         val name = displayNameOf(uri) ?: "Overlay"
                         val ready = host.prepareMedia(uri, name)
                         val meta = ThumbnailExtractor.probe(app, ready)

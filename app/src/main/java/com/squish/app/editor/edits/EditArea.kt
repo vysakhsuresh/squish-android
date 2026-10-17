@@ -38,9 +38,8 @@ internal interface EditHost {
     fun displayNameOf(uri: Uri): String?
     fun checkDecodable(uri: Uri)
     /**
-     * The file the project should hold for a picked video: itself, or the
-     * copy made when only the software decoders take it (MediaConversion),
-     * with the notice shown under [name] meanwhile.
+     * The file the project should hold for a picked video - the file itself;
+     * the one door every video comes in by (EditorViewModel.prepareMedia).
      */
     suspend fun prepareMedia(uri: Uri, name: String?): Uri
     /** Starts a light preview copy of each heavy video file among [uris] that has none yet. */

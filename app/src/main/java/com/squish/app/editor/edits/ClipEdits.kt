@@ -664,7 +664,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             // Photos come in the same pick as videos. Each is made into a short
             // clip first (see StillClips); the order picked is kept either way.
             val resolver = app.contentResolver
-            val isPhoto = uris.associateWith { resolver.getType(it)?.startsWith("image/") == true }
+            val isPhoto = uris.associateWith { com.squish.app.av.AvImages.isPicture(app, it) }
             val photos = isPhoto.count { it.value }
             if (photos > 0) _state.update { it.copy(preparingStills = it.preparingStills + photos) }
             // Counted down only once the clips are on the timeline, not when each
@@ -743,9 +743,8 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         if (failedAny) _state.update { it.copy(failure = SquishError.FileUnreadable()) }
         run {
             val probed = sources.map { src ->
-                // A video only the software decoders take is converted on its
-                // way in (MediaConversion); it is then known by the copy's
-                // address, so its name is taken before.
+                // Every video comes in through prepareMedia (EditorViewModel
+                // says what it does); its name is taken from the file picked.
                 val name = if (src.label == null) displayNameOf(src.uri) else null
                 val uri = if (src.label == null) host.prepareMedia(src.uri, name) else src.uri
                 val meta = ThumbnailExtractor.probe(app, uri)
@@ -1722,7 +1721,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         val needed = clip.replacementNeedsMs()
         val name = displayNameOf(uri) ?: "Clip"
         viewModelScope.launch {
-            val photo = app.contentResolver.getType(uri)?.startsWith("image/") == true
+            val photo = com.squish.app.av.AvImages.isPicture(app, uri)
             if (photo) {
                 _state.update { it.copy(preparingStills = it.preparingStills + 1) }
                 try {
@@ -1738,8 +1737,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 }
                 return@launch
             }
-            // Converted first when only the software decoders take it
-            // (MediaConversion), so the replacement is a file every path reads.
+            // Through the one door every video comes in by (prepareMedia).
             val source = host.prepareMedia(uri, name)
             val meta = ThumbnailExtractor.probe(app, source)
             if (meta.durationMs <= 0L) {

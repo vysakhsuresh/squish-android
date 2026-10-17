@@ -39,12 +39,39 @@ object LumaDecoder {
         toMs: Long,
         stride: Int,
         onFrame: suspend (timeMs: Long, frame: LumaFrame) -> Unit
-    ): Boolean = decodeFrames(
-        context, uri, fromMs, toMs,
-        wanted = { index, _ -> index % stride == 0 },
-        convert = ::toGrid,
-        onFrame = onFrame
-    )
+    ): Boolean = withSoftware(context, uri, {
+        decodeFrames(
+            context, uri, fromMs, toMs,
+            wanted = { index, _ -> index % stride == 0 },
+            convert = ::toGrid,
+            onFrame = onFrame
+        )
+    }) {
+        com.squish.app.av.AvFrames.forEach(
+            context, uri, fromMs, toMs,
+            wanted = { index, _ -> index % stride == 0 },
+            convert = { source -> source.grid(MotionEstimator::analysisSize) },
+            onFrame = onFrame
+        )
+    }
+
+    /**
+     * The phone's decoder, or Squish's FFmpeg: FFmpeg first for a file only
+     * it reads or decodes (AvRoute, and the import probe's verdict), and
+     * after the phone's for any file the phone's path gives nothing from.
+     */
+    private suspend fun withSoftware(
+        context: Context,
+        uri: Uri,
+        platform: suspend () -> Boolean,
+        software: suspend () -> Boolean
+    ): Boolean {
+        val report = com.squish.app.media.MediaCompat.cached(uri)
+        val ffmpegFirst = com.squish.app.av.AvRoute.decide(context, uri).ffmpeg ||
+            report?.videoSoftware == true || report?.videoProblem != null
+        if (ffmpegFirst) return software()
+        return platform() || software()
+    }
 
     /**
      * Calls [onFrame] with a small colour picture of a frame roughly every
@@ -62,12 +89,23 @@ object LumaDecoder {
         onFrame: suspend (timeMs: Long, frame: Bitmap) -> Unit
     ): Boolean {
         var next = fromMs
-        return decodeFrames(
-            context, uri, fromMs, toMs,
-            wanted = { _, timeMs -> (timeMs >= next).also { if (it) next = timeMs + everyMs } },
-            convert = { image, rotation -> toBitmap(image, rotation, maxSide) },
-            onFrame = onFrame
-        )
+        return withSoftware(context, uri, {
+            next = fromMs
+            decodeFrames(
+                context, uri, fromMs, toMs,
+                wanted = { _, timeMs -> (timeMs >= next).also { if (it) next = timeMs + everyMs } },
+                convert = { image, rotation -> toBitmap(image, rotation, maxSide) },
+                onFrame = onFrame
+            )
+        }) {
+            next = fromMs
+            com.squish.app.av.AvFrames.forEach(
+                context, uri, fromMs, toMs,
+                wanted = { _, timeMs -> (timeMs >= next).also { if (it) next = timeMs + everyMs } },
+                convert = { source -> source.bitmap(maxSide) },
+                onFrame = onFrame
+            )
+        }
     }
 
     private suspend fun <T> decodeFrames(

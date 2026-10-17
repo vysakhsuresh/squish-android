@@ -198,6 +198,19 @@ object MediaLibrary {
     private val misses = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val decoders = Semaphore(3)
 
+    private fun ownTile(context: Context, uri: Uri): Bitmap? = runCatching {
+        if (com.squish.app.av.AvImages.isPicture(context, uri)) {
+            com.squish.app.av.AvImages.thumbnail(context, uri, TILE_PX)
+        } else {
+            com.squish.app.av.AvRetriever().use { r ->
+                r.setDataSource(context, uri)
+                val lengthMs = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                // A second in, as the provider's own thumbnails are, past a fade from black.
+                r.getScaledFrameAtTime(minOf(1_000L, lengthMs / 2) * 1000L, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC, TILE_PX, TILE_PX)
+            }
+        }
+    }.getOrNull()
+
     /** The tile as last loaded, for a grid that scrolls back over it. */
     fun tile(uri: Uri): Bitmap? = tiles.get(uri.toString())
 
@@ -217,7 +230,12 @@ object MediaLibrary {
             decoders.withPermit {
                 tiles.get(key) ?: runCatching {
                     context.contentResolver.loadThumbnail(uri, Size(TILE_PX, TILE_PX), null)
-                }.getOrNull()?.also { tiles.put(key, it) } ?: run { misses += key; null }
+                }.getOrNull()
+                    // The provider pictures what the phone decodes; a RAW, a
+                    // WMV or a ProRes clip it leaves blank is pictured by the
+                    // app's own decoders.
+                    ?: ownTile(context, uri)
+                        ?.also { tiles.put(key, it) } ?: run { misses += key; null }
             }
         }
     }

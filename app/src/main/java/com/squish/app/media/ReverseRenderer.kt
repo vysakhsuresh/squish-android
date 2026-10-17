@@ -150,7 +150,7 @@ object ReverseRenderer {
         outUs: Long,
         onProgress: (Float) -> Unit
     ): EncodedSound? {
-        val pcm = decodeSound(context, source, inUs, outUs, onProgress) ?: return null
+        val pcm = decodeSoundAny(context, source, inUs, outUs, onProgress) ?: return null
         val (samples, count, rate, channels) = pcm
         // Frame by frame - a frame being one sample per channel - so the
         // channels stay with each other. In place: the window is the one
@@ -175,6 +175,82 @@ object ReverseRenderer {
 
     /** [count] samples of [samples] are the sound; the array is allotted ahead and may run longer. */
     private data class Pcm(val samples: ShortArray, val count: Int, val sampleRate: Int, val channels: Int)
+
+    /**
+     * The sound through the phone's decoder, or Squish's FFmpeg: first for a
+     * file only it reads or whose sound only it decodes, and when the phone's
+     * decoder will not take the track.
+     */
+    private suspend fun decodeSoundAny(context: Context, source: Uri, inUs: Long, outUs: Long, onProgress: (Float) -> Unit): Pcm? {
+        val report = MediaCompat.cached(source)
+        if (com.squish.app.av.AvRoute.decide(context, source).ffmpeg || report?.audioSoftware == true || report?.audioProblem != null) {
+            return decodeSoundWithFfmpeg(context, source, inUs, outUs, onProgress)
+        }
+        return try {
+            decodeSound(context, source, inUs, outUs, onProgress) ?: decodeSoundWithFfmpeg(context, source, inUs, outUs, onProgress)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            decodeSoundWithFfmpeg(context, source, inUs, outUs, onProgress) ?: throw e
+        }
+    }
+
+    private suspend fun decodeSoundWithFfmpeg(context: Context, source: Uri, inUs: Long, outUs: Long, onProgress: (Float) -> Unit): Pcm? {
+        val file = com.squish.app.av.AvFile.open(context, source) ?: return null
+        try {
+            val stream = file.info.audio ?: return null
+            val decoder = com.squish.app.av.AvDecoder.forStream(file, stream.index, threads = 1) ?: return null
+            decoder.use {
+                val start = file.info.startUs
+                com.squish.app.av.AvNative.fileSeekDecoder(file.nativeHandle, decoder.nativeHandle, inUs + start)
+                val frame = com.squish.app.av.AvDecoder.Frame()
+                var pcm = ByteBuffer.allocateDirect(1 shl 16).order(ByteOrder.nativeOrder())
+                var out: ShortArray? = null
+                var written = 0
+                var rate = 0
+                var channels = 0
+                while (true) {
+                    coroutineContext.ensureActive()
+                    val r = com.squish.app.av.AvNative.fileDecodeNext(file.nativeHandle, decoder.nativeHandle, stream.index, frame.meta)
+                    if (r != com.squish.app.av.AvNative.OK) break
+                    if (frame.ptsUs == Long.MIN_VALUE || frame.samples <= 0) continue
+                    val firstUs = frame.ptsUs - start
+                    if (firstUs >= outUs) break
+                    if (rate == 0) {
+                        rate = frame.sampleRate.coerceAtLeast(1)
+                        channels = frame.outChannels.coerceAtLeast(1)
+                        out = ShortArray(((outUs - inUs) / 1_000_000.0 * rate * channels).toInt().coerceAtLeast(1024) + 4096)
+                    }
+                    val need = frame.samples * channels * 2 + 4096
+                    if (pcm.capacity() < need) pcm = ByteBuffer.allocateDirect(need * 2).order(ByteOrder.nativeOrder())
+                    val bytes = decoder.toPcm16(pcm, 0, pcm.capacity())
+                    if (bytes <= 0) continue
+                    val frames = bytes / (2 * channels)
+                    // Which of this frame's samples fall inside the window.
+                    val usPerFrame = 1_000_000.0 / rate
+                    val skip = if (firstUs >= inUs) 0 else ((inUs - firstUs) / usPerFrame).toInt().coerceIn(0, frames)
+                    val keep = (((outUs - firstUs) / usPerFrame).toLong().coerceIn(0L, frames.toLong())).toInt() - skip
+                    if (keep > 0) {
+                        var buffer = out!!
+                        val needed = written + keep * channels
+                        if (needed > buffer.size) buffer = buffer.copyOf(maxOf(needed, buffer.size * 2)).also { out = it }
+                        pcm.position(0)
+                        pcm.limit(bytes)
+                        val shorts = pcm.asShortBuffer()
+                        shorts.position(skip * channels)
+                        shorts.get(buffer, written, keep * channels)
+                        written += keep * channels
+                    }
+                    onProgress(((firstUs - inUs).toFloat() / (outUs - inUs)).coerceIn(0f, 1f))
+                }
+                val samples = out ?: return null
+                if (written == 0) return null
+                return Pcm(samples, written, rate, channels)
+            }
+        } finally {
+            file.close()
+        }
+    }
 
     /** The sound between [inUs] and [outUs] as 16-bit PCM, interleaved. Null without a sound track. */
     private suspend fun decodeSound(context: Context, source: Uri, inUs: Long, outUs: Long, onProgress: (Float) -> Unit): Pcm? {
@@ -353,35 +429,69 @@ object ReverseRenderer {
         spill: File,
         onProgress: (Float) -> Unit
     ): Long {
-        val extractor = MediaExtractor()
-        var decoder: MediaCodec? = null
+        // The phone's own decoder, or Squish's FFmpeg for a file only it reads
+        // or decodes - first when that is known, and as the fallback when the
+        // phone's decoder will not open on the track.
+        val report = MediaCompat.cached(source)
+        val ffmpegFirst = com.squish.app.av.AvRoute.decide(context, source).ffmpeg ||
+            report?.videoSoftware == true || report?.videoProblem != null
+        val reader: PictureReader = if (ffmpegFirst) {
+            AvPictureReader.open(context, source) ?: error("no picture FFmpeg can read")
+        } else {
+            try {
+                PlatformPictureReader.open(context, source)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AvPictureReader.open(context, source) ?: throw e
+            }
+        }
+        return reader.use { encodeReversed(it, inUs, outUs, muxer, sound, spill, onProgress) }
+    }
+
+    /** What the encoding half needs of a decoder: the track's tags, its runs, and each run's frames. */
+    private interface PictureReader : java.io.Closeable {
+        val rotation: Int
+        val fps: Int
+        val sourceBitrate: Int
+
+        fun runs(inUs: Long, outUs: Long): Runs
+
+        /**
+         * Decodes the run from [gopStartUs] up to [gopEndUs], handing over
+         * each frame inside [inUs]..[outUs] as it comes: its stored size, a
+         * packer that writes it as plain planar I420 at an even width and
+         * height no larger, and its time.
+         */
+        suspend fun decodeRun(
+            gopStartUs: Long,
+            gopEndUs: Long,
+            inUs: Long,
+            outUs: Long,
+            onFrame: (width: Int, height: Int, pack: (out: ByteArray, width: Int, height: Int) -> Unit, ptsUs: Long) -> Unit
+        )
+    }
+
+    private suspend fun encodeReversed(
+        reader: PictureReader,
+        inUs: Long,
+        outUs: Long,
+        muxer: MediaMuxer,
+        sound: EncodedSound?,
+        spill: File,
+        onProgress: (Float) -> Unit
+    ): Long {
         var encoder: MediaCodec? = null
         val spool = FrameSpool(spoolBudgetBytes, spill)
         try {
-            extractor.setDataSource(context, source, null)
-            val track = (0 until extractor.trackCount).firstOrNull {
-                extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/")
-            } ?: error("no video track")
-            val format = extractor.getTrackFormat(track)
-            val mime = format.getString(MediaFormat.KEY_MIME) ?: error("no video mime")
-            if (isTenBit(format, mime)) error(TEN_BIT)
-            extractor.selectTrack(track)
-
-            val rotation = if (format.containsKey(KEY_ROTATION)) runCatching { format.getInteger(KEY_ROTATION) }.getOrDefault(0) else 0
-            val fps = if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
-                runCatching { format.getInteger(MediaFormat.KEY_FRAME_RATE) }.getOrElse {
-                    runCatching { format.getFloat(MediaFormat.KEY_FRAME_RATE).toInt() }.getOrDefault(30)
-                }
-            } else 30
-            val sourceBitrate = if (format.containsKey(MediaFormat.KEY_BIT_RATE)) runCatching { format.getInteger(MediaFormat.KEY_BIT_RATE) }.getOrDefault(0) else 0
+            val rotation = reader.rotation
+            val fps = reader.fps
+            val sourceBitrate = reader.sourceBitrate
 
             // Where each run of frames starts, within the window: the keyframes.
-            val runs = keyframesWithin(extractor, inUs, outUs)
+            val runs = reader.runs(inUs, outUs)
             val syncs = runs.syncs
             if (syncs.isEmpty()) error("no keyframe before the window")
-
-            format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-            decoder = MediaCodec.createDecoderByType(mime).started { configure(format, null, null, 0) }
 
             var videoTrack = -1
             var audioTrack = -1
@@ -433,18 +543,15 @@ object ReverseRenderer {
                 val gopStartUs = syncs[gop]
                 val gopEndUs = ReverseRuns.runEndUs(syncs, gop, runs.tailBoundUs)
                 spool.clear()
-                decodeRun(extractor, decoder, gopStartUs, gopEndUs, inUs, outUs) { image, ptsUs ->
+                reader.decodeRun(gopStartUs, gopEndUs, inUs, outUs) { width, height, pack, ptsUs ->
                     if (frameW == 0) {
-                        // Two bytes a sample on the luma plane is a 10-bit picture
-                        // the tags did not announce.
-                        if (image.planes[0].pixelStride != 1) error(TEN_BIT)
                         // Even sides, as encoders require: an odd crop loses its last line.
-                        frameW = image.cropRect.width() / 2 * 2
-                        frameH = image.cropRect.height() / 2 * 2
+                        frameW = width / 2 * 2
+                        frameH = height / 2 * 2
                         packed = ByteArray(frameW * frameH * 3 / 2)
                         encoder = openEncoder(frameW, frameH, fps, sourceBitrate)
                     }
-                    packI420(image, packed!!, frameW, frameH)
+                    pack(packed!!, frameW, frameH)
                     spool.add(ptsUs, packed!!)
                 }
                 val enc = encoder ?: continue
@@ -483,12 +590,211 @@ object ReverseRenderer {
             check(started) { "nothing was written" }
             return (lastPtsUs - firstPtsUs) / 1_000L + 1_000L / fps.coerceAtLeast(1)
         } finally {
-            runCatching { decoder?.stop() }
-            runCatching { decoder?.release() }
             runCatching { encoder?.stop() }
             runCatching { encoder?.release() }
-            runCatching { extractor.release() }
             spool.close()
+        }
+    }
+
+    /** The phone's own extractor and decoder, as this renderer always read a file. */
+    private class PlatformPictureReader private constructor(
+        private val extractor: MediaExtractor,
+        private val decoder: MediaCodec,
+        override val rotation: Int,
+        override val fps: Int,
+        override val sourceBitrate: Int
+    ) : PictureReader {
+
+        private var checked = false
+
+        override fun runs(inUs: Long, outUs: Long): Runs = ReverseRenderer.keyframesWithin(extractor, inUs, outUs)
+
+        override suspend fun decodeRun(
+            gopStartUs: Long,
+            gopEndUs: Long,
+            inUs: Long,
+            outUs: Long,
+            onFrame: (Int, Int, (ByteArray, Int, Int) -> Unit, Long) -> Unit
+        ) {
+            ReverseRenderer.decodeRun(extractor, decoder, gopStartUs, gopEndUs, inUs, outUs) { image, ptsUs ->
+                if (!checked) {
+                    // Two bytes a sample on the luma plane is a 10-bit picture
+                    // the tags did not announce.
+                    if (image.planes[0].pixelStride != 1) error(TEN_BIT)
+                    checked = true
+                }
+                onFrame(image.cropRect.width(), image.cropRect.height(), { out, w, h -> ReverseRenderer.packI420(image, out, w, h) }, ptsUs)
+            }
+        }
+
+        override fun close() {
+            runCatching { decoder.stop() }
+            runCatching { decoder.release() }
+            runCatching { extractor.release() }
+        }
+
+        companion object {
+            fun open(context: Context, source: Uri): PlatformPictureReader {
+                val extractor = MediaExtractor()
+                try {
+                    extractor.setDataSource(context, source, null)
+                    val track = (0 until extractor.trackCount).firstOrNull {
+                        extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/")
+                    } ?: error("no video track")
+                    val format = extractor.getTrackFormat(track)
+                    val mime = format.getString(MediaFormat.KEY_MIME) ?: error("no video mime")
+                    if (ReverseRenderer.isTenBit(format, mime)) error(TEN_BIT)
+                    extractor.selectTrack(track)
+                    val rotation = if (format.containsKey(KEY_ROTATION)) runCatching { format.getInteger(KEY_ROTATION) }.getOrDefault(0) else 0
+                    val fps = if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
+                        runCatching { format.getInteger(MediaFormat.KEY_FRAME_RATE) }.getOrElse {
+                            runCatching { format.getFloat(MediaFormat.KEY_FRAME_RATE).toInt() }.getOrDefault(30)
+                        }
+                    } else 30
+                    val sourceBitrate = if (format.containsKey(MediaFormat.KEY_BIT_RATE)) runCatching { format.getInteger(MediaFormat.KEY_BIT_RATE) }.getOrDefault(0) else 0
+                    format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+                    val decoder = with(ReverseRenderer) { MediaCodec.createDecoderByType(mime).started { configure(format, null, null, 0) } }
+                    return PlatformPictureReader(extractor, decoder, rotation, fps, sourceBitrate)
+                } catch (t: Throwable) {
+                    runCatching { extractor.release() }
+                    throw t
+                }
+            }
+        }
+    }
+
+    /**
+     * Squish's FFmpeg as the decoder: any container, any codec. A 10-bit
+     * picture comes out as 8-bit (squishav.c's to_i420), so 10-bit SDR
+     * reverses here where the phone's path refuses it; HDR is still refused,
+     * since its values written into an SDR file would look washed out.
+     */
+    private class AvPictureReader private constructor(
+        private val file: com.squish.app.av.AvFile,
+        private val stream: com.squish.app.av.AvStream,
+        private val decoder: com.squish.app.av.AvDecoder
+    ) : PictureReader {
+
+        private val startUs = file.info.startUs
+        private val frame = com.squish.app.av.AvDecoder.Frame()
+        private var planes: ByteBuffer? = null
+
+        override val rotation: Int get() = stream.rotation
+        override val fps: Int get() = stream.fps.takeIf { it >= 1f }?.let { Math.round(it) } ?: 30
+        override val sourceBitrate: Int get() = stream.bitRate.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+
+        /** The key frames within the window, read off the packets' flags with no decoding, as keyframesWithin does. */
+        override fun runs(inUs: Long, outUs: Long): Runs {
+            val syncs = ArrayList<Long>()
+            val past = ArrayList<Long>()
+            file.seek(inUs + startUs)
+            var before = -1L
+            while (file.readPacket()) {
+                if (file.packetStream != stream.index) continue
+                val raw = if (file.packetPtsUs != Long.MIN_VALUE) file.packetPtsUs else file.packetDtsUs
+                if (raw == Long.MIN_VALUE) continue
+                val t = raw - startUs
+                val sync = file.packetKey
+                if (t >= outUs) {
+                    if (t - outUs > TAIL_SCAN_US) break
+                    if (sync && (past.isEmpty() || t > past.last())) {
+                        past.add(t)
+                        if (past.size >= ReverseRuns.TAIL_SYNCS) break
+                    }
+                } else if (sync) {
+                    // The key frame at or before the window's start opens the first run.
+                    if (t <= inUs) before = t
+                    else if (syncs.isEmpty() || t > syncs.last()) syncs.add(t)
+                }
+            }
+            if (before >= 0L) syncs.add(0, before)
+            else if (syncs.isEmpty() || syncs.first() > inUs) {
+                // The seek landed on a key frame after the start: the file has
+                // none before it, so the first frame there is where it begins.
+                syncs.add(0, inUs)
+            }
+            return Runs(syncs, ReverseRuns.tailBoundUs(past))
+        }
+
+        override suspend fun decodeRun(
+            gopStartUs: Long,
+            gopEndUs: Long,
+            inUs: Long,
+            outUs: Long,
+            onFrame: (Int, Int, (ByteArray, Int, Int) -> Unit, Long) -> Unit
+        ) {
+            com.squish.app.av.AvNative.fileSeekDecoder(file.nativeHandle, decoder.nativeHandle, gopStartUs + startUs)
+            while (true) {
+                coroutineContext.ensureActive()
+                val r = com.squish.app.av.AvNative.fileDecodeNext(file.nativeHandle, decoder.nativeHandle, stream.index, frame.meta)
+                if (r != com.squish.app.av.AvNative.OK) break
+                if (frame.ptsUs == Long.MIN_VALUE) continue
+                val pts = frame.ptsUs - startUs
+                // Out of the decoder in the order they are shown, so the first
+                // frame past the run's end means the run is all out.
+                if (pts >= gopEndUs) break
+                if (pts < gopStartUs || pts < inUs || pts >= outUs) continue
+                val fw = frame.width
+                val fh = frame.height
+                if (fw <= 0 || fh <= 0) continue
+                onFrame(fw, fh, { out, w, h -> pack(fw, fh, out, w, h) }, pts)
+            }
+        }
+
+        /** The frame as I420 at its own size into a direct buffer, then cut to [w]x[h] into [out]. */
+        private fun pack(fw: Int, fh: Int, out: ByteArray, w: Int, h: Int) {
+            val cw = (fw + 1) / 2
+            val ch = (fh + 1) / 2
+            val ySize = fw * fh
+            val cSize = cw * ch
+            val buffer = planes?.takeIf { it.capacity() >= ySize + 2 * cSize }
+                ?: ByteBuffer.allocateDirect(ySize + 2 * cSize).also { planes = it }
+            buffer.clear()
+            val y = buffer.duplicate().apply { position(0); limit(ySize) }.slice()
+            val u = buffer.duplicate().apply { position(ySize); limit(ySize + cSize) }.slice()
+            val v = buffer.duplicate().apply { position(ySize + cSize); limit(ySize + 2 * cSize) }.slice()
+            val r = com.squish.app.av.AvNative.decFrameToYuv(decoder.nativeHandle, 0L, y, fw, u, cw, 1, v, cw, 1)
+            if (r < 0) error("FFmpeg could not hand over a frame ($r)")
+            var o = 0
+            for (row in 0 until h) {
+                buffer.position(row * fw)
+                buffer.get(out, o, w)
+                o += w
+            }
+            for (plane in 0 until 2) {
+                val base = ySize + plane * cSize
+                for (row in 0 until h / 2) {
+                    buffer.position(base + row * cw)
+                    buffer.get(out, o, w / 2)
+                    o += w / 2
+                }
+            }
+        }
+
+        override fun close() {
+            decoder.close()
+            file.close()
+        }
+
+        companion object {
+            fun open(context: Context, source: Uri): AvPictureReader? {
+                val file = com.squish.app.av.AvFile.open(context, source) ?: return null
+                val stream = file.info.video
+                if (stream == null) {
+                    file.close()
+                    return null
+                }
+                if (stream.hdr) {
+                    file.close()
+                    error(TEN_BIT)
+                }
+                val decoder = com.squish.app.av.AvDecoder.forStream(file, stream.index)
+                if (decoder == null) {
+                    file.close()
+                    return null
+                }
+                return AvPictureReader(file, stream, decoder)
+            }
         }
     }
 

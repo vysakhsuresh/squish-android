@@ -100,6 +100,7 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
         // Opus file in a phone's music folder auditions whatever the phone's
         // own decoders make of it (SoftwareDecoders).
         ExoPlayer.Builder(context, SoftwareDecoders.renderers(context))
+            .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(context))
             .setAudioAttributes(
                 AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
                 /* handleAudioFocus = */ true

@@ -39,7 +39,7 @@ object TrackRunner {
         boxFraction: Float,
         onProgress: (Int, Int) -> Unit
     ): MotionTrack? = withContext(Dispatchers.IO) {
-        val retriever = MediaMetadataRetriever()
+        val retriever = com.squish.app.av.AvRetriever()
 
         try {
             retriever.setDataSource(context, uri)

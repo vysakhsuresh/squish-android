@@ -87,7 +87,7 @@ object FrameBatch {
      * longer says where a frame sits in the clip.
      */
     inline fun forEachFrame(
-        retriever: MediaMetadataRetriever,
+        retriever: com.squish.app.av.AvRetriever,
         firstIndex: Int,
         lastIndex: Int,
         stride: Int,

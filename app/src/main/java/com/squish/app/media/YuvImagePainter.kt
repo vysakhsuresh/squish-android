@@ -91,6 +91,27 @@ class YuvImagePainter(private val surface: Surface) {
         out.queueInputImage(image)
     }
 
+    /**
+     * Queues one frame of [width]x[height] that [fill] writes into the
+     * dequeued image itself - three planes, or one RGBA plane on a writer
+     * that gives only that - stamped [timestampNs]. Squish's FFmpeg writes
+     * straight from its decoded frame this way (AvVideoOutput), with no copy
+     * of its own in between.
+     */
+    fun paintWith(width: Int, height: Int, choice: YuvDataSpace.Choice, timestampNs: Long, fill: (Image) -> Unit) {
+        val out = writer?.takeIf { this.width == width && this.height == height && this.choice == choice }
+            ?: open(width, height, choice)
+        val image = out.dequeueInputImage()
+        try {
+            fill(image)
+            image.timestamp = timestampNs
+        } catch (e: Exception) {
+            image.close()
+            throw e
+        }
+        out.queueInputImage(image)
+    }
+
     private fun open(width: Int, height: Int, choice: YuvDataSpace.Choice): ImageWriter {
         writer?.close()
         val made = ImageWriter.Builder(surface)

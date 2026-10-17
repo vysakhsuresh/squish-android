@@ -27,7 +27,7 @@ object GifMaker {
 
     /** The GIF's gallery URI, or null when the video could not be read or the gallery refused it. [progress] runs 0..1. */
     suspend fun make(context: Context, video: Uri, name: String, progress: (Float) -> Unit = {}): Uri? = withContext(Dispatchers.IO) {
-        val retriever = MediaMetadataRetriever()
+        val retriever = com.squish.app.av.AvRetriever()
         val temp = File(context.cacheDir, "gif-${System.currentTimeMillis()}.gif")
         try {
             retriever.setDataSource(context, video)

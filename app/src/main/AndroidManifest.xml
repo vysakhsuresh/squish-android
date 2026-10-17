@@ -91,6 +91,11 @@
                 <data android:scheme="content" />
                 <data android:scheme="file" />
                 <data android:mimeType="video/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="application/mxf" />
+                <data android:mimeType="application/vnd.rn-realmedia" />
+                <data android:mimeType="application/vnd.rn-realmedia-vbr" />
+                <data android:mimeType="application/x-matroska" />
             </intent-filter>
             <intent-filter>
                 <!-- No scheme here, and none wanted: a SEND carries its URI in
@@ -98,6 +103,11 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="video/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="application/mxf" />
+                <data android:mimeType="application/vnd.rn-realmedia" />
+                <data android:mimeType="application/vnd.rn-realmedia-vbr" />
+                <data android:mimeType="application/x-matroska" />
             </intent-filter>
         </activity>
 

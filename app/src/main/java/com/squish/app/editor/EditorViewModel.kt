@@ -25,7 +25,6 @@ import com.squish.app.settings.Preferences
 import com.squish.app.settings.withExportDefaults
 import com.squish.app.media.ExportsInFlight
 import com.squish.app.media.MediaCompat
-import com.squish.app.media.MediaConversion
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.SquishError
 import com.squish.app.media.StillClips
@@ -264,7 +263,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val resolver = app.contentResolver
         // The photos are counted first so the loading screen can say how many
         // are still to render, and the count falls as each lands.
-        val images = start.uris.count { resolver.getType(it)?.startsWith("image/") == true }
+        val images = start.uris.count { com.squish.app.av.AvImages.isPicture(app, it) }
         _state.update { it.copy(preparingStills = images) }
         val sources = try {
             start.uris.mapNotNull { picked ->
@@ -272,13 +271,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 // a made-up name, and that was the project's title - "5ee44925-efb7...".
                 val name = withContext(Dispatchers.IO) { displayNameOf(picked) }
                 val uri = if (start.copyIn) withContext(Dispatchers.IO) { app.importCopy(picked) } else picked
-                if (resolver.getType(uri)?.startsWith("image/") == true) {
+                if (com.squish.app.av.AvImages.isPicture(app, uri)) {
                     val still = StillClips.fromImage(app, uri)
                     _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
                     still?.let { Triple(it, name ?: displayNameOf(uri) ?: "Photo", true) }
                 } else {
-                    // A file only the software decoders take is converted
-                    // here, before the editor opens on it (MediaConversion).
+                    // Every video comes in through prepareMedia, which decides
+                    // which reader opens it before the editor does.
                     Triple(prepareMedia(uri, name), name ?: displayNameOf(uri) ?: "Clip", false)
                 }
             }
@@ -706,27 +705,28 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var codecsProbed = false
 
     /**
+     * The file the project holds for a picked video: the file itself, always.
+     *
+     * Every video comes in through here. Files only Squish's own FFmpeg
+     * reads used to be converted here into an H.264 copy, because the
+     * filmstrip, the waveform, Freeze, Reverse and the export could only
+     * read through the phone's decoders and nextlib's FFmpeg lost the last
+     * frames of every stream. Both are gone: every reader falls back to the
+     * app's own FFmpeg (SoftwareDecoders), which drains properly, so the
+     * original is used where it is. What is done here is to decide, off the
+     * main thread and before any player asks, which reader opens the file
+     * (AvRoute), so the first frame does not wait on the probe.
+     */
+    private suspend fun prepareMedia(uri: Uri, @Suppress("UNUSED_PARAMETER") name: String?): Uri {
+        withContext(Dispatchers.IO) { com.squish.app.av.AvRoute.decide(getApplication(), uri) }
+        return uri
+    }
+
+    /**
      * Asks whether this phone can decode [uri], and says so straight away if not -
      * rather than showing a black preview, or letting an export start that cannot
      * finish. The answer is kept for the export's preflight. See [MediaCompat].
      */
-    /**
-     * The file the project holds for a picked video: itself, or - when only
-     * the app's software decoders take it - the copy MediaConversion makes,
-     * with the notice over the strip (or on the loading screen) saying which
-     * file and how far while it is made. ConversionRules says why a copy.
-     */
-    private suspend fun prepareMedia(uri: Uri, name: String?): Uri {
-        val shown = name ?: displayNameOf(uri) ?: "this file"
-        return try {
-            MediaConversion.prepare(getApplication(), uri) { percent ->
-                _state.update { it.copy(converting = Converting(shown, percent)) }
-            }
-        } finally {
-            _state.update { if (it.converting == null) it else it.copy(converting = null) }
-        }
-    }
-
     private fun checkDecodable(uri: Uri) {
         viewModelScope.launch {
             val report = MediaCompat.check(getApplication(), uri) ?: return@launch
@@ -1484,7 +1484,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val missing = _state.value.missingMedia ?: return
         viewModelScope.launch {
             val app = getApplication<Application>()
-            val image = app.contentResolver.getType(picked)?.startsWith("image/") == true
+            val image = com.squish.app.av.AvImages.isPicture(app, picked)
             val replacement = if (image) {
                 _state.update { it.copy(preparingStills = it.preparingStills + 1) }
                 try {

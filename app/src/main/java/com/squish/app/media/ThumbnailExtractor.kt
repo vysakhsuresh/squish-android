@@ -5,6 +5,10 @@ import android.graphics.Bitmap
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import com.squish.app.av.AvFile
+import com.squish.app.av.AvInfo
+import com.squish.app.av.AvRetriever
+import com.squish.app.av.AvRoute
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,7 +41,10 @@ data class VideoMeta(
 object ThumbnailExtractor {
 
     suspend fun probe(context: Context, uri: Uri): VideoMeta = withContext(Dispatchers.IO) {
-        val retriever = MediaMetadataRetriever()
+        // A file only Squish's FFmpeg reads whole (AvRoute) is described as
+        // FFmpeg sees it: the platform's readers would give its header at best.
+        AvRoute.decide(context, uri).takeIf { it.ffmpeg }?.info?.let { metaOf(it) }?.let { return@withContext it }
+        val retriever = AvRetriever()
         val base = try {
             retriever.setDataSource(context, uri)
             VideoMeta(
@@ -62,6 +69,7 @@ object ThumbnailExtractor {
             // its readers are Media3's own and cover more. So the player's own
             // reader is asked before giving up.
             return@withContext probeWithMedia3(context, uri)
+                ?: AvFile.probe(context, uri)?.let { metaOf(it) }
                 ?: VideoMeta(durationMs = 0L, width = 0, height = 0, rotationDegrees = 0, fps = 30f)
         } finally {
             retriever.release()
@@ -107,6 +115,7 @@ object ThumbnailExtractor {
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun probeWithMedia3(context: Context, uri: Uri): VideoMeta? = runCatching {
         androidx.media3.inspector.MetadataRetriever.Builder(context, androidx.media3.common.MediaItem.fromUri(uri))
+            .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(context))
             .build().use { retriever ->
                 val durationUs = retriever.retrieveDurationUs().get(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)
                 val groups = retriever.retrieveTrackGroups().get(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)
@@ -136,6 +145,23 @@ object ThumbnailExtractor {
 
     private const val PROBE_TIMEOUT_S = 10L
 
+    /** A file as Squish's FFmpeg describes it, in this file's terms; null when it has no picture or sound at all. */
+    private fun metaOf(info: AvInfo): VideoMeta? {
+        val video = info.video
+        if (video == null && info.audio == null && info.durationMs <= 0L) return null
+        return VideoMeta(
+            durationMs = info.durationMs,
+            // The stored shape with the pixel shape applied - an anamorphic
+            // DVD's 720x576 is 1024x576 to look at - and the turn kept apart,
+            // as the retriever's keys keep it.
+            width = video?.displayWidth ?: 0,
+            height = video?.height ?: 0,
+            rotationDegrees = video?.rotation ?: 0,
+            fps = video?.fps?.takeIf { it > 1f && it < 1000f } ?: 30f,
+            hasAudio = info.audio != null
+        )
+    }
+
     private data class TrackInfo(
         val width: Int,
         val height: Int,
@@ -146,7 +172,7 @@ object ThumbnailExtractor {
 
     /** Container duration for any media file, including audio-only tracks. */
     suspend fun probeDurationMs(context: Context, uri: Uri): Long = withContext(Dispatchers.IO) {
-        val retriever = MediaMetadataRetriever()
+        val retriever = AvRetriever()
         try {
             retriever.setDataSource(context, uri)
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
@@ -243,7 +269,7 @@ object ThumbnailExtractor {
         exact: Boolean = false
     ): Bitmap? =
         withContext(Dispatchers.IO) {
-            val retriever = MediaMetadataRetriever()
+            val retriever = AvRetriever()
             try {
                 retriever.setDataSource(context, uri)
                 retriever.getScaledFrameAtTime(
@@ -283,7 +309,7 @@ object ThumbnailExtractor {
     suspend fun extractFrames(context: Context, uri: Uri, count: Int, durationMs: Long): List<Bitmap?> =
         withContext(Dispatchers.IO) {
             if (durationMs <= 0 || count <= 0) return@withContext emptyList()
-            val retriever = MediaMetadataRetriever()
+            val retriever = AvRetriever()
             try {
                 retriever.setDataSource(context, uri)
                 val step = durationMs / count

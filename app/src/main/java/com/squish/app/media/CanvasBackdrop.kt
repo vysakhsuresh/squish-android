@@ -108,6 +108,8 @@ object CanvasBackdrop {
             )
         }
     }.getOrNull()
+        // A picture only the app's own decoders read (AvImages).
+        ?: com.squish.app.av.AvImages.decode(context, image, longSide)
 
     /**
      * [source] cut to fill a frame of [aspect]: scaled so the frame is covered,

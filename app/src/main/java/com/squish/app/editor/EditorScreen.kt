@@ -402,7 +402,7 @@ fun EditorScreen(
                 }
             },
             onBrowseFiles = if (use == LibraryUse.Replace) null else {
-                { browseFor = use; browseClips.launch(arrayOf("video/*", "image/*")) }
+                { browseFor = use; browseClips.launch(com.squish.app.av.AvTypes.PICTURES_AND_FOOTAGE) }
             }
         )
     }
@@ -712,7 +712,7 @@ fun EditorScreen(
                             state = state,
                             viewModel = viewModel,
                             onDone = { openToolName = null },
-                            onPickAudio = { pickAudioTrack.launch(arrayOf("audio/*", "video/*")) },
+                            onPickAudio = { pickAudioTrack.launch(com.squish.app.av.AvTypes.SOUNDS) },
                             onAddText = addText,
                             onAddTitle = addTitle,
                             newLineId = newLineId,
@@ -754,17 +754,6 @@ fun EditorScreen(
                                         if (state.preparingStills == 1) "Preparing 1 photo…" else "Preparing ${state.preparingStills} photos…",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = SquishColors.Violet
-                                    )
-                                }
-                                // A file only the software decoders take is
-                                // converted before the editor opens on it
-                                // (MediaConversion); minutes, named and counted.
-                                state.converting?.let { converting ->
-                                    Text(
-                                        PolishRules.convertingLine(converting.name, converting.percent),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = SquishColors.Cyan,
-                                        modifier = Modifier.padding(horizontal = 24.dp)
                                     )
                                 }
                             }
@@ -1338,7 +1327,6 @@ private fun StatusCards(
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
     )
     PreparingIndicator(count = state.preparingStills, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-    ConvertingIndicator(converting = state.converting, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
     SpeakingIndicator(speaking = state.speakingId != null, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
     ReversingIndicator(
         reversing = state.reversing,
@@ -1406,10 +1394,10 @@ private fun RelinkCard(name: String?, sound: Boolean, onRelink: () -> Unit, onBr
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (sound) {
-                SquishPrimaryButton(text = "Relink", onClick = { onBrowse(arrayOf("audio/*")) })
+                SquishPrimaryButton(text = "Relink", onClick = { onBrowse(com.squish.app.av.AvTypes.SOUNDS) })
             } else {
                 SquishPrimaryButton(text = "Relink", onClick = onRelink)
-                SquishOutlinedButton(text = "Browse files", onClick = { onBrowse(arrayOf("video/*", "image/*")) })
+                SquishOutlinedButton(text = "Browse files", onClick = { onBrowse(com.squish.app.av.AvTypes.PICTURES_AND_FOOTAGE) })
             }
         }
     }

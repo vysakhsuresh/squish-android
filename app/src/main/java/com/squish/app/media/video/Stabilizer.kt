@@ -45,7 +45,7 @@ object Stabilizer {
         strength: Float,
         onProgress: (Int, Int) -> Unit
     ): Result? = withContext(Dispatchers.IO) {
-        val retriever = MediaMetadataRetriever()
+        val retriever = com.squish.app.av.AvRetriever()
 
         try {
             retriever.setDataSource(context, uri)

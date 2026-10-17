@@ -124,7 +124,7 @@ object Segmenter {
             )
         }.getOrNull() ?: return@withContext null
 
-        val retriever = MediaMetadataRetriever()
+        val retriever = com.squish.app.av.AvRetriever()
         try {
             val times = ArrayList<Long>(count)
             val masks = ArrayList<ByteArray>(count)

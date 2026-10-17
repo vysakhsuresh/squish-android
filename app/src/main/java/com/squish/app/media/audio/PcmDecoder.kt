@@ -123,6 +123,77 @@ object PcmDecoder {
         onFormat: (sampleRate: Int) -> Unit,
         onFrame: (Float) -> Boolean
     ): Boolean {
+        // Squish's FFmpeg first for a file only it reads or whose sound only it
+        // decodes - a WMA, a DTS track, an APE - and after the phone's decoder
+        // for anything the phone's path gives no sound from. Never after sound
+        // has been handed on: the callers would hear the start twice.
+        val report = com.squish.app.media.MediaCompat.cached(uri)
+        if (com.squish.app.av.AvRoute.decide(context, uri).ffmpeg || report?.audioSoftware == true || report?.audioProblem != null) {
+            return decodeWithFfmpeg(context, uri, onFormat, onFrame)
+        }
+        var delivered = false
+        val ok = decodeWithPlatform(context, uri, onFormat) { sample -> delivered = true; onFrame(sample) }
+        if (ok || delivered) return true
+        return decodeWithFfmpeg(context, uri, onFormat, onFrame)
+    }
+
+    /** The same walk through Squish's FFmpeg: 16-bit PCM off the decoder, the channels averaged. */
+    private suspend fun decodeWithFfmpeg(
+        context: Context,
+        uri: Uri,
+        onFormat: (sampleRate: Int) -> Unit,
+        onFrame: (Float) -> Boolean
+    ): Boolean {
+        val file = com.squish.app.av.AvFile.open(context, uri) ?: return false
+        try {
+            val stream = file.info.audio ?: return false
+            val decoder = com.squish.app.av.AvDecoder.forStream(file, stream.index, threads = 1) ?: return false
+            decoder.use {
+                val frame = com.squish.app.av.AvDecoder.Frame()
+                var pcm = java.nio.ByteBuffer.allocateDirect(1 shl 16).order(ByteOrder.nativeOrder())
+                var announced = false
+                var delivered = false
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val r = com.squish.app.av.AvNative.fileDecodeNext(file.nativeHandle, decoder.nativeHandle, stream.index, frame.meta)
+                    if (r != com.squish.app.av.AvNative.OK) break
+                    val channels = frame.outChannels.coerceAtLeast(1)
+                    val need = frame.samples * channels * 2 + 4096
+                    if (pcm.capacity() < need) pcm = java.nio.ByteBuffer.allocateDirect(need * 2).order(ByteOrder.nativeOrder())
+                    val bytes = decoder.toPcm16(pcm, 0, pcm.capacity())
+                    if (bytes <= 0) continue
+                    if (!announced) {
+                        announced = true
+                        onFormat(frame.sampleRate.coerceAtLeast(1))
+                    }
+                    pcm.position(0)
+                    pcm.limit(bytes)
+                    val shorts = pcm.asShortBuffer()
+                    while (shorts.remaining() >= channels) {
+                        var sum = 0f
+                        for (c in 0 until channels) sum += shorts.get() / 32768f
+                        delivered = true
+                        if (!onFrame(sum / channels)) return true
+                    }
+                }
+                return delivered
+            }
+        } catch (c: CancellationException) {
+            throw c
+        } catch (t: Throwable) {
+            android.util.Log.w("SquishAv", "reading the sound of $uri", t)
+            return false
+        } finally {
+            file.close()
+        }
+    }
+
+    private suspend fun decodeWithPlatform(
+        context: Context,
+        uri: Uri,
+        onFormat: (sampleRate: Int) -> Unit,
+        onFrame: (Float) -> Boolean
+    ): Boolean {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         try {

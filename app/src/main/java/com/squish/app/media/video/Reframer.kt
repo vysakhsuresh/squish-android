@@ -51,7 +51,7 @@ object Reframer {
         val count = (span / 1000f * SAMPLES_PER_SECOND).roundToInt().coerceIn(2, MAX_SAMPLES)
         val step = span / (count - 1).coerceAtLeast(1)
 
-        val retriever = MediaMetadataRetriever()
+        val retriever = com.squish.app.av.AvRetriever()
         try {
             retriever.setDataSource(context, uri)
         } catch (t: Throwable) {

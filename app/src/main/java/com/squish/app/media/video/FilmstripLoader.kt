@@ -147,7 +147,7 @@ object FilmstripLoader {
     }
 
     private suspend fun drain(context: Context) {
-        var retriever: MediaMetadataRetriever? = null
+        var retriever: com.squish.app.av.AvRetriever? = null
         var openUri: Uri? = null
         try {
             while (true) {
@@ -178,7 +178,7 @@ object FilmstripLoader {
                     openUri = uri
                     // A source that cannot be opened has no filmstrip, and that is
                     // all it means - the clip still draws, edits, trims and exports.
-                    retriever = runCatching { MediaMetadataRetriever().apply { setDataSource(context, uri) } }.getOrNull()
+                    retriever = runCatching { com.squish.app.av.AvRetriever().apply { setDataSource(context, uri) } }.getOrNull()
                 }
                 val frame = runCatching {
                     retriever?.getScaledFrameAtTime(

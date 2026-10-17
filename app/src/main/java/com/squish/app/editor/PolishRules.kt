@@ -136,16 +136,4 @@ object PolishRules {
         val count = if (total > 1) " ($ready of $total ready)" else ""
         return "Building a light preview copy$pct$count — editing stays responsive while it works"
     }
-
-    /**
-     * The notice while a file only the software decoders take is converted
-     * before it lands (MediaConversion). Named, because the person picked it
-     * a moment ago and a bare "Converting…" does not say which; and the
-     * reason in a few words, because a minute's wait on an import with no
-     * reason reads as the app hanging.
-     */
-    fun convertingLine(name: String, percent: Int?): String {
-        val pct = percent?.takeIf { it in 1..100 }?.let { " · $it%" } ?: ""
-        return "Converting $name for this phone$pct — its format needs a software decoder, so a copy is made once"
-    }
 }

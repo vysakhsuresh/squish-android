@@ -187,7 +187,7 @@ fun HomeScreen(
                         .build()
                 )
             },
-            onBrowseFiles = { browseFiles.launch(arrayOf("video/*", "image/*")) }
+            onBrowseFiles = { browseFiles.launch(com.squish.app.av.AvTypes.PICTURES_AND_FOOTAGE) }
         )
     } }
     // The camera, straight into a project: the take is written under the
@@ -288,7 +288,7 @@ fun HomeScreen(
                 item(key = "new-project") {
                     NewProjectCard(
                         onPick = { showLibrary = true },
-                        onBrowse = { browseFiles.launch(arrayOf("video/*", "image/*")) },
+                        onBrowse = { browseFiles.launch(com.squish.app.av.AvTypes.PICTURES_AND_FOOTAGE) },
                         onRecord = {
                             val dir = File(context.filesDir, IMPORTS_DIR).apply { mkdirs() }
                             val file = File(dir, "rec_${System.currentTimeMillis()}.mp4")

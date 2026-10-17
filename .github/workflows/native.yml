@@ -9,7 +9,7 @@ on:
   push:
     paths:
       - 'app/src/main/cpp/**'
-      - 'tools/native/**'
+      - 'tools/native/build.sh'
       - '.github/workflows/native.yml'
 
 jobs:

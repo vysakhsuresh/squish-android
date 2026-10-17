@@ -3,103 +3,107 @@
 package com.squish.app.media
 
 import android.content.Context
+import android.graphics.BitmapFactory
+import android.graphics.ColorSpace
 import android.media.metrics.LogSessionId
 import android.os.Build
 import android.view.Surface
 import androidx.media3.common.Format
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.Clock
+import androidx.media3.common.util.GlUtil
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.exoplayer.RenderersFactory
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.amr.AmrExtractor
+import androidx.media3.extractor.ts.AdtsExtractor
 import androidx.media3.transformer.AssetLoader
 import androidx.media3.transformer.Codec
 import androidx.media3.transformer.DefaultAssetLoaderFactory
 import androidx.media3.transformer.DefaultDecoderFactory
-import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary
-import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory
-import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.SquishFfmpegCodecs
+import com.google.common.util.concurrent.MoreExecutors
+import com.squish.app.av.AvCodecs
+import com.squish.app.av.AvExtractorsFactory
+import com.squish.app.av.AvNative
+import com.squish.app.av.AvRenderersFactory
+import com.squish.app.av.AvTransformerCodecs
+import java.util.concurrent.Executors
 
 /**
- * The FFmpeg software decoders the app carries, for files no decoder on the
- * phone will take.
+ * Squish's own FFmpeg (com.squish.app.av, libsquishav.so - every demuxer and
+ * every decoder FFmpeg has, with dav1d, libjxl and LibRaw), wired into every
+ * place the app reads media. GPL-3.0; see THIRD_PARTY_NOTICES.md.
  *
  * A professional editor was handed a phone's own footage and some of it
- * "gave errors": a file opens, its length and tracks read, and then no
- * decoder on the device takes its frames. On this project's own test phone
- * that is every HEVC 10-bit file ever made - it has no Main 10 decoder at
- * all - and on any phone it is DTS and TrueHD sound off a film, MPEG-2 and
- * DivX off a disc, AV1 on a phone from before it. The platform decodes
- * what the platform decodes; for the rest the app brings its own, through
- * nextlib's build of FFmpeg for Media3 1.11.1
- * (io.github.anilbeesetti:nextlib-media3ext, GPL-3.0 - see
- * THIRD_PARTY_NOTICES.md).
+ * "gave errors"; the answer then was nextlib's cut-down FFmpeg and a
+ * conversion of each such file on import. The answer now is that the app
+ * reads them itself, where they are, with no copy:
  *
- * Three doors, and the platform's decoders stay first at each:
- *
- * - **Every player** ([renderers]): nextlib's renderers behind Media3's own,
- *   so a format the phone decodes still goes to the phone, and only a
- *   format it refuses falls to FFmpeg. That is the preview, the clip
- *   previews and the music audition playing anything at once.
- * - **Transformer** ([assetLoaderFactory]): the proxy, the stills, the
- *   export and the import conversion read through a decoder factory that
- *   hands MediaCodec everything it takes and the FFmpeg decoders the rest
- *   (SquishFfmpegCodecs, which says what that path cannot do).
- * - **The gate** (MediaCompat): a file is decodable when either takes it,
- *   and one only FFmpeg takes is marked so, which is what has it converted
- *   on import (ConversionRules says why converted rather than decoded in
- *   place).
+ * - **Every player** ([renderers], [mediaSourceFactory]): Media3's own
+ *   readers and the phone's own decoders first; FFmpeg's demuxer for a file
+ *   Media3 does not read whole (AvRoute) and FFmpeg's decoders for a format
+ *   no decoder on the phone takes, both behind MediaCodec's renderers so
+ *   every effect and every audio processor reaches them (AvCodecAdapter).
+ * - **Every Transformer** ([assetLoaderFactory]): the proxy, the stills, the
+ *   export, the same readers and a decoder factory that hands MediaCodec
+ *   everything it takes and FFmpeg the rest (AvTransformerCodecs).
+ * - **The gate** (MediaCompat): a file is decodable when either takes it.
+ * - **The frame readers** (AvRetriever and its kin): the filmstrip, the
+ *   waveform, Freeze, Reverse, Stabilize and the rest fall back to FFmpeg
+ *   where the phone's MediaMetadataRetriever and MediaCodec give up.
  */
 object SoftwareDecoders {
 
-    /** Whether the native libraries loaded on this phone; false on an ABI they were not built for. */
+    /** Whether the native library loaded on this phone; false on an ABI it was not built for. */
     val available: Boolean
-        get() = runCatching { FfmpegLibrary.isAvailable() }.getOrDefault(false)
+        get() = AvNative.loaded
 
-    /**
-     * Whether FFmpeg decodes [format] *for this app*: by its MIME type, never
-     * anything encrypted, and for video only from API 33 - the one API that
-     * can put a software-decoded frame on Transformer's surface at the
-     * picture's size is `ImageWriter.Builder.setWidthAndHeight`
-     * (YuvImagePainter says what happened without it). Below 33 the players
-     * still fall back to the FFmpeg renderers on their own; this is the
-     * answer for the gate and the export, which must agree.
-     */
-    fun decodes(format: Format): Boolean {
-        val mime = format.sampleMimeType ?: return false
-        if (format.drmInitData != null) return false
-        if (MimeTypes.isVideo(mime) && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
-        return available && runCatching { FfmpegLibrary.supportsFormat(mime) }.getOrDefault(false)
-    }
+    /** Whether Squish's FFmpeg decodes [format] for this app (AvCodecs.decodes says what that means). */
+    fun decodes(format: Format): Boolean = AvCodecs.decodes(format)
 
-    /**
-     * A player's renderers: Media3's own first, FFmpeg's after them
-     * (EXTENSION_RENDERER_MODE_ON), and a MediaCodec that fails to start
-     * falling to the next decoder of its kind before giving up.
-     */
-    fun renderers(context: Context): RenderersFactory =
-        NextRenderersFactory(context)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-            .setEnableDecoderFallback(true)
+    /** A player's renderers: the phone's decoders first, FFmpeg's behind them (AvRenderersFactory). */
+    fun renderers(context: Context): RenderersFactory = AvRenderersFactory(context)
+
+    /** A player's media sources: Media3's readers, or FFmpeg's for a file they do not read whole. */
+    fun mediaSourceFactory(context: Context): MediaSource.Factory =
+        DefaultMediaSourceFactory(context, AvExtractorsFactory(context))
 
     /** Transformer's decoders: the platform's where they take the format, FFmpeg's where only it does. */
     fun decoderFactory(context: Context): Codec.DecoderFactory = FallbackDecoderFactory(context)
 
     /**
      * What every Transformer in the app is built with (`setAssetLoaderFactory`):
-     * Media3's default loader - images and all - over [decoderFactory].
+     * Media3's default loader - images and all - over the readers above and
+     * [decoderFactory]. The extractor flags and the clipping in the media
+     * period are the ones Transformer sets for its own default
+     * (ExoPlayerAssetLoader.createMediaSourceFactory in 1.11.1), and the
+     * bitmap loader the one DefaultAssetLoaderFactory makes for itself.
      */
-    fun assetLoaderFactory(context: Context): AssetLoader.Factory =
-        DefaultAssetLoaderFactory(context, decoderFactory(context), Clock.DEFAULT, /* logSessionId = */ null)
+    fun assetLoaderFactory(context: Context): AssetLoader.Factory {
+        val extractors = DefaultExtractorsFactory()
+            .setAdtsExtractorFlags(AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
+            .setAmrExtractorFlags(AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
+        val sources = DefaultMediaSourceFactory(context, AvExtractorsFactory(context, extractors))
+            .setEnableClippingInMediaPeriod(true)
+        val options = BitmapFactory.Options().apply { inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB) }
+        val bitmaps = DataSourceBitmapLoader.Builder(context)
+            .setExecutorService(MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor()))
+            .setBitmapFactoryOptions(options)
+            .setMaximumOutputDimension(GlUtil.MAX_BITMAP_DECODING_SIZE)
+            .build()
+        return DefaultAssetLoaderFactory(context, decoderFactory(context), Clock.DEFAULT, sources, bitmaps)
+    }
 
     private class FallbackDecoderFactory(private val context: Context) : Codec.DecoderFactory {
-        private val platform = DefaultDecoderFactory(context)
+        private val platform = DefaultDecoderFactory.Builder(context).build()
 
         private fun software(format: Format): Boolean =
-            !MediaCompat.platformDecodes(context, format) && decodes(format)
+            AvCodecs.isOwn(format) || (!MediaCompat.platformDecodes(context, format) && decodes(format))
 
         override fun createForAudioDecoding(format: Format, logSessionId: LogSessionId?): Codec =
-            if (software(format)) SquishFfmpegCodecs.audio(format)
+            if (software(format)) AvTransformerCodecs.audio(format)
             else platform.createForAudioDecoding(format, logSessionId)
 
         override fun createForVideoDecoding(
@@ -109,7 +113,7 @@ object SoftwareDecoders {
             logSessionId: LogSessionId?
         ): Codec =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && software(format)) {
-                SquishFfmpegCodecs.video(format, outputSurface)
+                AvTransformerCodecs.video(format, outputSurface)
             } else {
                 platform.createForVideoDecoding(format, outputSurface, requestSdrToneMapping, logSessionId)
             }

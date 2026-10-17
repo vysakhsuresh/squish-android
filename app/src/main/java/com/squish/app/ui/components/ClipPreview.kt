@@ -102,9 +102,13 @@ fun ClipPreview(
     maxHeightDp: Float = PreviewBox.MAX_HEIGHT_DP
 ) {
     val context = LocalContext.current
-    // With the FFmpeg renderers behind the platform's, so a file the phone
-    // cannot decode still previews before it is converted (SoftwareDecoders).
-    val player = remember { ExoPlayer.Builder(context, SoftwareDecoders.renderers(context)).build() }
+    // Squish's FFmpeg behind the phone's readers and decoders, so any file
+    // plays here (SoftwareDecoders).
+    val player = remember {
+        ExoPlayer.Builder(context, SoftwareDecoders.renderers(context))
+            .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(context))
+            .build()
+    }
 
     var positionMs by remember { mutableStateOf(0L) }
     var playing by remember { mutableStateOf(false) }
