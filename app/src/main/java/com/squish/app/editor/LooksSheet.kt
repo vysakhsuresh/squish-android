@@ -606,8 +606,13 @@ private fun LookChip(
     val stops = remember(look.id, intensity) {
         Looks.swatch(look, intensity).map { Color(it) }
     }
-    val preview = remember(frame, look.id, intensity) {
-        frame?.graded(look.atIntensity(intensity))
+    // Graded off the main thread: thirty chips each grading their frame in
+    // composition, in the one frame the sheet's picture arrived, was a dropped
+    // frame on opening Looks. The last preview stays up while the next is made,
+    // so a strength drag does not flash the swatches.
+    var preview by remember(look.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(frame, look.id, intensity) {
+        preview = frame?.let { f -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { f.graded(look.atIntensity(intensity)) } }
     }
 
     Column(
@@ -629,9 +634,10 @@ private fun LookChip(
                     shape = RoundedCornerShape(10.dp)
                 )
         ) {
-            if (preview != null) {
+            val shown = preview
+            if (shown != null) {
                 Image(
-                    bitmap = preview.asImageBitmap(),
+                    bitmap = shown.asImageBitmap(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize().padding(2.dp).clip(RoundedCornerShape(8.dp))

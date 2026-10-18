@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.squish.app.ui.components.SelectableChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -456,5 +457,20 @@ fun EffectStrengthPanel(effect: TimedEffect, viewModel: EditorViewModel) {
             onChange = { change -> viewModel.clips.changeEffect(effect.id, change = change) },
             onGestureEnd = viewModel::endGesture
         )
+        // Another effect over the same stretch, at the same strength: CapCut's
+        // Replace. It was delete, add again and drag both ends back.
+        Text("Swap for", style = MaterialTheme.typography.labelMedium, color = SquishColors.TextSecondary)
+        SideScrollChips(EffectKind.entries.toList(), { it == effect.kind }, Modifier.fillMaxWidth()) { kind ->
+            SelectableChip(
+                label = kind.label,
+                selected = kind == effect.kind,
+                accentColor = SquishColors.Blue,
+                onClick = {
+                    if (kind != effect.kind) {
+                        viewModel.clips.changeEffect(effect.id, discrete = true, change = { it.copy(kind = kind, amount = TimedEffect.DEFAULT_AMOUNT) })
+                    }
+                }
+            )
+        }
     }
 }
