@@ -232,12 +232,35 @@ fun MediaLibrarySheet(
                         color = SquishColors.Cyan, strokeWidth = 2.dp,
                         modifier = Modifier.size(24.dp).align(Alignment.Center)
                     )
-                    shown.isEmpty() -> Text(
-                        if (list.isEmpty()) "Nothing in the phone's library yet." else "Nothing here.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = SquishColors.TextMuted,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    // Empty said why, with the way out under it. With only some
+                    // files shared (Android 14's partial access) the grid opened on
+                    // Videos and read "Nothing here." when the one file shared was
+                    // a photo - a dead end that looked like an empty phone.
+                    shown.isEmpty() -> Column(
+                        modifier = Modifier.align(Alignment.Center).padding(horizontal = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            when {
+                                list.isEmpty() && access == MediaLibrary.Access.Partial -> "Squish can only see the files you shared with it, and none are shared yet."
+                                list.isEmpty() -> "Nothing in the phone's library yet."
+                                access == MediaLibrary.Access.Partial -> "None of the files you shared with Squish is here."
+                                else -> "Nothing here."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SquishColors.TextMuted,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        if (access == MediaLibrary.Access.Partial) {
+                            SelectableChip(label = "Choose more files", selected = true, accentColor = SquishColors.Cyan,
+                                onClick = { ask.launch(MediaLibrary.permissions()) })
+                        }
+                        if (kindFilter != null && list.isNotEmpty()) {
+                            SelectableChip(label = "Show photos and videos", selected = false, accentColor = SquishColors.Cyan,
+                                onClick = { kindFilter = null })
+                        }
+                    }
                     else -> LazyVerticalGrid(
                         state = gridState,
                         columns = GridCells.Fixed(3),
