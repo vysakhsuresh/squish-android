@@ -164,6 +164,46 @@ object PreviewRules {
     fun holdAtCut(heldShowsOutgoing: Boolean, arrivedByPlaying: Boolean, heldForMs: Long, incomingFailed: Boolean): Boolean =
         heldShowsOutgoing && arrivedByPlaying && !incomingFailed && heldForMs <= HOLD_MAX_MS
 
+    /** How far a sound may drift from the clock before it is put back. */
+    const val SOUND_DRIFT_MS = 400L
+
+    /** After a sound starts, how long its position is not believed: the sink is still opening. */
+    const val SOUND_START_GRACE_MS = 1_000L
+
+    /** The least time between two corrections of one sound. */
+    const val SOUND_CORRECTION_GAP_MS = 1_500L
+
+    /**
+     * Whether a sound playing against the clock is seeked back onto it.
+     *
+     * Only a sound that is READY and actually playing, past [SOUND_START_GRACE_MS]
+     * since it was started and [SOUND_CORRECTION_GAP_MS] since its last
+     * correction. A song added from the phone was seeked the moment it lagged
+     * by [SOUND_DRIFT_MS] - and on its first play it always does: the audio
+     * sink takes a moment to open and the file has not been read yet, so its
+     * position stands still while the clock runs. The seek threw away what had
+     * been buffered, the rebuffer made it lag again, and the next tick seeked
+     * again: the song broke up all the way through its first play, and played
+     * clean the second time, once it was cached.
+     */
+    fun shouldResyncSound(ready: Boolean, playing: Boolean, driftMs: Long, sinceStartMs: Long, sinceCorrectionMs: Long): Boolean =
+        ready && playing && kotlin.math.abs(driftMs) > SOUND_DRIFT_MS &&
+            sinceStartMs >= SOUND_START_GRACE_MS && sinceCorrectionMs >= SOUND_CORRECTION_GAP_MS
+
+    /** The longest the clock waits for a sound that is due and still loading. */
+    const val SOUND_HOLD_MAX_MS = 1_500L
+
+    /**
+     * Whether the clock waits for a sound: one under the playhead that has been
+     * told to play and is still loading ([buffering]), for at most
+     * [SOUND_HOLD_MAX_MS] - the wait the picture already gets from a decoder
+     * that is not ready, so a song starts with its picture rather than chasing
+     * it. A sound that never loads must not freeze the edit, so past the limit
+     * the clock runs on without it.
+     */
+    fun holdForSound(buffering: Boolean, wantsToPlay: Boolean, heldForMs: Long): Boolean =
+        buffering && wantsToPlay && heldForMs <= SOUND_HOLD_MAX_MS
+
     /**
      * Whether the clock is read off the first surface (roll A): whenever the
      * shot driving it is the one on that roll now. Asked every pass, not only

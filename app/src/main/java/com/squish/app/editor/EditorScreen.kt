@@ -649,6 +649,9 @@ fun EditorScreen(
                         onAddStock = { stockGate.request("Free stock footage") { showStock = true } },
                         onAddOverlay = addOverlay,
                         onCloseGap = viewModel.clips::closeGap,
+                        // Every shot's own sound off and on in one tap, before the first shot.
+                        cameraMuted = state.muteOriginal,
+                        onToggleCameraSound = if (state.anyCameraAudio) ({ viewModel.audio.setMuteOriginal(!state.muteOriginal) }) else null,
                         onOpenSound = { openToolName = Tool.Sound.name },
                         // A line at once, as the video and overlay heads add at
                         // once (section 2's track heads); the Text sheet is on

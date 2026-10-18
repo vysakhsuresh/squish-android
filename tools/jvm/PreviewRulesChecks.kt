@@ -322,6 +322,68 @@ fun main() {
         }
     }
 
+    // ---- A song's first play: the seek loop. --------------------------------
+    // A model of a sound player on its first play: after every start or seek
+    // it stands still for [warm] ms (the sink opening, the file being read),
+    // then runs at the clock's rate. Ticked thirty times a second against the
+    // clock for ten seconds, as PreviewEngine.syncAudio does.
+    run {
+        class Song(val warm: Long) {
+            var position = 0L
+            var bufferedUntil = warm
+            var seeks = 0
+            var heardMs = 0L
+            var startedAt = 0L
+            var correctedAt = -1_000_000L
+        }
+        fun play(holdClock: Boolean, rule: (Song, Long, Long) -> Boolean): Song {
+            val song = Song(warm = 700L)
+            var clock = 0L
+            var heldSince = -1L
+            var now = 0L
+            while (now < 10_000L) {
+                now += 33L
+                val buffering = now < song.bufferedUntil
+                // The clock: waits for a loading sound, as it waits for a picture.
+                val hold = holdClock && PreviewRules.holdForSound(buffering, wantsToPlay = true,
+                    heldForMs = if (heldSince < 0) 0L else now - heldSince)
+                if (hold) { if (heldSince < 0) heldSince = now } else { heldSince = -1L; clock += 33L }
+                if (!buffering) { song.position += 33L; song.heardMs += 33L }
+                if (rule(song, clock, now)) {
+                    song.position = clock
+                    song.bufferedUntil = now + song.warm
+                    song.seeks++
+                    song.correctedAt = now
+                }
+            }
+            return song
+        }
+        // The old rule: any drift past 400 ms, whatever the player is doing.
+        val old = play(holdClock = false) { s, clock, _ -> kotlin.math.abs(s.position - clock) > 400L }
+        check("the model reproduces the old break-up (${old.seeks} seeks)", old.seeks >= 5)
+        val new = play(holdClock = true) { s, clock, now ->
+            PreviewRules.shouldResyncSound(
+                ready = now >= s.bufferedUntil, playing = true, driftMs = s.position - clock,
+                sinceStartMs = now - s.startedAt, sinceCorrectionMs = now - s.correctedAt
+            )
+        }
+        check("a song's first play is not seeked over and over (${new.seeks} seeks)", new.seeks <= 1)
+        check("a song's first play is heard through (${new.heardMs} ms of 10 s)", new.heardMs >= 9_000L)
+        // The wait is what does it: the guards alone, with the clock running
+        // on, still correct a song that lags 700 ms after every seek once each
+        // gap - fewer breaks than the old loop, but breaks.
+        val unheld = play(holdClock = false) { s, clock, now ->
+            PreviewRules.shouldResyncSound(now >= s.bufferedUntil, true, s.position - clock, now - s.startedAt, now - s.correctedAt)
+        }
+        check("the guards alone at least thin the seeks (${unheld.seeks} against ${old.seeks})", unheld.seeks * 2 <= old.seeks)
+        // A sound that never loads holds the clock for a moment, not for ever.
+        check("a sound that never loads lets the clock go", !PreviewRules.holdForSound(true, true, PreviewRules.SOUND_HOLD_MAX_MS + 1))
+        check("a paused sound does not hold the clock", !PreviewRules.holdForSound(true, wantsToPlay = false, heldForMs = 0L))
+        // A drift that is real is still corrected, once the sound is running.
+        check("a running sound far off the clock is put back", PreviewRules.shouldResyncSound(true, true, 900L, 5_000L, 5_000L))
+        check("a buffering sound is never seeked", !PreviewRules.shouldResyncSound(false, true, 900L, 5_000L, 5_000L))
+    }
+
     if (failures.isEmpty()) {
         println("PASS - the preview parks inside the trim, redraws without drifting, rattles no ramp, and never reloads a slow seek forever")
     } else {

@@ -36,6 +36,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.CropSquare
@@ -269,6 +275,9 @@ fun TimelineEditor(
      * track was magnetic has gaps; each is drawn, and a tap on it offers this.
      */
     onCloseGap: ((String) -> Unit)? = null,
+    /** Whether every shot's own sound is off; with [onToggleCameraSound], the switch before the first shot. */
+    cameraMuted: Boolean = false,
+    onToggleCameraSound: (() -> Unit)? = null,
     /**
      * A finger is moving the strip, or carrying a clip (true), or has let go
      * (false). The preview pauses, serves the scrub from sync samples and settles
@@ -1029,7 +1038,9 @@ fun TimelineEditor(
                                     gaps = remember(state.baseVideoClips) { state.mainGaps() },
                                     onCloseGap = onCloseGap,
                                     onAddMedia = onAddVideo,
-                                    counterShiftPx = counterShift
+                                    counterShiftPx = counterShift,
+                                    cameraMuted = cameraMuted,
+                                    onToggleCameraSound = onToggleCameraSound
                                 )
                                 Group.Sound -> Lane(
                                     clips = remember(state.audioClips, soundRows, row.index) { state.audioClips.filter { soundRows[it.id] == row.index } },
@@ -1714,7 +1725,10 @@ private fun Lane(
     /** A sound's beats to draw on it, in its file's time. */
     soundBeats: (Clip) -> List<Long> = { emptyList() },
     /** Clips selected alongside [selectedId] (Select more): drawn selected too. */
-    alsoSelected: Set<String> = emptySet()
+    alsoSelected: Set<String> = emptySet(),
+    /** The main track's camera sound switch (CameraSoundButton), before its first shot. */
+    cameraMuted: Boolean = false,
+    onToggleCameraSound: (() -> Unit)? = null
 ) {
     val latestBareTap by rememberUpdatedState(onBareTap)
 
@@ -1805,6 +1819,10 @@ private fun Lane(
                 }
             }
 
+            if (onToggleCameraSound != null) clips.minByOrNull { it.timelineStartMs }?.let { first ->
+                CameraSoundButton(x = window.xDp(first.timelineStartMs).dp, muted = cameraMuted, onToggle = onToggleCameraSound)
+            }
+
             if (clips.isEmpty() && onAddMedia != null) {
                 // Beside the playhead, where the eye is: at zero it was off screen whenever
                 // sound or words ran on past where the picture had been.
@@ -1876,6 +1894,48 @@ private fun BoxScope.AddMedia(x: Dp, counterShiftPx: () -> Float, onClick: () ->
         Text("Add media", style = MaterialTheme.typography.labelMedium, color = SquishColors.TextPrimary, maxLines = 1)
     }
 }
+
+/**
+ * The camera sound's switch, in the empty track before the first shot, where
+ * CapCut keeps its "Mute clip audio": one tap silences every shot's own sound
+ * and another brings it back. It was only reachable as a switch on the Sound
+ * sheet's "Mic & camera" chip, or a clip at a time through Volume, and was
+ * reported as not being there at all. It rides with the track, so it is in
+ * sight at the start of the edit and out of the way past it.
+ */
+@Composable
+private fun BoxScope.CameraSoundButton(x: Dp, muted: Boolean, onToggle: () -> Unit) {
+    val tint = if (muted) SquishColors.Danger else Concept.Video.accent
+    Column(
+        modifier = Modifier
+            .offset(x = x - CAMERA_SOUND_WIDTH - 8.dp)
+            .align(Alignment.CenterStart)
+            .width(CAMERA_SOUND_WIDTH)
+            .clip(RoundedCornerShape(9.dp))
+            .background(tint.copy(alpha = 0.16f))
+            .border(1.dp, tint.copy(alpha = 0.45f), RoundedCornerShape(9.dp))
+            .toggleable(value = !muted, role = Role.Switch, onValueChange = { onToggle() })
+            .semantics { contentDescription = "Clip audio" }
+            .padding(vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            if (muted) "Unmute" else "Mute audio",
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 10.sp,
+            color = SquishColors.TextPrimary,
+            maxLines = 1
+        )
+    }
+}
+
+private val CAMERA_SOUND_WIDTH = 64.dp
 
 /**
  * The mark on a join: tap it for the transition sheet. Two wedges meeting, solid
