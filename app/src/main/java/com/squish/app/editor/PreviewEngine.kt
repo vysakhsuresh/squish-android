@@ -265,7 +265,9 @@ class PreviewEngine(private val context: Context) {
         val voice = AtomicReference(VoiceEffect.None)
         // Every surface carries a voice: it is the clip's own now, an
         // overlay's as much as a shot's, and the export voices both.
-        val player: ExoPlayer = newVideoPlayer { voice.get() }
+        /** The level past what the player's own volume can give, applied in its sink. */
+        val boost = java.util.concurrent.atomic.AtomicReference(1f)
+        val player: ExoPlayer = newVideoPlayer({ voice.get() }, { boost.get() })
 
         // Read by the shaders every frame; written by the tick.
         val chroma = AtomicReference<ChromaKey?>(null)
@@ -713,11 +715,16 @@ class PreviewEngine(private val context: Context) {
             .build()
     }
 
-    private fun newVideoPlayer(voiceNow: () -> VoiceEffect) =
+    private fun newVideoPlayer(voiceNow: () -> VoiceEffect, boostNow: () -> Float) =
         // The fold-down in front of the voice, as the export has it: see
         // AudioMixing.processor. At unity on a mono or stereo file it makes
         // itself inactive and costs nothing.
-        ExoPlayer.Builder(context, processedRenderers(AudioMixing.processor(1f), VoiceProcessor(voiceNow)))
+        ExoPlayer.Builder(
+            context,
+            // And the part of a level past full after the voice (AudioRules.gainSplit),
+            // as a sound player has it: a shot or an overlay goes to 400% now.
+            processedRenderers(AudioMixing.processor(1f), VoiceProcessor(voiceNow), GainProcessor(boostNow))
+        )
         // Media3's readers, or FFmpeg's for a file they do not read whole (AvRoute).
         .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(context))
         // Ready on half a second of buffer rather than the default two and a half.
@@ -1733,7 +1740,10 @@ class PreviewEngine(private val context: Context) {
             else -> OverlayRules.effectiveVolume(clip, muteOriginal, originalVolume, clip.volumeAtTimeline(t)) *
                 AudioRules.fadeGain(t - clip.timelineStartMs, clip.durationMs, clip.fadeInMs, clip.fadeOutMs)
         }
-        if (player.volume != level) player.volume = level
+        // Up to full on the player, the rest in its sink, as a sound's is split.
+        val (ownLevel, boost) = AudioRules.gainSplit(level)
+        if (player.volume != ownLevel) player.volume = ownLevel
+        s.boost.set(boost)
 
         // Every surface but the clock's waits while the clock's picture is
         // loading, as the sounds do: run on, an overlay was ahead on resume

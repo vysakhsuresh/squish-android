@@ -59,7 +59,11 @@ object MusicLibrary {
      * of them ahead of time - so Listen and Add on an original are a file
      * read, where they used to wait a second on the synthesis.
      */
-    suspend fun original(context: Context, style: MusicSynth.Style): Uri? = withContext(Dispatchers.Default) {
+    suspend fun original(
+        context: Context,
+        style: MusicSynth.Style,
+        on: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Default
+    ): Uri? = withContext(on) {
         madeFile(context, style)?.let { return@withContext Uri.fromFile(it) }
         // One composition per track at a time: a tap while [prepareAll] is on
         // the same track waits for that one rather than starting a second.
@@ -97,7 +101,9 @@ object MusicLibrary {
         for (style in MusicSynth.styles) {
             if (madeFile(context, style) != null) continue
             val t0 = android.os.SystemClock.elapsedRealtime()
-            original(context, style)
+            // At background priority (BackgroundWork): it was at the preview's own,
+            // beside the first auditions and the first play after Add.
+            original(context, style, com.squish.app.util.BackgroundWork.dispatcher)
             com.squish.app.av.Perf.took("compose", android.os.SystemClock.elapsedRealtime() - t0, style.id)
         }
     }

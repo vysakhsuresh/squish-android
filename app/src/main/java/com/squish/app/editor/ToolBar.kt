@@ -158,7 +158,7 @@ val Tool.icon: ImageVector
         Tool.Mirror -> Icons.Filled.Flip
         Tool.Freeze -> Icons.Filled.PauseCircleOutline
         Tool.Reverse -> Icons.Filled.FastRewind
-        Tool.Replace -> Icons.Filled.SwapHoriz
+        Tool.Replace, Tool.ReplaceSound -> Icons.Filled.SwapHoriz
         Tool.CopyAttributes -> Icons.Filled.ContentPaste
         Tool.PasteAttributes -> Icons.Filled.ContentPasteGo
         Tool.SelectMore -> Icons.Filled.Checklist

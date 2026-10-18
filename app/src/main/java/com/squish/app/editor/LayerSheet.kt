@@ -218,7 +218,9 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
         LabeledSlider(
             "Level",
             clip.valueAt(ValueTrack.Volume, state.playheadMs),
-            0f..1f,
+            // To 400%, as a song: quiet phone footage could not be made louder.
+            0f..AudioRules.MAX_SOUND_GAIN,
+            readout = { "%.0f%%".format(it * 100) },
             onFinished = {
                 // Where it ended, if that is a level; dragged down to nothing,
                 // where it began.
@@ -233,6 +235,13 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
         ) {
             if (dragFrom == null) dragFrom = clip.volume
             viewModel.clips.setClipVolume(clip.id, it)
+        }
+        if (clip.valueAt(ValueTrack.Volume, state.playheadMs) > 1f) {
+            Text(
+                "Above 100% a loud passage may distort. The file is written at this level.",
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.TextMuted
+            )
         }
         if (!clip.isOverlay && state.muteOriginal) {
             Text(

@@ -10,6 +10,7 @@ import com.squish.app.media.effects.Adjust
 import com.squish.app.media.effects.AdjustField
 import com.squish.app.media.effects.HslBand
 import com.squish.app.media.effects.HueBand
+import com.squish.app.timeline.MAX_SOUND_GAIN
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipAnimation
 import com.squish.app.timeline.ClipArrival
@@ -664,7 +665,8 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             // Photos come in the same pick as videos. Each is made into a short
             // clip first (see StillClips); the order picked is kept either way.
             val resolver = app.contentResolver
-            val isPhoto = uris.associateWith { com.squish.app.av.AvImages.isPicture(app, it) }
+            // Off the main thread, the names with them (EditorViewModel.displayNameOf keeps them).
+            val isPhoto = withContext(Dispatchers.IO) { uris.associateWith { displayNameOf(it); com.squish.app.av.AvImages.isPicture(app, it) } }
             val photos = isPhoto.count { it.value }
             if (photos > 0) _state.update { it.copy(preparingStills = it.preparingStills + photos) }
             // Counted down only once the clips are on the timeline, not when each
@@ -828,7 +830,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      */
     fun setClipMuted(clipId: String, muted: Boolean, restoreTo: Float = 1f) =
         record(if (muted) "Mute" else "Unmute") {
-            updateClip(clipId) { if (it.kind == ClipKind.Video) it.withMuted(muted, restoreTo) else it }
+            updateClip(clipId) { if (it.kind == ClipKind.Video || it.kind == ClipKind.Audio) it.withMuted(muted, restoreTo) else it }
         }
 
     private fun writeVolume(clipId: String, volume: Float) = mutateTimeline { timeline ->
@@ -837,7 +839,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             // the clip has any, the one level until then. A level set on a muted
             // clip is meant to be heard, so the slider takes the switch with it.
             if (it.id == clipId && it.kind == ClipKind.Video) {
-                it.withValueAt(ValueTrack.Volume, timeline.playheadMs, volume, 0f..1f).let { set -> if (volume > 0f) set.copy(muted = false) else set }
+                it.withValueAt(ValueTrack.Volume, timeline.playheadMs, volume, 0f..MAX_SOUND_GAIN).let { set -> if (volume > 0f) set.copy(muted = false) else set }
             } else it
         })
     }
@@ -1721,7 +1723,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         val needed = clip.replacementNeedsMs()
         val name = displayNameOf(uri) ?: "Clip"
         viewModelScope.launch {
-            val photo = com.squish.app.av.AvImages.isPicture(app, uri)
+            val photo = withContext(Dispatchers.IO) { com.squish.app.av.AvImages.isPicture(app, uri) }
             if (photo) {
                 _state.update { it.copy(preparingStills = it.preparingStills + 1) }
                 try {

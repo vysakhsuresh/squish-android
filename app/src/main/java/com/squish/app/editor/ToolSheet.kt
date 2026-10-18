@@ -375,7 +375,13 @@ fun EditorToolSheet(
 
             Tool.Speed -> if (clip != null) SpeedPanel(state, viewModel, accent)
             Tool.Volume -> clip?.let {
-                if (it.kind == ClipKind.Audio) SoundVolumePanel(state, it, viewModel) else ClipVolumePanel(state, it, viewModel)
+                if (it.kind == ClipKind.Audio) SoundVolumePanel(state, it, viewModel)
+                // A shot's and an overlay's sound fade as a song's does - the preview
+                // and the file always played them, and there was no way to set one.
+                else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ClipVolumePanel(state, it, viewModel)
+                    if (!it.isStillPicture) FadePanel(it, viewModel)
+                }
             }
             Tool.Animation -> when {
                 item != null -> TextAnimationPanel(item, viewModel)

@@ -59,6 +59,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.squish.app.home.countOf
+import com.squish.app.timeline.readsMuted
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.ValueTrack
@@ -412,7 +413,9 @@ fun CameraSoundPanel(state: EditorUiState, viewModel: EditorViewModel) {
             else "This clip has no audio track",
             icon = Icons.Filled.Mic,
             accent = SquishColors.Cyan,
-            trailing = if (!state.anyCameraAudio) null else ({
+            // Shown while the mute is on even with no sound left to mute: a mute
+            // left on silenced every clip added later, with no switch to undo it.
+            trailing = if (!state.anyCameraAudio && !state.muteOriginal) null else ({
                 SquishToggleSwitch(
                     checked = !state.muteOriginal,
                     onCheckedChange = { viewModel.audio.setMuteOriginal(!it) },
@@ -491,6 +494,13 @@ fun SoundVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewMode
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
+            )
+            // On and off without losing the level, as a shot's sound has: the
+            // only way to silence a song was to drag it to nothing.
+            SquishToggleSwitch(
+                checked = !clip.readsMuted,
+                onCheckedChange = { on -> viewModel.clips.setClipMuted(clip.id, muted = !on, restoreTo = clip.volume.takeIf { it > 0f } ?: 1f) },
+                label = "Sound"
             )
         }
 

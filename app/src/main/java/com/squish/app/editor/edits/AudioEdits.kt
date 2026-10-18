@@ -73,7 +73,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 _state.update { it.copy(failure = SquishError.FileUnreadable()) }
                 return@launch
             }
-            val name = label ?: displayNameOf(uri) ?: "Audio"
+            val name = label ?: withContext(Dispatchers.IO) { displayNameOf(uri) } ?: "Audio"
 
             // At the playhead, ending with the edit - or backed up to end with
             // it when the playhead is parked on the last second; see
@@ -105,6 +105,52 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             recomputeEstimate()
             // A readable file can still carry a codec this phone cannot decode; say
             // so now rather than when the export fails on it.
+            checkDecodable(uri)
+            ensureWaveform(uri)
+        }
+    }
+
+    /**
+     * Another file under a sound: the same place on the strip, its window
+     * where the new file has it (AudioRules.replacementWindow), its level,
+     * keys, fades, voice and speed kept - one undo step. A song trimmed,
+     * faded and set on its beats had to be deleted and every one of those
+     * done again to try another track.
+     */
+    fun replaceAudio(clipId: String, uri: Uri) {
+        viewModelScope.launch {
+            val fileMs = ThumbnailExtractor.probeDurationMs(app, uri)
+            val name = withContext(Dispatchers.IO) { displayNameOf(uri) } ?: "Audio"
+            val clip = _state.value.audioClips.firstOrNull { it.id == clipId } ?: return@launch
+            val window = AudioRules.replacementWindow(clip.sourceInMs, clip.sourceSpanMs, fileMs)
+            if (window == null) {
+                _state.update { it.copy(failure = SquishError.FileUnreadable()) }
+                return@launch
+            }
+            val span = window.last - window.first
+            // A curve drawn over the old window, fitted to the new one where it is shorter.
+            val ramp = if (span == clip.sourceSpanMs || !clip.speedRamp.isRamped || clip.sourceSpanMs <= 0L) clip.speedRamp
+            else com.squish.app.timeline.SpeedRamp(clip.speedRamp.ordered.map { it.copy(atMs = it.atMs * span / clip.sourceSpanMs) })
+            recordLate("Replace sound", edit = { s ->
+                    s.copy(audioClips = s.audioClips.map {
+                        if (it.id != clipId) it
+                        else it.copy(
+                            uri = uri,
+                            label = name,
+                            sourceDurationMs = fileMs,
+                            sourceInMs = window.first,
+                            sourceOutMs = window.last,
+                            speedRamp = ramp,
+                            // A fade longer than a shorter clip is fitted to it.
+                            fadeInMs = it.fadeInMs,
+                            fadeOutMs = it.fadeOutMs
+                        ).let { c ->
+                            val (fadeIn, fadeOut) = AudioRules.fades(c.durationMs, c.fadeInMs, c.fadeOutMs, changedIn = false)
+                            c.copy(fadeInMs = fadeIn, fadeOutMs = fadeOut)
+                        }
+                    })
+            })
+            recomputeEstimate()
             checkDecodable(uri)
             ensureWaveform(uri)
         }
@@ -219,7 +265,8 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      */
     fun setAudioClipVolume(clipId: String, volume: Float) = record("Level", gesture = "Level $clipId") {
         val playhead = _state.value.playheadMs
-        updateAudioClip(clipId) { it.withValueAt(ValueTrack.Volume, playhead, volume, 0f..AudioRules.MAX_SOUND_GAIN) }
+        // A level set on a muted sound is meant to be heard: the switch goes with it, as a shot's does.
+        updateAudioClip(clipId) { it.withValueAt(ValueTrack.Volume, playhead, volume, 0f..AudioRules.MAX_SOUND_GAIN).let { c -> if (volume > 0f) c.copy(muted = false) else c } }
     }
 
     /** Level's Reset: the sound at its own level, its keys gone, as one step. */
@@ -300,7 +347,10 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         // level for a main-track shot - not its raw slider, which at a camera
         // level of 30% gave a sound three times louder than the shot had been.
         val heard = OverlayRules.effectiveVolume(clip, current.muteOriginal, current.originalVolume)
-        val extraction = AudioRules.extracted(clip.copy(uri = uri), UUID.randomUUID().toString(), heardAt = heard, name = current.clipTitle(clip))
+        val extraction = AudioRules.extracted(
+            clip.copy(uri = uri), UUID.randomUUID().toString(), heardAt = heard, name = current.clipTitle(clip),
+            heardOf = { v -> OverlayRules.effectiveVolume(clip, current.muteOriginal, current.originalVolume, v) }
+        )
         record("Extract audio") {
             _state.update { s ->
                 s.copy(

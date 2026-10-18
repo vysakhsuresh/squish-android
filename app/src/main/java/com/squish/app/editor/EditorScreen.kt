@@ -331,6 +331,16 @@ fun EditorScreen(
             viewModel.addAudioWhenOpened(it)
         }
     }
+    // A song's Replace: another file under the selected sound.
+    var replaceSoundTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    val pickReplacementSound = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val target = replaceSoundTarget
+        replaceSoundTarget = null
+        if (uri != null && target != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            viewModel.replaceAudioWhenOpened(target, uri)
+        }
+    }
     // Several at once, added in the order picked - one video at a time made
     // building an edit from a handful of shots a chore. In at the playhead, where
     // the strip is looking - see insertSourcesAtPlayhead.
@@ -445,6 +455,10 @@ fun EditorScreen(
             Tool.Replace -> {
                 replaceTarget = state.selectedClipId
                 library = LibraryUse.Replace
+            }
+            Tool.ReplaceSound -> state.selectedClipId?.let { id ->
+                replaceSoundTarget = id
+                pickReplacementSound.launch(com.squish.app.av.AvTypes.SOUNDS)
             }
             Tool.CopyAttributes -> state.selectedClipId?.let(viewModel.clips::copyAttributes)
             Tool.PasteAttributes -> state.selectedClipId?.let(viewModel.clips::pasteAttributes)
@@ -651,7 +665,7 @@ fun EditorScreen(
                         onCloseGap = viewModel.clips::closeGap,
                         // Every shot's own sound off and on in one tap, before the first shot.
                         cameraMuted = state.muteOriginal,
-                        onToggleCameraSound = if (state.anyCameraAudio) ({ viewModel.audio.setMuteOriginal(!state.muteOriginal) }) else null,
+                        onToggleCameraSound = if (state.anyCameraAudio || state.muteOriginal) ({ viewModel.audio.setMuteOriginal(!state.muteOriginal) }) else null,
                         onOpenSound = { openToolName = Tool.Sound.name },
                         // A line at once, as the video and overlay heads add at
                         // once (section 2's track heads); the Text sheet is on

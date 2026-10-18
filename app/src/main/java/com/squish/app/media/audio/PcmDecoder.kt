@@ -77,7 +77,9 @@ object PcmDecoder {
         // hour's song taking the time an hour's decode takes.
         val key = WaveformCache.key(context, uri, bucketMs, maxDurationMs)
         key?.let { WaveformCache.read(context, it) }?.let { return@withContext it }
-        decodePeaksUncached(context, uri, bucketMs, maxDurationMs)?.also { wave ->
+        // At background priority: a whole song decoded the moment it is added ran
+        // beside its first play and took the cores the preview wanted.
+        withContext(com.squish.app.util.BackgroundWork.dispatcher) { decodePeaksUncached(context, uri, bucketMs, maxDurationMs) }?.also { wave ->
             key?.let { WaveformCache.write(context, it, wave) }
         }
     }

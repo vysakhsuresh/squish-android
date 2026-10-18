@@ -320,8 +320,8 @@ class VideoProcessor(private val context: Context) {
         val stillBitmaps = HashMap<String, android.graphics.Bitmap?>()
         val track = state.videoClips - blended.toSet()
         val videoOut = !state.audioOnly
-        // A sound-only export keeps the camera's sound even when the picture's
-        // mute is on - sound is all it was asked for.
+        // A sound-only export keeps the camera's track even when the mute is on;
+        // whether it is heard is decided per shot (editedClip's cameraKept).
         val baseAudio = state.audioOnly || !state.muteOriginal
         // The size the encoder will write, not the one asked for: fitted here,
         // the layers are drawn at it and the bitrate is spent on it, rather than
@@ -757,14 +757,18 @@ class VideoProcessor(private val context: Context) {
             .build()
 
         // The shot's own level under the camera sound for the whole edit - the
-        // number the preview plays it at (OverlayRules.effectiveVolume). A
-        // sound-only export keeps the camera's sound even with the picture's
-        // mute on, as it always has: sound is all it was asked for. With a
+        // number the preview plays it at (OverlayRules.effectiveVolume). With a
         // level keyed over the clip, the keys carry the shot's own part and
         // the camera level is what is mixed at.
         val keyed = clip.volumeKeys.isNotEmpty()
         val own = if (clip.muted) 0f else if (keyed) 1f else clip.volume
-        val level = if (state.audioOnly) (own * state.originalVolume).coerceIn(0f, 1f)
+        // Sound only honours the camera mute whenever anything else is heard -
+        // it brought back camera sound the user had silenced under the music.
+        // Only with nothing else to hear is the camera kept, sound being all
+        // that was asked for. Silenced by level, not by dropping the track, so
+        // what the export is made of is what it always was.
+        val cameraKept = !state.muteOriginal || (state.audioClips.isEmpty() && state.videoClips.none { it.isOverlay })
+        val level = if (state.audioOnly) (if (cameraKept) (own * state.originalVolume).coerceIn(0f, AudioMixing.MAX_GAIN) else 0f)
         else OverlayRules.effectiveVolume(clip.copy(volume = own), state.muteOriginal, state.originalVolume)
         return EditedMediaItem.Builder(item)
             .setRemoveAudio(state.muteOriginal && !state.audioOnly)
@@ -830,7 +834,7 @@ class VideoProcessor(private val context: Context) {
             .setEffects(
                 Effects(
                     if (heard) buildAudioProcessors(
-                        clip.speedRamp, clip.sourceSpanMs, if (keyed) 1f else clip.volume.coerceIn(0f, 1f), clip.voice, fadeOf(clip),
+                        clip.speedRamp, clip.sourceSpanMs, if (keyed) 1f else clip.volume.coerceIn(0f, AudioMixing.MAX_GAIN), clip.voice, fadeOf(clip),
                         clip.pitchFollowsSpeed, curveOf(clip)
                     )
                     else ImmutableList.of(),
@@ -1079,7 +1083,9 @@ class VideoProcessor(private val context: Context) {
                 .setEffects(
                     Effects(
                         buildAudioProcessors(
-                            ramp, span, if (keyed) 1f else clip.volume, clip.voice, fadeOf(clip, skippedPlayedMs),
+                            // A muted sound is silent in the file as in the preview
+                            // (Clip.volumeAtTimeline answers nothing there).
+                            ramp, span, if (clip.muted) 0f else if (keyed) 1f else clip.volume, clip.voice, fadeOf(clip, skippedPlayedMs),
                             clip.pitchFollowsSpeed, curveOf(clip, skippedPlayedMs)
                         ),
                         ImmutableList.of()

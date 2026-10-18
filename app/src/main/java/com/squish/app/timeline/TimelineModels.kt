@@ -697,6 +697,7 @@ data class Clip(
         get() = ClipAttributes(
             kind = kind,
             volume = volume,
+            muted = muted,
             fadeInMs = fadeInMs,
             fadeOutMs = fadeOutMs,
             voice = voice,
@@ -863,7 +864,9 @@ data class ClipAttributes(
     val loopMs: Long = ClipAnimation.DEFAULT_LOOP_MS,
     val frameBlend: Boolean = false,
     /** Whether the pitch follows the speed: a sound's, carried with the curve. */
-    val pitchFollowsSpeed: Boolean = false
+    val pitchFollowsSpeed: Boolean = false,
+    /** The Mute switch over the level (Clip.muted). */
+    val muted: Boolean = false
 ) {
     /** The curve as a shape across [spanMs] of source. */
     fun rampFor(spanMs: Long): SpeedRamp {
@@ -1917,16 +1920,18 @@ fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): T
     if (clip.kind == ClipKind.Text) return this
     val sounding = if (clip.isStillPicture) clip else clip.copy(
         // A sound's level runs to four times its own (AudioRules.MAX_SOUND_GAIN,
-        // which is the Level slider's range and what AudioMixing writes); a
-        // picture's is its share of the camera level and stops at one. Clamped
-        // to one for both, a sound copied at 300% was pasted at 100% with
-        // nothing said - the one attribute the paste quietly changed.
-        volume = attrs.volume.coerceIn(0f, if (clip.kind == ClipKind.Audio) MAX_SOUND_GAIN else 1f),
+        // which is the Level slider's range and what AudioMixing writes), and
+        // so does a shot's and an overlay's now. Clamped to one, a sound copied
+        // at 300% was pasted at 100% with nothing said.
+        volume = attrs.volume.coerceIn(0f, MAX_SOUND_GAIN),
         fadeInMs = attrs.fadeInMs,
         fadeOutMs = attrs.fadeOutMs,
         voice = attrs.voice,
         speedRamp = attrs.rampFor(clip.sourceSpanMs),
-        pitchFollowsSpeed = attrs.pitchFollowsSpeed
+        pitchFollowsSpeed = attrs.pitchFollowsSpeed,
+        // The Mute switch goes with the level it silences: copied from a muted
+        // shot the level came across and the target played at it.
+        muted = attrs.muted
     )
     val pasted = if (clip.kind != ClipKind.Video || attrs.kind != ClipKind.Video) sounding else {
         val placed = attrs.transform.clamped()

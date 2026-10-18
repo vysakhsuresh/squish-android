@@ -196,8 +196,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private fun persist(): Unit = synchronized(slotLock) {
         val current = _state.value
         if (current.projectId.isBlank() || current.isLoadingSource) return
+        // The same state object as the last save, the same draft: leaving the
+        // editor saved on the way out and again in onCleared, encoding the
+        // whole edit twice on the main thread for the second to find nothing.
+        if (current === lastPersisted) return
         autosave.save(current)
+        lastPersisted = current
     }
+
+    @Volatile private var lastPersisted: EditorUiState? = null
 
     /**
      * Names the project, or with a blank name un-names it. Saved at once rather
@@ -1130,11 +1137,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(estimatedOutputBytes = it.estimatedExportBytes) }
     }
 
-    private fun displayNameOf(uri: Uri): String? = runCatching {
+    // Names asked for once each: the callers are on the main thread, adding
+    // media, and a provider query each - two or three per pick - was a burst
+    // of IPC on it. The adds warm this off it first (warmNames).
+    private val names = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun displayNameOf(uri: Uri): String? = names[uri.toString()] ?: (runCatching {
         getApplication<Application>().contentResolver
             .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-    }.getOrNull() ?: uri.lastPathSegment
+    }.getOrNull() ?: uri.lastPathSegment)?.also { names[uri.toString()] = it }
 
     fun clearFailure() = _state.update { it.copy(failure = null) }
 
@@ -1474,6 +1486,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     /** A sound picked, once the edit is open. */
     fun addAudioWhenOpened(uri: Uri) = onceOpened { audio.addAudioTrack(uri) }
+    fun replaceAudioWhenOpened(clipId: String, uri: Uri) = onceOpened { audio.replaceAudio(clipId, uri) }
 
     /** Media picked for an overlay row, once the edit is open. */
     fun addOverlaysWhenOpened(uris: List<Uri>) = onceOpened { layers.addOverlayClips(uris) }
@@ -1544,7 +1557,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val missing = _state.value.missingMedia ?: return
         viewModelScope.launch {
             val app = getApplication<Application>()
-            val image = com.squish.app.av.AvImages.isPicture(app, picked)
+            val image = withContext(Dispatchers.IO) { displayNameOf(picked); com.squish.app.av.AvImages.isPicture(app, picked) }
             val replacement = if (image) {
                 _state.update { it.copy(preparingStills = it.preparingStills + 1) }
                 try {

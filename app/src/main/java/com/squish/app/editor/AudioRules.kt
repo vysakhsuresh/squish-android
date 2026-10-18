@@ -244,6 +244,21 @@ object AudioRules {
         return Loop(clip.copy(fadeOutMs = 0L), copies)
     }
 
+    /**
+     * Where a sound's window lands in the file that replaces it ([fileMs]
+     * long): from the same point in, when the new file reaches that far
+     * with room for a clip, else from its start; as long as it was, or as
+     * much of it as the new file has. Null when the file is shorter than a
+     * clip can be. What the song's Replace keeps - its place on the strip,
+     * its level, fades and voice go with the clip unchanged.
+     */
+    fun replacementWindow(sourceInMs: Long, spanMs: Long, fileMs: Long): LongRange? {
+        if (fileMs < com.squish.app.timeline.MIN_CLIP_MS) return null
+        val inMs = if (sourceInMs >= 0L && sourceInMs + com.squish.app.timeline.MIN_CLIP_MS <= fileMs) sourceInMs else 0L
+        val outMs = minOf(inMs + spanMs.coerceAtLeast(com.squish.app.timeline.MIN_CLIP_MS), fileMs)
+        return inMs..outMs
+    }
+
     /** A shot's sound detached: the sound clip made, and the shot as it is left. */
     data class Extraction(val sound: Clip, val muted: Clip)
 
@@ -256,7 +271,21 @@ object AudioRules {
      * audio" on a shot or an overlay does; from there the sound can be slid,
      * trimmed or cut apart from the picture.
      */
-    fun extracted(clip: Clip, id: String, heardAt: Float = clip.volume, name: String = clip.label): Extraction {
+    fun extracted(
+        clip: Clip,
+        id: String,
+        heardAt: Float = clip.volume,
+        name: String = clip.label,
+        /** A level of the shot's as heard - what [heardAt] is of its resting level - for its keys. */
+        heardOf: (Float) -> Float = { it }
+    ): Extraction {
+        // The keyed level goes with it, each key as heard. With the resting
+        // level alone - which is dead once a clip has keys - a fade-up or a dip
+        // drawn on the shot was gone from the sound, and the shot was muted.
+        // Heard at nothing throughout (a camera mute), the keys are kept as
+        // drawn, for the reason the resting level below is.
+        val heardKeys = clip.volumeKeys.map { it.copy(value = heardOf(it.value).coerceIn(0f, 1f)) }
+        val keys = if (heardKeys.any { it.value > 0f }) heardKeys else clip.volumeKeys
         val sound = Clip(
             id = id,
             kind = ClipKind.Audio,
@@ -275,7 +304,11 @@ object AudioRules {
             fadeInMs = clip.fadeInMs,
             fadeOutMs = clip.fadeOutMs,
             voice = clip.voice,
-            speedRamp = clip.speedRamp
+            speedRamp = clip.speedRamp,
+            volumeKeys = keys,
+            // A 2x shot that was chipmunked stays chipmunked; dropped, its sound
+            // played pitch-held in the preview and the file.
+            pitchFollowsSpeed = clip.pitchFollowsSpeed
         )
         // Muted by the switch, not by a level of nothing: on a keyed shot that
         // level would land as one key, and the shot would go on being heard.

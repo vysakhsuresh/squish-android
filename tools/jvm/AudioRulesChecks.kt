@@ -202,6 +202,25 @@ fun main() {
         // At the level it was heard: a shot at 60% under a camera level of 50%.
         check(near(AudioRules.extracted(shot, "s3", heardAt = 0.3f).sound.volume, 0.3f), "the sound is not at the level the shot was heard at")
         check(AudioRules.extracted(shot, "s4", heardAt = 0f).sound.volume == 1f, "a shot under a camera mute gave a silent sound")
+        // A song replaced: same window where the new file has it, from its
+        // start where it does not, cut to what it has, refused when tiny.
+        check(AudioRules.replacementWindow(30_000, 20_000, 240_000) == 30_000L..50_000L, "a long replacement moved the window")
+        check(AudioRules.replacementWindow(30_000, 20_000, 40_000) == 30_000L..40_000L, "a replacement shorter than the window's end ran past it")
+        check(AudioRules.replacementWindow(30_000, 20_000, 25_000) == 0L..20_000L, "a replacement shorter than the in-point did not start at its head")
+        check(AudioRules.replacementWindow(30_000, 20_000, 8_000) == 0L..8_000L, "a short replacement was not used whole")
+        check(AudioRules.replacementWindow(0, 20_000, 100) == null, "a file too short for a clip was taken")
+        // A keyed level goes with the sound, each key as heard: a dip drawn on
+        // the shot was dropped, and the shot muted, so it was gone from both.
+        val keyed = shot.copy(volumeKeys = listOf(
+            com.squish.app.timeline.ValueKey(0L, 1f), com.squish.app.timeline.ValueKey(2_000L, 0.2f)
+        ), pitchFollowsSpeed = true)
+        val k = AudioRules.extracted(keyed, "s5", heardAt = 0.3f, heardOf = { it * 0.5f }).sound
+        check(k.volumeKeys.map { it.atMs } == listOf(0L, 2_000L) && near(k.volumeKeys[0].value, 0.5f) && near(k.volumeKeys[1].value, 0.1f),
+            "the shot's keyed level did not come with its sound: ${k.volumeKeys}")
+        check(k.pitchFollowsSpeed, "the sound lost the shot's pitch following its speed")
+        // Under a camera mute the keys are heard at nothing; kept as drawn.
+        val m = AudioRules.extracted(keyed, "s6", heardAt = 0f, heardOf = { 0f }).sound
+        check(m.volumeKeys.map { it.value } == listOf(1f, 0.2f), "a camera mute flattened the extracted keys: ${m.volumeKeys}")
     }
 
     // --- A split keeps each fade on its own end. -----------------------------

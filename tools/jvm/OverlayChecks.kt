@@ -210,8 +210,12 @@ fun main() {
             if (it.id == "b") it.copy(volume = 1f, volumeKeys = listOf(ValueKey(0L, 1f), ValueKey(5_000L, 0.5f))) else it
         })
         val muted = keyedShot.withMainOnOverlay("b", muteOriginal = true, originalVolume = 1f).byId("b")
-        check(muted.volume == 0f && muted.volumeKeys.all { it.value == 0f },
-            "floated out of a muted edit the shot is heard at ${muted.volume} / ${muted.volumeKeys.map { it.value }}")
+        // Silent by its Mute switch, its level kept: written as zeros, keys and
+        // all, it stayed silent for good once moved back with the camera on,
+        // while its Mute switch read on.
+        check(muted.muted, "floated out of a muted edit the shot is not muted")
+        check(muted.volume == 1f && muted.volumeKeys.map { it.value } == listOf(1f, 0.5f),
+            "floated out of a muted edit the shot lost its level: ${muted.volume} / ${muted.volumeKeys.map { it.value }}")
         val quiet = keyedShot.withMainOnOverlay("b", muteOriginal = false, originalVolume = 0.4f).byId("b")
         check(quiet.volume == 0.4f && quiet.volumeKeys.map { it.value } == listOf(0.4f, 0.2f),
             "floated out of a quiet edit the keys are ${quiet.volumeKeys.map { it.value }}")
@@ -305,10 +309,13 @@ fun main() {
         check(OverlayRules.levelAsOverlay(0.8f, muteOriginal = true, originalVolume = 1f) == 0f, "a shot under a camera mute started talking as an overlay")
         check(near(OverlayRules.levelAsOverlay(0.8f, false, 0.5f), 0.4f), "a shot's heard level was not kept as an overlay")
         check(near(OverlayRules.levelOnMain(0.4f, 0.5f), 0.8f), "an overlay's level was not kept on the main track")
-        check(OverlayRules.levelOnMain(1f, 0.5f) == 1f, "a level past full")
+        // A shot's level runs to the boost ceiling now, as a sound's does.
+        check(OverlayRules.levelOnMain(1f, 0.5f) == 2f, "an overlay at full under a half camera level is not boosted to be heard the same")
+        check(OverlayRules.levelOnMain(3f, 0.5f) == com.squish.app.timeline.MAX_SOUND_GAIN, "a level past the boost ceiling")
         check(OverlayRules.levelOnMain(0.6f, 0f) == 0.6f, "a zero camera level divided by zero")
         val state = TimelineState(clips = listOf(video("a", 5_000), video("b", 5_000, start = 5_000, volume = 0.8f)))
-        check(state.withMainOnOverlay("b", muteOriginal = true, originalVolume = 1f).byId("b").volume == 0f, "to overlay under a camera mute is heard")
+        val underMute = state.withMainOnOverlay("b", muteOriginal = true, originalVolume = 1f).byId("b")
+        check(underMute.muted && underMute.volume == 0.8f, "to overlay under a camera mute is heard, or lost its level (${underMute.muted}, ${underMute.volume})")
         check(near(state.withMainOnOverlay("b", muteOriginal = false, originalVolume = 0.5f).byId("b").volume, 0.4f), "to overlay changed the heard level")
         val o = TimelineState(clips = listOf(video("a", 5_000), video("o", 2_000, layer = 1, volume = 0.4f)))
         val down = o.withOverlayOnMain("o", 0, originalVolume = 0.5f).byId("o")

@@ -79,6 +79,8 @@ enum class Tool(val label: String, val sheet: Boolean) {
     Reverse("Reverse", false),
     /** Another file under the clip, keeping its place, length and everything set on it. */
     Replace("Replace", false),
+    /** Another file under a sound, keeping its place, window, level, fades and voice - the picker, no sheet. */
+    ReplaceSound("Replace", false),
     /** The clip's settings - sound, speed, placement, cut-out - taken for Paste attributes. */
     CopyAttributes("Copy attributes", false),
     PasteAttributes("Paste attributes", false),
@@ -182,7 +184,7 @@ fun toolsFor(kind: SelectionKind, canTransition: Boolean = false, multi: Boolean
         )
         // CapCut's order: the level, then the fades, then everything about time.
         kind == SelectionKind.Audio -> listOf(
-            Tool.Split, Tool.Volume, Tool.Fade, Tool.Speed, Tool.Delete, Tool.Beats, Tool.Sync, Tool.Voice,
+            Tool.Split, Tool.Volume, Tool.Fade, Tool.Speed, Tool.Delete, Tool.ReplaceSound, Tool.Beats, Tool.Sync, Tool.Voice,
             Tool.CopyAttributes, Tool.PasteAttributes, Tool.Duplicate, Tool.SelectMore
         )
         kind == SelectionKind.Text -> listOf(

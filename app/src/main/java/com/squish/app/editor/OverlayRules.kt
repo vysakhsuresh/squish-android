@@ -3,6 +3,7 @@ package com.squish.app.editor
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ClipKind
 import com.squish.app.timeline.withRowsCompacted
+import com.squish.app.timeline.MAX_SOUND_GAIN
 import com.squish.app.timeline.MIN_CLIP_MS
 import com.squish.app.timeline.OVERLAY_LANDING
 import com.squish.app.timeline.SpeedRamp
@@ -174,15 +175,20 @@ object OverlayRules {
         val lifted = withLayerChanged(clipId, +1)
         val clip = lifted.clips.firstOrNull { it.id == clipId } ?: return this
         if (!clip.isOverlay) return this
-        val heard = levelAsOverlay(clip.volume, muteOriginal, originalVolume)
+        // Under the camera switch the shot is muted, not written down to a
+        // level of nothing: as zeros, every key included, it stayed silent for
+        // good once it was moved back and the camera turned on, while its Mute
+        // switch read on (AudioRules: muted by the switch, not by a level of
+        // nothing). Muted, the switch says so and turns it back on.
+        val heard = levelAsOverlay(clip.volume, false, originalVolume)
         // Every key the same way, not the resting level alone: `volume` is only
         // the fallback once a clip has keys (Clip.volumeAt), so a shot with a
         // keyed level floated out of an edit with the camera sound off kept its
         // raw keys and went from silent to fully audible over the music - which
         // is the exact thing this conversion exists to prevent.
-        val heardKeys = clip.volumeKeys.map { it.copy(value = levelAsOverlay(it.value, muteOriginal, originalVolume)) }
+        val heardKeys = clip.volumeKeys.map { it.copy(value = levelAsOverlay(it.value, false, originalVolume)) }
         return (if (keepPlacement) lifted else lifted.withPlacementReset(clipId))
-            .let { t -> t.copy(clips = t.clips.map { if (it.id == clipId) it.copy(volume = heard, volumeKeys = heardKeys) else it }) }
+            .let { t -> t.copy(clips = t.clips.map { if (it.id == clipId) it.copy(volume = heard, volumeKeys = heardKeys, muted = it.muted || muteOriginal) else it }) }
             .copy(selectedClipId = clipId)
     }
 
@@ -200,14 +206,14 @@ object OverlayRules {
 
     /** A shot's level as an overlay: what it was heard at under the camera sound. */
     fun levelAsOverlay(volume: Float, muteOriginal: Boolean, originalVolume: Float): Float =
-        if (muteOriginal) 0f else (volume * originalVolume).coerceIn(0f, 1f)
+        if (muteOriginal) 0f else (volume * originalVolume).coerceIn(0f, MAX_SOUND_GAIN)
 
     /**
      * An overlay's level as a shot: as loud as it was, once the camera level is
      * applied - as near as a shot's own level can go, which is full.
      */
     fun levelOnMain(volume: Float, originalVolume: Float): Float =
-        if (originalVolume <= 0f) volume.coerceIn(0f, 1f) else (volume / originalVolume).coerceIn(0f, 1f)
+        if (originalVolume <= 0f) volume.coerceIn(0f, MAX_SOUND_GAIN) else (volume / originalVolume).coerceIn(0f, MAX_SOUND_GAIN)
 
     /** Longer than this, a photo moved to the main track is a render worth asking about first. */
     const val LONG_STILL_MS = 60_000L
@@ -319,9 +325,9 @@ object OverlayRules {
 
     /** The same, at [own] for the clip's level - the keyed level at one moment (Clip.volumeAt). */
     fun effectiveVolume(clip: Clip, muteOriginal: Boolean, originalVolume: Float, own: Float): Float = when {
-        clip.isOverlay -> own.coerceIn(0f, 1f)
+        clip.isOverlay -> own.coerceIn(0f, MAX_SOUND_GAIN)
         muteOriginal -> 0f
-        else -> (own * originalVolume).coerceIn(0f, 1f)
+        else -> (own * originalVolume).coerceIn(0f, MAX_SOUND_GAIN)
     }
 
     /**
