@@ -50,9 +50,14 @@ internal object AacWriter {
                 var outputDone = false
                 val chunk = ByteArray(32 * 1024)
                 while (!outputDone) {
+                    // Waits on the output only when no input was fed: waiting
+                    // 10 ms on both after every 64 ms buffer of sound made a
+                    // fifty-second track take 19 s to encode where it takes 1.
+                    var fed = false
                     if (!inputDone) {
-                        val i = codec.dequeueInputBuffer(TIMEOUT_US)
+                        val i = codec.dequeueInputBuffer(0L)
                         if (i >= 0) {
+                            fed = true
                             val buf = codec.getInputBuffer(i)!!
                             buf.clear()
                             val room = (minOf(buf.remaining(), chunk.size) / frameBytes) * frameBytes
@@ -70,7 +75,7 @@ internal object AacWriter {
                             }
                         }
                     }
-                    val o = codec.dequeueOutputBuffer(info, TIMEOUT_US)
+                    val o = codec.dequeueOutputBuffer(info, if (fed) 0L else TIMEOUT_US)
                     when {
                         o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                             track = muxer.addTrack(codec.outputFormat)
