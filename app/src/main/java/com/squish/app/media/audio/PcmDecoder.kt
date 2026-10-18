@@ -143,14 +143,23 @@ object PcmDecoder {
         // decodes - a WMA, a DTS track, an APE - and after the phone's decoder
         // for anything the phone's path gives no sound from. Never after sound
         // has been handed on: the callers would hear the start twice.
+        //
+        // And FFmpeg first for every file when it is here at all: this walk
+        // wants PCM as fast as it comes, not a picture on time, and MediaCodec
+        // hands it over a buffer at a time through the media server - 49
+        // seconds of WAV took 614 ms to draw on the moto that way.
+        if (com.squish.app.av.AvNative.loaded) {
+            var deliveredByFfmpeg = false
+            val ok = decodeWithFfmpeg(context, uri, onFormat) { sample -> deliveredByFfmpeg = true; onFrame(sample) }
+            if (ok || deliveredByFfmpeg) return true
+        }
         val report = com.squish.app.media.MediaCompat.cached(uri)
         if (com.squish.app.av.AvRoute.decide(context, uri).ffmpeg || report?.audioSoftware == true || report?.audioProblem != null) {
-            return decodeWithFfmpeg(context, uri, onFormat, onFrame)
+            return false
         }
-        var delivered = false
-        val ok = decodeWithPlatform(context, uri, onFormat) { sample -> delivered = true; onFrame(sample) }
-        if (ok || delivered) return true
-        return decodeWithFfmpeg(context, uri, onFormat, onFrame)
+        // The phone's decoder for what FFmpeg gave nothing from (or when the
+        // library is not on this phone).
+        return decodeWithPlatform(context, uri, onFormat, onFrame)
     }
 
     /** The same walk through Squish's FFmpeg: 16-bit PCM off the decoder, the channels averaged. */

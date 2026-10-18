@@ -81,6 +81,9 @@ object MusicLibrary {
      * stamp stale and write the same WAVs over each other, and a half-written
      * file is a sound that does not play.
      */
+    /** Remakes the effects on disk now if the synth has changed since, so the first one asked for does not wait on all of them. */
+    fun warmUp(context: Context) = remakeEffectsIfStale(context)
+
     @Synchronized
     private fun remakeEffectsIfStale(context: Context) {
         val stamp = File(dir(context), "effects.build")

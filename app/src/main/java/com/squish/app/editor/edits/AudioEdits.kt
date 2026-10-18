@@ -741,25 +741,26 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         _state.update { it.copy(beats = it.beats.copy(running = true, failed = false, listeningTo = label)) }
 
         beatJob = viewModelScope.launch {
-            val pcm = PcmDecoder.decodeMono(
-                context = app,
-                uri = uri,
-                targetSampleRate = BEAT_ANALYSIS_RATE,
-                maxDurationMs = BEAT_MAX_ANALYSIS_MS
-            )
-            if (pcm == null) {
-                _state.update { it.copy(beats = it.beats.copy(running = false, failed = true, listeningTo = label)) }
-                return@launch
-            }
-
             // A Squish original's beats are known exactly (MusicSynth.beatMap):
             // listening found only 7 of the 22 on their tempo - Lo-fi Sunset,
             // written at 78, was heard at 156 on the phone. Everything else is
-            // listened to.
+            // listened to. Asked first: the six-minute decode used to run for
+            // an original too, and its answer was thrown away.
             val original = uri.takeIf { it.scheme == "file" && it.path?.contains("/files/music/") == true }
                 ?.lastPathSegment?.substringBeforeLast('.')?.let { com.squish.app.media.audio.MusicSynth.byId(it) }
-            val map = original?.let { com.squish.app.media.audio.MusicSynth.beatMap(it) }
-                ?: withContext(Dispatchers.Default) { BeatDetector.detect(pcm.samples, pcm.sampleRate) }
+            val map = original?.let { com.squish.app.media.audio.MusicSynth.beatMap(it) } ?: run {
+                val pcm = PcmDecoder.decodeMono(
+                    context = app,
+                    uri = uri,
+                    targetSampleRate = BEAT_ANALYSIS_RATE,
+                    maxDurationMs = BEAT_MAX_ANALYSIS_MS
+                )
+                if (pcm == null) {
+                    _state.update { it.copy(beats = it.beats.copy(running = false, failed = true, listeningTo = label)) }
+                    return@launch
+                }
+                withContext(Dispatchers.Default) { BeatDetector.detect(pcm.samples, pcm.sampleRate) }
+            }
             if (map.isEmpty) {
                 _state.update { it.copy(beats = it.beats.copy(running = false, failed = true, listeningTo = label)) }
                 return@launch
