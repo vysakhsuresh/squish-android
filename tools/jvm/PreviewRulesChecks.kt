@@ -382,6 +382,11 @@ fun main() {
         // A drift that is real is still corrected, once the sound is running.
         check("a running sound far off the clock is put back", PreviewRules.shouldResyncSound(true, true, 900L, 5_000L, 5_000L))
         check("a buffering sound is never seeked", !PreviewRules.shouldResyncSound(false, true, 900L, 5_000L, 5_000L))
+        // A spike in the reported position is not a drift: the moto's song
+        // read 50 to 300 ms behind with a 400-550 ms spike now and then, and
+        // each spike was a seek - a skip heard after every scrub and play.
+        check("one reading past the line is not corrected", !PreviewRules.shouldResyncSound(true, true, -551L, 5_000L, 5_000L, driftForMs = 200L))
+        check("a drift that lasts is corrected", PreviewRules.shouldResyncSound(true, true, -551L, 5_000L, 5_000L, driftForMs = 700L))
     }
 
     if (failures.isEmpty()) {

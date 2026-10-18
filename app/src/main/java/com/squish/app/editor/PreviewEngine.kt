@@ -522,6 +522,7 @@ class PreviewEngine(private val context: Context) {
     private var soundHeldMs = 0L
     private var soundHolding = false
     private var clockStalled = false
+    private val soundDriftSince = HashMap<String, Long>()
 
     /** The base track in timeline order, for finding the shot before a cut. */
     private var baseClips: List<Clip> = emptyList()
@@ -1907,9 +1908,15 @@ class PreviewEngine(private val context: Context) {
                         playing = player.isPlaying,
                         driftMs = player.currentPosition - wanted,
                         sinceStartMs = now - (soundStartedAt[clip.id] ?: 0L),
-                        sinceCorrectionMs = now - (soundCorrectedAt[clip.id] ?: 0L)
+                        sinceCorrectionMs = now - (soundCorrectedAt[clip.id] ?: 0L),
+                        // Since when the drift has been past the line, without a break.
+                        driftForMs = if (abs(player.currentPosition - wanted) <= PreviewRules.SOUND_DRIFT_MS) {
+                            soundDriftSince.remove(clip.id)
+                            0L
+                        } else now - soundDriftSince.getOrPut(clip.id) { now }
                     )
                 ) {
+                    soundDriftSince.remove(clip.id)
                     Log.i(TAG, "sound ${clip.label}: put back by ${player.currentPosition - wanted} ms")
                     soundCorrectedAt[clip.id] = now
                     player.seekTo(wanted)

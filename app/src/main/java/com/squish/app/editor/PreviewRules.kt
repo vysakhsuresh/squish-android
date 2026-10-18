@@ -186,9 +186,26 @@ object PreviewRules {
      * again: the song broke up all the way through its first play, and played
      * clean the second time, once it was cached.
      */
-    fun shouldResyncSound(ready: Boolean, playing: Boolean, driftMs: Long, sinceStartMs: Long, sinceCorrectionMs: Long): Boolean =
-        ready && playing && kotlin.math.abs(driftMs) > SOUND_DRIFT_MS &&
+    fun shouldResyncSound(
+        ready: Boolean,
+        playing: Boolean,
+        driftMs: Long,
+        sinceStartMs: Long,
+        sinceCorrectionMs: Long,
+        /** How long the drift has stayed past [SOUND_DRIFT_MS] without a break. */
+        driftForMs: Long = Long.MAX_VALUE
+    ): Boolean =
+        ready && playing && kotlin.math.abs(driftMs) > SOUND_DRIFT_MS && driftForMs >= SOUND_DRIFT_SUSTAIN_MS &&
             sinceStartMs >= SOUND_START_GRACE_MS && sinceCorrectionMs >= SOUND_CORRECTION_GAP_MS
+
+    /**
+     * How long a drift must last before it is corrected. A sound's reported
+     * position moves in steps and jitters against the clock - 50 to 300 ms
+     * behind on the moto, read a fifth of a second apart - and one reading
+     * past [SOUND_DRIFT_MS] was enough: the song was seeked, and the seek
+     * itself was the skip heard, after every scrub and play.
+     */
+    const val SOUND_DRIFT_SUSTAIN_MS = 600L
 
     /** The longest the clock waits for a sound that is due and still loading. */
     const val SOUND_HOLD_MAX_MS = 1_500L
