@@ -228,14 +228,16 @@ object MediaLibrary {
         if (key in misses) return null
         return withContext(Dispatchers.IO) {
             decoders.withPermit {
-                tiles.get(key) ?: runCatching {
-                    context.contentResolver.loadThumbnail(uri, Size(TILE_PX, TILE_PX), null)
-                }.getOrNull()
+                tiles.get(key)?.let { return@withPermit it }
+                // Bracketed, so the provider's thumbnail is kept too: the elvis
+                // chain bound the put to the last link alone, so nearly every tile
+                // was fetched again each time it scrolled back into view.
+                (runCatching { context.contentResolver.loadThumbnail(uri, Size(TILE_PX, TILE_PX), null) }.getOrNull()
                     // The provider pictures what the phone decodes; a RAW, a
                     // WMV or a ProRes clip it leaves blank is pictured by the
                     // app's own decoders.
-                    ?: ownTile(context, uri)
-                        ?.also { tiles.put(key, it) } ?: run { misses += key; null }
+                    ?: ownTile(context, uri))
+                    ?.also { tiles.put(key, it) } ?: run { misses += key; null }
             }
         }
     }

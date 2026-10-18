@@ -282,9 +282,14 @@ object ReverseRenderer {
             var outputDone = false
             while (!outputDone) {
                 coroutineContext.ensureActive()
+
+                // Waits on the output only when nothing was fed (AacWriter says why: 10 ms each way a pass).
+
+                var fedNow = false
                 if (!inputDone) {
-                    val i = codec.dequeueInputBuffer(TIMEOUT_US)
+                    val i = codec.dequeueInputBuffer(0L)
                     if (i >= 0) {
+                        fedNow = true
                         val buf = codec.getInputBuffer(i)
                         val size = if (buf != null) extractor.readSampleData(buf, 0) else -1
                         // Past the window there is nothing more to read; the
@@ -298,7 +303,7 @@ object ReverseRenderer {
                         }
                     }
                 }
-                val o = codec.dequeueOutputBuffer(info, TIMEOUT_US)
+                val o = codec.dequeueOutputBuffer(info, if (fedNow) 0L else TIMEOUT_US)
                 when {
                     o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         val f = codec.outputFormat
@@ -371,9 +376,14 @@ object ReverseRenderer {
             var outputDone = false
             while (!outputDone) {
                 coroutineContext.ensureActive()
+
+                // Waits on the output only when nothing was fed (AacWriter says why: 10 ms each way a pass).
+
+                var fedNow = false
                 if (!inputDone) {
-                    val i = codec.dequeueInputBuffer(TIMEOUT_US)
+                    val i = codec.dequeueInputBuffer(0L)
                     if (i >= 0) {
+                        fedNow = true
                         val buf = codec.getInputBuffer(i)!!
                         buf.clear()
                         buf.order(ByteOrder.nativeOrder())
@@ -390,7 +400,7 @@ object ReverseRenderer {
                         }
                     }
                 }
-                val o = codec.dequeueOutputBuffer(info, TIMEOUT_US)
+                val o = codec.dequeueOutputBuffer(info, if (fedNow) 0L else TIMEOUT_US)
                 when {
                     o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> outFormat = codec.outputFormat
                     o >= 0 -> {
@@ -895,9 +905,14 @@ object ReverseRenderer {
         var outputDone = false
         while (!outputDone) {
             coroutineContext.ensureActive()
+
+            // Waits on the output only when nothing was fed (AacWriter says why: 10 ms each way a pass).
+
+            var fedNow = false
             if (!inputDone) {
-                val i = decoder.dequeueInputBuffer(TIMEOUT_US)
+                val i = decoder.dequeueInputBuffer(0L)
                 if (i >= 0) {
+                    fedNow = true
                     val t = extractor.sampleTime
                     val buf = decoder.getInputBuffer(i)
                     val size = if (buf != null && t >= 0L && t < gopEndUs) extractor.readSampleData(buf, 0) else -1
@@ -910,7 +925,7 @@ object ReverseRenderer {
                     }
                 }
             }
-            val o = decoder.dequeueOutputBuffer(info, TIMEOUT_US)
+            val o = decoder.dequeueOutputBuffer(info, if (fedNow) 0L else TIMEOUT_US)
             if (o >= 0) {
                 val pts = info.presentationTimeUs
                 if (info.size > 0 && pts >= inUs && pts < outUs) {

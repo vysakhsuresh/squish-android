@@ -536,6 +536,9 @@ class PreviewEngine(private val context: Context) {
     /** The blended stills of the edit, their pictures decoded once and kept. */
     private var blendStills: List<Clip> = emptyList()
     private val blendBitmaps = mutableMapOf<String, android.graphics.Bitmap?>()
+    private val blendLoading = HashSet<String>()
+    private val stillDecoder = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "SquishBlendStill").apply { isDaemon = true } }
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /**
      * One blended still as a base surface reads it: its picture, its mode, and
@@ -567,7 +570,23 @@ class PreviewEngine(private val context: Context) {
             // decoder that gets both right and there is no reason to have a
             // second. (The export's copy of this still decodes whole, and
             // must: the file is written at full resolution.)
-            blendBitmaps[key] = StillClips.previewBitmap(context, uri, BLEND_STILL_MAX_SIDE)
+            // Off the main thread: this runs inside the tick, and a PNG of 3840
+            // px decoded there froze the preview and the UI for a fifth of a
+            // second the first time a blended photo met a shot. The shot plays
+            // plain until it lands, then every base surface takes it again.
+            if (blendLoading.add(key)) {
+                stillDecoder.execute {
+                    val decoded = runCatching { StillClips.previewBitmap(context, uri, BLEND_STILL_MAX_SIDE) }.getOrNull()
+                    mainHandler.post {
+                        blendLoading.remove(key)
+                        if (released) return@post
+                        blendBitmaps[key] = decoded
+                        listOf(surfaceA, surfaceB).forEach { it.liveClip = null; it.blendStillClip = null }
+                        requestRedraw()
+                    }
+                }
+            }
+            return null
         }
         val bitmap = blendBitmaps[key]
         if (bitmap == null) {
@@ -1970,6 +1989,7 @@ class PreviewEngine(private val context: Context) {
         if (released) return
         released = true
         focus.drop()
+        stillDecoder.shutdown()
         allSurfaces().forEach { it.player.release() }
         audioPlayers.values.forEach { it.release() }
         overlaySurfaces.clear()

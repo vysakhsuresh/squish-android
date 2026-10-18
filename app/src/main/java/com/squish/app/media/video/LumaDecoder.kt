@@ -140,9 +140,16 @@ object LumaDecoder {
 
             while (true) {
                 currentCoroutineContext().ensureActive()
+
+
+                // Waits on the output only when nothing was fed (AacWriter says why: 10 ms each way a pass).
+
+
+                var fedNow = false
                 if (!inputDone) {
-                    val inIndex = codec.dequeueInputBuffer(TIMEOUT_US)
+                    val inIndex = codec.dequeueInputBuffer(0L)
                     if (inIndex >= 0) {
+                        fedNow = true
                         val buffer = codec.getInputBuffer(inIndex) ?: return false
                         val size = extractor.readSampleData(buffer, 0)
                         if (size < 0 || extractor.sampleTime > toMs * 1000L + 200_000L) {
@@ -155,7 +162,7 @@ object LumaDecoder {
                     }
                 }
 
-                val outIndex = codec.dequeueOutputBuffer(info, TIMEOUT_US)
+                val outIndex = codec.dequeueOutputBuffer(info, if (fedNow) 0L else TIMEOUT_US)
                 if (outIndex < 0) continue
                 val timeMs = info.presentationTimeUs / 1000L
                 val ended = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
