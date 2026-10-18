@@ -141,6 +141,9 @@ typedef struct {
     AVIOContext *pb;
     AVFormatContext *fmt;
     AVPacket *pkt;
+    // Where the first packet starts, past the header: what a stream that
+    // cannot seek by time is rewound to (fileSeek).
+    int64_t data_offset;
 } SqFile;
 
 static int io_read(void *opaque, uint8_t *buf, int n) {
@@ -260,6 +263,8 @@ JNIEXPORT jlong JNICALL FN(fileOpen)(JNIEnv *env, jclass cls, jint fd, jstring j
         file_free(f);
         return r < 0 ? r : AVERROR_UNKNOWN;
     }
+    // Read before the analysis below, which reads packets ahead and keeps them.
+    f->data_offset = avio_tell(f->fmt->pb);
     // Ten seconds of analysis at most: enough for a frame rate and for every
     // MPEG-TS stream to be found, not so much that opening a long file waits.
     f->fmt->max_analyze_duration = 10 * AV_TIME_BASE;
@@ -586,11 +591,12 @@ JNIEXPORT jint JNICALL FN(fileSeek)(JNIEnv *env, jclass cls, jlong h, jlong time
     int r = avformat_seek_file(f->fmt, -1, INT64_MIN, timeUs, timeUs, 0);
     if (r < 0) r = av_seek_frame(f->fmt, -1, timeUs, AVSEEK_FLAG_BACKWARD);
     if (r < 0) {
-        // Some streams cannot seek by time at all; byte zero is still a place to start from.
-        if (timeUs <= 0 || av_seek_frame(f->fmt, -1, 0, AVSEEK_FLAG_BYTE) >= 0) {
-            if (timeUs <= 0) avio_seek(f->fmt->pb, 0, SEEK_SET);
-            return 0;
-        }
+        // A stream that cannot seek by time at all (an FLV with no index)
+        // starts again from its first packet - the byte after its header, not
+        // byte zero, which is the header and read as packets is nothing. The
+        // caller decodes forward from there to the time it wanted.
+        avformat_flush(f->fmt);
+        if (avio_seek(f->fmt->pb, f->data_offset, SEEK_SET) >= 0) return 0;
     }
     return r;
 }
