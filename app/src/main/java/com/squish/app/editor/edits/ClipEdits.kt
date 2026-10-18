@@ -1374,9 +1374,14 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         viewModelScope.launch {
             var landed = false
             try {
-                val longer = StillClips.extended(app, uri, wanted) ?: return@launch
-                val fileMs = ThumbnailExtractor.probe(app, longer).durationMs
-                if (fileMs <= 0L) return@launch
+                // Said when it fails: the photo then plays its old length in the
+                // preview and holds its last frame, with nothing to say why.
+                val longer = StillClips.extended(app, uri, wanted)
+                val fileMs = longer?.let { ThumbnailExtractor.probe(app, it).durationMs } ?: 0L
+                if (longer == null || fileMs <= 0L) {
+                    _state.update { it.copy(failure = SquishError.StillFailed(clip.label.ifBlank { "Photo" })) }
+                    return@launch
+                }
                 // As it is now, not as it was: it may have been trimmed again,
                 // or replaced, while the render ran.
                 fun swap(clips: List<Clip>) = clips.map { now ->

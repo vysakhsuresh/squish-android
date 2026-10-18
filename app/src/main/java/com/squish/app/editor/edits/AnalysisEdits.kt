@@ -1,6 +1,7 @@
 package com.squish.app.editor.edits
 
 import android.net.Uri
+import com.squish.app.media.SquishError
 import com.squish.app.media.ProxyEngine
 import com.squish.app.media.ThumbnailExtractor
 import com.squish.app.media.video.LivelinessProfiler
@@ -122,7 +123,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
             // Measured on this footage, forwards: a clip reversed or replaced
             // meanwhile plays other frames, and the mask would not line up.
             if (!sameFootage(clip, _state.value.videoClips.firstOrNull { it.id == clip.id })) {
-                _state.update { it.copy(backgroundProgress = ReframeProgress()) }
+                _state.update { it.copy(backgroundProgress = ReframeProgress(), failure = SquishError.ChangedWhileWorking("the person was being found")) }
                 return@launch
             }
             // Beneath any gesture still moving, as Stabilize and Auto-reframe
@@ -199,6 +200,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
                 _state.update { it.copy(reframeProgress = ReframeProgress(failed = true)) }
                 return@launch
             }
+            if (tracks.size < total) _state.update { it.copy(failure = SquishError.PartlyDone("Auto-reframe", tracks.size, total)) }
             recordLate(
                 "Auto-reframe",
                 edit = { snapshot ->
@@ -261,6 +263,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
                 _state.update { it.copy(bestBitsProgress = ReframeProgress(failed = true)) }
                 return@launch
             }
+            if (profiles.size < files.size) _state.update { it.copy(failure = SquishError.PartlyDone("Use the liveliest bit", profiles.size, files.size)) }
             recordLate(
                 "Use the liveliest bit",
                 edit = { snapshot ->

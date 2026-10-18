@@ -191,9 +191,11 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
     }
     fun isStarred(key: String) = favourites.any { it.key == key }
 
+    var usedCount by remember { mutableIntStateOf(0) }
     fun add(pick: MusicPick, uri: Uri) {
         stopListening()
         MusicLibrary.noteUsed(context, pick)
+        usedCount++
         viewModel.audio.addAudioTrack(uri, pick.title, asSong = true)
     }
 
@@ -311,7 +313,9 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
                 onAdd = { track -> add(track.pick, track.uri) }
             )
             else -> {
-                val recents = remember(favourites) { MusicLibrary.recents(context) }
+                // Read again after each add, not only when the stars change: a track
+                // added from here went to the top of the list only after leaving it.
+                val recents = remember(favourites, usedCount) { MusicLibrary.recents(context) }
                 if (favourites.isEmpty() && recents.isEmpty()) {
                     Text(
                         "Nothing here yet. Star a track, or add one, and it will be waiting here next time.",

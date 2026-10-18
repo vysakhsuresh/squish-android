@@ -842,7 +842,19 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * undo step; stickers - an emoji or two - are left. [onDone] gets how many
      * lines were translated, or -1 when the service could not be reached.
      */
-    fun translateCaptions(from: String, to: String, onDone: (translated: Int, of: Int) -> Unit) {
+    private var translateJob: kotlinx.coroutines.Job? = null
+
+    /** Stops a translation under way; the lines already back are kept, as one step. */
+    fun stopTranslating() { translateJob?.cancel() }
+
+    fun translateCaptions(
+        from: String,
+        to: String,
+        // Line by line over the network: thirty lines were tens of seconds
+        // with nothing to count and no way to stop.
+        onProgress: (sent: Int, of: Int) -> Unit = { _, _ -> },
+        onDone: (translated: Int, of: Int) -> Unit
+    ) {
         // On the flag the item carries, not on how long its words are. The
         // filter used to be "more than two code points", standing in for
         // `sticker` - which this same data class has and which clearCaptions
@@ -853,15 +865,28 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         // one of them was still in the old language.
         val lines = _state.value.textOverlays.filter { !it.sticker && it.text.isNotBlank() }
         if (lines.isEmpty()) return onDone(0, 0)
-        viewModelScope.launch {
+        translateJob?.cancel()
+        translateJob = viewModelScope.launch {
             // Line by line; one the service refuses is left in its own words and
             // the rest still go, and the sheet says how many did.
             val done = HashMap<String, Pair<String, String>>()
-            for (line in lines) {
-                val out = runCatching { com.squish.app.online.OnlineTranslate.translate(app, line.text, from, to) }.getOrNull()
+            for ((i, line) in lines.withIndex()) {
+                onProgress(i, lines.size)
+                // Stopped: what came back before the stop still lands, as one step.
+                val out = try {
+                    com.squish.app.online.OnlineTranslate.translate(app, line.text, from, to)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    break
+                } catch (e: Exception) { null }
                 if (out != null) done[line.id] = line.text to out
             }
-            if (done.isEmpty()) return@launch onDone(0, lines.size)
+            landTranslation(done, lines.size, onDone)
+        }
+    }
+
+    private fun landTranslation(done: Map<String, Pair<String, String>>, lines: Int, onDone: (Int, Int) -> Unit) {
+        run {
+            if (done.isEmpty()) return onDone(0, lines)
             recordLate("Translate captions", edit = { snapshot ->
                 snapshot.copy(textOverlays = snapshot.textOverlays.map { item ->
                     val (sent, got) = done[item.id] ?: return@map item
@@ -870,7 +895,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                     if (item.text == sent) item.copy(text = got, wordStartsMs = emptyList()) else item
                 })
             })
-            onDone(done.size, lines.size)
+            onDone(done.size, lines)
         }
     }
 

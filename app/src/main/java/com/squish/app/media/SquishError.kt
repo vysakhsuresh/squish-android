@@ -296,6 +296,24 @@ sealed class SquishError(
         fix = "Free some space and open the file in Squish again, or save it to your gallery first."
     )
 
+    /**
+     * A long analysis whose clip was reversed, replaced or relinked while it
+     * ran: its answer is for other frames, so it is let go - said, where the
+     * panel used to go back to idle as if nothing had been asked.
+     */
+    class ChangedWhileWorking(val what: String) : SquishError(
+        title = "The clip changed while $what",
+        detail = "It was reversed, replaced or relinked while it was being analysed, so the result would not line up with it.",
+        fix = "Run it again on the clip as it is now."
+    )
+
+    /** An analysis over several shots that could read only some of them. */
+    class PartlyDone(val what: String, val read: Int, val of: Int) : SquishError(
+        title = "$what worked on $read of $of shots",
+        detail = "The others could not be read - a file that is missing, or that this phone cannot decode.",
+        fix = "Relink or replace those shots, then run it again for them."
+    )
+
     /** A freeze on an overlay row with something on the row where the rest of the shot would move to. */
     class NoRoomOnRow : SquishError(
         title = "No room on this row for the freeze",

@@ -1446,6 +1446,9 @@ private fun TranslateCard(viewModel: EditorViewModel) {
     var from by rememberSaveable { mutableStateOf("en") }
     var to by rememberSaveable { mutableStateOf("es") }
     var working by remember { mutableStateOf(false) }
+    var stopped by remember { mutableStateOf(false) }
+    var sent by remember { mutableStateOf(0) }
+    var sentOf by remember { mutableStateOf(0) }
     var note by remember { mutableStateOf<String?>(null) }
     PanelSurface(accent = SquishColors.Amber) {
         PanelHeading(
@@ -1467,10 +1470,14 @@ private fun TranslateCard(viewModel: EditorViewModel) {
             }
         }
         SquishOutlinedButton(
-            text = if (working) "Translating…" else "Translate captions",
+            text = if (working) (if (sentOf > 0) "Translating ${sent + 1} of $sentOf · tap to stop" else "Translating… · tap to stop") else "Translate captions",
             modifier = Modifier.fillMaxWidth(),
             onClick = {
-                if (working) return@SquishOutlinedButton
+                if (working) {
+                    stopped = true
+                    viewModel.text.stopTranslating()
+                    return@SquishOutlinedButton
+                }
                 // The same language both sides did nothing at all; it says why now.
                 if (from == to) {
                     note = "Pick a language to translate into that isn't the one the captions are in."
@@ -1478,11 +1485,14 @@ private fun TranslateCard(viewModel: EditorViewModel) {
                 }
                 gate.request("Translation") {
                     working = true
+                    stopped = false
+                    sentOf = 0
                     note = null
-                    viewModel.text.translateCaptions(from, to) { n, of ->
+                    viewModel.text.translateCaptions(from, to, onProgress = { i, of -> sent = i; sentOf = of }) { n, of ->
                         working = false
                         note = when {
                             of == 0 -> "No lines of words to translate."
+                            stopped -> if (n == 0) "Stopped before any line came back." else "Stopped: $n of $of lines translated. Undo takes them back."
                             n == 0 -> "Couldn't reach the translation service. Check the connection and try again."
                             n < of -> "Translated $n of $of lines - the service refused the rest, which keep their words. Undo takes it back."
                             else -> "Translated ${countOf(n, "line")}. Undo takes it back."
