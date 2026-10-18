@@ -363,6 +363,7 @@ JNIEXPORT jbyteArray JNICALL FN(fileInfo)(JNIEnv *env, jclass cls, jlong h) {
             int bits = p->bits_per_raw_sample > 0 ? p->bits_per_raw_sample :
                        (sf ? av_get_bytes_per_sample((enum AVSampleFormat) p->format) * 8 : 0);
             str_fmt(&s, ",\"bits\":%d", bits);
+            str_fmt(&s, ",\"frameSize\":%d,\"blockAlign\":%d", p->frame_size, p->block_align);
         }
         const AVDictionaryEntry *lang = av_dict_get(st->metadata, "language", NULL, 0);
         const AVDictionaryEntry *title = av_dict_get(st->metadata, "title", NULL, 0);
