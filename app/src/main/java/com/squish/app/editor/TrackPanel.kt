@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,11 +65,15 @@ fun TrackPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel, acc
     var frame by remember(clip.id) { mutableStateOf<Bitmap?>(null) }
     var stale by remember(clip.id) { mutableStateOf(true) }
 
-    LaunchedEffect(clip.id, stale) {
-        if (stale) {
-            frame = viewModel.analysis.sampleFrame(clip, state.playheadMs)
-            stale = false
-        }
+    // Taken again when the playhead moves, after a moment's rest: the track
+    // starts from the playhead, and with the frame taken once on opening, a
+    // thing aimed at on that frame was looked for on another and the track
+    // locked onto whatever stood there now.
+    val restingAt = state.playheadMs / 100L
+    LaunchedEffect(clip.id, stale, restingAt) {
+        if (!stale) delay(250)
+        frame = viewModel.analysis.sampleFrame(clip, state.playheadMs)
+        stale = false
     }
 
     PanelSurface(accent = accent) {

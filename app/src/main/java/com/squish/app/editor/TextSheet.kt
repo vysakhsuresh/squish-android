@@ -1470,7 +1470,12 @@ private fun TranslateCard(viewModel: EditorViewModel) {
             text = if (working) "Translating…" else "Translate captions",
             modifier = Modifier.fillMaxWidth(),
             onClick = {
-                if (working || from == to) return@SquishOutlinedButton
+                if (working) return@SquishOutlinedButton
+                // The same language both sides did nothing at all; it says why now.
+                if (from == to) {
+                    note = "Pick a language to translate into that isn't the one the captions are in."
+                    return@SquishOutlinedButton
+                }
                 gate.request("Translation") {
                     working = true
                     note = null

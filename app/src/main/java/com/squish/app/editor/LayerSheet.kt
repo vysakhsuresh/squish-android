@@ -233,7 +233,8 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
                 viewModel.endGesture()
             }
         ) {
-            if (dragFrom == null) dragFrom = clip.volume
+            // The level the slider showed, which on a keyed clip is the key's, not the resting level.
+            if (dragFrom == null) dragFrom = clip.valueAt(ValueTrack.Volume, state.playheadMs)
             viewModel.clips.setClipVolume(clip.id, it)
         }
         if (clip.valueAt(ValueTrack.Volume, state.playheadMs) > 1f) {
