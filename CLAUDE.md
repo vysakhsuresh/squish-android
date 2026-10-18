@@ -275,6 +275,18 @@ should work through it and then delete what holds up.
   Swap for row; Reverse of a clip with sound is quicker (its AAC loop no
   longer waits 10 ms a buffer) and an HDR clip reverses tone-mapped (seen in
   the self-test, not judged on real HLG footage).
+  **Then seen on the moto the same evening**, editing a four-clip reel as an
+  editor would: a phone song added and played at once and after every scrub
+  with no correction logged (`SquishPreview` logs "put back by" and "waiting
+  for a sound"; the scrub-and-play skip was a jitter spike, now ignored below
+  600 ms of drift); the first song starts with the video and follows the
+  picture's end through a trim, a dissolve and a 2x; Mute audio; the Music
+  sheet keeping its category and bringing its list into view; render starting
+  without waiting on the notification question; a 51 s 1080x1920 export in
+  37 s; the partial-access empty state and "Allow access" bringing a
+  project's clips back at the right shape. Still open: scrubbing on the
+  release build is ~20 ms a frame median, 30-38% janky, mostly the editor's
+  own recomposition per frame (`am profile` on a debug build names it).
 
 - **15 October: the software decoders, the import conversion and the bare
   playhead.** Built with no phone attached (`docs/DEVICE_FINDINGS.md` §59).
