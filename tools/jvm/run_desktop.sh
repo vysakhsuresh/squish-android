@@ -129,6 +129,7 @@ run envelope  tools/jvm/stub/MonoPcm.kt "$SRC/media/audio/Waveform.kt" tools/jvm
 run srt "$SRC/data/SrtFile.kt" "$SRC/data/PickedText.kt" tools/jvm/SrtChecks.kt
 run shaderuniforms tools/jvm/ShaderUniformChecks.kt
 run yuvdataspace "$SRC/media/YuvDataSpace.kt" tools/jvm/YuvDataSpaceChecks.kt
+run tonemap "$SRC/av/ToneMap.kt" tools/jvm/ToneMapChecks.kt
 run av "$SRC/av/AvCodecMap.kt" "$SRC/av/AvRouteRules.kt" tools/jvm/AvChecks.kt
 
 # And the suites that run app code against Media3 itself. They keep their own

@@ -130,6 +130,7 @@ run envelope  tools/jvm/stub/MonoPcm.kt "$SRC/media/audio/Waveform.kt" tools/jvm
 run srt "$SRC/data/SrtFile.kt" "$SRC/data/PickedText.kt" tools/jvm/SrtChecks.kt
 run shaderuniforms tools/jvm/ShaderUniformChecks.kt
 run yuvdataspace "$SRC/media/YuvDataSpace.kt" tools/jvm/YuvDataSpaceChecks.kt
+run tonemap "$SRC/av/ToneMap.kt" tools/jvm/ToneMapChecks.kt
 run av "$SRC/av/AvCodecMap.kt" "$SRC/av/AvRouteRules.kt" tools/jvm/AvChecks.kt
 run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScreen.kt" tools/jvm/SplitScreenChecks.kt
 run gif        "$SRC/media/gif/GifEncoder.kt" "$SRC/media/gif/GifSize.kt" tools/jvm/GifChecks.kt

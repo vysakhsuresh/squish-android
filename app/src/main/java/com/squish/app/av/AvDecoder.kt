@@ -103,8 +103,20 @@ class AvDecoder private constructor(private var handle: Long) : Closeable {
         }
 
         /** A decoder for [stream] of [file]. */
-        fun forStream(file: AvFile, stream: Int, threads: Int = defaultThreads()): AvDecoder? =
-            open(file.streamParams(stream), threads)
+        /**
+         * A decoder for one of [file]'s streams, for the readers that make
+         * pictures of their own (Reverse, the filmstrip, thumbnails, the
+         * analyses): an HLG or PQ stream comes out tone-mapped to BT.709 SDR
+         * (ToneMap), which written as it was looked flat and grey. The players
+         * and the export open theirs with [open] and hand HDR on as HDR.
+         */
+        fun forStream(file: AvFile, stream: Int, threads: Int = defaultThreads(), toSdr: Boolean = true): AvDecoder? {
+            val decoder = open(file.streamParams(stream), threads) ?: return null
+            val trc = file.info.streams.firstOrNull { it.index == stream }?.colorTrc ?: 2
+            // runCatching: a library older than this function has no tone map, and pictures come as they did.
+            if (toSdr) ToneMap.cached(trc)?.let { t -> runCatching { AvNative.decSetToneMap(decoder.nativeHandle, t) } }
+            return decoder
+        }
 
         /**
          * FFmpeg's frame threads hold about a frame each, which a drain gives

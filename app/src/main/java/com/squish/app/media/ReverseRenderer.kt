@@ -44,11 +44,12 @@ import kotlin.coroutines.coroutineContext
  * rather than turning pixels: the frames are written as they were stored, and
  * the tag says which way up, as the camera wrote it.
  *
- * Only 8-bit footage: the frames are packed as bytes, and a 10-bit picture
- * (HLG or HDR10 from a recent phone) has two per sample. Such a file is
- * refused before anything is decoded, from its transfer and profile tags,
- * and again from the decoder's first picture where the tags are missing -
- * read as bytes, its planes came out as green stripes.
+ * The phone's reader takes 8-bit footage only: the frames are packed as
+ * bytes, and a 10-bit picture (HLG or HDR10 from a recent phone) has two per
+ * sample - read as bytes, its planes came out as green stripes. Such a file
+ * goes to FFmpeg's reader instead, found by its transfer and profile tags or,
+ * where they are missing, by the decoder's first picture; there it comes out
+ * 8-bit, and HDR tone-mapped to SDR (ToneMap), so the reversed clip is SDR.
  */
 object ReverseRenderer {
 
@@ -70,7 +71,8 @@ object ReverseRenderer {
     private const val COLOR_TRANSFER_HLG = 7
     private val TEN_BIT_HEVC_PROFILES = setOf(2, 4096, 8192)
     private const val VP9_AV1_PROFILE_2 = 4
-    private const val TEN_BIT = "10-bit or HDR footage cannot be reversed here"
+    /** The phone's reader met a picture of more than a byte a sample: FFmpeg's reads it instead. */
+    private class TenBitPicture : IllegalStateException("a 10-bit picture")
 
     /**
      * How far past the window [keyframesWithin] goes looking for the margin the
@@ -460,7 +462,14 @@ object ReverseRenderer {
                 }
             }
         }
-        return reader.use { encodeReversed(it, inUs, outUs, muxer, sound, spill, onProgress) }
+        return try {
+            reader.use { encodeReversed(it, inUs, outUs, muxer, sound, spill, onProgress) }
+        } catch (e: TenBitPicture) {
+            // 10-bit with no tag to say so, found at the first picture - before
+            // the encoder opens, so nothing has reached the muxer.
+            val av = AvPictureReader.open(context, source) ?: throw e
+            av.use { encodeReversed(it, inUs, outUs, muxer, sound, spill, onProgress) }
+        }
     }
 
     /** What the encoding half needs of a decoder: the track's tags, its runs, and each run's frames. */
@@ -634,7 +643,7 @@ object ReverseRenderer {
                 if (!checked) {
                     // Two bytes a sample on the luma plane is a 10-bit picture
                     // the tags did not announce.
-                    if (image.planes[0].pixelStride != 1) error(TEN_BIT)
+                    if (image.planes[0].pixelStride != 1) throw TenBitPicture()
                     checked = true
                 }
                 onFrame(image.cropRect.width(), image.cropRect.height(), { out, w, h -> ReverseRenderer.packI420(image, out, w, h) }, ptsUs)
@@ -657,7 +666,7 @@ object ReverseRenderer {
                     } ?: error("no video track")
                     val format = extractor.getTrackFormat(track)
                     val mime = format.getString(MediaFormat.KEY_MIME) ?: error("no video mime")
-                    if (ReverseRenderer.isTenBit(format, mime)) error(TEN_BIT)
+                    if (ReverseRenderer.isTenBit(format, mime)) throw TenBitPicture()
                     extractor.selectTrack(track)
                     val rotation = if (format.containsKey(KEY_ROTATION)) runCatching { format.getInteger(KEY_ROTATION) }.getOrDefault(0) else 0
                     val fps = if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
@@ -680,8 +689,9 @@ object ReverseRenderer {
     /**
      * Squish's FFmpeg as the decoder: any container, any codec. A 10-bit
      * picture comes out as 8-bit (squishav.c's to_i420), so 10-bit SDR
-     * reverses here where the phone's path refuses it; HDR is still refused,
-     * since its values written into an SDR file would look washed out.
+     * reverses here where the phone's path refuses it, and HDR comes out
+     * tone-mapped to SDR (AvDecoder.forStream sets ToneMap's tables) rather
+     * than as its own values in an SDR file, which looked washed out.
      */
     private class AvPictureReader private constructor(
         private val file: com.squish.app.av.AvFile,
@@ -803,10 +813,6 @@ object ReverseRenderer {
                 if (stream == null) {
                     file.close()
                     return null
-                }
-                if (stream.hdr) {
-                    file.close()
-                    error(TEN_BIT)
                 }
                 val decoder = com.squish.app.av.AvDecoder.forStream(file, stream.index)
                 if (decoder == null) {

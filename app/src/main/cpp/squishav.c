@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <strings.h>
 #include <fcntl.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -631,10 +632,25 @@ typedef struct {
     uint8_t *tmp[4];
     int tmp_lines[4];
     int tmp_w, tmp_h;
+    // HDR to SDR (decSetToneMap): ToneMap.kt's packed tables, and the
+    // 16-bit RGB and 8-bit RGB pictures the frame passes through.
+    float *tone;
+    struct SwsContext *sws_rgb, *sws_out;
+    uint8_t *rgb48[4];
+    int rgb48_lines[4];
+    int rgb48_w, rgb48_h;
+    uint8_t *rgb24[4];
+    int rgb24_lines[4];
+    int rgb24_w, rgb24_h;
 } SqDec;
 
 static void dec_free(SqDec *d) {
     if (!d) return;
+    av_freep(&d->tone);
+    sws_freeContext(d->sws_rgb);
+    sws_freeContext(d->sws_out);
+    av_freep(&d->rgb48[0]);
+    av_freep(&d->rgb24[0]);
     avcodec_free_context(&d->ctx);
     av_frame_free(&d->frame);
     av_packet_free(&d->pkt);
@@ -895,28 +911,171 @@ static int is_rgb(enum AVPixelFormat f) {
 }
 
 /**
- * A scaler from the frame to [dw]x[dh] of [dst], with the frame's own matrix
- * and range on the way in and [dst_full] on the way out.
+ * A scaler (cached in [slot]) from the frame to [dw]x[dh] of [dst], with the
+ * frame's own matrix and range on the way in and [dst_full] on the way out.
  */
-static struct SwsContext *scaler(SqDec *d, AVFrame *fr, int dw, int dh, enum AVPixelFormat dst, int dst_full, int flags) {
+static struct SwsContext *scaler_in(struct SwsContext **slot, AVFrame *fr, int dw, int dh, enum AVPixelFormat dst, int dst_full, int flags) {
     int full = fr->color_range == AVCOL_RANGE_JPEG;
     enum AVPixelFormat src = plain((enum AVPixelFormat) fr->format, &full);
-    d->sws = sws_getCachedContext(d->sws, fr->width, fr->height, src, dw, dh, dst, flags, NULL, NULL, NULL);
-    if (!d->sws) return NULL;
+    *slot = sws_getCachedContext(*slot, fr->width, fr->height, src, dw, dh, dst, flags, NULL, NULL, NULL);
+    if (!*slot) return NULL;
     int space = fr->colorspace;
     if (space == AVCOL_SPC_UNSPECIFIED || space == AVCOL_SPC_RESERVED || space == AVCOL_SPC_RGB)
         space = fr->height >= 720 ? AVCOL_SPC_BT709 : AVCOL_SPC_SMPTE170M;
     if (space == AVCOL_SPC_BT2020_CL) space = AVCOL_SPC_BT2020_NCL;
     const int *coeffs = sws_getCoefficients(space);
     int src_full = is_rgb(src) ? 1 : full;
-    sws_setColorspaceDetails(d->sws, coeffs, src_full, coeffs, dst_full, 0, 1 << 16, 1 << 16);
-    return d->sws;
+    sws_setColorspaceDetails(*slot, coeffs, src_full, coeffs, dst_full, 0, 1 << 16, 1 << 16);
+    return *slot;
+}
+
+static struct SwsContext *scaler(SqDec *d, AVFrame *fr, int dw, int dh, enum AVPixelFormat dst, int dst_full, int flags) {
+    return scaler_in(&d->sws, fr, dw, dh, dst, dst_full, flags);
+}
+
+/* ToneMap.kt's packed layout. */
+#define TM_SIZE 4096
+#define TM_IN 0
+#define TM_GAIN TM_SIZE
+#define TM_RATIO (2 * TM_SIZE)
+#define TM_OUT_709 (3 * TM_SIZE)
+#define TM_OUT_SRGB (4 * TM_SIZE)
+#define TM_TOP (5 * TM_SIZE)
+#define TM_MATRIX (TM_TOP + 1)
+#define TM_LUMA (TM_MATRIX + 9)
+#define TM_LENGTH (TM_LUMA + 3)
+
+/** Whether [fr] is to be tone-mapped: tables set, and a YUV frame. */
+static int toned(SqDec *d, AVFrame *fr) {
+    int full = 0;
+    return d->tone && !is_rgb(plain((enum AVPixelFormat) fr->format, &full));
+}
+
+static inline int tm_index(float v) {
+    int i = (int) (sqrtf(v) * (TM_SIZE - 1) + 0.5f);
+    return i < 0 ? 0 : i > TM_SIZE - 1 ? TM_SIZE - 1 : i;
+}
+
+/** One pixel: ToneMap.pixel, line for line (tools/jvm/ToneMapChecks.kt executes that one). */
+static inline void tone_pixel(const float *t, const uint16_t *in, uint8_t *out, int out_table) {
+    float r = t[TM_IN + (in[0] >> 4)];
+    float g = t[TM_IN + (in[1] >> 4)];
+    float b = t[TM_IN + (in[2] >> 4)];
+    float ys = t[TM_LUMA] * r + t[TM_LUMA + 1] * g + t[TM_LUMA + 2] * b;
+    float k = t[TM_GAIN + tm_index(ys < 0.f ? 0.f : ys > 1.f ? 1.f : ys)];
+    r *= k; g *= k; b *= k;
+    const float *m = t + TM_MATRIX;
+    float rr = m[0] * r + m[1] * g + m[2] * b;
+    float gg = m[3] * r + m[4] * g + m[5] * b;
+    float bb = m[6] * r + m[7] * g + m[8] * b;
+    if (rr < 0.f) rr = 0.f;
+    if (gg < 0.f) gg = 0.f;
+    if (bb < 0.f) bb = 0.f;
+    float mx = rr > gg ? rr : gg;
+    if (bb > mx) mx = bb;
+    if (mx > 0.f) {
+        float q = mx / t[TM_TOP];
+        float s = t[TM_RATIO + tm_index(q > 1.f ? 1.f : q)];
+        rr *= s; gg *= s; bb *= s;
+    }
+    const float *o = t + out_table;
+    out[0] = (uint8_t) (o[tm_index(rr > 1.f ? 1.f : rr)] + 0.5f);
+    out[1] = (uint8_t) (o[tm_index(gg > 1.f ? 1.f : gg)] + 0.5f);
+    out[2] = (uint8_t) (o[tm_index(bb > 1.f ? 1.f : bb)] + 0.5f);
+}
+
+/**
+ * The frame at [dw]x[dh] as 16-bit R'G'B' in d->rgb48 (still HDR's signal,
+ * on BT.2020's matrix), for tone_pixel to read.
+ */
+static int to_rgb48(SqDec *d, AVFrame *fr, int dw, int dh, int flags) {
+    if (d->rgb48_w != dw || d->rgb48_h != dh || !d->rgb48[0]) {
+        av_freep(&d->rgb48[0]);
+        int r = av_image_alloc(d->rgb48, d->rgb48_lines, dw, dh, AV_PIX_FMT_RGB48, 32);
+        if (r < 0) return r;
+        d->rgb48_w = dw;
+        d->rgb48_h = dh;
+    }
+    struct SwsContext *sws = scaler_in(&d->sws_rgb, fr, dw, dh, AV_PIX_FMT_RGB48, 1, flags);
+    if (!sws) return AVERROR(EINVAL);
+    sws_scale(sws, (const uint8_t *const *) fr->data, fr->linesize, 0, fr->height, d->rgb48, d->rgb48_lines);
+    return 0;
+}
+
+/**
+ * The frame tone-mapped into [out] (rows [line] bytes apart, [step] bytes a
+ * pixel - 3 for RGB24, 4 for RGBA, whose alpha is set opaque) at [dw]x[dh],
+ * through [out_table] (TM_OUT_709 or TM_OUT_SRGB).
+ */
+static int tone_to(SqDec *d, AVFrame *fr, int dw, int dh, int flags, uint8_t *out, int line, int step, int out_table) {
+    int r = to_rgb48(d, fr, dw, dh, flags);
+    if (r < 0) return r;
+    for (int y = 0; y < dh; y++) {
+        const uint16_t *s = (const uint16_t *) (d->rgb48[0] + (size_t) y * d->rgb48_lines[0]);
+        uint8_t *o = out + (size_t) y * line;
+        for (int x = 0; x < dw; x++, s += 3, o += step) {
+            tone_pixel(d->tone, s, o, out_table);
+            if (step == 4) o[3] = 255;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Sets (a ToneMap.LENGTH float array) or clears (null) the tables this
+ * decoder's YUV, RGBA and bitmap pictures are tone-mapped through. Set, a
+ * YUV frame comes out as BT.709 SDR at limited range; the caller decides
+ * from the stream's transfer whether to set them.
+ */
+JNIEXPORT jint JNICALL FN(decSetToneMap)(JNIEnv *env, jclass cls, jlong h, jfloatArray jtables) {
+    (void) cls;
+    SqDec *d = (SqDec *) (intptr_t) h;
+    if (!jtables) {
+        av_freep(&d->tone);
+        return 0;
+    }
+    if ((*env)->GetArrayLength(env, jtables) != TM_LENGTH) return AVERROR(EINVAL);
+    if (!d->tone) d->tone = av_malloc(sizeof(float) * TM_LENGTH);
+    if (!d->tone) return AVERROR(ENOMEM);
+    (*env)->GetFloatArrayRegion(env, jtables, 0, TM_LENGTH, d->tone);
+    return 0;
 }
 
 /** Makes [d->tmp] a planar 8-bit 4:2:0 copy of the frame at its own size; null planes on failure. */
 static int to_i420(SqDec *d, AVFrame *fr, const uint8_t **planes, int *lines) {
     int full = fr->color_range == AVCOL_RANGE_JPEG;
     enum AVPixelFormat src = plain((enum AVPixelFormat) fr->format, &full);
+    if (toned(d, fr)) {
+        // HDR through RGB: tone-mapped to 8-bit BT.709 R'G'B', then to
+        // limited-range BT.709 YUV, as a camera's SDR would be.
+        if (d->rgb24_w != fr->width || d->rgb24_h != fr->height || !d->rgb24[0]) {
+            av_freep(&d->rgb24[0]);
+            int r = av_image_alloc(d->rgb24, d->rgb24_lines, fr->width, fr->height, AV_PIX_FMT_RGB24, 32);
+            if (r < 0) return r;
+            d->rgb24_w = fr->width;
+            d->rgb24_h = fr->height;
+        }
+        if (d->tmp_w != fr->width || d->tmp_h != fr->height || !d->tmp[0]) {
+            av_freep(&d->tmp[0]);
+            int r = av_image_alloc(d->tmp, d->tmp_lines, fr->width, fr->height, AV_PIX_FMT_YUV420P, 32);
+            if (r < 0) return r;
+            d->tmp_w = fr->width;
+            d->tmp_h = fr->height;
+        }
+        int r = tone_to(d, fr, fr->width, fr->height, SWS_POINT, d->rgb24[0], d->rgb24_lines[0], 3, TM_OUT_709);
+        if (r < 0) return r;
+        d->sws_out = sws_getCachedContext(d->sws_out, fr->width, fr->height, AV_PIX_FMT_RGB24,
+                                          fr->width, fr->height, AV_PIX_FMT_YUV420P, SWS_BILINEAR, NULL, NULL, NULL);
+        if (!d->sws_out) return AVERROR(EINVAL);
+        const int *bt709 = sws_getCoefficients(AVCOL_SPC_BT709);
+        sws_setColorspaceDetails(d->sws_out, bt709, 1, bt709, 0, 0, 1 << 16, 1 << 16);
+        sws_scale(d->sws_out, (const uint8_t *const *) d->rgb24, d->rgb24_lines, 0, fr->height, d->tmp, d->tmp_lines);
+        for (int i = 0; i < 3; i++) {
+            planes[i] = d->tmp[i];
+            lines[i] = d->tmp_lines[i];
+        }
+        return 0;
+    }
     if (src == AV_PIX_FMT_YUV420P) {
         for (int i = 0; i < 3; i++) {
             planes[i] = fr->data[i];
@@ -981,6 +1140,7 @@ JNIEXPORT jint JNICALL FN(decFrameToYuv)(JNIEnv *env, jclass cls, jlong h, jlong
     copy_plane(yd, yRow, 1, planes[0], lines[0], w, hh);
     copy_plane(ud, uRow, uPixel, planes[1], lines[1], cw, ch);
     copy_plane(vd, vRow, vPixel, planes[2], lines[2], cw, ch);
+    if (toned(d, fr)) return 0;
     int full = fr->color_range == AVCOL_RANGE_JPEG;
     enum AVPixelFormat src = plain((enum AVPixelFormat) fr->format, &full);
     return is_rgb(src) ? 0 : full;
@@ -994,6 +1154,7 @@ JNIEXPORT jint JNICALL FN(decFrameToRgbaBuffer)(JNIEnv *env, jclass cls, jlong h
     AVFrame *fr = frame_of(d, frame);
     uint8_t *dst = (*env)->GetDirectBufferAddress(env, buffer);
     if (!dst) return AVERROR(EINVAL);
+    if (toned(d, fr)) return tone_to(d, fr, w, hh, SWS_BILINEAR, dst, rowStride, 4, TM_OUT_SRGB);
     struct SwsContext *sws = scaler(d, fr, w, hh, AV_PIX_FMT_RGBA, 1, SWS_BILINEAR);
     if (!sws) return AVERROR(EINVAL);
     uint8_t *out[4] = {dst, NULL, NULL, NULL};
@@ -1019,8 +1180,11 @@ JNIEXPORT jint JNICALL FN(decFrameToBitmap)(JNIEnv *env, jclass cls, jlong h, jl
     // Area averaging when shrinking a lot (thumbnails of 4K), bilinear otherwise.
     int flags = (fr->width > (int) info.width * 2) ? SWS_AREA : SWS_BILINEAR;
     enum AVPixelFormat dst = AV_PIX_FMT_RGBA;
-    struct SwsContext *sws = scaler(d, fr, (int) info.width, (int) info.height, dst, 1, flags);
-    if (!sws) {
+    struct SwsContext *sws = toned(d, fr) ? NULL : scaler(d, fr, (int) info.width, (int) info.height, dst, 1, flags);
+    if (toned(d, fr)) {
+        // HDR is opaque video: tone-mapped straight into the bitmap.
+        r = tone_to(d, fr, (int) info.width, (int) info.height, flags, pixels, (int) info.stride, 4, TM_OUT_SRGB);
+    } else if (!sws) {
         r = AVERROR(EINVAL);
     } else {
         uint8_t *out[4] = {pixels, NULL, NULL, NULL};

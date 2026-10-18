@@ -59,6 +59,7 @@ internal object AvNative {
     ): Int
     @JvmStatic external fun decFrameToRgbaBuffer(decoder: Long, frame: Long, into: ByteBuffer, rowStride: Int, width: Int, height: Int): Int
     @JvmStatic external fun decFrameToBitmap(decoder: Long, frame: Long, bitmap: Bitmap): Int
+    @JvmStatic external fun decSetToneMap(decoder: Long, tables: FloatArray?): Int
     @JvmStatic external fun decFrameToGray(decoder: Long, frame: Long, into: ByteArray, width: Int, height: Int): Int
     @JvmStatic external fun decFrameToPcm16(decoder: Long, frame: Long, into: ByteBuffer, offset: Int, capacity: Int): Int
 
