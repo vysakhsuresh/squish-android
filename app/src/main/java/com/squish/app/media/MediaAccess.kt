@@ -109,6 +109,9 @@ private const val COPY_BUFFER = 1 shl 20
  * "selected photos") is not enough - only what was selected stays readable -
  * so that case is copied as before.
  */
+/** Whether [importCopy] has to copy [uri] for it to outlive this process: handed back unchanged, it failed. */
+fun Context.importCopyNeeded(uri: Uri): Boolean = uri.scheme != "file" && !readableWithoutGrant(uri)
+
 private fun Context.readableWithoutGrant(uri: Uri): Boolean {
     if (uri.authority != android.provider.MediaStore.AUTHORITY) return false
     val path = uri.path.orEmpty()

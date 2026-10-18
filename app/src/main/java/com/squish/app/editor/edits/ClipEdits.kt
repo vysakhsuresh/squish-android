@@ -706,7 +706,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 val current = _state.value
                 val made = StillClips.blank(app, current.framedWidth, current.framedHeight)
                 if (made == null) {
-                    _state.update { it.copy(failure = SquishError.Unknown(null)) }
+                    _state.update { it.copy(failure = SquishError.StillFailed("Blank")) }
                     return@launch
                 }
                 addSources(listOf(StillSource(made, "Blank")), failedAny = false, at = at)
@@ -1531,6 +1531,10 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
     /** Whether Freeze would do anything: the playhead is on footage, not on a still of either kind. */
     fun canFreeze(state: EditorUiState, clipId: String): Boolean {
         val clip = state.videoClips.firstOrNull { it.id == clipId } ?: return false
+        // One freeze of a clip at a time: a second tap while the first was
+        // rendering made a second still, or failed with "the clip was cut while
+        // the freeze was being made" - by the first freeze.
+        if (clipId in freezing) return false
         return clip.isFootage && state.playheadMs >= clip.timelineStartMs && state.playheadMs <= clip.timelineEndMs
     }
 
@@ -1555,6 +1559,8 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * was the last thing pressed on it, and the next tap should work on the
      * result - but a selection made meanwhile is someone else's.
      */
+    private val freezing = java.util.Collections.synchronizedSet(HashSet<String>())
+
     fun freezeFrame(clipId: String) {
         val current = _state.value
         if (!canFreeze(current, clipId)) return
@@ -1563,6 +1569,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         // The frame on screen: the very end of a clip shows its last frame.
         val sourceMs = clip.sourceAt(minOf(at, clip.timelineEndMs - 1L)).coerceIn(clip.sourceInMs, (clip.sourceOutMs - 1L).coerceAtLeast(clip.sourceInMs))
         val uri = clip.uri ?: current.sourceUri ?: return
+        freezing.add(clipId)
         viewModelScope.launch {
             _state.update { it.copy(preparingStills = it.preparingStills + 1) }
             try {
@@ -1611,6 +1618,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     }
                 }
             } finally {
+                freezing.remove(clipId)
                 _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
             }
         }

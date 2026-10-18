@@ -11,6 +11,7 @@ import com.squish.app.data.ProjectSnapshot
 import com.squish.app.data.ProjectStart
 import com.squish.app.data.SquishRepositories
 import com.squish.app.media.importCopy
+import com.squish.app.media.importCopyNeeded
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
 import com.squish.app.timeline.withTransition
@@ -773,7 +774,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             for (uri in shared.distinct()) {
                 val t0 = android.os.SystemClock.elapsedRealtime()
                 val copy = withContext(Dispatchers.IO) { getApplication<Application>().importCopy(uri) }
-                if (copy == uri) continue
+                if (copy == uri) {
+                    // Handed back unchanged where a copy was wanted: it failed, and
+                    // the file goes with the grant. Said now, while it can still be fixed.
+                    val app = getApplication<Application>()
+                    if (withContext(Dispatchers.IO) { app.importCopyNeeded(uri) }) {
+                        val name = withContext(Dispatchers.IO) { displayNameOf(uri) } ?: "this file"
+                        _state.update { it.copy(failure = SquishError.ImportNotKept(name)) }
+                    }
+                    continue
+                }
                 com.squish.app.av.Perf.took("import-copy", android.os.SystemClock.elapsedRealtime() - t0, copy.lastPathSegment.orEmpty())
                 fun List<Clip>.moved() = map { if (it.uri == uri) it.copy(uri = copy) else it }
                 _state.update { s ->
@@ -1037,10 +1047,19 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * to stop the run, and nudging a slider during a long pass then undoing the
      * nudge threw away the rest of the pass.
      */
+    // Back inside the edit after an undo or a redo that shortened it, as
+    // mutateTimeline brings it back after an edit: left past the end the strip,
+    // centred on the playhead, showed empty track and the timecode read past
+    // the length.
+    private fun EditorUiState.playheadInside(): EditorUiState {
+        val end = timelineDurationMs
+        return if (playheadMs <= end) this else copy(playheadMs = end, scrubNonce = scrubNonce + 1)
+    }
+
     fun undo() {
         text.stopIfUndoingRun()
         val restored = history.undo(_state.value.editSnapshot) ?: return
-        _state.update { it.restoring(restored) }
+        _state.update { it.restoring(restored).playheadInside() }
         refreshMissingMedia()
         publishHistory()
         recomputeEstimate()
@@ -1048,7 +1067,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun redo() {
         val restored = history.redo(_state.value.editSnapshot) ?: return
-        _state.update { it.restoring(restored) }
+        _state.update { it.restoring(restored).playheadInside() }
         refreshMissingMedia()
         publishHistory()
         recomputeEstimate()

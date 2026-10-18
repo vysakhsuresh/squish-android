@@ -613,10 +613,10 @@ fun main() {
             .withAttributesPasted("quiet", loud.attributes).byId("quiet")
         check(pastedLoud.volume == 3f, "paste onto a sound landed a level of ${pastedLoud.volume}, not the 3x copied")
         check(com.squish.app.timeline.MAX_SOUND_GAIN == 4f, "the sound ceiling moved")
-        // Onto a picture it is still its share of the camera level, which stops at one.
+        // Onto a picture as well: a shot's level runs to the same ceiling now.
         val onShot = TimelineState(clips = listOf(video("b", 20_000), loud))
             .withAttributesPasted("b", loud.attributes).byId("b")
-        check(onShot.volume == 1f, "paste onto a shot landed a level of ${onShot.volume}, past what a shot may be")
+        check(onShot.volume == 3f, "paste onto a shot landed a level of ${onShot.volume}, not the 3x copied")
         check(p.keyframes == pip.keyframes && p.offsetXFraction == 0.5f && p.mask == Mask() && p.mirrored && p.quarterTurns == 1,
             "paste from a sound reset the picture: keys ${p.keyframes.size}, x ${p.offsetXFraction}, mask ${p.mask}, mirror ${p.mirrored}, turns ${p.quarterTurns}")
     }

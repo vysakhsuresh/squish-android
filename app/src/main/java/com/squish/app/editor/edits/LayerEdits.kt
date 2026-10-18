@@ -228,7 +228,7 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
                 val made = StillClips.fromImage(app, picture, clip.durationMs + StillClips.DEFAULT_MS)
                 val fileMs = made?.let { ThumbnailExtractor.probe(app, it).durationMs } ?: 0L
                 if (made == null || fileMs <= 0L) {
-                    _state.update { it.copy(failure = SquishError.Unknown(null)) }
+                    _state.update { it.copy(failure = SquishError.StillFailed(clip.label)) }
                     return@launch
                 }
                 // recordLate, not record: the still has just been rendered, so

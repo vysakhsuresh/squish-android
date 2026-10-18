@@ -141,6 +141,9 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                             sourceInMs = window.first,
                             sourceOutMs = window.last,
                             speedRamp = ramp,
+                            // The old song's beats are in its own time, not this one's:
+                            // drawn on the new track and snapped to, they were not in it.
+                            beats = emptyList(),
                             // A fade longer than a shorter clip is fitted to it.
                             fadeInMs = it.fadeInMs,
                             fadeOutMs = it.fadeOutMs
@@ -1233,7 +1236,9 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 .distinctBy { it.id }
                 .filter { it.timelineEndMs > music.timelineStartMs && it.timelineStartMs < music.timelineEndMs }
             val found = HashMap<Uri, List<LongRange>>()
+            var unread = 0
             listenTo(sources) { uri, pcm ->
+                if (pcm == null) unread++
                 found[uri] = if (pcm == null) emptyList()
                 else withContext(Dispatchers.Default) { SpeechSegmenter.segment(pcm).map { it.startMs..it.endMs } }
             }
@@ -1242,6 +1247,8 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             if (DuckRules.keys(current, speech).isEmpty()) {
                 // Talking under it, and it is already down under all of it: say so (-1).
                 val under = speech.any { it.last > current.timelineStartMs && it.first < current.timelineEndMs }
+                // None of it could be listened to: not "no talking found" (-2).
+                if (!under && unread > 0 && sources.isNotEmpty() && found.values.all { it.isEmpty() }) return@launch onDone(-2)
                 return@launch onDone(if (under) -1 else 0)
             }
             recordLate("Duck under speech", edit = { snapshot ->
@@ -1294,8 +1301,12 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                     }
                 }
             }
-            val levels = Loudness.levels(shots.map { loudness[it.id] ?: 0f }, shots.map { it.volume })
-            val byId = shots.zip(levels)
+            // Only the shots that were heard: one that could not be read counted as
+            // silent, and the rest were levelled against a zero.
+            val heard = shots.filter { it.id in loudness }
+            if (heard.size < 2) return@launch onDone(if (heard.size < shots.size) -1 else 0)
+            val levels = Loudness.levels(heard.map { loudness.getValue(it.id) }, heard.map { it.volume })
+            val byId = heard.zip(levels)
                 .filter { (clip, level) -> kotlin.math.abs(clip.volume - level) > 0.02f }
                 .associate { (clip, level) -> clip.id to level }
             if (byId.isEmpty()) return@launch onDone(0)
@@ -1327,13 +1338,15 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             listenTo(listOf(clip)) { _, pcm ->
                 if (pcm != null) speech = withContext(Dispatchers.Default) { SpeechSegmenter.segment(pcm).map { it.startMs..it.endMs } }
             }
-            val found = speech ?: return@launch onDone(0L)
+            // Unread is not silent: a recording past half an hour in, or sound
+            // this phone cannot decode, read "no pauses found".
+            val found = speech ?: return@launch onDone(SILENCES_UNREAD)
             val current = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return@launch onDone(0L)
             // Listened to for the window it had: a shot trimmed or floated
             // meanwhile is not the one the answer is for.
             fun same(c: Clip?) = c != null && c.isMain && c.sourceInMs == clip.sourceInMs && c.sourceOutMs == clip.sourceOutMs &&
                 c.uri == clip.uri && c.isReversed == clip.isReversed
-            if (!same(current)) return@launch onDone(0L)
+            if (!same(current)) return@launch onDone(SILENCES_CHANGED)
             val padded = SilenceRules.keptWindows(found, current.sourceInMs, current.sourceOutMs)
             // What the timeline will actually keep, not what the listener
             // found: a window under MIN_CLIP_MS cannot be a clip, so counting
@@ -1378,4 +1391,8 @@ private const val LISTEN_RATE = 16_000
 
 /** Past half an hour into a file it is not listened to: that decode would be the size of the heap. */
 private const val LISTEN_MAX_MS = 30 * 60_000L
+
+/** removeSilences' answers that are not a length cut: the sound unread, the shot changed. */
+const val SILENCES_UNREAD = -1L
+const val SILENCES_CHANGED = -2L
 

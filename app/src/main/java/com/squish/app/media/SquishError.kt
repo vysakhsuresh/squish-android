@@ -272,6 +272,30 @@ sealed class SquishError(
         fix = "Pick a longer file, or trim the clip first and replace it then."
     )
 
+    /**
+     * A picture that could not be made into a clip: a blank, or a photo moved
+     * to the main track. Unknown said "Export stopped unexpectedly" and to
+     * change the quality preset, for an edit command.
+     */
+    class StillFailed(val name: String) : SquishError(
+        title = "Couldn't make “$name” into a clip",
+        detail = "The picture could not be read, or the phone ran out of space while it was being rendered.",
+        fix = "Check there is free space, then try again."
+    )
+
+    /**
+     * A file shared on a grant that ends with this process, which could not be
+     * copied in to keep. Said, because the edit plays it now and loses it the
+     * next time Squish starts - and a file from a chat or a cloud drive is not
+     * in the gallery to be relinked.
+     */
+    class ImportNotKept(val name: String) : SquishError(
+        title = "Couldn't keep a copy of “$name”",
+        detail = "It plays now, but it was shared for this session only and could not be copied into Squish - " +
+            "usually because the phone is short of space. Once Squish closes, the project will not find it.",
+        fix = "Free some space and open the file in Squish again, or save it to your gallery first."
+    )
+
     /** A freeze on an overlay row with something on the row where the rest of the shot would move to. */
     class NoRoomOnRow : SquishError(
         title = "No room on this row for the freeze",

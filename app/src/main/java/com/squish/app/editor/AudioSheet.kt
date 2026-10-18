@@ -445,7 +445,8 @@ fun CameraSoundPanel(state: EditorUiState, viewModel: EditorViewModel) {
                         note = null
                         viewModel.audio.evenOutVolume { changed ->
                             working = false
-                            note = if (changed == 0) "The clips are already at an even level."
+                            note = if (changed < 0) "Couldn't listen to enough of the clips to compare them - their sound can't be decoded here."
+                            else if (changed == 0) "The clips are already at an even level."
                             else "Brought ${countOf(changed, "clip")} down to match the rest. Undo takes it back."
                         }
                     }
@@ -554,7 +555,8 @@ fun SoundVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewMode
                 duckNote = null
                 viewModel.audio.duckUnderSpeech(clip.id) { dips ->
                     ducking = false
-                    duckNote = if (dips < 0) "Already turned down under all the talking - nothing to change."
+                    duckNote = if (dips == -2) "Couldn't listen to the talking under it - its sound can't be decoded here, or it is more than 30 minutes into its file."
+                    else if (dips < 0) "Already turned down under all the talking - nothing to change."
                     else if (dips == 0) "No talking found under this sound - voiceovers and the shots' own sound are listened to."
                     else "Turned down under $dips ${if (dips == 1) "stretch" else "stretches"} of speech. Undo takes it back."
                 }

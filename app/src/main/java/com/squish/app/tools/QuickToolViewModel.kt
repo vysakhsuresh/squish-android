@@ -849,6 +849,13 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             onError("Nothing to merge. Every clip came back with no length — pick them again.")
             return
         }
+        // A file that read as no length is one nothing here can open: said now,
+        // in its name, rather than by the pipeline afterwards with a cause that
+        // names nothing. Stitch has its own check above.
+        if (tool != QuickTool.Stitch && current.durationMs <= 0L) {
+            onError("“${current.name ?: "This file"}” can't be read here. Pick another file, or open it in the editor to see why.")
+            return
+        }
 
         // Every file in the list, not the ones that survived the filter in
         // [editorStateOf]. A clip that no longer reads probes to no length and

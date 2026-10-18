@@ -58,6 +58,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _undoOffer = MutableStateFlow<UndoOffer?>(null)
     val undoOffer: StateFlow<UndoOffer?> = _undoOffer.asStateFlow()
 
+    // A line the dashboard says once (a snackbar with no Undo): what a tap
+    // that could not be done would otherwise say by doing nothing.
+    private val _notice = MutableStateFlow<String?>(null)
+    val notice: StateFlow<String?> = _notice.asStateFlow()
+    fun say(message: String) { _notice.value = message }
+    fun noticeShown() { _notice.value = null }
+
     /**
      * Reads the draft sidecars, off the main thread.
      *
@@ -140,7 +147,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** A copy of the project, named after it, beside it in the grid. */
     fun duplicateProject(project: DraftSummary) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { autosave.duplicate(project.id, _projects.value.map { it.title }) }
+            val copy = withContext(Dispatchers.IO) { autosave.duplicate(project.id, _projects.value.map { it.title }) }
+            // It did nothing on a failure: a project not opened yet has no draft
+            // to copy, and a full phone refuses the write.
+            if (copy == null) say(
+                if (project.title.isBlank()) "Couldn't copy this project. Open it once, or free some space, and try again."
+                else "Couldn't copy “${project.title}”. Open it once, or free some space, and try again."
+            )
             refreshDrafts()
         }
     }

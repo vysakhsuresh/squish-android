@@ -255,6 +255,27 @@ not here.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **18 October, after the phone left: the first-play class and the sound
+  controls.** Reported on the phone: a song added from the device broke up on
+  its first play and played clean after, and there was "no option to mute a
+  video's sound". Fixed without a phone; the rules are executed
+  (`PreviewRulesChecks`' model song, `AudioRulesChecks`, `OverlayChecks`,
+  negative-tested) and nothing has been heard. What a device answers, in
+  order: add a song from the phone and press play at once - it must not break
+  up, and the picture may wait up to 1.5 s for it (`PreviewRules.holdForSound`);
+  a voice-recorder .aac and a call .amr played from their middle stay there;
+  a PiP's first play does not stutter; Spotify pauses when the preview plays,
+  a call or pulled headphones pause the preview (`PlaybackFocus`); the strip's
+  "Mute audio" before the first shot silences every shot and reads "Unmute"
+  in red; a shot's Volume goes to 400% and is louder in the preview and the
+  file alike (the surfaces' new `GainProcessor`), with Fade in/out under it;
+  Replace on a song keeps its place, trim, level and fades; a song's Sound
+  switch; Extract audio on a keyed shot keeps the keys; Sound only under a
+  camera mute leaves the camera out when there is music; a placed effect's
+  Swap for row; Reverse of a clip with sound is quicker (its AAC loop no
+  longer waits 10 ms a buffer) and an HDR clip reverses tone-mapped (seen in
+  the self-test, not judged on real HLG footage).
+
 - **15 October: the software decoders, the import conversion and the bare
   playhead.** Built with no phone attached (`docs/DEVICE_FINDINGS.md` §59).
   nextlib's FFmpeg decoders now stand behind the platform's in every player

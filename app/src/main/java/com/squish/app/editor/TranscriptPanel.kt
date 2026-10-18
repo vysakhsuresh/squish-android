@@ -65,14 +65,13 @@ fun TranscriptPanel(state: EditorUiState, viewModel: EditorViewModel, onClose: (
     // Through Transcript.chosenRange, which drops a choice that no longer fits
     // the list rather than slicing past its end - see there for what that cost.
     val chosen: IntRange? = Transcript.chosenRange(anchor, head, words.size)
-    // And the stale ends are let go of, so the panel is not holding a choice it
-    // is not showing. Keyed on the list's length, which is what can invalidate
-    // them; a change of words at the same length is still those words' places.
-    LaunchedEffect(words.size) {
-        if (Transcript.chosenRange(anchor, head, words.size) == null) {
-            anchor = null
-            head = null
-        }
+    // And let go of whenever the words change at all. Held by index, a choice
+    // survived an Undo that brought two deleted words back - still in range,
+    // so it stayed - and slid two words along: Delete then took words nobody
+    // had chosen. A list of the same length is a different list after an edit.
+    LaunchedEffect(words) {
+        anchor = null
+        head = null
     }
     val span = chosen?.let { range -> Transcript.span(words.slice(range)) }
 

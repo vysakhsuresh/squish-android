@@ -125,8 +125,8 @@ object AvImages {
         val target = File(dir, "$name.src." + if (png) "png" else "jpg")
         val partial = File(target.absolutePath + ".part")
         return try {
-            FileOutputStream(partial).use {
-                bitmap.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 95, it)
+            FileOutputStream(partial).use { partialOut ->
+                bitmap.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 95, partialOut)
             }
             if (partial.length() > 0L && partial.renameTo(target)) Uri.fromFile(target) else null
         } catch (e: Exception) {
@@ -310,12 +310,14 @@ object AvImages {
         val info = AvNative.rawInfo(raw)
         if (info[3] != 1) return@withRaw null
         val jpeg = AvNative.rawThumbJpeg(raw) ?: return@withRaw null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
-        var sample = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= side) sample *= 2
-        val decoded = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, BitmapFactory.Options().apply { inSampleSize = sample })
-            ?: return@withRaw null
+        // ImageDecoder, sampled to the side by PictureSample, as every picture
+        // here is read; software, since [turned] draws it through a Matrix.
+        val decoded = runCatching {
+            android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(jpeg))) { decoder, info, _ ->
+                decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                decoder.setTargetSampleSize(com.squish.app.media.PictureSample.forLongSide(info.size.width, info.size.height, side))
+            }
+        }.getOrNull() ?: return@withRaw null
         // The embedded preview is stored the way the sensor is; LibRaw's flip turns it.
         turned(decoded, flipDegrees(info[2]))
     }

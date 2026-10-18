@@ -201,7 +201,12 @@ fun HomeScreen(
         val file = recording?.let(::File)
         recording = null
         if (taken && file != null && file.length() > 0L) viewModel.startProject(listOf(Uri.fromFile(file)), onOpenProject)
-        else file?.delete()
+        else {
+            file?.delete()
+            // Some camera apps keep a video in the gallery and hand back an
+            // empty file: the take is not lost, and the user should know where.
+            if (taken) viewModel.say("The camera kept the video in your gallery - start a New project and pick it there.")
+        }
     }
 
     var renaming by remember { mutableStateOf<DraftSummary?>(null) }
@@ -224,6 +229,12 @@ fun HomeScreen(
         viewModel.dismissUndoOffer()
     }
     DisposableEffect(Unit) { onDispose { viewModel.dismissUndoOffer() } }
+    val notice by viewModel.notice.collectAsState()
+    LaunchedEffect(notice) {
+        val line = notice ?: return@LaunchedEffect
+        snackbar.showSnackbar(message = line, withDismissAction = true)
+        viewModel.noticeShown()
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
@@ -295,9 +306,13 @@ fun HomeScreen(
                             val target = runCatching {
                                 FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                             }.getOrNull()
-                            if (target != null) {
+                            if (target == null) viewModel.say("Couldn't make room for a recording. Free some space and try again.")
+                            else {
                                 recording = file.absolutePath
-                                runCatching { record.launch(target) }.onFailure { recording = null }
+                                runCatching { record.launch(target) }.onFailure {
+                                    recording = null
+                                    viewModel.say("No camera app on this phone could record a video.")
+                                }
                             }
                         }
                     )

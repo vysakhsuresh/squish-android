@@ -273,8 +273,12 @@ fun ClipVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
                     note = null
                     viewModel.audio.removeSilences(clip.id) { removed ->
                         working = false
-                        note = if (removed <= 0L) "No pauses long enough to cut - or no talking found in this shot."
-                        else "Cut ${"%.1f".format(removed / 1000f)} s of pauses. Undo puts them back."
+                        note = when {
+                            removed == com.squish.app.editor.edits.SILENCES_UNREAD -> "Couldn't listen to this shot's sound - it can't be decoded here, or it is more than 30 minutes into its file."
+                            removed == com.squish.app.editor.edits.SILENCES_CHANGED -> "The shot changed while it was being listened to. Try again."
+                            removed <= 0L -> "No pauses long enough to cut - or no talking found in this shot."
+                            else -> "Cut ${"%.1f".format(removed / 1000f)} s of pauses. Undo puts them back."
+                        }
                     }
                 }
             )

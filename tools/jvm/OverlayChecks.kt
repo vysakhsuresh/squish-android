@@ -166,7 +166,7 @@ fun main() {
         val keyedState = TimelineState(clips = listOf(video("a", 5_000), video("b", 5_000, start = 5_000), keyedOverlay))
         val onMain = keyedState.withOverlayOnMain("o", 4_000, originalVolume = 0.5f).byId("o")
         check(onMain.opacityKeys.isEmpty() && onMain.opacity == 1f, "to main left ${onMain.opacityKeys.size} opacity keys on the shot")
-        check(onMain.volumeKeys.map { it.value } == listOf(1f, 1f), "to main left the level keys raw: ${onMain.volumeKeys.map { it.value }}")
+        check(onMain.volumeKeys.map { it.value } == listOf(1f, 2f), "to main left the level keys raw (a key at full under a half camera level is 2x on the main track, heard the same): ${onMain.volumeKeys.map { it.value }}")
         check(onMain.volumeKeys.map { it.atMs } == listOf(0L, 2_000L), "to main moved the level keys in time")
     }
 
