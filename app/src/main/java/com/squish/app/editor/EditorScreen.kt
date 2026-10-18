@@ -665,7 +665,11 @@ fun EditorScreen(
                         onCloseGap = viewModel.clips::closeGap,
                         // Every shot's own sound off and on in one tap, before the first shot.
                         cameraMuted = state.muteOriginal,
-                        onToggleCameraSound = if (state.anyCameraAudio || state.muteOriginal) ({ viewModel.audio.setMuteOriginal(!state.muteOriginal) }) else null,
+                        // Remembered: a fresh lambda each recomposition made the main
+                        // track's lane recompose on every frame of a scrub.
+                        onToggleCameraSound = remember(state.anyCameraAudio || state.muteOriginal, state.muteOriginal) {
+                            if (state.anyCameraAudio || state.muteOriginal) ({ viewModel.audio.setMuteOriginal(!state.muteOriginal) }) else null
+                        },
                         onOpenSound = { openToolName = Tool.Sound.name },
                         // A line at once, as the video and overlay heads add at
                         // once (section 2's track heads); the Text sheet is on
