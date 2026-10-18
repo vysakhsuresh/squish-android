@@ -69,8 +69,13 @@ object MusicLibrary {
             val aac = File(dir(context), "${style.id}.m4a")
             // A full phone can refuse the write: no track, rather than a crash in the panel.
             runCatching {
+                val t0 = android.os.SystemClock.elapsedRealtime()
                 MusicSynth.render(style, wav)
-                if (AacWriter.encode(wav, aac)) {
+                val t1 = android.os.SystemClock.elapsedRealtime()
+                val encoded = AacWriter.encode(wav, aac)
+                com.squish.app.av.Perf.took("synth", t1 - t0, style.id)
+                com.squish.app.av.Perf.took("aac", android.os.SystemClock.elapsedRealtime() - t1, style.id)
+                if (encoded) {
                     wav.delete()
                     Uri.fromFile(aac)
                 } else {

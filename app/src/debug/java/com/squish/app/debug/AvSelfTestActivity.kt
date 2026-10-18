@@ -28,6 +28,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
+import com.google.common.collect.ImmutableList
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
@@ -200,8 +202,10 @@ class AvSelfTestActivity : Activity() {
             640, 360, PixelFormat.RGBA_8888, 4,
             android.hardware.HardwareBuffer.USAGE_GPU_COLOR_OUTPUT or android.hardware.HardwareBuffer.USAGE_CPU_READ_RARELY
         )
-        var surfaceFrames = 0
-        reader.setOnImageAvailableListener({ rd -> rd.acquireLatestImage()?.let { surfaceFrames++; it.close() } }, Handler(Looper.getMainLooper()))
+        // Counted as the player hands each frame to the surface: an RGBA reader
+        // is never given a decoder's YUV buffers, so counting its images read 0.
+        val surfaceCount = java.util.concurrent.atomic.AtomicInteger()
+        reader.setOnImageAvailableListener({ rd -> rd.acquireLatestImage()?.close() }, Handler(Looper.getMainLooper()))
         val player = ExoPlayer.Builder(this@AvSelfTestActivity, SoftwareDecoders.renderers(this@AvSelfTestActivity))
             .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(this@AvSelfTestActivity))
             .build()
@@ -215,6 +219,7 @@ class AvSelfTestActivity : Activity() {
         try {
             if (video) {
                 if (intent.getBooleanExtra("effects", true)) player.setVideoEffects(listOf(RgbFilter.createGrayscaleFilter()))
+                player.setVideoFrameMetadataListener { _, _, _, _ -> surfaceCount.incrementAndGet() }
                 player.setVideoSurface(reader.surface)
             }
             player.volume = 0f
@@ -230,11 +235,11 @@ class AvSelfTestActivity : Activity() {
             out.put("decoders", decoders.joinToString())
             out.put("videoRendered", v?.renderedOutputBufferCount ?: 0)
             out.put("videoDropped", v?.droppedBufferCount ?: 0)
-            out.put("surfaceFrames", surfaceFrames)
+            out.put("surfaceFrames", surfaceCount.get())
             out.put("audioOut", a?.renderedOutputBufferCount ?: 0)
             out.put("position", player.currentPosition)
             error?.let { out.put("error", it.errorCodeName + ": " + (it.cause?.toString() ?: it.message)) }
-            val videoOk = !video || ((v?.renderedOutputBufferCount ?: 0) > 10 && surfaceFrames > 5)
+            val videoOk = !video || ((v?.renderedOutputBufferCount ?: 0) > 10 && surfaceCount.get() > 5)
             // The clock moving is what says the player played: a stalled one sits at 0.
             out.put("ok", error == null && videoOk && player.currentPosition > 1_000L)
         } finally {
@@ -245,14 +250,21 @@ class AvSelfTestActivity : Activity() {
     }
 
     /** Two seconds out through the app's Transformer setup, then read back with the platform's extractor. */
-    private suspend fun export(uri: Uri, video: Boolean, audio: Boolean): JSONObject = withContext(Dispatchers.Main) {
+    /** As VideoProcessor does: a copy the MP4 writer refuses is made again, encoded. */
+    private suspend fun export(uri: Uri, video: Boolean, audio: Boolean): JSONObject {
+        val first = export(uri, video, audio, encode = false)
+        if (first.optBoolean("ok") || !video) return first
+        return export(uri, video, audio, encode = true).also { it.put("result", "re-encoded after copy failed: " + it.optString("result")) }
+    }
+
+    private suspend fun export(uri: Uri, video: Boolean, audio: Boolean, encode: Boolean): JSONObject = withContext(Dispatchers.Main) {
         val out = JSONObject()
         val file = File(cacheDir, "selftest_export.mp4").apply { delete() }
         val item = EditedMediaItem.Builder(
             MediaItem.Builder().setUri(uri).setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder().setEndPositionMs(2_000).build()
             ).build()
-        ).build()
+        ).apply { if (encode) setEffects(Effects(ImmutableList.of(), ImmutableList.of<androidx.media3.common.Effect>(RgbFilter.createGrayscaleFilter()))) }.build()
         val done = suspendCancellableCoroutine<String> { cont ->
             val transformer = Transformer.Builder(this@AvSelfTestActivity)
                 .setAssetLoaderFactory(SoftwareDecoders.assetLoaderFactory(this@AvSelfTestActivity))
