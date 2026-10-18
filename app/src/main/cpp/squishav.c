@@ -243,6 +243,12 @@ JNIEXPORT jlong JNICALL FN(fileOpen)(JNIEnv *env, jclass cls, jint fd, jstring j
             else if (!strcasecmp(ext, "ras") || !strcasecmp(ext, "sun")) id = AV_CODEC_ID_SUNRAST;
             else if (!strcasecmp(ext, "xbm")) id = AV_CODEC_ID_XBM;
             else if (!strcasecmp(ext, "xwd")) id = AV_CODEC_ID_XWD;
+            // PAM's header is "P7" and then words, which the pnm probe (digits
+            // after the magic) does not take; the name is how FFmpeg's own
+            // command line finds it too.
+            else if (!strcasecmp(ext, "pam")) id = AV_CODEC_ID_PAM;
+            else if (!strcasecmp(ext, "phm")) id = AV_CODEC_ID_PHM;
+            else if (!strcasecmp(ext, "pfm")) id = AV_CODEC_ID_PFM;
             (*env)->ReleaseStringUTFChars(env, jext, ext);
         }
         if (id != AV_CODEC_ID_NONE) {
