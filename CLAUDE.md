@@ -284,9 +284,17 @@ should work through it and then delete what holds up.
   sheet keeping its category and bringing its list into view; render starting
   without waiting on the notification question; a 51 s 1080x1920 export in
   37 s; the partial-access empty state and "Allow access" bringing a
-  project's clips back at the right shape. Still open: scrubbing on the
-  release build is ~20 ms a frame median, 30-38% janky, mostly the editor's
-  own recomposition per frame (`am profile` on a debug build names it).
+  project's clips back at the right shape. Later that night, also seen: audio
+  focus taken on play and given back on pause (`dumpsys audio`); a song's
+  Sound switch, Replace, an effect's Swap for; a 6.5-minute ADTS .aac played
+  from 0:21 with no correction; Sound only under a camera mute.
+  **Scrubbing is the phone's GPU, not the app** - measured with
+  `dumpsys gfxinfo com.squish.app framestats` (columns parsed with awk; a
+  bare `gfxinfo` percentile does not say where): the app's own frame work is
+  about 4 ms, GPU and swap 11-14 ms on a 90 Hz panel (11.1 ms budget), and
+  the plainest screen, Settings scrolling, is 8.5 ms of GPU on the moto. The
+  editor renders 0 frames at rest. Do not chase recomposition for it again;
+  a GPU-lighter strip (fewer layers, cached waveform bitmaps) is what is left.
 
 - **15 October: the software decoders, the import conversion and the bare
   playhead.** Built with no phone attached (`docs/DEVICE_FINDINGS.md` §59).
