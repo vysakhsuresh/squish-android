@@ -99,7 +99,9 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
     // And its list brought up into view when a category is picked: the list
     // is under the fold, so a tap seemed to do nothing but light a chip.
     val listInView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
-    var tabTapped by remember { mutableStateOf(false) }
+    // Set from the start when a category was remembered: reopened on "On this
+    // phone", the sheet showed its chips and hid the songs under them again.
+    var tabTapped by remember { mutableStateOf(tab != 0) }
     LaunchedEffect(tab) {
         musicPrefs.edit().putInt("lastTab", tab).apply()
         // After the list has had its moment to load: the phone's songs are read

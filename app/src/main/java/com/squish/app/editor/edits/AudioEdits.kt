@@ -73,7 +73,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
                 _state.update { it.copy(failure = SquishError.FileUnreadable()) }
                 return@launch
             }
-            val name = label ?: withContext(Dispatchers.IO) { displayNameOf(uri) } ?: "Audio"
+            val name = label ?: withContext(Dispatchers.IO) { displayNameOf(uri) }?.let(::songName) ?: "Audio"
 
             // At the playhead, ending with the edit - or backed up to end with
             // it when the playhead is parked on the last second; see
@@ -122,7 +122,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     fun replaceAudio(clipId: String, uri: Uri) {
         viewModelScope.launch {
             val fileMs = ThumbnailExtractor.probeDurationMs(app, uri)
-            val name = withContext(Dispatchers.IO) { displayNameOf(uri) } ?: "Audio"
+            val name = withContext(Dispatchers.IO) { displayNameOf(uri) }?.let(::songName) ?: "Audio"
             val clip = _state.value.audioClips.firstOrNull { it.id == clipId } ?: return@launch
             val window = AudioRules.replacementWindow(clip.sourceInMs, clip.sourceSpanMs, fileMs)
             if (window == null) {
@@ -1398,3 +1398,15 @@ private const val LISTEN_MAX_MS = 30 * 60_000L
 const val SILENCES_UNREAD = -1L
 const val SILENCES_CHANGED = -2L
 
+
+/**
+ * A song's file name as a name: "Kaho Naa Pyar Hai Sad Udit Narayan 320
+ * Kbps.mp3" read on the strip with its extension, where the Music list's
+ * own songs read as titles. Only a known sound extension is taken off.
+ */
+internal fun songName(fileName: String): String {
+    val ext = fileName.substringAfterLast('.', "").lowercase()
+    return if (ext in SOUND_EXTENSIONS) fileName.substringBeforeLast('.').ifBlank { fileName } else fileName
+}
+
+private val SOUND_EXTENSIONS = setOf("mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "amr", "wma", "aiff", "aif", "mka", "ac3", "mp2")

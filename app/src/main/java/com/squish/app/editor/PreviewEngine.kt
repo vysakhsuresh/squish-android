@@ -1189,6 +1189,9 @@ class PreviewEngine(private val context: Context) {
             // with a rebuffer.
             val parked = player.playbackState == Player.STATE_READY && abs(player.currentPosition - target) < PARKED_MS
             if (!parked) player.seekTo(target)
+            // Said once a sound is open: a file that cannot seek plays from its
+            // start wherever it is asked to, and nothing else would show it.
+            if (player.playbackState == Player.STATE_READY && !player.isCurrentMediaItemSeekable && target > 0L) Log.w(TAG, "sound ${clip.label} cannot seek; it plays from its start")
             primed.add(clip.id)
         }
     }

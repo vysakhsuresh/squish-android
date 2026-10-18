@@ -468,6 +468,8 @@ fun EffectStrengthPanel(effect: TimedEffect, viewModel: EditorViewModel) {
                 onClick = {
                     if (kind != effect.kind) {
                         viewModel.clips.changeEffect(effect.id, discrete = true, change = { it.copy(kind = kind, amount = TimedEffect.DEFAULT_AMOUNT) })
+                        // Played at once, as a picked transition is: a swap you cannot see is a guess.
+                        viewModel.showMoment(effect.startMs, effect.endMs - effect.startMs)
                     }
                 }
             )
