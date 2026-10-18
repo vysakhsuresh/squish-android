@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -36,18 +37,64 @@ object MusicLibrary {
     private fun dir(context: Context) = File(context.filesDir, "music").apply { mkdirs() }
 
     /** Whether [style] has already been rendered, so the list can say so. */
-    fun isReady(context: Context, style: MusicSynth.Style): Boolean =
-        File(dir(context), "${style.id}.wav").exists()
+    fun isReady(context: Context, style: MusicSynth.Style): Boolean = madeFile(context, style) != null
 
     /**
-     * The track's file, composed the first time it is asked for. Kept in app
+     * The track's file if it has been made: the AAC kept since 18 October,
+     * or the WAV an earlier build wrote - which a project made then names by
+     * that address, so it stays and is used as it is.
+     */
+    private fun madeFile(context: Context, style: MusicSynth.Style): File? =
+        File(dir(context), "${style.id}.wav").takeIf { it.length() > 0L }
+            ?: File(dir(context), "${style.id}.m4a").takeIf { it.length() > 0L }
+
+    private val making = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+
+    /**
+     * The track's file, composed if it has not been yet. Kept in app
      * storage, so a project that uses it can always find it again.
+     *
+     * Composed as a WAV and kept as AAC: the WAV of a fifty-second track is
+     * 6.5 MB and the AAC under 1.3, which is what lets [prepareAll] make all
+     * of them ahead of time - so Listen and Add on an original are a file
+     * read, where they used to wait a second on the synthesis.
      */
     suspend fun original(context: Context, style: MusicSynth.Style): Uri? = withContext(Dispatchers.Default) {
-        val file = File(dir(context), "${style.id}.wav")
-        // A full phone can refuse the write: no track, rather than a crash in the panel.
-        runCatching { if (!file.exists()) MusicSynth.render(style, file); Uri.fromFile(file) }
-            .getOrElse { file.delete(); null }
+        madeFile(context, style)?.let { return@withContext Uri.fromFile(it) }
+        // One composition per track at a time: a tap while [prepareAll] is on
+        // the same track waits for that one rather than starting a second.
+        making.getOrPut(style.id) { kotlinx.coroutines.sync.Mutex() }.withLock {
+            madeFile(context, style)?.let { return@withLock Uri.fromFile(it) }
+            val wav = File(context.cacheDir, "compose-${style.id}.wav")
+            val aac = File(dir(context), "${style.id}.m4a")
+            // A full phone can refuse the write: no track, rather than a crash in the panel.
+            runCatching {
+                MusicSynth.render(style, wav)
+                if (AacWriter.encode(wav, aac)) {
+                    wav.delete()
+                    Uri.fromFile(aac)
+                } else {
+                    // No AAC encoder would have it: the WAV, as before.
+                    val kept = File(dir(context), "${style.id}.wav")
+                    if (!wav.renameTo(kept)) wav.copyTo(kept, overwrite = true).also { wav.delete() }
+                    Uri.fromFile(kept)
+                }
+            }.getOrElse { wav.delete(); aac.delete(); null }
+        }
+    }
+
+    /**
+     * Makes every original not made yet, one after another at low priority,
+     * so none of them waits on a tap. Called when the Music panel opens;
+     * about a second of composing each, and 25 MB or so for all of them.
+     */
+    suspend fun prepareAll(context: Context) = withContext(Dispatchers.Default) {
+        for (style in MusicSynth.styles) {
+            if (madeFile(context, style) != null) continue
+            val t0 = android.os.SystemClock.elapsedRealtime()
+            original(context, style)
+            com.squish.app.av.Perf.took("compose", android.os.SystemClock.elapsedRealtime() - t0, style.id)
+        }
     }
 
     /**

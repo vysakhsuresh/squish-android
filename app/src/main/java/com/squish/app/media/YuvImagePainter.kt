@@ -41,7 +41,7 @@ import java.nio.ByteBuffer
  * decoder, used from the thread the decoder is driven on.
  */
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-class YuvImagePainter(private val surface: Surface) {
+class YuvImagePainter(private val surface: Surface, private val maxImages: Int = MAX_IMAGES) {
 
     private var writer: ImageWriter? = null
     private var width = 0
@@ -123,7 +123,7 @@ class YuvImagePainter(private val surface: Surface) {
             // gave YUV_420_888 (format 35, three planes). The log line below
             // says which this phone did.
             .setHardwareBufferFormat(HardwareBuffer.YCBCR_420_888)
-            .setMaxImages(MAX_IMAGES)
+            .setMaxImages(maxImages)
             .setDataSpace(dataSpace(choice))
             // No usage asked for: the writer's own is CPU writes and the
             // consumer adds the GPU's.

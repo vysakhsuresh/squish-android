@@ -96,9 +96,15 @@ object AvCodecs {
     fun inputCapacity(format: Format): Int {
         val video = MimeTypes.isVideo(format.sampleMimeType)
         val promised = if (format.maxInputSize != Format.NO_VALUE) format.maxInputSize else 0
-        val floor = if (video) maxOf(2 shl 20, format.width.coerceAtLeast(0) * format.height.coerceAtLeast(0))
-        else 512 * 1024
-        return maxOf(promised, floor)
+        // Every byte of this is on the Java heap (a direct buffer on Android is
+        // allocated there), times the inputs each decoder keeps, times the
+        // players a preview runs at once - so a reader's own figure is
+        // trusted, and a floor is only for the formats that give none (a
+        // Matroska track): half a frame's pixels for a picture, 4 MB at 4K. A
+        // sample larger still is skipped by MediaCodecRenderer, not fatal.
+        if (promised > 0) return maxOf(promised, if (video) 256 * 1024 else 64 * 1024)
+        return if (video) maxOf(2 shl 20, format.width.coerceAtLeast(0) * format.height.coerceAtLeast(0) / 2)
+        else 256 * 1024
     }
 
     /** The colour space a frame goes onto a surface in, from what the frame and its track say. */

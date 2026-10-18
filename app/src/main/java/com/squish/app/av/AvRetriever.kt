@@ -186,10 +186,9 @@ class AvFrameSource private constructor(
         val s = stream ?: return null
         val d = decoder ?: return null
         val target = timeUs.coerceAtLeast(0L) + file.info.startUs
-        AvNative.fileSeekDecoder(file.nativeHandle, d.nativeHandle, target)
         sequential = false
         index = -1
-        if (next(s, d) != AvNative.OK) return null
+        if (!AvFrames.seekToKeyFrame(file, d, s.index, frame, target)) return null
         if (!exact || frame.ptsUs == Long.MIN_VALUE || frame.ptsUs >= target) return draw(s, d, 0L, maxWidth, maxHeight)
         // On towards the moment, keeping the frame before in case it is the nearer.
         var previous = d.takeFrame()
@@ -275,6 +274,9 @@ class AvFrameSource private constructor(
     companion object {
         /** Frames decoded past the key frame looking for the moment; four seconds at 60 fps... and then some. */
         private const val MAX_EXACT_STEPS = 600
+
+        /** Frames decoded past a seek waiting for a key frame (AvFrames.seekToKeyFrame): ten seconds at 30 fps. */
+        const val MAX_KEY_WAIT = 300
 
         /**
          * [threads] for the decoder: one for a source asked for frames here

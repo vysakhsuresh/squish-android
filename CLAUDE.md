@@ -1465,6 +1465,23 @@ should work through it and then delete what holds up.
   (`ImageWriter.Builder.setWidthAndHeight`); below it such pictures are
   "cannot be decoded", as before. `prepareMedia` is still the one door a
   video enters by; it now only warms `AvRoute`.
+- **A native handle can be negative.** arm64 Android tags heap pointers in
+  their top byte (the moto's are 0xb4...), so a valid FFmpeg handle as a
+  signed long is hugely negative. `AvHandles.failed` is the only test for a
+  failed open; "<= 0" threw every open away on the phone and every reader
+  quietly fell back to the platform (18 October). `AvChecks` holds it.
+- **A software decoder's surface wants as many images as a hardware one.**
+  Media3's effects input holds several frames before it shows the first, so
+  `AvCodecAdapter` paints the player's surface through a 10-image
+  `ImageWriter` (`PLAYER_IMAGES`); with the 3 a Transformer is content
+  with, the writer and the pipeline waited on each other and every file
+  FFmpeg decoded sat black after four frames. Media3's
+  `DebugTraceUtil.enableTracing` is how that was seen: frames queued, none
+  "RenderedToOutputSurface".
+- **Media3's image loader goes by type, not by readability.** It takes JPEG,
+  PNG, WebP, BMP, HEIF (and AVIF from Android 14) and nothing else, so a GIF
+  or a camera RAW the phone decodes still has to be written as a copy before
+  it becomes a still (`AvImages.readableFile`).
 - **Time runs left to right.** Both strips compute a left-origin pixel from a
   moment and place it with `offset`, which mirrors in RTL (`absoluteOffset` is
   the one that does not), while the playhead and the drag deltas do not - so on

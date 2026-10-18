@@ -41,6 +41,9 @@ data class AvStream(
     val sampleRate: Int = 0,
     val channels: Int = 0,
     val sampleFmt: String = "",
+    /** Samples in each sound packet and the bytes of one, where the codec has fixed ones (RealAudio, ADPCM, GSM). */
+    val frameSize: Int = 0,
+    val blockAlign: Int = 0,
     val language: String = "",
     val title: String = ""
 ) {
@@ -111,14 +114,26 @@ data class AvInfo(
                     sampleRate = s.optInt("sampleRate"),
                     channels = s.optInt("channels"),
                     sampleFmt = s.optString("sampleFmt"),
+                    frameSize = s.optInt("frameSize"),
+                    blockAlign = s.optInt("blockAlign"),
                     language = s.optString("language"),
                     title = s.optString("title")
                 )
             }
+            val size = o.optLong("size", -1L)
+            val bitRate = o.optLong("bitRate")
+            // A length the container does not give - RealAudio's is 0 - from
+            // its size at its rate, which for the constant-rate codecs such
+            // files carry is the length. Without one the editor read "no
+            // length" as "no file", and Media3's loader changed its mind about
+            // the length at the end, which a Transformer refuses.
+            val said = o.optLong("durationUs", -1L)
+            val rate = bitRate.takeIf { it > 0 } ?: streams.sumOf { it.bitRate.coerceAtLeast(0L) }
+            val durationUs = if (said > 0) said else if (size > 0 && rate > 0) size * 8_000_000L / rate else said
             return AvInfo(
                 format = o.optString("format"),
                 formatLong = o.optString("formatLong"),
-                durationUs = o.optLong("durationUs", -1L),
+                durationUs = durationUs,
                 startUs = o.optLong("startUs", 0L),
                 bitRate = o.optLong("bitRate"),
                 size = o.optLong("size", -1L),

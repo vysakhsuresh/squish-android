@@ -16,6 +16,48 @@ import kotlinx.coroutines.ensureActive
  */
 object AvFrames {
 
+    /**
+     * Seeks [file]'s [stream] so that [frame] holds the first key frame at or
+     * before [targetUs] (container time), decoded by [decoder]; false when
+     * nothing could be decoded at all.
+     *
+     * A seek lands on a key frame at or before the time only in a file with
+     * an index. One without - a transport stream, an MPEG program stream, an
+     * FLV - is searched by its timestamps and lands wherever its bytes happen
+     * to give, half a second past the key frame on the phone's test VOB; every
+     * run of a Reverse was then skipped as "after the window" and the render
+     * held no frames. So when the first key frame decoded is later than
+     * asked, it seeks further back - a second, four, sixteen, then the start
+     * of the file - and decodes forward again. A stream that never marks a
+     * key frame gives up waiting after [AvFrameSource.MAX_KEY_WAIT] frames and
+     * keeps what it has.
+     */
+    fun seekToKeyFrame(file: AvFile, decoder: AvDecoder, stream: Int, frame: AvDecoder.Frame, targetUs: Long): Boolean {
+        val start = file.info.startUs
+        var back = 0L
+        while (true) {
+            val at = (targetUs - back).coerceAtLeast(start)
+            AvNative.fileSeekDecoder(file.nativeHandle, decoder.nativeHandle, if (at <= start) 0L else at)
+            var waited = 0
+            var found = false
+            while (true) {
+                if (AvNative.fileDecodeNext(file.nativeHandle, decoder.nativeHandle, stream, frame.meta) != AvNative.OK) break
+                // From the start of the file the first frame is taken as it is: it is
+                // whole, and a decoder that never marks key frames (FFmpeg's
+                // Sorenson Spark) would otherwise be waited on to the end - and a
+                // rewind to byte zero does not work in every container (FLV).
+                if (frame.key || at <= start || ++waited >= AvFrameSource.MAX_KEY_WAIT) {
+                    found = true
+                    break
+                }
+            }
+            val late = found && frame.ptsUs != Long.MIN_VALUE && frame.ptsUs > targetUs
+            if (found && !late) return true
+            if (at <= start) return found
+            back = if (back == 0L) 1_000_000L else back * 4
+        }
+    }
+
     /** The frame in hand, converted on request. */
     class View internal constructor(
         private val decoder: AvDecoder,
@@ -97,14 +139,19 @@ object AvFrames {
             val decoder = AvDecoder.forStream(file, stream.index) ?: return false
             decoder.use {
                 val start = file.info.startUs
-                AvNative.fileSeekDecoder(file.nativeHandle, decoder.nativeHandle, fromMs * 1000L + start)
                 val frame = AvDecoder.Frame()
                 val view = View(decoder, stream, frame)
                 var index = 0
+                // From the key frame at or before the start (seekToKeyFrame says why that takes care).
+                if (!seekToKeyFrame(file, decoder, stream.index, frame, fromMs * 1000L + start)) return false
+                var first = true
                 while (true) {
                     currentCoroutineContext().ensureActive()
-                    val r = AvNative.fileDecodeNext(file.nativeHandle, decoder.nativeHandle, stream.index, frame.meta)
-                    if (r != AvNative.OK) break
+                    if (!first) {
+                        val r = AvNative.fileDecodeNext(file.nativeHandle, decoder.nativeHandle, stream.index, frame.meta)
+                        if (r != AvNative.OK) break
+                    }
+                    first = false
                     if (frame.ptsUs == Long.MIN_VALUE) continue
                     val timeMs = (frame.ptsUs - start) / 1000L
                     if (timeMs > toMs) break

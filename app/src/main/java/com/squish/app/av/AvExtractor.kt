@@ -83,6 +83,16 @@ class AvExtractor(context: Context, private val uri: Uri) : Extractor {
     private var pendingSeekUs = C.TIME_UNSET
     private var packetsRead = 0L
     private val lastTimeUs = HashMap<Int, Long>()
+    private val lastEndUs = HashMap<Int, Long>()
+    private val bitRates = HashMap<Int, Long>()
+    private val blocks = HashMap<Int, Triple<Int, Int, Int>>()
+
+    /** A packet's length from a codec of fixed blocks - so many bytes, so many samples - or null. */
+    private fun blockLengthUs(stream: Int, size: Int): Long? {
+        val (blockAlign, frameSize, rate) = blocks[stream] ?: return null
+        if (blockAlign <= 0 || frameSize <= 0 || rate <= 0) return null
+        return (size / blockAlign).toLong() * frameSize * 1_000_000L / rate
+    }
 
     override fun sniff(input: ExtractorInput): Boolean = true
 
@@ -101,6 +111,15 @@ class AvExtractor(context: Context, private val uri: Uri) : Extractor {
             val track = output.track(s.index, if (s.isVideo) C.TRACK_TYPE_VIDEO else C.TRACK_TYPE_AUDIO)
             track.format(formatOf(s, info, params))
             tracks[s.index] = track
+            // The stream's own rate, the file's, or the file's size over its
+            // length - a RealAudio file gives neither of the first two.
+            if (s.isAudio) blocks[s.index] = Triple(s.blockAlign, s.frameSize, s.sampleRate)
+            bitRates[s.index] = when {
+                s.bitRate > 0 -> s.bitRate
+                info.bitRate > 0 -> info.bitRate
+                info.size > 0 && info.durationUs > 0 -> info.size * 8_000_000L / info.durationUs
+                else -> 0L
+            }
             if (s.isAudio) audioStreams += s.index
         }
         output.endTracks()
@@ -115,6 +134,7 @@ class AvExtractor(context: Context, private val uri: Uri) : Extractor {
             f.seek(pendingSeekUs + startUs)
             pendingSeekUs = C.TIME_UNSET
             lastTimeUs.clear()
+            lastEndUs.clear()
         }
         val more = try {
             f.readPacket()
@@ -134,10 +154,24 @@ class AvExtractor(context: Context, private val uri: Uri) : Extractor {
             if (buffer.size < size) buffer = ByteArray(size + size / 4)
             f.packetData(buffer, 0)
             val raw = if (f.packetPtsUs != Long.MIN_VALUE) f.packetPtsUs else f.packetDtsUs
-            // A packet with no time at all follows the one before it.
-            val timeUs = if (raw != Long.MIN_VALUE) raw - startUs
-            else (lastTimeUs[stream] ?: 0L) + f.packetDurationUs.coerceAtLeast(0L)
+            // A packet with no time at all follows the one before it, by that
+            // one's length - its own, or what its size takes at the stream's
+            // bitrate. RealAudio's packets carry neither a time nor a length:
+            // every one was stamped 0, the player stopped at 156 ms, and an
+            // export failed on a file Media3 then measured at 10 ms long.
+            // And a sound packet whose time does not move on is given the end
+            // of the one before: RealAudio stamps every packet 0 rather than
+            // leaving the time unset (ffmpeg -debug_ts on the phone).
+            val previousEnd = lastEndUs[stream]
+            val stalled = stream in audioStreams && raw != Long.MIN_VALUE && previousEnd != null &&
+                raw - startUs <= (lastTimeUs[stream] ?: Long.MIN_VALUE) && previousEnd > raw - startUs
+            val timeUs = if (raw != Long.MIN_VALUE && !stalled) raw - startUs else previousEnd ?: 0L
+            val lengthUs = f.packetDurationUs.takeIf { it > 0L }
+                ?: blockLengthUs(stream, size)
+                ?: bitRates[stream]?.takeIf { it > 0L }?.let { size * 8_000_000L / it }
+                ?: 0L
             lastTimeUs[stream] = timeUs
+            lastEndUs[stream] = timeUs + lengthUs
             track.sampleData(ParsableByteArray(buffer, size), size)
             // A sound packet is always somewhere a decoder can start; FFmpeg
             // does not always say so.
@@ -219,7 +253,7 @@ class AvExtractor(context: Context, private val uri: Uri) : Extractor {
         /** At most this much skipped behind FFmpeg per call, so a read returns quickly. */
         private const val SKIP_STEP = 4L shl 20
 
-        private const val AUDIO_INPUT = 512 * 1024
+        private const val AUDIO_INPUT = 256 * 1024
 
         /**
          * Room for the largest packet the stream will send: three frames'

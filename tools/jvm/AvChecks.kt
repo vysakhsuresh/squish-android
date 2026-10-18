@@ -54,6 +54,8 @@ fun main() {
     check(!AvRouteRules.media3Reads("mpegts", listOf(v("vc1"), a("ac3")), 188), "a VC-1 transport stream stays with Media3")
     check(!AvRouteRules.media3Reads("mpeg", listOf(v("mpeg2video"), a("pcm_dvd"))), "a DVD's LPCM sound in a VOB stays with Media3")
     check(!AvRouteRules.media3Reads("flv", listOf(v("flv1"), a("mp3"))), "a Sorenson Spark FLV stays with Media3")
+    check(!AvRouteRules.media3Reads("mpeg", listOf(v("mpeg1video"), a("mp2"))), "an MPEG-1 system stream (.mpg), which PsExtractor refuses, stays with Media3")
+    check(AvRouteRules.media3Reads("mpeg", listOf(v("mpeg2video"), a("mp2"))), "an MPEG-2 program stream goes to FFmpeg")
     check(!AvRouteRules.media3Reads("ape", listOf(a("ape"))), "a Monkey's Audio file stays with Media3")
     check(!AvRouteRules.media3Reads("mxf", listOf(v("dnxhd"), a("pcm_s24le"))), "an MXF stays with Media3")
     check(!AvRouteRules.media3Reads("dv", listOf(v("dvvideo"), a("pcm_s16le"))), "a DV tape capture stays with Media3")

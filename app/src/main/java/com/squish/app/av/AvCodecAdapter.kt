@@ -210,7 +210,14 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
     private fun paintOn(target: Surface, out: Output, timestampNs: Long) {
         try {
             synchronized(paintLock) {
-                val p = painter ?: YuvImagePainter(target).also { painter = it }
+                // As many images as a hardware decoder gives this surface (the
+                // moto's "max dequeue count 11"). Media3's effects input holds
+                // several frames before it shows the first; with the three a
+                // Transformer is content with, the writer waited for a free image
+                // that the pipeline was waiting on frames to give back, and the
+                // preview sat black with four frames painted - every file FFmpeg
+                // decoded, on the phone, 18 October.
+                val p = painter ?: YuvImagePainter(target, PLAYER_IMAGES).also { painter = it }
                 AvCodecs.paint(p, decoder, out.held, out.frame, format, timestampNs)
             }
         } catch (e: Exception) {
@@ -441,8 +448,10 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
     }
 
     private companion object {
-        const val VIDEO_INPUTS = 6
-        const val AUDIO_INPUTS = 12
+        /** Images the writer may have out at once on a player's surface (see paintOn). */
+        const val PLAYER_IMAGES = 10
+        const val VIDEO_INPUTS = 4
+        const val AUDIO_INPUTS = 8
         /** Frames held for the renderer; one more is kept back for the end of stream. */
         const val VIDEO_OUTPUTS = 6
         const val AUDIO_OUTPUTS = 12

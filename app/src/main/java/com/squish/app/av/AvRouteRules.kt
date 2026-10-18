@@ -48,7 +48,10 @@ object AvRouteRules {
     private val TS_VIDEO = setOf("h264", "hevc", "mpeg2video", "mpeg1video")
     private val TS_AUDIO = setOf("aac", "aac_latm", "mp3", "mp2", "ac3", "eac3", "dts")
 
-    private val PS_VIDEO = setOf("mpeg2video", "mpeg1video", "h264")
+    // Not MPEG-1: PsExtractor reads an MPEG-2 program stream and refuses an
+    // MPEG-1 system stream outright ("None of the available extractors"),
+    // found on the phone with a .mpg.
+    private val PS_VIDEO = setOf("mpeg2video", "h264")
     private val PS_AUDIO = setOf("mp2", "mp3", "ac3")
 
     private val WAV_AUDIO = setOf("pcm_s16le", "pcm_u8", "pcm_s24le", "pcm_s32le", "pcm_f32le", "pcm_alaw", "pcm_mulaw", "adpcm_ima_wav")

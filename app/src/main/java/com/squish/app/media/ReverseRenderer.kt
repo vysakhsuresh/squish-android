@@ -446,6 +446,20 @@ object ReverseRenderer {
                 AvPictureReader.open(context, source) ?: throw e
             }
         }
+        if (reader is PlatformPictureReader) {
+            // The phone's reader can open a file and still find nothing to
+            // reverse in it - an H.264 AVI whose key frames MediaExtractor
+            // does not mark ("no keyframe before the window"). Nothing has gone
+            // to the muxer at that point (it starts on the encoder's first
+            // output), so FFmpeg's reader is tried instead.
+            val noFrames = runCatching { reader.runs(inUs, outUs).syncs.isEmpty() }.getOrDefault(true)
+            if (noFrames) {
+                AvPictureReader.open(context, source)?.let { av ->
+                    reader.close()
+                    return av.use { encodeReversed(it, inUs, outUs, muxer, sound, spill, onProgress) }
+                }
+            }
+        }
         return reader.use { encodeReversed(it, inUs, outUs, muxer, sound, spill, onProgress) }
     }
 
@@ -723,11 +737,17 @@ object ReverseRenderer {
             outUs: Long,
             onFrame: (Int, Int, (ByteArray, Int, Int) -> Unit, Long) -> Unit
         ) {
-            com.squish.app.av.AvNative.fileSeekDecoder(file.nativeHandle, decoder.nativeHandle, gopStartUs + startUs)
+            // From the run's own key frame, which a file with no index does not
+            // seek to by itself (AvFrames.seekToKeyFrame says why).
+            if (!com.squish.app.av.AvFrames.seekToKeyFrame(file, decoder, stream.index, frame, gopStartUs + startUs)) return
+            var first = true
             while (true) {
                 coroutineContext.ensureActive()
-                val r = com.squish.app.av.AvNative.fileDecodeNext(file.nativeHandle, decoder.nativeHandle, stream.index, frame.meta)
-                if (r != com.squish.app.av.AvNative.OK) break
+                if (!first) {
+                    val r = com.squish.app.av.AvNative.fileDecodeNext(file.nativeHandle, decoder.nativeHandle, stream.index, frame.meta)
+                    if (r != com.squish.app.av.AvNative.OK) break
+                }
+                first = false
                 if (frame.ptsUs == Long.MIN_VALUE) continue
                 val pts = frame.ptsUs - startUs
                 // Out of the decoder in the order they are shown, so the first

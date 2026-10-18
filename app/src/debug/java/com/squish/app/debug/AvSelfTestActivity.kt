@@ -81,7 +81,10 @@ class AvSelfTestActivity : Activity() {
         text = TextView(this).apply { textSize = 11f; setPadding(16, 16, 16, 16) }
         setContentView(ScrollView(this).apply { addView(text) })
         val only = intent.getStringExtra("only")
-        val dir = File(getExternalFilesDir(null), "selftest")
+        // Files adb pushes into Android/data are not listed to the app on
+        // Android 15, so a run-as copy under files/imports/selftest is the
+        // usual place (imports, so AvRoute decides on them as on any share).
+        val dir = intent.getStringExtra("dir")?.let { File(it) } ?: File(filesDir, "imports/selftest")
         scope.launch { runAll(dir, only) }
     }
 
@@ -191,7 +194,12 @@ class AvSelfTestActivity : Activity() {
     /** Plays three seconds into an off-screen surface with an effect on, muted, and counts what came out. */
     private suspend fun play(uri: Uri, video: Boolean): JSONObject = withContext(Dispatchers.Main) {
         val out = JSONObject()
-        val reader = ImageReader.newInstance(640, 360, PixelFormat.RGBA_8888, 4)
+        // GPU output usage: the effects pipeline draws into this, and a reader
+        // without it was handed nothing, from any decoder.
+        val reader = ImageReader.newInstance(
+            640, 360, PixelFormat.RGBA_8888, 4,
+            android.hardware.HardwareBuffer.USAGE_GPU_COLOR_OUTPUT or android.hardware.HardwareBuffer.USAGE_CPU_READ_RARELY
+        )
         var surfaceFrames = 0
         reader.setOnImageAvailableListener({ rd -> rd.acquireLatestImage()?.let { surfaceFrames++; it.close() } }, Handler(Looper.getMainLooper()))
         val player = ExoPlayer.Builder(this@AvSelfTestActivity, SoftwareDecoders.renderers(this@AvSelfTestActivity))
@@ -206,7 +214,7 @@ class AvSelfTestActivity : Activity() {
         })
         try {
             if (video) {
-                player.setVideoEffects(listOf(RgbFilter.createGrayscaleFilter()))
+                if (intent.getBooleanExtra("effects", true)) player.setVideoEffects(listOf(RgbFilter.createGrayscaleFilter()))
                 player.setVideoSurface(reader.surface)
             }
             player.volume = 0f
@@ -227,7 +235,8 @@ class AvSelfTestActivity : Activity() {
             out.put("position", player.currentPosition)
             error?.let { out.put("error", it.errorCodeName + ": " + (it.cause?.toString() ?: it.message)) }
             val videoOk = !video || ((v?.renderedOutputBufferCount ?: 0) > 10 && surfaceFrames > 5)
-            out.put("ok", error == null && videoOk && (decoders.any { it.startsWith("a:") } || !video || decoders.isNotEmpty()))
+            // The clock moving is what says the player played: a stalled one sits at 0.
+            out.put("ok", error == null && videoOk && player.currentPosition > 1_000L)
         } finally {
             player.release()
             reader.close()

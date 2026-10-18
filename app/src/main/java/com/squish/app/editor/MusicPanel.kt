@@ -93,6 +93,15 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var vibe by rememberSaveable { mutableStateOf("All") }
 
+    // Every Squish original made ahead, in the background, a moment after the
+    // panel opens - so Listen and Add on one are instant rather than a
+    // second's composing each (MusicLibrary.prepareAll). Made once; after
+    // that this finds them all on disk and returns at once.
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(800)
+        MusicLibrary.prepareAll(context)
+    }
+
     // One small player for listening before adding, released with the panel.
     var playingKey by remember { mutableStateOf<String?>(null) }
     val player = remember {

@@ -158,7 +158,18 @@ class VideoProcessor(private val context: Context) {
             val outcome = if (needsClear && clear == null) {
                 Result.failure(IOException("Could not write the blank frame the layers are padded with"))
             } else {
-                runExport(state, outputFile, clear, backdrop, aspects) { active.set(it) }
+                runExport(state, outputFile, clear, backdrop, aspects) { active.set(it) }.let { first ->
+                    // A copy that the MP4 writer refuses - an H.264 AVI, whose
+                    // parameter sets travel in the stream where the writer wants
+                    // them in the track - is made again re-encoded, once, rather
+                    // than failing a cut that only wanted its frames kept.
+                    if (first.isSuccess || !isPlainTrim(state) || first.exceptionOrNull() is kotlinx.coroutines.CancellationException) first
+                    else {
+                        android.util.Log.w("SquishExport", "the copy failed; encoding instead", first.exceptionOrNull())
+                        runCatching { outputFile.delete() }
+                        runExport(state, outputFile, clear, backdrop, aspects, copy = false) { active.set(it) }
+                    }
+                }
             }
             result = outcome
             outcome
@@ -183,6 +194,7 @@ class VideoProcessor(private val context: Context) {
         clear: File?,
         backdrop: List<Clip>,
         aspects: Map<android.net.Uri, Float>,
+        copy: Boolean = true,
         onTransformer: (Transformer) -> Unit
     ): Result<File> =
         suspendCancellableCoroutine { continuation ->
@@ -204,7 +216,7 @@ class VideoProcessor(private val context: Context) {
             // for nothing and, on a quiet screen recording, came out heavier than
             // the file it was cut from. Media3 falls back to a full encode by
             // itself when a file cannot be cut this way.
-            val trimOnly = isPlainTrim(state)
+            val trimOnly = copy && isPlainTrim(state)
 
             // Left at its defaults for a cut. Media3 reads any requested encoder
             // setting - a bitrate included - as "this must be re-encoded", and
@@ -231,7 +243,7 @@ class VideoProcessor(private val context: Context) {
                 // The FFmpeg decoders where the platform has none, so a file
                 // that reached the export unconverted - a conversion that
                 // failed, a quick tool on a file rip - still decodes
-                // (SoftwareDecoders; SquishFfmpegCodecs has that path's limit).
+                // (SoftwareDecoders).
                 .setAssetLoaderFactory(SoftwareDecoders.assetLoaderFactory(context))
                 .apply {
                     if (trimOnly) {

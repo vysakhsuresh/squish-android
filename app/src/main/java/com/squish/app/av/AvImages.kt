@@ -108,8 +108,19 @@ object AvImages {
      * JPEG of every one), so nothing a person sees is a conversion.
      */
     fun readableFile(context: Context, uri: Uri, dir: File, name: String, maxLongSide: Int): Uri? {
-        if (platformReads(context, uri)) return uri
-        val bitmap = decode(context, uri, maxLongSide) ?: return null
+        // Readable here is not enough: Media3's image loader, which renders the
+        // still, goes by the picture's type and takes only these - so a GIF or
+        // a camera RAW the phone decodes itself was still refused there
+        // ("Attempted to load a Bitmap from unsupported MIME type: image/raw").
+        val platform = platformReads(context, uri)
+        if (platform && media3Takes(context, uri)) return uri
+        // The phone's own decoder where it reads the picture (it applies the
+        // orientation tag, and for a RAW gives the camera's preview at once),
+        // the app's own where it does not.
+        // Not for a RAW: the phone gives its embedded preview, 1980 px for an
+        // 18 MP Canon, where LibRaw develops the sensor itself at twice that.
+        val bitmap = (if (platform && extension(context, uri) !in RAW_EXTENSIONS) platformDecode(context, uri, maxLongSide) else null)
+            ?: decode(context, uri, maxLongSide) ?: return null
         val png = bitmap.hasAlpha()
         val target = File(dir, "$name.src." + if (png) "png" else "jpg")
         val partial = File(target.absolutePath + ".part")
@@ -126,6 +137,43 @@ object AvImages {
             partial.delete()
         }
     }
+
+    /**
+     * Whether Media3's image loader takes [uri]'s type: the formats
+     * BitmapFactory reads that Media3 lists (Util.isBitmapFactorySupportedMimeType),
+     * AVIF only from Android 14. The type is the provider's, else the name's.
+     */
+    private fun media3Takes(context: Context, uri: Uri): Boolean {
+        val type = runCatching { context.contentResolver.getType(uri) }.getOrNull()?.lowercase()
+            ?: when (extension(context, uri)) {
+                "jpg", "jpeg", "jpe", "jfif" -> "image/jpeg"
+                "png" -> "image/png"
+                "webp" -> "image/webp"
+                "bmp", "dib" -> "image/bmp"
+                "heic", "heif", "hif" -> "image/heif"
+                "avif" -> "image/avif"
+                else -> return false
+            }
+        return when (type) {
+            "image/jpeg", "image/jpg", "image/png", "image/webp", "image/bmp", "image/x-ms-bmp",
+            "image/heif", "image/heic", "image/heif-sequence", "image/heic-sequence" -> true
+            "image/avif" -> android.os.Build.VERSION.SDK_INT >= 34
+            else -> false
+        }
+    }
+
+    /** Through ImageDecoder, upright, its long side at most [maxLongSide]; null when it refuses. */
+    private fun platformDecode(context: Context, uri: Uri, maxLongSide: Int): Bitmap? = runCatching {
+        val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
+        android.graphics.ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+            val long = maxOf(info.size.width, info.size.height)
+            if (long > maxLongSide) {
+                val scale = maxLongSide.toFloat() / long
+                decoder.setTargetSize((info.size.width * scale).toInt().coerceAtLeast(1), (info.size.height * scale).toInt().coerceAtLeast(1))
+            }
+        }
+    }.getOrNull()
 
     // ---- sizing --------------------------------------------------------------
 

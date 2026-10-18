@@ -97,8 +97,15 @@ open class AvRenderersFactory(context: Context) : DefaultRenderersFactory(contex
 /** What both renderers do: the phone's decoders, then FFmpeg. */
 private object AvSupport {
 
-    fun capabilities(own: Int, format: Format): Int {
+    /**
+     * [video] is the renderer's kind. Asked without it, FFmpeg "decodes" a
+     * sound track for the video renderer too - which then claimed every sound
+     * it was offered, was handed a WMA as a picture and failed reading a width
+     * from its output format, and took the track away from the audio renderer.
+     */
+    fun capabilities(own: Int, format: Format, video: Boolean): Int {
         if (RendererCapabilities.getFormatSupport(own) == C.FORMAT_HANDLED) return own
+        if (androidx.media3.common.MimeTypes.isVideo(format.sampleMimeType) != video) return own
         if (!AvCodecs.decodes(format)) return own
         return RendererCapabilities.create(
             C.FORMAT_HANDLED,
@@ -109,7 +116,8 @@ private object AvSupport {
         )
     }
 
-    fun decoders(context: Context, platform: List<MediaCodecInfo>, format: Format): List<MediaCodecInfo> {
+    fun decoders(context: Context, platform: List<MediaCodecInfo>, format: Format, video: Boolean): List<MediaCodecInfo> {
+        if (androidx.media3.common.MimeTypes.isVideo(format.sampleMimeType) != video) return platform
         if (AvCodecs.isOwn(format)) return listOf(AvCodecs.codecInfo(format))
         if (!AvCodecs.decodes(format)) return platform
         val takes = platform.any { runCatching { it.isFormatSupported(context, format) }.getOrDefault(false) }
@@ -126,7 +134,7 @@ private class AvVideoRenderer(private val appContext: Context, builder: MediaCod
     override fun supportsFormat(mediaCodecSelector: MediaCodecSelector, format: Format): Int {
         val own = if (AvCodecs.isOwn(format)) RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE)
         else super.supportsFormat(mediaCodecSelector, format)
-        return AvSupport.capabilities(own, format)
+        return AvSupport.capabilities(own, format, video = true)
     }
 
     override fun getDecoderInfos(
@@ -135,7 +143,7 @@ private class AvVideoRenderer(private val appContext: Context, builder: MediaCod
         requiresSecureDecoder: Boolean
     ): List<MediaCodecInfo> {
         val platform = if (AvCodecs.isOwn(format)) emptyList() else super.getDecoderInfos(mediaCodecSelector, format, requiresSecureDecoder)
-        return AvSupport.decoders(appContext, platform, format)
+        return AvSupport.decoders(appContext, platform, format, video = true)
     }
 }
 
@@ -154,7 +162,7 @@ private class AvAudioRenderer(
     override fun supportsFormat(mediaCodecSelector: MediaCodecSelector, format: Format): Int {
         val own = if (AvCodecs.isOwn(format)) RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE)
         else super.supportsFormat(mediaCodecSelector, format)
-        return AvSupport.capabilities(own, format)
+        return AvSupport.capabilities(own, format, video = false)
     }
 
     override fun getDecoderInfos(
@@ -163,6 +171,6 @@ private class AvAudioRenderer(
         requiresSecureDecoder: Boolean
     ): List<MediaCodecInfo> {
         val platform = if (AvCodecs.isOwn(format)) emptyList() else super.getDecoderInfos(mediaCodecSelector, format, requiresSecureDecoder)
-        return AvSupport.decoders(appContext, platform, format)
+        return AvSupport.decoders(appContext, platform, format, video = false)
     }
 }
