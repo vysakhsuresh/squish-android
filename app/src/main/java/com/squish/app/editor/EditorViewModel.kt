@@ -11,6 +11,7 @@ import com.squish.app.data.ProjectSnapshot
 import com.squish.app.data.ProjectStart
 import com.squish.app.data.SquishRepositories
 import com.squish.app.media.importCopy
+import com.squish.app.media.canReadMedia
 import com.squish.app.media.importCopyNeeded
 import com.squish.app.timeline.Transition
 import com.squish.app.timeline.TransitionType
@@ -1565,6 +1566,40 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * unreadable file back under every clip with the card gone: the only way
      * to it again was to leave and reopen the project.
      */
+    /**
+     * Every file found unreadable this session, tried again: after access to
+     * the phone's photos and videos is given back, the clips that went
+     * missing when it was narrowed come back as they were, with no Relink.
+     */
+    fun recheckMissingMedia() {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val back = withContext(Dispatchers.IO) { unreadable.filter { app.canReadMedia(it) } }
+            if (back.isEmpty()) return@launch
+            unreadable.removeAll(back.toSet())
+            refreshMissingMedia()
+            // The edit's shape was measured off whichever shot could be read
+            // while the source could not - on the moto a 16:9 shot, so a
+            // portrait reel came back drawn small in a landscape frame. Read
+            // off the source again, as Relink does.
+            val source = _state.value.sourceUri
+            if (source != null && source in back) {
+                val meta = ThumbnailExtractor.probe(app, source)
+                if (meta.displayWidth > 0 && meta.displayHeight > 0) {
+                    _state.update {
+                        it.copy(
+                            sourceWidth = meta.displayWidth,
+                            sourceHeight = meta.displayHeight,
+                            sourceHasAudio = meta.hasAudio,
+                            fps = meta.fps
+                        )
+                    }
+                    recomputeEstimate()
+                }
+            }
+        }
+    }
+
     private fun refreshMissingMedia() = _state.update { current ->
         val missing = (current.videoClips + current.audioClips).firstOrNull { it.uri in unreadable }
         when {

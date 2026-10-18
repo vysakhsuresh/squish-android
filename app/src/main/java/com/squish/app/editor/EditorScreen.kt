@@ -1365,9 +1365,18 @@ private fun StatusCards(
     // failure is dismissed, until the file is relinked or the clips deleted.
     state.missingMedia?.let { uri ->
         val clip = (state.videoClips + state.audioClips).firstOrNull { it.uri == uri }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        // A gallery file gone because the phone's access was narrowed to chosen
+        // files is not missing: asked for access again, it comes back as it was.
+        val accessLost = uri.authority == "media" && com.squish.app.media.MediaLibrary.access(context) != com.squish.app.media.MediaLibrary.Access.Full
+        val askAccess = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) {
+            viewModel.recheckMissingMedia()
+        }
         RelinkCard(
             name = clip?.label?.takeIf { it.isNotBlank() },
             sound = clip?.kind == ClipKind.Audio,
+            accessLost = accessLost,
+            onAllowAccess = { askAccess.launch(com.squish.app.media.MediaLibrary.permissions()) },
             onRelink = onRelink,
             onBrowse = onBrowseRelink,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -1383,7 +1392,15 @@ private fun StatusCards(
  * picker never shows.
  */
 @Composable
-private fun RelinkCard(name: String?, sound: Boolean, onRelink: () -> Unit, onBrowse: (Array<String>) -> Unit, modifier: Modifier = Modifier) {
+private fun RelinkCard(
+    name: String?,
+    sound: Boolean,
+    onRelink: () -> Unit,
+    onBrowse: (Array<String>) -> Unit,
+    modifier: Modifier = Modifier,
+    accessLost: Boolean = false,
+    onAllowAccess: () -> Unit = {}
+) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1395,6 +1412,7 @@ private fun RelinkCard(name: String?, sound: Boolean, onRelink: () -> Unit, onBr
     ) {
         Text(
             when {
+                accessLost && name != null -> "Squish can't see “$name”"
                 name != null -> "“$name” is missing"
                 sound -> "A sound in this edit is missing"
                 else -> "A file in this edit is missing"
@@ -1405,12 +1423,16 @@ private fun RelinkCard(name: String?, sound: Boolean, onRelink: () -> Unit, onBr
             overflow = TextOverflow.Ellipsis
         )
         Text(
-            "Its clips are kept where they were. Pick the file again, or another one, and every clip that played it plays that instead.",
+            if (accessLost) "Squish can only see the photos and videos you chose to share, and this is not one of them. Allow access and every clip comes back as it was - or relink it to another file."
+            else "Its clips are kept where they were. Pick the file again, or another one, and every clip that played it plays that instead.",
             style = MaterialTheme.typography.bodySmall,
             color = SquishColors.TextSecondary
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (sound) {
+            if (accessLost) {
+                SquishPrimaryButton(text = "Allow access", onClick = onAllowAccess)
+                SquishOutlinedButton(text = "Relink", onClick = onRelink)
+            } else if (sound) {
                 SquishPrimaryButton(text = "Relink", onClick = { onBrowse(com.squish.app.av.AvTypes.SOUNDS) })
             } else {
                 SquishPrimaryButton(text = "Relink", onClick = onRelink)
