@@ -148,6 +148,7 @@ object FilmstripLoader {
 
     private suspend fun drain(context: Context) {
         var retriever: com.squish.app.av.AvRetriever? = null
+        var frames: com.squish.app.av.AvFrameSource? = null
         var openUri: Uri? = null
         try {
             while (true) {
@@ -175,18 +176,32 @@ object FilmstripLoader {
                 }
                 if (uri != openUri) {
                     runCatching { retriever?.release() }
+                    frames?.close()
+                    retriever = null
                     openUri = uri
-                    // A source that cannot be opened has no filmstrip, and that is
-                    // all it means - the clip still draws, edits, trims and exports.
-                    retriever = runCatching { com.squish.app.av.AvRetriever().apply { setDataSource(context, uri) } }.getOrNull()
+                    // Squish's FFmpeg, one decoder kept open from tile to tile.
+                    // The platform's retriever made a new decoder for every
+                    // tile inside the media server - a software one, a tenth of
+                    // a second each, competing with the preview's first frame on
+                    // the same cores - where this seeks and decodes one key frame.
+                    frames = runCatching { com.squish.app.av.AvFrameSource.open(context, uri, threads = 1) }
+                        .onFailure { android.util.Log.w("SquishAv", "filmstrip: FFmpeg could not open $uri", it) }.getOrNull()
+                    if (frames == null) android.util.Log.w("SquishAv", "filmstrip: no FFmpeg source for $uri")
+                    // A source FFmpeg cannot open goes to the retriever; one that
+                    // nothing opens has no filmstrip, and that is all it means -
+                    // the clip still draws, edits, trims and exports.
+                    if (frames == null) {
+                        retriever = runCatching { com.squish.app.av.AvRetriever().apply { setDataSource(context, uri) } }.getOrNull()
+                    }
                 }
                 val frame = runCatching {
-                    retriever?.getScaledFrameAtTime(
-                        timeMs * 1000L,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                        TILE_PX,
-                        TILE_PX
-                    )
+                    frames?.frameAt(timeMs * 1000L, exact = false, maxWidth = TILE_PX, maxHeight = TILE_PX)
+                        ?: retriever?.getScaledFrameAtTime(
+                            timeMs * 1000L,
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                            TILE_PX,
+                            TILE_PX
+                        )
                 }.getOrNull() ?: continue
                 cache.put(key, frame)
                 noteDecoded(uri, timeMs)
@@ -194,6 +209,7 @@ object FilmstripLoader {
             }
         } finally {
             runCatching { retriever?.release() }
+            runCatching { frames?.close() }
             // Normally the loop has already handed the queue back. If it ended any
             // other way, let the next request start a fresh worker - but only if
             // no newer one has taken over in the meantime.

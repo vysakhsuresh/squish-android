@@ -116,3 +116,15 @@ object AvRouteRules {
         }
     }
 }
+
+/**
+ * Whether a handle the native side returns is a failure: zero, or one of
+ * FFmpeg's error numbers, which are negative ints. Not "<= 0": a heap
+ * pointer on an arm64 phone carries a tag in its top byte (the moto's are
+ * 0xb4...), which as a signed long is hugely negative - and read as an
+ * error, every file FFmpeg opened was thrown away and every reader quietly
+ * fell back to the platform's. Pure, so AvChecks holds it.
+ */
+object AvHandles {
+    fun failed(handle: Long): Boolean = handle == 0L || (handle < 0L && handle >= Int.MIN_VALUE.toLong())
+}

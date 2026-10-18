@@ -19,6 +19,9 @@ internal object AvNative {
     const val EOF = 2
     const val SKIPPED = 3
 
+    /** Whether a handle from fileOpen or decOpen is a failure (AvHandles says why it is not "<= 0"). */
+    fun failed(handle: Long): Boolean = AvHandles.failed(handle)
+
     /** Whether the library loaded on this phone. False on an ABI it was not built for, or a missing file. */
     val loaded: Boolean by lazy {
         runCatching { System.loadLibrary("squishav") }

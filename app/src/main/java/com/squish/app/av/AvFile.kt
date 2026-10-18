@@ -196,7 +196,7 @@ class AvFile private constructor(private var handle: Long, val info: AvInfo) : C
             val fd = pfd.detachFd()
             val extension = (name ?: displayName(context, uri))?.substringAfterLast('.', "")?.takeIf { it.isNotEmpty() }
             val handle = AvNative.fileOpen(fd, extension)
-            if (handle <= 0L) return null
+            if (AvNative.failed(handle)) return null
             val info = runCatching { AvNative.fileInfo(handle)?.let { AvInfo.parse(it) } }.getOrNull()
             if (info == null) {
                 AvNative.fileClose(handle)

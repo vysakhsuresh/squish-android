@@ -100,6 +100,15 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
         // Opus file in a phone's music folder auditions whatever the phone's
         // own decoders make of it (SoftwareDecoders).
         ExoPlayer.Builder(context, SoftwareDecoders.renderers(context))
+            // Playing from a quarter second of sound, as the timeline's sound
+            // players do, rather than Media3's default two and a half - which
+            // was the pause between tapping Listen and hearing anything.
+            .setLoadControl(
+                androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(2_000, 15_000, 250, 500)
+                    .setPrioritizeTimeOverSizeThresholds(true)
+                    .build()
+            )
             .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(context))
             .setAudioAttributes(
                 AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),

@@ -40,10 +40,40 @@ data class VideoMeta(
 
 object ThumbnailExtractor {
 
-    suspend fun probe(context: Context, uri: Uri): VideoMeta = withContext(Dispatchers.IO) {
-        // A file only Squish's FFmpeg reads whole (AvRoute) is described as
-        // FFmpeg sees it: the platform's readers would give its header at best.
-        AvRoute.decide(context, uri).takeIf { it.ffmpeg }?.info?.let { metaOf(it) }?.let { return@withContext it }
+    /**
+     * What a file is, asked once. A picked video used to be opened by four
+     * readers before the editor showed - FFmpeg for its route, then
+     * MediaMetadataRetriever, then MediaExtractor, then Media3's retriever
+     * when any field came back empty - and the proxy engine asked again
+     * after. The answer is kept for the process; only a real one is kept, so
+     * a file that could not be read yet is asked again.
+     */
+    suspend fun probe(context: Context, uri: Uri): VideoMeta {
+        probes[uri.toString()]?.let { return it }
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        return probeUncached(context, uri).also {
+            if (it.durationMs > 0L) probes[uri.toString()] = it
+            com.squish.app.av.Perf.took("probe", android.os.SystemClock.elapsedRealtime() - t0, uri.lastPathSegment.orEmpty())
+        }
+    }
+
+    private val probes = java.util.concurrent.ConcurrentHashMap<String, VideoMeta>()
+
+    /** Forgets [uri]'s answer: a file relinked or replaced at the same address. */
+    fun forget(uri: Uri) {
+        probes.remove(uri.toString())
+    }
+
+    private suspend fun probeUncached(context: Context, uri: Uri): VideoMeta = withContext(Dispatchers.IO) {
+        // FFmpeg's description, which deciding the route (AvRoute) has
+        // already read: one native open that answers the length, the stored
+        // size, the turn, the rate and the sound together, where the
+        // platform's path opened the file three times for the same. A file
+        // only FFmpeg reads whole has no other answer anyway.
+        val route = AvRoute.decide(context, uri)
+        val info = route.info ?: if (route.ffmpeg) null else AvFile.probe(context, uri)
+        info?.let { i -> metaOf(i)?.takeIf { m -> m.durationMs > 0L && (i.video == null || m.width > 0) } }
+            ?.let { return@withContext it }
         val retriever = AvRetriever()
         val base = try {
             retriever.setDataSource(context, uri)
@@ -157,9 +187,20 @@ object ThumbnailExtractor {
             width = video?.displayWidth ?: 0,
             height = video?.height ?: 0,
             rotationDegrees = video?.rotation ?: 0,
-            fps = video?.fps?.takeIf { it > 1f && it < 1000f } ?: 30f,
+            fps = video?.fps?.takeIf { it > 1f && it < 1000f }?.let { roundedRate(it) } ?: 30f,
             hasAudio = info.audio != null
         )
+    }
+
+    /**
+     * A rate within a tenth of a whole number as that number - 29.97 as 30,
+     * 23.976 as 24 - which is what MediaExtractor's integer KEY_FRAME_RATE
+     * said for the same files, and what every frame step in the editor was
+     * worked out against. 12.5 stays 12.5.
+     */
+    private fun roundedRate(fps: Float): Float {
+        val whole = Math.round(fps).toFloat()
+        return if (kotlin.math.abs(fps - whole) <= 0.1f) whole else fps
     }
 
     private data class TrackInfo(

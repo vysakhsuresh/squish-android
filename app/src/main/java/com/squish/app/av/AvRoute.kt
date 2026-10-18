@@ -39,6 +39,10 @@ object AvRoute {
     private fun ownFile(context: Context, uri: Uri): Boolean {
         if (uri.scheme != "file") return false
         val path = uri.path ?: return false
+        // Not the imports: those are copies of whatever was shared - a WMV, a
+        // RealMedia file - kept under the app's storage (MediaAccess.importCopy),
+        // and they need the same decision their originals did.
+        if ("/${com.squish.app.media.IMPORTS_DIR}/" in path) return false
         return path.startsWith(context.filesDir.absolutePath) || path.startsWith(context.cacheDir.absolutePath)
     }
 

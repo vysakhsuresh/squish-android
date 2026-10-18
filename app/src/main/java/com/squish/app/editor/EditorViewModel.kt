@@ -47,6 +47,9 @@ import com.squish.app.timeline.withoutTrack
 import com.squish.app.timeline.withOverlayTransitionsFitted
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -219,6 +222,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (openedId == projectId) return
         openedId = projectId
         _state.update { it.copy(projectId = projectId, isLoadingSource = true) }
+        com.squish.app.av.Perf.start("open")
+        com.squish.app.av.Perf.start("open-editor")
+        viewModelScope.launch {
+            _state.first { !it.isLoadingSource }
+            com.squish.app.av.Perf.end("open-editor", "editor shown, ${_state.value.videoClips.size} clips")
+        }
 
         viewModelScope.launch {
             // Off the main thread: a draft with a few thousand motion samples
@@ -263,29 +272,46 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val resolver = app.contentResolver
         // The photos are counted first so the loading screen can say how many
         // are still to render, and the count falls as each lands.
-        val images = start.uris.count { com.squish.app.av.AvImages.isPicture(app, it) }
-        _state.update { it.copy(preparingStills = images) }
-        val sources = try {
-            start.uris.mapNotNull { picked ->
-                // Named by the file handed over, not by its copy: a copy is kept under
-                // a made-up name, and that was the project's title - "5ee44925-efb7...".
-                val name = withContext(Dispatchers.IO) { displayNameOf(picked) }
-                val uri = if (start.copyIn) withContext(Dispatchers.IO) { app.importCopy(picked) } else picked
-                if (com.squish.app.av.AvImages.isPicture(app, uri)) {
-                    val still = StillClips.fromImage(app, uri)
-                    _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
-                    still?.let { Triple(it, name ?: displayNameOf(uri) ?: "Photo", true) }
-                } else {
-                    // Every video comes in through prepareMedia, which decides
-                    // which reader opens it before the editor does.
-                    Triple(prepareMedia(uri, name), name ?: displayNameOf(uri) ?: "Clip", false)
-                }
+        // Every picked item at once rather than one after another, in the
+        // order picked: ten clips used to be ten probes in a row, and a photo
+        // among them held every clip after it until its render finished. The
+        // files are opened off the main thread; photo renders are two at a
+        // time, as many as a phone's encoder takes well side by side.
+        val pictures = withContext(Dispatchers.IO) { start.uris.map { com.squish.app.av.AvImages.isPicture(app, it) } }
+        _state.update { it.copy(preparingStills = pictures.count { it }) }
+        val renders = kotlinx.coroutines.sync.Semaphore(2)
+        val gathered = try {
+            kotlinx.coroutines.coroutineScope {
+                start.uris.mapIndexed { i, picked ->
+                    async {
+                        // Named by the file handed over, not by its copy: a copy is kept under
+                        // a made-up name, and that was the project's title - "5ee44925-efb7...".
+                        val name = withContext(Dispatchers.IO) { displayNameOf(picked) }
+                        // A video handed over on a grant that ends with this
+                        // process is copied after the editor opens, not before
+                        // (keepAfterGrant): the grant reads it until then, and a
+                        // film shared from the gallery used to be a whole-file
+                        // copy of spinner. A photo is rendered from it now, and
+                        // its file is the render, so it needs no copy at all.
+                        val uri = picked
+                        val source = if (pictures[i]) {
+                            val still = renders.withPermit { StillClips.fromImage(app, uri) }
+                            _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
+                            still?.let { Triple(it, name ?: displayNameOf(uri) ?: "Photo", true) }
+                        } else {
+                            // Every video comes in through prepareMedia, which decides
+                            // which reader opens it before the editor does.
+                            Triple(prepareMedia(uri, name), name ?: displayNameOf(uri) ?: "Clip", false)
+                        }
+                        source?.let { s -> s to ThumbnailExtractor.probe(app, s.first) }
+                    }
+                }.awaitAll()
             }
         } finally {
             _state.update { it.copy(preparingStills = 0) }
         }
-        val probed = sources.map { (uri, label, still) -> Pair(Triple(uri, label, still), ThumbnailExtractor.probe(app, uri)) }
-            .filter { (_, meta) -> meta.durationMs > 0L }
+        val sources = gathered.filterNotNull()
+        val probed = sources.filter { (_, meta) -> meta.durationMs > 0L }
         val lead = probed.firstOrNull()
         if (lead == null) {
             // Every real video has a length. None means the file could not be read
@@ -295,9 +321,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         val (leadSource, leadMeta) = lead
-        val originalSize = runCatching {
-            resolver.openFileDescriptor(leadSource.first, "r")?.use { it.statSize } ?: 0L
-        }.getOrDefault(0L)
+        val originalSize = withContext(Dispatchers.IO) {
+            runCatching { resolver.openFileDescriptor(leadSource.first, "r")?.use { it.statSize } ?: 0L }.getOrDefault(0L)
+        }
         var cursor = 0L
         val clips = probed.map { (source, meta) ->
             val (uri, label, still) = source
@@ -355,6 +381,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         // list had come back was written in H.264 without a word said.
         probeCodecs()
         withContext(Dispatchers.IO) { persist() }
+        if (start.copyIn) keepAfterGrant(sources.filterNot { it.first.third }.map { it.first.first })
         if (probed.size < sources.size || sources.size < start.uris.size) {
             _state.update { it.copy(failure = SquishError.FileUnreadable()) }
         }
@@ -720,6 +747,39 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun prepareMedia(uri: Uri, @Suppress("UNUSED_PARAMETER") name: String?): Uri {
         withContext(Dispatchers.IO) { com.squish.app.av.AvRoute.decide(getApplication(), uri) }
         return uri
+    }
+
+    /**
+     * Copies each of [shared] - files handed over on a grant that ends with
+     * this process - under the app's own storage, in the background and after
+     * the editor is up, and moves every clip that plays one onto its copy.
+     * Not an undo step: which file plays a clip is a fact about where it is
+     * kept, not about the edit; so the copy goes into every state the history
+     * holds too, as a longer still render does (ClipEdits). The grant reads
+     * the file until then. If the process dies first, the draft names the
+     * shared address, and opening it later says it is missing and offers
+     * Relink, as for any file gone from the gallery.
+     */
+    private fun keepAfterGrant(shared: List<Uri>) {
+        if (shared.isEmpty()) return
+        viewModelScope.launch {
+            for (uri in shared.distinct()) {
+                val t0 = android.os.SystemClock.elapsedRealtime()
+                val copy = withContext(Dispatchers.IO) { getApplication<Application>().importCopy(uri) }
+                if (copy == uri) continue
+                com.squish.app.av.Perf.took("import-copy", android.os.SystemClock.elapsedRealtime() - t0, copy.lastPathSegment.orEmpty())
+                fun List<Clip>.moved() = map { if (it.uri == uri) it.copy(uri = copy) else it }
+                _state.update { s ->
+                    s.copy(
+                        videoClips = s.videoClips.moved(),
+                        audioClips = s.audioClips.moved(),
+                        sourceUri = if (s.sourceUri == uri) copy else s.sourceUri
+                    )
+                }
+                history.amendAll { snapshot -> snapshot.copy(videoClips = snapshot.videoClips.moved(), audioClips = snapshot.audioClips.moved()) }
+                withContext(Dispatchers.IO) { persist() }
+            }
+        }
     }
 
     /**
@@ -1562,10 +1622,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Redraws the lanes of a recovered edit without blocking the restore on it. */
     private suspend fun restoreAudioWaveforms(clips: List<Clip>) {
-        clips.mapNotNull { it.uri }.distinct().forEach { uri ->
-            if (_state.value.audioWaveforms[uri.toString()] != null) return@forEach
-            val wave = PcmDecoder.decodePeaks(getApplication(), uri) ?: return@forEach
-            _state.update { it.copy(audioWaveforms = it.audioWaveforms + (uri.toString() to wave)) }
+        // Three at a time rather than one after another; each is read from
+        // the disk cache once it has been drawn before (WaveformCache).
+        val slots = kotlinx.coroutines.sync.Semaphore(3)
+        kotlinx.coroutines.coroutineScope {
+            clips.mapNotNull { it.uri }.distinct()
+                .filter { _state.value.audioWaveforms[it.toString()] == null }
+                .map { uri ->
+                    async {
+                        val wave = slots.withPermit { PcmDecoder.decodePeaks(getApplication(), uri) } ?: return@async
+                        _state.update { it.copy(audioWaveforms = it.audioWaveforms + (uri.toString() to wave)) }
+                    }
+                }.awaitAll()
         }
     }
 
@@ -1653,6 +1721,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             .forEach { proxyQueue.addLast(it) }
         if (proxyQueue.isEmpty() || proxyJob?.isActive == true) return
         proxyJob = viewModelScope.launch {
+            // After the editor is up and its first frame has had time to land:
+            // a proxy reads the whole file, and started the moment the clip was
+            // known it was a second reader racing the preview for the same disk
+            // and the same decoder, for a copy nobody needs in the first seconds.
+            _state.first { !it.isLoadingSource }
+            delay(PROXY_START_DELAY_MS)
             while (true) {
                 val uri = proxyQueue.removeFirstOrNull() ?: break
                 if (uri in _state.value.proxyStatuses) continue
@@ -1729,6 +1803,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private companion object {
+        /** How long after the editor shows before a light preview copy starts (ensureProxies). */
+        const val PROXY_START_DELAY_MS = 2_500L
+
         val AUTOSAVE_INTERVAL = 1_500.milliseconds
         /** Allowed on top of a shown moment for the seek and the start. */
         const val SHOW_START_SLACK_MS = 2_500L

@@ -124,6 +124,13 @@ fun main() {
     check(vi[0] == 0 && vi[7] == 1920 && vi[8] == 1080, "a picture blob does not carry its type and size")
     check(vi[5] == -99 && vi[6] == -99, "the profile and level are not FFmpeg's unknown")
 
+    // ---- Native handles: a tagged arm64 pointer is a handle, not an error. --
+    check(!com.squish.app.av.AvHandles.failed(0xb4000072c7d869e0uL.toLong()), "a tagged heap pointer (0xb4...) is taken for an error")
+    check(!com.squish.app.av.AvHandles.failed(0x00000072c7d869e0L), "an untagged pointer is taken for an error")
+    check(com.squish.app.av.AvHandles.failed(0L), "a null handle is taken for a handle")
+    check(com.squish.app.av.AvHandles.failed(-1094995529L), "AVERROR_INVALIDDATA is taken for a handle")
+    check(com.squish.app.av.AvHandles.failed(-12L), "AVERROR(ENOMEM) is taken for a handle")
+
     if (problems.isEmpty()) println("AvChecks: all passed") else {
         problems.forEach { println("FAIL: $it") }
         System.exit(1)

@@ -117,12 +117,22 @@ object OnlineMusic {
 
     /** The URL of the item's first MP3 - enough to listen to it streamed. */
     suspend fun streamUrl(context: Context, track: Track): String? {
+        // Asked once per track: Listen, then Star, then Add each fetched the
+        // item's metadata again before a byte of sound moved.
+        streamUrls[track.id]?.let { return it }
         val files = JSONObject(Online.get(context, "https://archive.org/metadata/${enc(track.id)}")).optJSONArray("files") ?: return null
-        val name = (0 until files.length()).map { files.getJSONObject(it) }
-            .firstOrNull { it.optString("name").endsWith(".mp3", ignoreCase = true) }
+        val mp3s = (0 until files.length()).map { files.getJSONObject(it) }
+            .filter { it.optString("name").endsWith(".mp3", ignoreCase = true) }
+        // The Archive's own VBR derivative before an uploaded original, which
+        // is often a 320 kbps file twice the size for nothing a phone speaker
+        // or an AAC export at 128 kbps keeps.
+        val name = (mp3s.firstOrNull { it.optString("format") == "VBR MP3" } ?: mp3s.firstOrNull())
             ?.optString("name") ?: return null
-        return "https://archive.org/download/${enc(track.id)}/" + name.split('/').joinToString("/") { enc(it) }
+        return ("https://archive.org/download/${enc(track.id)}/" + name.split('/').joinToString("/") { enc(it) })
+            .also { streamUrls[track.id] = it }
     }
+
+    private val streamUrls = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /** Where the track is kept once downloaded - the key it is starred under. */
     fun localFile(context: Context, track: Track): File =

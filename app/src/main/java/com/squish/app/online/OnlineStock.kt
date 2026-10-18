@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.sync.withPermit
 import com.squish.app.media.StillClips
 import java.net.URLEncoder
 
@@ -61,11 +62,18 @@ object OnlineStock {
         }.filter { licenceAllowsCutting(it.licenseUrl) }
     }
 
+    /**
+     * Four thumbnails at a time. Every tile on screen used to start its own
+     * download at once, and a dozen of them shared the line with the clip
+     * being fetched - so the clip a person tapped was the slowest thing loading.
+     */
+    private val thumbnailSlots = kotlinx.coroutines.sync.Semaphore(4)
+
     /** The item's picture, kept in the cache. */
     suspend fun thumbnail(context: Context, video: Video): Bitmap? = try {
         val dir = File(context.cacheDir, "stock-thumbs").apply { mkdirs() }
         val file = File(dir, video.id.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".jpg")
-        if (file.length() == 0L) Online.download(context, video.thumbnailUrl, file)
+        if (file.length() == 0L) thumbnailSlots.withPermit { Online.download(context, video.thumbnailUrl, file) }
         // Sampled to the tile, not decoded whole. The Archive's thumbnail for
         // an item is often the item's own full-size derivative, and
         // BitmapFactory.decodeFile takes no sample size - so a grid of tiles
@@ -73,7 +81,9 @@ object OnlineStock {
         // half the screen's width. That is the large-video crash in a scrolling
         // list, and the tile needs a few hundred pixels. Through
         // StillClips.previewBitmap, the one sampled decoder in the app.
-        StillClips.previewBitmap(context, Uri.fromFile(file), THUMB_MAX_SIDE)
+        // Off the main thread: a tile's state is produced on the composition's
+        // dispatcher, and a dozen decodes there were a dozen dropped frames.
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { StillClips.previewBitmap(context, Uri.fromFile(file), THUMB_MAX_SIDE) }
     } catch (cancelled: CancellationException) {
         // A tile scrolled off cancels this; runCatching caught that with
         // everything else and wrote a null picture back into a state nobody is
@@ -84,7 +94,7 @@ object OnlineStock {
     }
 
     /** The clip on the phone (files/imports/stock), ready for the timeline. */
-    suspend fun download(context: Context, video: Video): Uri? {
+    suspend fun download(context: Context, video: Video, onProgress: ((done: Long, total: Long) -> Unit)? = null): Uri? {
         val dir = File(context.filesDir, DIR).apply { mkdirs() }
         val file = File(dir, video.id.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".mp4")
         if (file.length() > 0L) return Uri.fromFile(file)
@@ -103,7 +113,7 @@ object OnlineStock {
             .minByOrNull { (_, size) -> size }
             ?.first?.optString("name") ?: return null
         val url = "https://archive.org/download/${enc(video.id)}/" + mp4.split('/').joinToString("/") { enc(it) }
-        return Uri.fromFile(Online.download(context, url, file))
+        return Uri.fromFile(Online.download(context, url, file, onProgress))
     }
 
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")

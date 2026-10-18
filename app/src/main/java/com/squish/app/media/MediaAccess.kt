@@ -51,6 +51,11 @@ fun Context.canReadMedia(uri: Uri): Boolean =
  */
 fun Context.importCopy(uri: Uri): Uri {
     if (uri.scheme == "file") return uri
+    // A gallery file the app may read without a grant is not copied: its own
+    // address outlives the grant, so the copy bought nothing and cost the
+    // whole file before the editor opened - a 1.4 GB film shared from the
+    // gallery was a minute of spinner.
+    if (readableWithoutGrant(uri)) return uri
     val dir = File(filesDir, IMPORTS_DIR).apply { mkdirs() }
     var name: String? = null
     var size = -1L
@@ -82,7 +87,9 @@ fun Context.importCopy(uri: Uri): Uri {
     val partial = File(dir, "${target.name}.part")
     val copied = runCatching {
         contentResolver.openInputStream(uri)?.use { input ->
-            partial.outputStream().use { output -> input.copyTo(output) }
+            // A megabyte at a time: the default 8 KB was one system call on
+            // each side for every 8 KB of a file that can be a gigabyte.
+            partial.outputStream().use { output -> input.copyTo(output, COPY_BUFFER) }
         } ?: error("no stream")
         partial.length() > 0L && (size <= 0L || partial.length() == size)
     }.getOrDefault(false)
@@ -91,6 +98,31 @@ fun Context.importCopy(uri: Uri): Uri {
         return uri
     }
     return Uri.fromFile(target)
+}
+
+private const val COPY_BUFFER = 1 shl 20
+
+/**
+ * Whether [uri] is a MediaStore item of a kind the app holds the read
+ * permission for: the media provider then lets the app open it by its own
+ * address in any process, grant or none. Partial access (Android 14's
+ * "selected photos") is not enough - only what was selected stays readable -
+ * so that case is copied as before.
+ */
+private fun Context.readableWithoutGrant(uri: Uri): Boolean {
+    if (uri.authority != android.provider.MediaStore.AUTHORITY) return false
+    val path = uri.path.orEmpty()
+    val permissions = when {
+        android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU ->
+            listOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        "/video/" in path -> listOf(android.Manifest.permission.READ_MEDIA_VIDEO)
+        "/images/" in path -> listOf(android.Manifest.permission.READ_MEDIA_IMAGES)
+        "/audio/" in path -> listOf(android.Manifest.permission.READ_MEDIA_AUDIO)
+        else -> return false
+    }
+    return permissions.all {
+        androidx.core.content.ContextCompat.checkSelfPermission(this, it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
 }
 
 /** Where shared files that could not be kept by grant are copied to. */

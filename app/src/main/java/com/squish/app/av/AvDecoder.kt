@@ -95,7 +95,7 @@ class AvDecoder private constructor(private var handle: Long) : Closeable {
         fun open(params: ByteArray, threads: Int = defaultThreads()): AvDecoder? {
             if (!AvNative.loaded) return null
             val h = AvNative.decOpen(params, threads)
-            if (h <= 0L) {
+            if (AvNative.failed(h)) {
                 android.util.Log.w("SquishAv", "decoder did not open (ffmpeg error $h)")
                 return null
             }

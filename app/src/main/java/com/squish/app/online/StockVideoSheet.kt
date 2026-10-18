@@ -67,6 +67,7 @@ fun StockVideoSheet(onPicked: (Uri) -> Unit, onDismiss: () -> Unit) {
     var videos by remember { mutableStateOf<List<OnlineStock.Video>?>(null) }
     var failed by remember { mutableStateOf(false) }
     var fetching by remember { mutableStateOf<String?>(null) }
+    var fetched by remember { mutableStateOf<Float?>(null) }
     var rowNote by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(query) {
         delay(if (query.isEmpty()) 0L else 500L)
@@ -142,15 +143,19 @@ fun StockVideoSheet(onPicked: (Uri) -> Unit, onDismiss: () -> Unit) {
                         StockTile(
                             video = video,
                             busy = fetching == video.id,
+                            progress = if (fetching == video.id) fetched else null,
                             onClick = {
                                 if (fetching != null) return@StockTile
                                 fetching = video.id
+                                fetched = null
                                 scope.launch {
                                     // The sheet closing cancels this; let that
                                     // through rather than reporting it as a
                                     // download that failed.
                                     val uri = try {
-                                        OnlineStock.download(context, video)
+                                        OnlineStock.download(context, video) { done, total ->
+                                            if (total > 0L) scope.launch { fetched = (done.toFloat() / total).coerceIn(0f, 1f) }
+                                        }
                                     } catch (cancelled: CancellationException) {
                                         throw cancelled
                                     } catch (t: Throwable) {
@@ -169,7 +174,7 @@ fun StockVideoSheet(onPicked: (Uri) -> Unit, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun StockTile(video: OnlineStock.Video, busy: Boolean, onClick: () -> Unit) {
+private fun StockTile(video: OnlineStock.Video, busy: Boolean, progress: Float? = null, onClick: () -> Unit) {
     val context = LocalContext.current
     // See EffectsPanel: the lint check does not see this assignment.
     @Suppress("ProduceStateDoesNotAssignValue")
@@ -185,7 +190,13 @@ private fun StockTile(video: OnlineStock.Video, busy: Boolean, onClick: () -> Un
             thumb?.let { Image(it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
             if (busy) {
                 Box(modifier = Modifier.fillMaxSize().background(SquishColors.Background.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = SquishColors.Cyan, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                    // How far, once the server has said how big: a bare spinner over a
+                    // forty-megabyte clip read as the app having stopped.
+                    if (progress != null) {
+                        CircularProgressIndicator(progress = { progress }, color = SquishColors.Cyan, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                    } else {
+                        CircularProgressIndicator(color = SquishColors.Cyan, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                    }
                 }
             }
         }

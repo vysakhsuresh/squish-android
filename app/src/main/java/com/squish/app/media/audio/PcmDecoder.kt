@@ -72,6 +72,22 @@ object PcmDecoder {
         bucketMs: Int = WaveformBuilder.BUCKET_MS,
         maxDurationMs: Long = 60 * 60_000L
     ): Waveform? = withContext(Dispatchers.IO) {
+        // From disk when this file was drawn before: every project open used
+        // to decode every one of its songs again, one after another, an
+        // hour's song taking the time an hour's decode takes.
+        val key = WaveformCache.key(context, uri, bucketMs, maxDurationMs)
+        key?.let { WaveformCache.read(context, it) }?.let { return@withContext it }
+        decodePeaksUncached(context, uri, bucketMs, maxDurationMs)?.also { wave ->
+            key?.let { WaveformCache.write(context, it, wave) }
+        }
+    }
+
+    private suspend fun decodePeaksUncached(
+        context: Context,
+        uri: Uri,
+        bucketMs: Int,
+        maxDurationMs: Long
+    ): Waveform? = withContext(Dispatchers.IO) {
         var rate = 1
         var perBucket = 1L
         var peaks = FloatArray(0)
@@ -247,22 +263,28 @@ object PcmDecoder {
 
             while (!outputDone) {
                 currentCoroutineContext().ensureActive()
-                if (!inputDone) {
-                    val inIndex = codec.dequeueInputBuffer(10_000)
-                    if (inIndex >= 0) {
-                        val inBuf = codec.getInputBuffer(inIndex)
-                        val size = if (inBuf != null) extractor.readSampleData(inBuf, 0) else -1
-                        if (size < 0) {
-                            codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputDone = true
-                        } else {
-                            codec.queueInputBuffer(inIndex, 0, size, extractor.sampleTime, 0)
-                            extractor.advance()
-                        }
+                // Every free input buffer filled without waiting, then the
+                // output asked for without waiting if anything went in. One
+                // buffer each way with a 10 ms wait on both was up to 20 ms a
+                // pass of nothing but waiting, which on a long song was most
+                // of the time the waveform took to appear.
+                var fed = false
+                while (!inputDone) {
+                    val inIndex = codec.dequeueInputBuffer(0)
+                    if (inIndex < 0) break
+                    val inBuf = codec.getInputBuffer(inIndex)
+                    val size = if (inBuf != null) extractor.readSampleData(inBuf, 0) else -1
+                    if (size < 0) {
+                        codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        inputDone = true
+                    } else {
+                        codec.queueInputBuffer(inIndex, 0, size, extractor.sampleTime, 0)
+                        extractor.advance()
                     }
+                    fed = true
                 }
 
-                val outIndex = codec.dequeueOutputBuffer(info, 10_000)
+                val outIndex = codec.dequeueOutputBuffer(info, if (fed) 0L else 10_000L)
                 if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     val f = codec.outputFormat
                     if (f.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {

@@ -439,6 +439,7 @@ class PreviewEngine(private val context: Context) {
                 }
 
                 override fun onRenderedFirstFrame() {
+                    com.squish.app.av.Perf.end("open", "first frame")
                     val clip = activeClipId ?: return
                     // A seek masks the player's state to BUFFERING the moment it is
                     // asked for, and callbacks arrive in order on this thread. So a

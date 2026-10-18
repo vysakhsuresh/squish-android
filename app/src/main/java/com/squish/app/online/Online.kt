@@ -14,6 +14,7 @@ import com.squish.app.ui.theme.SquishColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -54,49 +55,94 @@ object Online {
     class Disabled : IOException("Online features are off")
 
     /** A GET, as text. Off the main thread; refuses while the switch is off. */
+    // No disconnect() after a request: on Android that closes the socket, so
+    // every request paid a new TCP and TLS handshake - the metadata call and
+    // the file call back to back, and the redirect after them. Reading the
+    // body to its end and closing the stream hands the connection back to
+    // HttpURLConnection's pool, and the next request to the host reuses it.
+
     suspend fun get(context: Context, url: String): String = withContext(Dispatchers.IO) {
-        open(context, url).run {
-            try {
-                inputStream.bufferedReader().use { it.readText() }
-            } finally {
-                disconnect()
-            }
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        open(context, url).inputStream.bufferedReader().use { it.readText() }.also {
+            com.squish.app.av.Perf.took("online-get", android.os.SystemClock.elapsedRealtime() - t0, url.substringBefore('?').takeLast(60))
         }
     }
 
-    /** A GET into [target], through a partial file so a dropped connection leaves nothing half-written. */
-    suspend fun download(context: Context, url: String, target: File): File = withContext(Dispatchers.IO) {
+    /**
+     * A GET into [target], through a partial file so a dropped connection
+     * leaves nothing half-written - and so the next try carries on from where
+     * this one stopped (a Range request) rather than from the first byte.
+     * [onProgress] hears the bytes so far and the total (or -1), at most
+     * every quarter second. Cancellation is checked between reads, so a
+     * download nobody waits for any more stops.
+     */
+    suspend fun download(
+        context: Context,
+        url: String,
+        target: File,
+        onProgress: ((done: Long, total: Long) -> Unit)? = null
+    ): File = withContext(Dispatchers.IO) {
+        val t0 = android.os.SystemClock.elapsedRealtime()
         val part = File(target.parentFile, target.name + ".part")
-        val connection = open(context, url)
+        val have = if (part.exists()) part.length() else 0L
+        val connection = open(context, url, resumeFrom = have)
+        val resumed = have > 0L && connection.responseCode == HttpURLConnection.HTTP_PARTIAL
+        val already = if (resumed) have else 0L
+        val length = connection.getHeaderField("Content-Length")?.toLongOrNull() ?: -1L
+        val total = if (length >= 0L) length + already else -1L
         try {
-            connection.inputStream.use { input -> part.outputStream().use { input.copyTo(it) } }
+            connection.inputStream.use { input ->
+                java.io.FileOutputStream(part, resumed).buffered(BUFFER).use { out ->
+                    val buffer = ByteArray(BUFFER)
+                    var done = already
+                    var told = 0L
+                    while (true) {
+                        coroutineContext.ensureActive()
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        out.write(buffer, 0, n)
+                        done += n
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (onProgress != null && now - told >= 250L) {
+                            told = now
+                            onProgress(done, total)
+                        }
+                    }
+                    onProgress?.invoke(done, total)
+                }
+            }
         } catch (t: Throwable) {
-            part.delete()
+            // Kept for a resume unless the server would not resume it anyway.
+            if (!resumed && have == 0L && connection.getHeaderField("Accept-Ranges") != "bytes") part.delete()
             throw t
-        } finally {
-            connection.disconnect()
         }
         if (!part.renameTo(target)) {
             part.delete()
             throw IOException("could not keep the download")
         }
+        com.squish.app.av.Perf.took("download", android.os.SystemClock.elapsedRealtime() - t0, "${target.length() / 1024} KB ${target.name}")
         target
     }
 
-    private fun open(context: Context, url: String): HttpURLConnection {
+    private fun open(context: Context, url: String, resumeFrom: Long = 0L): HttpURLConnection {
         if (!isEnabled(context)) throw Disabled()
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = TIMEOUT_MS
         connection.readTimeout = TIMEOUT_MS
         connection.instanceFollowRedirects = true
         connection.setRequestProperty("User-Agent", USER_AGENT)
+        if (resumeFrom > 0L) connection.setRequestProperty("Range", "bytes=$resumeFrom-")
         val code = connection.responseCode
         if (code !in 200..299) {
+            connection.errorStream?.close()
             connection.disconnect()
             throw IOException("HTTP $code")
         }
         return connection
     }
+
+    /** Read and write size for a download: 8 KB was one system call per 8 KB, on both sides. */
+    private const val BUFFER = 256 * 1024
 
     /** See the top-level [com.squish.app.online.searchTerms], which is where it can be executed. */
     fun searchTerms(typed: String): String? = com.squish.app.online.searchTerms(typed)

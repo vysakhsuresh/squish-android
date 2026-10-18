@@ -40,7 +40,7 @@ class AvRetriever : Closeable {
         this.uri = uri
         val route = AvRoute.decide(context, uri)
         if (route.ffmpeg) {
-            av = AvFrameSource.open(context, uri)
+            av = AvFrameSource.open(context, uri, threads = 1)
             avTried = true
             if (av == null) throw IllegalArgumentException("nothing reads $uri")
             return
@@ -51,7 +51,7 @@ class AvRetriever : Closeable {
             platform = p
         } catch (e: Exception) {
             p.release()
-            av = AvFrameSource.open(context, uri)
+            av = AvFrameSource.open(context, uri, threads = 1)
             avTried = true
             if (av == null) throw if (e is IllegalArgumentException) e else IllegalArgumentException(e)
         }
@@ -67,7 +67,7 @@ class AvRetriever : Closeable {
         avTried = true
         val c = appContext ?: return null
         val u = uri ?: return null
-        av = AvFrameSource.open(c, u)
+        av = AvFrameSource.open(c, u, threads = 1)
         return av
     }
 
@@ -276,10 +276,16 @@ class AvFrameSource private constructor(
         /** Frames decoded past the key frame looking for the moment; four seconds at 60 fps... and then some. */
         private const val MAX_EXACT_STEPS = 600
 
-        fun open(context: Context, uri: Uri): AvFrameSource? {
+        /**
+         * [threads] for the decoder: one for a source asked for frames here
+         * and there (a filmstrip, a cover), since FFmpeg's frame threads each
+         * hold a frame back and a seek then decodes that many to show one;
+         * more for one walked in order.
+         */
+        fun open(context: Context, uri: Uri, threads: Int = AvDecoder.defaultThreads()): AvFrameSource? {
             val file = AvFile.open(context, uri) ?: return null
             val stream = file.info.video
-            val decoder = stream?.let { runCatching { AvDecoder.forStream(file, it.index) }.getOrNull() }
+            val decoder = stream?.let { runCatching { AvDecoder.forStream(file, it.index, threads) }.getOrNull() }
             if (stream != null && decoder == null) {
                 // No picture FFmpeg can show; the file still answers its length.
                 return AvFrameSource(file, null, null)

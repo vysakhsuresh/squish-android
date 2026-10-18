@@ -110,6 +110,10 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         }
     }
 
+    // The files whose waveform is being read now: two quick calls for one
+    // file (an add, then a split) each decoded it whole.
+    private val waveformsUnderWay = java.util.Collections.synchronizedSet(HashSet<String>())
+
     /**
      * The waveform of a file, decoded once and cached against the file, not the
      * clip, so splitting a track in two costs nothing and both halves draw
@@ -118,9 +122,16 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      */
     fun ensureWaveform(uri: Uri) {
         if (_state.value.audioWaveforms[uri.toString()] != null) return
+        if (!waveformsUnderWay.add(uri.toString())) return
         viewModelScope.launch {
-            val wave = PcmDecoder.decodePeaks(app, uri) ?: return@launch
-            _state.update { it.copy(audioWaveforms = it.audioWaveforms + (uri.toString() to wave)) }
+            try {
+                val t0 = android.os.SystemClock.elapsedRealtime()
+                val wave = PcmDecoder.decodePeaks(app, uri) ?: return@launch
+                com.squish.app.av.Perf.took("waveform", android.os.SystemClock.elapsedRealtime() - t0, uri.lastPathSegment.orEmpty())
+                _state.update { it.copy(audioWaveforms = it.audioWaveforms + (uri.toString() to wave)) }
+            } finally {
+                waveformsUnderWay.remove(uri.toString())
+            }
         }
     }
 
