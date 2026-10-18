@@ -502,9 +502,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     /**
      * The strip's drag, outside [state]: every pointer event's moment goes to
-     * the preview through [liveScrub] and the edit's own playhead is written
-     * at most every [LIVE_COMMIT_MS], then exactly once more when the finger
-     * lifts ([commitScrub]).
+     * the preview through [liveScrub], and the edit's own playhead is written
+     * once, when the finger lifts or a fling ends ([commitScrub]).
      *
      * Through [seekTo] a scrub cost a whole-editor recomposition per frame -
      * every child of the screen takes [state] and a new playhead is a new
@@ -526,26 +525,22 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
      * of this let a stale commit land on top of a frame step.
      */
     private var liveScrubMs: Long? = null
-    private var liveCommittedAt = 0L
 
     fun scrubLive(ms: Long) {
         val target = ms.coerceIn(0L, _state.value.timelineDurationMs)
         liveScrubMs = target
         _liveScrub.tryEmit(target)
-        val now = android.os.SystemClock.uptimeMillis()
-        if (now - liveCommittedAt >= LIVE_COMMIT_MS) {
-            liveCommittedAt = now
-            // No nonce: the preview has already gone there through the flow, and a
-            // nonce would seek it a second time to the same place.
-            _state.update { it.copy(playheadMs = target) }
-        }
+        // Not written into the edit until the finger lifts (commitScrub). Four
+        // writes a second were four whole-editor recompositions a second under
+        // the finger - the largest share of a scrub's frame time in the
+        // moto's profile, with the strip and the preview, the only two things
+        // that move, both following the live moment already.
     }
 
     /** The finger has left the strip: the last live moment becomes the edit's playhead. */
     fun commitScrub() {
         val target = liveScrubMs ?: return
         liveScrubMs = null
-        liveCommittedAt = android.os.SystemClock.uptimeMillis()
         _state.update { it.copy(playheadMs = target.coerceIn(0L, it.timelineDurationMs)) }
     }
 
@@ -1892,7 +1887,5 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         const val SHOW_START_SLACK_MS = 2_500L
         /** Played before and after a shown transition, so the cut it smooths is seen. */
         const val SHOW_AROUND_MS = 400L
-        /** How often a drag of the strip writes the playhead into the edit; see scrubLive. */
-        const val LIVE_COMMIT_MS = 250L
     }
 }
