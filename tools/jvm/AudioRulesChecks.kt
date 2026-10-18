@@ -202,6 +202,23 @@ fun main() {
         // At the level it was heard: a shot at 60% under a camera level of 50%.
         check(near(AudioRules.extracted(shot, "s3", heardAt = 0.3f).sound.volume, 0.3f), "the sound is not at the level the shot was heard at")
         check(AudioRules.extracted(shot, "s4", heardAt = 0f).sound.volume == 1f, "a shot under a camera mute gave a silent sound")
+        // A song that ended with the picture keeps ending with it.
+        run {
+            val song = Clip(kind = ClipKind.Audio, label = "song", uri = null, sourceInMs = 0, sourceOutMs = 55_176,
+                timelineStartMs = 0, sourceDurationMs = 227_000)
+            val sting = song.copy(id = "sting", sourceOutMs = 3_000, timelineStartMs = 10_000)
+            val fast = song.copy(id = "fast", speedRamp = SpeedRamp.flat(2f), sourceOutMs = 110_352)
+            val after = AudioRules.followingPictureEnd(listOf(song, sting, fast), 55_176, 53_176)
+            check(after[0].timelineEndMs == 53_176L, "the song did not follow the picture's end in: ${after[0].timelineEndMs}")
+            check(after[1] == sting, "a sound ending elsewhere moved")
+            check(after[2] == fast, "a retimed sound was refitted")
+            val longer = AudioRules.followingPictureEnd(listOf(song), 55_176, 300_000)
+            check(longer[0].sourceOutMs == 227_000L, "the song ran past its file: ${longer[0].sourceOutMs}")
+            check(AudioRules.followingPictureEnd(listOf(song), 55_176, 55_176)[0] == song, "an unchanged end moved the song")
+        }
+        // The first song goes in with the video, a later one at the playhead.
+        check(AudioRules.songStartMs(26_418, 0) == 0L, "the first song did not start with the video")
+        check(AudioRules.songStartMs(26_418, 1) == 26_418L, "a second song did not go in at the playhead")
         // A song replaced: same window where the new file has it, from its
         // start where it does not, cut to what it has, refused when tiny.
         check(AudioRules.replacementWindow(30_000, 20_000, 240_000) == 30_000L..50_000L, "a long replacement moved the window")

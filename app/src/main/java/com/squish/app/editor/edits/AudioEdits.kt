@@ -62,7 +62,7 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
      * voiceover and a second mic can all sit on the strip at once, overlapping
      * freely, because each one is an ordinary clip rather than a special case.
      */
-    fun addAudioTrack(uri: Uri, label: String? = null) {
+    fun addAudioTrack(uri: Uri, label: String? = null, asSong: Boolean = false) {
         viewModelScope.launch {
             val trackDuration = ThumbnailExtractor.probeDurationMs(app, uri)
             // A file with no readable length is refused here, with a reason. It
@@ -83,7 +83,9 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
             // it is in sight without moving anything - and an undo of the add
             // leaves the view where it was.
             val here = _state.value
-            val landing = EditRules.soundLanding(here.playheadMs, here.trimmedDurationMs, trackDuration, LAST_MOMENT_MS)
+            // A song is placed by AudioRules.songStartMs: the first one with the video.
+            val from = if (asSong) AudioRules.songStartMs(here.playheadMs, here.audioClips.size) else here.playheadMs
+            val landing = EditRules.soundLanding(from, here.trimmedDurationMs, trackDuration, LAST_MOMENT_MS)
             val clip = Clip(
                 kind = ClipKind.Audio,
                 uri = uri,

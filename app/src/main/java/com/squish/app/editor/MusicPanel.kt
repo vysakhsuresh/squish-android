@@ -11,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -87,10 +88,27 @@ import kotlinx.coroutines.launch
  * pauses for it.
  */
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    // The category last used, across sessions: someone who adds their own
+    // songs picked "On this phone" again every time the sheet opened.
+    val musicPrefs = remember { context.getSharedPreferences("music", android.content.Context.MODE_PRIVATE) }
+    var tab by rememberSaveable { mutableIntStateOf(musicPrefs.getInt("lastTab", 0).coerceIn(0, 4)) }
+    // And its list brought up into view when a category is picked: the list
+    // is under the fold, so a tap seemed to do nothing but light a chip.
+    val listInView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    var tabTapped by remember { mutableStateOf(false) }
+    LaunchedEffect(tab) {
+        musicPrefs.edit().putInt("lastTab", tab).apply()
+        // After the list has had its moment to load: the phone's songs are read
+        // in the background, and asked at once there was nothing below to show.
+        if (tabTapped) {
+            kotlinx.coroutines.delay(400)
+            listInView.bringIntoView()
+        }
+    }
     var vibe by rememberSaveable { mutableStateOf("All") }
 
     // Every Squish original made ahead, in the background, a moment after the
@@ -176,13 +194,13 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
     fun add(pick: MusicPick, uri: Uri) {
         stopListening()
         MusicLibrary.noteUsed(context, pick)
-        viewModel.audio.addAudioTrack(uri, pick.title)
+        viewModel.audio.addAudioTrack(uri, pick.title, asSong = true)
     }
 
     PanelSurface(accent = SquishColors.Cyan) {
         PanelHeading(
             "Music",
-            "Tap to listen · Add puts it at the playhead",
+            "Tap to listen · the first song starts with the video, later ones at the playhead",
             icon = Icons.Filled.LibraryMusic,
             accent = SquishColors.Cyan
         )
@@ -195,10 +213,11 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 pair.forEachIndexed { c, label ->
                     val i = r * 2 + c
-                    SelectableChip(label, tab == i, accentColor = SquishColors.Cyan, modifier = Modifier.weight(1f), onClick = { tab = i })
+                    SelectableChip(label, tab == i, accentColor = SquishColors.Cyan, modifier = Modifier.weight(1f), onClick = { tabTapped = true; tab = i })
                 }
             }
         }
+        Column(modifier = Modifier.fillMaxWidth().bringIntoViewRequester(listInView), verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
         when (tab) {
             0 -> {
@@ -321,6 +340,7 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
                     }
                 }
             }
+        }
         }
     }
 }

@@ -1222,7 +1222,9 @@ class PreviewEngine(private val context: Context) {
         // One budget a play, not one a wait: a slow source that loaded, fell
         // behind and was put back would otherwise start a fresh wait each time
         // and freeze the picture again and again.
+        val wasHolding = soundHolding
         soundHolding = PreviewRules.holdForSound(loadingSound, wantsToPlay = true, heldForMs = soundHeldMs)
+        if (soundHolding != wasHolding) Log.i(TAG, if (soundHolding) "waiting for a sound to load" else "sound ready after $soundHeldMs ms of waiting")
         if (soundHolding) soundHeldMs += (now - anchorWallMs).coerceIn(0L, 100L)
 
         var t = when {
@@ -1908,6 +1910,7 @@ class PreviewEngine(private val context: Context) {
                         sinceCorrectionMs = now - (soundCorrectedAt[clip.id] ?: 0L)
                     )
                 ) {
+                    Log.i(TAG, "sound ${clip.label}: put back by ${player.currentPosition - wanted} ms")
                     soundCorrectedAt[clip.id] = now
                     player.seekTo(wanted)
                 }

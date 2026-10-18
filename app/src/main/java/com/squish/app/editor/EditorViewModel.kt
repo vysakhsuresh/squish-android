@@ -146,6 +146,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private val slotLock = Any()
 
     init {
+        // The whole edit in view once it is loaded. A project opened at the
+        // zoom it was left at, on 0:00 - so a song starting at 0:26 was off
+        // the strip, and opening a project looked as if it had lost its music.
+        viewModelScope.launch {
+            _state.first { !it.isLoadingSource && it.trimmedDurationMs > 0L }
+            fitTimeline()
+        }
         // Aggressive by design. Each save is atomic, and skipped entirely when
         // nothing changed, so the cost of a tick is one string comparison, and the
         // worst case after a kill is a second and a half of lost work - and
@@ -1097,7 +1104,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             // And where an overlay's transition is kept only while its join is
             // (withOverlayTransitionsFitted): the tool that turns it off is only
             // offered on a join, so one left past the join could not be reached.
+            // And where a song laid to end with the video keeps ending with it
+            // (AudioRules.followingPictureEnd) when a trim or a cut moves that end.
+            val pictureEndBefore = timeline.baseVideoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
             val next = block(timeline)
+                .let { t ->
+                    val pictureEndAfter = t.baseVideoClips.maxOfOrNull { it.timelineEndMs } ?: 0L
+                    t.copy(clips = AudioRules.followingPictureEnd(t.clips, pictureEndBefore, pictureEndAfter))
+                }
                 .let { t -> t.copy(clips = t.clips.map(AudioRules::withFittedFades)) }
                 .withOverlayTransitionsFitted()
             val video = next.clips.filter { it.kind == ClipKind.Video }
@@ -1504,7 +1518,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun insertWhenOpened(uris: List<Uri>) = onceOpened { clips.insertSourcesAtPlayhead(uris) }
 
     /** A sound picked, once the edit is open. */
-    fun addAudioWhenOpened(uri: Uri) = onceOpened { audio.addAudioTrack(uri) }
+    fun addAudioWhenOpened(uri: Uri) = onceOpened { audio.addAudioTrack(uri, asSong = true) }
     fun replaceAudioWhenOpened(clipId: String, uri: Uri) = onceOpened { audio.replaceAudio(clipId, uri) }
 
     /** Media picked for an overlay row, once the edit is open. */

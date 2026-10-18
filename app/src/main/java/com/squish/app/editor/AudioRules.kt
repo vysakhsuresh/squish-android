@@ -244,6 +244,44 @@ object AudioRules {
         return Loop(clip.copy(fadeOutMs = 0L), copies)
     }
 
+    /** How near a sound's end must be to the picture's to count as ending with it. */
+    const val ENDS_WITH_PICTURE_MS = 50L
+
+    /**
+     * The sounds that ended where the picture ended, kept ending there when the
+     * picture's end moves from [oldEndMs] to [newEndMs] - as far as each file
+     * has sound, and never shorter than a clip can be. A song is laid to end
+     * with the video when it is added (EditRules.soundLanding); trimming two
+     * seconds off a shot afterwards left it two seconds past the picture, and
+     * the file ended on black under the music. Only a sound at its own speed
+     * moves (a retimed one keeps the length its curve gives), and only its
+     * tail: where it starts is the editor's choice.
+     */
+    fun followingPictureEnd(clips: List<Clip>, oldEndMs: Long, newEndMs: Long): List<Clip> {
+        if (oldEndMs <= 0L || newEndMs <= 0L || oldEndMs == newEndMs) return clips
+        return clips.map { c ->
+            if (c.kind != ClipKind.Audio || kotlin.math.abs(c.timelineEndMs - oldEndMs) > ENDS_WITH_PICTURE_MS ||
+                c.durationMs != c.sourceSpanMs
+            ) return@map c
+            val played = newEndMs - c.timelineStartMs
+            if (played < com.squish.app.timeline.MIN_CLIP_MS) return@map c
+            val limit = if (c.sourceDurationMs > 0L) c.sourceDurationMs else Long.MAX_VALUE
+            val out = (c.sourceInMs + played).coerceAtMost(limit)
+            if (out - c.sourceInMs < com.squish.app.timeline.MIN_CLIP_MS) c else c.copy(sourceOutMs = out)
+        }
+    }
+
+    /**
+     * Where a song added from the Music sheet goes in: the first one in an
+     * edit with no sound yet starts with the video, a later one at the
+     * playhead. Every song went in at the playhead, and an editor who had
+     * played the edit through to look at it found the music starting 26 s in
+     * and cut to the 28 s left - the background track is nearly always meant
+     * for the whole video, and a second song is the one placed by hand.
+     */
+    fun songStartMs(playheadMs: Long, soundsInEdit: Int): Long =
+        if (soundsInEdit == 0) 0L else playheadMs.coerceAtLeast(0L)
+
     /**
      * Where a sound's window lands in the file that replaces it ([fileMs]
      * long): from the same point in, when the new file reaches that far
