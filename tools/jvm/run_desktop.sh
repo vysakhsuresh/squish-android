@@ -40,7 +40,7 @@ run tracker    "$SRC/media/video/MotionEstimator.kt" "$SRC/media/video/ObjectTra
 run maskoutline "$SRC/timeline/Mask.kt" "$SRC/timeline/Keyframe.kt" "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
                "$SRC/editor/MaskOutline.kt" tools/jvm/MaskOutlineChecks.kt
 run frames     "$SRC/media/video/FrameBatch.kt" tools/jvm/stub/Bitmap.kt \
-               tools/jvm/stub/MediaMetadataRetriever.kt tools/jvm/FrameBatchChecks.kt
+               tools/jvm/stub/MediaMetadataRetriever.kt tools/jvm/stub/AvRetriever.kt tools/jvm/FrameBatchChecks.kt
 run beat       "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" tools/jvm/BeatChecks.kt
 run preview    "$SRC/editor/PreviewBox.kt" tools/jvm/PreviewChecks.kt
 run previewrules "$SRC/editor/PreviewRules.kt" tools/jvm/PreviewRulesChecks.kt

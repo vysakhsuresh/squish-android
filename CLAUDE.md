@@ -175,6 +175,18 @@ function first; if it can, it can be checked.
   Pull a gallery file with `MSYS_NO_PATHCONV=1 adb exec-out "content read --uri
   content://media/external/video/media/<id>" > f.mp4` (`exec-out`, not `shell`:
   a pty turns every LF into CRLF and the file comes out bigger and broken).
+- **The native library is not built on this machine.** FFmpeg's configure
+  under Git Bash takes most of an hour and there is no make; a push touching
+  `app/src/main/cpp/**` or `tools/native/build.sh` runs
+  `.github/workflows/native.yml` (four ABIs and a test `ffmpeg` for an arm64
+  phone, a few minutes with its dependencies cached), then
+  `sh tools/native/fetch.sh` puts the libraries in `jniLibs`. The NDK's own
+  `clang.exe` here does `-fsyntax-only` on the C against the FFmpeg headers,
+  which catches most mistakes before a push. `testmedia.yml` makes ~80 short
+  files in odd formats; push them to
+  `/sdcard/Android/data/com.squish.app/files/selftest/` and
+  `am start -n com.squish.app/.debug.AvSelfTestActivity` (debug builds only)
+  runs each through every reader, logged under `SquishSelfTest`.
 - **A worktree has no `local.properties`**, so a build there wants
   `ANDROID_HOME=C:\Users\vysak\AppData\Local\Android\Sdk` in the environment.
 - **The device is the user's own phone** (moto g84 5G, serial ZY32J8HF2S),
@@ -1437,17 +1449,22 @@ should work through it and then delete what holds up.
   `WindowChecks` executes the model and `ControlChecks` reads the sign. Do not
   reintroduce a walking playhead near the start: with a line that walks and
   then holds, no one drag sign is right for both halves.
-- **A file the phone cannot decode is converted on import, not decoded in
-  place.** The app carries FFmpeg (nextlib, GPL-3.0, `SoftwareDecoders`) and
-  every player and every Transformer falls back to it - but the filmstrip,
-  the waveform, Freeze, Reverse and Stabilize read files through MediaCodec
-  and MediaMetadataRetriever, and the FFmpeg path cannot hand back the last
-  frames of a stream (nextlib has no drain; `SquishFfmpegCodecs` says why).
-  So `MediaConversion.prepare` runs wherever a video enters a project
-  (`EditHost.prepareMedia`) and the clip keeps the H.264/AAC copy. A new
-  door for footage into the editor must go through it. The `Codec` adapters
-  live in nextlib's own package under `app/src/main/java/io/github/...`
-  because the decoders are package-private; do not move that file.
+- **Every reader has Squish's own FFmpeg behind it, and nothing is
+  converted.** `libsquishav.so` (FFmpeg 8.1.3 with every demuxer and
+  decoder, dav1d, libjxl, LibRaw; `app/src/main/cpp`, built by
+  `tools/native/build.sh` on GitHub's runners, fetched into `jniLibs` with
+  `tools/native/fetch.sh` and committed) is wired in at each door: players
+  and Transformers through `SoftwareDecoders` (Media3's extractors unless
+  `AvRouteRules` says they drop a track, then `AvExtractor`; the phone's
+  decoders first, then `AvCodecAdapter`/`AvTransformerCodecs`), frames
+  through `AvRetriever` (use it, never `MediaMetadataRetriever()` directly),
+  `AvFrames` for walks, `PcmDecoder`'s FFmpeg leg for sound, Reverse's
+  `AvPictureReader`, and `AvImages` for any picture `ImageDecoder` refuses.
+  A new place that reads media must go through one of these, or the formats
+  only FFmpeg reads go black there. The software picture path needs API 33
+  (`ImageWriter.Builder.setWidthAndHeight`); below it such pictures are
+  "cannot be decoded", as before. `prepareMedia` is still the one door a
+  video enters by; it now only warms `AvRoute`.
 - **Time runs left to right.** Both strips compute a left-origin pixel from a
   moment and place it with `offset`, which mirrors in RTL (`absoluteOffset` is
   the one that does not), while the playhead and the drag deltas do not - so on
