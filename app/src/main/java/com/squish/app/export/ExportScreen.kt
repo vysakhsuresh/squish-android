@@ -546,7 +546,7 @@ private fun lengthOf(ms: Long): String {
 }
 
 /** "30 fps", or "29.97 fps" where the rate is not whole. */
-private fun fpsOf(fps: Float): String = if (fps % 1f > 0.05f) "%.2f fps".format(fps) else "%.0f fps".format(fps)
+private fun fpsOf(fps: Float): String = com.squish.app.media.ExportSettings.rateLabel(fps)
 
 /**
  * Where the file went. Stated, because it already went there.

@@ -87,9 +87,14 @@ private fun boxes(f: RandomAccessFile, start: Long, end: Long, depth: Int) {
                 var minD = Long.MAX_VALUE
                 var maxD = 0L
                 val spread = LinkedHashMap<Long, Long>()
+                // MP4PROBE_LONG=40 lists every run of frames longer than 40 ms, with where it starts:
+                // how a stutter in a file is found, rather than only counted.
+                val longMs = System.getenv("MP4PROBE_LONG")?.toDoubleOrNull()
                 repeat(entries) {
                     val count = f.readInt().toLong() and 0xffffffffL
                     val delta = f.readInt().toLong() and 0xffffffffL
+                    if (longMs != null && timescale > 0 && delta * 1000.0 / timescale > longMs)
+                        println("    at %.3f s: %d frames of %.2f ms".format(total.toDouble() / timescale, count, delta * 1000.0 / timescale))
                     samples += count; total += count * delta
                     if (count > 0) { minD = minOf(minD, delta); maxD = maxOf(maxD, delta) }
                     spread[delta] = (spread[delta] ?: 0L) + count

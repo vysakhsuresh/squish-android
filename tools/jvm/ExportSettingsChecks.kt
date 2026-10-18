@@ -227,6 +227,13 @@ fun main() {
         )
     }
 
+    // The done screen's rate: a standard one by name, a mix as a mix.
+    check("60 fps measured 59.994 reads 60", ExportSettings.rateLabel(59.994f) == "60 fps")
+    check("29.97 reads 29.97", ExportSettings.rateLabel(29.968f) == "29.97 fps")
+    check("a reel of 60 and 30 fps clips reads as varying, not 43.35", ExportSettings.rateLabel(43.35f) == "Varies")
+    check("24 reads 24", ExportSettings.rateLabel(24.0f) == "24 fps")
+    check("an unknown rate reads as unknown", ExportSettings.rateLabel(0f) == "…")
+
     if (failures.isEmpty()) {
         println("PASS - the export sheet's arithmetic holds: rates, quality, the ceiling, defaults, the fit and the retry")
     } else {

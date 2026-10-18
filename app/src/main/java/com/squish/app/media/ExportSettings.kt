@@ -129,4 +129,20 @@ object ExportSettings {
 
     /** However far off the first run was, the next is never starved past a fifth of the target rate. */
     private const val MIN_RETRY_SCALE = 0.2f
+
+    /** The rates a file is made at; one measured near none of them is a mix of several. */
+    private val STANDARD_RATES = floatArrayOf(23.976f, 24f, 25f, 29.97f, 30f, 48f, 50f, 59.94f, 60f, 90f, 120f)
+
+    /**
+     * A file's rate as the done screen says it: "30 fps", "29.97 fps" - or
+     * "Varies" for one measured between the standard rates, which is a file
+     * whose clips ran at different rates, kept each at its own. The average
+     * of a reel of 60 fps and 30 fps clips read "43.35 fps": a rate nothing
+     * was shot or written at, which reads as a fault.
+     */
+    fun rateLabel(fps: Float): String {
+        if (fps <= 0f || !fps.isFinite()) return "…"
+        val near = STANDARD_RATES.minByOrNull { kotlin.math.abs(it - fps) }?.takeIf { kotlin.math.abs(it - fps) < 0.05f * maxOf(1f, it / 30f) } ?: return "Varies"
+        return if (near % 1f > 0.01f) String.format(java.util.Locale.ROOT, "%.2f fps", near) else String.format(java.util.Locale.ROOT, "%.0f fps", near)
+    }
 }

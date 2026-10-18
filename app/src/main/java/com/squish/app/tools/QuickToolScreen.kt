@@ -117,11 +117,16 @@ fun QuickToolScreen(
     // in the editor: a Squeeze was the first export for most people, and it
     // never asked, so the card's promise of a notification was never kept.
     // Refused, the export runs the same with none.
-    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { render() }
+    // Asked alongside the render, not before it: the render waited on the
+    // answer, and a phone put down while the question stood rendered nothing
+    // for as long as it lay there (five minutes, on the moto). Allowed, the
+    // notification shows from its next update.
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val startRender = {
         val wanted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        if (wanted) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) else render()
+        render()
+        if (wanted) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     // Leaving flushes the session first. And mid-export, leaving is a question:

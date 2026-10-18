@@ -106,11 +106,16 @@ fun ExportSheet(
     // the export runs the same with none. Asked on the first Render rather than
     // on opening the app, where a permission nobody has a reason for yet is
     // refused out of hand.
-    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { render() }
+    // Asked alongside the render, not before it: the render waited on the
+    // answer, and a phone put down while the question stood rendered nothing
+    // for as long as it lay there (five minutes, on the moto). Allowed, the
+    // notification shows from its next update.
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val startRender = {
         val wanted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        if (wanted) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) else render()
+        render()
+        if (wanted) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     var confirmStop by remember { mutableStateOf(false) }
