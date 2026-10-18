@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: the media self-test (debug/AvSelfTestActivity.kt). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="com.squish.app.debug.AvSelfTestActivity"
+            android:exported="true"
+            android:label="Squish media self-test" />
+    </application>
+</manifest>

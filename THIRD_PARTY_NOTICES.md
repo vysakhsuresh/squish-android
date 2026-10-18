@@ -14,25 +14,42 @@ face instead of a synthetic one.
 the font binaries. Add the verbatim `OFL.txt` from the Space Grotesk distribution
 to the repository, and surface the attribution on an in-app licences screen.
 
-## nextlib — FFmpeg decoders for Media3
+## FFmpeg, dav1d, libjxl and LibRaw — libsquishav.so
 
-`io.github.anilbeesetti:nextlib-media3ext` (Anil Kumar Beesetti), a build of
-FFmpeg's decoders — libavcodec, libavutil, libswscale, libswresample, with
-dav1d for AV1 — as Media3 renderers, licensed under the **GNU General Public
-License, version 3** — https://www.gnu.org/licenses/gpl-3.0.html. FFmpeg itself
-is LGPL 2.1 or later, with GPL parts enabled in this build.
+`app/src/main/jniLibs/<abi>/libsquishav.so` is built from source by
+`tools/native/build.sh` (versions pinned there) and links, statically:
 
-Used by `app/src/main/java/com/squish/app/media/SoftwareDecoders.kt` and the
-adapter in `app/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/`
-to play, convert and export files no decoder on the phone takes. The decision
-to take a GPL dependency was the owner's, on 15 October, after the licence was
-put to them.
+- **FFmpeg 8.1.3** (https://ffmpeg.org) — libavformat, libavcodec,
+  libswscale, libswresample, libavutil, configured `--enable-gpl
+  --enable-version3`, so the build as a whole is under the **GNU General
+  Public License, version 3** — https://www.gnu.org/licenses/gpl-3.0.html.
+- **dav1d** (VideoLAN), BSD 2-Clause — AV1 decoding.
+- **libjxl** (the JPEG XL project), BSD 3-Clause, with **Highway** (Apache
+  2.0 / BSD 3-Clause), **Brotli** (MIT) and **skcms** (BSD 3-Clause).
+- **LibRaw** 0.21.4, under the GNU LGPL 2.1 or the CDDL 1.0 at the
+  recipient's choice — camera RAW development.
+- zlib, from the NDK's platform, zlib licence.
 
-**Before a store release:** the GPL requires that the corresponding source of
-the library be available to anyone the app is distributed to, and that the
-app's own licence be compatible with it. The library's source is at
-https://github.com/anilbeesetti/nextlib; the app's licence has to be settled
-with that in mind, or the dependency removed before publishing.
+Used through `app/src/main/java/com/squish/app/av/` (the JNI wrapper's
+source is `app/src/main/cpp/`) to read, decode and export every container
+and codec FFmpeg has, and every picture format the platform refuses. It
+replaced nextlib (`io.github.anilbeesetti:nextlib-media3ext`, GPL-3.0) on
+18 October. The decision to take a GPL dependency was the owner's, on 15
+October, after the licence was put to them.
+
+**Before a store release:** the GPL requires that the corresponding source be
+available to anyone the app is distributed to - FFmpeg's, the wrapper's and
+the build script, all of which are fetched or held by this repository - and
+that the app's own licence be compatible with it. Some of the codecs FFmpeg
+decodes (HEVC, AAC, AC-3 and others) are under patents in some countries;
+decoding them in software in a distributed app is a question for a lawyer
+before a store release, not for this file.
+
+## AndroidSVG
+
+`com.caverock:androidsvg-aar` 1.4 (Paul LeBeau), Apache License 2.0 —
+http://www.apache.org/licenses/LICENSE-2.0. Draws SVG pictures for the photo
+path (`av/AvImages.kt`).
 
 ## Android Open Source Project — vertex shader
 
