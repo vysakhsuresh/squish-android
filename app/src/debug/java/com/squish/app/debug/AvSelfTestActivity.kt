@@ -183,7 +183,7 @@ class AvSelfTestActivity : Activity() {
             val reversed = File(cacheDir, "selftest_rev.mp4")
             val rev = ReverseRenderer.render(context, uri, 0L, minOf(2_000L, meta.durationMs.coerceAtLeast(500L)), reversed)
             r.put("reverse", rev.fold({ "ok ${it.durationMs}ms ${reversed.length()}B" }, { "FAIL ${it.message}" }))
-            reversed.delete()
+            if (!intent.getBooleanExtra("keep", false)) reversed.delete()
         }
         val ok = (!hasVideo || r.optDouble("frameVariety") > 4.0) &&
             (!meta.hasAudio || pcm != null) &&
@@ -300,7 +300,7 @@ class AvSelfTestActivity : Activity() {
         }
         out.put("tracks", tracks)
         out.put("ok", done.startsWith("ok") && (!video || tracks.contains("video/")) && (!audio || tracks.contains("audio/")))
-        file.delete()
+        if (!intent.getBooleanExtra("keep", false)) file.delete()
         out
     }
 
