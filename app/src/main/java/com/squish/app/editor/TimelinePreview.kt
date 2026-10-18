@@ -322,9 +322,19 @@ fun TimelinePreview(
     }
     LaunchedEffect(engine) {
         var lastEcho = 0L
+        var lastShown = 0L
         while (true) {
             val next = engine.tick()
-            if (next != frame) {
+            // Under a finger on the strip, the preview's layers are recomposed at
+            // most ten times a second: each new position recomposed the whole
+            // preview - every caption, overlay and effect - about seventeen
+            // times a second of a drag on the moto, the largest part of a
+            // scrub's frame, while the picture itself is the player's and moves
+            // regardless. The first tick after the finger lifts is never held.
+            val tickNow = android.os.SystemClock.uptimeMillis()
+            val held = latestScrubbing && next.isPlaying == frame.isPlaying && tickNow - lastShown < SCRUB_FRAME_MS
+            if (next != frame && !held) {
+                lastShown = tickNow
                 // The strip reads livePosition every tick; the edit's own playhead
                 // gets the position a few times a second while playing, at once
                 // when paused or stopping, and never under a finger on the strip
@@ -1562,6 +1572,9 @@ private val TICK = 33.milliseconds
 
 /** How often the playhead shown is written into the edit while playing; see the tick loop. */
 private const val ECHO_MS = 250L
+
+/** The least time between two recompositions of the preview's layers under a finger on the strip. */
+private const val SCRUB_FRAME_MS = 100L
 
 /** Where playback was at a tick, when, and how fast it was going; see the tick loop. */
 private class PlayAnchor(val positionMs: Long, val atNanos: Long, val rate: Double)

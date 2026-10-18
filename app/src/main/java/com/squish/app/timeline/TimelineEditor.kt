@@ -881,7 +881,8 @@ fun TimelineEditor(
         }
     }
 
-    Row(modifier = modifier.fillMaxWidth().background(SquishColors.Background)) {
+    // No background of its own: it sits on the editor's, the same colour (see EditorScreen's Scaffold).
+    Row(modifier = modifier.fillMaxWidth()) {
 
         Column(modifier = Modifier.width(GUTTER)) {
             Spacer(modifier = Modifier.height(RULER_HEIGHT))
