@@ -196,7 +196,7 @@ object PreviewRules {
     /**
      * Whether the clock waits for a sound: one under the playhead that has been
      * told to play and is still loading ([buffering]), for at most
-     * [SOUND_HOLD_MAX_MS] - the wait the picture already gets from a decoder
+     * [SOUND_HOLD_MAX_MS] in all over one play ([heldForMs] is the play's total so far, not the current wait's: a slow source that loads, falls behind and is put back must not start a fresh wait each time) - the wait the picture already gets from a decoder
      * that is not ready, so a song starts with its picture rather than chasing
      * it. A sound that never loads must not freeze the edit, so past the limit
      * the clock runs on without it.

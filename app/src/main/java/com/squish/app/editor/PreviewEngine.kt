@@ -205,6 +205,9 @@ data class PreviewFrame(
  */
 class PreviewEngine(private val context: Context) {
 
+    // The phone's sound, taken while playing and given back on pause (PlaybackFocus).
+    private val focus = PlaybackFocus(context) { pause() }
+
     /**
      * True once [release] has run.
      *
@@ -362,6 +365,7 @@ class PreviewEngine(private val context: Context) {
         var wantedIn = 0L
         var wantedOut = 0L
         var lastCorrection = 0L
+        var startedAt = 0L
         var lastPosition = -1L
 
         val rate = Rate()
@@ -513,8 +517,9 @@ class PreviewEngine(private val context: Context) {
     // When each sound was last started and last put back on the clock (PreviewRules.shouldResyncSound).
     private val soundStartedAt = HashMap<String, Long>()
     private val soundCorrectedAt = HashMap<String, Long>()
-    private var soundHoldSince = -1L
+    private var soundHeldMs = 0L
     private var soundHolding = false
+    private var clockStalled = false
 
     /** The base track in timeline order, for finding the shot before a cut. */
     private var baseClips: List<Clip> = emptyList()
@@ -1027,7 +1032,9 @@ class PreviewEngine(private val context: Context) {
         // and the clock is about to be read off one of them. Land them exactly
         // first, or playback carries on from the keyframe instead of the playhead.
         if (sloppy || scrub.inFlight || settlePending) settle()
+        soundHeldMs = 0L
         playing = true
+        focus.take()
         anchorTimelineMs = positionMs
         anchorWallMs = SystemClock.elapsedRealtime()
         // Not cleared. Clearing here is what used to make the first play the one
@@ -1039,6 +1046,7 @@ class PreviewEngine(private val context: Context) {
     fun pause() {
         if (released) return
         playing = false
+        focus.drop()
         allSurfaces().forEach { it.player.pause() }
         audioPlayers.values.forEach { it.pause() }
         applyPendingProxy()
@@ -1148,7 +1156,12 @@ class PreviewEngine(private val context: Context) {
             if (only != null && clip.id !in only) return@forEach
             val player = audioPlayers[clip.id] ?: return@forEach
             val at = t.coerceIn(clip.timelineStartMs, clip.timelineEndMs.coerceAtLeast(clip.timelineStartMs))
-            player.seekTo(clip.sourceAt(at).coerceAtLeast(0L))
+            val target = clip.sourceAt(at).coerceAtLeast(0L)
+            // Already parked there (a resume after a pause): a seek would flush
+            // the buffer and the sink for nothing, and every play would start
+            // with a rebuffer.
+            val parked = player.playbackState == Player.STATE_READY && abs(player.currentPosition - target) < PARKED_MS
+            if (!parked) player.seekTo(target)
             primed.add(clip.id)
         }
     }
@@ -1172,6 +1185,7 @@ class PreviewEngine(private val context: Context) {
         val state = clockPlayer.playbackState
         val driving = clockClip != null && state == Player.STATE_READY && clockPlayer.isPlaying
         val stalled = playing && clockClip != null && state == Player.STATE_BUFFERING
+        clockStalled = stalled
         // A sound under the playhead told to play and still loading holds the
         // clock and the picture with it, for a moment (PreviewRules.holdForSound):
         // left to run, a song on its first play lagged the clock and was seeked
@@ -1179,8 +1193,11 @@ class PreviewEngine(private val context: Context) {
         val loadingSound = playing && audioClips.any { c ->
             covers(c, positionMs) && audioPlayers[c.id]?.let { it.playWhenReady && it.playbackState == Player.STATE_BUFFERING } == true
         }
-        if (!loadingSound) soundHoldSince = -1L else if (soundHoldSince < 0L) soundHoldSince = now
-        soundHolding = PreviewRules.holdForSound(loadingSound, wantsToPlay = true, heldForMs = if (soundHoldSince < 0L) 0L else now - soundHoldSince)
+        // One budget a play, not one a wait: a slow source that loaded, fell
+        // behind and was put back would otherwise start a fresh wait each time
+        // and freeze the picture again and again.
+        soundHolding = PreviewRules.holdForSound(loadingSound, wantsToPlay = true, heldForMs = soundHeldMs)
+        if (soundHolding) soundHeldMs += (now - anchorWallMs).coerceIn(0L, 100L)
 
         var t = when {
             !playing -> positionMs
@@ -1672,7 +1689,15 @@ class PreviewEngine(private val context: Context) {
             // and this runs thirty times a second. Not mid-scrub either: every step
             // of one seeks anyway, and a sync-sample seek lands up to a GOP from
             // where it was asked, so "correcting" it only asks for the same keyframe.
+            // And, as for a sound (PreviewRules.shouldResyncSound), only a
+            // player that is running while the transport runs, past the moment
+            // its sink opens, and at a rate it can play: a PiP whose first
+            // frames came late was seeked, the exact seek came back late too,
+            // and it stuttered through its first play; one faster than 8x lags
+            // by design and was a slideshow of corrections.
             !park && !scrubbing && player.playbackState == Player.STATE_READY &&
+                (!playing || (player.isPlaying && now - s.startedAt >= PreviewRules.SOUND_START_GRACE_MS)) &&
+                PreviewRules.playerRate(speed) == speed &&
                 abs(player.currentPosition - wanted) > VIDEO_RESYNC_MS &&
                 now - s.lastCorrection > CORRECTION_GAP_MS -> {
                 s.lastCorrection = now
@@ -1691,8 +1716,14 @@ class PreviewEngine(private val context: Context) {
         }
         if (player.volume != level) player.volume = level
 
-        val run = playing && !park && !soundHolding
-        if (run && !player.playWhenReady) player.play()
+        // Every surface but the clock's waits while the clock's picture is
+        // loading, as the sounds do: run on, an overlay was ahead on resume
+        // and seeked back.
+        val run = playing && !park && !soundHolding && !(clockStalled && s.key != clockKey)
+        if (run && !player.playWhenReady) {
+            s.startedAt = now
+            player.play()
+        }
         if (!run && player.playWhenReady) player.pause()
     }
 
@@ -1840,7 +1871,7 @@ class PreviewEngine(private val context: Context) {
                     // sounds exactly like audio breaking up.
                     player.seekTo(wanted)
                     primed.add(clip.id)
-                } else if (PreviewRules.shouldResyncSound(
+                } else if (player.isCurrentMediaItemSeekable && PreviewRules.playerRate(speed) == speed && PreviewRules.shouldResyncSound(
                         ready = player.playbackState == Player.STATE_READY,
                         playing = player.isPlaying,
                         driftMs = player.currentPosition - wanted,
@@ -1853,11 +1884,16 @@ class PreviewEngine(private val context: Context) {
                 }
             }
 
-            if (transportRunning && !player.playWhenReady) {
+            // While the clock waits for a sound still loading, the ones already
+            // loaded wait with the picture - run on, they were ahead of it and
+            // put back with a jump. The loading ones keep asking to play, or the
+            // wait would end the moment it began.
+            val run = transportRunning && !(soundHolding && player.playbackState != Player.STATE_BUFFERING)
+            if (run && !player.playWhenReady) {
                 soundStartedAt[clip.id] = now
                 player.play()
             }
-            if (!transportRunning && player.playWhenReady) player.pause()
+            if (!run && player.playWhenReady) player.pause()
         }
     }
 
@@ -1898,6 +1934,8 @@ class PreviewEngine(private val context: Context) {
                     existing.prepare()
                     audioSources[clip.id] = uri.toString()
                     primed.remove(clip.id)
+                    // A reloaded sound opens its sink again: the same grace as a start.
+                    soundStartedAt[clip.id] = SystemClock.elapsedRealtime()
                 }
             }
         }
@@ -1931,6 +1969,7 @@ class PreviewEngine(private val context: Context) {
     fun release() {
         if (released) return
         released = true
+        focus.drop()
         allSurfaces().forEach { it.player.release() }
         audioPlayers.values.forEach { it.release() }
         overlaySurfaces.clear()
@@ -1999,6 +2038,8 @@ class PreviewEngine(private val context: Context) {
 
         /** Generous on purpose: correction is for a jump, not for playback. */
         const val VIDEO_RESYNC_MS = 120L
+        // A sound this close to where it is wanted is left where it is on play.
+        const val PARKED_MS = 50L
 
         /** How far ahead of a cue its decoder is positioned and buffered. */
         const val PREROLL_MS = 2_000L

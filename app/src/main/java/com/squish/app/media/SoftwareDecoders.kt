@@ -10,7 +10,6 @@ import android.os.Build
 import android.view.Surface
 import androidx.media3.common.Format
 import androidx.media3.common.util.Clock
-import androidx.media3.common.util.GlUtil
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.exoplayer.RenderersFactory
@@ -66,9 +65,24 @@ object SoftwareDecoders {
     /** A player's renderers: the phone's decoders first, FFmpeg's behind them (AvRenderersFactory). */
     fun renderers(context: Context): RenderersFactory = AvRenderersFactory(context)
 
+    /** GlUtil.MAX_BITMAP_DECODING_SIZE in Media3 1.11.1, read off the jar. */
+    private const val MAX_BITMAP_SIDE = 4096
+
     /** A player's media sources: Media3's readers, or FFmpeg's for a file they do not read whole. */
     fun mediaSourceFactory(context: Context): MediaSource.Factory =
-        DefaultMediaSourceFactory(context, AvExtractorsFactory(context))
+        DefaultMediaSourceFactory(context, AvExtractorsFactory(context, seekableExtractors()))
+
+    /**
+     * Media3's readers with constant-bitrate seeking on the two formats that
+     * have no index: an ADTS .aac (a voice recorder's) and an .amr (a call
+     * recorder's). Without it they read as unseekable, every seek went to the
+     * start, and the preview's sound sync - seeing seconds of drift - put a
+     * sound played from its middle back to its start every second and a half.
+     * The export always had the flags.
+     */
+    private fun seekableExtractors() = DefaultExtractorsFactory()
+        .setAdtsExtractorFlags(AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
+        .setAmrExtractorFlags(AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
 
     /** Transformer's decoders: the platform's where they take the format, FFmpeg's where only it does. */
     fun decoderFactory(context: Context): Codec.DecoderFactory = FallbackDecoderFactory(context)
@@ -81,17 +95,17 @@ object SoftwareDecoders {
      * (ExoPlayerAssetLoader.createMediaSourceFactory in 1.11.1), and the
      * bitmap loader the one DefaultAssetLoaderFactory makes for itself.
      */
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.ExperimentalApi::class])
     fun assetLoaderFactory(context: Context): AssetLoader.Factory {
-        val extractors = DefaultExtractorsFactory()
-            .setAdtsExtractorFlags(AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
-            .setAmrExtractorFlags(AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
+        val extractors = seekableExtractors()
         val sources = DefaultMediaSourceFactory(context, AvExtractorsFactory(context, extractors))
             .setEnableClippingInMediaPeriod(true)
         val options = BitmapFactory.Options().apply { inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB) }
         val bitmaps = DataSourceBitmapLoader.Builder(context)
             .setExecutorService(MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor()))
             .setBitmapFactoryOptions(options)
-            .setMaximumOutputDimension(GlUtil.MAX_BITMAP_DECODING_SIZE)
+            // GlUtil.MAX_BITMAP_DECODING_SIZE's value: the constant is library-private.
+            .setMaximumOutputDimension(MAX_BITMAP_SIDE)
             .build()
         return DefaultAssetLoaderFactory(context, decoderFactory(context), Clock.DEFAULT, sources, bitmaps)
     }

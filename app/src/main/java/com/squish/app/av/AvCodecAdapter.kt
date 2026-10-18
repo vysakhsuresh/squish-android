@@ -279,8 +279,13 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
             }
             decoder.close()
         }
-        painter?.release()
+        releasePainter()
         painter = null
+    }
+
+    /** The painter exists only from API 33 (YuvImagePainter needs it), so below it there is nothing to let go. */
+    private fun releasePainter() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) painter?.release()
     }
 
     override fun setOnFrameRenderedListener(listener: MediaCodecAdapter.OnFrameRenderedListener, handler: Handler) {
@@ -290,13 +295,13 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
 
     override fun setOutputSurface(surface: Surface) {
         if (surface === this.surface) return
-        painter?.release()
+        releasePainter()
         painter = null
         this.surface = surface
     }
 
     override fun detachOutputSurface() {
-        painter?.release()
+        releasePainter()
         painter = null
         surface = null
     }

@@ -339,15 +339,15 @@ fun main() {
         fun play(holdClock: Boolean, rule: (Song, Long, Long) -> Boolean): Song {
             val song = Song(warm = 700L)
             var clock = 0L
-            var heldSince = -1L
+            var heldTotal = 0L
             var now = 0L
             while (now < 10_000L) {
                 now += 33L
                 val buffering = now < song.bufferedUntil
                 // The clock: waits for a loading sound, as it waits for a picture.
                 val hold = holdClock && PreviewRules.holdForSound(buffering, wantsToPlay = true,
-                    heldForMs = if (heldSince < 0) 0L else now - heldSince)
-                if (hold) { if (heldSince < 0) heldSince = now } else { heldSince = -1L; clock += 33L }
+                    heldForMs = heldTotal)
+                if (hold) heldTotal += 33L else clock += 33L
                 if (!buffering) { song.position += 33L; song.heardMs += 33L }
                 if (rule(song, clock, now)) {
                     song.position = clock

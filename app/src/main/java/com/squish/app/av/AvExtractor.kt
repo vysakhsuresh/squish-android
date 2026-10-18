@@ -27,6 +27,7 @@ import androidx.media3.extractor.text.SubtitleParser
  * and every Transformer in the app is built over this, so a WMV, a RealMedia
  * file, a ProRes MOV or a DivX 3 AVI plays and exports like an MP4 does.
  */
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.ExperimentalApi::class])
 class AvExtractorsFactory(
     context: Context,
     private val delegate: ExtractorsFactory = DefaultExtractorsFactory()
