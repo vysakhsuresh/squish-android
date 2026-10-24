@@ -2,6 +2,10 @@
 
 package com.squish.app.editor
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import android.net.Uri
 import android.view.TextureView
 import androidx.compose.foundation.background
@@ -131,6 +135,12 @@ fun TimelinePreview(
     muted: Boolean = false,
     /** Green screens drawn, or held off while a key colour is picked off the picture. */
     keyPreview: Boolean = true,
+    /**
+     * A colour sheet is open (holdShowsBefore): pressing and holding the
+     * picture shows it without its looks, adjustments and effects until the
+     * finger lifts (EDGE_PLAN D5).
+     */
+    holdShowsBefore: Boolean = false,
     /** The editor asking the transport to play or pause; see [TransportRequest]. */
     transportRequest: TransportRequest? = null,
     /** The shape of the picture after the rotation. */
@@ -237,13 +247,20 @@ fun TimelinePreview(
     // cheap - the engine itself decides what, if anything, needs a seek.
     // Captions are not the engine's any more (see CaptionLayer), and neither are
     // rotation and crop.
-    LaunchedEffect(videoClips, audioClips, effects, fallbackUri, proxies, muteOriginal, originalVolume) {
+    // The picture held on a colour sheet (EDGE_PLAN D5): no grade on any
+    // surface, no effects library, no grade on a photo overlay - the shot as
+    // the camera saw it, for as long as the finger stays down.
+    var holdingBefore by remember { mutableStateOf(false) }
+    if (!holdShowsBefore && holdingBefore) holdingBefore = false
+    val shownEffects = if (holdingBefore) emptyList() else effects
+    LaunchedEffect(videoClips, audioClips, shownEffects, fallbackUri, proxies, muteOriginal, originalVolume) {
         engine.setTimeline(
-            videoClips, audioClips, effects, fallbackUri, proxies,
+            videoClips, audioClips, shownEffects, fallbackUri, proxies,
             muteOriginal, originalVolume
         )
     }
     LaunchedEffect(keyPreview) { engine.setKeyPreview(keyPreview) }
+    LaunchedEffect(holdingBefore) { engine.setLooksShown(!holdingBefore) }
 
     // Photos on overlay rows, drawn here rather than by a player: a picture needs
     // no decoder, and keeps its transparency. Their shapes, once read, for the box.
@@ -409,6 +426,38 @@ fun TimelinePreview(
             // tap does when something is selected: that is the exception, the
             // node is read far more often than it is in that state, and naming
             // the exception would be wrong nearly always.
+            // Before/after on a colour sheet (EDGE_PLAN D5): a finger held still
+            // on the picture shows it bare until it lifts. Watched on the
+            // Initial pass and left alone unless it becomes a hold, so a tap
+            // still plays and a drag still moves a box; a hold's release is
+            // taken, so it does not also play.
+            .then(
+                if (!holdShowsBefore) Modifier else Modifier.pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        val stillDown = withTimeoutOrNull(BEFORE_HOLD_MS) {
+                            while (true) {
+                                val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull false
+                                if (!change.pressed) return@withTimeoutOrNull false
+                                if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) return@withTimeoutOrNull false
+                            }
+                            @Suppress("UNREACHABLE_CODE") false
+                        } == null
+                        if (stillDown) {
+                            holdingBefore = true
+                            try {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    event.changes.forEach { it.consume() }
+                                    if (event.changes.none { it.pressed }) break
+                                }
+                            } finally {
+                                holdingBefore = false
+                            }
+                        }
+                    }
+                }
+            )
             .semantics { contentDescription = "The picture" }
             .clickable(
                 // The player's own controller is off, so the picture itself is the
@@ -495,7 +544,7 @@ fun TimelinePreview(
                 // shots, the gaps and every picture-in-picture, measured on the
                 // frame the file keeps. Captions stay above it, as in the file, and
                 // so does the tool on the picture.
-                Box(modifier = Modifier.fillMaxSize().zIndex(0f).canvasFx(effects, layerTime, kept)) {
+                Box(modifier = Modifier.fillMaxSize().zIndex(0f).canvasFx(shownEffects, layerTime, kept)) {
                     // Behind everything on a padded canvas: the colour, the picture,
                     // or the blurred still of the shot under the playhead - the same
                     // file the export lays under it.
@@ -569,6 +618,7 @@ fun TimelinePreview(
                                     clip = if (plain) clip.copy(crop = clip.crop?.copy(rect = CropRect())) else clip,
                                     transform = if (plain) Transform.Identity else clip.transformAt(layerTime),
                                     layerTime = layerTime,
+                                    bare = holdingBefore,
                                     onAspect = { aspect -> clip.uri?.let { stillAspects[it.toString()] = aspect } }
                                 )
                             }
@@ -1196,7 +1246,7 @@ private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: 
  * through its image item (CompositionFactory.overlayEffects).
  */
 @Composable
-private fun StillOverlay(clip: Clip, transform: Transform, layerTime: Long, onAspect: (Float) -> Unit) {
+private fun StillOverlay(clip: Clip, transform: Transform, layerTime: Long, bare: Boolean = false, onAspect: (Float) -> Unit) {
     // A blended still is not drawn here at all: a Compose layer cannot blend
     // against a TextureView, so it goes through the base surfaces' own shader
     // instead - the same shader the file uses (PreviewEngine, LayerBlendEffect).
@@ -1212,7 +1262,8 @@ private fun StillOverlay(clip: Clip, transform: Transform, layerTime: Long, onAs
     // value costs a pass over a 960-pixel copy on the CPU. A fifth of a second
     // is finer than the eye follows a filter coming up and leaves the cache
     // something to hit.
-    val grade = if (!clip.lookAnimated) clip.grade else remember(clip, (layerTime - clip.timelineStartMs) / GRADE_STEP_MS) {
+    // Ungraded while the picture is held on a colour sheet (EDGE_PLAN D5).
+    val grade = if (bare) com.squish.app.media.effects.Looks.grade(null, 1f) else if (!clip.lookAnimated) clip.grade else remember(clip, (layerTime - clip.timelineStartMs) / GRADE_STEP_MS) {
         clip.gradeAt(((layerTime - clip.timelineStartMs) / GRADE_STEP_MS) * GRADE_STEP_MS)
     }
     var picture by remember(uri) { mutableStateOf(StillPictures.cached(uri, grade)) }
@@ -1261,6 +1312,9 @@ private fun StillOverlay(clip: Clip, transform: Transform, layerTime: Long, onAs
  * is pixels rather than a uniform, so every value costs a pass over the copy.
  */
 private const val GRADE_STEP_MS = 200L
+
+/** How long a finger rests on the picture before a colour sheet shows the shot bare (EDGE_PLAN D5). */
+private const val BEFORE_HOLD_MS = 400L
 
 private object StillPictures {
     /** Long side of the copy drawn - past what a phone's preview box shows. */

@@ -227,6 +227,9 @@ class PreviewEngine(private val context: Context) {
      */
     private var keyPreview = true
 
+    /** False while the picture is held on a colour sheet (EDGE_PLAN D5): every surface drawn ungraded. */
+    private var looksShown = true
+
     /**
      * Whether every level is held at nothing: while a voiceover is being taken,
      * so the speaker does not feed the picture's sound back into the mic. The
@@ -291,6 +294,9 @@ class PreviewEngine(private val context: Context) {
         /** The clip, and the loupe state, the shader values were last written for; see [applyLive]. */
         var liveClip: Clip? = null
         var liveKeyPreview = true
+        var liveLooksShown = true
+        /** Whether [grade] was last worked out with the looks shown. */
+        var gradedLooksShown = true
         val effects = AtomicReference<List<TimedEffect>>(emptyList())
 
         /**
@@ -692,6 +698,17 @@ class PreviewEngine(private val context: Context) {
     }
 
     /**
+     * Every clip graded (true), or drawn as the camera saw it (false) while the
+     * picture is held on a colour sheet - the before of before/after (EDGE_PLAN
+     * D5). Applied on the next tick, with a fresh frame asked for.
+     */
+    fun setLooksShown(on: Boolean) {
+        if (released || on == looksShown) return
+        looksShown = on
+        requestRedraw()
+    }
+
+    /**
      * Renderers whose audio passes through the given processors - a
      * [VoiceProcessor] reading the clip's voice, and for a sound player a
      * [GainProcessor] before it - so robot, echo, radio and a boost past full
@@ -999,12 +1016,13 @@ class PreviewEngine(private val context: Context) {
         // Nor is it enough for a blended still: that is a *different* clip, and
         // setting a blend mode on it leaves this shot's own Clip untouched.
         if (!clip.lookAnimated &&
-            clip === s.liveClip && keyPreview == s.liveKeyPreview &&
+            clip === s.liveClip && keyPreview == s.liveKeyPreview && looksShown == s.liveLooksShown &&
             (!s.isBase || (effects === s.effectsFrom && blendStills === s.blendFrom))
         ) return
         s.blendFrom = blendStills
         s.liveClip = clip
         s.liveKeyPreview = keyPreview
+        s.liveLooksShown = looksShown
         var changed = false
         if (hdrChanged) changed = true
         val chroma = if (keyPreview) clip.chromaKey else null
@@ -1014,10 +1032,12 @@ class PreviewEngine(private val context: Context) {
         }
         // Worked out again only when the clip changed - an edit makes a new
         // Clip - and written only when it came out different.
-        if (clip !== s.gradedClip || clip.lookAnimated) {
-            val sameClip = clip === s.gradedClip
+        if (clip !== s.gradedClip || clip.lookAnimated || s.gradedLooksShown != looksShown) {
+            val sameClip = clip === s.gradedClip && s.gradedLooksShown == looksShown
             s.gradedClip = clip
-            val grade = if (clip.lookAnimated) clip.gradeAt(timelineMs - clip.timelineStartMs) else clip.grade
+            s.gradedLooksShown = looksShown
+            val grade = if (!looksShown) IDENTITY_GRADE
+                else if (clip.lookAnimated) clip.gradeAt(timelineMs - clip.timelineStartMs) else clip.grade
             if (grade != s.grade.get()) {
                 s.grade.set(grade)
                 // A keyed look's grade changes with the clock, and the clock

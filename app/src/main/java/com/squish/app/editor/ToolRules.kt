@@ -337,3 +337,13 @@ object ProjectName {
         return text.substring(0, end)
     }
 }
+
+/**
+ * The sheets where pressing and holding the picture shows the shot without its
+ * looks, adjustments and effects (EDGE_PLAN D5): every sheet whose job is how
+ * the picture looks, so a grade can be judged against what the camera saw.
+ * Elsewhere a hold on the picture is the ordinary touch it always was.
+ */
+fun holdShowsBefore(tool: Tool?): Boolean = tool in BEFORE_AFTER_TOOLS
+
+private val BEFORE_AFTER_TOOLS = setOf(Tool.Looks, Tool.Filters, Tool.Adjust, Tool.Effects, Tool.Strength)

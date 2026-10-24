@@ -1106,6 +1106,7 @@ private fun EditorPreview(
             // The green screen is not drawn while its colour is being picked
             // off the picture, so the loupe reads the screen and not the hole.
             keyPreview = !(eyedropper != null && openTool == Tool.Cutout),
+            holdShowsBefore = holdShowsBefore(openTool),
             transportRequest = state.transportRequest,
             originalVolume = state.originalVolume,
             rotationDegrees = state.rotationDegrees,

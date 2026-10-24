@@ -12,6 +12,7 @@ import com.squish.app.editor.cutTarget
 import com.squish.app.editor.hasCameraAudio
 import com.squish.app.editor.sheetSurvives
 import com.squish.app.editor.toolsFor
+import com.squish.app.editor.holdShowsBefore
 import kotlin.system.exitProcess
 
 // The editor's toolbar decisions, executed: which tools show for what is
@@ -222,6 +223,10 @@ fun main() {
             check(group == listOf(Tool.SelectMore, Tool.Duplicate, Tool.Ungroup, Tool.Delete), "$kind as a group shows $group")
         }
         check(toolsFor(SelectionKind.None, multi = true) == LEVEL_ZERO, "nothing selected but several: not level 0")
+        // EDGE_PLAN D5: holding the picture shows it bare on every colour sheet, and only there.
+        for (t in listOf(Tool.Looks, Tool.Filters, Tool.Adjust, Tool.Effects, Tool.Strength)) check(holdShowsBefore(t), "holding the picture on $t does not show the shot bare")
+        for (t in listOf(Tool.Speed, Tool.Crop, Tool.Text, Tool.Mask)) check(!holdShowsBefore(t), "holding the picture on $t hides its looks")
+        check(!holdShowsBefore(null), "holding the picture with no sheet open hides its looks")
         check(footage.none { it.sheet } && !Tool.CopyAttributes.sheet && !Tool.SelectMore.sheet, "a clip operation opens a sheet instead of acting")
         // Replace's sheet - where in the new file to start - opens on the pick, and
         // stays while a footage clip is selected; a shot's tool closes over a set.
