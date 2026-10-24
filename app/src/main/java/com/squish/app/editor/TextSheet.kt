@@ -1565,7 +1565,8 @@ private fun SpeechModelCard() {
     var progress by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Pair<Long, Long>?>(null) }
     var job by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var failed by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    if (com.squish.app.media.audio.Transcriber.isAvailable(context) || !com.squish.app.media.audio.WhisperNative.loaded) return
+    if (!com.squish.app.media.audio.WhisperNative.loaded) return
+    val systemToo = com.squish.app.media.audio.Transcriber.isAvailable(context)
     installed?.let {
         Text(
             "Words come from the ${it.label.lowercase()} speech model on this phone - nothing is sent anywhere.",
@@ -1575,7 +1576,10 @@ private fun SpeechModelCard() {
         return
     }
     Text(
-        "This phone has no speech recognition of its own. Download a speech model once and Squish writes the " +
+        if (systemToo) "For each word on the moment it is said - what Karaoke and the word styles follow - and for " +
+            "languages this phone does not know, download a speech model once. Squish then writes the words itself, " +
+            "here on the phone - only the model is downloaded; your video is never sent."
+        else "This phone has no speech recognition of its own. Download a speech model once and Squish writes the " +
             "words itself, here on the phone - only the model is downloaded; your video is never sent.",
         style = MaterialTheme.typography.bodySmall,
         color = SquishColors.TextSecondary

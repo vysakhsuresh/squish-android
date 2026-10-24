@@ -24,6 +24,12 @@ fun main() {
     check(ml?.words?.map { it.text } == listOf("നമസ്കാരം", "नमस्ते") && ml.language == "ml", "non-Latin words were ${ml?.words}")
     // An end before its start (whisper.cpp can) is held at the start.
     check(WhisperText.parse("500\t400\tok\n")?.words?.first()?.endMs == 500L, "an end before its start was kept")
+    // Word starts handed to a caption are from its stretch's start, as the segmenter's are:
+    // whisper's are on the file's clock, and passed on as they were, every line after
+    // the first was offset twice (seen on the phone: 2380 ms into a line that starts at 2310).
+    val later = WhisperText.parse("0\t200\tIt\n300\t700\ttakes\n", offsetMs = 7_370)!!
+    check(later.startsWithin(7_370) == listOf(0L, 300L), "starts within the stretch were ${later.startsWithin(7_370)}")
+    check(later.startsWithin(7_500) == listOf(0L, 170L), "a start before the stretch was not held at 0: ${later.startsWithin(7_500)}")
     if (problems.isEmpty()) println("WhisperTextChecks: all checks passed")
     else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
 }

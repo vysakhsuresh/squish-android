@@ -10,6 +10,14 @@ object WhisperText {
     data class Word(val startMs: Long, val endMs: Long, val text: String)
     data class Result(val words: List<Word>, val language: String?) {
         val text: String get() = words.joinToString(" ") { it.text }.replace(Regex(" ([,.!?;:])"), "$1").trim()
+
+        /**
+         * Each word's start from [stretchStartMs], the start of the stretch it
+         * was heard in - the clock a caption's word starts are kept on, as the
+         * segmenter's are. The words themselves are on the file's clock; handed
+         * on as they were, every line after the first had its words offset twice.
+         */
+        fun startsWithin(stretchStartMs: Long): List<Long> = words.map { (it.startMs - stretchStartMs).coerceAtLeast(0L) }
     }
 
     fun parse(raw: String?, offsetMs: Long = 0L): Result? {

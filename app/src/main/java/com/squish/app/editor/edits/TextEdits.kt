@@ -640,11 +640,12 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             return
         }
 
-        // The system recognizer where the phone has one (the fast path); Whisper
-        // where a speech model has been downloaded (EDGE_PLAN E1), which also
-        // gives every word its own time.
-        val system = Transcriber.isAvailable(app)
-        val whisper = !system && com.squish.app.media.audio.WhisperTranscriber.isReady(app)
+        // Whisper wherever a speech model has been downloaded (EDGE_PLAN E1): it
+        // gives every word its own time, which the word styles (E2) follow, and
+        // names the language itself. The system recognizer otherwise - its words
+        // have no times, so they are spread over the dips in the sound.
+        val whisper = com.squish.app.media.audio.WhisperTranscriber.isReady(app)
+        val system = !whisper && Transcriber.isAvailable(app)
         val canTranscribe = system || whisper
         _state.update {
             it.copy(
@@ -691,7 +692,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                 // Where each word begins, from the sound, so the Words arrival lands them on the speech.
                 val count = text.split(' ').count { it.isNotBlank() }
                 val starts = when {
-                    heard != null && heard.words.size == count && count > 1 -> heard.words.map { it.startMs }
+                    heard != null && heard.words.size == count && count > 1 -> heard.startsWithin(plan.segment.startMs)
                     count > 1 -> withContext(Dispatchers.Default) { SpeechSegmenter.wordStarts(plan.pcm, plan.segment, count) }
                     else -> emptyList()
                 }
