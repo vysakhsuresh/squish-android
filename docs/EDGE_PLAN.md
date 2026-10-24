@@ -12,7 +12,7 @@ one line of evidence. P items are also ticked in `docs/INSHOT_PARITY.md`.
 
 ## Checklist (in the order to work them)
 
-- [ ] **A1** Benchmark harness -> docs/BENCHMARKS.md
+- [~] **A1** Benchmark harness -> docs/BENCHMARKS.md - baseline on the moto: cold start 383 ms, scrub 40% janky (p90 48 ms), playback ~20% janky, export 1.37x real time, SSIM 0.864; import timings and competitors not measured yet (phone dropped off adb; no InShot on it)
 - [ ] **B1** Footage matrix: every format lands, plays, scrubs, cuts, exports
 - [ ] **B2** Conversion never blocks the editor
 - [ ] **B3** VFR and A/V sync at 1, 10, 60 min
