@@ -216,7 +216,10 @@ fun main() {
         for (kind in SelectionKind.entries.filter { it != SelectionKind.None }) {
             check(Tool.SelectMore in toolsFor(kind, canTransition = true), "$kind has no Select more")
             val several = toolsFor(kind, canTransition = true, multi = true)
-            check(several == listOf(Tool.SelectMore, Tool.Delete), "$kind with several selected shows $several")
+            // EDGE_PLAN D4: a set duplicates and groups as one; a group ungroups.
+            check(several == listOf(Tool.SelectMore, Tool.Duplicate, Tool.Group, Tool.Delete), "$kind with several selected shows $several")
+            val group = toolsFor(kind, canTransition = true, multi = true, grouped = true)
+            check(group == listOf(Tool.SelectMore, Tool.Duplicate, Tool.Ungroup, Tool.Delete), "$kind as a group shows $group")
         }
         check(toolsFor(SelectionKind.None, multi = true) == LEVEL_ZERO, "nothing selected but several: not level 0")
         check(footage.none { it.sheet } && !Tool.CopyAttributes.sheet && !Tool.SelectMore.sheet, "a clip operation opens a sheet instead of acting")

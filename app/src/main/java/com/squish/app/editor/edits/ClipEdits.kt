@@ -36,6 +36,7 @@ import com.squish.app.timeline.rippleVideo
 import com.squish.app.timeline.withClipMoved
 import com.squish.app.timeline.withClipRemoved
 import com.squish.app.timeline.withClipDuplicated
+import com.squish.app.timeline.withClipsDuplicated
 import com.squish.app.timeline.withClipTrimmed
 import com.squish.app.timeline.withOverlayGeometry
 import com.squish.app.timeline.withPlacementReset
@@ -1860,6 +1861,71 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * track (see [withClipDuplicated]); a caption, sticker or effect goes where
      * the original ends, as long as it is, kept inside the picture.
      */
+    /**
+     * Everything selected copied together (EDGE_PLAN D4) - shots, overlays,
+     * sounds, lines and effects - one span of the set later, so they sit
+     * against each other in the copy as in the original. The copies are
+     * selected; a group copied is a group again. With one thing selected it
+     * is [duplicateSelected]. Refused whole, and said, when an overlay's copy
+     * finds no free row.
+     */
+    fun duplicateSelection() {
+        val current = _state.value
+        val ids = current.allSelectedIds
+        val lead = current.selectedClipId ?: return
+        if (ids.size < 2) return duplicateSelected()
+        val texts = current.textOverlays.filter { it.id in ids }
+        val effects = current.effects.filter { it.id in ids }
+        val clips = (current.videoClips + current.audioClips).filter { it.id in ids }
+        val span = com.squish.app.timeline.spanOf(
+            clips.map { it.timelineStartMs to it.timelineEndMs } + texts.map { it.startMs to it.endMs } + effects.map { it.startMs to it.endMs }
+        )
+        val copyOf = ids.associateWith { UUID.randomUUID().toString() }
+        val timeline = current.toTimeline()
+        if (clips.isNotEmpty() && timeline.withClipsDuplicated(ids, span) { copyOf.getValue(it) } == null) {
+            val overlay = clips.firstOrNull { it.isOverlay }
+            _state.update { it.copy(failure = SquishError.OverlayRowsFull(footage = overlay?.isStillPicture == false)) }
+            return
+        }
+        val wasGroup = current.selectionIsGroup
+        record("Duplicate ${ids.size}") {
+            _state.update { s ->
+                s.copy(
+                    textOverlays = s.textOverlays + texts.map { it.copy(id = copyOf.getValue(it.id), startMs = it.startMs + span, endMs = it.endMs + span) },
+                    effects = s.effects + effects.map { it.copy(id = copyOf.getValue(it.id)).movedBy(span) }
+                )
+            }
+            if (clips.isNotEmpty()) mutateTimeline { t -> t.withClipsDuplicated(ids, span) { copyOf.getValue(it) } ?: t }
+            val leadCopy = copyOf.getValue(lead)
+            _state.update { s ->
+                s.copy(
+                    selectedClipId = leadCopy,
+                    selectedClipIds = copyOf.values.toSet() - leadCopy,
+                    groups = if (wasGroup) com.squish.app.timeline.Groups.copied(s.groups, copyOf) else s.groups,
+                    playheadMs = (current.playheadMs + span).coerceAtMost(s.timelineDurationMs),
+                    scrubNonce = s.scrubNonce + 1
+                )
+            }
+        }
+    }
+
+    /** The selection kept together: selecting one of it selects all of it (EDGE_PLAN D4). */
+    fun groupSelection() {
+        val ids = _state.value.allSelectedIds
+        if (ids.size < 2) return
+        record("Group ${ids.size}") {
+            _state.update { s -> s.copy(groups = com.squish.app.timeline.Groups.grouped(s.groups, ids), selectingMore = false) }
+        }
+    }
+
+    /** The group the selection is let go; its members stay selected, now apart. */
+    fun ungroupSelection() {
+        val ids = _state.value.allSelectedIds
+        record("Ungroup") {
+            _state.update { s -> s.copy(groups = com.squish.app.timeline.Groups.ungrouped(s.groups, ids)) }
+        }
+    }
+
     fun duplicateSelected() {
         val current = _state.value
         val selected = current.selectedClipId ?: return

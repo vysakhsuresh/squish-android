@@ -442,7 +442,9 @@ fun EditorScreen(
             }
             Tool.Overlay -> addOverlay()
             Tool.Split -> viewModel.clips.splitAtPlayhead()
-            Tool.Duplicate -> viewModel.clips.duplicateSelected()
+            Tool.Duplicate -> if (state.allSelectedIds.size > 1) viewModel.clips.duplicateSelection() else viewModel.clips.duplicateSelected()
+            Tool.Group -> viewModel.clips.groupSelection()
+            Tool.Ungroup -> viewModel.clips.ungroupSelection()
             Tool.Delete -> viewModel.clips.deleteSelectedClip()
             Tool.ToOverlay -> state.selectedClipId?.let(viewModel.layers::switchToOverlay)
             Tool.ExtractAudio -> state.selectedClipId?.let(viewModel.audio::extractAudio)
@@ -699,7 +701,7 @@ fun EditorScreen(
                 val toolbar = @Composable {
                     val accent = kind.concept?.accent
                     ToolBar(
-                        tools = toolsFor(kind, canTransition, multi, footage),
+                        tools = toolsFor(kind, canTransition, multi, footage, grouped = state.selectionIsGroup),
                         // Select more wears the primary colour while it is on, and
                         // says what the next press does: the one tool on the row
                         // that is a state, not an action.

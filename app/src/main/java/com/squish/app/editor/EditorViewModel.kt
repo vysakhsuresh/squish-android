@@ -828,7 +828,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun selectClip(clipId: String?) = _state.update { current ->
         // A plain selection is one thing: whatever was selected alongside goes,
         // and Select more is off until it is asked for again.
-        current.copy(selectedClipId = clipId, selectedClipIds = emptySet(), selectingMore = false)
+        // One of a group selects the group (EDGE_PLAN D4), the tapped one leading.
+        val rest = clipId?.let { com.squish.app.timeline.Groups.selectionFor(current.groups, it).second }.orEmpty()
+        current.copy(selectedClipId = clipId, selectedClipIds = rest, selectingMore = false)
             .replacingOnlyIfSelected()
     }
 
@@ -1133,7 +1135,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 audioClips = next.clips.filter { it.kind == ClipKind.Audio },
                 selectedClipId = next.selectedClipId,
                 selectedClipIds = (next.selectedIds intersect kept) - setOfNotNull(next.selectedClipId),
-                effects = fitted
+                effects = fitted,
+                // A group keeps only what is still there (EDGE_PLAN D4).
+                groups = com.squish.app.timeline.Groups.pruned(current.groups, next.clips.map { it.id }.toSet() + current.textOverlays.map { it.id } + fitted.map { it.id })
             )
             // An edit that leaves the edit shorter than where the playhead was -
             // the last shot deleted with the playhead at the end - brings the
@@ -1733,6 +1737,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         videoClips = snapshot.clips,
         textOverlays = snapshot.textOverlays,
         effects = snapshot.effects,
+        groups = snapshot.groups,
         markers = snapshot.markers,
         // Always the start, as CapCut opens a project: reopened where it was left -
         // usually the end, after playing it through - the strip showed every clip

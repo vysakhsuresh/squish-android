@@ -318,6 +318,7 @@ data class EditSnapshot(
     val audioClips: List<Clip>,
     val textOverlays: List<TextOverlayItem>,
     val effects: List<TimedEffect>,
+    val groups: List<Set<String>> = emptyList(),
     val markers: List<Long>,
     val selectedClipId: String?,
     val muteOriginal: Boolean,
@@ -462,6 +463,8 @@ data class EditorUiState(
     val speakingId: String? = null,
     /** Timed effects from the library - shake, glitch, flash and the rest. */
     val effects: List<TimedEffect> = emptyList(),
+    /** Clips, lines and effects kept together (EDGE_PLAN D4): selecting one selects its group. */
+    val groups: List<Set<String>> = emptyList(),
     /** Where auto-reframe has got to; the tracks themselves are on the shots (Clip.reframe). */
     val reframeProgress: ReframeProgress = ReframeProgress(),
     /** Finding the person in a clip, for background removal. */
@@ -629,6 +632,9 @@ data class EditorUiState(
     /** Whether several things are selected at once, so the toolbar shows what acts on all of them. */
     val multiSelected: Boolean get() = selectedClipIds.isNotEmpty()
 
+    /** The selection is exactly one group (EDGE_PLAN D4): the toolbar offers Ungroup rather than Group. */
+    val selectionIsGroup: Boolean get() = allSelectedIds.size > 1 && groups.any { it == allSelectedIds }
+
     /**
      * The shape of the picture the preview composes on: the crop if one is chosen,
      * otherwise the source, turned on its side when the edit is rotated a quarter
@@ -721,6 +727,7 @@ data class EditorUiState(
             audioClips = audioClips,
             textOverlays = textOverlays,
             effects = effects,
+            groups = groups,
             markers = markers,
             selectedClipId = selectedClipId,
             muteOriginal = muteOriginal,
@@ -750,6 +757,7 @@ data class EditorUiState(
         audioClips = snapshot.audioClips,
         textOverlays = snapshot.textOverlays,
         effects = snapshot.effects,
+        groups = snapshot.groups,
         markers = snapshot.markers,
         selectedClipId = snapshot.selectedClipId,
         selectedClipIds = selectionAfterRestore(

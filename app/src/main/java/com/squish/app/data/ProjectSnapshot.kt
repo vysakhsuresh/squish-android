@@ -34,6 +34,8 @@ data class ProjectSnapshot(
     val audioClips: List<Clip>,
     val textOverlays: List<TextOverlayItem>,
     val effects: List<TimedEffect>,
+    /** Clips, lines and effects kept together (EDGE_PLAN D4). */
+    val groups: List<Set<String>> = emptyList(),
     val markers: List<Long>,
     val playheadMs: Long,
     val outputP: Int,

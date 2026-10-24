@@ -87,6 +87,9 @@ enum class Tool(val label: String, val sheet: Boolean) {
     /** Taps on the strip add to the selection from here on: Delete and a carry then act on all of it. */
     SelectMore("Select more", false),
     Duplicate("Duplicate", false),
+    /** The selection kept together: selecting one of it selects all of it (EDGE_PLAN D4). */
+    Group("Group", false),
+    Ungroup("Ungroup", false),
     ToOverlay("To overlay", false),
     ToMain("To main", false),
     Delete("Delete", false);
@@ -152,10 +155,12 @@ val LEVEL_ZERO: List<Tool> = listOf(
  * differ ([FOOTAGE_TOOLS]): a freeze of a freeze, a still rendered backwards
  * for a minute, a stabilizer measuring no shake.
  */
-fun toolsFor(kind: SelectionKind, canTransition: Boolean = false, multi: Boolean = false, footage: Boolean = true): List<Tool> {
+fun toolsFor(kind: SelectionKind, canTransition: Boolean = false, multi: Boolean = false, footage: Boolean = true, grouped: Boolean = false): List<Tool> {
     val row: List<Tool> = when {
         kind == SelectionKind.None -> LEVEL_ZERO
-        multi -> listOf(Tool.SelectMore, Tool.Delete)
+        // A set: what acts on all of it. Duplicate copies it keeping its
+        // spacing, Group keeps it together, and a group is ungrouped here.
+        multi -> listOf(Tool.SelectMore, Tool.Duplicate, if (grouped) Tool.Ungroup else Tool.Group, Tool.Delete)
         kind == SelectionKind.MainVideo -> listOfNotNull(
             Tool.Split, Tool.Speed, Tool.Volume, Tool.Animation, Tool.Delete, Tool.Placement,
             Tool.Transition.takeIf { canTransition },

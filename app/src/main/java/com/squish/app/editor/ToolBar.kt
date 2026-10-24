@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.ContentPasteGo
@@ -165,6 +167,9 @@ val Tool.icon: ImageVector
         Tool.PasteAttributes -> Icons.Filled.ContentPaste
         Tool.SelectMore -> Icons.Filled.Checklist
         Tool.Duplicate -> Icons.Filled.ContentCopy
+        // A chain link: kept together, and the link broken.
+        Tool.Group -> Icons.Filled.Link
+        Tool.Ungroup -> Icons.Filled.LinkOff
         Tool.ToOverlay -> Icons.Filled.FlipToFront
         Tool.ToMain -> Icons.Filled.FlipToBack
         Tool.Delete -> Icons.Filled.DeleteOutline

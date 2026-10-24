@@ -71,6 +71,7 @@ private val FROM_STATE: Map<String, (EditorUiState) -> Any?> = mapOf(
     "audioClips" to { s -> s.audioClips },
     "textOverlays" to { s -> s.textOverlays },
     "effects" to { s -> s.effects },
+    "groups" to { s -> s.groups },
     "markers" to { s -> s.markers },
     "playheadMs" to { s -> s.playheadMs },
     "outputP" to { s -> s.outputP },
@@ -135,6 +136,7 @@ private fun wildState(): EditorUiState = EditorUiState(
     effects = listOf(TimedEffect(id = "fx-1", kind = EffectKind.entries.last(), startMs = 200L, endMs = 1_800L, intensity = 0.45f, amount = 0.8f,
         intensityKeys = listOf(com.squish.app.timeline.ValueKey(0L, 0.2f), com.squish.app.timeline.ValueKey(900L, 0.9f, com.squish.app.timeline.KeyframeEasing.Bounce)),
         amountKeys = listOf(com.squish.app.timeline.ValueKey(400L, 0.1f)))),
+    groups = listOf(setOf("fx-1", "clip-a"), setOf("line-1", "song-1", "clip-b")),
     stabilizeStrength = 0.72f,
     // Only the fields a draft carries are moved: `running`, `failed`,
     // `listeningTo` and `failedOutsideWindow` are how a listen is *going*, and

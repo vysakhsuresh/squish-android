@@ -2277,3 +2277,85 @@ fun shiftedPast(t: Long, removed: List<LongRange>): Long {
     }
     return (t - shift).coerceAtLeast(0L)
 }
+
+// ---- Groups (EDGE_PLAN D4) -----------------------------------------------------
+
+/**
+ * Clips, lines and effects kept together: one list of id sets on the edit.
+ * Selecting any member selects the group, so it moves, shifts, deletes,
+ * duplicates and copies as one - the selection already does all of those
+ * together (withClipsMoved, withClipsRemoved, withClipsDuplicated). Kept on
+ * the edit rather than as a field on three models: one place to write, one
+ * to read, and nothing to keep in step.
+ */
+object Groups {
+
+    /** [ids] made one group; a member of another group leaves it, and a group left with one member goes. */
+    fun grouped(groups: List<Set<String>>, ids: Set<String>): List<Set<String>> {
+        if (ids.size < 2) return groups
+        return groups.map { it - ids }.filter { it.size >= 2 } + listOf(ids)
+    }
+
+    /** Every group that has any of [ids] in it, let go. */
+    fun ungrouped(groups: List<Set<String>>, ids: Set<String>): List<Set<String>> =
+        groups.filter { g -> g.none { it in ids } }
+
+    /** The groups with only the members that still [exist]; one of one is no group. */
+    fun pruned(groups: List<Set<String>>, exist: Set<String>): List<Set<String>> =
+        groups.map { it intersect exist }.filter { it.size >= 2 }
+
+    /** The group [id] is in, or null. */
+    fun of(groups: List<Set<String>>, id: String): Set<String>? = groups.firstOrNull { id in it }
+
+    /** What a tap on [id] selects: it leads, and the rest of its group comes with it. */
+    fun selectionFor(groups: List<Set<String>>, id: String): Pair<String, Set<String>> =
+        id to ((of(groups, id) ?: emptySet()) - id)
+
+    /** The groups, and a copy of every group whose members were all copied, by [copyOf]. */
+    fun copied(groups: List<Set<String>>, copyOf: Map<String, String>): List<Set<String>> =
+        groups + groups.filter { g -> g.all { it in copyOf } }.map { g -> g.map { copyOf.getValue(it) }.toSet() }
+}
+
+/**
+ * Every clip in [ids] copied, keeping how they sit against each other: the
+ * copies start one span of the set later - the set from its first start to
+ * its last end - so a picture-in-picture and the sound under it are as far
+ * apart in the copy as in the original. Main-track shots are copied in, in
+ * their order, straight after the last of them, and the track makes room.
+ * The copies are selected, the copy of the lead leading. Null when an
+ * overlay's copy finds no free row there: refused whole, never half done.
+ * Lines of words and effects are not clips; the editor copies them by the
+ * same span ([spanOf]).
+ */
+fun TimelineState.withClipsDuplicated(ids: Set<String>, spanMs: Long? = null, copyId: (String) -> String): TimelineState? {
+    val chosen = clips.filter { it.id in ids && it.kind != ClipKind.Text }
+    if (chosen.isEmpty()) return this
+    // The whole set's span - its lines and effects included - when the editor knows it.
+    val span = spanMs ?: spanOf(chosen.map { it.timelineStartMs to it.timelineEndMs })
+    val mains = chosen.filter { it.isMain }.sortedBy { it.timelineStartMs }
+    var next = this
+    if (mains.isNotEmpty()) {
+        val copies = mains.map { it.copy(id = copyId(it.id), transitionIn = Transition()) }
+        val last = mains.last().id
+        next = next.relaidFrom(this) { if (it.id == last) listOf(it) + copies else listOf(it) }
+    }
+    val added = ArrayList<Clip>()
+    for (clip in chosen.filter { !it.isMain }.sortedBy { it.timelineStartMs }) {
+        val copy = clip.copy(id = copyId(clip.id), timelineStartMs = clip.timelineStartMs + span, transitionIn = Transition())
+        if (clip.kind == ClipKind.Video && clip.isOverlay) {
+            val probe = next.copy(clips = next.clips + added)
+            val row = if (probe.layerIsFree(clip.layer, copy.timelineStartMs, copy.timelineEndMs)) clip.layer
+            else probe.firstFreeLayer(copy.timelineStartMs, copy.timelineEndMs, top = clip.topLayer) ?: return null
+            added += copy.copy(layer = row)
+        } else {
+            added += copy
+        }
+    }
+    val leadCopy = selectedClipId?.takeIf { it in ids }?.let(copyId) ?: copyId(chosen.first().id)
+    val all = chosen.map { copyId(it.id) }.toSet()
+    return next.copy(clips = next.clips + added, selectedClipId = leadCopy, selectedIds = all - leadCopy)
+}
+
+/** How long a set of things is, from its first start to its last end. */
+fun spanOf(ranges: List<Pair<Long, Long>>): Long =
+    if (ranges.isEmpty()) 0L else (ranges.maxOf { it.second } - ranges.minOf { it.first }).coerceAtLeast(0L)

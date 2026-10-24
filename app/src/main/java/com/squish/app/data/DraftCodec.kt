@@ -174,6 +174,8 @@ internal object DraftCodec {
         })
 
         put("audioClips", JSONArray().apply { state.audioClips.forEach { put(DraftClipCodec.encodeClip(it)) } })
+        // Groups (EDGE_PLAN D4), only when there are any: lists of ids.
+        if (state.groups.isNotEmpty()) put("groups", JSONArray().apply { state.groups.forEach { g -> put(JSONArray().apply { g.sorted().forEach { put(it) } }) } })
     }
 
 
@@ -283,6 +285,10 @@ internal object DraftCodec {
                 }
             }.orEmpty(),
             markers = markers,
+            groups = json.optJSONArray("groups")?.let { all ->
+                (0 until all.length()).mapNotNull { i -> all.optJSONArray(i)?.let { g -> (0 until g.length()).mapNotNull { j -> g.optString(j).takeIf { it.isNotBlank() } }.toSet() } }
+                    .filter { it.size >= 2 }
+            }.orEmpty(),
             playheadMs = json.optLong("playheadMs"),
             outputP = if (json.has("outputP")) json.optInt("outputP") else OutputSize.fromLegacyQuality(json.optString("quality")) ?: OutputSize.ORIGINAL,
             fitToSize = json.optBoolean("fitToSize"),
