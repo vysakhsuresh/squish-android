@@ -125,3 +125,27 @@ val Clip.readsMuted: Boolean
 /** Whether a key sits under the playhead on [track] - what lights the keyframe button. */
 fun Clip.hasValueKeyAt(track: ValueTrack, playheadMs: Long, toleranceMs: Long = KEY_TOLERANCE_MS): Boolean =
     valueKeys(track).hasKeyNear(playheadMs - timelineStartMs, toleranceMs)
+
+/** The key of [track] under the playhead, within [toleranceMs], or null (EDGE_PLAN D2: its curve is set from the sheet). */
+fun Clip.valueKeyAt(track: ValueTrack, playheadMs: Long, toleranceMs: Long = KEY_TOLERANCE_MS): ValueKey? {
+    val local = playheadMs - timelineStartMs
+    return valueKeys(track).minByOrNull { kotlin.math.abs(it.atMs - local) }
+        ?.takeIf { kotlin.math.abs(it.atMs - local) <= toleranceMs }
+}
+
+/**
+ * The clip with the easing of [track]'s key under the playhead set - and its
+ * curve, for [KeyframeEasing.Custom]; a preset drops any curve the key had.
+ * Unchanged when no key is there.
+ */
+fun Clip.withValueKeyEasing(
+    track: ValueTrack,
+    playheadMs: Long,
+    easing: KeyframeEasing,
+    curve: CubicBezier? = null,
+    toleranceMs: Long = KEY_TOLERANCE_MS
+): Clip {
+    val key = valueKeyAt(track, playheadMs, toleranceMs) ?: return this
+    val keyed = key.copy(easing = easing, curve = if (easing == KeyframeEasing.Custom) (curve ?: key.curve ?: CubicBezier.DEFAULT_CUSTOM) else null)
+    return withKeys(track, valueKeys(track).map { if (it.atMs == key.atMs) keyed else it })
+}

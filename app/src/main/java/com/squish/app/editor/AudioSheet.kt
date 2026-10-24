@@ -60,6 +60,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.squish.app.home.countOf
+import com.squish.app.timeline.valueKeyAt
 import com.squish.app.timeline.readsMuted
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MIN_CLIP_MS
@@ -525,7 +526,11 @@ fun SoundVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewMode
             onClip = state.playheadMs in clip.timelineStartMs..clip.timelineEndMs,
             accent = SquishColors.Cyan,
             onToggle = { viewModel.clips.toggleValueKey(clip.id, ValueTrack.Volume) },
-            onClear = { viewModel.clips.clearValueKeys(clip.id, ValueTrack.Volume) }
+            onClear = { viewModel.clips.clearValueKeys(clip.id, ValueTrack.Volume) },
+            keyEasing = clip.valueKeyAt(ValueTrack.Volume, state.playheadMs, state.frameMs)?.easing,
+                    keyCurve = clip.valueKeyAt(ValueTrack.Volume, state.playheadMs, state.frameMs)?.curve,
+            onEasing = { viewModel.clips.setValueKeyEasing(clip.id, ValueTrack.Volume, it) },
+            onCurve = { viewModel.clips.setValueKeyCurve(clip.id, ValueTrack.Volume, it) }
         )
         val level = clip.valueAt(ValueTrack.Volume, state.playheadMs)
         LabeledSlider(

@@ -66,6 +66,7 @@ run timeline   $TIMELINE tools/jvm/TimelineChecks.kt
 run magnetic   $TIMELINE tools/jvm/MagneticChecks.kt
 run spanremoval $TIMELINE $SRC/timeline/SpanRemoval.kt tools/jvm/SpanRemovalChecks.kt
 run lookkeys $TIMELINE tools/jvm/LookKeysChecks.kt
+run valueeasing $TIMELINE tools/jvm/ValueEasingChecks.kt
 run layerblend $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/LayerBlendChecks.kt
 run editrules  $TIMELINE "$SRC/editor/EditRules.kt" tools/jvm/EditRulesChecks.kt
 run audiorules $TIMELINE "$SRC/editor/AudioRules.kt" tools/jvm/AudioRulesChecks.kt
@@ -112,6 +113,7 @@ run controls   tools/jvm/ControlChecks.kt
 run framecompare tools/jvm/FrameCompare.kt
 run exportjournal "$SRC/media/ExportJournal.kt" tools/jvm/ExportJournalChecks.kt
 run syncanalysis "$SRC/media/SyncAnalysis.kt" tools/jvm/SyncAnalysisChecks.kt
+run easing "$SRC/timeline/Keyframe.kt" tools/jvm/EasingChecks.kt
 run draftfields tools/jvm/DraftFieldChecks.kt
 run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScreen.kt" tools/jvm/SplitScreenChecks.kt
 run gif        "$SRC/media/gif/GifEncoder.kt" "$SRC/media/gif/GifSize.kt" tools/jvm/GifChecks.kt

@@ -21,7 +21,7 @@ one line of evidence. P items are also ticked in `docs/INSHOT_PARITY.md`.
 - [~] **B6** Export never dies - free-space preflight was already in; now an export killed with its process is said on the next launch (ExportJournal, checked), a hot phone and a quiet encoder are said on the card and the notification; not yet seen on a phone
 - [ ] **C1** Export speed
 - [ ] **D1** Main clip on the picture: drag, pinch, turn
-- [ ] **D2** Keyframe curves
+- [~] **D2** Keyframe curves - Ease in, Ease out, Strong, Back, Bounce, Elastic and a two-handle Custom curve per key on placement, opacity, level, look strength and mask; one function for preview and export; EasingChecks (endpoints, monotone, overshoot, bezier inverse < 1e-4, fails with the solver weakened), ValueEasingChecks, draft round trip (fails 4 ways without the curve read back); not seen on the phone
 - [ ] **D6** Live preview audit: every slider previews live
 - [ ] **E1** Captions on every phone (Whisper on device)
 - [ ] **E2** Caption styles for reels (+ P4 bilingual)

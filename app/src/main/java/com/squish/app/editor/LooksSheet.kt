@@ -59,6 +59,7 @@ import com.squish.app.media.effects.HueBand
 import com.squish.app.media.effects.Look
 import com.squish.app.media.effects.LookFamily
 import com.squish.app.media.effects.Looks
+import com.squish.app.timeline.valueKeyAt
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.ValueTrack
 import com.squish.app.timeline.hasValueKeyAt
@@ -159,7 +160,11 @@ fun FiltersPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                     onClip = onClip,
                     accent = SquishColors.Blue,
                     onToggle = { viewModel.clips.toggleValueKey(clip.id, ValueTrack.Look) },
-                    onClear = { viewModel.clips.clearValueKeys(clip.id, ValueTrack.Look) }
+                    onClear = { viewModel.clips.clearValueKeys(clip.id, ValueTrack.Look) },
+                    keyEasing = clip.valueKeyAt(ValueTrack.Look, state.playheadMs, state.frameMs)?.easing,
+                    keyCurve = clip.valueKeyAt(ValueTrack.Look, state.playheadMs, state.frameMs)?.curve,
+                    onEasing = { viewModel.clips.setValueKeyEasing(clip.id, ValueTrack.Look, it) },
+                    onCurve = { viewModel.clips.setValueKeyCurve(clip.id, ValueTrack.Look, it) }
                 )
                 LabeledSlider(
                     "Strength", clip.valueAt(ValueTrack.Look, state.playheadMs), 0f..1f,

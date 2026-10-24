@@ -124,7 +124,7 @@ private fun wildClip(): Clip = Clip(
     rotation = 12.5f,
     keyframes = listOf(
         Keyframe(0L, Transform(1f, 0f, 0f, 0f), KeyframeEasing.entries.first()),
-        Keyframe(1_500L, Transform(1.8f, 0.2f, -0.3f, 30f), KeyframeEasing.entries.last())
+        Keyframe(1_500L, Transform(1.8f, 0.2f, -0.3f, 30f), KeyframeEasing.entries.last(), com.squish.app.timeline.CubicBezier(0.2f, 0.7f, 0.4f, 1.1f))
     ),
     chromaKey = ChromaKey(keyColorArgb = 0xFF00FF2A.toInt(), similarity = 0.31f, smoothness = 0.09f, spill = 0.14f),
     mask = Mask(
@@ -142,7 +142,7 @@ private fun wildClip(): Clip = Clip(
         track = MotionTrack(listOf(TrackSample(0L, 0.4f, 0.6f, 1.2f, 0.9f), TrackSample(500L, 0.45f, 0.55f, 1.1f, 0.7f))),
         keys = listOf(
             MaskKey(0L, Mask(shape = MaskShape.entries.first(), widthFraction = 0.3f), KeyframeEasing.entries.first()),
-            MaskKey(900L, Mask(shape = MaskShape.entries.last(), widthFraction = 0.5f), KeyframeEasing.entries.last())
+            MaskKey(900L, Mask(shape = MaskShape.entries.last(), widthFraction = 0.5f), KeyframeEasing.entries.last(), com.squish.app.timeline.CubicBezier(0.3f, -0.2f, 0.6f, 1f))
         )
     ),
     background = BackgroundRemoval(maskFile = "segments/wild.png", fill = BackgroundFill.entries.last(), colorArgb = 0xFF2277AA.toInt()),
@@ -205,9 +205,9 @@ private fun wildClip(): Clip = Clip(
         )
     ),
     stabilizeStrength = 0.83f,
-    opacityKeys = listOf(ValueKey(0L, 0.2f, KeyframeEasing.entries.first()), ValueKey(800L, 0.95f, KeyframeEasing.entries.last())),
+    opacityKeys = listOf(ValueKey(0L, 0.2f, KeyframeEasing.entries.first()), ValueKey(800L, 0.95f, KeyframeEasing.entries.last(), com.squish.app.timeline.CubicBezier(0.1f, 0.5f, 0.5f, 0.9f))),
     blend = LayerBlend.entries.last(),
-    volumeKeys = listOf(ValueKey(0L, 1.4f, KeyframeEasing.entries.last()), ValueKey(600L, 0.3f, KeyframeEasing.entries.first())),
+    volumeKeys = listOf(ValueKey(0L, 1.4f, KeyframeEasing.entries.last(), com.squish.app.timeline.CubicBezier(0.6f, 0f, 0.9f, 1f)), ValueKey(600L, 0.3f, KeyframeEasing.entries.first())),
     lookKeys = listOf(ValueKey(0L, 0.1f, KeyframeEasing.entries.first()), ValueKey(400L, 0.9f, KeyframeEasing.entries.last())),
     arrival = ClipArrival.entries.last(),
     arrivalMs = 420L,

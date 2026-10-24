@@ -154,7 +154,7 @@ data class Mask(
         val a = keys[i]
         val b = keys[i + 1]
         val span = (b.atMs - a.atMs).coerceAtLeast(1L)
-        val t = a.easing.ease(((sourceMs - a.atMs).toFloat() / span).coerceIn(0f, 1f))
+        val t = a.easing.ease(((sourceMs - a.atMs).toFloat() / span).coerceIn(0f, 1f), a.curve)
         return a.mask.mixedWith(b.mask, t).inheriting(this)
     }
 
@@ -192,7 +192,9 @@ data class Mask(
 data class MaskKey(
     val atMs: Long,
     val mask: Mask,
-    val easing: KeyframeEasing = KeyframeEasing.Smooth
+    val easing: KeyframeEasing = KeyframeEasing.Smooth,
+    /** The two handles of a [KeyframeEasing.Custom] curve; null for every other easing. */
+    val curve: CubicBezier? = null
 )
 
 /** Inserts a shape key, or replaces the one already within [toleranceMs] of it. */
@@ -230,3 +232,19 @@ fun Mask.withShapeKeyRemoved(sourceMs: Long, toleranceMs: Long = KEY_TOLERANCE_M
 
 private fun List<MaskKey>.easingNear(atMs: Long): KeyframeEasing =
     lastOrNull { it.atMs <= atMs }?.easing ?: firstOrNull()?.easing ?: KeyframeEasing.Smooth
+
+/** The shape key nearest [sourceMs] within [toleranceMs], or null (EDGE_PLAN D2: its curve is set from the sheet). */
+fun List<MaskKey>.shapeKeyNear(sourceMs: Long, toleranceMs: Long = KEY_TOLERANCE_MS): MaskKey? =
+    minByOrNull { kotlin.math.abs(it.atMs - sourceMs) }?.takeIf { kotlin.math.abs(it.atMs - sourceMs) <= toleranceMs }
+
+/** The mask with the easing of its shape key at [sourceMs] set - and its curve, for Custom. Unchanged with no key there. */
+fun Mask.withShapeKeyEasing(
+    sourceMs: Long,
+    easing: KeyframeEasing,
+    curve: CubicBezier? = null,
+    toleranceMs: Long = KEY_TOLERANCE_MS
+): Mask {
+    val key = keys.shapeKeyNear(sourceMs, toleranceMs) ?: return this
+    val keyed = key.copy(easing = easing, curve = if (easing == KeyframeEasing.Custom) (curve ?: key.curve ?: CubicBezier.DEFAULT_CUSTOM) else null)
+    return copy(keys = keys.map { if (it.atMs == key.atMs) keyed else it })
+}

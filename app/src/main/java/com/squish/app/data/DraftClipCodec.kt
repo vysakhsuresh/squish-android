@@ -10,6 +10,7 @@ import com.squish.app.media.effects.AdjustField
 import com.squish.app.media.effects.HslBand
 import com.squish.app.media.effects.HueBand
 import com.squish.app.timeline.VoiceEffect
+import com.squish.app.timeline.CubicBezier
 import com.squish.app.media.video.FrameMotion
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.StabilizerMeasurement
@@ -138,6 +139,7 @@ internal object DraftClipCodec {
                             put(JSONObject().apply {
                                 put("atMs", key.atMs)
                                 put("easing", key.easing.name)
+                                putCurve(this, key.curve)
                                 putMaskShape(key.mask)
                             })
                         }
@@ -375,12 +377,14 @@ internal object DraftClipCodec {
         putFinite("offsetYFraction", key.transform.offsetYFraction)
         putFinite("rotationDegrees", key.transform.rotationDegrees)
         put("easing", key.easing.name)
+        putCurve(this, key.curve)
     }
 
     private fun encodeValueKey(key: ValueKey): JSONObject = JSONObject().apply {
         put("atMs", key.atMs)
         putFinite("value", key.value)
         put("easing", key.easing.name)
+        putCurve(this, key.curve)
     }
 
     private fun decodeValueKeys(array: JSONArray?): List<ValueKey> {
@@ -391,6 +395,7 @@ internal object DraftClipCodec {
                 atMs = o.optLong("atMs"),
                 value = o.optDouble("value", 1.0).toFloat(),
                 easing = enumOrNull<KeyframeEasing>(o.optString("easing")) ?: KeyframeEasing.Smooth
+                , curve = curveOf(o)
             )
         }.sortedBy { it.atMs }
     }
@@ -539,6 +544,7 @@ internal object DraftClipCodec {
                                     atMs = k.optLong("atMs"),
                                     mask = maskShapeOf(k),
                                     easing = enumOrNull<KeyframeEasing>(k.optString("easing")) ?: KeyframeEasing.Smooth
+                                    , curve = curveOf(k)
                                 )
                             }
                         }.sortedBy { it.atMs }
@@ -599,8 +605,25 @@ internal object DraftClipCodec {
                 offsetYFraction = json.optDouble("offsetYFraction", 0.0).toFloat(),
                 rotationDegrees = json.optDouble("rotationDegrees", 0.0).toFloat()
             ),
-            easing = enumOrNull<KeyframeEasing>(json.optString("easing")) ?: KeyframeEasing.Smooth
+            easing = enumOrNull<KeyframeEasing>(json.optString("easing")) ?: KeyframeEasing.Smooth,
+            curve = curveOf(json)
         )
+    }
+
+    /** A Custom easing's two handles, written only when there is one (EDGE_PLAN D2). */
+    private fun putCurve(o: JSONObject, curve: CubicBezier?) {
+        if (curve == null) return
+        o.put("curve", JSONObject().apply {
+            putFinite("x1", curve.x1); putFinite("y1", curve.y1)
+            putFinite("x2", curve.x2); putFinite("y2", curve.y2)
+        })
+    }
+
+    private fun curveOf(o: JSONObject): CubicBezier? = o.optJSONObject("curve")?.let { c ->
+        CubicBezier(
+            c.optDouble("x1", 0.25).toFloat(), c.optDouble("y1", 0.1).toFloat(),
+            c.optDouble("x2", 0.25).toFloat(), c.optDouble("y2", 1.0).toFloat()
+        ).takeIf { listOf(it.x1, it.y1, it.x2, it.y2).all { v -> v.isFinite() } }
     }
 
     private inline fun <reified T : Enum<T>> enumOrNull(name: String?): T? =

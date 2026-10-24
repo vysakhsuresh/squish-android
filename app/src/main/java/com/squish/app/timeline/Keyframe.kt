@@ -21,12 +21,135 @@ enum class KeyframeEasing(val label: String) {
     Smooth("Smooth"),
     Linear("Linear"),
     /** Holds this value until the next key, then jumps. Step animation. */
-    Hold("Hold");
+    Hold("Hold"),
 
-    fun ease(t: Float): Float = when (this) {
-        Linear -> t
-        Smooth -> t * t * (3f - 2f * t)
-        Hold -> 0f
+    // EDGE_PLAN D2 (24 October): the curves CapCut and InShot offer. Appended,
+    // never reordered - a draft names its easing by name.
+    /** Starts slow, arrives at speed. */
+    EaseIn("Ease in"),
+    /** Leaves at speed, settles slowly - the move most things want. */
+    EaseOut("Ease out"),
+    /** Slow, fast, slow, harder than Smooth: a deliberate move. */
+    StrongInOut("Strong"),
+    /** Runs a little past the next key and comes back. */
+    Back("Back"),
+    /** Lands on the next key and bounces on it. */
+    Bounce("Bounce"),
+    /** Springs past the next key and rings down onto it. */
+    Elastic("Elastic"),
+    /** The key's own two-handle curve ([Keyframe.curve]). */
+    Custom("Custom");
+
+    /**
+     * Progress 0..1 through a segment, eased. [curve] is the key's own for
+     * [Custom], and ignored by every other easing. The overshooting ones
+     * (Back, Elastic) leave 0..1 on the way and land exactly on 1.
+     */
+    fun ease(t: Float, curve: CubicBezier? = null): Float {
+        val x = t.coerceIn(0f, 1f)
+        return when (this) {
+            Linear -> x
+            Smooth -> x * x * (3f - 2f * x)
+            Hold -> 0f
+            EaseIn -> CubicBezier.EASE_IN.y(x)
+            EaseOut -> CubicBezier.EASE_OUT.y(x)
+            StrongInOut -> CubicBezier.STRONG.y(x)
+            Back -> {
+                val c1 = 1.70158f
+                val c3 = c1 + 1f
+                val u = x - 1f
+                1f + c3 * u * u * u + c1 * u * u
+            }
+            Bounce -> bounceOut(x)
+            Elastic -> when (x) {
+                0f -> 0f
+                1f -> 1f
+                else -> {
+                    val c4 = (2.0 * Math.PI / 3.0)
+                    (Math.pow(2.0, -10.0 * x) * Math.sin((x * 10.0 - 0.75) * c4) + 1.0).toFloat()
+                }
+            }
+            Custom -> (curve ?: CubicBezier.DEFAULT_CUSTOM).y(x)
+        }
+    }
+
+    /** Whether the value only ever moves towards the next key - false for the ones that overshoot. */
+    val isMonotone: Boolean get() = this != Back && this != Bounce && this != Elastic
+
+    private fun bounceOut(x: Float): Float {
+        val n1 = 7.5625f
+        val d1 = 2.75f
+        return when {
+            x < 1f / d1 -> n1 * x * x
+            x < 2f / d1 -> { val u = x - 1.5f / d1; n1 * u * u + 0.75f }
+            x < 2.5f / d1 -> { val u = x - 2.25f / d1; n1 * u * u + 0.9375f }
+            else -> { val u = x - 2.625f / d1; n1 * u * u + 0.984375f }
+        }
+    }
+}
+
+/**
+ * A timing curve as CSS and every motion tool draws it: from (0,0) to (1,1)
+ * through two handles. x is time and must stay within 0..1 (clamped); y is
+ * progress and may leave 0..1 for an overshoot. [y] solves the curve's own
+ * parameter for a time - Newton, then bisection where Newton would leave the
+ * segment - to well inside 1e-4 of the time asked (EasingChecks).
+ */
+data class CubicBezier(val x1: Float, val y1: Float, val x2: Float, val y2: Float) {
+
+    private val cx1 = x1.coerceIn(0f, 1f)
+    private val cx2 = x2.coerceIn(0f, 1f)
+
+    private fun bez(p1: Float, p2: Float, s: Float): Float {
+        val u = 1f - s
+        return 3f * u * u * s * p1 + 3f * u * s * s * p2 + s * s * s
+    }
+
+    private fun dBez(p1: Float, p2: Float, s: Float): Float {
+        val u = 1f - s
+        return 3f * u * u * p1 + 6f * u * s * (p2 - p1) + 3f * s * s * (1f - p2)
+    }
+
+    /** The curve's parameter at time [x]. */
+    fun parameterAt(x: Float): Float {
+        val target = x.coerceIn(0f, 1f)
+        var s = target
+        repeat(8) {
+            val err = bez(cx1, cx2, s) - target
+            if (kotlin.math.abs(err) < 1e-6f) return s
+            val d = dBez(cx1, cx2, s)
+            if (kotlin.math.abs(d) < 1e-6f) return@repeat
+            s -= err / d
+        }
+        if (s in 0f..1f && kotlin.math.abs(bez(cx1, cx2, s) - target) < 1e-6f) return s
+        var lo = 0f
+        var hi = 1f
+        s = target
+        repeat(40) {
+            val v = bez(cx1, cx2, s)
+            if (kotlin.math.abs(v - target) < 1e-7f) return s
+            if (v < target) lo = s else hi = s
+            s = (lo + hi) / 2f
+        }
+        return s
+    }
+
+    /** The time on the curve at parameter [s] - for checking [parameterAt] and for drawing. */
+    fun xAt(s: Float): Float = bez(cx1, cx2, s)
+
+    /** Progress at time [x]. */
+    fun y(x: Float): Float {
+        if (x <= 0f) return 0f
+        if (x >= 1f) return 1f
+        return bez(y1, y2, parameterAt(x))
+    }
+
+    companion object {
+        val EASE_IN = CubicBezier(0.42f, 0f, 1f, 1f)
+        val EASE_OUT = CubicBezier(0f, 0f, 0.58f, 1f)
+        val STRONG = CubicBezier(0.83f, 0f, 0.17f, 1f)
+        /** Where a Custom curve starts before its handles are moved: CSS's own "ease". */
+        val DEFAULT_CUSTOM = CubicBezier(0.25f, 0.1f, 0.25f, 1f)
     }
 }
 
@@ -68,7 +191,9 @@ data class Transform(
 data class Keyframe(
     val atMs: Long,
     val transform: Transform = Transform.Identity,
-    val easing: KeyframeEasing = KeyframeEasing.Smooth
+    val easing: KeyframeEasing = KeyframeEasing.Smooth,
+    /** The two handles of a [KeyframeEasing.Custom] curve; null for every other easing. */
+    val curve: CubicBezier? = null
 )
 
 /**
@@ -95,7 +220,7 @@ fun List<Keyframe>.transformAt(tInClipMs: Long, fallback: Transform): Transform 
 
     val span = (b.atMs - a.atMs).coerceAtLeast(1L)
     val raw = ((tInClipMs - a.atMs).toFloat() / span).coerceIn(0f, 1f)
-    return Transform.lerp(a.transform, b.transform, a.easing.ease(raw))
+    return Transform.lerp(a.transform, b.transform, a.easing.ease(raw, a.curve))
 }
 
 /**
@@ -198,7 +323,9 @@ fun List<Keyframe>.upserted(key: Keyframe, toleranceMs: Long): List<Keyframe> =
 data class ValueKey(
     val atMs: Long,
     val value: Float,
-    val easing: KeyframeEasing = KeyframeEasing.Smooth
+    val easing: KeyframeEasing = KeyframeEasing.Smooth,
+    /** The two handles of a [KeyframeEasing.Custom] curve; null for every other easing. */
+    val curve: CubicBezier? = null
 )
 
 /**
@@ -219,7 +346,7 @@ fun List<ValueKey>.valueAt(tInClipMs: Long, fallback: Float): Float {
     val b = this[i + 1]
     val span = (b.atMs - a.atMs).coerceAtLeast(1L)
     val raw = ((tInClipMs - a.atMs).toFloat() / span).coerceIn(0f, 1f)
-    return a.value + (b.value - a.value) * a.easing.ease(raw)
+    return a.value + (b.value - a.value) * a.easing.ease(raw, a.curve)
 }
 
 /** The track with every key [deltaMs] later; see [shiftedBy] for why nothing is dropped. */

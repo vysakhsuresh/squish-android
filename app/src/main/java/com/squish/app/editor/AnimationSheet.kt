@@ -1,5 +1,10 @@
 package com.squish.app.editor
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -227,6 +232,7 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
                         accent = accent,
                         onGoTo = { viewModel.seekTo(clip.timelineStartMs + key.atMs) },
                         onEasing = { viewModel.clips.setKeyframeEasing(clip.id, key.atMs, it) },
+                        onCurve = { viewModel.clips.setKeyframeCurve(clip.id, key.atMs, it, dragging = true) },
                         onRemove = { viewModel.clips.removeKeyframe(clip.id, key.atMs) }
                     )
                 }
@@ -280,8 +286,17 @@ fun KeyframeButton(
     onClip: Boolean,
     accent: Color,
     onToggle: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    /**
+     * The key under the playhead, when there is one and the sheet lets its
+     * curve be chosen (EDGE_PLAN D2): the curve picker shows under the row.
+     */
+    keyEasing: KeyframeEasing? = null,
+    keyCurve: com.squish.app.timeline.CubicBezier? = null,
+    onEasing: ((KeyframeEasing) -> Unit)? = null,
+    onCurve: ((com.squish.app.timeline.CubicBezier) -> Unit)? = null
 ) {
+  Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -324,6 +339,25 @@ fun KeyframeButton(
             com.squish.app.ui.components.TextAction("Clear", color = SquishColors.Pink, onClick = onClear)
         }
     }
+    // The curve out of the key under the playhead, where the sheet offers it
+    // and a later key exists for it to travel to (EDGE_PLAN D2).
+    if (keyed && keyEasing != null && onEasing != null && count > 1) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
+            KeyframeEasing.entries.forEach { easing ->
+                SelectableChip(label = easing.label, selected = keyEasing == easing, onClick = { onEasing(easing) })
+            }
+        }
+        EasingGraph(
+            easing = keyEasing,
+            curve = keyCurve,
+            accent = accent,
+            onCurve = { onCurve?.invoke(it) }
+        )
+    }
+  }
 }
 
 /**
@@ -461,6 +495,7 @@ private fun KeyRow(
     accent: Color,
     onGoTo: () -> Unit,
     onEasing: (KeyframeEasing) -> Unit,
+    onCurve: (com.squish.app.timeline.CubicBezier) -> Unit,
     onRemove: () -> Unit
 ) {
     Column(
@@ -508,16 +543,27 @@ private fun KeyRow(
 
         // Easing on the last key would describe a segment that does not exist.
         if (key.atMs != clip.keyframes.last().atMs) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            // Ten now (EDGE_PLAN D2), more than fit across a phone: a row that
+            // scrolls, with the chosen curve drawn under it so the name is not
+            // the only way to know what a move will do.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
                 KeyframeEasing.entries.forEach { easing ->
                     SelectableChip(
                         label = easing.label,
                         selected = key.easing == easing,
-                        modifier = Modifier.weight(1f),
                         onClick = { onEasing(easing) }
                     )
                 }
             }
+            EasingGraph(
+                easing = key.easing,
+                curve = key.curve,
+                accent = accent,
+                onCurve = onCurve
+            )
         }
     }
 }
@@ -668,3 +714,83 @@ val KeyframeOutlineGlyph: ImageVector by lazy {
 
 /** How long a shown arrival plays on past its end, so it is seen to land. */
 private const val SHOW_AFTER_MS = 400L
+
+/**
+ * The key's curve drawn: time across, progress up, the box being 0..1 of both
+ * (EDGE_PLAN D2). For Custom, its two handles can be dragged - each point
+ * follows the finger, clamped to the box in time and allowed a little above and
+ * below it in progress so a curve can overshoot. For the presets it is only a
+ * picture of what the name means.
+ */
+@Composable
+private fun EasingGraph(
+    easing: KeyframeEasing,
+    curve: com.squish.app.timeline.CubicBezier?,
+    accent: Color,
+    onCurve: (com.squish.app.timeline.CubicBezier) -> Unit
+) {
+    val custom = easing == KeyframeEasing.Custom
+    val shown = curve ?: com.squish.app.timeline.CubicBezier.DEFAULT_CUSTOM
+    val latest by androidx.compose.runtime.rememberUpdatedState(shown)
+    val latestOnCurve by androidx.compose.runtime.rememberUpdatedState(onCurve)
+    // Progress room above and below the box, for the curves that overshoot.
+    val headroom = 0.35f
+    androidx.compose.foundation.Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(if (custom) 140.dp else 72.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(SquishColors.Background)
+            .semantics {
+                contentDescription = if (custom) "Custom curve: drag its two handles to shape the move" else "${easing.label} curve"
+            }
+            .then(
+                if (!custom) Modifier else Modifier.pointerInput(Unit) {
+                    var which = 0
+                    detectDragGestures(
+                        onDragStart = { at ->
+                            val h = size.height.toFloat()
+                            fun toPx(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(
+                                x * size.width, h - ((y + headroom) / (1f + 2 * headroom)) * h
+                            )
+                            val c = latest
+                            val d1 = (toPx(c.x1, c.y1) - at).getDistance()
+                            val d2 = (toPx(c.x2, c.y2) - at).getDistance()
+                            which = if (d1 <= d2) 1 else 2
+                        },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            val h = size.height.toFloat()
+                            val x = (change.position.x / size.width).coerceIn(0f, 1f)
+                            val y = ((h - change.position.y) / h * (1f + 2 * headroom) - headroom).coerceIn(-headroom, 1f + headroom)
+                            val c = latest
+                            latestOnCurve(if (which == 1) c.copy(x1 = x, y1 = y) else c.copy(x2 = x, y2 = y))
+                        }
+                    )
+                }
+            )
+    ) {
+        val w = size.width
+        val h = size.height
+        fun px(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(x * w, h - ((y + headroom) / (1f + 2 * headroom)) * h)
+        // The 0 and 1 lines of progress, so an overshoot can be seen as one.
+        drawLine(SquishColors.Border, px(0f, 0f), px(1f, 0f), strokeWidth = 1.dp.toPx())
+        drawLine(SquishColors.Border, px(0f, 1f), px(1f, 1f), strokeWidth = 1.dp.toPx())
+        val path = androidx.compose.ui.graphics.Path()
+        val steps = 64
+        for (i in 0..steps) {
+            val t = i / steps.toFloat()
+            val p = px(t, easing.ease(t, shown))
+            if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+        }
+        drawPath(path, accent, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()))
+        if (custom) {
+            val p1 = px(shown.x1, shown.y1)
+            val p2 = px(shown.x2, shown.y2)
+            drawLine(SquishColors.TextMuted, px(0f, 0f), p1, strokeWidth = 1.dp.toPx())
+            drawLine(SquishColors.TextMuted, px(1f, 1f), p2, strokeWidth = 1.dp.toPx())
+            drawCircle(accent, radius = 7.dp.toPx(), center = p1)
+            drawCircle(accent, radius = 7.dp.toPx(), center = p2)
+        }
+    }
+}

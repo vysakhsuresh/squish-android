@@ -23,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.squish.app.timeline.valueKeyAt
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.MAX_FOOTAGE_LAYER
 import com.squish.app.editor.OverlayRules.canStep
@@ -60,7 +61,11 @@ fun OpacityPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
             onClip = onClip,
             accent = SquishColors.Magenta,
             onToggle = { viewModel.clips.toggleValueKey(clip.id, ValueTrack.Opacity) },
-            onClear = { viewModel.clips.clearValueKeys(clip.id, ValueTrack.Opacity) }
+            onClear = { viewModel.clips.clearValueKeys(clip.id, ValueTrack.Opacity) },
+            keyEasing = clip.valueKeyAt(ValueTrack.Opacity, state.playheadMs, state.frameMs)?.easing,
+                    keyCurve = clip.valueKeyAt(ValueTrack.Opacity, state.playheadMs, state.frameMs)?.curve,
+            onEasing = { viewModel.clips.setValueKeyEasing(clip.id, ValueTrack.Opacity, it) },
+            onCurve = { viewModel.clips.setValueKeyCurve(clip.id, ValueTrack.Opacity, it) }
         )
         LabeledSlider("Opacity", clip.valueAt(ValueTrack.Opacity, state.playheadMs), 0f..1f, onFinished = viewModel::endGesture) {
             viewModel.layers.setOpacity(clip.id, it)

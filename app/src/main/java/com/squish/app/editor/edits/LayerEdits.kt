@@ -14,6 +14,7 @@ import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Mask
 import com.squish.app.timeline.withShapeAt
 import com.squish.app.timeline.withShapeKeyAdded
+import com.squish.app.timeline.withShapeKeyEasing
 import com.squish.app.timeline.withShapeKeyRemoved
 import com.squish.app.timeline.hasShapeKeyNear
 import com.squish.app.timeline.MaskMode
@@ -443,6 +444,27 @@ internal class LayerEdits(host: EditHost) : EditArea(host) {
             timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(mask = next) else it })
         }
     }
+
+    /** The curve out of the mask's shape key under the playhead (EDGE_PLAN D2). */
+    fun setMaskKeyEasing(clipId: String, easing: com.squish.app.timeline.KeyframeEasing) = record("Key easing") {
+        mutateTimeline { timeline ->
+            val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+            val mask = clip.mask ?: return@mutateTimeline timeline
+            val next = mask.withShapeKeyEasing(clip.sourceAt(timeline.playheadMs), easing)
+            timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(mask = next) else it })
+        }
+    }
+
+    /** That key's own Custom curve, as its handles are dragged: one undo step a drag. */
+    fun setMaskKeyCurve(clipId: String, curve: com.squish.app.timeline.CubicBezier) =
+        record("Key curve", gesture = "Mask key curve $clipId") {
+            mutateTimeline { timeline ->
+                val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+                val mask = clip.mask ?: return@mutateTimeline timeline
+                val next = mask.withShapeKeyEasing(clip.sourceAt(timeline.playheadMs), com.squish.app.timeline.KeyframeEasing.Custom, curve)
+                timeline.copy(clips = timeline.clips.map { if (it.id == clipId) it.copy(mask = next) else it })
+            }
+        }
 
     /** Every shape key off, the shape left standing where the playhead has it. */
     fun clearMaskKeys(clipId: String) = record("Clear mask keyframes") {

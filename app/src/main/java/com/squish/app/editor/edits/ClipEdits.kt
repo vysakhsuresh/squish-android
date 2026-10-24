@@ -30,6 +30,7 @@ import com.squish.app.timeline.withMuted
 import com.squish.app.timeline.withValueAt
 import com.squish.app.timeline.withValueKeyAdded
 import com.squish.app.timeline.withValueKeyRemoved
+import com.squish.app.timeline.withValueKeyEasing
 import com.squish.app.timeline.withValueKeysCleared
 import com.squish.app.timeline.rippleVideo
 import com.squish.app.timeline.withClipMoved
@@ -866,6 +867,30 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
         }
     }
 
+    /** The curve out of the key under the playhead on [track] (EDGE_PLAN D2). */
+    fun setValueKeyEasing(clipId: String, track: ValueTrack, easing: KeyframeEasing) {
+        val frame = _state.value.frameMs
+        record("Key easing") {
+            mutateTimeline { timeline ->
+                timeline.copy(clips = timeline.clips.map {
+                    if (it.id == clipId) it.withValueKeyEasing(track, timeline.playheadMs, easing, toleranceMs = frame) else it
+                })
+            }
+        }
+    }
+
+    /** That key's own Custom curve, as its handles are dragged: one undo step a drag. */
+    fun setValueKeyCurve(clipId: String, track: ValueTrack, curve: com.squish.app.timeline.CubicBezier) {
+        val frame = _state.value.frameMs
+        record("Key curve", gesture = "Key curve $clipId $track") {
+            mutateTimeline { timeline ->
+                timeline.copy(clips = timeline.clips.map {
+                    if (it.id == clipId) it.withValueKeyEasing(track, timeline.playheadMs, KeyframeEasing.Custom, curve, toleranceMs = frame) else it
+                })
+            }
+        }
+    }
+
     /** Every key off one track, the clip left at the level its first frame had. */
     fun clearValueKeys(clipId: String, track: ValueTrack) = record("Clear keys") {
         mutateTimeline { timeline ->
@@ -1183,6 +1208,23 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             timeline.copy(clips = timeline.clips.map { if (it.id == clipId) updated else it })
         }
     }
+
+    /**
+     * A key's own curve, which makes its easing Custom (EDGE_PLAN D2). A drag
+     * of a handle is one gesture, so one undo step, however many events it sends.
+     */
+    fun setKeyframeCurve(clipId: String, atMs: Long, curve: com.squish.app.timeline.CubicBezier, dragging: Boolean) =
+        record("Key curve", gesture = if (dragging) "Key curve $clipId $atMs" else null) {
+            mutateTimeline { timeline ->
+                val clip = timeline.clips.firstOrNull { it.id == clipId } ?: return@mutateTimeline timeline
+                val updated = clip.copy(
+                    keyframes = clip.keyframes.map {
+                        if (it.atMs == atMs) it.copy(easing = KeyframeEasing.Custom, curve = curve) else it
+                    }
+                )
+                timeline.copy(clips = timeline.clips.map { if (it.id == clipId) updated else it })
+            }
+        }
 
     /** Drops the animation, leaving the clip wherever it was on its first frame. */
     fun clearKeyframes(clipId: String) = record("Clear keys") {

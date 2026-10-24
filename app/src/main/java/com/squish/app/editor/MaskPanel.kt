@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Mask
 import com.squish.app.timeline.hasShapeKeyNear
+import com.squish.app.timeline.shapeKeyNear
 import com.squish.app.timeline.MaskMode
 import com.squish.app.timeline.MaskShape
 import com.squish.app.ui.components.SelectableChip
@@ -129,7 +130,11 @@ fun MaskPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
                 onClip = onClip,
                 accent = SquishColors.Magenta,
                 onToggle = { viewModel.layers.toggleMaskKey(clip.id) },
-                onClear = { viewModel.layers.clearMaskKeys(clip.id) }
+                onClear = { viewModel.layers.clearMaskKeys(clip.id) },
+                keyEasing = held?.keys?.shapeKeyNear(sourceMs)?.easing,
+                keyCurve = held?.keys?.shapeKeyNear(sourceMs)?.curve,
+                onEasing = { viewModel.layers.setMaskKeyEasing(clip.id, it) },
+                onCurve = { viewModel.layers.setMaskKeyCurve(clip.id, it) }
             )
         }
 
