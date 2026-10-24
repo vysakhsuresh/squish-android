@@ -14,11 +14,11 @@ one line of evidence. P items are also ticked in `docs/INSHOT_PARITY.md`.
 
 - [~] **A1** Benchmark harness -> docs/BENCHMARKS.md - baseline on the moto: cold start 383 ms, scrub 40% janky (p90 48 ms), playback ~20% janky, export 1.37x real time, SSIM 0.864; import timings and competitors not measured yet (phone dropped off adb; no InShot on it)
 - [ ] **B1** Footage matrix: every format lands, plays, scrubs, cuts, exports
-- [ ] **B2** Conversion never blocks the editor
+- [~] **B2** Conversion never blocks the editor - already so since d6b9299 (18 Oct): nothing converts, FFmpeg reads every door; seen 24 Oct: a 10-bit HEVC MKV opened the editor in 160 ms, first frame 2.1 s. Left: Freeze, Reverse, Stabilize, Track on such a file, on the phone
 - [ ] **B3** VFR and A/V sync at 1, 10, 60 min
 - [ ] **B4** HDR end to end
 - [ ] **B5** High-frame-rate footage as true slow motion
-- [ ] **B6** Export never dies
+- [~] **B6** Export never dies - free-space preflight was already in; now an export killed with its process is said on the next launch (ExportJournal, checked), a hot phone and a quiet encoder are said on the card and the notification; not yet seen on a phone
 - [ ] **C1** Export speed
 - [ ] **D1** Main clip on the picture: drag, pinch, turn
 - [ ] **D2** Keyframe curves

@@ -1228,7 +1228,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         // and the notification is the one place the progress can be seen then.
         // The name on the project's card, not the first file's ("1001319240.jpg").
         val title = current.projectName ?: ProjectRules.displayTitle(current.videoClips.firstOrNull()?.label, current.startedAtMillis)
-        ExportService.begin(getApplication(), title)
+        ExportService.begin(getApplication(), title, current.projectId)
 
         exportJob = viewModelScope.launch {
             // The edit as it is goes to disk before the encode starts, not a tick

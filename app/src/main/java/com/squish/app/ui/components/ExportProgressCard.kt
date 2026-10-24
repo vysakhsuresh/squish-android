@@ -20,6 +20,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -117,6 +122,28 @@ fun ExportProgressCard(
 
         ProgressTrack(fraction = fraction, eased = eased, accent = accent)
 
+        // Said, not hidden (EDGE_PLAN B6). A hot phone slows the chip down,
+        // and an export that suddenly runs at half speed - or a last stretch
+        // the encoder does not report on - reads as one that hung, which is
+        // the moment people kill the app and lose the render.
+        val hot by com.squish.app.media.ExportService.hot.collectAsState()
+        var quietSince by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
+        var quietFor by remember { mutableLongStateOf(0L) }
+        LaunchedEffect(progress.fraction, progress.stage) { quietSince = android.os.SystemClock.elapsedRealtime(); quietFor = 0L }
+        LaunchedEffect(Unit) {
+            while (true) {
+                kotlinx.coroutines.delay(1_000)
+                quietFor = android.os.SystemClock.elapsedRealtime() - quietSince
+            }
+        }
+        val note = when {
+            hot -> "Your phone is hot, so Android has slowed it down. The export is still running and will finish - it is just slower."
+            !saving && fraction != null && quietFor > QUIET_NOTE_MS ->
+                "Still working - the encoder has not reported for ${quietFor / 1000} s. Long effects and the last stretch of a file can do this; it has not stopped."
+            else -> null
+        }
+        note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.Yellow) }
+
         if (!saving) {
             Text(
                 buildString {
@@ -185,3 +212,6 @@ private fun ProgressTrack(fraction: Float?, eased: Float, accent: Color) {
     }
 }
 
+
+/** How long the encoder may be quiet before the card says it is still working. */
+private const val QUIET_NOTE_MS = 30_000L

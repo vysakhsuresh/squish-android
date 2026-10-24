@@ -151,6 +151,7 @@ fun HomeScreen(
     val projectsChanged by com.squish.app.data.ProjectsChanged.count.collectAsState()
     LaunchedEffect(projectsChanged) { viewModel.refreshDrafts() }
     val context = LocalContext.current
+    var interrupted by remember { mutableStateOf(com.squish.app.media.ExportService.takeInterrupted(context)) }
 
     // What is picked lands as one project, the picker's order kept.
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
@@ -317,6 +318,34 @@ fun HomeScreen(
                             }
                         }
                     )
+                }
+
+                // An export the phone killed, said once on the next visit
+                // (ExportJournal) rather than vanishing without a word.
+                interrupted?.let { entry ->
+                    item(key = "interrupted-export") {
+                        com.squish.app.ui.components.SquishCard(accent = SquishColors.Yellow) {
+                            Text(
+                                com.squish.app.media.ExportJournal.message(entry),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = SquishColors.TextPrimary
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                entry.projectId?.takeIf { id -> projects.any { it.id == id } }?.let { id ->
+                                    com.squish.app.ui.components.SquishOutlinedButton(
+                                        text = "Open the project",
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { interrupted = null; onOpenProject(id) }
+                                    )
+                                }
+                                com.squish.app.ui.components.SquishOutlinedButton(
+                                    text = "OK",
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { interrupted = null }
+                                )
+                            }
+                        }
+                    }
                 }
 
                 if (coach) {

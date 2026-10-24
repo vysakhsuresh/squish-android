@@ -53,11 +53,22 @@ class ExportService : Service() {
     private var title: String = "your video"
     private var lastShownAt = 0L
     private var lastStage: ExportStage? = null
+    private var thermal: android.os.PowerManager.OnThermalStatusChangedListener? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        // The phone's own heat, while the service is up - that is, while an export runs.
+        runCatching {
+            val power = getSystemService(android.os.PowerManager::class.java)
+            val listener = android.os.PowerManager.OnThermalStatusChangedListener { status ->
+                hot.value = status >= android.os.PowerManager.THERMAL_STATUS_SEVERE
+                if (hot.value) android.util.Log.w("SquishExport", "thermal status $status during an export")
+            }
+            power.addThermalStatusListener(mainExecutor, listener)
+            thermal = listener
+        }
         val manager = getSystemService(NotificationManager::class.java)
         // Low importance: a progress bar, not an alert. It neither sounds nor
         // peeks, and it is gone the moment the export is.
@@ -101,6 +112,7 @@ class ExportService : Service() {
     }
 
     override fun onDestroy() {
+        thermal?.let { l -> runCatching { getSystemService(android.os.PowerManager::class.java).removeThermalStatusListener(l) } }
         watching?.cancel()
         scope.cancel()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -140,6 +152,7 @@ class ExportService : Service() {
             else -> buildString {
                 append("$percent%")
                 progress.remainingMs?.let { append(" · about ${Timecode.clock(it)} left") }
+                if (hot.value) append(" · phone is hot, so it is going slower")
             }
         }
         return NotificationCompat.Builder(this, CHANNEL)
@@ -173,8 +186,16 @@ class ExportService : Service() {
          * that starts the render, while the app is in front - from the
          * background Android refuses, and the export goes on without it.
          */
-        fun begin(context: Context, title: String) {
+        fun begin(context: Context, title: String, projectId: String? = null) {
             progress.value = ExportProgress(stage = ExportStage.Preparing)
+            hot.value = false
+            // Written before anything else: if the process is killed from here on,
+            // the next launch finds this and says so (ExportJournal).
+            runCatching {
+                journal(context).writeText(
+                    ExportJournal.encode(ExportEntry(title, projectId, System.currentTimeMillis(), android.os.Process.myPid()))
+                )
+            }
             val intent = Intent(context, ExportService::class.java).putExtra(EXTRA_TITLE, title)
             runCatching { ContextCompat.startForegroundService(context, intent) }
                 .onFailure { android.util.Log.w("SquishExport", "could not start the export service", it) }
@@ -187,7 +208,32 @@ class ExportService : Service() {
 
         /** The export is over - handed over, failed or stopped - and so is the notification. */
         fun end(context: Context) {
+            runCatching { journal(context).delete() }
+            hot.value = false
             runCatching { context.stopService(Intent(context, ExportService::class.java)) }
         }
+
+        private fun journal(context: Context) = java.io.File(context.filesDir, "export.journal")
+
+        /**
+         * An export a killed process left unfinished, once: the entry is taken
+         * as it is read, so the dashboard says it a single time. Null when the
+         * last export ended, is still running here, or is a week old.
+         */
+        fun takeInterrupted(context: Context): ExportEntry? {
+            val file = journal(context)
+            val entry = runCatching { if (file.exists()) ExportJournal.decode(file.readText()) else null }.getOrNull()
+            if (entry == null) { runCatching { file.delete() }; return null }
+            if (entry.pid == android.os.Process.myPid()) return null
+            runCatching { file.delete() }
+            return ExportJournal.interrupted(entry, android.os.Process.myPid(), System.currentTimeMillis())
+        }
+
+        /**
+         * True while the phone reports itself SEVERE or hotter during an export.
+         * Android slows the chip itself; what the app owes is saying so, so an
+         * export that suddenly runs at half speed is not read as one that hung.
+         */
+        val hot = MutableStateFlow(false)
     }
 }
