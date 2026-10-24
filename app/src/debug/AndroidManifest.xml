@@ -16,5 +16,10 @@
             android:name="com.squish.app.debug.WhisperProbeActivity"
             android:exported="true"
             android:label="Squish whisper probe" />
+        <!-- Sound levels read off a file (debug/LevelProbeActivity.kt, EDGE_PLAN G2). -->
+        <activity
+            android:name="com.squish.app.debug.LevelProbeActivity"
+            android:exported="true"
+            android:label="Squish level probe" />
     </application>
 </manifest>
