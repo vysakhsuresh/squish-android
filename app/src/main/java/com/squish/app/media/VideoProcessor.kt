@@ -579,7 +579,9 @@ class VideoProcessor(private val context: Context) {
      * nearly twice the size the sheet had promised.
      */
     private fun frameDrop(state: EditorUiState, spedUp: Boolean = false): Effect? =
-        if (state.outputFps == ExportSettings.SOURCE_FPS && !spedUp) null
+        // Kept whole only where Auto keeps the footage's rate - not past 60,
+        // where it is dropped to 60 like any chosen rate (ExportSettings.AUTO_MAX_FPS).
+        if (state.outputFps == ExportSettings.SOURCE_FPS && !spedUp && state.fps <= ExportSettings.AUTO_MAX_FPS + 0.5f) null
         // On a grid, not Media3's FrameDropEffect: that one stepped a 1.5x shot to 22.5 fps (GridFrameDropEffect).
         // The kept frames take their slots only where the footage has frames to
         // spare - a sped shot always has - so the file is evenly spaced rather

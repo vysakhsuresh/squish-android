@@ -43,9 +43,20 @@ object ExportSettings {
      */
     const val HEVC_BITRATE_SCALE = 0.65f
 
-    /** The rate the file is written at: the choice, or the footage's own when none was made. */
-    fun effectiveFps(outputFps: Int, sourceFps: Float): Float =
-        if (outputFps > 0) outputFps.toFloat() else sourceFps
+    /**
+     * What "Auto" keeps at most. A phone's slow-motion mode writes 120 or 240
+     * frames a second; kept whole, the cuts-only export asked the encoder for
+     * a file at that rate (EDGE_PLAN B5) - refused by most and enormous where
+     * not. The frames past 60 are there to be slowed into, not played.
+     */
+    const val AUTO_MAX_FPS = 60f
+
+    /** The rate the file is written at: the choice, or the footage's own (up to [AUTO_MAX_FPS]) when none was made. */
+    fun effectiveFps(outputFps: Int, sourceFps: Float): Float = when {
+        outputFps > 0 -> outputFps.toFloat()
+        sourceFps > AUTO_MAX_FPS + 0.5f -> AUTO_MAX_FPS
+        else -> sourceFps
+    }
 
     /**
      * Whether a chosen rate asks for frames the footage does not have. Dropping

@@ -63,6 +63,26 @@ object SlowMotion {
         return kotlin.math.ceil(SMOOTH_FPS / speed).toInt()
     }
 
+    /**
+     * For footage shot faster than the file is written: the speed it can be
+     * slowed to with every frame a real one, or null when there are no frames
+     * to spare. 240 fps into a 30 fps file is an eighth - 8x slower, no
+     * blending, nothing invented (EDGE_PLAN B5).
+     */
+    fun realFramesDownTo(sourceFps: Float, outputFps: Float): Float? {
+        if (sourceFps <= 0f || outputFps <= 0f || sourceFps <= outputFps + 0.5f) return null
+        return (outputFps / sourceFps).coerceAtLeast(SpeedRamp.MIN_SPEED)
+    }
+
+    /** One line saying so, for the Speed sheet, or null for footage with no frames to spare. */
+    fun highRateHint(sourceFps: Float, outputFps: Float): String? {
+        val speed = realFramesDownTo(sourceFps, outputFps) ?: return null
+        val times = 1f / speed
+        val label = if (kotlin.math.abs(times - Math.round(times)) < 0.05f) "${Math.round(times)}x"
+        else String.format(java.util.Locale.ROOT, "%.1fx", times)
+        return "Shot at ${Math.round(sourceFps)} fps - slow it up to $label and every frame is a real one, no blending."
+    }
+
     /** How the result of a speed will read, for a panel to say so plainly. */
     enum class Verdict { Smooth, Stepped, Slideshow }
 

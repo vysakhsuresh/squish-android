@@ -379,7 +379,9 @@ private fun PictureRows(state: EditorUiState, viewModel: EditorViewModel) {
             ExportSettings.exceedsSource(state.outputFps, sourceFps) ->
                 "The footage runs at ${"%.0f".format(sourceFps)} fps. A higher rate can't add frames; the file keeps the ones it has."
             state.outputFps == ExportSettings.SOURCE_FPS ->
-                if (sourceFps > 1f) "Auto keeps the footage's ${"%.0f".format(sourceFps)} fps." else "Auto keeps the footage's own rate."
+                if (sourceFps > ExportSettings.AUTO_MAX_FPS + 0.5f)
+                    "Auto writes ${"%.0f".format(ExportSettings.AUTO_MAX_FPS)} fps - the footage is ${"%.0f".format(sourceFps)}, and its extra frames are for slowing down."
+                else if (sourceFps > 1f) "Auto keeps the footage's ${"%.0f".format(sourceFps)} fps." else "Auto keeps the footage's own rate."
             // The rate asked for is the rate the footage runs at, so nothing is
             // dropped. The line below said frames were, which is the sheet
             // describing an edit it is not making - 30 chosen on 30 fps footage

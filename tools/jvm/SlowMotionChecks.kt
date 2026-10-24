@@ -62,6 +62,18 @@ fun main() {
     check("a flat ramp's slowest is its rate", SpeedRamp.flat(0.4f).slowestSpeed == 0.4f)
     check("the identity ramp is full speed", SpeedRamp().slowestSpeed == 1f)
 
+    // EDGE_PLAN B5: footage shot faster than it is written slows that far with
+    // every frame a real one - 240 into a 30 fps file is 8x, into 60 is 4x.
+    check("240 fps into 30 slows 8x on real frames", SlowMotion.realFramesDownTo(240f, 30f) == 0.125f)
+    check("240 fps into 60 slows 4x", SlowMotion.realFramesDownTo(240f, 60f) == 0.25f)
+    check("120 fps into 30 slows 4x", SlowMotion.realFramesDownTo(120f, 30f) == 0.25f)
+    check("30 fps into 30 has no frames to spare", SlowMotion.realFramesDownTo(30f, 30f) == null)
+    check("29.97 into 30 has no frames to spare", SlowMotion.realFramesDownTo(29.97f, 30f) == null)
+    check("an unknown rate says nothing", SlowMotion.realFramesDownTo(0f, 30f) == null)
+    check("the 240 fps hint names 8x", SlowMotion.highRateHint(240f, 30f)?.contains("8x") == true)
+    check("the 240 fps hint names the rate", SlowMotion.highRateHint(240f, 30f)?.contains("240 fps") == true)
+    check("no hint at 30 fps", SlowMotion.highRateHint(30f, 30f) == null)
+
     println("30 fps at a quarter: " + SlowMotion.advice(30f, 0.25f))
     println("120 fps at a quarter: " + SlowMotion.advice(120f, 0.25f))
     println("30 fps goes to %.2fx before it steps".format(SlowMotion.smoothestSpeed(30f)))

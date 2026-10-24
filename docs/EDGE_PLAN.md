@@ -17,7 +17,7 @@ one line of evidence. P items are also ticked in `docs/INSHOT_PARITY.md`.
 - [~] **B2** Conversion never blocks the editor - already so since d6b9299 (18 Oct): nothing converts, FFmpeg reads every door; seen 24 Oct: a 10-bit HEVC MKV opened the editor in 160 ms, first frame 2.1 s. Left: Freeze, Reverse, Stabilize, Track on such a file, on the phone
 - [ ] **B3** VFR and A/V sync at 1, 10, 60 min
 - [ ] **B4** HDR end to end
-- [ ] **B5** High-frame-rate footage as true slow motion
+- [~] **B5** High-frame-rate footage as true slow motion - "Auto" no longer writes 240 fps on a cuts-only export (capped at 60, extra frames dropped evenly; ExportSettingsChecks failed on it, 2 counts); the Speed sheet says "Shot at 240 fps - slow it up to 8x and every frame is a real one" (SlowMotionChecks); not seen on the phone (matrix hfr_120/hfr_240 ready)
 - [~] **B6** Export never dies - free-space preflight was already in; now an export killed with its process is said on the next launch (ExportJournal, checked), a hot phone and a quiet encoder are said on the card and the notification; not yet seen on a phone
 - [ ] **C1** Export speed
 - [ ] **D1** Main clip on the picture: drag, pinch, turn

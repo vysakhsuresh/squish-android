@@ -122,6 +122,12 @@ fun SpeedPanel(state: EditorUiState, viewModel: EditorViewModel, accent: Color) 
             // guarded this case all along.
             if (clip.kind == ClipKind.Video && !clip.isStillPicture) {
                 SmoothnessLine(sourceFps = state.fps, speed = ramp.slowestSpeed)
+                // Footage shot for slow motion says how far it goes on its own
+                // frames (EDGE_PLAN B5) - the one case worth telling before any
+                // slider has moved.
+                com.squish.app.timeline.SlowMotion.highRateHint(state.fps, state.exportFps)?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.Cyan)
+                }
 
                 SmoothToggle(
                     sourceFps = state.fps,

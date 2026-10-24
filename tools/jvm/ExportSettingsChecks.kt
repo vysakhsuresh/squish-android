@@ -27,6 +27,13 @@ fun main() {
     check("30 on 29.97 footage is the same rate", !ExportSettings.exceedsSource(30, 29.97f))
     check("no choice never exceeds", !ExportSettings.exceedsSource(ExportSettings.SOURCE_FPS, 24f))
     check("unknown footage rate exceeds nothing", !ExportSettings.exceedsSource(60, 0f))
+    // EDGE_PLAN B5: "Auto" on footage shot faster than an encoder writes keeps
+    // 60, not the shooting rate - a 240 fps slow-motion clip at 1x asked the
+    // encoder for a 240 fps file on the cuts-only path.
+    check("Auto on 240 fps footage writes 60", ExportSettings.effectiveFps(ExportSettings.SOURCE_FPS, 240f) == 60f)
+    check("Auto on 120 fps footage writes 60", ExportSettings.effectiveFps(ExportSettings.SOURCE_FPS, 120f) == 60f)
+    check("Auto on 59.94 fps footage keeps it", ExportSettings.effectiveFps(ExportSettings.SOURCE_FPS, 59.94f) == 59.94f)
+    check("a choice of 30 on 240 fps footage is 30", ExportSettings.effectiveFps(30, 240f) == 30f)
     check("the offered rates are the standard five", ExportSettings.FPS_CHOICES == listOf(24, 25, 30, 50, 60))
 
     // ---- Quality and codec -------------------------------------------------------
