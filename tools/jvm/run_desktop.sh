@@ -111,6 +111,7 @@ run cutsounds  $TIMELINE "$SRC/timeline/CutSounds.kt" tools/jvm/CutSoundChecks.k
 run controls   tools/jvm/ControlChecks.kt
 run framecompare tools/jvm/FrameCompare.kt
 run exportjournal "$SRC/media/ExportJournal.kt" tools/jvm/ExportJournalChecks.kt
+run syncanalysis "$SRC/media/SyncAnalysis.kt" tools/jvm/SyncAnalysisChecks.kt
 run draftfields tools/jvm/DraftFieldChecks.kt
 run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScreen.kt" tools/jvm/SplitScreenChecks.kt
 run gif        "$SRC/media/gif/GifEncoder.kt" "$SRC/media/gif/GifSize.kt" tools/jvm/GifChecks.kt

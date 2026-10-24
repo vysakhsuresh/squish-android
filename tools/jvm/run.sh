@@ -125,6 +125,7 @@ run cutsounds  $TIMELINE "$SRC/timeline/CutSounds.kt" tools/jvm/CutSoundChecks.k
 run controls   tools/jvm/ControlChecks.kt
 run framecompare tools/jvm/FrameCompare.kt
 run exportjournal "$SRC/media/ExportJournal.kt" tools/jvm/ExportJournalChecks.kt
+run syncanalysis "$SRC/media/SyncAnalysis.kt" tools/jvm/SyncAnalysisChecks.kt
 run draftfields tools/jvm/DraftFieldChecks.kt
 run runners   tools/jvm/RunnerChecks.kt
 run draftkeys tools/jvm/DraftKeyChecks.kt
