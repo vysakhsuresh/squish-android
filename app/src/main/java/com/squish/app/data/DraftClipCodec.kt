@@ -80,6 +80,7 @@ internal object DraftClipCodec {
         if (clip.fadeInMs > 0L) put("fadeInMs", clip.fadeInMs)
         if (clip.fadeOutMs > 0L) put("fadeOutMs", clip.fadeOutMs)
         if (clip.voice != VoiceEffect.None) put("voice", clip.voice.name)
+        if (clip.noiseReduction > 0f) putFinite("noiseReduction", clip.noiseReduction)
         if (clip.beats.isNotEmpty()) put("beats", JSONArray().apply { clip.beats.forEach { put(it) } })
         put(
             "speedPoints",
@@ -469,6 +470,7 @@ internal object DraftClipCodec {
             fadeInMs = json.optLong("fadeInMs").coerceAtLeast(0L),
             fadeOutMs = json.optLong("fadeOutMs").coerceAtLeast(0L),
             voice = enumOrNull<VoiceEffect>(json.optString("voice")) ?: VoiceEffect.None,
+            noiseReduction = json.optDouble("noiseReduction", 0.0).toFloat().takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f,
             beats = json.optJSONArray("beats")?.let { array ->
                 (0 until array.length()).map { i -> array.optLong(i) }
             }.orEmpty().sorted(),

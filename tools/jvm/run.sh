@@ -131,6 +131,7 @@ run easing "$SRC/timeline/Keyframe.kt" tools/jvm/EasingChecks.kt
 run whispertext "$SRC/media/audio/WhisperText.kt" tools/jvm/WhisperTextChecks.kt
 run captionwords $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" "$SRC/editor/Annotation.kt" "$SRC/editor/TextOverlay.kt" tools/jvm/CaptionWordsChecks.kt
 run flowinterp "$SRC/media/video/MotionEstimator.kt" "$SRC/media/video/FlowInterp.kt" tools/jvm/FlowInterpChecks.kt
+run noisereduce "$SRC/media/audio/Fft.kt" "$SRC/media/audio/NoiseReducer.kt" tools/jvm/NoiseReduceChecks.kt
 run draftfields tools/jvm/DraftFieldChecks.kt
 run runners   tools/jvm/RunnerChecks.kt
 run draftkeys tools/jvm/DraftKeyChecks.kt

@@ -16,7 +16,9 @@ EXTRA_CP=$(echo "$LIBS" | while read -r j; do cygpath -m "$j"; done | paste -sd 
 export EXTRA_CP
 SRC=app/src/main/java/com/squish/app
 sh tools/jvm/jc.sh VoiceEffectsChecks "$SRC/media/audio/VoiceProcessor.kt" "$SRC/media/audio/VoiceCleaner.kt" \
-  "$SRC/timeline/VoiceEffect.kt" tools/jvm/VoiceEffectsChecks.kt 2>&1 | grep -v "^warning" | tail -5
+  "$SRC/timeline/VoiceEffect.kt" tools/jvm/VoiceEffectsChecks.kt 2>&1 | grep -v "^warning" # Reduce noise in the chain (EDGE_PLAN G2): length, pass-through and switching while playing.
+sh tools/jvm/jc.sh NoiseProcessorChecks "$SRC/media/audio/Fft.kt" "$SRC/media/audio/NoiseReducer.kt" "$SRC/media/audio/NoiseProcessor.kt" \n  tools/jvm/NoiseProcessorChecks.kt 2>&1 | grep -v "^warning" | tail -5
+| tail -5
 # The three level processors - the fades and the volume curves - run against
 # Media3's BaseAudioProcessor on real PCM. AudioRulesChecks executes what a
 # fade's level should be; these execute the buffer loops that apply it.
@@ -32,6 +34,9 @@ sh tools/jvm/jc.sh ProcessorChecks $TIMELINE "$SRC/editor/AudioRules.kt" "$SRC/m
   "$SRC/media/audio/GainProcessor.kt" "$SRC/media/audio/GainCurveProcessor.kt" \
   "$SRC/media/audio/VoiceProcessor.kt" "$SRC/media/audio/VoiceCleaner.kt" \
   tools/jvm/ProcessorChecks.kt 2>&1 | grep -v "^warning" | tail -8
+# Reduce noise in the chain (EDGE_PLAN G2): length, pass-through, switching while playing.
+sh tools/jvm/jc.sh NoiseProcessorChecks "$SRC/media/audio/Fft.kt" "$SRC/media/audio/NoiseReducer.kt" "$SRC/media/audio/NoiseProcessor.kt" \
+  tools/jvm/NoiseProcessorChecks.kt 2>&1 | grep -v "^warning" | tail -5
 
 # The draft round trip: a clip encoded, written as text, parsed and read back,
 # compared field by field. Here rather than in run.sh for two jars - org.json,

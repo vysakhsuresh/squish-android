@@ -605,6 +605,9 @@ fun FadePanel(clip: Clip, viewModel: EditorViewModel) {
 
 private fun seconds(v: Float): String = "%.1f s".format(v)
 
+/** Where Reduce noise starts when switched on: most of the way, leaving the voice natural. */
+private const val DEFAULT_NOISE_REDUCTION = 0.8f
+
 /**
  * A clip's Voice: the effect on its own sound - a shot's, an overlay's, an
  * added sound's - heard live and written to the file. It was one setting for
@@ -665,6 +668,30 @@ fun VoicePanel(clip: Clip, viewModel: EditorViewModel) {
                 }
                 repeat(3 - row.size) { Box(modifier = Modifier.weight(1f)) }
             }
+        }
+        // Beside the voices rather than one of them, so a take can be cleaned
+        // and still be a robot (EDGE_PLAN G2). Heard live and written alike.
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Reduce noise", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+                Text(
+                    "Takes a fan, traffic or hum out from under the words, not only between them.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SquishColors.TextMuted
+                )
+            }
+            SquishToggleSwitch(
+                checked = clip.noiseReduction > 0f,
+                onCheckedChange = { on -> viewModel.audio.setNoiseReduction(clip.id, if (on) DEFAULT_NOISE_REDUCTION else 0f) },
+                label = "Reduce noise"
+            )
+        }
+        if (clip.noiseReduction > 0f) {
+            LabeledSlider(
+                "Strength", clip.noiseReduction, 0.1f..1f,
+                readout = { "${(it * 100).toInt()}%" },
+                onFinished = viewModel::endGesture
+            ) { viewModel.audio.setNoiseReduction(clip.id, it, dragging = true) }
         }
         SquishOutlinedButton(
             // "Shot and overlay", because setVoiceForAll maps over every video

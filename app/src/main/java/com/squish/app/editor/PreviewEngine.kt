@@ -243,6 +243,8 @@ class PreviewEngine(private val context: Context) {
     private class AudioChain {
         val gain = AtomicReference(1f)
         val voice = AtomicReference(VoiceEffect.None)
+        /** The clip's Reduce noise, read by its sink every buffer (NoiseProcessor). */
+        val denoise = AtomicReference(0f)
     }
 
     /**
@@ -267,7 +269,9 @@ class PreviewEngine(private val context: Context) {
         // overlay's as much as a shot's, and the export voices both.
         /** The level past what the player's own volume can give, applied in its sink. */
         val boost = java.util.concurrent.atomic.AtomicReference(1f)
-        val player: ExoPlayer = newVideoPlayer({ voice.get() }, { boost.get() })
+        /** The clip's Reduce noise, read by its sink every buffer (NoiseProcessor). */
+        val denoise = AtomicReference(0f)
+        val player: ExoPlayer = newVideoPlayer({ voice.get() }, { boost.get() }, { denoise.get() })
 
         // Read by the shaders every frame; written by the tick.
         val chroma = AtomicReference<ChromaKey?>(null)
@@ -720,7 +724,7 @@ class PreviewEngine(private val context: Context) {
             .build()
     }
 
-    private fun newVideoPlayer(voiceNow: () -> VoiceEffect, boostNow: () -> Float) =
+    private fun newVideoPlayer(voiceNow: () -> VoiceEffect, boostNow: () -> Float, denoiseNow: () -> Float) =
         // The fold-down in front of the voice, as the export has it: see
         // AudioMixing.processor. At unity on a mono or stereo file it makes
         // itself inactive and costs nothing.
@@ -728,7 +732,8 @@ class PreviewEngine(private val context: Context) {
             context,
             // And the part of a level past full after the voice (AudioRules.gainSplit),
             // as a sound player has it: a shot or an overlay goes to 400% now.
-            processedRenderers(AudioMixing.processor(1f), VoiceProcessor(voiceNow), GainProcessor(boostNow))
+            // Noise out before the voice, as the export orders them.
+            processedRenderers(AudioMixing.processor(1f), com.squish.app.media.audio.NoiseProcessor(denoiseNow), VoiceProcessor(voiceNow), GainProcessor(boostNow))
         )
         // Media3's readers, or FFmpeg's for a file they do not read whole (AvRoute).
         .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(context))
@@ -792,6 +797,7 @@ class PreviewEngine(private val context: Context) {
         // preview disagreed about the *timbre*, not only the loudness.
         processedRenderers(
             AudioMixing.processor(1f),
+            com.squish.app.media.audio.NoiseProcessor { chain.denoise.get() },
             VoiceProcessor { chain.voice.get() },
             GainProcessor { chain.gain.get() }
         )
@@ -1685,6 +1691,7 @@ class PreviewEngine(private val context: Context) {
         // shift as a playback parameter - and the speed's own shift with it
         // when the clip asks for that, as the file writes it.
         s.voice.set(clip.voice)
+        s.denoise.set(clip.noiseReduction)
         val speed = clip.speedAt(if (park) clip.timelineStartMs else t)
         setSpeed(player, s.rate, clip.id, speed, pitch = pitchFor(clip, speed))
         val wanted = PreviewRules.seekTarget(clip.sourceAt(t), clip.sourceInMs, clip.sourceOutMs)
@@ -1914,6 +1921,7 @@ class PreviewEngine(private val context: Context) {
             audioChains[clip.id]?.let { chain ->
                 chain.gain.set(boost)
                 chain.voice.set(clip.voice)
+                chain.denoise.set(clip.noiseReduction)
             }
             val speed = clip.speedAt(t)
             setSpeed(player, rate, clip.id, speed, pitch = pitchFor(clip, speed))
@@ -1983,6 +1991,7 @@ class PreviewEngine(private val context: Context) {
                     val chain = AudioChain().also {
                         it.gain.set(AudioRules.gainSplit(clip.volume).second)
                         it.voice.set(clip.voice)
+                        it.denoise.set(clip.noiseReduction)
                     }
                     audioChains[clip.id] = chain
                     audioPlayers[clip.id] = newAudioPlayer(chain).apply {

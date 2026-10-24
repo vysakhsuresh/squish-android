@@ -313,6 +313,15 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     }
 
     /**
+     * Reduce noise on one clip's own sound, 0 off to 1 (NoiseReducer, EDGE_PLAN
+     * G2). The switch is one step; a drag of the strength is one step too.
+     */
+    fun setNoiseReduction(clipId: String, strength: Float, dragging: Boolean = false) =
+        record("Reduce noise", gesture = if (dragging) "Reduce noise $clipId" else null) {
+            updateAnyClip(clipId) { it.copy(noiseReduction = strength.coerceIn(0f, 1f)) }
+        }
+
+    /**
      * The voice on every clip of the selected one's kind - every shot and
      * overlay for a shot, every added sound for a sound - as one step: the
      * sheet's "Apply to all" (ROADMAP §2 item 7). The one edit-wide switch

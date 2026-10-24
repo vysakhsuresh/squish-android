@@ -38,6 +38,7 @@ import com.squish.app.timeline.VoiceEffect
 import com.squish.app.media.audio.FadeProcessor
 import com.squish.app.media.audio.GainCurveProcessor
 import com.squish.app.media.audio.GainProcessor
+import com.squish.app.media.audio.NoiseProcessor
 import com.squish.app.media.audio.VoiceProcessor
 import com.squish.app.media.video.FrameBlendEffect
 import com.squish.app.media.video.FrameBlendPlan
@@ -790,7 +791,7 @@ class VideoProcessor(private val context: Context) {
             .setRemoveVideo(state.audioOnly)
             .setEffects(
                 Effects(
-                    buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, level, clip.voice, fadeOf(clip), clip.pitchFollowsSpeed, curveOf(clip)),
+                    buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, level, clip.voice, fadeOf(clip), clip.pitchFollowsSpeed, curveOf(clip), noise = clip.noiseReduction),
                     ImmutableList.copyOf(effects)
                 )
             )
@@ -850,7 +851,7 @@ class VideoProcessor(private val context: Context) {
                 Effects(
                     if (heard) buildAudioProcessors(
                         clip.speedRamp, clip.sourceSpanMs, if (keyed) 1f else clip.volume.coerceIn(0f, AudioMixing.MAX_GAIN), clip.voice, fadeOf(clip),
-                        clip.pitchFollowsSpeed, curveOf(clip)
+                        clip.pitchFollowsSpeed, curveOf(clip), noise = clip.noiseReduction
                     )
                     else ImmutableList.of(),
                     ImmutableList.copyOf(effects)
@@ -1112,7 +1113,7 @@ class VideoProcessor(private val context: Context) {
                             // A muted sound is silent in the file as in the preview
                             // (Clip.volumeAtTimeline answers nothing there).
                             ramp, span, if (clip.muted) 0f else if (keyed) 1f else clip.volume, clip.voice, fadeOf(clip, skippedPlayedMs),
-                            clip.pitchFollowsSpeed, curveOf(clip, skippedPlayedMs)
+                            clip.pitchFollowsSpeed, curveOf(clip, skippedPlayedMs), noise = clip.noiseReduction
                         ),
                         ImmutableList.of()
                     )
@@ -1147,7 +1148,9 @@ class VideoProcessor(private val context: Context) {
         voice: VoiceEffect = VoiceEffect.None,
         fade: FadeProcessor? = null,
         pitchFollowsSpeed: Boolean = false,
-        curve: GainCurveProcessor? = null
+        curve: GainCurveProcessor? = null,
+        /** Reduce noise, 0 off to 1 (NoiseProcessor, EDGE_PLAN G2): after the fold-down, before the voice. */
+        noise: Float = 0f
     ): ImmutableList<AudioProcessor> {
         // The voice's processing first, on the file's own time, and its pitch last:
         // the order the preview runs them (its sink's processors, then its speed
@@ -1170,8 +1173,10 @@ class VideoProcessor(private val context: Context) {
         if (voice == VoiceEffect.None) {
             // Nothing to be before or after: one processor, as it was.
             processors.add(AudioMixing.processor(level))
+            if (noise > 0f) processors.add(NoiseProcessor { noise })
         } else {
             processors.add(AudioMixing.processor(1f))
+            if (noise > 0f) processors.add(NoiseProcessor { noise })
             processors.add(VoiceProcessor { voice })
             // Clipped to the sample range the way the mixer's matrix clips, so
             // a level that distorts still distorts.

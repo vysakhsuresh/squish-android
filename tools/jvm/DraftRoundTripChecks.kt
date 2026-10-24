@@ -110,6 +110,7 @@ private fun wildClip(): Clip = Clip(
     fadeInMs = 320L,
     fadeOutMs = 480L,
     voice = VoiceEffect.entries.last(),
+    noiseReduction = 0.65f,
     // Sorted and in range: the codec sorts beats on the way in, and a fixture
     // that was not sorted would be testing the sort rather than the round trip.
     beats = listOf(100L, 900L, 1_700L),

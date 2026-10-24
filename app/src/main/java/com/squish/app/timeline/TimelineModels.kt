@@ -135,6 +135,13 @@ data class Clip(
     val voice: VoiceEffect = VoiceEffect.None,
 
     /**
+     * Noise taken out from under the voice - a fan, traffic, hum - from 0, off,
+     * to 1, the full reduction (NoiseReducer, EDGE_PLAN G2). Beside [voice]
+     * rather than one of its choices, so a voice can be cleaned and then robot.
+     */
+    val noiseReduction: Float = 0f,
+
+    /**
      * Beats on this sound, in the file's own time, so they travel with the clip
      * and through its speed curve. Found by the beat detector or tapped in by
      * ear; drawn as dots on the clip, and what the cuts snap to.
@@ -703,6 +710,7 @@ data class Clip(
             voice = voice,
             speedRamp = speedRamp,
             speedSpanMs = sourceSpanMs,
+            noiseReduction = noiseReduction,
             opacity = opacity,
             transform = staticTransform,
             keyframes = keyframes,
@@ -836,6 +844,8 @@ data class ClipAttributes(
     val speedRamp: SpeedRamp,
     /** The source span the curve was drawn across. */
     val speedSpanMs: Long,
+    /** Noise reduction, a sound setting like the voice. */
+    val noiseReduction: Float = 0f,
     val opacity: Float,
     val transform: Transform,
     val keyframes: List<Keyframe>,
@@ -1928,6 +1938,7 @@ fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): T
         fadeOutMs = attrs.fadeOutMs,
         voice = attrs.voice,
         speedRamp = attrs.rampFor(clip.sourceSpanMs),
+        noiseReduction = attrs.noiseReduction,
         pitchFollowsSpeed = attrs.pitchFollowsSpeed,
         // The Mute switch goes with the level it silences: copied from a muted
         // shot the level came across and the target played at it.
