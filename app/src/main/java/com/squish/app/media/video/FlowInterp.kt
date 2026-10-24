@@ -35,6 +35,9 @@ object FlowInterp {
     /** A block is believed above this confidence (MotionEstimator's own 0..1). */
     const val BELIEVED = 0.3f
 
+    /** How far apart, in analysis pixels, a block's two measurements may be and still be trusted. */
+    const val CONSISTENT_PX = 1.0
+
     /** The share of blocks that must be believed for a pair to be moved along the field at all. */
     const val MIN_HELD = 0.5f
 
@@ -58,7 +61,14 @@ object FlowInterp {
         val cell: Float,
         val dx: FloatArray,
         val dy: FloatArray,
-        val confidence: FloatArray
+        val confidence: FloatArray,
+        /**
+         * How far each block's move is to be trusted for drawing, 0 to 1: 0
+         * where measuring it the other way round gives a different answer - a
+         * thin line, a turning edge, anything a block cannot pin down - so
+         * the frame is the cross-fade there rather than a tear.
+         */
+        val trust: FloatArray = FloatArray(cols * rows) { 1f }
     )
 
     /** The mean difference a believed block may leave between the earlier frame moved and the later one. */
@@ -85,6 +95,7 @@ object FlowInterp {
         val dx = FloatArray(cols * rows)
         val dy = FloatArray(cols * rows)
         val conf = FloatArray(cols * rows)
+        val trust = FloatArray(cols * rows) { 1f }
         // The block and a margin the search can look into: MotionEstimator
         // skips its search radius and one more at every border.
         val margin = 9
@@ -95,7 +106,10 @@ object FlowInterp {
             val w = minOf(size, p.width)
             val h = minOf(size, p.height)
             val m = MotionEstimator.estimate(crop(p, x0, y0, w, h), crop(n, x0, y0, w, h))
+            val back = MotionEstimator.estimate(crop(n, x0, y0, w, h), crop(p, x0, y0, w, h))
             val k = r * cols + c
+            trust[k] = if (m.confidence > BELIEVED && back.confidence > BELIEVED &&
+                kotlin.math.hypot((m.dx + back.dx).toDouble(), (m.dy + back.dy).toDouble()) > CONSISTENT_PX) 0f else 1f
             dx[k] = m.dx * scale
             dy[k] = m.dy * scale
             // Believed only if the move explains the block: the estimator's
@@ -103,7 +117,7 @@ object FlowInterp {
             // which across a cut between two busy pictures can still be a lot.
             conf[k] = if (residual(p, n, c * BLOCK, r * BLOCK, m.dx, m.dy) <= MAX_RESIDUAL) m.confidence else 0f
         }
-        return smoothed(Field(cols, rows, (BLOCK * scale).toFloat(), dx, dy, conf))
+        return smoothed(Field(cols, rows, (BLOCK * scale).toFloat(), dx, dy, conf, trust))
     }
 
     /**
@@ -127,7 +141,7 @@ object FlowInterp {
             val k = r * f.cols + c
             if (xs.isNotEmpty()) { dx[k] = median(xs); dy[k] = median(ys) }
         }
-        return Field(f.cols, f.rows, f.cell, dx, dy, f.confidence)
+        return Field(f.cols, f.rows, f.cell, dx, dy, f.confidence, f.trust)
     }
 
     /** The share of blocks the estimator believed. */
@@ -135,6 +149,19 @@ object FlowInterp {
 
     /** Whether this pair is moved along the field at all, or cross-faded as Blend frames always did. */
     fun usesFlow(f: Field): Boolean = heldShare(f) >= MIN_HELD
+
+    /** The trust at a point, between the four nearest block centres, as [vectorAt] blends vectors. */
+    fun trustAt(f: Field, x: Float, y: Float): Float {
+        val gx = (x / f.cell - 0.5f).coerceIn(0f, (f.cols - 1).toFloat())
+        val gy = (y / f.cell - 0.5f).coerceIn(0f, (f.rows - 1).toFloat())
+        val c0 = floor(gx).toInt(); val r0 = floor(gy).toInt()
+        val c1 = minOf(c0 + 1, f.cols - 1); val r1 = minOf(r0 + 1, f.rows - 1)
+        val fx = gx - c0; val fy = gy - r0
+        val t = f.trust
+        val top = t[r0 * f.cols + c0] * (1 - fx) + t[r0 * f.cols + c1] * fx
+        val bottom = t[r1 * f.cols + c0] * (1 - fx) + t[r1 * f.cols + c1] * fx
+        return top * (1 - fy) + bottom * fy
+    }
 
     /** The field's vector at a point of the frame, between the four nearest block centres. */
     fun vectorAt(f: Field, x: Float, y: Float): Pair<Float, Float> {
@@ -196,7 +223,7 @@ object FlowInterp {
             val a = sample(prev, x - t * vx, y - t * vy)
             val b = sample(next, x + (1 - t) * vx, y + (1 - t) * vy)
             val moved = a * (1 - t) + b * t
-            val back = smoothstep(DISAGREE_FROM, DISAGREE_TO, abs(a - b))
+            val back = maxOf(smoothstep(DISAGREE_FROM, DISAGREE_TO, abs(a - b)), 1f - trustAt(f, x, y))
             out[k] = moved + (fade - moved) * back
         }
         return LumaFrame(w, h, out)
@@ -216,6 +243,9 @@ object FlowInterp {
         }
         return out
     }
+
+    /** Each block's trust as a byte, for the shader's second texture (RGBA8, the trust in every channel). */
+    fun packTrust(f: Field): ByteArray = ByteArray(f.cols * f.rows * 4) { i -> (f.trust[i / 4].coerceIn(0f, 1f) * 255f).toInt().toByte() }
 
     /** [pack] read back, as the shader reads it. */
     fun unpack(bytes: ByteArray, cols: Int, rows: Int): Field {

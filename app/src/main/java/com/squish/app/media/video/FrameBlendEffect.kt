@@ -81,6 +81,7 @@ private class FrameBlendShaderProgram(
     private var probeBytes: java.nio.ByteBuffer? = null
     private var heldLuma: LumaFrame? = null
     private var fieldTexId = 0
+    private var trustTexId = 0
 
     private var width = -1
     private var height = -1
@@ -132,7 +133,7 @@ private class FrameBlendShaderProgram(
                 val flow = field != null && FlowInterp.usesFlow(field) && upload(field)
                 for (blend in blends) {
                     val out = free.removeFirst()
-                    if (flow) checkNotNull(flowProgram).draw(out, previous.texId, inputTexture.texId, blend.mix, field!!, fieldTexId, luma!!)
+                    if (flow) checkNotNull(flowProgram).draw(out, previous.texId, inputTexture.texId, blend.mix, field!!, fieldTexId, trustTexId, luma!!)
                     else draw(out, previous.texId, inputTexture.texId, blend.mix)
                     outputListener.onOutputFrameAvailable(out, blend.timeUs)
                 }
@@ -184,7 +185,9 @@ private class FrameBlendShaderProgram(
             probe?.release()
             probe = null
             if (fieldTexId != 0) GLES20.glDeleteTextures(1, intArrayOf(fieldTexId), 0)
+            if (trustTexId != 0) GLES20.glDeleteTextures(1, intArrayOf(trustTexId), 0)
             fieldTexId = 0
+            trustTexId = 0
             flowProgram?.delete()
             glProgram.delete()
         } catch (e: GlUtil.GlException) {
@@ -277,24 +280,33 @@ private class FrameBlendShaderProgram(
         null
     }
 
+    /** A texture for a few dozen texels, clamped at its edges, filtered by [filter]. */
+    private fun smallTexture(filter: Int): Int {
+        val ids = IntArray(1)
+        GLES20.glGenTextures(1, ids, 0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, ids[0])
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, filter)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, filter)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        return ids[0]
+    }
+
+    private fun direct(bytes: ByteArray): java.nio.ByteBuffer =
+        java.nio.ByteBuffer.allocateDirect(bytes.size).order(java.nio.ByteOrder.nativeOrder()).apply { put(bytes); flip() }
+
     /** The field into its texture, a texel a block (FlowInterp.pack). False when it could not be. */
     private fun upload(field: FlowInterp.Field): Boolean = try {
-        if (fieldTexId == 0) {
-            val ids = IntArray(1)
-            GLES20.glGenTextures(1, ids, 0)
-            fieldTexId = ids[0]
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fieldTexId)
-            // Nearest: a texel is sixteen bits split over two channels, which
-            // filtering between texels would mix into nonsense.
-            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST)
-            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST)
-            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
-            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-        }
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fieldTexId)
+        // Nearest for the vectors: a texel is sixteen bits split over two
+        // channels, which filtering between texels would mix into nonsense.
+        // Linear for the trust, blended between blocks as FlowInterp.trustAt does.
+        if (fieldTexId == 0) fieldTexId = smallTexture(GLES20.GL_NEAREST)
+        if (trustTexId == 0) trustTexId = smallTexture(GLES20.GL_LINEAR)
         GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 1)
-        val data = java.nio.ByteBuffer.wrap(FlowInterp.pack(field))
-        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, field.cols, field.rows, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, data)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fieldTexId)
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, field.cols, field.rows, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, direct(FlowInterp.pack(field)))
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, trustTexId)
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, field.cols, field.rows, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, direct(FlowInterp.packTrust(field)))
         GlUtil.checkGlError()
         true
     } catch (e: GlUtil.GlException) {

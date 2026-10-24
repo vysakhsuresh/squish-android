@@ -25,6 +25,10 @@ precision mediump float;
 uniform sampler2D uTexA;
 uniform sampler2D uTexB;
 uniform sampler2D uField;
+// Each block's trust (FlowInterp.Field.trust), a texel a block, linearly filtered:
+// 0 where the block measured differently each way round, and the frame is the
+// cross-fade there.
+uniform sampler2D uTrust;
 uniform float uMix;
 uniform vec2 uFieldSize;
 uniform vec2 uCellUv;
@@ -86,6 +90,6 @@ void main() {
   vec4 moved = mix(a, b, t);
   vec4 fade = mix(texture2D(uTexA, uv), texture2D(uTexB, uv), t);
   vec3 d = abs(a.rgb - b.rgb);
-  float back = smoothstep(DISAGREE_FROM, DISAGREE_TO, (d.r + d.g + d.b) / 3.0);
+  float back = max(smoothstep(DISAGREE_FROM, DISAGREE_TO, (d.r + d.g + d.b) / 3.0), 1.0 - texture2D(uTrust, clamp(uv / uCellUv / uFieldSize, 0.0, 1.0)).r);
   gl_FragColor = mix(moved, fade, back);
 }

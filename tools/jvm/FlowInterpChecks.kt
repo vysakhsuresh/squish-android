@@ -53,7 +53,48 @@ private fun sad(a: LumaFrame, b: LumaFrame): Double = a.pixels.indices.sumOf { a
 private fun crossFade(a: LumaFrame, b: LumaFrame, t: Float) =
     LumaFrame(a.width, a.height, FloatArray(a.pixels.size) { a.pixels[it] * (1 - t) + b.pixels[it] * t })
 
+/**
+ * Flat colour bars - nothing to match - with a thin bright line across them
+ * moving [shift] px down: what tore on the phone (25 Oct, testsrc2 slowed to
+ * 0.25x), the line broken into segments in every in-between frame.
+ */
+private fun barsAndLine(shift: Int, turn: Float = 0f): LumaFrame {
+    val px = FloatArray(W * H)
+    for (j in 0 until H) for (i in 0 until W) {
+        val bar = 0.2f + 0.1f * (i / 46)
+        // [turn] tips the line about its left end: its motion grows along it, as testsrc2's does.
+        val lineY = 40 + i * (0.3f + turn) + shift
+        px[j * W + i] = if (kotlin.math.abs(j - lineY) < 2f) 0.95f else bar
+    }
+    return LumaFrame(W, H, px)
+}
+
+/** The worst of the in-between frame's errors against [truth], summed over a 16 px column: where a tear would show. */
+private fun worstColumn(f: LumaFrame, truth: LumaFrame): Double {
+    var worst = 0.0
+    for (c in 0 until W / 16) {
+        var e = 0.0
+        for (j in 0 until H) for (i in c * 16 until c * 16 + 16) e += abs(f.pixels[j * W + i] - truth.pixels[j * W + i])
+        worst = maxOf(worst, e)
+    }
+    return worst
+}
+
 fun main() {
+    // A thin line moving over flat bars: no worse than the cross-fade anywhere along it.
+    run {
+        val a = barsAndLine(0); val b = barsAndLine(8); val truth = barsAndLine(4)
+        val mid = FlowInterp.interpolate(a, b, FlowInterp.field(a, b), 0.5f)
+        val fade = crossFade(a, b, 0.5f)
+        val flowWorst = worstColumn(mid, truth); val fadeWorst = worstColumn(fade, truth)
+        check(flowWorst <= fadeWorst * 1.05, "a thin line moving over flat bars tears: worst column $flowWorst against a cross-fade's $fadeWorst")
+        // Turning as it goes: no worse than the cross-fade anywhere along it either.
+        val ta = barsAndLine(0); val tb = barsAndLine(0, turn = 0.05f); val tTruth = barsAndLine(0, turn = 0.025f)
+        val tMid = FlowInterp.interpolate(ta, tb, FlowInterp.field(ta, tb), 0.5f)
+        val tFlow = worstColumn(tMid, tTruth); val tFade = worstColumn(crossFade(ta, tb, 0.5f), tTruth)
+        check(tFlow <= tFade * 1.05, "a turning line tears: worst column $tFlow against a cross-fade's $tFade")
+    }
+
     // A square moving 12 px a frame: the frame half way is the square at +6.
     val a = frame(100)
     val b = frame(112)
