@@ -54,7 +54,10 @@ fun main() {
         check(TextStyleSpec().stroke == TextStroke.NONE, "a bare spec has an edge")
         // What a new line starts as, and what Reset puts back: the outline, not the bare spec.
         check(TextLook.of(TextStyleSpec.NEW_LINE) == TextLook.Outline, "a new line does not start outlined")
-        for (preset in TitlePreset.entries) check(TextLook.of(preset.style) == preset.look, "${preset.label}'s style is not its look")
+        // A template lights its own look's chip, or - tuned past every look, as the
+        // E3 templates with a second edge or their own bubble are - none: never another's.
+        for (preset in TitlePreset.entries) check(TextLook.of(preset.style).let { it == preset.look || it == null }, "${preset.label}'s style reads as another look")
+        check(TitlePreset.entries.count { TextLook.of(it.style) == it.look } >= 17, "the first seventeen templates no longer light their looks")
         check(CaptionStylePreset.entries.map { it.style }.distinct().size == CaptionStylePreset.entries.size, "two caption presets are the same style")
         // A saved style's name is the first free number, never one that is taken.
         check(TextStyleNames.next(emptyList()) == "Style 1", "the first saved style")
