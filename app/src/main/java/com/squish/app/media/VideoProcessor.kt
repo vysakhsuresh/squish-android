@@ -927,7 +927,7 @@ class VideoProcessor(private val context: Context) {
      * "Keep HDR" export the effect passes the frames through untouched.
      */
     private fun hdrLift(uri: android.net.Uri?): Effect? =
-        uri?.takeIf { MediaCompat.cached(it)?.hdr == true }?.let { com.squish.app.media.effects.HdrLiftEffect { true } }
+        uri?.takeIf { MediaCompat.cached(it)?.hlg == true }?.let { com.squish.app.media.effects.HdrLiftEffect { true } }
 
     private fun singleFileEffects(state: EditorUiState): List<Effect> = buildList {
         rotation(state)?.let { add(it) }

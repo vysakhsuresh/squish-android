@@ -54,6 +54,8 @@ object MediaCompat {
         val hasAudio: Boolean = true,
         val sampleRateHz: Int = 0,
         val hdr: Boolean = false,
+        /** The picture is HLG: the one HDR whose tone-mapped output is lifted to SDR white (HdrLiftEffect, fitted to HLG). */
+        val hlg: Boolean = false,
         val videoSoftware: Boolean = false,
         val audioSoftware: Boolean = false
     )
@@ -106,6 +108,7 @@ object MediaCompat {
             hasAudio = audio.isNotEmpty(),
             sampleRateHz = audio.filter { decodable(context, it) }.maxOfOrNull { it.sampleRate }?.coerceAtLeast(0) ?: 0,
             hdr = video.any { ColorInfo.isTransferHdr(it.colorInfo) },
+            hlg = video.any { it.colorInfo?.colorTransfer == androidx.media3.common.C.COLOR_TRANSFER_HLG },
             // Software only when no track of the part goes through the
             // platform and some track goes through FFmpeg - the same "any
             // track will do" the player applies.

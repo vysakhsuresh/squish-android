@@ -1001,7 +1001,7 @@ class PreviewEngine(private val context: Context) {
     private fun applyLive(s: Surface, clip: Clip, timelineMs: Long) {
         // Before the early return: whether a file is HDR is learnt in the
         // background (MediaCompat), so the same clip can turn out HDR a tick later.
-        val hdr = (clip.uri ?: fallbackUri)?.let { com.squish.app.media.MediaCompat.cached(it)?.hdr } == true
+        val hdr = (clip.uri ?: fallbackUri)?.let { com.squish.app.media.MediaCompat.cached(it)?.hlg } == true
         val hdrChanged = s.hdrLift.get() != hdr
         if (hdrChanged) {
             s.hdrLift.set(hdr)
