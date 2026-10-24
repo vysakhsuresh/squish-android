@@ -11,5 +11,10 @@
             android:name="com.squish.app.debug.SyncProbeActivity"
             android:exported="true"
             android:label="Squish sync probe" />
+        <!-- Whisper run on a file (debug/WhisperProbeActivity.kt, EDGE_PLAN E1). -->
+        <activity
+            android:name="com.squish.app.debug.WhisperProbeActivity"
+            android:exported="true"
+            android:label="Squish whisper probe" />
     </application>
 </manifest>
