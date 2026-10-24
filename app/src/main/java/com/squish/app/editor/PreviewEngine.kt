@@ -271,6 +271,8 @@ class PreviewEngine(private val context: Context) {
 
         // Read by the shaders every frame; written by the tick.
         val chroma = AtomicReference<ChromaKey?>(null)
+        /** Whether the clip on this surface is HDR, so its tone-mapped picture is lifted to SDR white (HdrLiftEffect). */
+        val hdrLift = java.util.concurrent.atomic.AtomicBoolean(false)
         val mask = AtomicReference<Pair<Mask?, Long>>(null to 0L)
         val background = AtomicReference<Pair<BackgroundRemoval?, Long>>(null to 0L)
         /**
@@ -465,6 +467,8 @@ class PreviewEngine(private val context: Context) {
             })
 
             chain = buildList<Effect> {
+                // First, so the key, the grade and the mask see the HDR picture as it will be seen.
+                add(com.squish.app.media.effects.HdrLiftEffect { hdrLift.get() })
                 // Keyed first, then background, then masked - the export's order.
                 add(ChromaKeyEffect { chroma.get() })
                 add(BackgroundEffect({ background.get().first }, { background.get().second }, timesAreSourceTime = true))
@@ -972,6 +976,14 @@ class PreviewEngine(private val context: Context) {
      * nothing new by itself.
      */
     private fun applyLive(s: Surface, clip: Clip, timelineMs: Long) {
+        // Before the early return: whether a file is HDR is learnt in the
+        // background (MediaCompat), so the same clip can turn out HDR a tick later.
+        val hdr = (clip.uri ?: fallbackUri)?.let { com.squish.app.media.MediaCompat.cached(it)?.hdr } == true
+        val hdrChanged = s.hdrLift.get() != hdr
+        if (hdrChanged) {
+            s.hdrLift.set(hdr)
+            s.liveClip = null
+        }
         // Only when something read here has changed: an edit makes a new Clip,
         // the loupe flips keyPreview, the library makes a new effects list.
         // This runs per surface per tick, and the pairs and lists built below
@@ -988,6 +1000,7 @@ class PreviewEngine(private val context: Context) {
         s.liveClip = clip
         s.liveKeyPreview = keyPreview
         var changed = false
+        if (hdrChanged) changed = true
         val chroma = if (keyPreview) clip.chromaKey else null
         if (s.chroma.get() != chroma) {
             s.chroma.set(chroma)

@@ -127,6 +127,25 @@ fun main() {
     val p400 = px(pq, pqSignal(400.0), pqSignal(400.0), pqSignal(400.0))[1]
     check(p400 in (pqWhite + 3)..253, "PQ 400 nits ($p400) is not between white ($pqWhite) and the peak")
 
+    // ---- Media3's own HDR-to-SDR, lifted to ToneMap's white (EDGE_PLAN B4). ----
+    // Measured on the moto, 25 Oct: smptehdbars tagged HLG, through the
+    // preview and through an export alike, came out 61 (the 40% bar) and 134
+    // (the 75% bar) - 1000 nits put at white, so HLG's reference white sat at
+    // half brightness while every thumbnail of the same clip had it at white.
+    // The lift takes Media3's output to what ToneMap gives the same signal.
+    val hlg40 = px(hlg, 0.40, 0.40, 0.40)[1]
+    val hlg75 = px(hlg, 0.75, 0.75, 0.75)[1]
+    fun lifted(v: Int) = (ToneMap.liftMedia3(v / 255.0, v / 255.0, v / 255.0)[1] * 255 + 0.5).toInt()
+    check(kotlin.math.abs(lifted(134) - hlg75) <= 8, "Media3's 75% bar (134) lifts to ${lifted(134)}, ToneMap gives $hlg75")
+    check(kotlin.math.abs(lifted(61) - hlg40) <= 8, "Media3's 40% bar (61) lifts to ${lifted(61)}, ToneMap gives $hlg40")
+    check(lifted(0) == 0, "black lifted to ${lifted(0)}")
+    check(lifted(255) == 255, "Media3's peak lifted to ${lifted(255)}, not white")
+    var lastLift = -1
+    for (v in 0..255) { val l = lifted(v); check(l >= lastLift, "the lift falls at $v: $l after $lastLift"); lastLift = l }
+    // A colour keeps its hue: Media3's yellow bar (136,129,0) stays yellow, red over green as it was.
+    val y = ToneMap.liftMedia3(136 / 255.0, 129 / 255.0, 0.0)
+    check(y[2] < 0.02 && y[0] > y[1] && y[1] > 0.6, "Media3's yellow lifted to ${y.toList()}")
+
     if (problems.isEmpty()) {
         println("PASS: HLG and PQ come to BT.709 and sRGB with black black, grey grey, white near white, hue kept and the peak rolled into white")
     } else {

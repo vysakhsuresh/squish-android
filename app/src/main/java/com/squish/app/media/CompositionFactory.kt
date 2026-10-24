@@ -243,6 +243,8 @@ object CompositionFactory {
      */
     fun overlayEffects(clip: Clip, canvas: ExportPresets.Resolution?, speed: List<Effect>): List<Effect> =
         buildList {
+            // HDR lifted to SDR white first (HdrLiftEffect), as on the base.
+            if (clip.uri?.let { MediaCompat.cached(it)?.hdr } == true) add(com.squish.app.media.effects.HdrLiftEffect { true })
             // Keyed first, on the raw frame, so the matte is cut from the pixels the
             // camera saw rather than from a scaled and resampled copy of them.
             clip.chromaKey?.let { add(ChromaKeyEffect(it)) }

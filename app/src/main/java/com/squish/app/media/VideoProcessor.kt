@@ -660,6 +660,8 @@ class VideoProcessor(private val context: Context) {
     ): EditedMediaItem {
         val uri = clip.uri ?: state.sourceUri
         val effects: List<Effect> = if (state.audioOnly) emptyList() else buildList {
+            // First, so the key, the grade and the mask see the HDR picture as it will be seen.
+            hdrLift(uri)?.let { add(it) }
             clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
             clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
             clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
@@ -885,7 +887,9 @@ class VideoProcessor(private val context: Context) {
                     // sound and cancels the copy.
                     if (plainTrim) ImmutableList.of()
                     else buildAudioProcessors(SpeedRamp(), 0L, state.originalVolume),
-                    if (state.audioOnly) ImmutableList.of() else ImmutableList.copyOf(singleFileEffects(state))
+                    if (state.audioOnly) ImmutableList.of()
+                    // A plain trim is copied, so it is given no pass at all.
+                    else ImmutableList.copyOf(listOfNotNull(if (plainTrim) null else hdrLift(state.sourceUri)) + singleFileEffects(state))
                 )
             )
             .build()
@@ -897,6 +901,15 @@ class VideoProcessor(private val context: Context) {
      * given a pass over every frame that changes nothing. No grade: a look is a
      * clip's own, and the quick tools have no clips.
      */
+    /**
+     * An HDR file's picture, after Media3 has tone-mapped it, lifted to SDR
+     * white (HdrLiftEffect, EDGE_PLAN B4): Media3 puts the peak at white and
+     * left every HDR clip at half brightness. None for an SDR file. On a
+     * "Keep HDR" export the effect passes the frames through untouched.
+     */
+    private fun hdrLift(uri: android.net.Uri?): Effect? =
+        uri?.takeIf { MediaCompat.cached(it)?.hdr == true }?.let { com.squish.app.media.effects.HdrLiftEffect { true } }
+
     private fun singleFileEffects(state: EditorUiState): List<Effect> = buildList {
         rotation(state)?.let { add(it) }
         crop(state, clip = null)?.let { add(it) }

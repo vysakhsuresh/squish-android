@@ -129,6 +129,32 @@ object ToneMap {
         return t
     }
 
+    /**
+     * How Media3's HDR-to-SDR output reads back to display light: a power of
+     * [MEDIA3_GAMMA] with the peak, [PEAK_NITS], at 1. Fitted to what the moto
+     * gave for two bars of a known HLG signal (EDGE_PLAN B4).
+     */
+    const val MEDIA3_GAMMA = 2.4
+
+    /**
+     * Media3's tone-mapped pixel (0..1, as its shader chain carries it) lifted
+     * to the white this file's own pictures use. Media3 maps an HDR picture's
+     * peak to white, so HLG's reference white - 203 nits, where a person's
+     * skin and a white shirt sit - came out at half brightness: every HDR clip
+     * looked dim in the preview and in the file, and the filmstrip beside it,
+     * tone-mapped here, did not. Read back to display light, put in units of
+     * SDR white, rolled into white by [curve] on the largest channel (so a
+     * colour keeps its hue) and encoded as [tables] encodes. The shader
+     * squish_hdr_lift_es2.glsl is this, line for line.
+     */
+    fun liftMedia3(r: Double, g: Double, b: Double): DoubleArray {
+        val m = max(r, max(g, b)).coerceIn(0.0, 1.0)
+        if (m <= 0.0) return doubleArrayOf(0.0, 0.0, 0.0)
+        val lm = m.pow(MEDIA3_GAMMA) * top
+        val ratio = curve(lm) / lm
+        return doubleArrayOf(r, g, b).map { c -> bt709Oetf(c.coerceIn(0.0, 1.0).pow(MEDIA3_GAMMA) * top * ratio) }.toDoubleArray()
+    }
+
     private val made = java.util.concurrent.ConcurrentHashMap<Int, FloatArray>()
 
     /** [tables], made once for each transfer: every decoder of an HDR stream is handed the same array. */
