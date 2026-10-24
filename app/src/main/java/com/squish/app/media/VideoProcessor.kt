@@ -172,6 +172,17 @@ class VideoProcessor(private val context: Context) {
                 }
             }
             result = outcome
+            // The benchmark line (docs/BENCHMARKS.md, EDGE_PLAN A1): wall time
+            // of the whole render against the length it made.
+            if (outcome.isSuccess) {
+                val took = SystemClock.elapsedRealtime() - started
+                val lengthMs = state.trimmedDurationMs
+                com.squish.app.av.Perf.took(
+                    "export", took,
+                    "length=$lengthMs x=${if (took > 0) String.format(java.util.Locale.ROOT, "%.2f", lengthMs.toDouble() / took) else "?"} " +
+                        "bytes=${outputFile.length()} p=${state.outputP} fps=${state.outputFps}"
+                )
+            }
             outcome
         } finally {
             poll.cancel()

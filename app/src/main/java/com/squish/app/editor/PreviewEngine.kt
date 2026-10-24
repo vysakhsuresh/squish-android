@@ -748,6 +748,14 @@ class PreviewEngine(private val context: Context) {
         .build()
         .apply {
             setSeekParameters(SeekParameters.EXACT)
+            // Frames the renderer dropped, for the benchmark (EDGE_PLAN A1): logged as
+            // they are reported, in batches and on every stop, so a script sums the
+            // lines between a play and a pause.
+            addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
+                override fun onDroppedVideoFrames(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
+                    com.squish.app.av.Perf.took("dropped", elapsedMs, "frames=$droppedFrames")
+                }
+            })
             repeatMode = Player.REPEAT_MODE_OFF
             playWhenReady = false
         }
@@ -1054,6 +1062,7 @@ class PreviewEngine(private val context: Context) {
 
     fun play() {
         if (released) return
+        com.squish.app.av.Perf.took("play", 0, "at=$positionMs")
         if (durationMs > 0 && positionMs >= durationMs) seekTo(0)
         // Play from a scrub still settling: the surfaces may be on sync samples,
         // and the clock is about to be read off one of them. Land them exactly
@@ -1072,6 +1081,7 @@ class PreviewEngine(private val context: Context) {
 
     fun pause() {
         if (released) return
+        if (playing) com.squish.app.av.Perf.took("pause", SystemClock.elapsedRealtime() - anchorWallMs, "at=$positionMs")
         playing = false
         focus.drop()
         allSurfaces().forEach { it.player.pause() }

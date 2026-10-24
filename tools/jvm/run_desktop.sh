@@ -109,6 +109,7 @@ run skin       "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/SpatialMoves
 run wheels     "$SRC/media/effects/ColorWheels.kt" tools/jvm/WheelChecks.kt
 run cutsounds  $TIMELINE "$SRC/timeline/CutSounds.kt" tools/jvm/CutSoundChecks.kt
 run controls   tools/jvm/ControlChecks.kt
+run framecompare tools/jvm/FrameCompare.kt
 run draftfields tools/jvm/DraftFieldChecks.kt
 run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScreen.kt" tools/jvm/SplitScreenChecks.kt
 run gif        "$SRC/media/gif/GifEncoder.kt" "$SRC/media/gif/GifSize.kt" tools/jvm/GifChecks.kt

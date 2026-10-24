@@ -123,6 +123,7 @@ run skin       "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/SpatialMoves
 run wheels     "$SRC/media/effects/ColorWheels.kt" tools/jvm/WheelChecks.kt
 run cutsounds  $TIMELINE "$SRC/timeline/CutSounds.kt" tools/jvm/CutSoundChecks.kt
 run controls   tools/jvm/ControlChecks.kt
+run framecompare tools/jvm/FrameCompare.kt
 run draftfields tools/jvm/DraftFieldChecks.kt
 run runners   tools/jvm/RunnerChecks.kt
 run draftkeys tools/jvm/DraftKeyChecks.kt
