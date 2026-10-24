@@ -99,6 +99,12 @@ These are on at least one competitor's headline list and we have them:
 
 ## 2. The gaps
 
+> **24 October:** the InShot gaps still open after the work below - smooth
+> slow-mo, noise reduction under speech, geometric transitions, bilingual
+> captions, gradient and pattern backgrounds, animated stickers, a larger
+> sound-effects library, blend modes on video - are a work order in
+> `docs/INSHOT_PARITY.md`, checked against the code rather than this list.
+
 Verdicts: **BUILD** (worth it), **LATER** (worth it, not now), **SKIP** (on
 purpose, reason given), **DECIDE** (needs your call, usually because it costs
 money or a promise).

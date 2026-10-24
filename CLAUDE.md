@@ -1547,3 +1547,7 @@ should work through it and then delete what holds up.
 
 `BUILD_NOTES.md` has the Media3 API details and the things most likely to need a
 touch. `ARCHITECTURE.md` has the shape of the app.
+
+`docs/INSHOT_PARITY.md` is the open work order for the features InShot has and
+Squish does not (24 Oct): a checklist, worked from the first item not `[x]`, with
+its own testing rules. A session told to "carry on the InShot list" starts there.
