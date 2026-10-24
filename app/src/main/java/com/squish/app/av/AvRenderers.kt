@@ -145,6 +145,20 @@ private class AvVideoRenderer(private val appContext: Context, builder: MediaCod
         val platform = if (AvCodecs.isOwn(format)) emptyList() else super.getDecoderInfos(mediaCodecSelector, format, requiresSecureDecoder)
         return AvSupport.decoders(appContext, platform, format, video = true)
     }
+
+    /**
+     * Media3 leaves out, before a seek's target, samples it is told nothing
+     * depends on - safe for the phone's decoders. FFmpeg's frame-threaded HEVC
+     * was seen on the moto (24 October, a 10-bit x265 MKV) to lose references
+     * after a jump ("Could not find ref with POC") and to stall once in six
+     * jumps with this left on, none in six with it off; so FFmpeg is given
+     * every sample and pays for decoding a few more frames on a seek.
+     */
+    override fun shouldDiscardDecoderInputBuffer(buffer: androidx.media3.decoder.DecoderInputBuffer): Boolean {
+        val info = codecInfo
+        if (info != null && AvCodecs.isOurs(info)) return false
+        return super.shouldDiscardDecoderInputBuffer(buffer)
+    }
 }
 
 private class AvAudioRenderer(

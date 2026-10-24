@@ -94,6 +94,8 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
     private var announced: String? = null
     /** Bumped by every flush; work begun under an older one is thrown away. */
     @Volatile private var generation = 0
+    /** True from a flush's start until FFmpeg itself is flushed; see flush. */
+    private var flushing = false
     @Volatile private var released = false
     @Volatile private var failure: Exception? = null
     /** Held by the worker for each packet it feeds and drains; a flush takes it to know FFmpeg is idle. */
@@ -237,13 +239,25 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
 
     override fun flush() {
         lock.withLock {
+            // The worker takes no packet while this is up. Between the bump
+            // below and taking decoderLock it could otherwise pick a packet
+            // left from before the seek, stamp it with the *new* generation,
+            // feed it and then wait for an output slot - every one of them
+            // held by the renderer, which is this thread, parked on
+            // decoderLock. That deadlock was the preview frozen black after
+            // a jump into a long HEVC film (moto, 24 October; seen in a jdb
+            // thread dump).
+            flushing = true
             generation++
+            queuedInputs.clear()
             inputFree.signalAll()
             inputQueued.signalAll()
             outputFree.signalAll()
         }
         decoderLock.withLock {
             lock.withLock {
+                flushing = false
+                inputQueued.signalAll()
                 runCatching { decoder.flush() }
                 queuedInputs.clear()
                 freeInputs.clear()
@@ -321,7 +335,7 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
                 val index: Int
                 val gen: Int
                 lock.withLock {
-                    while (!released && queuedInputs.isEmpty()) inputQueued.await()
+                    while (!released && (flushing || queuedInputs.isEmpty())) inputQueued.await()
                     if (released) return
                     index = queuedInputs.pollFirst()!!
                     gen = generation
@@ -393,8 +407,8 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
 
     /** A free output slot, waiting for the renderer to give one back; null when a flush came first. */
     private fun takeOutput(gen: Int): Int? = lock.withLock {
-        while (freeOutputs.isEmpty() && gen == generation && !released) outputFree.await()
-        if (gen != generation || released) null else freeOutputs.pollFirst()
+        while (freeOutputs.isEmpty() && gen == generation && !released && !flushing) outputFree.await()
+        if (gen != generation || released || flushing) null else freeOutputs.pollFirst()
     }
 
     /** The frame just received into [out]; false for one with nothing in it. */
