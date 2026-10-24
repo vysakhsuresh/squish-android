@@ -482,7 +482,7 @@ object CaptionRenderer {
      */
     private fun paintArc(item: TextOverlayItem, shown: String, textSize: Float, paint: TextPaint): Painted {
         val bend = item.arc.coerceIn(-1f, 1f)
-        paint.textAlign = Paint.Align.CENTER
+        paint.textAlign = Paint.Align.LEFT
         // The whole line's length, so revealed letters do not re-bend it.
         val lineW = paint.measureText(item.text).coerceAtLeast(1f)
         val r = TextDepth.arcRadius(lineW, bend)
@@ -514,7 +514,10 @@ object CaptionRenderer {
         val path = Path().apply {
             if (rainbow) addArc(oval, 270f - halfDeg, 2 * halfDeg) else addArc(oval, 90f + halfDeg, -2 * halfDeg)
         }
-        val along = lineW / 2f
+        // From the arc's start, by half of what the shown letters leave of it: drawn
+        // on a path, text runs from the offset whatever the paint's alignment, and a
+        // centred paint at half the length started the line in the middle (seen on the moto).
+        val along = ((lineW - paint.measureText(shown)) / 2f).coerceAtLeast(0f)
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)

@@ -34,8 +34,8 @@ one line of evidence. P items are also ticked in `docs/INSHOT_PARITY.md`.
 - [ ] **D3** Keyframes on effects
 - [ ] **D4** Group editing
 - [ ] **D5** Before/after hold
-- [ ] **E3** Text depth
-- [ ] **E4** Text mask
+- [~] **E3** Text depth - built (db060c1): gradient fill, glow colour and reach, a second edge, bubble padding, a bend, a colour per word, 31 title templates, one renderer (TextDepthChecks, negative-tested; drafts round-trip every new field). SEEN on the moto 25 Oct: the Fire template's gradient and red glow; Bend at 41% drew the line from the arc's middle off its end at first - fixed (path text runs from its offset whatever the alignment) and seen as an even arch. Not seen: Pop art/Comic second edges, word colours, the padding slider, a bent line in a file other than through E4
+- [x] **E4** Text mask - knockout text: the line drawn as a full-frame card in its colour with its letters cut out, through the one caption renderer, the card never turned or raised (KnockoutChecks, negative-tested). SEEN on the moto 25 Oct in the preview and a 480p export: a bent, gradient "HOT DEAL" as a yellow card with the video through the letters, in the same place in both
 - [ ] **E5** Downloadable on-device voices
 - [ ] **F2** Effects 21 -> 60+
 - [ ] **F3** Transitions 26 -> 50+ (includes P3)
