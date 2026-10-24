@@ -61,6 +61,20 @@ data class TextOverlayItem(
     val loopMs: Long = TextAnimation.DEFAULT_LOOP_MS,
     /** The word being said standing out, and how many words at a time (EDGE_PLAN E2). */
     val wordStyle: WordStyle = WordStyle.NONE,
+    // Text with depth (EDGE_PLAN E3): see TextStyleSpec for each.
+    val fill: TextFill = TextFill.SOLID,
+    val glowColorArgb: Int? = null,
+    val glowStrength: Float = 1f,
+    val outline2: TextStroke = TextStroke.NONE,
+    val padding: Float = 1f,
+    val arc: Float = 0f,
+    /**
+     * A colour for single words of the line, by the word's place in it (as
+     * the line splits on spaces); a word not named is in the line's colour.
+     * The line's own, not its style: Apply to all does not paint another
+     * line's third word.
+     */
+    val wordColors: Map<Int, Int> = emptyMap(),
     /**
      * Where each word of an auto-caption starts, from [startMs], as the
      * segmenter heard them; empty for a line typed by hand. Read by the Words
@@ -116,7 +130,9 @@ data class TextOverlayItem(
             font = font, fontFile = fontFile, bold = bold, italic = italic, underline = underline,
             align = align, letterSpacing = letterSpacing, lineSpacing = lineSpacing,
             colorArgb = colorArgb, sizeSp = sizeSp, stroke = stroke, shadow = shadow,
-            background = background, glow = glow, opacity = opacity, words = wordStyle
+            background = background, glow = glow, opacity = opacity, words = wordStyle,
+            fill = fill, glowColorArgb = glowColorArgb, glowStrength = glowStrength, outline2 = outline2,
+            padding = padding, arc = arc
         )
 
     /** This line in [spec]'s style; its words, timing and place are its own still. */
@@ -124,7 +140,9 @@ data class TextOverlayItem(
         font = spec.font, fontFile = spec.fontFile, bold = spec.bold, italic = spec.italic, underline = spec.underline,
         align = spec.align, letterSpacing = spec.letterSpacing, lineSpacing = spec.lineSpacing,
         colorArgb = spec.colorArgb, sizeSp = spec.sizeSp, stroke = spec.stroke, shadow = spec.shadow,
-        background = spec.background, glow = spec.glow, opacity = spec.opacity, wordStyle = spec.words
+        background = spec.background, glow = spec.glow, opacity = spec.opacity, wordStyle = spec.words,
+        fill = spec.fill, glowColorArgb = spec.glowColorArgb, glowStrength = spec.glowStrength, outline2 = spec.outline2,
+        padding = spec.padding, arc = spec.arc
     )
 
     /** How it moves, on its own: what Animation's Apply to all carries. */

@@ -87,6 +87,13 @@ private fun wildLine(): TextOverlayItem = TextOverlayItem(
     loop = TextLoop.entries.last(),
     loopMs = 1_150L,
     wordStyle = com.squish.app.editor.WordStyle(com.squish.app.editor.WordMode.Karaoke, 0xFF22C55E.toInt(), 3),
+    fill = com.squish.app.editor.TextFill(listOf(0xFFFF0000.toInt(), 0xFF00FF00.toInt(), 0xFF0000FF.toInt()), 33f),
+    glowColorArgb = 0xFF00FFAA.toInt(),
+    glowStrength = 1.7f,
+    outline2 = TextStroke(0xFF123456.toInt(), 0.11f),
+    padding = 1.4f,
+    arc = -0.35f,
+    wordColors = mapOf(0 to 0xFFFF00FF.toInt(), 2 to 0xFF00FFFF.toInt()),
     wordStartsMs = listOf(0L, 420L, 910L, 1_500L),
     // A sticker *and* a shape is not a state the editor can make - a line is one
     // of the three kinds. It is set that way on purpose: the shape's three keys

@@ -106,7 +106,14 @@ private val NOT_PERSISTED = mapOf(
     "shadow" to "the same",
     // E2's word styles: TextStyleJson writes them as wordMode, wordColor and
     // wordsPerScreen, and DraftTextRoundTripChecks carries one through a draft.
-    "wordStyle" to "written by TextStyleJson.write (wordMode, wordColor, wordsPerScreen) and read by TextStyleJson.read"
+    "wordStyle" to "written by TextStyleJson.write (wordMode, wordColor, wordsPerScreen) and read by TextStyleJson.read",
+    // E3's text with depth: TextStyleJson again, each under its own key or two.
+    "fill" to "written by TextStyleJson.write (fillColors, fillAngle) and read by TextStyleJson.read",
+    "glowColorArgb" to "written by TextStyleJson.write (glowColor) and read by TextStyleJson.read",
+    "glowStrength" to "written by TextStyleJson.write and read by TextStyleJson.read",
+    "outline2" to "written by TextStyleJson.write (outline2Color, outline2Width) and read by TextStyleJson.read",
+    "padding" to "written by TextStyleJson.write and read by TextStyleJson.read",
+    "arc" to "written by TextStyleJson.write and read by TextStyleJson.read"
 )
 
 /**

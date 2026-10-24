@@ -85,6 +85,70 @@ data class TextBackground(val colorArgb: Int, val opacity: Float, val radius: Fl
     }
 }
 
+/**
+ * The letters' fill (EDGE_PLAN E3): one colour - the line's own - or a
+ * gradient of two or three [colors] at [angleDegrees], 0 running left to
+ * right and 90 top to bottom.
+ */
+data class TextFill(val colors: List<Int> = emptyList(), val angleDegrees: Float = 90f) {
+    val isGradient: Boolean get() = colors.size >= 2
+
+    companion object {
+        val SOLID = TextFill()
+        const val MAX_STOPS = 3
+    }
+}
+
+/**
+ * The geometry text with depth is drawn with (EDGE_PLAN E3), with no Android
+ * in it: tools/jvm/TextDepthChecks.kt executes it, and CaptionRenderer draws
+ * with what it answers.
+ */
+object TextDepth {
+
+    /**
+     * Where a gradient at [angleDegrees] starts and ends across a box [w] by [h]
+     * (x0, y0, x1, y1): through the box's middle, long enough that its first
+     * and last colours reach the corners - a gradient whose ends sat inside
+     * the box painted its corners flat.
+     */
+    fun gradientEnds(w: Float, h: Float, angleDegrees: Float): FloatArray {
+        val a = Math.toRadians(angleDegrees.toDouble())
+        val dx = kotlin.math.cos(a).toFloat()
+        val dy = kotlin.math.sin(a).toFloat()
+        val half = (w * kotlin.math.abs(dx) + h * kotlin.math.abs(dy)) / 2f
+        val cx = w / 2f
+        val cy = h / 2f
+        return floatArrayOf(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half)
+    }
+
+    /** The angle a line bent by [bend] spans: a full bend, either way, is half a circle. */
+    private fun sweep(bend: Float): Double = kotlin.math.abs(bend.coerceIn(-1f, 1f)) * PI
+
+    /** The radius of the circle a line [width] wide is laid on when bent by [bend]; infinite for a straight line. */
+    fun arcRadius(width: Float, bend: Float): Float {
+        val s = sweep(bend)
+        return if (s <= 1e-6) Float.POSITIVE_INFINITY else (width / s).toFloat()
+    }
+
+    /** How far the middle of the bent line stands off the line through its ends. */
+    fun arcRise(width: Float, bend: Float): Float {
+        val s = sweep(bend)
+        if (s <= 1e-6) return 0f
+        return (arcRadius(width, bend) * (1 - kotlin.math.cos(s / 2))).toFloat()
+    }
+
+    /** How far apart the bent line's ends are: narrower than the line laid flat. */
+    fun arcChord(width: Float, bend: Float): Float {
+        val s = sweep(bend)
+        if (s <= 1e-6) return width
+        return (2 * arcRadius(width, bend) * kotlin.math.sin(s / 2)).toFloat()
+    }
+
+    /** The half-angle, in degrees, a bent line spans either side of its middle. */
+    fun arcHalfDegrees(bend: Float): Float = Math.toDegrees(sweep(bend) / 2).toFloat()
+}
+
 /** How the word being said stands out from the rest of its line (EDGE_PLAN E2). */
 enum class WordMode(val label: String) {
     None("Off"),
@@ -255,7 +319,18 @@ data class TextStyleSpec(
     val glow: Boolean = false,
     val opacity: Float = 1f,
     /** The word being said standing out, and how many words at a time. */
-    val words: WordStyle = WordStyle.NONE
+    val words: WordStyle = WordStyle.NONE,
+    /** A gradient in place of the one colour (EDGE_PLAN E3). */
+    val fill: TextFill = TextFill.SOLID,
+    /** The glow's own colour - null is the letters' - and how far it reaches, 0.2 to 2. */
+    val glowColorArgb: Int? = null,
+    val glowStrength: Float = 1f,
+    /** A second edge, outside the first. */
+    val outline2: TextStroke = TextStroke.NONE,
+    /** Room round the letters inside a bubble, as a multiple of the usual. */
+    val padding: Float = 1f,
+    /** The line bent into an arc, -1 (a smile) to 1 (a rainbow); 0 is straight. */
+    val arc: Float = 0f
 ) {
     companion object {
         const val DEFAULT_SIZE_SP = 28
@@ -743,7 +818,9 @@ enum class TitlePreset(
     val colorArgb: Int,
     val sizeSp: Int,
     val yFraction: Float,
-    val exit: TextExit = TextExit.Fade
+    val exit: TextExit = TextExit.Fade,
+    /** What a template adds on top of its look: a gradient, a bend, a second edge (EDGE_PLAN E3). */
+    private val extra: (TextStyleSpec) -> TextStyleSpec = { it }
 ) {
     Headline("Headline", "BIG NEWS", TextFont.Bold, TextLook.Outline, TextMotion.Pop, WHITE, 44, 0.45f),
     Subtitle("Subtitle", "Say it here", TextFont.Sans, TextLook.Box, TextMotion.Fade, WHITE, 26, 0.84f),
@@ -761,11 +838,41 @@ enum class TitlePreset(
     Love("Love", "Forever", TextFont.Hand, TextLook.Neon, TextMotion.Pop, 0xFFFF6B8B.toInt(), 46, 0.45f),
     Follow("Follow", "Follow for more", TextFont.Bold, TextLook.Box, TextMotion.Slide, 0xFFFFD166.toInt(), 28, 0.8f, TextExit.Slide),
     Cinema("Cinema", "A FILM BY YOU", TextFont.Condensed, TextLook.Plain, TextMotion.Fade, WHITE, 26, 0.5f),
-    Spin("Spin", "Let's go!", TextFont.Bold, TextLook.Outline, TextMotion.Spin, 0xFF5CE1E6.toInt(), 46, 0.4f, TextExit.Spin);
+    Spin("Spin", "Let's go!", TextFont.Bold, TextLook.Outline, TextMotion.Spin, 0xFF5CE1E6.toInt(), 46, 0.4f, TextExit.Spin),
+
+    // Text with depth (EDGE_PLAN E3).
+    Sunset("Sunset", "Golden hour", TextFont.Bold, TextLook.Shadow, TextMotion.Fade, WHITE, 48, 0.4f,
+        extra = { it.copy(fill = TextFill(listOf(0xFFFFD166.toInt(), 0xFFFF6B6B.toInt(), 0xFFC44DFF.toInt()), 90f)) }),
+    Ocean("Ocean", "Deep blue", TextFont.Serif, TextLook.Plain, TextMotion.Slide, WHITE, 46, 0.45f,
+        extra = { it.copy(fill = TextFill(listOf(0xFF5CE1E6.toInt(), 0xFF2F80ED.toInt()), 0f), outline2 = TextStroke(WHITE, 0.08f)) }),
+    Rainbow("Rainbow", "Summer days", TextFont.Bold, TextLook.Outline, TextMotion.Pop, WHITE, 44, 0.35f,
+        extra = { it.copy(arc = 0.45f, fill = TextFill(listOf(0xFFFF4FA3.toInt(), 0xFFFFD166.toInt(), 0xFF5CE1E6.toInt()), 0f)) }),
+    Smile("Smile", "Have a nice day", TextFont.Hand, TextLook.Shadow, TextMotion.Bounce, 0xFFFFD166.toInt(), 40, 0.6f,
+        extra = { it.copy(arc = -0.4f) }),
+    Badge("Badge", "OFFICIAL", TextFont.Condensed, TextLook.Outline, TextMotion.Zoom, WHITE, 42, 0.4f, TextExit.Zoom,
+        extra = { it.copy(arc = 0.6f, outline2 = TextStroke(0xFFFFD166.toInt(), 0.1f)) }),
+    PopArt("Pop art", "So good", TextFont.Bold, TextLook.Outline, TextMotion.Pop, 0xFFFF4FA3.toInt(), 52, 0.45f, TextExit.Pop,
+        extra = { it.copy(stroke = TextStroke(WHITE, 0.16f), outline2 = TextStroke(BLACK, 0.12f)) }),
+    Comic("Comic", "POW!", TextFont.Bold, TextLook.Outline, TextMotion.Bounce, 0xFFFFD166.toInt(), 64, 0.4f, TextExit.Pop,
+        extra = { it.copy(stroke = TextStroke(BLACK, 0.2f), outline2 = TextStroke(0xFFFF4FA3.toInt(), 0.14f)) }),
+    Chrome("Chrome", "PREMIUM", TextFont.Condensed, TextLook.Shadow, TextMotion.Fade, WHITE, 46, 0.45f,
+        extra = { it.copy(fill = TextFill(listOf(WHITE, 0xFF9AA3AD.toInt(), WHITE), 90f), letterSpacing = 0.12f) }),
+    Fire("Fire", "HOT DEAL", TextFont.Bold, TextLook.Neon, TextMotion.Blink, 0xFFFFD166.toInt(), 52, 0.4f, TextExit.Blink,
+        extra = { it.copy(fill = TextFill(listOf(0xFFFFE066.toInt(), 0xFFFF6B1A.toInt()), 90f), glowColorArgb = 0xFFFF3B30.toInt(), glowStrength = 1.6f) }),
+    Ice("Ice", "Chill", TextFont.Hand, TextLook.Neon, TextMotion.Fade, 0xFFBFEFFF.toInt(), 50, 0.45f,
+        extra = { it.copy(glowColorArgb = 0xFF2F80ED.toInt(), glowStrength = 1.4f) }),
+    Party("Party", "Let's celebrate", TextFont.Bold, TextLook.Outline, TextMotion.Spin, WHITE, 44, 0.4f, TextExit.Spin,
+        extra = { it.copy(arc = 0.3f, fill = TextFill(listOf(0xFF7CFF6B.toInt(), 0xFF5CE1E6.toInt(), 0xFFFF4FA3.toInt()), 45f)) }),
+    Tag("Tag", "NEW", TextFont.Bold, TextLook.Box, TextMotion.Slide, WHITE, 40, 0.25f, TextExit.Slide,
+        extra = { it.copy(background = TextBackground(0xFFFF3B30.toInt(), 0.95f, 0.3f, TextBubble.Box), padding = 1.8f) }),
+    Banner("Banner", "Grand opening", TextFont.Serif, TextLook.Box, TextMotion.Slide, WHITE, 34, 0.5f, TextExit.Slide,
+        extra = { it.copy(background = TextBackground(0xFF1B1B3A.toInt(), 0.9f, 0.3f, TextBubble.Band), padding = 1.6f, outline2 = TextStroke.NONE) }),
+    Retro("Retro", "Since 1985", TextFont.Condensed, TextLook.Shadow, TextMotion.Drop, 0xFFFF9F1C.toInt(), 48, 0.45f, TextExit.Rise,
+        extra = { it.copy(fill = TextFill(listOf(0xFFFFD166.toInt(), 0xFFFF6B6B.toInt()), 90f), stroke = TextStroke(0xFF1B1B3A.toInt(), 0.12f), outline2 = TextStroke(0xFFFFD166.toInt(), 0.08f)) });
 
     /** This title's style, on its own. */
     val style: TextStyleSpec
-        get() = look.applied(TextStyleSpec(font = font, colorArgb = colorArgb, sizeSp = sizeSp))
+        get() = extra(look.applied(TextStyleSpec(font = font, colorArgb = colorArgb, sizeSp = sizeSp)))
 }
 
 /**

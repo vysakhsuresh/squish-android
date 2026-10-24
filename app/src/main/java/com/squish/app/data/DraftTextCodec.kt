@@ -17,6 +17,7 @@ import com.squish.app.editor.TextStroke
 import com.squish.app.editor.TextStyleSpec
 import com.squish.app.editor.WordMode
 import com.squish.app.editor.WordStyle
+import com.squish.app.editor.TextFill
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
 import org.json.JSONArray
@@ -56,6 +57,8 @@ internal object DraftTextCodec {
         put("loop", item.loop.name)
         put("loopMs", item.loopMs)
         if (item.wordStartsMs.isNotEmpty()) put("wordStarts", JSONArray(item.wordStartsMs))
+        // A colour for single words (EDGE_PLAN E3), by their place in the line.
+        if (item.wordColors.isNotEmpty()) put("wordColors", JSONObject().apply { item.wordColors.forEach { (k, v) -> put(k.toString(), v) } })
         put("sticker", item.sticker)
         // Written only when it is one, so a draft of words is the shape it
         // always was and an older build reading this one simply finds no shape.
@@ -103,6 +106,7 @@ internal object DraftTextCodec {
             loop = enumOrNull<TextLoop>(json.optString("loop")) ?: TextLoop.None,
             loopMs = json.optLong("loopMs", TextAnimation.DEFAULT_LOOP_MS),
             wordStartsMs = json.optJSONArray("wordStarts")?.let { a -> (0 until a.length()).map { a.optLong(it) } }.orEmpty(),
+            wordColors = json.optJSONObject("wordColors")?.let { o -> o.keys().asSequence().mapNotNull { k -> k.toIntOrNull()?.let { it to o.optInt(k) } }.toMap() }.orEmpty(),
             sticker = json.optBoolean("sticker", false),
             shape = AnnotationShape.named(json.optString("shape").takeIf { it.isNotEmpty() }),
             shapeAspect = json.optDouble("shapeAspect", 1.0).toFloat()
@@ -168,6 +172,19 @@ object TextStyleJson {
             json.put("wordColor", s.words.colorArgb)
             json.put("wordsPerScreen", s.words.perScreen)
         }
+        // Text with depth (EDGE_PLAN E3), each only when it is set.
+        if (s.fill.isGradient) {
+            json.put("fillColors", org.json.JSONArray(s.fill.colors))
+            json.putFinite("fillAngle", s.fill.angleDegrees)
+        }
+        s.glowColorArgb?.let { json.put("glowColor", it) }
+        if (s.glowStrength != 1f) json.putFinite("glowStrength", s.glowStrength)
+        if (s.outline2.isOn) {
+            json.put("outline2Color", s.outline2.colorArgb)
+            json.putFinite("outline2Width", s.outline2.width)
+        }
+        if (s.padding != 1f) json.putFinite("padding", s.padding)
+        if (s.arc != 0f) json.putFinite("arc", s.arc)
     }
 
     fun encode(s: TextStyleSpec): JSONObject = JSONObject().also { write(it, s) }
@@ -217,7 +234,15 @@ object TextStyleJson {
                 mode = enumOrNull<WordMode>(json.optString("wordMode")) ?: WordMode.None,
                 colorArgb = json.optInt("wordColor", WordStyle.HIGHLIGHT_YELLOW),
                 perScreen = json.optInt("wordsPerScreen", 0).coerceIn(0, WordStyle.MAX_PER_SCREEN)
-            )
+            ),
+            fill = json.optJSONArray("fillColors")?.let { a ->
+                TextFill((0 until a.length()).map { a.optInt(it) }.take(TextFill.MAX_STOPS), json.optDouble("fillAngle", 90.0).toFloat())
+            } ?: TextFill.SOLID,
+            glowColorArgb = if (json.has("glowColor")) json.optInt("glowColor") else null,
+            glowStrength = json.optDouble("glowStrength", 1.0).toFloat().coerceIn(0.2f, 2f),
+            outline2 = TextStroke(json.optInt("outline2Color", TextStroke.NONE.colorArgb), json.optDouble("outline2Width", 0.0).toFloat()),
+            padding = json.optDouble("padding", 1.0).toFloat().coerceIn(0.5f, 3f),
+            arc = json.optDouble("arc", 0.0).toFloat().coerceIn(-1f, 1f)
         )
     }
 

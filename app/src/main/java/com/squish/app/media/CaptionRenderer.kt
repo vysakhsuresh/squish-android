@@ -29,6 +29,10 @@ import com.squish.app.editor.CaptionWords
 import com.squish.app.editor.WordMode
 import com.squish.app.editor.WordState
 import com.squish.app.editor.WordStyle
+import com.squish.app.editor.TextDepth
+import com.squish.app.editor.TextFill
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -210,10 +214,24 @@ object CaptionRenderer {
         val geometry: CharSequence = if (pops && active != null) SpannableString(shown).apply {
             setSpan(RelativeSizeSpan(WordStyle.POP_SCALE), active.first, active.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         } else shown
-        val filled: CharSequence = if (wordStyle != null && lit != null) SpannableString(geometry).apply {
-            val ink = if (wordStyle.mode == WordMode.Box) CaptionWords.inkOn(wordStyle.colorArgb) else wordStyle.colorArgb
-            setSpan(ForegroundColorSpan(ink), lit.first, lit.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        } else geometry
+        val filled: CharSequence = if ((wordStyle == null || lit == null) && item.wordColors.isEmpty()) geometry else SpannableString(geometry).apply {
+            // A colour of its own for single words (EDGE_PLAN E3), by their place
+            // in the whole line - so a page of a few words keeps each word's.
+            // Set first, so the word being said still wears the highlight.
+            if (item.wordColors.isNotEmpty()) {
+                var at = 0
+                CaptionWords.words(shown).forEachIndexed { i, w ->
+                    item.wordColors[(words?.from ?: 0) + i]?.let { setSpan(ForegroundColorSpan(it), at, at + w.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+                    at += w.length + 1
+                }
+            }
+            if (wordStyle != null && lit != null) {
+                val ink = if (wordStyle.mode == WordMode.Box) CaptionWords.inkOn(wordStyle.colorArgb) else wordStyle.colorArgb
+                setSpan(ForegroundColorSpan(ink), lit.first, lit.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        // A line bent into an arc is laid along a circle instead (EDGE_PLAN E3).
+        if (item.arc != 0f) return paintArc(item, shown, textSize, paint)
 
         val fullLayout = layout(item, sizing, paint, maxWidth, sizing, grow)
         val shownLayout = layout(item, filled, paint, fullLayout.width, sizing, grow)
@@ -221,7 +239,8 @@ object CaptionRenderer {
 
         // Room round the letters for the edge, the shadow, the glow or the box.
         val background = item.background
-        val pad = (textSize * padShare(item)).roundToInt() + if (wordStyle?.mode == WordMode.Box) (textSize * 0.15f).roundToInt() else 0
+        val pad = (textSize * padShare(item) * (if (item.background.isOn) item.padding.coerceIn(0.5f, 3f) else 1f)).roundToInt() +
+            if (wordStyle?.mode == WordMode.Box) (textSize * 0.15f).roundToInt() else 0
         val band = background.isOn && background.bubble == TextBubble.Band
         val tail = if (background.isOn && background.bubble == TextBubble.Speech) (textSize * 0.5f).roundToInt() else 0
         val grabWidth = (fullLayout.width + pad * 2).coerceAtLeast(1)
@@ -272,12 +291,19 @@ object CaptionRenderer {
         if (item.glow) {
             // A wide soft pass and a tight one in the letter colour, then the
             // letters themselves lightened, which is what reads as a tube lit up.
+            // Its own colour and reach where they are set (EDGE_PLAN E3).
+            val reach = item.glowStrength.coerceIn(0.2f, 2f)
             val glow = TextPaint(paint).apply {
-                maskFilter = BlurMaskFilter(textSize * 0.45f, BlurMaskFilter.Blur.NORMAL)
+                color = item.glowColorArgb ?: item.colorArgb
+                maskFilter = BlurMaskFilter(textSize * 0.45f * reach, BlurMaskFilter.Blur.NORMAL)
             }
             layout(item, geometry, glow, fullLayout.width, sizing, grow).draw(canvas)
-            glow.maskFilter = BlurMaskFilter(textSize * 0.15f, BlurMaskFilter.Blur.NORMAL)
+            glow.maskFilter = BlurMaskFilter(textSize * 0.15f * reach, BlurMaskFilter.Blur.NORMAL)
             layout(item, geometry, glow, fullLayout.width, sizing, grow).draw(canvas)
+        }
+        if (item.outline2.isOn) {
+            // The second edge, outside the first: drawn wider and under it.
+            layout(item, geometry, outerEdge(paint, item, textSize), fullLayout.width, sizing, grow).draw(canvas)
         }
         if (stroke.isOn) {
             val edge = TextPaint(paint).apply {
@@ -289,6 +315,9 @@ object CaptionRenderer {
             layout(item, geometry, edge, fullLayout.width, sizing, grow).draw(canvas)
         }
         if (item.glow) paint.color = lighten(item.colorArgb)
+        // A gradient on the letters' fill alone - set now, after every pass
+        // above copied the paint - across the box the whole line takes.
+        gradientFor(item, fullLayout.width.toFloat(), fullLayout.height.toFloat())?.let { paint.shader = it }
         shownLayout.draw(canvas)
         canvas.restore()
 
@@ -390,12 +419,112 @@ object CaptionRenderer {
         )
     }
 
+    /** The second edge (EDGE_PLAN E3): its width reaches past the first edge by its own. */
+    private fun outerEdge(paint: TextPaint, item: TextOverlayItem, textSize: Float) = TextPaint(paint).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = textSize * ((if (item.stroke.isOn) item.stroke.width else 0f) + 2f * item.outline2.width)
+        strokeJoin = Paint.Join.ROUND
+        color = item.outline2.colorArgb
+        shader = null
+    }
+
+    /** The letters' gradient across a box [w] by [h] (TextDepth.gradientEnds), or null for one colour. */
+    private fun gradientFor(item: TextOverlayItem, w: Float, h: Float): LinearGradient? {
+        val fill = item.fill
+        if (!fill.isGradient) return null
+        val e = TextDepth.gradientEnds(w, h, fill.angleDegrees)
+        val colours = fill.colors.take(TextFill.MAX_STOPS).toIntArray()
+        return LinearGradient(e[0], e[1], e[2], e[3], colours, null, Shader.TileMode.CLAMP)
+    }
+
+    /**
+     * A line bent into an arc (EDGE_PLAN E3): laid along a circle the line's
+     * own length round, centre below for a rainbow and above for a smile
+     * (TextDepth's radius), every pass the straight line has drawn in the
+     * same order. One line only - a bend over wrapped lines would bend each
+     * round a different circle - and the word styles stay with straight lines.
+     */
+    private fun paintArc(item: TextOverlayItem, shown: String, textSize: Float, paint: TextPaint): Painted {
+        val bend = item.arc.coerceIn(-1f, 1f)
+        paint.textAlign = Paint.Align.CENTER
+        // The whole line's length, so revealed letters do not re-bend it.
+        val lineW = paint.measureText(item.text).coerceAtLeast(1f)
+        val r = TextDepth.arcRadius(lineW, bend)
+        val half = Math.toRadians(TextDepth.arcHalfDegrees(bend).toDouble())
+        val fm = paint.fontMetrics
+        val ascent = -fm.ascent
+        val descent = fm.descent
+        val rainbow = bend > 0f
+        // The letters stand outward on a rainbow and inward on a smile.
+        val inner = if (rainbow) r - descent else r - ascent
+        val outer = if (rainbow) r + ascent else r + descent
+        var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE; var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+        for (i in 0..24) {
+            val phi = -half + 2 * half * i / 24.0
+            for (radius in floatArrayOf(inner, outer)) {
+                val x = (radius * kotlin.math.sin(phi)).toFloat()
+                val y = (if (rainbow) -radius * kotlin.math.cos(phi) else radius * kotlin.math.cos(phi)).toFloat()
+                minX = minOf(minX, x); maxX = maxOf(maxX, x); minY = minOf(minY, y); maxY = maxOf(maxY, y)
+            }
+        }
+        val pad = (textSize * padShare(item) * (if (item.background.isOn) item.padding.coerceIn(0.5f, 3f) else 1f)).roundToInt()
+        val width = (ceil(maxX - minX).toInt() + pad * 2).coerceAtLeast(1)
+        val height = (ceil(maxY - minY).toInt() + pad * 2).coerceAtLeast(1)
+        // The circle's centre, so the bounds sit inside the padding.
+        val cx = pad - minX
+        val cy = pad - minY
+        val oval = RectF(cx - r, cy - r, cx + r, cy + r)
+        val halfDeg = Math.toDegrees(half).toFloat()
+        val path = Path().apply {
+            if (rainbow) addArc(oval, 270f - halfDeg, 2 * halfDeg) else addArc(oval, 90f + halfDeg, -2 * halfDeg)
+        }
+        val along = lineW / 2f
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        if (item.background.isOn) drawBubble(canvas, item, textSize, width.toFloat(), height.toFloat(), 0f)
+        val stroke = item.stroke
+        val shadow = item.shadow
+        if (shadow.isOn) {
+            val cast = TextPaint(paint).apply {
+                color = withOpacity(shadow.colorArgb, shadow.opacity)
+                maskFilter = if (shadow.blur > 0f) BlurMaskFilter(textSize * shadow.blur, BlurMaskFilter.Blur.NORMAL) else null
+                if (stroke.isOn) { style = Paint.Style.FILL_AND_STROKE; strokeWidth = textSize * stroke.width; strokeJoin = Paint.Join.ROUND }
+            }
+            val radians = Math.toRadians(shadow.angleDegrees.toDouble())
+            canvas.save()
+            canvas.translate((cos(radians) * shadow.offset * textSize).toFloat(), (sin(radians) * shadow.offset * textSize).toFloat())
+            canvas.drawTextOnPath(shown, path, along, 0f, cast)
+            canvas.restore()
+        }
+        if (item.glow) {
+            val reach = item.glowStrength.coerceIn(0.2f, 2f)
+            val glow = TextPaint(paint).apply { color = item.glowColorArgb ?: item.colorArgb; maskFilter = BlurMaskFilter(textSize * 0.45f * reach, BlurMaskFilter.Blur.NORMAL) }
+            canvas.drawTextOnPath(shown, path, along, 0f, glow)
+            glow.maskFilter = BlurMaskFilter(textSize * 0.15f * reach, BlurMaskFilter.Blur.NORMAL)
+            canvas.drawTextOnPath(shown, path, along, 0f, glow)
+        }
+        if (item.outline2.isOn) canvas.drawTextOnPath(shown, path, along, 0f, outerEdge(paint, item, textSize))
+        if (stroke.isOn) {
+            val edge = TextPaint(paint).apply { style = Paint.Style.STROKE; strokeWidth = textSize * stroke.width; strokeJoin = Paint.Join.ROUND; color = stroke.colorArgb }
+            canvas.drawTextOnPath(shown, path, along, 0f, edge)
+        }
+        if (item.glow) paint.color = lighten(item.colorArgb)
+        gradientFor(item, width.toFloat(), height.toFloat())?.let { paint.shader = it }
+        canvas.drawTextOnPath(shown, path, along, 0f, paint)
+
+        if (!item.flipped) return Painted(bitmap, width, height)
+        val mirror = Matrix().apply { preScale(-1f, 1f) }
+        return Painted(Bitmap.createBitmap(bitmap, 0, 0, width, height, mirror, true), width, height)
+    }
+
     /** How much room round the letters, as a share of the text size: the widest of what is drawn past them. */
     private fun padShare(item: TextOverlayItem): Float {
         var share = 0.05f
         if (item.stroke.isOn) share = maxOf(share, item.stroke.width * 0.6f + 0.05f)
+        if (item.outline2.isOn) share = maxOf(share, (if (item.stroke.isOn) item.stroke.width else 0f) * 0.6f + item.outline2.width * 1.1f + 0.05f)
         if (item.shadow.isOn) share = maxOf(share, item.shadow.blur + item.shadow.offset)
-        if (item.glow) share = maxOf(share, 0.6f)
+        if (item.glow) share = maxOf(share, 0.6f * item.glowStrength.coerceIn(0.2f, 2f))
         if (item.background.isOn) share = maxOf(share, if (item.background.bubble == TextBubble.Pill) 0.6f else 0.45f)
         return share
     }

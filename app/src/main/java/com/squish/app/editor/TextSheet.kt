@@ -770,6 +770,8 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
     var fontError by remember { mutableStateOf<String?>(null) }
     var pickingColour by remember(item.id) { mutableStateOf(false) }
     var pickingStroke by remember(item.id) { mutableStateOf(false) }
+    var pickingOutline2 by remember(item.id) { mutableStateOf(false) }
+    var colouringWord by remember(item.id) { mutableStateOf<Int?>(null) }
     var pickingShadow by remember(item.id) { mutableStateOf(false) }
 
     val importFont = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -1033,6 +1035,78 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
                 onFinished = done,
                 onEyedropper = onEyedropper
             )
+            // A second edge outside the first (EDGE_PLAN E3): a sticker look.
+            TextSlider("Second edge", item.outline2.width, 0f..0.3f, { if (it == 0f) "Off" else "%.2f".format(it) }, done) { v ->
+                drag { it.copy(outline2 = it.outline2.copy(width = v)) }
+            }
+            if (item.outline2.isOn) {
+                ColourRow(
+                    title = "Second edge colour",
+                    argb = item.outline2.colorArgb,
+                    open = pickingOutline2,
+                    onOpen = { pickingOutline2 = it },
+                    onPick = { c -> restyle { it.copy(outline2 = it.outline2.copy(colorArgb = c)) } },
+                    onDrag = { c -> drag { it.copy(outline2 = it.outline2.copy(colorArgb = c)) } },
+                    onFinished = done,
+                    onEyedropper = onEyedropper
+                )
+            }
+        }
+
+        // Text with depth (EDGE_PLAN E3): a gradient, a bend, the glow's own
+        // colour, a colour for single words.
+        if (!item.isShape) PanelSurface(accent = SquishColors.Amber) {
+            PanelHeading("Depth", "Gradient, bend and glow", accent = SquishColors.Amber)
+            ChipRow("Fill", GRADIENT_FILLS, GRADIENT_FILLS.firstOrNull { it.second == item.fill.colors } ?: GRADIENT_FILLS.first().takeIf { !item.fill.isGradient }, { it.first }) { pick ->
+                restyle { it.copy(fill = if (pick.second.isEmpty()) TextFill.SOLID else TextFill(pick.second, it.fill.angleDegrees)) }
+            }
+            if (item.fill.isGradient) {
+                TextSlider("Gradient angle", item.fill.angleDegrees, 0f..360f, { "${it.roundToInt()}°" }, done) { v ->
+                    drag { it.copy(fill = it.fill.copy(angleDegrees = v)) }
+                }
+            }
+            if (!item.sticker) {
+                TextSlider("Bend", item.arc, -1f..1f, { when { it == 0f -> "Straight"; it > 0f -> "Arch ${(it * 100).roundToInt()}%"; else -> "Smile ${(-it * 100).roundToInt()}%" } }, done) { v ->
+                    // Held at straight near the middle, so it can be found again.
+                    drag { it.copy(arc = if (kotlin.math.abs(v) < 0.04f) 0f else v) }
+                }
+            }
+            if (item.glow) {
+                Text("Glow colour", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    ColourSwatch(item.colorArgb, selected = item.glowColorArgb == null) { restyle { it.copy(glowColorArgb = null) } }
+                    WORD_COLOURS.forEach { c -> ColourSwatch(c, selected = item.glowColorArgb == c) { restyle { it.copy(glowColorArgb = c) } } }
+                }
+                TextSlider("Glow reach", item.glowStrength, 0.2f..2f, { "${(it * 100).roundToInt()}%" }, done) { v ->
+                    drag { it.copy(glowStrength = v) }
+                }
+            }
+            if (!item.sticker) {
+                val lineWords = CaptionWords.words(item.text)
+                if (lineWords.size > 1) {
+                    Text("Colour a word", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+                    SideScrollChips(lineWords.indices.toList(), { it == colouringWord }, Modifier.fillMaxWidth()) { i ->
+                        SelectableChip(
+                            label = lineWords[i].ifBlank { "·" },
+                            selected = i == colouringWord || i in item.wordColors,
+                            accentColor = item.wordColors[i]?.let { Color(it) } ?: SquishColors.Amber,
+                            onClick = { colouringWord = if (colouringWord == i) null else i }
+                        )
+                    }
+                    colouringWord?.let { i ->
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                            ColourSwatch(item.colorArgb, selected = i !in item.wordColors) {
+                                restyle { it.copy(wordColors = it.wordColors - i) }
+                            }
+                            WORD_COLOURS.forEach { c ->
+                                ColourSwatch(c, selected = item.wordColors[i] == c) {
+                                    restyle { it.copy(wordColors = it.wordColors + (i to c)) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         PanelSurface(accent = SquishColors.Amber) {
@@ -1346,6 +1420,10 @@ fun TextBubblePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedrop
                     drag { it.copy(background = it.background.copy(radius = v)) }
                 }
             }
+            // Room between the letters and the bubble's edge (EDGE_PLAN E3).
+            TextSlider("Padding", item.padding, 0.5f..3f, { "${(it * 100).roundToInt()}%" }, done) { v ->
+                drag { it.copy(padding = v) }
+            }
         }
     }
 }
@@ -1543,6 +1621,18 @@ private fun TranslateCard(viewModel: EditorViewModel) {
 
 /** The colour Neon takes on white letters: the Neon title preset's pink. */
 private const val NEON_PINK = 0xFFFF4FD8.toInt()
+
+/** The gradients the Style tab offers (EDGE_PLAN E3); the first is the one colour. */
+private val GRADIENT_FILLS: List<Pair<String, List<Int>>> = listOf(
+    "Solid" to emptyList(),
+    "Sunset" to listOf(0xFFFFD166.toInt(), 0xFFFF6B6B.toInt(), 0xFFC44DFF.toInt()),
+    "Ocean" to listOf(0xFF5CE1E6.toInt(), 0xFF2F80ED.toInt()),
+    "Fire" to listOf(0xFFFFE066.toInt(), 0xFFFF6B1A.toInt()),
+    "Candy" to listOf(0xFFFF4FA3.toInt(), 0xFF8B5CF6.toInt()),
+    "Lime" to listOf(0xFF7CFF6B.toInt(), 0xFF22C55E.toInt()),
+    "Chrome" to listOf(0xFFFFFFFF.toInt(), 0xFF9AA3AD.toInt(), 0xFFFFFFFF.toInt()),
+    "Gold" to listOf(0xFFFFF1A8.toInt(), 0xFFD4A017.toInt())
+)
 
 /** The highlight colours offered for the word being said: the ones reels use, each readable on a dark and a light shot. */
 private val WORD_COLOURS = listOf(
