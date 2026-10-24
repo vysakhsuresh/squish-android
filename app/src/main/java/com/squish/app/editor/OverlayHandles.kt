@@ -76,7 +76,13 @@ data class OverlayOnPicture(
      */
     val limit: (Transform) -> Transform = OverlayRules::limited,
     /** What the picture says while the finger is on it, moving or resizing. */
-    val readout: (Transform, Boolean) -> String = OverlayRules::readout
+    val readout: (Transform, Boolean) -> String = OverlayRules::readout,
+    /**
+     * A main-track shot (EDGE_PLAN D1): moved, pinched and turned like an
+     * overlay, but its box has no Delete or Copy-on-top - those are an
+     * overlay's, and a shot's are on the toolbar under it.
+     */
+    val mainShot: Boolean = false
 )
 
 /** What the box's gestures and corners do. */
@@ -226,6 +232,7 @@ fun OverlayHandles(
                             OverlayRules.handleAt(it, at.x, at.y, handles, cornerOutset, cornerReach)
                         }
                         ?.let { Corner.entries[it] }
+                        ?.takeIf { c -> selected?.mainShot != true || c == Corner.Resize || c == Corner.Edit }
                     if (selected != null && selectedBox != null && corner != null) {
                         if (corner == Corner.Resize) {
                             latestTouch()
@@ -399,8 +406,10 @@ fun OverlayHandles(
         box?.takeIf { roomy }?.let { b ->
             OverlayRules.reachableHandles(b, outset, -ox, -oy, layer.width - ox, layer.height - oy, margin).forEachIndexed { i, (cx, cy) ->
                 val corner = Corner.entries[i]
+                if (selected.mainShot && (corner == Corner.Delete || corner == Corner.Duplicate)) return@forEachIndexed
                 CornerButton(
                     corner = corner,
+                    label = if (selected.mainShot) corner.label.replace("overlay", "shot") else corner.label,
                     centreX = ox + cx,
                     centreY = oy + cy,
                     onClick = {
@@ -426,7 +435,7 @@ fun OverlayHandles(
  * move. The semantics give a screen reader the same buttons.
  */
 @Composable
-private fun CornerButton(corner: Corner, centreX: Float, centreY: Float, onClick: () -> Unit) {
+private fun CornerButton(corner: Corner, label: String = corner.label, centreX: Float, centreY: Float, onClick: () -> Unit) {
     val half = with(LocalDensity.current) { (CORNER_SIZE / 2).roundToPx() }
     Box(
         modifier = Modifier
@@ -436,9 +445,9 @@ private fun CornerButton(corner: Corner, centreX: Float, centreY: Float, onClick
             .background(if (corner == Corner.Delete) SquishColors.Danger else SquishColors.SurfaceElevated)
             .border(1.dp, Color.White.copy(alpha = 0.85f), CircleShape)
             .semantics {
-                contentDescription = corner.label
+                contentDescription = label
                 role = Role.Button
-                if (corner != Corner.Resize) onClick(label = corner.label) { onClick(); true }
+                if (corner != Corner.Resize) onClick(label = label) { onClick(); true }
             },
         contentAlignment = Alignment.Center
     ) {

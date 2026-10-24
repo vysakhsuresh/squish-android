@@ -83,6 +83,7 @@ import com.squish.app.media.CanvasBackdrop
 import com.squish.app.media.CaptionRenderer
 import com.squish.app.media.ExportPlan
 import com.squish.app.media.StillClips
+import com.squish.app.timeline.clamped
 import com.squish.app.timeline.Clip
 import com.squish.app.timeline.Transform
 import com.squish.app.timeline.turnedAspect
@@ -660,6 +661,29 @@ fun TimelinePreview(
                 )
             }
             val keptFrame = keptOnArea(kept, pictureSize, areaSize, canvasOrigin(areaSize, canvas, clipped))
+            // The selected main-track shot, grabbed on the picture like an
+            // overlay (EDGE_PLAN D1): only while it is selected, or every tap
+            // on the picture would take hold of it instead of playing. Its
+            // placement is in fractions of the whole canvas (VideoSurface), so
+            // its box is measured against the canvas, not the kept crop.
+            // Not on a padded canvas, where the shot is fitted into a smaller
+            // frame inside it and this box would not be where it is drawn.
+            val mainShot = if (padded) null else videoClips.firstOrNull {
+                it.id == selectedClipId && !it.isOverlay &&
+                    layerTime >= it.timelineStartMs && layerTime < it.timelineStartMs + it.durationMs
+            }?.let { clip ->
+                val draw = listOf(frame.surfaceA, frame.surfaceB).firstOrNull { it.clipId == clip.id && it.visible }
+                OverlayOnPicture(
+                    clipId = clip.id,
+                    layer = -1,
+                    drawn = clip.placedAt(layerTime),
+                    placed = clip.placementAt(layerTime),
+                    aspect = turnedAspect(draw?.aspect, clip.quarterTurns)?.let { CropRules.croppedAspect(it, clip.crop) },
+                    limit = { t -> t.clamped() },
+                    mainShot = true
+                )
+            }
+            val canvasFrame = keptOnArea(PreviewBox.Frame(), pictureSize, areaSize, canvasOrigin(areaSize, canvas, clipped))
             // Text and stickers, above every picture layer as they are drawn:
             // the box round the letters the layer painted (TextGeometry), so
             // what is grabbed is what is on screen.
@@ -710,9 +734,13 @@ fun TimelinePreview(
                 onPlaceText = overlayActions.onPlaceText
             )
             OverlayHandles(
-                overlays = onPicture + words,
+                // The selected main shot alone, in the canvas's frame, while it is
+                // selected: the box measures every item in one frame, and the
+                // shot's is not the kept crop the overlays and words use. A tap
+                // off it deselects as before, and they are grabbable again.
+                overlays = if (mainShot != null) listOf(mainShot) else onPicture + words,
                 selectedId = selectedClipId,
-                frame = keptFrame,
+                frame = if (mainShot != null) canvasFrame else keptFrame,
                 showBox = !frame.isPlaying,
                 actions = actions,
                 onTouch = { engine.pause() },

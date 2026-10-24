@@ -20,7 +20,7 @@ one line of evidence. P items are also ticked in `docs/INSHOT_PARITY.md`.
 - [~] **B5** High-frame-rate footage as true slow motion - "Auto" no longer writes 240 fps on a cuts-only export (capped at 60, extra frames dropped evenly; ExportSettingsChecks failed on it, 2 counts); the Speed sheet says "Shot at 240 fps - slow it up to 8x and every frame is a real one" (SlowMotionChecks); not seen on the phone (matrix hfr_120/hfr_240 ready)
 - [~] **B6** Export never dies - free-space preflight was already in; now an export killed with its process is said on the next launch (ExportJournal, checked), a hot phone and a quiet encoder are said on the card and the notification; not yet seen on a phone
 - [ ] **C1** Export speed
-- [ ] **D1** Main clip on the picture: drag, pinch, turn
+- [~] **D1** Main clip on the picture: drag, pinch, turn - the selected main shot takes the overlay box (drag, pinch, turn, snap, the Resize and Edit corners; no Delete or Copy-on-top), measured in the canvas frame its placement is in, through withOverlayGeometry so it keys at the playhead when animated; not on a padded canvas yet (its frame differs); not seen on the phone (build with clean: TimelinePreview changed)
 - [~] **D2** Keyframe curves - Ease in, Ease out, Strong, Back, Bounce, Elastic and a two-handle Custom curve per key on placement, opacity, level, look strength and mask; one function for preview and export; EasingChecks (endpoints, monotone, overshoot, bezier inverse < 1e-4, fails with the solver weakened), ValueEasingChecks, draft round trip (fails 4 ways without the curve read back); not seen on the phone
 - [ ] **D6** Live preview audit: every slider previews live
 - [ ] **E1** Captions on every phone (Whisper on device)
