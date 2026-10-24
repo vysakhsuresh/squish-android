@@ -1562,3 +1562,7 @@ touch. `ARCHITECTURE.md` has the shape of the app.
 `docs/INSHOT_PARITY.md` is the open work order for the features InShot has and
 Squish does not (24 Oct): a checklist, worked from the first item not `[x]`, with
 its own testing rules. A session told to "carry on the InShot list" starts there.
+
+`docs/EDGE_PLAN.md` (24 Oct) is the larger plan over CapCut and InShot that folds
+the InShot list in and says where each P item slots in. A session told to "carry
+on docs/EDGE_PLAN.md" starts at its first item not `[x]`.
