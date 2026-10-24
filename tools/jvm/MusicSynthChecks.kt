@@ -63,10 +63,45 @@ fun main() {
         check(peak < 0.99, "${s.id} clips (peak $peak)")
         f.delete()
     }
+    // ---- The library as it is browsed (docs/INSHOT_PARITY.md P7). ----------
+    check(MusicSynth.effects.size >= 60, "only ${MusicSynth.effects.size} effects - the library promises about sixty")
+    check(MusicSynth.styles.size >= 34, "only ${MusicSynth.styles.size} originals")
+    MusicSynth.effects.forEach { e ->
+        check(e.category in MusicSynth.effectCategories, "${e.id} is in \"${e.category}\", which is not a category the panel shows")
+    }
+    MusicSynth.effectCategories.forEach { c ->
+        val n = MusicSynth.effects.count { it.category == c }
+        check(n >= 4, "the category \"$c\" has $n effects - a tile with one or two in it is not a category")
+    }
+    MusicSynth.vibes.filter { it != "All" }.forEach { v ->
+        val n = MusicSynth.styles.count { MusicSynth.vibeOf(it) == v }
+        check(n >= 3, "the music category \"$v\" has $n tracks")
+    }
+    MusicSynth.styles.forEach { s ->
+        check(MusicSynth.vibeOf(s) in MusicSynth.vibes, "${s.id} is filed under \"${MusicSynth.vibeOf(s)}\", which is not on the list")
+    }
+    // Same peak for every effect, so no one of them is much louder than the
+    // others when five are laid in one edit; and none identical to another.
+    val rendered = HashMap<String, ShortArray>()
+    fun samples(file: File): ShortArray {
+        val b = file.readBytes()
+        return ShortArray((b.size - 44) / 2) { k -> ((b[44 + 2 * k + 1].toInt() shl 8) or (b[44 + 2 * k].toInt() and 0xff)).toShort() }
+    }
     for (e in MusicSynth.effects) {
         val f = File(dir, "${e.id}.wav")
         MusicSynth.renderEffect(e, f)
         val (peak, rms, secs) = measure(f)
+        val s = samples(f)
+        rendered[e.id] = s
+        // write() normalises to 0.85 before its tanh: tanh(0.85) * 32000 / 32768.
+        check(kotlin.math.abs(peak - 0.6735) < 0.02, "${e.id} peaks at $peak, not at the level every effect is set to")
+        // No DC offset: a sound sitting off zero thumps where it starts and stops.
+        var sumL = 0.0
+        var sumR = 0.0
+        for (k in s.indices step 2) { sumL += s[k]; sumR += s[k + 1] }
+        val frames = (s.size / 2).coerceAtLeast(1)
+        check(kotlin.math.abs(sumL / frames / 32768) < 0.01 && kotlin.math.abs(sumR / frames / 32768) < 0.01,
+            "${e.id} sits off zero (mean ${sumL / frames / 32768}, ${sumR / frames / 32768})")
         check(kotlin.math.abs(secs - e.seconds) < 0.01, "${e.id}: ${secs}s written")
         check(rms > 0.01 && peak > 0.3, "${e.id} is nearly silent (rms $rms, peak $peak)")
         check(peak < 0.99, "${e.id} clips (peak $peak)")
@@ -93,6 +128,20 @@ fun main() {
         check(lastSample(f) < 0.02, "${e.id} ends on a sample at ${lastSample(f)} - it will click on its cut")
         check(tailPeak(f, half) < 0.25, "${e.id} has no taper (last 0.5 ms peaks at ${tailPeak(f, half)})")
         f.delete()
+    }
+    // No two alike: correlation of the left channels over the shorter one.
+    val ids = rendered.keys.sorted()
+    for (a in ids.indices) for (b in a + 1 until ids.size) {
+        val x = rendered[ids[a]]!!
+        val y = rendered[ids[b]]!!
+        val n = minOf(x.size, y.size) / 2
+        var xy = 0.0; var xx = 0.0; var yy = 0.0
+        for (k in 0 until n) {
+            val p = x[2 * k].toDouble(); val q = y[2 * k].toDouble()
+            xy += p * q; xx += p * p; yy += q * q
+        }
+        val corr = if (xx > 0 && yy > 0) xy / kotlin.math.sqrt(xx * yy) else 0.0
+        check(corr < 0.95, "${ids[a]} and ${ids[b]} are the same sound (correlation $corr)")
     }
     if (problems.isEmpty()) println("MusicSynthChecks: all checks passed (${MusicSynth.styles.size} tracks, ${MusicSynth.effects.size} effects)")
     else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }

@@ -255,6 +255,17 @@ not here.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **24 October: the FFmpeg seek deadlock and the library.** Seen on the moto:
+  a 51-minute 10-bit HEVC MKV froze black after a jump down the strip
+  (`AvCodecAdapter.flush` and its worker deadlocked - jdb thread dump); fixed,
+  and six scrub-then-play jumps from 0:43 to 5:35 then played with picture.
+  The Music sheet's library is category tiles, search and artwork over 37
+  originals and 76 effects; seen browsing, searching, auditioning a new track
+  and a new effect. Not heard by an ear: whether each of the 52 new effects
+  sounds like its name (`MusicSynthChecks` holds level, length, DC and that
+  no two are alike, nothing about likeness), and none was added to an edit
+  and exported.
+
 - **18 October, after the phone left: the first-play class and the sound
   controls.** Reported on the phone: a song added from the device broke up on
   its first play and played clean after, and there was "no option to mute a

@@ -55,7 +55,7 @@ object MusicLibrary {
      * storage, so a project that uses it can always find it again.
      *
      * Composed as a WAV and kept as AAC: the WAV of a fifty-second track is
-     * 6.5 MB and the AAC under 1.3, which is what lets [prepareAll] make all
+     * 6.5 MB and the AAC under 1.3, which is what lets [prepare] make them
      * of them ahead of time - so Listen and Add on an original are a file
      * read, where they used to wait a second on the synthesis.
      */
@@ -65,7 +65,7 @@ object MusicLibrary {
         on: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Default
     ): Uri? = withContext(on) {
         madeFile(context, style)?.let { return@withContext Uri.fromFile(it) }
-        // One composition per track at a time: a tap while [prepareAll] is on
+        // One composition per track at a time: a tap while [prepare] is on
         // the same track waits for that one rather than starting a second.
         making.getOrPut(style.id) { kotlinx.coroutines.sync.Mutex() }.withLock {
             madeFile(context, style)?.let { return@withLock Uri.fromFile(it) }
@@ -93,12 +93,14 @@ object MusicLibrary {
     }
 
     /**
-     * Makes every original not made yet, one after another at low priority,
-     * so none of them waits on a tap. Called when the Music panel opens;
-     * about a second of composing each, and 25 MB or so for all of them.
+     * Makes each of [styles] not made yet, one after another at low priority,
+     * so none of them waits on a tap. Called with the category the Music
+     * panel has open - about a second of composing each and 1.2 MB kept.
+     * It made every original when there were twenty-two; at thirty-seven
+     * that was 45 MB written for opening the sheet once.
      */
-    suspend fun prepareAll(context: Context) = withContext(Dispatchers.Default) {
-        for (style in MusicSynth.styles) {
+    suspend fun prepare(context: Context, styles: List<MusicSynth.Style>) = withContext(Dispatchers.Default) {
+        for (style in styles) {
             if (madeFile(context, style) != null) continue
             val t0 = android.os.SystemClock.elapsedRealtime()
             // At background priority (BackgroundWork): it was at the preview's own,

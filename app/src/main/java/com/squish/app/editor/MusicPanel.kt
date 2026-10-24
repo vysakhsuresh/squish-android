@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -111,15 +113,46 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
             listInView.bringIntoView()
         }
     }
-    var vibe by rememberSaveable { mutableStateOf("All") }
+    // The library is browsed as InShot's is: a wall of category tiles, then
+    // the category's list; a search reaches across all of it. Null is the
+    // wall. Kept per tab, so going between Originals and Effects keeps both.
+    var musicShelf by rememberSaveable { mutableStateOf<String?>(null) }
+    var sfxShelf by rememberSaveable { mutableStateOf<String?>(null) }
+    var musicQuery by rememberSaveable { mutableStateOf("") }
+    var sfxQuery by rememberSaveable { mutableStateOf("") }
+    val musicShown = remember(musicShelf, musicQuery) {
+        val q = musicQuery.trim()
+        when {
+            q.isNotEmpty() -> MusicSynth.styles.filter {
+                it.title.contains(q, ignoreCase = true) || it.mood.contains(q, ignoreCase = true) ||
+                    MusicSynth.vibeOf(it).contains(q, ignoreCase = true)
+            }
+            musicShelf == null -> emptyList()
+            musicShelf == "All" -> MusicSynth.styles
+            else -> MusicSynth.styles.filter { MusicSynth.vibeOf(it) == musicShelf }
+        }
+    }
+    val sfxShown = remember(sfxShelf, sfxQuery) {
+        val q = sfxQuery.trim()
+        when {
+            q.isNotEmpty() -> MusicSynth.effects.filter {
+                it.title.contains(q, ignoreCase = true) || it.hint.contains(q, ignoreCase = true) ||
+                    it.category.contains(q, ignoreCase = true)
+            }
+            sfxShelf == null -> emptyList()
+            sfxShelf == "All" -> MusicSynth.effects
+            else -> MusicSynth.effects.filter { it.category == sfxShelf }
+        }
+    }
 
-    // Every Squish original made ahead, in the background, a moment after the
-    // panel opens - so Listen and Add on one are instant rather than a
-    // second's composing each (MusicLibrary.prepareAll). Made once; after
-    // that this finds them all on disk and returns at once.
-    LaunchedEffect(Unit) {
+    // The originals on show made ahead, in the background, a moment after
+    // they are shown - so Listen and Add on one are instant rather than a
+    // second's composing each (MusicLibrary.prepare). Made once; after that
+    // this finds them on disk and returns at once.
+    LaunchedEffect(musicShown) {
+        if (musicShown.isEmpty()) return@LaunchedEffect
         kotlinx.coroutines.delay(800)
-        MusicLibrary.prepareAll(context)
+        MusicLibrary.prepare(context, musicShown)
     }
 
     // One small player for listening before adding, released with the panel.
@@ -226,22 +259,29 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
         when (tab) {
             0 -> {
                 Text(
-                    "Composed by Squish on your phone — yours to use anywhere, no credit needed.",
+                    "${MusicSynth.styles.size} tracks composed by Squish on your phone — yours to use anywhere, no credit needed.",
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextMuted
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                ) {
-                    MusicSynth.vibes.forEach { v ->
-                        SelectableChip(v, vibe == v, accentColor = SquishColors.Cyan, onClick = { vibe = v })
-                    }
+                LibrarySearch(musicQuery, { musicQuery = it }, "Search music: vlog, chill, dance…")
+                if (musicQuery.isBlank() && musicShelf == null) {
+                    ShelfGrid(
+                        MusicSynth.vibes.map { v ->
+                            musicShelfLook(v).copy(count = if (v == "All") MusicSynth.styles.size else MusicSynth.styles.count { MusicSynth.vibeOf(it) == v })
+                        },
+                        unit = "tracks",
+                        onPick = { stopListening(); musicShelf = it }
+                    )
+                } else if (musicQuery.isBlank()) {
+                    ShelfHeader(musicShelfLook(musicShelf!!).copy(count = musicShown.size), "tracks") { stopListening(); musicShelf = null }
+                } else if (musicShown.isEmpty()) {
+                    Text("No track matches \"${musicQuery.trim()}\".", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
                 }
-                MusicSynth.styles.filter { vibe == "All" || MusicSynth.vibeOf(it) == vibe }.forEach { style ->
+                musicShown.forEach { style ->
                     val pick = MusicPick("orig:${style.id}", style.title, "${style.mood} · ${style.seconds}s")
                     MusicRow(
                         pick = pick,
+                        art = musicShelfLook(MusicSynth.vibeOf(style)),
                         playing = playingKey == pick.key,
                         busy = preparing == pick.key,
                         starred = isStarred(pick.key),
@@ -267,14 +307,29 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
             }
             1 -> {
                 Text(
-                    "A whoosh on a cut, a pop on a sticker, a riser into the drop. Made on the phone, like the music.",
+                    "${MusicSynth.effects.size} sounds: a whoosh on a cut, a pop on a sticker, a riser into the drop. Made on the phone, like the music.",
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextMuted
                 )
-                MusicSynth.effects.forEach { effect ->
+                LibrarySearch(sfxQuery, { sfxQuery = it }, "Search sounds: whoosh, coin, rain…")
+                if (sfxQuery.isBlank() && sfxShelf == null) {
+                    ShelfGrid(
+                        (listOf("All") + MusicSynth.effectCategories).map { c ->
+                            sfxShelfLook(c).copy(count = if (c == "All") MusicSynth.effects.size else MusicSynth.effects.count { it.category == c })
+                        },
+                        unit = "sounds",
+                        onPick = { stopListening(); sfxShelf = it }
+                    )
+                } else if (sfxQuery.isBlank()) {
+                    ShelfHeader(sfxShelfLook(sfxShelf!!).copy(count = sfxShown.size), "sounds") { stopListening(); sfxShelf = null }
+                } else if (sfxShown.isEmpty()) {
+                    Text("No sound matches \"${sfxQuery.trim()}\".", style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted)
+                }
+                sfxShown.forEach { effect ->
                     val pick = MusicPick("sfx:${effect.id}", effect.title, effect.hint)
                     MusicRow(
                         pick = pick,
+                        art = sfxShelfLook(effect.category),
                         playing = playingKey == pick.key,
                         busy = preparing == pick.key,
                         starred = isStarred(pick.key),
@@ -499,9 +554,138 @@ private fun PhoneMusic(
 /** The list stops here and says so; a search finds the rest. It used to stop at sixty in silence. */
 private const val SHOWN = 100
 
+/**
+ * A shelf of the library as its tile draws it: a name, a glyph and two
+ * colours. The same look is the artwork on each of its rows, so a track or a
+ * sound says where it lives when it turns up in a search.
+ */
+private data class ShelfLook(val name: String, val emoji: String, val from: androidx.compose.ui.graphics.Color, val to: androidx.compose.ui.graphics.Color, val count: Int = 0)
+
+private fun musicShelfLook(name: String): ShelfLook = when (name) {
+    "Vlog" -> ShelfLook(name, "🎒", SquishColors.Orange, SquishColors.Amber)
+    "Chill" -> ShelfLook(name, "☕", SquishColors.Cyan, SquishColors.Blue)
+    "Upbeat" -> ShelfLook(name, "☀️", SquishColors.Amber, SquishColors.Orange)
+    "Dance" -> ShelfLook(name, "🪩", SquishColors.Magenta, SquishColors.Violet)
+    "Beats" -> ShelfLook(name, "🎧", SquishColors.Violet, SquishColors.Blue)
+    "Cinematic" -> ShelfLook(name, "🎬", SquishColors.Blue, SquishColors.Violet)
+    "Emotional" -> ShelfLook(name, "💗", SquishColors.Magenta, SquishColors.Orange)
+    "Fun" -> ShelfLook(name, "🎈", SquishColors.Amber, SquishColors.Magenta)
+    "Business" -> ShelfLook(name, "💼", SquishColors.Blue, SquishColors.Cyan)
+    else -> ShelfLook("All", "🎵", SquishColors.Cyan, SquishColors.Violet)
+}
+
+private fun sfxShelfLook(name: String): ShelfLook = when (name) {
+    "Transitions" -> ShelfLook(name, "💨", SquishColors.Cyan, SquishColors.Blue)
+    "Impacts" -> ShelfLook(name, "💥", SquishColors.Orange, SquishColors.Magenta)
+    "Funny" -> ShelfLook(name, "🤡", SquishColors.Amber, SquishColors.Orange)
+    "UI & alerts" -> ShelfLook(name, "🔔", SquishColors.Blue, SquishColors.Cyan)
+    "Game" -> ShelfLook(name, "🕹️", SquishColors.Violet, SquishColors.Magenta)
+    "Musical" -> ShelfLook(name, "🎺", SquishColors.Amber, SquishColors.Violet)
+    "Build-ups" -> ShelfLook(name, "🚀", SquishColors.Magenta, SquishColors.Violet)
+    "Nature" -> ShelfLook(name, "🌧️", SquishColors.Cyan, SquishColors.Violet)
+    "Horror" -> ShelfLook(name, "👻", SquishColors.Violet, SquishColors.Blue)
+    else -> ShelfLook("All", "🔊", SquishColors.Cyan, SquishColors.Violet)
+}
+
+private fun ShelfLook.brush() = androidx.compose.ui.graphics.Brush.linearGradient(listOf(from, to))
+
+/** The wall of category tiles, two to a row. */
+@Composable
+private fun ShelfGrid(shelves: List<ShelfLook>, unit: String, onPick: (String) -> Unit) {
+    shelves.chunked(2).forEach { pair ->
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            pair.forEach { shelf ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(shelf.brush())
+                        .clickable(role = Role.Button, onClickLabel = "Open") { onPick(shelf.name) }
+                        .padding(horizontal = 12.dp, vertical = 12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(shelf.name, style = MaterialTheme.typography.titleSmall, color = SquishColors.Background, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${shelf.count} $unit", style = MaterialTheme.typography.labelSmall, color = SquishColors.Background.copy(alpha = 0.75f))
+                    }
+                    // Decoration: the name beside it already says what this is.
+                    Text(shelf.emoji, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { contentDescription = "" })
+                }
+            }
+            // An odd last tile keeps its half width rather than stretching.
+            if (pair.size == 1) Box(modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+/** Above an open category: the way back to the wall, and what is open. */
+@Composable
+private fun ShelfHeader(shelf: ShelfLook, unit: String, onBack: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .border(1.dp, SquishColors.Border, RoundedCornerShape(10.dp))
+                .clickable(role = Role.Button, onClickLabel = "Back to categories", onClick = onBack)
+                .padding(horizontal = 10.dp, vertical = 10.dp)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = SquishColors.TextSecondary, modifier = Modifier.size(16.dp))
+            Text(" Categories", style = MaterialTheme.typography.labelLarge, color = SquishColors.TextSecondary)
+        }
+        Box(
+            modifier = Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).background(shelf.brush()),
+            contentAlignment = Alignment.Center
+        ) { Text(shelf.emoji, style = MaterialTheme.typography.bodyMedium) }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(shelf.name, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${shelf.count} $unit", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+        }
+    }
+}
+
+@Composable
+private fun LibrarySearch(query: String, onChange: (String) -> Unit, hint: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SquishColors.Background)
+            .border(1.dp, SquishColors.Border, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Icon(Icons.Filled.Search, contentDescription = null, tint = SquishColors.TextMuted, modifier = Modifier.size(18.dp))
+        Box(modifier = Modifier.padding(start = 8.dp).weight(1f)) {
+            if (query.isEmpty()) {
+                Text(hint, style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = SquishColors.TextPrimary),
+                cursorBrush = SolidColor(SquishColors.Cyan),
+                // Named for what it searches, not by the placeholder, which is
+                // gone the moment anything is typed (CLAUDE.md, 7 October).
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search the library" }
+            )
+        }
+        if (query.isNotEmpty()) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "Clear search",
+                tint = SquishColors.TextMuted,
+                modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { onChange("") }.padding(7.dp)
+            )
+        }
+    }
+}
+
 @Composable
 private fun MusicRow(
     pick: MusicPick,
+    art: ShelfLook? = null,
     playing: Boolean,
     busy: Boolean,
     starred: Boolean,
@@ -521,14 +705,21 @@ private fun MusicRow(
             .clickable(onClickLabel = if (playing) "Stop" else "Listen", onClick = onListen)
             .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
-        Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+        // With artwork: the category's tile in small, the play state over it.
+        Box(
+            modifier = if (art != null) Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(art.brush()) else Modifier.size(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (art != null && !busy && !playing) {
+                Text(art.emoji, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { contentDescription = "" })
+            }
             if (busy) {
-                CircularProgressIndicator(color = SquishColors.Cyan, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-            } else {
+                CircularProgressIndicator(color = if (art != null) SquishColors.Background else SquishColors.Cyan, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+            } else if (art == null || playing) {
                 Icon(
                     if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (playing) "Stop" else "Listen",
-                    tint = SquishColors.Cyan
+                    tint = if (art != null) SquishColors.Background else SquishColors.Cyan
                 )
             }
         }

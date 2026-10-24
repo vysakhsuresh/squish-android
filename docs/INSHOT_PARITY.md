@@ -34,7 +34,7 @@ written at 30.0 fps, distinct frames`. A `[~]` is not "done".
 - [ ] **P4** Bilingual captions
 - [ ] **P5** Gradient and pattern canvas backgrounds
 - [ ] **P6** Animated stickers (GIF)
-- [ ] **P7** A real sound-effects library
+- [~] **P7** A real sound-effects library - 76 effects in 9 categories and 37 originals in 9, browsed by tile and search; MusicSynthChecks (level, DC, no two alike, categories) negative-tested; seen browsing and auditioning on the moto, not yet added to an edit and exported
 - [ ] **P8** Blend modes on video overlays
 - [ ] **P9** README and Settings say what the app actually does
 - [ ] **R** Extended regression sweep
