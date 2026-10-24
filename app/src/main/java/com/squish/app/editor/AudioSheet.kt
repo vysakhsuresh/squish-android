@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.GraphicEq
@@ -411,7 +412,7 @@ fun CameraSoundPanel(state: EditorUiState, viewModel: EditorViewModel) {
             "Camera sound",
             if (state.anyCameraAudio) "The sound recorded with the video, on every shot"
             else "This clip has no audio track",
-            icon = Icons.Filled.Mic,
+            icon = Icons.Filled.Videocam,
             accent = SquishColors.Cyan,
             // Shown while the mute is on even with no sound left to mute: a mute
             // left on silenced every clip added later, with no switch to undo it.
@@ -487,7 +488,7 @@ fun SoundVolumePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewMode
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            AccentBadge(icon = Icons.Filled.GraphicEq, accent = SquishColors.Cyan)
+            AccentBadge(icon = Icons.Filled.MusicNote, accent = SquishColors.Cyan)
             Text(
                 clip.label,
                 style = MaterialTheme.typography.titleSmall,

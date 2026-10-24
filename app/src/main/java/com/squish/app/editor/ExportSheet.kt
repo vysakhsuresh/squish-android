@@ -30,6 +30,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material3.Icon
@@ -214,7 +215,7 @@ fun ExportSheet(
                     title = "Export",
                     subtitle = "${Timecode.format(state.trimmedDurationMs)} · " +
                         "${countOf(state.videoClips.size, "clip")} · ${countOf(state.audioClips.size, "sound")}",
-                    icon = Icons.Filled.FileUpload,
+                    icon = Icons.Filled.SaveAlt,
                     accent = SquishColors.Blue,
                     trailing = {
                         IconButton(onClick = onDismiss) {

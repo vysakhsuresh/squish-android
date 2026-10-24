@@ -281,7 +281,7 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
                     val pick = MusicPick("orig:${style.id}", style.title, "${style.mood} · ${style.seconds}s")
                     MusicRow(
                         pick = pick,
-                        art = musicShelfLook(MusicSynth.vibeOf(style)),
+                        art = musicShelfLook(MusicSynth.vibeOf(style)).copy(emoji = MusicSynth.emojiOf(style)),
                         playing = playingKey == pick.key,
                         busy = preparing == pick.key,
                         starred = isStarred(pick.key),
@@ -329,7 +329,7 @@ fun MusicPanel(viewModel: EditorViewModel, editorPlaying: Boolean = false) {
                     val pick = MusicPick("sfx:${effect.id}", effect.title, effect.hint)
                     MusicRow(
                         pick = pick,
-                        art = sfxShelfLook(effect.category),
+                        art = sfxShelfLook(effect.category).copy(emoji = MusicSynth.emojiOf(effect)),
                         playing = playingKey == pick.key,
                         busy = preparing == pick.key,
                         starred = isStarred(pick.key),

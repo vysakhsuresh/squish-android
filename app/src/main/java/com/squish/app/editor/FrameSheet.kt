@@ -128,8 +128,13 @@ private fun AutoReframeRow(state: EditorUiState, viewModel: EditorViewModel) {
     // Counted, not any-ed: a shot added since the run, or one whose footage
     // could not be read, has no track of its own, and "in each shot" was then
     // a claim one reframed shot out of ten was enough to make.
-    val tracked = if (state.cropAspect.ratio == null) 0 else state.videoClips.count { it.isMain && it.reframe != null }
-    val following = tracked > 0
+    // And counted by what the track found, not by its being there: a run that
+    // saw no face, person or movement leaves a track that only holds the
+    // middle, and this said "The crop follows the subject" over it (24 October).
+    val ran = if (state.cropAspect.ratio == null) 0 else state.videoClips.count { it.isMain && it.reframe != null }
+    val tracked = if (state.cropAspect.ratio == null) 0
+    else state.videoClips.count { it.isMain && com.squish.app.media.video.ReframeRules.foundSubject(it.reframe) }
+    val following = ran > 0
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             when {
@@ -137,6 +142,8 @@ private fun AutoReframeRow(state: EditorUiState, viewModel: EditorViewModel) {
                     "Finding the subject — ${progress.done * 100 / progress.total}%"
                 progress.running -> "Finding the subject…"
                 progress.failed -> "Could not read the footage to reframe it."
+                following && tracked == 0 ->
+                    "No face, person or movement was found to follow, so the crop stays in the middle."
                 tracked >= shots && shots > 1 -> "The crop follows the subject in each shot. Play to see it move."
                 following && tracked < shots ->
                     "The crop follows the subject in $tracked of $shots shots. " +

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Timer
@@ -141,7 +142,7 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
             PanelHeading(
                 "Moves",
                 "Across the whole clip, over the arrival and leaving",
-                icon = Icons.Filled.OpenWith,
+                icon = Icons.Filled.Animation,
                 accent = accent
             )
             // Read back off the keys, since a move is not stored by name: the
@@ -196,7 +197,7 @@ fun AnimationPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
             PanelHeading(
                 "Keyframes",
                 "Control points along the clip",
-                icon = Icons.Filled.Timer,
+                icon = Icons.Filled.Diamond,
                 accent = accent,
                 trailing = {
                     if (animated) {
@@ -542,7 +543,7 @@ fun StabilizePanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel,
             "Stabilize",
             if (clip.isStabilized) "Shake removed · ${clip.stabilizer.size} measurements"
             else "Smooth out handheld shake",
-            icon = Icons.Filled.Straighten,
+            icon = Icons.Filled.Anchor,
             accent = accent,
             trailing = {
                 if (clip.isStabilized) {

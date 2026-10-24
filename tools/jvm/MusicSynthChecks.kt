@@ -77,6 +77,19 @@ fun main() {
         val n = MusicSynth.styles.count { MusicSynth.vibeOf(it) == v }
         check(n >= 3, "the music category \"$v\" has $n tracks")
     }
+    // Each row's own picture (24 October: every row wore its shelf's emoji, so
+    // Heartbeat sat under a ghost). None falls back to the default, and no two
+    // in one list share a picture, or the picture tells nothing apart.
+    val fx = MusicSynth.effects.map { MusicSynth.emojiOf(it) }
+    MusicSynth.effects.forEach { e -> check(MusicSynth.emojiOf(e) != "🔊", "${e.id} has no emoji of its own") }
+    fx.groupBy { it }.filter { it.value.size > 1 }.forEach { (emoji, _) ->
+        check(false, "${MusicSynth.effects.filter { MusicSynth.emojiOf(it) == emoji }.joinToString { it.id }} share $emoji")
+    }
+    val tr = MusicSynth.styles.map { MusicSynth.emojiOf(it) }
+    MusicSynth.styles.forEach { s -> check(MusicSynth.emojiOf(s) != "🎵", "${s.id} has no emoji of its own") }
+    tr.groupBy { it }.filter { it.value.size > 1 }.forEach { (emoji, _) ->
+        check(false, "${MusicSynth.styles.filter { MusicSynth.emojiOf(it) == emoji }.joinToString { it.id }} share $emoji")
+    }
     MusicSynth.styles.forEach { s ->
         check(MusicSynth.vibeOf(s) in MusicSynth.vibes, "${s.id} is filed under \"${MusicSynth.vibeOf(s)}\", which is not on the list")
     }

@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -142,13 +144,13 @@ val Tool.icon: ImageVector
         Tool.Layer -> Icons.Filled.Layers
         Tool.Mask -> Icons.Filled.Vignette
         Tool.Cutout -> Icons.Filled.Person
-        Tool.Stabilize -> Icons.Filled.Straighten
+        Tool.Stabilize -> Icons.Filled.Anchor
         Tool.Track -> Icons.Filled.MyLocation
         Tool.Beats -> Icons.Filled.GraphicEq
         Tool.Sync -> Icons.Filled.Sync
         Tool.Fade -> Icons.AutoMirrored.Filled.TrendingUp
-        Tool.Voice -> Icons.Filled.RecordVoiceOver
-        Tool.ExtractAudio -> Icons.Filled.Audiotrack
+        Tool.Voice -> Icons.Filled.SettingsVoice
+        Tool.ExtractAudio -> Icons.AutoMirrored.Filled.CallSplit
         Tool.Edit -> Icons.Filled.Edit
         Tool.Style -> Icons.Filled.Palette
         Tool.Strength -> Icons.Filled.Tune
@@ -156,11 +158,11 @@ val Tool.icon: ImageVector
         Tool.Flip -> Icons.Filled.Flip
         Tool.Rotate -> Icons.AutoMirrored.Filled.RotateRight
         Tool.Mirror -> Icons.Filled.Flip
-        Tool.Freeze -> Icons.Filled.PauseCircleOutline
+        Tool.Freeze -> Icons.Filled.AcUnit
         Tool.Reverse -> Icons.Filled.FastRewind
         Tool.Replace, Tool.ReplaceSound -> Icons.Filled.SwapHoriz
-        Tool.CopyAttributes -> Icons.Filled.ContentPaste
-        Tool.PasteAttributes -> Icons.Filled.ContentPasteGo
+        Tool.CopyAttributes -> Icons.Filled.FormatPaint
+        Tool.PasteAttributes -> Icons.Filled.ContentPaste
         Tool.SelectMore -> Icons.Filled.Checklist
         Tool.Duplicate -> Icons.Filled.ContentCopy
         Tool.ToOverlay -> Icons.Filled.FlipToFront

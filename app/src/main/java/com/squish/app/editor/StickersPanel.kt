@@ -273,12 +273,12 @@ private enum class StickerSet(val label: String, val stickers: List<Sticker>) {
         s("💙", "blue heart"), s("💜", "purple heart"), s("🖤", "black heart"), s("🤍", "white heart"),
         s("💖", "sparkling heart"), s("💘", "heart arrow cupid"), s("💔", "broken heart"), s("❣️", "heart exclamation"),
         s("💕", "two hearts"), s("💯", "hundred percent"), s("✨", "sparkles"), s("⭐", "star"),
-        s("🌟", "glowing star"), s("💫", "dizzy shooting star")
+        s("🌟", "glowing star"), s("💫", "dizzy stars"), s("🌠", "shooting star")
     )),
     Party("Party", listOf(
         s("🎉", "party popper celebrate"), s("🎊", "confetti"), s("🎂", "birthday cake"), s("🎁", "gift present"),
         s("🎈", "balloon"), s("🥂", "cheers clink glasses"), s("🍾", "champagne bottle"), s("🏆", "trophy winner"),
-        s("🥇", "gold medal first"), s("🎯", "target bullseye"), s("🔥", "fire flame lit hot trending"), s("💥", "boom explosion bang fire"),
+        s("🥇", "gold medal first"), s("🎯", "target bullseye"), s("🔥", "fire flame lit hot trending"), s("💥", "boom explosion bang"),
         s("⚡", "lightning bolt"), s("🚀", "rocket launch"), s("🌈", "rainbow"), s("☀️", "sun sunny"),
         s("🌙", "moon night"), s("❄️", "snowflake cold"), s("🎆", "fireworks firework diwali new year"), s("🎇", "sparkler fireworks diwali"), s("🪔", "diya lamp diwali festival")
     )),

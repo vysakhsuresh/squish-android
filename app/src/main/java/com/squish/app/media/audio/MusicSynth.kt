@@ -24,8 +24,6 @@ object MusicSynth {
 
     const val SAMPLE_RATE = 32_000
 
-    /** Instruments a style can use. */
-    internal enum class Lead { Pluck, Bell, Square, None }
 
     /**
      * One track's recipe: tempo, key, chords, and which parts play. The notes
@@ -49,9 +47,83 @@ object MusicSynth {
         val crackle: Boolean = false,
         val echo: Float = 0.25f
     ) {
-        internal val leadKind: Lead get() = Lead.entries[lead]
         val seconds: Int get() = (bars * 4 * 60f / bpm).roundToInt()
+        val kit: Kit get() = paletteOf(this).kit
+        val bassKind: BassKind get() = paletteOf(this).bass
+        val padKind: PadKind get() = paletteOf(this).pad
+        val leadKind: LeadKind get() = paletteOf(this).lead
+        val melody: Melody get() = paletteOf(this).melody
+        val intro: Intro get() = paletteOf(this).intro
     }
+
+    // ---- Arrangements (24 October) -------------------------------------------
+    //
+    // Reported on the phone: "all the tracks start with the same sound - one
+    // common instrument throughout". Measured, they did: every original opened
+    // on the same two bars (one hi-hat, one saw bass, one pad), played the same
+    // drum hits and the same bass all the way through, and walked its lead up
+    // the same arpeggio - the opening four seconds of half of all pairs
+    // correlated above 0.985 in spectral shape (OriginalsVarietyChecks). A
+    // tempo and a key are not an arrangement. Each track now has its own
+    // palette, and no two share one.
+
+    enum class Kit { Pop, Lofi, Trap, House, Brush, Chip, Rock, Cinematic, Electro, Perc, None }
+    enum class BassKind { Saw, Sub, Pluck, Square, Round, Synth, None }
+    enum class PadKind { Saw, Strings, Organ, Air, Keys, None }
+    enum class LeadKind { Pluck, Bell, Square, Piano, Marimba, Flute, Synth, None }
+    enum class Melody { ArpUp, ArpDown, Broken, Stabs, Hook, Sparse }
+
+    /** How the first two bars go, before everything is playing. */
+    enum class Intro { Full, Pad, Beat, Melody, Riser, Filter, Bass }
+
+    data class Palette(val kit: Kit, val bass: BassKind, val pad: PadKind, val lead: LeadKind, val melody: Melody, val intro: Intro)
+
+    private val palettes: Map<String, Palette> by lazy {
+        fun p(k: Kit, b: BassKind, pad: PadKind, l: LeadKind, m: Melody, i: Intro) = Palette(k, b, pad, l, m, i)
+        mapOf(
+            "lofi-sunset" to p(Kit.Lofi, BassKind.Round, PadKind.Keys, LeadKind.Pluck, Melody.Sparse, Intro.Filter),
+            "good-vibes" to p(Kit.Pop, BassKind.Pluck, PadKind.Organ, LeadKind.Marimba, Melody.Hook, Intro.Full),
+            "epic-rise" to p(Kit.Cinematic, BassKind.Sub, PadKind.Strings, LeadKind.Bell, Melody.ArpUp, Intro.Riser),
+            "night-drive" to p(Kit.Rock, BassKind.Synth, PadKind.Strings, LeadKind.Synth, Melody.ArpUp, Intro.Filter),
+            "chill-house" to p(Kit.House, BassKind.Sub, PadKind.Air, LeadKind.Bell, Melody.Stabs, Intro.Beat),
+            "street-beat" to p(Kit.Lofi, BassKind.Sub, PadKind.None, LeadKind.Piano, Melody.Sparse, Intro.Beat),
+            "sunny-day" to p(Kit.Pop, BassKind.Round, PadKind.None, LeadKind.Marimba, Melody.Broken, Intro.Melody),
+            "calm-keys" to p(Kit.None, BassKind.Round, PadKind.Keys, LeadKind.Piano, Melody.Sparse, Intro.Pad),
+            "romantic-piano" to p(Kit.None, BassKind.Round, PadKind.Strings, LeadKind.Piano, Melody.Broken, Intro.Melody),
+            "trap-energy" to p(Kit.Trap, BassKind.Sub, PadKind.None, LeadKind.Synth, Melody.Hook, Intro.Bass),
+            "funky-groove" to p(Kit.Electro, BassKind.Pluck, PadKind.Organ, LeadKind.Pluck, Melody.Stabs, Intro.Beat),
+            "dreamy-ambient" to p(Kit.None, BassKind.None, PadKind.Air, LeadKind.Bell, Melody.Sparse, Intro.Pad),
+            "summer-pop" to p(Kit.Pop, BassKind.Saw, PadKind.Saw, LeadKind.Pluck, Melody.ArpUp, Intro.Full),
+            "dark-tension" to p(Kit.Cinematic, BassKind.Sub, PadKind.Strings, LeadKind.None, Melody.Sparse, Intro.Bass),
+            "acoustic-morning" to p(Kit.Brush, BassKind.Round, PadKind.None, LeadKind.Pluck, Melody.Broken, Intro.Melody),
+            "retro-arcade" to p(Kit.Chip, BassKind.Square, PadKind.None, LeadKind.Square, Melody.Hook, Intro.Full),
+            "jazz-cafe" to p(Kit.Brush, BassKind.Round, PadKind.Keys, LeadKind.Flute, Melody.Sparse, Intro.Beat),
+            "travel-vlog" to p(Kit.Pop, BassKind.Pluck, PadKind.Air, LeadKind.Marimba, Melody.ArpDown, Intro.Filter),
+            "inspiring" to p(Kit.Cinematic, BassKind.Round, PadKind.Strings, LeadKind.Piano, Melody.ArpUp, Intro.Pad),
+            "lofi-rain" to p(Kit.Lofi, BassKind.Sub, PadKind.Keys, LeadKind.Bell, Melody.ArpDown, Intro.Pad),
+            "party-bounce" to p(Kit.House, BassKind.Synth, PadKind.Saw, LeadKind.Synth, Melody.Stabs, Intro.Riser),
+            "heartfelt" to p(Kit.None, BassKind.None, PadKind.Strings, LeadKind.Pluck, Melody.Broken, Intro.Melody),
+            "daily-vlog" to p(Kit.Perc, BassKind.Round, PadKind.Organ, LeadKind.Pluck, Melody.Hook, Intro.Beat),
+            "city-walk" to p(Kit.Lofi, BassKind.Round, PadKind.None, LeadKind.Bell, Melody.Hook, Intro.Bass),
+            "weekend" to p(Kit.Electro, BassKind.Saw, PadKind.Organ, LeadKind.Pluck, Melody.Stabs, Intro.Full),
+            "deep-house" to p(Kit.House, BassKind.Sub, PadKind.Keys, LeadKind.Bell, Melody.Sparse, Intro.Filter),
+            "festival" to p(Kit.Electro, BassKind.Sub, PadKind.Air, LeadKind.Synth, Melody.ArpUp, Intro.Riser),
+            "disco-nights" to p(Kit.Pop, BassKind.Pluck, PadKind.Strings, LeadKind.Pluck, Melody.Stabs, Intro.Filter),
+            "kids-party" to p(Kit.Pop, BassKind.Pluck, PadKind.None, LeadKind.Bell, Melody.Hook, Intro.Full),
+            "silly-march" to p(Kit.Rock, BassKind.Square, PadKind.None, LeadKind.Flute, Melody.Hook, Intro.Beat),
+            "cartoon-chase" to p(Kit.Perc, BassKind.Square, PadKind.None, LeadKind.Square, Melody.ArpDown, Intro.Full),
+            "bright-ideas" to p(Kit.Pop, BassKind.Round, PadKind.Air, LeadKind.Marimba, Melody.ArpUp, Intro.Pad),
+            "tech-launch" to p(Kit.House, BassKind.Synth, PadKind.Air, LeadKind.Bell, Melody.ArpDown, Intro.Filter),
+            "clean-slide" to p(Kit.Brush, BassKind.Sub, PadKind.Keys, LeadKind.Pluck, Melody.Sparse, Intro.Pad),
+            "adventure" to p(Kit.Cinematic, BassKind.Round, PadKind.Strings, LeadKind.Flute, Melody.Hook, Intro.Melody),
+            "memories" to p(Kit.None, BassKind.None, PadKind.Keys, LeadKind.Piano, Melody.Sparse, Intro.Melody),
+            "boom-bap" to p(Kit.Lofi, BassKind.Round, PadKind.Organ, LeadKind.Piano, Melody.Stabs, Intro.Bass)
+        )
+    }
+
+    /** The track's palette; one not in the table plays as the old band did, which OriginalsVarietyChecks refuses. */
+    fun paletteOf(style: Style): Palette =
+        palettes[style.id] ?: Palette(Kit.Pop, BassKind.Saw, PadKind.Saw, LeadKind.Pluck, Melody.ArpUp, Intro.Full)
 
     private const val PLUCK = 0
     private const val BELL = 1
@@ -440,6 +512,52 @@ object MusicSynth {
     )
 
     fun effectById(id: String): Effect? = effects.firstOrNull { it.id == id }
+
+    /**
+     * Each sound's own picture, beside its name in the library.
+     *
+     * Reported on 24 October: every row wore its shelf's emoji, so Heartbeat
+     * sat under a ghost (Horror) and Coin under a joystick. The shelf is the
+     * row's colour now; the emoji is the sound's. One that is also a sound
+     * sticker uses the sticker's emoji (SoundStickerChecks holds the two
+     * together), and no two sounds share one (MusicSynthChecks).
+     */
+    private val effectEmoji = mapOf(
+        "sfx-whoosh" to "💨", "sfx-pop" to "🫧", "sfx-click" to "🖱️", "sfx-riser" to "🚀", "sfx-ding" to "🔔",
+        "sfx-swipe" to "👉", "sfx-boom" to "💥", "sfx-glitch" to "📺", "sfx-shutter" to "📸", "sfx-boing" to "🤸",
+        "sfx-chime" to "✨", "sfx-heartbeat" to "❤️", "sfx-typewriter" to "⌨️", "sfx-drumroll" to "🥁", "sfx-tada" to "🎉",
+        "sfx-zap" to "⚡", "sfx-reverse" to "⏪", "sfx-subdrop" to "🔈", "sfx-impact" to "💢", "sfx-glass" to "🪟",
+        "sfx-metal" to "🔩", "sfx-cloth" to "👕", "sfx-swish" to "🌀", "sfx-build" to "📈",
+        "sfx-whoosh-fast" to "🏎️", "sfx-whoosh-deep" to "🌊", "sfx-swoosh-up" to "⤴️", "sfx-swoosh-down" to "⤵️",
+        "sfx-tapestop" to "📼", "sfx-rewind" to "⏮️",
+        "sfx-punch" to "🥊", "sfx-slam" to "🚪", "sfx-thud" to "📦", "sfx-cinematic-boom" to "🎬", "sfx-slash" to "⚔️",
+        "sfx-slide-up" to "⬆️", "sfx-slide-down" to "⬇️", "sfx-trombone" to "😢", "sfx-squeak" to "🐭", "sfx-honk" to "🤡",
+        "sfx-bubbles" to "🐠", "sfx-wobble" to "🍮", "sfx-plop" to "🪨", "sfx-zip" to "🏃",
+        "sfx-notify" to "📱", "sfx-success" to "✅", "sfx-error" to "❌", "sfx-message" to "💬", "sfx-tap" to "👆",
+        "sfx-switch" to "🔘", "sfx-cash" to "💰", "sfx-ticktock" to "⏰",
+        "sfx-coin" to "🪙", "sfx-jump" to "🦘", "sfx-powerup" to "🍄", "sfx-laser" to "🛸", "sfx-gameover" to "💀",
+        "sfx-levelup" to "🏆", "sfx-blip" to "🎮", "sfx-explode8" to "👾",
+        "sfx-gong" to "🧘", "sfx-cymbal" to "🎊", "sfx-harp" to "👼", "sfx-scratch" to "💿", "sfx-orchhit" to "🎻",
+        "sfx-tension" to "😰", "sfx-charge" to "🔋",
+        "sfx-thunder" to "⛈️", "sfx-wind" to "🌬️", "sfx-rain" to "🌧️", "sfx-bird" to "🐦", "sfx-drop" to "💧",
+        "sfx-drone" to "🌑", "sfx-stinger" to "😱", "sfx-ghost" to "👻", "sfx-darkhit" to "🖤"
+    )
+
+    fun emojiOf(effect: Effect): String = effectEmoji[effect.id] ?: "🔊"
+
+    /** Each track's own picture: its shelf is the colour, the emoji says what the track is. */
+    private val trackEmoji = mapOf(
+        "lofi-sunset" to "🌇", "good-vibes" to "😎", "epic-rise" to "🏔️", "night-drive" to "🌃", "chill-house" to "🍹",
+        "street-beat" to "🛹", "sunny-day" to "☀️", "calm-keys" to "🎹", "romantic-piano" to "🌹", "trap-energy" to "🔥",
+        "funky-groove" to "🕺", "dreamy-ambient" to "☁️", "summer-pop" to "🏖️", "dark-tension" to "🕯️",
+        "acoustic-morning" to "🎸", "retro-arcade" to "🕹️", "jazz-cafe" to "🎷", "travel-vlog" to "✈️",
+        "inspiring" to "🌄", "lofi-rain" to "🌧️", "party-bounce" to "🎉", "heartfelt" to "💕", "daily-vlog" to "📹",
+        "city-walk" to "🏙️", "weekend" to "🧺", "deep-house" to "🎛️", "festival" to "🎪", "disco-nights" to "🪩",
+        "kids-party" to "🎈", "silly-march" to "🤪", "cartoon-chase" to "🐭", "bright-ideas" to "💡",
+        "tech-launch" to "🚀", "clean-slide" to "📊", "adventure" to "🧭", "memories" to "📷", "boom-bap" to "🎤"
+    )
+
+    fun emojiOf(style: Style): String = trackEmoji[style.id] ?: "🎵"
 
     /** Renders [effect] to a stereo 16-bit WAV at [out]. */
     fun renderEffect(effect: Effect, out: File) {
@@ -1402,6 +1520,7 @@ object MusicSynth {
 
     /** Renders [style] to a stereo 16-bit WAV at [out]. */
     fun render(style: Style, out: File) {
+        val p = paletteOf(style)
         val frames = style.seconds * SAMPLE_RATE
         val left = FloatArray(frames)
         val right = FloatArray(frames)
@@ -1409,53 +1528,358 @@ object MusicSynth {
 
         val beat = 60.0 / style.bpm
         val step = beat / 4.0
+        val hook = hookOf(style)
+        // Each track tunes its kit a little its own way, so two on one kit do not
+        // open on the very same drums. summer-pop, the one track left on the old
+        // band, keeps it exactly.
+        val tune = if (style.id == "summer-pop") 1.0 else 0.85 + (abs(style.id.hashCode()) % 8) * 0.05
+        // Two bars in the middle with the drums and bass out, on anything long
+        // enough to have a middle: a track that never changes is a loop.
+        val breakdown = if (style.bars >= 16 && p.kit != Kit.None) (style.bars / 2) until (style.bars / 2 + 2) else IntRange.EMPTY
 
         for (bar in 0 until style.bars) {
             val (root, minor) = style.chords[bar % style.chords.size]
             val third = if (minor) 3 else 4
             val chord = intArrayOf(root, root + third, root + 7, root + (if (minor) 10 else 11))
             val barStart = bar * 4 * beat
-            // A lighter first bar and a fuller middle: the track builds and breathes.
             val intro = bar < 2
             val outro = bar >= style.bars - 1
+            val resting = bar in breakdown
+
+            val kickOn = p.kit != Kit.None && !resting &&
+                (!intro || p.intro in setOf(Intro.Full, Intro.Beat, Intro.Bass, Intro.Filter))
+            val snareOn = p.kit != Kit.None && !resting &&
+                (!intro || p.intro in setOf(Intro.Full, Intro.Beat, Intro.Filter))
+            val hatOn = p.kit != Kit.None && !outro &&
+                (!intro || p.intro in setOf(Intro.Full, Intro.Beat, Intro.Filter))
+            val bassOn = p.bass != BassKind.None && !resting &&
+                (!intro || p.intro in setOf(Intro.Full, Intro.Bass, Intro.Filter))
+            val padOn = p.pad != PadKind.None &&
+                (!intro || p.intro in setOf(Intro.Full, Intro.Pad, Intro.Filter, Intro.Riser))
+            val leadOn = p.lead != LeadKind.None &&
+                (!intro || p.intro in setOf(Intro.Full, Intro.Melody, Intro.Filter))
 
             for (s in 0 until 16) {
                 val swingDelay = if (s % 2 == 1) style.swing * step else 0.0
                 val t = barStart + s * step + swingDelay
-                if (!intro && style.kickPattern[s] == 'x') kick(left, right, t)
-                if (!intro && style.snarePattern[s] == 'x') snare(left, right, t, rng)
-                if (style.hatPattern[s] == 'x' && !outro) hat(left, right, t, rng, if (s % 4 == 0) 0.9f else 0.55f)
+                if (kickOn && style.kickPattern[s] == 'x') drumKick(p.kit, left, right, t, tune)
+                if (snareOn && style.snarePattern[s] == 'x') drumSnare(p.kit, left, right, t, rng, tune)
+                if (hatOn && style.hatPattern[s] == 'x') drumHat(p.kit, left, right, t, rng, if (s % 4 == 0) 0.9f else 0.55f, tune)
             }
 
-            // Bass: the root, on the beat or in eighths.
-            val bassNote = root - 24
-            val bassSteps = if (style.bassEighths) (0 until 8).map { it * 2 } else listOf(0, 8)
-            for (s in bassSteps) {
-                bass(left, right, barStart + s * step, midiHz(bassNote), step * (if (style.bassEighths) 1.8 else 7.5))
+            if (bassOn) {
+                val bassNote = root - 24
+                val bassSteps = if (style.bassEighths) (0 until 8).map { it * 2 } else listOf(0, 8)
+                for (s in bassSteps) {
+                    bassVoice(p.bass, left, right, barStart + s * step, midiHz(bassNote), step * (if (style.bassEighths) 1.8 else 7.5), rng)
+                }
             }
 
-            if (style.pad) pad(left, right, barStart, 4 * beat, chord.map { midiHz(it) })
+            if (padOn) padVoice(p.pad, left, right, barStart, 4 * beat, chord.map { midiHz(it) })
 
-            // Lead: an arpeggio up the chord an octave higher, varied every other bar.
-            if (style.leadKind != Lead.None && !intro) {
-                val order = if (bar % 2 == 0) intArrayOf(0, 1, 2, 3, 2, 1, 2, 3) else intArrayOf(3, 2, 1, 2, 0, 2, 1, 3)
-                for (i in 0 until 8) {
-                    val note = chord[order[i]] + 12
-                    val t = barStart + i * 2 * step
-                    when (style.leadKind) {
-                        Lead.Pluck -> pluck(left, right, t, midiHz(note), rng, pan = if (i % 2 == 0) -0.3f else 0.3f)
-                        Lead.Bell -> if (i % 2 == 0) bell(left, right, t, midiHz(note + 12))
-                        Lead.Square -> square(left, right, t, midiHz(note), step * 1.6)
-                        Lead.None -> Unit
-                    }
+            if (leadOn) {
+                for ((s, note, len) in melodyBar(p.melody, chord, bar, hook)) {
+                    val t = barStart + s * step + (if (s % 2 == 1) style.swing * step else 0.0)
+                    leadVoice(p.lead, left, right, t, note, len * step, rng, pan = if (s % 4 < 2) -0.25f else 0.25f)
                 }
             }
         }
+
+        val twoBars = (2 * 4 * beat * SAMPLE_RATE).toInt().coerceAtMost(frames)
+        if (p.intro == Intro.Riser) riserInto(left, right, twoBars, rng)
+        if (p.intro == Intro.Filter) openingFilter(left, right, twoBars)
 
         if (style.echo > 0f) echo(left, right, (beat * 0.75 * SAMPLE_RATE).toInt(), style.echo)
         if (style.crackle) crackle(left, right, rng)
         fadeOutTail(left, right)
         write(out, left, right)
+    }
+
+    // ---- The melody ------------------------------------------------------------------
+
+    /** A two-bar tune of a track's own, for [Melody.Hook]: a rhythm and the chord tones it walks. */
+    private class Hook(val rhythm: String, val degrees: IntArray)
+
+    private val hookRhythms = listOf(
+        "x--x--x-x---x-x-", "x-x---x-x-x---x-", "x---x-x---x-x-x-",
+        "x--x-x--x--x-x--", "x-xx--x-x-xx--x-", "x-----x-x-x-x---"
+    )
+
+    private fun hookOf(style: Style): Hook {
+        val r = Random(style.id.hashCode() xor 0x5EED)
+        val rhythm = hookRhythms[r.nextInt(hookRhythms.size)]
+        var d = r.nextInt(3)
+        // A walk over the chord tones and the octave above, mostly by step, so
+        // it sings rather than leaps.
+        val degrees = IntArray(16) {
+            d = (d + listOf(-1, 1, 1, -2, 2, 0)[r.nextInt(6)]).coerceIn(0, 6)
+            d
+        }
+        return Hook(rhythm, degrees)
+    }
+
+    /** One bar of the lead: (step, MIDI note, length in steps). */
+    private fun melodyBar(m: Melody, chord: IntArray, bar: Int, hook: Hook): List<Triple<Int, Int, Int>> {
+        val tones = intArrayOf(chord[0], chord[1], chord[2], chord[3], chord[0] + 12, chord[1] + 12, chord[2] + 12)
+        fun eighths(order: IntArray) = (0 until 8).map { i -> Triple(i * 2, chord[order[i % order.size]] + 12, 2) }
+        return when (m) {
+            Melody.ArpUp -> eighths(intArrayOf(0, 1, 2, 3))
+            Melody.ArpDown -> eighths(intArrayOf(3, 2, 1, 0))
+            Melody.Broken -> eighths(intArrayOf(0, 2, 1, 3, 2, 0, 3, 1))
+            // The chord on the off-beats, short: what a funk guitar or a house piano does.
+            Melody.Stabs -> listOf(2, 6, 10, 14).flatMap { s -> chord.map { Triple(s, it + 12, 1) } }
+            Melody.Sparse -> listOf(Triple(0, chord[2] + 12, 6), Triple(6, chord[3] + 12, 4), Triple(10, chord[1] + 24, 6))
+            Melody.Hook -> {
+                val hits = hook.rhythm.indices.filter { hook.rhythm[it] == 'x' }
+                hits.mapIndexed { k, s ->
+                    val next = if (k + 1 < hits.size) hits[k + 1] else 16
+                    // The second bar of each pair answers the first a step higher at its end.
+                    val deg = hook.degrees[k] + (if (bar % 2 == 1 && k == hits.lastIndex) 1 else 0)
+                    Triple(s, tones[deg.coerceIn(0, tones.lastIndex)] + 12, next - s)
+                }
+            }
+        }
+    }
+
+    // ---- Kits ------------------------------------------------------------------------
+
+    private fun drumKick(kit: Kit, l: FloatArray, r: FloatArray, t: Double, k: Double) = when (kit) {
+        Kit.Pop -> if (k == 1.0) kick(l, r, t) else thump(l, r, t, 48.0 * k, 110.0 * k, 28.0, 9.0, 0.9)
+        Kit.Lofi -> thump(l, r, t, 45.0, 70.0, 22.0, 12.0, 0.7, soft = true)
+        Kit.Trap -> thump(l, r, t, 48.0, 90.0, 18.0, 2.2, 0.95, length = 0.9)
+        Kit.House -> { thump(l, r, t, 50.0, 150.0, 40.0, 7.0, 0.9); click(l, r, t, 0.25) }
+        Kit.Brush -> thump(l, r, t, 55.0, 40.0, 30.0, 14.0, 0.55, soft = true)
+        Kit.Chip -> tone(l, r, t, 0.12, 200.0, 50.0, Wave.Square, level = 0.35, decay = 18.0)
+        Kit.Rock -> { thump(l, r, t, 52.0, 120.0, 30.0, 8.0, 1.0); click(l, r, t, 0.35) }
+        Kit.Cinematic -> thump(l, r, t, 40.0, 40.0, 6.0, 4.0, 1.0, length = 1.0)
+        Kit.Electro -> { thump(l, r, t, 46.0 * k, 160.0, 22.0, 4.5, 0.95, length = 0.6); click(l, r, t, 0.2) }
+        Kit.Perc -> thump(l, r, t, 70.0 * k, 60.0, 35.0, 16.0, 0.6, soft = true)
+        Kit.None -> Unit
+    }
+
+    private fun drumSnare(kit: Kit, l: FloatArray, r: FloatArray, t: Double, rng: Random, k: Double) = when (kit) {
+        Kit.Pop -> if (k == 1.0) snare(l, r, t, rng) else noiseHit(l, r, t, rng, 0.22, cutoff = 0.9, decay = 18.0, level = 0.35, tone = 185.0 * k, toneLevel = 0.25, band = true)
+        Kit.Lofi -> noiseHit(l, r, t, rng, 0.2, cutoff = 0.25, decay = 22.0, level = 0.45, tone = 180.0, toneLevel = 0.3)
+        Kit.Trap, Kit.House -> clap(l, r, t, rng, if (kit == Kit.Trap) 0.55 else 0.45)
+        Kit.Brush -> noiseHit(l, r, t, rng, 0.35, cutoff = 0.15, decay = 9.0, level = 0.35, band = true)
+        Kit.Chip -> noiseHit(l, r, t, rng, 0.1, cutoff = 1.0, decay = 30.0, level = 0.3, crush = true)
+        Kit.Rock -> noiseHit(l, r, t, rng, 0.3, cutoff = 0.8, decay = 12.0, level = 0.6, tone = 210.0, toneLevel = 0.4, band = true)
+        Kit.Cinematic -> { thump(l, r, t, 110.0, 30.0, 20.0, 6.0, 0.6, length = 0.6); noiseHit(l, r, t, rng, 0.4, cutoff = 0.08, decay = 7.0, level = 0.5) }
+        Kit.Electro -> noiseHit(l, r, t, rng, 0.25, cutoff = 0.7, decay = 14.0, level = 0.5, tone = 240.0 * k, toneLevel = 0.3, band = true)
+        Kit.Perc -> woodblock(l, r, t, 900.0 * k, 0.35)
+        Kit.None -> Unit
+    }
+
+    private fun drumHat(kit: Kit, l: FloatArray, r: FloatArray, t: Double, rng: Random, level: Float, k: Double) = when (kit) {
+        Kit.Pop -> hat(l, r, t, rng, level)
+        Kit.Lofi -> noiseHit(l, r, t, rng, 0.05, cutoff = 0.45, decay = 60.0, level = 0.07 * level, band = true, pan = 0.3f)
+        Kit.Trap -> noiseHit(l, r, t, rng, 0.03, cutoff = 1.0, decay = 150.0, level = 0.13 * level, band = true, pan = 0.2f)
+        Kit.House -> noiseHit(l, r, t, rng, 0.12, cutoff = 1.0, decay = 18.0, level = 0.09 * level, band = true, pan = 0.25f)
+        Kit.Brush -> ride(l, r, t, 0.05 * level)
+        Kit.Chip -> noiseHit(l, r, t, rng, 0.03, cutoff = 1.0, decay = 90.0, level = 0.1 * level, crush = true)
+        Kit.Rock -> noiseHit(l, r, t, rng, 0.08, cutoff = 1.0, decay = 40.0, level = 0.12 * level, band = true, pan = 0.25f)
+        Kit.Cinematic -> noiseHit(l, r, t, rng, 0.08, cutoff = 0.5, decay = 30.0, level = 0.06 * level, band = true, pan = -0.3f)
+        Kit.Electro -> metalHat(l, r, t, 0.07 * level, k)
+        Kit.Perc -> noiseHit(l, r, t, rng, 0.09, cutoff = 0.35 * k, decay = 25.0, level = 0.1 * level, band = true, pan = -0.35f)
+        Kit.None -> Unit
+    }
+
+    /** A pitched drum: a sine falling from [base] + [sweep] Hz to [base]. */
+    private fun thump(
+        l: FloatArray, r: FloatArray, t: Double, base: Double, sweep: Double, sweepRate: Double, decay: Double,
+        level: Double, length: Double = 0.35, soft: Boolean = false
+    ) {
+        val start = (t * SAMPLE_RATE).toInt()
+        var phase = 0.0
+        var lp = 0.0
+        val count = (length * SAMPLE_RATE).toInt()
+        for (n in 0 until count) {
+            val x = n.toDouble() / SAMPLE_RATE
+            phase += 2 * PI * (base + sweep * exp(-x * sweepRate)) / SAMPLE_RATE
+            var v = sin(phase) * exp(-x * decay) * minOf(1.0, (count - n).toDouble() / 64)
+            if (soft) { lp += (v - lp) * 0.3; v = lp }
+            add(l, r, start + n, (v * level).toFloat())
+        }
+    }
+
+    private fun click(l: FloatArray, r: FloatArray, t: Double, level: Double) {
+        val start = (t * SAMPLE_RATE).toInt()
+        for (n in 0 until 48) add(l, r, start + n, (sin(2 * PI * 3000 * n / SAMPLE_RATE) * exp(-n / 8.0) * level).toFloat())
+    }
+
+    private fun noiseHit(
+        l: FloatArray, r: FloatArray, t: Double, rng: Random, length: Double, cutoff: Double, decay: Double, level: Double,
+        tone: Double = 0.0, toneLevel: Double = 0.0, band: Boolean = false, crush: Boolean = false, pan: Float = 0f
+    ) {
+        val start = (t * SAMPLE_RATE).toInt()
+        var lp = 0.0
+        var prev = 0.0
+        var held = 0.0
+        for (n in 0 until (length * SAMPLE_RATE).toInt()) {
+            val x = n.toDouble() / SAMPLE_RATE
+            if (!crush || n % 4 == 0) held = rng.nextDouble() * 2 - 1
+            val raw = if (crush) kotlin.math.round(held * 4) / 4 else held
+            lp += (raw - lp) * cutoff
+            val v = if (band) lp - prev else lp
+            prev = lp
+            val body = if (tone > 0) sin(2 * PI * tone * x) * toneLevel * exp(-x * decay * 1.5) else 0.0
+            add(l, r, start + n, ((v * level + body) * exp(-x * decay)).toFloat(), pan)
+        }
+    }
+
+    /** A hand clap: three quick bursts and a short tail. */
+    private fun clap(l: FloatArray, r: FloatArray, t: Double, rng: Random, level: Double) {
+        for (k in 0 until 3) noiseHit(l, r, t + k * 0.011, rng, 0.012, cutoff = 0.6, decay = 60.0, level = level * 0.8, band = true)
+        noiseHit(l, r, t + 0.033, rng, 0.2, cutoff = 0.5, decay = 20.0, level = level, band = true)
+    }
+
+    /** A ride cymbal brushed: a few high, inharmonic partials. */
+    private fun ride(l: FloatArray, r: FloatArray, t: Double, level: Double) {
+        val start = (t * SAMPLE_RATE).toInt()
+        val hz = doubleArrayOf(3150.0, 4230.0, 5370.0, 6610.0)
+        for (n in 0 until (0.4 * SAMPLE_RATE).toInt()) {
+            val x = n.toDouble() / SAMPLE_RATE
+            var s = 0.0
+            for (h in hz) s += sin(2 * PI * h * x)
+            add(l, r, start + n, (s / 4 * exp(-x * 7) * level * minOf(1.0, x * 2000)).toFloat(), pan = 0.35f)
+        }
+    }
+
+    /** A wood block: a short, hollow, pitched knock. */
+    private fun woodblock(l: FloatArray, r: FloatArray, t: Double, hz: Double, level: Double) {
+        tone(l, r, t, 0.08, hz, wave = Wave.Triangle, level = level, decay = 45.0, attack = 0.0005, pan = 0.2f)
+        tone(l, r, t, 0.05, hz * 2.4, level = level * 0.3, decay = 70.0, attack = 0.0005, pan = 0.2f)
+    }
+
+    /** A drum machine's metallic hat: square partials at odd ratios, high-passed by their own decay. */
+    private fun metalHat(l: FloatArray, r: FloatArray, t: Double, level: Double, k: Double) {
+        listOf(2.0, 3.0, 4.16, 5.43, 6.79, 8.21).forEach { m ->
+            tone(l, r, t, 0.06, 540.0 * k * m, wave = Wave.Square, level = level / 4, decay = 70.0, attack = 0.0005, pan = 0.3f)
+        }
+    }
+
+    // ---- Basses ----------------------------------------------------------------------
+
+    private fun bassVoice(kind: BassKind, l: FloatArray, r: FloatArray, t: Double, hz: Double, length: Double, rng: Random) = when (kind) {
+        BassKind.Saw -> bass(l, r, t, hz, length)
+        BassKind.Sub -> tone(l, r, t, length, hz, level = 0.55, decay = 1.2, attack = 0.006)
+        BassKind.Pluck -> pluckAt(l, r, t, hz, rng, 0.45, 0.996f, length.coerceAtMost(1.2))
+        BassKind.Square -> tone(l, r, t, length * 0.8, hz, wave = Wave.Square, level = 0.22, decay = 2.0, attack = 0.005, soften = 0.12)
+        BassKind.Round -> tone(l, r, t, length, hz, wave = Wave.Triangle, level = 0.5, decay = 2.5, attack = 0.004, soften = 0.35)
+        BassKind.Synth -> {
+            tone(l, r, t, length, hz, wave = Wave.Saw, level = 0.22, decay = 2.0, attack = 0.003, soften = 0.09, pan = -0.15f)
+            tone(l, r, t, length, hz * 1.006, wave = Wave.Saw, level = 0.22, decay = 2.0, attack = 0.003, soften = 0.09, pan = 0.15f)
+        }
+        BassKind.None -> Unit
+    }
+
+    /** Karplus-Strong with a choice of level, damping and length. */
+    private fun pluckAt(l: FloatArray, r: FloatArray, t: Double, hz: Double, rng: Random, level: Double, damping: Float, length: Double, pan: Float = 0f) {
+        val start = (t * SAMPLE_RATE).toInt()
+        val period = (SAMPLE_RATE / hz).toInt().coerceAtLeast(2)
+        val buf = FloatArray(period) { rng.nextFloat() * 2 - 1 }
+        val mean = buf.average().toFloat()
+        for (i in buf.indices) buf[i] -= mean
+        var idx = 0
+        val count = (length * SAMPLE_RATE).toInt()
+        for (n in 0 until count) {
+            val next = (idx + 1) % period
+            val v = buf[idx]
+            buf[idx] = (v + buf[next]) * 0.5f * damping
+            idx = next
+            add(l, r, start + n, (v * level * minOf(1.0, (count - n).toDouble() / 200)).toFloat(), pan)
+        }
+    }
+
+    // ---- Pads ------------------------------------------------------------------------
+
+    private fun padVoice(kind: PadKind, l: FloatArray, r: FloatArray, t: Double, length: Double, notes: List<Double>) {
+        when (kind) {
+            PadKind.Saw -> pad(l, r, t, length, notes)
+            PadKind.Strings -> notes.forEachIndexed { k, hz ->
+                listOf(-0.004, 0.0, 0.004).forEach { d ->
+                    tone(l, r, t, length, hz * (1 + d), wave = Wave.Saw, level = 0.03, attack = 0.7, soften = 0.05,
+                        vibHz = 5.0, vibDepth = 0.003, pan = if (k % 2 == 0) -0.45f else 0.45f)
+                }
+            }
+            PadKind.Organ -> notes.forEachIndexed { k, hz ->
+                listOf(1.0 to 0.05, 2.0 to 0.03, 3.0 to 0.015).forEach { (h, g) ->
+                    tone(l, r, t, length * 0.95, hz * h, level = g, attack = 0.02, vibHz = 6.0, vibDepth = 0.002,
+                        pan = if (k % 2 == 0) -0.3f else 0.3f)
+                }
+            }
+            PadKind.Air -> notes.forEachIndexed { k, hz ->
+                tone(l, r, t, length, hz * 2, level = 0.035, attack = length * 0.4, vibHz = 0.3, vibDepth = 0.004,
+                    pan = if (k % 2 == 0) -0.6f else 0.6f)
+            }
+            // An electric piano struck on one and three: a sine with a bell-like
+            // partial that dies first.
+            PadKind.Keys -> listOf(0.0, length / 2).forEach { off ->
+                notes.forEach { hz ->
+                    tone(l, r, t + off, length / 2, hz, level = 0.06, decay = 2.2, attack = 0.004)
+                    tone(l, r, t + off, length / 2, hz * 4, level = 0.015, decay = 9.0, attack = 0.002)
+                }
+            }
+            PadKind.None -> Unit
+        }
+    }
+
+    // ---- Leads -----------------------------------------------------------------------
+
+    private fun leadVoice(kind: LeadKind, l: FloatArray, r: FloatArray, t: Double, note: Int, length: Double, rng: Random, pan: Float) {
+        val hz = midiHz(note)
+        when (kind) {
+            LeadKind.Pluck -> pluck(l, r, t, hz, rng, pan)
+            LeadKind.Bell -> bell(l, r, t, midiHz(note + 12))
+            LeadKind.Square -> square(l, r, t, hz, length.coerceAtLeast(0.08) * 0.9)
+            LeadKind.Piano -> {
+                listOf(1.0 to 0.16, 2.0 to 0.07, 3.0 to 0.03, 4.0 to 0.015).forEachIndexed { k, (h, g) ->
+                    tone(l, r, t, (length + 0.6).coerceAtMost(2.0), hz * h, level = g, decay = 2.0 + k * 1.5, attack = 0.002, pan = pan * 0.5f)
+                }
+            }
+            LeadKind.Marimba -> {
+                tone(l, r, t, 0.5, hz, level = 0.2, decay = 8.0, attack = 0.001, pan = pan)
+                tone(l, r, t, 0.2, hz * 4, level = 0.06, decay = 25.0, attack = 0.001, pan = pan)
+            }
+            LeadKind.Flute -> {
+                tone(l, r, t, length.coerceAtLeast(0.1), hz, level = 0.13, attack = 0.04, vibHz = 5.0, vibDepth = 0.006, pan = pan * 0.3f)
+                tone(l, r, t, length.coerceAtLeast(0.1), hz * 2, level = 0.02, attack = 0.05, pan = pan * 0.3f)
+                noiseLayer(l, r, rng, t, 0.06, { 0.6 }, { x -> 1 - x }, 0.03, band = true)
+            }
+            LeadKind.Synth -> {
+                tone(l, r, t, length.coerceAtLeast(0.08), hz, wave = Wave.Saw, level = 0.07, decay = 1.5, attack = 0.003, soften = 0.25, pan = -0.2f)
+                tone(l, r, t, length.coerceAtLeast(0.08), hz * 1.008, wave = Wave.Saw, level = 0.07, decay = 1.5, attack = 0.003, soften = 0.25, pan = 0.2f)
+            }
+            LeadKind.None -> Unit
+        }
+    }
+
+    // ---- Intros ----------------------------------------------------------------------
+
+    /** Noise climbing over the first two bars into the downbeat of the third. */
+    private fun riserInto(l: FloatArray, r: FloatArray, count: Int, rng: Random) {
+        var lp = 0.0
+        for (i in 0 until count) {
+            val x = i.toDouble() / count
+            lp += ((rng.nextFloat() * 2 - 1) - lp) * (0.02 + 0.4 * x)
+            val v = lp * x.pow(2.0) * 0.35
+            l[i] += v.toFloat()
+            r[i] += v.toFloat()
+        }
+    }
+
+    /** Everything in the first two bars heard through a low-pass that opens as they go. */
+    private fun openingFilter(l: FloatArray, r: FloatArray, count: Int) {
+        var lpL = 0.0
+        var lpR = 0.0
+        for (i in 0 until count) {
+            val x = i.toDouble() / count
+            val c = 0.02 + 0.98 * x.pow(2.5)
+            lpL += (l[i] - lpL) * c
+            lpR += (r[i] - lpR) * c
+            l[i] = lpL.toFloat()
+            r[i] = lpR.toFloat()
+        }
     }
 
     // ---- Instruments ----------------------------------------------------------------

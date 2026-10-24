@@ -36,8 +36,16 @@ object MusicLibrary {
 
     private fun dir(context: Context) = File(context.filesDir, "music").apply { mkdirs() }
 
-    /** Whether [style] has already been rendered, so the list can say so. */
-    fun isReady(context: Context, style: MusicSynth.Style): Boolean = madeFile(context, style) != null
+    /** Whether [style] has been rendered by this build of the synth, so the list can say so. */
+    fun isReady(context: Context, style: MusicSynth.Style): Boolean = currentFile(context, style) != null
+
+    /**
+     * Which build of the synth the originals on disk were composed by. Raise
+     * it when [MusicSynth.render] changes in a way a listener would hear.
+     * 2 (24 October): each track its own kit, bass, pad, lead, melody and
+     * intro, where every one had opened on the same band.
+     */
+    private const val ORIGINALS_BUILD = 2
 
     /**
      * The track's file if it has been made: the AAC kept since 18 October,
@@ -48,6 +56,15 @@ object MusicLibrary {
         File(dir(context), "${style.id}.wav").takeIf { it.length() > 0L }
             ?: File(dir(context), "${style.id}.m4a").takeIf { it.length() > 0L }
 
+    private fun stamp(context: Context, style: MusicSynth.Style) = File(dir(context), "${style.id}.build")
+
+    /** The made file, if this build made it; an older composition is null here and is made again. */
+    private fun currentFile(context: Context, style: MusicSynth.Style): File? {
+        val made = madeFile(context, style) ?: return null
+        val build = runCatching { stamp(context, style).readText().trim().toInt() }.getOrDefault(1)
+        return made.takeIf { build >= ORIGINALS_BUILD }
+    }
+
     private val making = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
 
     /**
@@ -56,39 +73,61 @@ object MusicLibrary {
      *
      * Composed as a WAV and kept as AAC: the WAV of a fifty-second track is
      * 6.5 MB and the AAC under 1.3, which is what lets [prepare] make them
-     * of them ahead of time - so Listen and Add on an original are a file
-     * read, where they used to wait a second on the synthesis.
+     * ahead of time - so Listen and Add on an original are a file read,
+     * where they used to wait a second on the synthesis.
+     *
+     * One composed by an earlier synth is composed again *under the same
+     * name* - a project that used it holds that address, so a new name
+     * would be a missing song in every draft that had one. Written to a
+     * temporary file and renamed over, so nothing ever reads half of one.
+     * Same length and tempo as before, so its place and beats still hold.
      */
     suspend fun original(
         context: Context,
         style: MusicSynth.Style,
         on: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Default
     ): Uri? = withContext(on) {
-        madeFile(context, style)?.let { return@withContext Uri.fromFile(it) }
+        currentFile(context, style)?.let { return@withContext Uri.fromFile(it) }
         // One composition per track at a time: a tap while [prepare] is on
         // the same track waits for that one rather than starting a second.
         making.getOrPut(style.id) { kotlinx.coroutines.sync.Mutex() }.withLock {
-            madeFile(context, style)?.let { return@withLock Uri.fromFile(it) }
+            currentFile(context, style)?.let { return@withLock Uri.fromFile(it) }
+            val old = madeFile(context, style)
             val wav = File(context.cacheDir, "compose-${style.id}.wav")
-            val aac = File(dir(context), "${style.id}.m4a")
             // A full phone can refuse the write: no track, rather than a crash in the panel.
             runCatching {
                 val t0 = android.os.SystemClock.elapsedRealtime()
                 MusicSynth.render(style, wav)
                 val t1 = android.os.SystemClock.elapsedRealtime()
-                val encoded = AacWriter.encode(wav, aac)
                 com.squish.app.av.Perf.took("synth", t1 - t0, style.id)
-                com.squish.app.av.Perf.took("aac", android.os.SystemClock.elapsedRealtime() - t1, style.id)
-                if (encoded) {
-                    wav.delete()
-                    Uri.fromFile(aac)
+                val kept: File = if (old != null && old.name.endsWith(".wav")) {
+                    // An old project names the WAV: the WAV it stays.
+                    if (!wav.renameTo(old)) wav.copyTo(old, overwrite = true).also { wav.delete() }
+                    old
                 } else {
-                    // No AAC encoder would have it: the WAV, as before.
-                    val kept = File(dir(context), "${style.id}.wav")
-                    if (!wav.renameTo(kept)) wav.copyTo(kept, overwrite = true).also { wav.delete() }
-                    Uri.fromFile(kept)
+                    val aac = File(dir(context), "${style.id}.m4a")
+                    val part = File(dir(context), "${style.id}.m4a.part")
+                    val encoded = AacWriter.encode(wav, part)
+                    com.squish.app.av.Perf.took("aac", android.os.SystemClock.elapsedRealtime() - t1, style.id)
+                    if (encoded && part.renameTo(aac)) {
+                        wav.delete()
+                        aac
+                    } else {
+                        part.delete()
+                        if (old != null) {
+                            // Could not encode the new one: the old one stays, rather than none.
+                            wav.delete()
+                            return@runCatching Uri.fromFile(old)
+                        }
+                        // No AAC encoder would have it: the WAV, as before.
+                        val w = File(dir(context), "${style.id}.wav")
+                        if (!wav.renameTo(w)) wav.copyTo(w, overwrite = true).also { wav.delete() }
+                        w
+                    }
                 }
-            }.getOrElse { wav.delete(); aac.delete(); null }
+                stamp(context, style).writeText(ORIGINALS_BUILD.toString())
+                Uri.fromFile(kept)
+            }.getOrElse { wav.delete(); old?.let { Uri.fromFile(it) } }
         }
     }
 
@@ -101,7 +140,7 @@ object MusicLibrary {
      */
     suspend fun prepare(context: Context, styles: List<MusicSynth.Style>) = withContext(Dispatchers.Default) {
         for (style in styles) {
-            if (madeFile(context, style) != null) continue
+            if (currentFile(context, style) != null) continue
             val t0 = android.os.SystemClock.elapsedRealtime()
             // At background priority (BackgroundWork): it was at the preview's own,
             // beside the first auditions and the first play after Add.
@@ -109,6 +148,7 @@ object MusicLibrary {
             com.squish.app.av.Perf.took("compose", android.os.SystemClock.elapsedRealtime() - t0, style.id)
         }
     }
+
 
     /**
      * Which build of the synth the effects on disk were made by.

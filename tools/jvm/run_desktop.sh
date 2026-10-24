@@ -37,6 +37,7 @@ run reverseruns "$SRC/media/ReverseRuns.kt" tools/jvm/ReverseRunChecks.kt
 run crop       "$SRC/editor/CropRect.kt" tools/jvm/CropChecks.kt
 run clipcrop   "$SRC/editor/CropRect.kt" "$SRC/editor/ClipCrop.kt" tools/jvm/ClipCropChecks.kt
 run tracker    "$SRC/media/video/MotionEstimator.kt" "$SRC/media/video/ObjectTracker.kt" tools/jvm/TrackerChecks.kt
+run reframerules "$SRC/media/video/ReframeRules.kt" "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" tools/jvm/ReframeRulesChecks.kt
 run maskoutline "$SRC/timeline/Mask.kt" "$SRC/timeline/Keyframe.kt" "$SRC/media/video/ObjectTracker.kt" "$SRC/media/video/MotionEstimator.kt" \
                "$SRC/editor/MaskOutline.kt" tools/jvm/MaskOutlineChecks.kt
 run frames     "$SRC/media/video/FrameBatch.kt" tools/jvm/stub/Bitmap.kt \
@@ -121,6 +122,7 @@ run animoptions $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.k
 run effectrecipes $TIMELINE tools/jvm/EffectRecipeChecks.kt
 run musicsynth "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/MusicSynthChecks.kt
 run synthtempo "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SynthTempoChecks.kt
+run originalsvariety "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/OriginalsVarietyChecks.kt
 run runners    tools/jvm/RunnerChecks.kt
 run draftkeys  tools/jvm/DraftKeyChecks.kt
 run privacy    tools/jvm/PrivacyChecks.kt

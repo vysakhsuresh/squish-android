@@ -250,6 +250,37 @@ fun main() {
         }
     }
 
+    // ---- A mark says one thing. ----------------------------------------------
+    // 24 October: Heartbeat sat under a ghost, Copy attributes wore the paste
+    // clipboard while Duplicate wore "copy", Freeze was a pause button, Camera
+    // sound shared the Record mic beside it, and forty-two templates shared six
+    // marks (Polaroid a television, Podcast a camcorder). Two things side by
+    // side with one picture cannot be told apart by it, so no two tools,
+    // templates or voices share a mark - bar these, each the same idea twice.
+    run {
+        val allowed = setOf(
+            "Icons.Filled.Flip",        // Flip (a sticker) and Mirror (a clip): one action, both labelled "Mirror"
+            "Icons.Filled.Tune",        // Adjust (a clip's row) and Strength (an effect's row): never on one row
+            "SquishIcons.Memories"      // Memories and Polaroid: both an instant photo, on different shelves
+        )
+        val toolbar = read("$SRC/editor/ToolBar.kt")
+        val tools = Regex("""(Tool\.[A-Za-z]+(?:, Tool\.[A-Za-z]+)*) -> (Icons\.[A-Za-z.]+)""").findAll(toolbar)
+            .map { it.groupValues[2] to it.groupValues[1] }.toList()
+        check(tools.size >= 30, "only ${tools.size} toolbar icons were read - the pattern has stopped matching")
+        tools.groupBy({ it.first }, { it.second }).filter { it.value.size > 1 && it.key !in allowed }.forEach { (icon, who) ->
+            problems.add("${who.joinToString(" and ")} all show $icon in the toolbar - one picture for different tools")
+        }
+        val glyphs = read("$SRC/editor/Glyphs.kt")
+        for (kind in listOf("Template", "VoiceEffect")) {
+            val marks = Regex("""$kind\.([A-Za-z0-9]+) -> (?:glyph|stock)\(([A-Za-z.]+),""").findAll(glyphs)
+                .map { it.groupValues[2] to it.groupValues[1] }.toList()
+            check(marks.size >= 10, "only ${marks.size} $kind marks were read - the pattern has stopped matching")
+            marks.groupBy({ it.first }, { it.second }).filter { it.value.size > 1 && it.key !in allowed }.forEach { (icon, who) ->
+                problems.add("$kind ${who.joinToString(", ")} share the mark $icon")
+            }
+        }
+    }
+
     // ---- Every synthesised sound is actually synthesised. -------------------
     run {
         val synth = read("$SRC/media/audio/MusicSynth.kt")

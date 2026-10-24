@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FilterVintage
 import androidx.compose.material.icons.filled.Palette
@@ -519,7 +520,7 @@ fun TemplatesPanel(viewModel: EditorViewModel) {
         PanelHeading(
             "Templates",
             "Look, frame, effects and a title at once · undo to take it off",
-            icon = Icons.Filled.AutoAwesome,
+            icon = Icons.Filled.AutoAwesomeMosaic,
             accent = SquishColors.Blue
         )
         // Five shelves rather than one list of forty-two: a new person opens

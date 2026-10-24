@@ -37,6 +37,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
@@ -782,7 +783,7 @@ internal fun ToolTile(tool: QuickTool, modifier: Modifier = Modifier, onClick: (
 @Composable
 internal fun DraftsDoor(tools: Int, binned: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Door(
-        icon = Icons.Filled.Edit,
+        icon = Icons.Filled.Inventory2,
         accent = SquishColors.Cyan,
         title = "Tool sessions and recently deleted",
         subtitle = buildList {

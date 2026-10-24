@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -49,7 +50,7 @@ fun MaskPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
         PanelHeading(
             "Mask",
             "Show only part of this clip",
-            icon = Icons.Filled.CenterFocusStrong,
+            icon = Icons.Filled.Vignette,
             accent = SquishColors.Magenta,
             trailing = {
                 if (mask != null) {

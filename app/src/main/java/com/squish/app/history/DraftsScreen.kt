@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
@@ -400,7 +401,7 @@ private fun DraftCard(
             )
             if (readable == false) {
                 Text(
-                    "The video can't be opened any more — remove this with ✕",
+                    "The video can't be opened any more — delete this with the bin",
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.Pink,
                     maxLines = 2
@@ -447,7 +448,7 @@ private fun DraftCard(
         if (readable != false) {
             CardAction(Icons.Filled.PlayArrow, "Preview ${draft.title}", SquishColors.Cyan, onPreview)
         }
-        CardAction(Icons.Filled.Close, "Delete ${draft.title}", SquishColors.Pink, onDiscard)
+        CardAction(Icons.Filled.DeleteOutline, "Delete ${draft.title}", SquishColors.Pink, onDiscard)
     }
 }
 
@@ -501,7 +502,7 @@ private fun TrashedCard(
         }
 
         CardAction(Icons.Filled.RestoreFromTrash, "Restore ${draft.title}", SquishColors.Cyan, onRestore)
-        CardAction(Icons.Filled.Close, "Delete ${draft.title} now", SquishColors.Pink, onPurge)
+        CardAction(Icons.Filled.DeleteForever, "Delete ${draft.title} now", SquishColors.Pink, onPurge)
     }
 }
 

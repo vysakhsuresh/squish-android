@@ -29,6 +29,14 @@ fun main() {
         "two sound stickers share a sound"
     )
 
+    // The sticker and the library show one picture for one sound: a camera
+    // sticker that plays a shutter is a camera in the Sound effects list too.
+    SoundStickers.all.forEach { pair ->
+        val effect = MusicSynth.effectById(pair.effectId) ?: return@forEach
+        check(MusicSynth.emojiOf(effect) == pair.emoji,
+            "${pair.label} is ${pair.emoji} as a sticker and ${MusicSynth.emojiOf(effect)} in the library")
+    }
+
     // Looked up the way the panel looks one up.
     SoundStickers.all.forEach { pair ->
         check(SoundStickers.forEmoji(pair.emoji) === pair, "${pair.emoji} could not be found by its own emoji")

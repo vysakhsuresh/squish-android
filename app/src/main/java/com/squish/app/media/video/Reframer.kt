@@ -33,12 +33,22 @@ object Reframer {
     /** Samples a second: enough to follow people, few enough to analyse a long clip quickly. */
     private const val SAMPLES_PER_SECOND = 4f
     private const val MAX_SAMPLES = 360
-    private const val ANALYSIS_WIDTH = 256
+    /**
+     * The long side frames are analysed at. 256 found no face across a table:
+     * the platform detector wants a face tens of pixels wide (ReframeRules).
+     */
+    private const val ANALYSIS_SIDE = 480
     private const val GRID = 16
 
     /**
      * The subject's path from [fromMs] to [toMs] of [uri], in source time and in
      * fractions of the frame. Null if the file cannot be read at all.
+     *
+     * Frames are decoded exactly and in order (LumaDecoder, as the cut-out
+     * does), not asked of the retriever by time: its quick answer is the
+     * nearest keyframe, the same picture for seconds on a phone clip, which
+     * left one usable sample in thirty-two. The retriever stays as the
+     * fallback, asked for the closest frame rather than the closest keyframe.
      */
     suspend fun analyze(
         context: Context,
@@ -46,69 +56,74 @@ object Reframer {
         fromMs: Long,
         toMs: Long,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
-    ): MotionTrack? = withContext(Dispatchers.IO) {
+    ): MotionTrack? = withContext(Dispatchers.Default) {
         val span = (toMs - fromMs).coerceAtLeast(1L)
-        val count = (span / 1000f * SAMPLES_PER_SECOND).roundToInt().coerceIn(2, MAX_SAMPLES)
-        val step = span / (count - 1).coerceAtLeast(1)
-
-        val retriever = com.squish.app.av.AvRetriever()
-        try {
-            retriever.setDataSource(context, uri)
-        } catch (t: Throwable) {
-            runCatching { retriever.release() }
-            return@withContext null
-        }
-
+        val step = ReframeRules.sampleStepMs(fromMs, toMs, SAMPLES_PER_SECOND, MAX_SAMPLES)
+        val count = (span / step + 1).toInt()
+        val segmenter = Segmenter.create(context)
+        val mask = ByteArray(Segmenter.MASK_SIZE * Segmenter.MASK_SIZE)
         val raw = ArrayList<TrackSample>(count)
         var previous: FloatArray? = null
-        try {
-            for (i in 0 until count) {
-                if (!currentCoroutineContext().isActive) return@withContext null
-                val at = fromMs + i * step
-                val frame = runCatching {
-                    retriever.getScaledFrameAtTime(
-                        at * 1000L,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                        ANALYSIS_WIDTH,
-                        ANALYSIS_WIDTH * 2
-                    )
-                }.getOrNull()
-                if (frame == null) {
-                    onProgress(i + 1, count)
-                    continue
-                }
-                val grid = lumaGrid(frame)
-                // The same decoded frame, handed back again. The retriever is
-                // asked for OPTION_CLOSEST_SYNC, which answers with the nearest
-                // *keyframe* - so on footage with a one-second keyframe interval
-                // four consecutive samples are one frame. Taken as samples they
-                // read as "no motion" and fell through to the frame's centre at
-                // confidence 0.2, and three of those outweighed the one real
-                // reading between them: a motion-driven reframe landed halfway
-                // between the subject and the middle. Skipped instead, so the
-                // path is made of the frames there actually are.
-                if (previous != null && grid.contentEquals(previous)) {
-                    frame.recycle()
-                    onProgress(i + 1, count)
-                    continue
-                }
-                val face = faceCentre(frame)
-                val motion = previous?.let { motionCentre(it, grid) }
-                previous = grid
-                frame.recycle()
 
-                val (x, y, confidence) = when {
-                    face != null -> Triple(face.x, face.y, 1f)
-                    motion != null -> Triple(motion.x, motion.y, 0.6f)
-                    else -> Triple(0.5f, 0.5f, 0.2f)
-                }
-                raw.add(TrackSample(atMs = at, xFraction = x, yFraction = y, confidence = confidence))
-                onProgress(i + 1, count)
-            }
-        } finally {
-            runCatching { retriever.release() }
+        fun read(at: Long, frame: Bitmap) {
+            val grid = lumaGrid(frame)
+            val face = faceCentre(frame)?.let { floatArrayOf(it.x, it.y) }
+            val person = if (face == null && segmenter != null) {
+                java.util.Arrays.fill(mask, 0)
+                runCatching { Segmenter.segment(segmenter, frame, mask) }
+                ReframeRules.maskCentre(mask, Segmenter.MASK_SIZE, Segmenter.MASK_SIZE)
+            } else null
+            val motion = previous?.let { motionCentre(it, grid) }?.let { floatArrayOf(it.x, it.y) }
+            previous = grid
+            val (x, y, confidence) = ReframeRules.aim(face, person, motion).let { Triple(it[0], it[1], it[2]) }
+            raw.add(TrackSample(atMs = at, xFraction = x, yFraction = y, confidence = confidence))
+            onProgress(((at - fromMs) * count / span).toInt().coerceIn(1, count), count)
         }
+
+        try {
+            val decoded = LumaDecoder.decodeColour(context, uri, fromMs, toMs, step, ANALYSIS_SIDE) { at, frame ->
+                if (!currentCoroutineContext().isActive) return@decodeColour
+                val argb = if (frame.config == Bitmap.Config.ARGB_8888) frame
+                else frame.copy(Bitmap.Config.ARGB_8888, false).also { frame.recycle() }
+                read(at, argb)
+                argb.recycle()
+            }
+            if (!decoded || raw.isEmpty()) {
+                raw.clear()
+                previous = null
+                val retriever = com.squish.app.av.AvRetriever()
+                try {
+                    try {
+                        retriever.setDataSource(context, uri)
+                    } catch (t: Throwable) {
+                        return@withContext null
+                    }
+                    for (i in 0 until count) {
+                        if (!currentCoroutineContext().isActive) return@withContext null
+                        val at = fromMs + i * step
+                        val frame = runCatching {
+                            retriever.getScaledFrameAtTime(at * 1000L, MediaMetadataRetriever.OPTION_CLOSEST, ANALYSIS_SIDE, ANALYSIS_SIDE)
+                        }.getOrNull() ?: continue
+                        val argb = if (frame.config == Bitmap.Config.ARGB_8888) frame
+                        else frame.copy(Bitmap.Config.ARGB_8888, false).also { frame.recycle() }
+                        read(at, argb)
+                        argb.recycle()
+                    }
+                } finally {
+                    runCatching { retriever.release() }
+                }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            android.util.Log.w("SquishReframe", "analysing $uri", t)
+        } finally {
+            runCatching { segmenter?.close() }
+        }
+        if (!currentCoroutineContext().isActive) return@withContext null
         if (raw.isEmpty()) return@withContext null
+        val found = raw.count { it.confidence > ReframeRules.NOTHING }
+        android.util.Log.i("SquishReframe", "${raw.size} frames, subject in $found (faces ${raw.count { it.confidence == ReframeRules.FACE }}, person ${raw.count { it.confidence == ReframeRules.PERSON }}, motion ${raw.count { it.confidence == ReframeRules.MOTION }})")
         MotionTrack(smooth(raw))
     }
 

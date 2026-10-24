@@ -35,7 +35,7 @@ enum class TransitionType(val label: String, val category: TransitionCategory) {
     SlideUp("Slide up", TransitionCategory.Camera),
     SlideDown("Slide down", TransitionCategory.Camera),
     /** The new shot pushes the old one off to the left. */
-    Push("Push", TransitionCategory.Camera),
+    Push("Push left", TransitionCategory.Camera),
     WipeRight("Wipe right", TransitionCategory.Camera),
     WipeLeft("Wipe left", TransitionCategory.Camera),
     /** The new shot lands from larger, dissolving in. */

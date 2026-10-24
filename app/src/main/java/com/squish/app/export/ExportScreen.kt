@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MusicNote
@@ -570,7 +571,12 @@ private fun SavedToCard(isAudio: Boolean, fileName: String, inGallery: Boolean) 
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    if (isAudio) Icons.Filled.FolderOpen else Icons.Filled.PhotoLibrary,
+                    when {
+                        // The picture agrees with the sentence beside it: a gallery only when it is in one.
+                        !inGallery -> Icons.Filled.PhoneAndroid
+                        isAudio -> Icons.Filled.LibraryMusic
+                        else -> Icons.Filled.PhotoLibrary
+                    },
                     contentDescription = null,
                     tint = SquishColors.Violet,
                     modifier = Modifier.size(20.dp)

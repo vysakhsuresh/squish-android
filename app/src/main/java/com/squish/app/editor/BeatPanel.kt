@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.ContentCut
@@ -216,7 +217,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
                 ) { viewModel.audio.cutOnBeats() }
 
                 BeatAction(
-                    icon = Icons.Filled.MusicNote,
+                    icon = Icons.Filled.ViewWeek,
                     title = "Fit shots to the beat",
                     body = "Shortens each shot so it ends on a dot - an edit that moves with " +
                         "the song, the way AutoCut makes one. Shots only get shorter.",
@@ -229,7 +230,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
                 // sound to fit to, since the song's length is the whole input.
                 if (state.audioClips.isNotEmpty()) {
                     BeatAction(
-                        icon = Icons.Filled.MusicNote,
+                        icon = Icons.Filled.Compress,
                         title = "Fit the shots to the song",
                         body = "Gives every shot an equal share of the song and puts each join on a " +
                             "dot, so the edit ends with the music. A shot with less footage than its " +
@@ -276,7 +277,7 @@ fun BeatPanel(state: EditorUiState, viewModel: EditorViewModel, showClear: Boole
         // cut" was a promise the plan does not always keep.
         var laid by remember { mutableStateOf<Pair<Int, Int>?>(null) }
         BeatAction(
-            icon = Icons.Filled.GraphicEq,
+            icon = Icons.Filled.Air,
             title = "Sound on every cut",
             body = laid.let { done ->
                 val n = done?.first ?: -1

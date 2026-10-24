@@ -92,7 +92,7 @@ class PersonMasks(val width: Int, val height: Int, val timesMs: LongArray, val m
 object Segmenter {
 
     private const val MODEL = "selfie_segmenter.tflite"
-    private const val MASK_SIZE = 128
+    internal const val MASK_SIZE = 128
     private const val SAMPLES_PER_SECOND = 10f
     private const val MAX_SAMPLES = 900
     private const val FRAME_SIDE = 320
@@ -112,17 +112,7 @@ object Segmenter {
         val count = (span / 1000f * SAMPLES_PER_SECOND).roundToInt().coerceIn(2, MAX_SAMPLES)
         val step = span / (count - 1).coerceAtLeast(1)
 
-        val segmenter = runCatching {
-            ImageSegmenter.createFromOptions(
-                context,
-                ImageSegmenter.ImageSegmenterOptions.builder()
-                    .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL).build())
-                    .setRunningMode(RunningMode.IMAGE)
-                    .setOutputConfidenceMasks(true)
-                    .setOutputCategoryMask(false)
-                    .build()
-            )
-        }.getOrNull() ?: return@withContext null
+        val segmenter = create(context) ?: return@withContext null
 
         val retriever = com.squish.app.av.AvRetriever()
         try {
@@ -205,7 +195,20 @@ object Segmenter {
     private const val SWEEP_GRACE_MS = 60_000L
 
     /** One frame's person confidence, resampled into [out] as 0..255. */
-    private fun segment(segmenter: ImageSegmenter, frame: Bitmap, out: ByteArray) {
+    /** The person model, or null where it will not load; the caller closes it. Auto-reframe uses it too. */
+    internal fun create(context: Context): ImageSegmenter? = runCatching {
+        ImageSegmenter.createFromOptions(
+            context,
+            ImageSegmenter.ImageSegmenterOptions.builder()
+                .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL).build())
+                .setRunningMode(RunningMode.IMAGE)
+                .setOutputConfidenceMasks(true)
+                .setOutputCategoryMask(false)
+                .build()
+        )
+    }.getOrNull()
+
+    internal fun segment(segmenter: ImageSegmenter, frame: Bitmap, out: ByteArray) {
         val result = segmenter.segment(BitmapImageBuilder(frame).build())
         val all = result.confidenceMasks().orElse(null) ?: return
         if (all.isEmpty()) return

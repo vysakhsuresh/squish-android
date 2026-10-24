@@ -420,7 +420,7 @@ private fun LibraryRow(
         if (!gone) {
             RowAction(Icons.Filled.Share, "Share ${record.shownTitle}", SquishColors.Cyan, onShare)
         }
-        RowAction(Icons.Filled.DeleteOutline, "Remove ${record.shownTitle}", SquishColors.Pink, onRemove)
+        RowAction(Icons.Filled.DeleteOutline, "Delete ${record.shownTitle}", SquishColors.Pink, onRemove)
     }
 }
 
