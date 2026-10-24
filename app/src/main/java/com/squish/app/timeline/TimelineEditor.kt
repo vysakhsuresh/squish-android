@@ -1091,7 +1091,8 @@ fun TimelineEditor(
                                     onSelect = guardedSelect,
                                     onBareTap = bareTap,
                                     trims = trims,
-                                    liftedId = lift?.id
+                                    liftedId = lift?.id,
+                                    onKeyTap = keyTap
                                 )
                             }
                         }
@@ -2441,7 +2442,9 @@ data class EffectSpan(
     val label: String,
     val startMs: Long,
     val endMs: Long,
-    val kind: EffectKind
+    val kind: EffectKind,
+    /** Where its keyed Strength and knob have keys, from [startMs] (EDGE_PLAN D3): its diamonds. */
+    val keyMs: List<Long> = emptyList()
 )
 
 /**
@@ -2459,7 +2462,8 @@ private fun EffectsRow(
     onBareTap: () -> Unit,
     trims: Trims,
     liftedId: String?,
-    alsoSelected: Set<String> = emptySet()
+    alsoSelected: Set<String> = emptySet(),
+    onKeyTap: (String, Long) -> Unit = { _, _ -> }
 ) {
     val latestBareTap by rememberUpdatedState(onBareTap)
     Box(
@@ -2476,7 +2480,7 @@ private fun EffectsRow(
         effects.forEach { effect ->
             if (!window.intersects(effect.startMs, effect.endMs)) return@forEach
             key(effect.id) {
-                EffectBar(effect, effect.id == selectedId || effect.id in alsoSelected, row.folded, effect.id == liftedId, window, onSelect, trims)
+                EffectBar(effect, effect.id == selectedId || effect.id in alsoSelected, row.folded, effect.id == liftedId, window, onSelect, trims, onKeyTap)
             }
         }
     }
@@ -2512,10 +2516,12 @@ private fun EffectBar(
     lifted: Boolean,
     window: TimelineWindow,
     onSelect: (String?) -> Unit,
-    trims: Trims
+    trims: Trims,
+    onKeyTap: (String, Long) -> Unit = { _, _ -> }
 ) {
     val latestSelect by rememberUpdatedState(onSelect)
     val latestEffect by rememberUpdatedState(effect)
+    val latestKeyTap by rememberUpdatedState(onKeyTap)
 
     val span = window.clampToView(effect.startMs, effect.endMs) ?: return
     val drawnStartMs = span.first
@@ -2561,6 +2567,24 @@ private fun EffectBar(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+        }
+        // Its keyed Strength and knob (EDGE_PLAN D3), blue as the Effects sheet
+        // is; a tap parks the playhead on the key, as a clip's diamond does.
+        effect.keyMs.forEach { atMs ->
+            val at = effect.startMs + atMs
+            if (at < drawnStartMs || at > drawnEndMs) return@forEach
+            val x = window.widthDp(at - drawnStartMs).dp
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .offset(x = x - KEY_TARGET / 2)
+                    .size(KEY_TARGET)
+                    .zIndex(2f)
+                    .pointerInput(effect.id, atMs) { detectTapGestures { latestKeyTap(effect.id, latestEffect.startMs + atMs) } },
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                Box(Modifier.padding(bottom = 2.dp).size(6.dp).rotate(45f).background(SquishColors.Blue))
             }
         }
         if (selected && headVisible) {

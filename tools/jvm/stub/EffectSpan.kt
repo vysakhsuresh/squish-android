@@ -20,5 +20,7 @@ data class EffectSpan(
     val label: String,
     val startMs: Long,
     val endMs: Long,
-    val kind: EffectKind
+    val kind: EffectKind,
+    /** Where its keyed Strength and knob have keys, from [startMs] (EDGE_PLAN D3): its diamonds. */
+    val keyMs: List<Long> = emptyList()
 )

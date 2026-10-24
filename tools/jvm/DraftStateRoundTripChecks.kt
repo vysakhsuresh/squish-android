@@ -132,7 +132,9 @@ private fun wildState(): EditorUiState = EditorUiState(
     ),
     captionSource = CaptionSource.entries.last(),
     captionLanguage = "ml-IN",
-    effects = listOf(TimedEffect(id = "fx-1", kind = EffectKind.entries.last(), startMs = 200L, endMs = 1_800L)),
+    effects = listOf(TimedEffect(id = "fx-1", kind = EffectKind.entries.last(), startMs = 200L, endMs = 1_800L, intensity = 0.45f, amount = 0.8f,
+        intensityKeys = listOf(com.squish.app.timeline.ValueKey(0L, 0.2f), com.squish.app.timeline.ValueKey(900L, 0.9f, com.squish.app.timeline.KeyframeEasing.Bounce)),
+        amountKeys = listOf(com.squish.app.timeline.ValueKey(400L, 0.1f)))),
     stabilizeStrength = 0.72f,
     // Only the fields a draft carries are moved: `running`, `failed`,
     // `listeningTo` and `failedOutsideWindow` are how a listen is *going*, and

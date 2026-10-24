@@ -112,7 +112,9 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 PlacedEffect(
                     effect = effect,
                     onJump = { viewModel.seekTo(effect.startMs) },
+                    playheadMs = state.playheadMs,
                     onChange = { change -> viewModel.clips.changeEffect(effect.id, change = change) },
+                    onStep = { change -> viewModel.clips.changeEffect(effect.id, discrete = true, change = change) },
                     onRemove = { viewModel.clips.removeEffect(effect.id) },
                     onGestureEnd = viewModel::endGesture
                 )
@@ -385,7 +387,9 @@ private val HILL = Color(0xFF3B7A57)
 private fun PlacedEffect(
     effect: TimedEffect,
     onJump: () -> Unit,
+    playheadMs: Long,
     onChange: ((TimedEffect) -> TimedEffect) -> Unit,
+    onStep: ((TimedEffect) -> TimedEffect) -> Unit,
     onRemove: () -> Unit,
     onGestureEnd: () -> Unit
 ) {
@@ -412,7 +416,7 @@ private fun PlacedEffect(
             )
             com.squish.app.ui.components.TextAction("Remove", color = SquishColors.Pink, onClick = onRemove)
         }
-        EffectSliders(effect, onChange, onGestureEnd)
+        EffectSliders(effect, playheadMs, onChange, onStep, onGestureEnd)
         // Its ends are retimed on the strip, where the effect is a clip with
         // handles like any other. "Start here" and "End here" buttons did the
         // same job a second way, with a second set of limits. The handles only
@@ -429,22 +433,46 @@ private fun PlacedEffect(
 
 /** Strength, and the effect's own knob where it has one (EffectKind.parameter). */
 @Composable
-private fun EffectSliders(effect: TimedEffect, onChange: ((TimedEffect) -> TimedEffect) -> Unit, onGestureEnd: () -> Unit) {
-    LabeledSlider("Strength", effect.intensity, 0.1f..1f, onFinished = onGestureEnd) { v -> onChange { it.copy(intensity = v) } }
-    effect.kind.parameter?.let { name ->
+private fun EffectSliders(
+    effect: TimedEffect,
+    playheadMs: Long,
+    onChange: ((TimedEffect) -> TimedEffect) -> Unit,
+    /** A one-tap change - a key added or taken off, a curve - which is its own undo step. */
+    onStep: ((TimedEffect) -> TimedEffect) -> Unit,
+    onGestureEnd: () -> Unit
+) {
+    // Keyed over the effect (EDGE_PLAN D3): with keys, a slider sets the value
+    // at the playhead, and the preview and the file move between them.
+    val onEffect = playheadMs in effect.startMs..effect.endMs
+    @Composable
+    fun knob(knob: EffectKnob, name: String, range: ClosedFloatingPointRange<Float>, readout: ((Float) -> String)?) {
+        val key = effect.knobKeyAt(knob, playheadMs)
+        val keys = if (knob == EffectKnob.Strength) effect.intensityKeys else effect.amountKeys
+        KeyframeButton(
+            keyed = key != null,
+            count = keys.size,
+            onClip = onEffect,
+            accent = SquishColors.Blue,
+            onToggle = { onStep { if (it.hasKnobKeyAt(knob, playheadMs)) it.withKnobKeyRemoved(knob, playheadMs) else it.withKnobKeyAdded(knob, playheadMs) } },
+            onClear = { onStep { e -> keys.fold(e) { acc, k -> acc.withKnobKeyRemoved(knob, acc.startMs + k.atMs) } } },
+            keyEasing = key?.easing,
+            keyCurve = key?.curve,
+            onEasing = { easing -> onStep { it.withKnobKeyEasing(knob, playheadMs, easing) } },
+            onCurve = { curve -> onStep { it.withKnobKeyEasing(knob, playheadMs, com.squish.app.timeline.KeyframeEasing.Custom, curve) } }
+        )
         LabeledSlider(
-            name,
-            effect.amount,
-            0f..1f,
-            readout = effect.kind.parameterReadout ?: Readout.percent(0f..1f),
+            name, effect.knobAt(knob, playheadMs), range,
+            readout = readout ?: Readout.percent(range),
             onFinished = onGestureEnd
-        ) { v -> onChange { it.copy(amount = v) } }
+        ) { v -> onChange { it.withKnobAt(knob, playheadMs, v, range) } }
     }
+    knob(EffectKnob.Strength, "Strength", 0.1f..1f, null)
+    effect.kind.parameter?.let { name -> knob(EffectKnob.Amount, name, 0f..1f, effect.kind.parameterReadout) }
 }
 
 /** How strong one placed effect is, and its own knob: the effect's own toolbar, Strength. */
 @Composable
-fun EffectStrengthPanel(effect: TimedEffect, viewModel: EditorViewModel) {
+fun EffectStrengthPanel(effect: TimedEffect, playheadMs: Long, viewModel: EditorViewModel) {
     PanelSurface(accent = SquishColors.Blue) {
         PanelHeading(
             effect.kind.label,
@@ -454,7 +482,9 @@ fun EffectStrengthPanel(effect: TimedEffect, viewModel: EditorViewModel) {
         )
         EffectSliders(
             effect,
+            playheadMs,
             onChange = { change -> viewModel.clips.changeEffect(effect.id, change = change) },
+            onStep = { change -> viewModel.clips.changeEffect(effect.id, discrete = true, change = change) },
             onGestureEnd = viewModel::endGesture
         )
         // Another effect over the same stretch, at the same strength: CapCut's

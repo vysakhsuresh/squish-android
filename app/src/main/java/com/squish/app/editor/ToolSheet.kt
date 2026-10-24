@@ -424,7 +424,7 @@ fun EditorToolSheet(
                 }
             }
             Tool.Style -> item?.let { TextStylePanel(it, viewModel, onEyedropper) }
-            Tool.Strength -> effect?.let { EffectStrengthPanel(it, viewModel) }
+            Tool.Strength -> effect?.let { EffectStrengthPanel(it, state.playheadMs, viewModel) }
             Tool.Replace -> state.replacing?.let { ReplacePanel(it, viewModel) }
             else -> Unit
         }

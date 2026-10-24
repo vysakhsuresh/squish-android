@@ -166,6 +166,9 @@ internal object DraftCodec {
                     put("endMs", e.endMs)
                     putFinite("intensity", e.intensity)
                     putFinite("amount", e.amount)
+                    // Keyed Strength and knob (EDGE_PLAN D3), written only when there are keys.
+                    if (e.intensityKeys.isNotEmpty()) put("intensityKeys", JSONArray().apply { e.intensityKeys.forEach { put(DraftClipCodec.encodeValueKey(it)) } })
+                    if (e.amountKeys.isNotEmpty()) put("amountKeys", JSONArray().apply { e.amountKeys.forEach { put(DraftClipCodec.encodeValueKey(it)) } })
                 })
             }
         })
@@ -273,7 +276,9 @@ internal object DraftCodec {
                         startMs = o.optLong("startMs"),
                         endMs = o.optLong("endMs"),
                         intensity = o.optDouble("intensity", 0.7).toFloat(),
-                        amount = o.optDouble("amount", TimedEffect.DEFAULT_AMOUNT.toDouble()).toFloat()
+                        amount = o.optDouble("amount", TimedEffect.DEFAULT_AMOUNT.toDouble()).toFloat(),
+                        intensityKeys = DraftClipCodec.decodeValueKeys(o.optJSONArray("intensityKeys")),
+                        amountKeys = DraftClipCodec.decodeValueKeys(o.optJSONArray("amountKeys"))
                     )
                 }
             }.orEmpty(),

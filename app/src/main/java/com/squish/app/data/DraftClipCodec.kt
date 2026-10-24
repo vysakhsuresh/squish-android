@@ -381,14 +381,14 @@ internal object DraftClipCodec {
         putCurve(this, key.curve)
     }
 
-    private fun encodeValueKey(key: ValueKey): JSONObject = JSONObject().apply {
+    internal fun encodeValueKey(key: ValueKey): JSONObject = JSONObject().apply {
         put("atMs", key.atMs)
         putFinite("value", key.value)
         put("easing", key.easing.name)
         putCurve(this, key.curve)
     }
 
-    private fun decodeValueKeys(array: JSONArray?): List<ValueKey> {
+    internal fun decodeValueKeys(array: JSONArray?): List<ValueKey> {
         if (array == null) return emptyList()
         return (0 until array.length()).mapNotNull { i ->
             val o = array.optJSONObject(i) ?: return@mapNotNull null

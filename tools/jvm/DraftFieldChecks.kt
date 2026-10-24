@@ -103,7 +103,10 @@ private val NOT_PERSISTED = mapOf(
     // The looks of a line are their own document (TextStyleJson), which has its
     // own symmetry: one function writes it and one reads it.
     "stroke" to "written by TextStyleJson.write and read by TextStyleJson.read",
-    "shadow" to "the same"
+    "shadow" to "the same",
+    // E2's word styles: TextStyleJson writes them as wordMode, wordColor and
+    // wordsPerScreen, and DraftTextRoundTripChecks carries one through a draft.
+    "wordStyle" to "written by TextStyleJson.write (wordMode, wordColor, wordsPerScreen) and read by TextStyleJson.read"
 )
 
 /**

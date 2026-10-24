@@ -1,6 +1,12 @@
 package com.squish.app.editor
 
 import com.squish.app.timeline.Clip
+import com.squish.app.timeline.KEY_TOLERANCE_MS
+import com.squish.app.timeline.ValueKey
+import com.squish.app.timeline.easingAt
+import com.squish.app.timeline.shiftedBy
+import com.squish.app.timeline.upserted
+import com.squish.app.timeline.valueAt
 import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.pow
@@ -67,7 +73,15 @@ data class TimedEffect(
     val startMs: Long,
     val endMs: Long,
     val intensity: Float = 0.7f,
-    val amount: Float = DEFAULT_AMOUNT
+    val amount: Float = DEFAULT_AMOUNT,
+    /**
+     * Strength keyed over the effect (EDGE_PLAN D3), on its own clock: [ValueKey.atMs]
+     * from [startMs], so the keys travel with the effect when it is carried. Empty
+     * is the one [intensity] throughout.
+     */
+    val intensityKeys: List<ValueKey> = emptyList(),
+    /** The knob keyed the same way; empty is the one [amount]. */
+    val amountKeys: List<ValueKey> = emptyList()
 ) {
     companion object {
         const val DEFAULT_AMOUNT = 0.5f
@@ -80,8 +94,13 @@ data class TimedEffect(
      * double speed an effect over two seconds of timeline covers four seconds
      * of the file, and shifting its ends by the trim alone showed it for one.
      */
-    fun shiftedInto(clip: Clip): TimedEffect =
-        copy(startMs = clip.sourceAtExtended(startMs), endMs = clip.sourceAtExtended(endMs))
+    fun shiftedInto(clip: Clip): TimedEffect {
+        val start = clip.sourceAtExtended(startMs)
+        // The keys too, through the same curve: on a 2x clip a key two seconds
+        // into the effect is four seconds into the file.
+        fun into(keys: List<ValueKey>) = keys.map { it.copy(atMs = clip.sourceAtExtended(startMs + it.atMs) - start) }
+        return copy(startMs = start, endMs = clip.sourceAtExtended(endMs), intensityKeys = into(intensityKeys), amountKeys = into(amountKeys))
+    }
 }
 
 /**
@@ -163,7 +182,8 @@ data class FxParams(
             var p = FxParams(timeSec = (timeMs % 100_000L) / 1000f)
             for (e in effects) {
                 if (timeMs < e.startMs || timeMs >= e.endMs) continue
-                val a = e.intensity.coerceIn(0f, 1f)
+                // Keyed or not (EDGE_PLAN D3): the one number, or the keys at this moment.
+                val a = e.knobAt(EffectKnob.Strength, timeMs).coerceIn(0f, 1f)
                 val t = (timeMs - e.startMs) / 1000f
                 val span = ((e.endMs - e.startMs) / 1000f).coerceAtLeast(0.001f)
                 // Every effect eases in and out over a tenth of a second, so none
@@ -174,7 +194,7 @@ data class FxParams(
                 // The effect's own knob, as a factor of how it always behaved:
                 // half way is one, so a draft from before it had the knob plays
                 // exactly as it did.
-                val amount = e.amount.coerceIn(0f, 1f)
+                val amount = e.knobAt(EffectKnob.Amount, timeMs).coerceIn(0f, 1f)
                 // A quarter at the left end, one in the middle, one and three quarters at
                 // the right - never nothing. It was amount * 2, so Slow zoom and Blur with
                 // the knob at the left did nothing at all and Strength did nothing either.
@@ -277,4 +297,89 @@ data class FxParams(
         private fun wobble(t: Float, rate: Float): Float =
             (sin(t * rate) * 0.6 + sin(t * rate * 2.31 + 1.3) * 0.4).toFloat()
     }
+}
+
+/** The two numbers a placed effect has: Strength, and its own knob (EffectKind.parameter). */
+enum class EffectKnob { Strength, Amount }
+
+private fun TimedEffect.keysOf(knob: EffectKnob): List<ValueKey> = if (knob == EffectKnob.Strength) intensityKeys else amountKeys
+private fun TimedEffect.staticOf(knob: EffectKnob): Float = if (knob == EffectKnob.Strength) intensity else amount
+private fun TimedEffect.withKeys(knob: EffectKnob, keys: List<ValueKey>): TimedEffect =
+    if (knob == EffectKnob.Strength) copy(intensityKeys = keys) else copy(amountKeys = keys)
+private fun TimedEffect.withStatic(knob: EffectKnob, value: Float): TimedEffect =
+    if (knob == EffectKnob.Strength) copy(intensity = value) else copy(amount = value)
+
+/** Where on its own clock a moment of the timeline falls, held to its ends. */
+private fun TimedEffect.local(timelineMs: Long): Long = (timelineMs - startMs).coerceIn(0L, (endMs - startMs).coerceAtLeast(0L))
+
+/** [knob] at a moment of the timeline (or of the file's clock, for an effect [TimedEffect.shiftedInto] one). */
+fun TimedEffect.knobAt(knob: EffectKnob, timelineMs: Long): Float = keysOf(knob).valueAt(local(timelineMs), staticOf(knob))
+
+/**
+ * [knob] set to [value] at [playheadMs], as a clip's keyed numbers are set
+ * (Clip.withValueAt): the one number with no keys, a key at the playhead
+ * inside the effect, or every key moved by the change when the playhead is
+ * outside it.
+ */
+fun TimedEffect.withKnobAt(knob: EffectKnob, playheadMs: Long, value: Float, range: ClosedFloatingPointRange<Float> = 0f..1f): TimedEffect {
+    val wanted = value.coerceIn(range.start, range.endInclusive)
+    val keys = keysOf(knob)
+    if (keys.isEmpty()) return withStatic(knob, wanted)
+    val now = knobAt(knob, playheadMs)
+    if (wanted == now) return this
+    val at = playheadMs - startMs
+    return if (at in 0L..(endMs - startMs)) {
+        withKeys(knob, keys.upserted(ValueKey(at, wanted, keys.easingAt(at)), KEY_TOLERANCE_MS))
+    } else {
+        val delta = wanted - now
+        withKeys(knob, keys.map { it.copy(value = (it.value + delta).coerceIn(range.start, range.endInclusive)) })
+    }
+}
+
+/** A key at the playhead holding what [knob] is there: the keyframe button. */
+fun TimedEffect.withKnobKeyAdded(knob: EffectKnob, playheadMs: Long): TimedEffect {
+    val at = local(playheadMs)
+    val keys = keysOf(knob)
+    return withKeys(knob, keys.upserted(ValueKey(at, knobAt(knob, playheadMs), keys.easingAt(at)), KEY_TOLERANCE_MS))
+}
+
+/** The key under the playhead off [knob]; the last one off leaves the value it had there. */
+fun TimedEffect.withKnobKeyRemoved(knob: EffectKnob, playheadMs: Long): TimedEffect {
+    val at = playheadMs - startMs
+    val keys = keysOf(knob)
+    if (keys.none { kotlin.math.abs(it.atMs - at) <= KEY_TOLERANCE_MS }) return this
+    val kept = keys.filterNot { kotlin.math.abs(it.atMs - at) <= KEY_TOLERANCE_MS }
+    val settled = knobAt(knob, playheadMs)
+    return if (kept.isEmpty()) withKeys(knob, kept).withStatic(knob, settled) else withKeys(knob, kept)
+}
+
+/** Whether a key of [knob] is under the playhead: what lights the keyframe button. */
+fun TimedEffect.hasKnobKeyAt(knob: EffectKnob, playheadMs: Long): Boolean =
+    keysOf(knob).any { kotlin.math.abs(it.atMs - (playheadMs - startMs)) <= KEY_TOLERANCE_MS }
+
+/** The key of [knob] under the playhead, or null: its curve is set from the card. */
+fun TimedEffect.knobKeyAt(knob: EffectKnob, playheadMs: Long): ValueKey? =
+    keysOf(knob).filter { kotlin.math.abs(it.atMs - (playheadMs - startMs)) <= KEY_TOLERANCE_MS }.minByOrNull { kotlin.math.abs(it.atMs - (playheadMs - startMs)) }
+
+/** The easing of [knob]'s key under the playhead set, a preset dropping any curve; unchanged with no key there. */
+fun TimedEffect.withKnobKeyEasing(knob: EffectKnob, playheadMs: Long, easing: com.squish.app.timeline.KeyframeEasing, curve: com.squish.app.timeline.CubicBezier? = null): TimedEffect {
+    val key = knobKeyAt(knob, playheadMs) ?: return this
+    return withKeys(knob, keysOf(knob).map { if (it === key) it.copy(easing = easing, curve = if (easing == com.squish.app.timeline.KeyframeEasing.Custom) (curve ?: it.curve ?: com.squish.app.timeline.CubicBezier.DEFAULT_CUSTOM) else null) else it })
+}
+
+/** Carried along the timeline: its keys are on its own clock and go with it. */
+fun TimedEffect.movedBy(deltaMs: Long): TimedEffect = copy(startMs = startMs + deltaMs, endMs = endMs + deltaMs)
+
+/**
+ * Its ends moved to [start] and [end]. A head trim moves its clock, so the
+ * keys are moved back by as much and stay on the moments they were set at;
+ * none is dropped, as a clip's are not (shiftedBy).
+ */
+fun TimedEffect.trimmedTo(start: Long, end: Long): TimedEffect {
+    val shift = startMs - start
+    return copy(
+        startMs = start, endMs = end,
+        intensityKeys = intensityKeys.shiftedBy(shift),
+        amountKeys = amountKeys.shiftedBy(shift)
+    )
 }

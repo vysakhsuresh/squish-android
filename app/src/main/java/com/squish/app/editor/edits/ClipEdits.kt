@@ -625,7 +625,8 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 if (e.id != id) return@map e
                 val start = (e.startMs + startDeltaMs).coerceIn(0L, (e.endMs - MIN_EFFECT_MS).coerceAtLeast(0L))
                 val end = (e.endMs + endDeltaMs).coerceIn(start + MIN_EFFECT_MS, maxOf(total, start + MIN_EFFECT_MS))
-                e.copy(startMs = start, endMs = end)
+                // Its keys stay on the moments they were set at (EDGE_PLAN D3).
+                e.trimmedTo(start, end)
             })
         }
     }
