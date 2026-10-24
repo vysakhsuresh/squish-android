@@ -1,0 +1,35 @@
+# Makes the footage for docs/EDGE_PLAN.md A1 (the benchmark edit) and B1 (the
+# footage matrix) with tools/native/make_bench_media.sh, on Linux where a full
+# ffmpeg is one apt-get away. Two artifacts, so the small benchmark set can be
+# fetched without the three-hour file.
+name: benchmedia
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/native/make_bench_media.sh'
+      - '.github/workflows/benchmedia.yml'
+
+jobs:
+  make:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -hide_banner -version | head -1
+      - name: Make
+        run: bash tools/native/make_bench_media.sh "$PWD/media"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmedia-bench
+          path: |
+            media/bench/
+            media/made.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmedia-matrix
+          path: media/matrix/
