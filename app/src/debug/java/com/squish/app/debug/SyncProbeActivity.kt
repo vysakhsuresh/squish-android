@@ -72,12 +72,36 @@ class SyncProbeActivity : Activity() {
         say("sound: ${pcm?.let { "${it.samples.size} samples at ${it.sampleRate} Hz" } ?: "could not be read"}")
         if (pcm == null || times.isEmpty()) return
         val flashes = SyncAnalysis.flashes(times.toLongArray(), luma.toFloatArray())
-        val beeps = SyncAnalysis.beeps(pcm.samples, pcm.sampleRate)
+        // The platform's decoder hands over the encoder's priming as sound and
+        // the MP4's audio edit list says to skip it; a player skips it, so the
+        // probe must too. Unskipped, every beep read 21 ms late on a camera
+        // file and 33 ms late on an export (Media3 writes 1600 samples there),
+        // which read as the export losing sync when it had not.
+        val delayMs = encoderDelayMs(uri)
+        val beeps = SyncAnalysis.beeps(pcm.samples, pcm.sampleRate).map { (it - delayMs).coerceAtLeast(0L) }
+        if (delayMs > 0) say("audio priming skipped: $delayMs ms (the audio edit list)")
         val report = SyncAnalysis.report(SyncAnalysis.pair(flashes, beeps))
         val line = "flashes ${flashes.size}, beeps ${beeps.size}; ${report ?: "nothing paired"}"
         say(line)
         runCatching { File(filesDir, "sync_report.txt").appendText("$uri\n$line\n") }
     }
+
+    /** The audio track's encoder delay as the platform reads it off the file's edit list, in ms; 0 when it says none. */
+    private fun encoderDelayMs(uri: Uri): Long = runCatching {
+        val extractor = android.media.MediaExtractor()
+        try {
+            extractor.setDataSource(this, uri, null)
+            (0 until extractor.trackCount).map { extractor.getTrackFormat(it) }
+                .firstOrNull { it.getString(android.media.MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
+                ?.let { f ->
+                    val rate = f.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE)
+                    val delay = if (f.containsKey("encoder-delay")) f.getInteger("encoder-delay") else 0
+                    if (rate > 0) delay * 1000L / rate else 0L
+                } ?: 0L
+        } finally {
+            extractor.release()
+        }
+    }.getOrDefault(0L)
 
     private companion object { const val TAG = "SquishSync" }
 }
