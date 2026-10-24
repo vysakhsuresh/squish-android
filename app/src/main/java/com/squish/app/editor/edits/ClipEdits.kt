@@ -950,7 +950,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
 
     // ---- Speed: the file's frames and the sound's pitch ------------------------------
 
-    fun setFrameBlend(clipId: String, on: Boolean) = record(if (on) "Blend frames" else "Blend frames off") {
+    fun setFrameBlend(clipId: String, on: Boolean) = record(if (on) "Smooth slow motion" else "Smooth slow motion off") {
         updateClip(clipId) { it.copy(frameBlend = on) }
     }
 

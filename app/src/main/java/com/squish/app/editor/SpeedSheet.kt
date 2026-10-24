@@ -336,10 +336,10 @@ private fun FrameBlendRow(clip: Clip, sourceFps: Float, viewModel: EditorViewMod
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("Blend frames", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+            Text("Smooth slow motion", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
             Text(
-                "Mixes neighbouring frames into the gaps the slow motion opens, in the file. " +
-                    "The preview shows the steps; the file blurs through them.",
+                "Draws new frames into the gaps the slow motion opens, following the movement, in the file. " +
+                    "Where it cannot follow (a cut, a flash, a blur) those frames are a blend. The preview shows the steps.",
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted
             )
@@ -347,7 +347,7 @@ private fun FrameBlendRow(clip: Clip, sourceFps: Float, viewModel: EditorViewMod
         SquishToggleSwitch(
             checked = clip.frameBlend,
             onCheckedChange = { viewModel.clips.setFrameBlend(clip.id, it) },
-            label = "Blend frames"
+            label = "Smooth slow motion"
         )
     }
 }

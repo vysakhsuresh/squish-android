@@ -69,6 +69,19 @@ private class FrameBlendShaderProgram(
         throw VideoFrameProcessingException(e)
     }
 
+    /**
+     * The in-between frames moved along the motion (FlowInterp, EDGE_PLAN F1).
+     * Null where it could not be built, and for HDR frames, whose float
+     * textures this does not read back: those blend, as every frame used to.
+     */
+    private val flowProgram: FlowShader? = if (useHdr) null else runCatching { FlowShader(context) }.getOrNull()
+
+    /** Each frame in, drawn small, to measure the motion on; and the last frame's luma. */
+    private var probe: GlTextureInfo? = null
+    private var probeBytes: java.nio.ByteBuffer? = null
+    private var heldLuma: LumaFrame? = null
+    private var fieldTexId = 0
+
     private var width = -1
     private var height = -1
 
@@ -109,12 +122,18 @@ private class FrameBlendShaderProgram(
         try {
             ensureConfigured(glObjectsProvider, inputTexture.width, inputTexture.height)
             val previous = held
+            val luma = if (flowProgram != null) readLuma(glObjectsProvider, inputTexture) else null
             if (holding && previous != null) {
                 // Everything but one texture, which the frame itself needs.
                 val blends = FrameBlendPlan.between(heldUs, presentationTimeUs, intervalUs, free.size - 1)
+                // Moved along the motion where the field holds enough of the
+                // picture; a cut, a flash or a blur blends, as it always did.
+                val field = if (blends.isNotEmpty() && luma != null) heldLuma?.let { FlowInterp.field(it, luma) } else null
+                val flow = field != null && FlowInterp.usesFlow(field) && upload(field)
                 for (blend in blends) {
                     val out = free.removeFirst()
-                    draw(out, previous.texId, inputTexture.texId, blend.mix)
+                    if (flow) checkNotNull(flowProgram).draw(out, previous.texId, inputTexture.texId, blend.mix, field!!, fieldTexId, luma!!)
+                    else draw(out, previous.texId, inputTexture.texId, blend.mix)
                     outputListener.onOutputFrameAvailable(out, blend.timeUs)
                 }
             }
@@ -124,6 +143,7 @@ private class FrameBlendShaderProgram(
             val keep = checkNotNull(held)
             draw(keep, inputTexture.texId, inputTexture.texId, 1f)
             heldUs = presentationTimeUs
+            heldLuma = luma
             holding = true
             inputListener.onInputFrameProcessed(inputTexture)
             outputListener.onOutputFrameAvailable(own, presentationTimeUs)
@@ -146,6 +166,7 @@ private class FrameBlendShaderProgram(
         // The last frame in has already gone out at its own time; nothing follows
         // it to blend towards. The next stream starts from nothing held.
         holding = false
+        heldLuma = null
         outputListener.onCurrentOutputStreamEnded()
     }
 
@@ -160,6 +181,11 @@ private class FrameBlendShaderProgram(
     override fun release() {
         try {
             deleteTextures()
+            probe?.release()
+            probe = null
+            if (fieldTexId != 0) GLES20.glDeleteTextures(1, intArrayOf(fieldTexId), 0)
+            fieldTexId = 0
+            flowProgram?.delete()
             glProgram.delete()
         } catch (e: GlUtil.GlException) {
             throw VideoFrameProcessingException(e)
@@ -218,6 +244,61 @@ private class FrameBlendShaderProgram(
         glProgram.bindAttributesAndUniforms()
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         GlUtil.checkGlError()
+    }
+
+    /**
+     * [input] drawn at FlowInterp's analysis width and read back as luma. Null
+     * when it cannot be read; that pair then blends.
+     */
+    private fun readLuma(provider: GlObjectsProvider, input: GlTextureInfo): LumaFrame? = try {
+        val w = FlowInterp.ANALYSIS_WIDTH.coerceAtMost(input.width)
+        val h = (w.toLong() * input.height / input.width.coerceAtLeast(1)).toInt().coerceAtLeast(1)
+        var target = probe
+        if (target == null || target.width != w || target.height != h) {
+            target?.release()
+            target = provider.createBuffersForTexture(GlUtil.createTexture(w, h, false), w, h)
+            probe = target
+            probeBytes = java.nio.ByteBuffer.allocateDirect(w * h * 4).order(java.nio.ByteOrder.nativeOrder())
+        }
+        draw(target, input.texId, input.texId, 1f)
+        val bytes = checkNotNull(probeBytes)
+        bytes.rewind()
+        GLES20.glReadPixels(0, 0, w, h, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, bytes)
+        GlUtil.checkGlError()
+        val luma = FloatArray(w * h)
+        for (k in 0 until w * h) {
+            val r = bytes.get(k * 4).toInt() and 0xFF
+            val g = bytes.get(k * 4 + 1).toInt() and 0xFF
+            val b = bytes.get(k * 4 + 2).toInt() and 0xFF
+            luma[k] = (0.2126f * r + 0.7152f * g + 0.0722f * b) / 255f
+        }
+        LumaFrame(w, h, luma)
+    } catch (e: GlUtil.GlException) {
+        null
+    }
+
+    /** The field into its texture, a texel a block (FlowInterp.pack). False when it could not be. */
+    private fun upload(field: FlowInterp.Field): Boolean = try {
+        if (fieldTexId == 0) {
+            val ids = IntArray(1)
+            GLES20.glGenTextures(1, ids, 0)
+            fieldTexId = ids[0]
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fieldTexId)
+            // Nearest: a texel is sixteen bits split over two channels, which
+            // filtering between texels would mix into nonsense.
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        }
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fieldTexId)
+        GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 1)
+        val data = java.nio.ByteBuffer.wrap(FlowInterp.pack(field))
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, field.cols, field.rows, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, data)
+        GlUtil.checkGlError()
+        true
+    } catch (e: GlUtil.GlException) {
+        false
     }
 
     private fun fail(e: Exception) {

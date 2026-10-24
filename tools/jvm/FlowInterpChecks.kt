@@ -1,0 +1,96 @@
+import com.squish.app.media.video.FlowInterp
+import com.squish.app.media.video.LumaFrame
+import kotlin.math.abs
+import kotlin.system.exitProcess
+
+/*
+ * INSHOT_PARITY P1 / EDGE_PLAN F1: smooth slow motion. An in-between frame
+ * drawn from both neighbours moved along the motion, rather than the two
+ * cross-faded (which is motion blur, not motion). FlowInterp is the CPU twin
+ * of squish_flow_es2.glsl; this executes it on frames whose truth is known.
+ */
+private val problems = mutableListOf<String>()
+private fun check(ok: Boolean, msg: String) { if (!ok) problems += msg }
+
+private const val W = 320
+private const val H = 180
+private const val SIDE = 96
+
+/** A textured background, and a textured bright square at [x] - trackable both, and told apart. */
+private fun frame(x: Int, y: Int = 42, seed: Int = 7): LumaFrame {
+    val px = FloatArray(W * H)
+    for (j in 0 until H) for (i in 0 until W) {
+        // Noise blurred over 3 px, so it can be matched at sub-pixel steps as a real picture can.
+        val bg = 0.15f + 0.3f * smoothNoise(i, j, seed)
+        val inSquare = i in x until x + SIDE && j in y until y + SIDE
+        px[j * W + i] = if (inSquare) 0.75f + 0.25f * smoothNoise(i - x, j - y, 4242) else bg
+    }
+    return LumaFrame(W, H, px)
+}
+
+private fun hash(i: Int, j: Int, seed: Int): Float {
+    var h = i * 374761393 + j * 668265263 + seed * 1442695040
+    h = (h xor (h ushr 13)) * 1274126177
+    h = h xor (h ushr 16)
+    return (h and 0xFFFF) / 65535f
+}
+
+private fun smoothNoise(i: Int, j: Int, seed: Int): Float {
+    var s = 0f
+    for (dy in -1..1) for (dx in -1..1) s += hash((i + dx) / 3, (j + dy) / 3, seed)
+    return s / 9f
+}
+
+/** Where the bright square sits: the mean column of pixels above 0.7. */
+private fun squareX(f: LumaFrame): Float {
+    var sum = 0.0; var n = 0
+    for (j in 0 until f.height) for (i in 0 until f.width) if (f.pixels[j * f.width + i] > 0.7f) { sum += i; n++ }
+    return if (n == 0) Float.NaN else (sum / n).toFloat() - (SIDE - 1) / 2f
+}
+
+private fun sad(a: LumaFrame, b: LumaFrame): Double = a.pixels.indices.sumOf { abs(a.pixels[it] - b.pixels[it]).toDouble() }
+
+private fun crossFade(a: LumaFrame, b: LumaFrame, t: Float) =
+    LumaFrame(a.width, a.height, FloatArray(a.pixels.size) { a.pixels[it] * (1 - t) + b.pixels[it] * t })
+
+fun main() {
+    // A square moving 12 px a frame: the frame half way is the square at +6.
+    val a = frame(100)
+    val b = frame(112)
+    val truth = frame(106)
+    val field = FlowInterp.field(a, b)
+    val mid = FlowInterp.interpolate(a, b, field, 0.5f)
+    val at = squareX(mid)
+    check(abs(at - 106f) <= 1f, "the square half way is at $at, not 106")
+    val flowError = sad(mid, truth)
+    val fadeError = sad(crossFade(a, b, 0.5f), truth)
+    check(flowError < fadeError * 0.6, "the in-between frame is no closer to the truth than a cross-fade: $flowError against $fadeError")
+    // A quarter of the way: +3.
+    val quarter = squareX(FlowInterp.interpolate(a, b, field, 0.25f))
+    check(abs(quarter - 103f) <= 1f, "the square a quarter of the way is at $quarter, not 103")
+    // The field holds most of the picture, and says so.
+    check(FlowInterp.heldShare(field) > 0.6f, "the field held only ${FlowInterp.heldShare(field)} of a trackable picture")
+
+    // Nothing moving: the frame comes out as it went in.
+    val still = FlowInterp.interpolate(a, a, FlowInterp.field(a, a), 0.5f)
+    check(sad(still, a) < 1e-3 * a.pixels.size, "a still scene changed: ${sad(still, a)}")
+
+    // A cut: nothing matches, so no motion is invented - the cross-fade.
+    val other = frame(10, y = 70, seed = 991)
+    val cutField = FlowInterp.field(a, other)
+    val cut = FlowInterp.interpolate(a, other, cutField, 0.5f)
+    val fade = crossFade(a, other, 0.5f)
+    check(sad(cut, fade) < 0.02 * a.pixels.size, "across a cut the in-between frame is not the cross-fade: ${sad(cut, fade)}")
+    check(FlowInterp.usesFlow(cutField) == false, "a cut was trusted as motion (held ${FlowInterp.heldShare(cutField)})")
+    check(FlowInterp.usesFlow(field), "a trackable move was not trusted")
+
+    // The packed field the shader reads gives the field back.
+    val packed = FlowInterp.pack(field)
+    val back = FlowInterp.unpack(packed, field.cols, field.rows)
+    var worst = 0f
+    for (k in field.dx.indices) worst = maxOf(worst, abs(back.dx[k] - field.dx[k]), abs(back.dy[k] - field.dy[k]))
+    check(worst < 0.02f, "the packed field is off by $worst analysis pixels")
+
+    if (problems.isEmpty()) println("FlowInterpChecks: all checks passed (half way at $at, error $flowError against a cross-fade's $fadeError)")
+    else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
+}
