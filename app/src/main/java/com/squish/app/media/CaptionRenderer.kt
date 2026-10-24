@@ -25,6 +25,14 @@ import com.squish.app.editor.TextFont
 import com.squish.app.editor.TextFrame
 import com.squish.app.editor.TextMotion
 import com.squish.app.editor.TextOverlayItem
+import com.squish.app.editor.CaptionWords
+import com.squish.app.editor.WordMode
+import com.squish.app.editor.WordState
+import com.squish.app.editor.WordStyle
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import java.io.File
 import kotlin.math.ceil
 import kotlin.math.cos
@@ -133,11 +141,7 @@ object CaptionRenderer {
     fun frameAt(item: TextOverlayItem, timeMs: Long): TextFrame? = item.frameAt(timeMs)
 
     /** The letters showing at [frame] - all of them, unless they are being revealed. */
-    fun shownText(item: TextOverlayItem, frame: TextFrame): String = if (item.isShape) "" else when (item.motion) {
-        TextMotion.Typewriter -> TextAnimation.shownLetters(item.text, frame.reveal)
-        TextMotion.Words -> TextAnimation.shownWords(item.text, frame.reveal)
-        else -> item.text
-    }
+    fun shownText(item: TextOverlayItem, frame: TextFrame): String = item.shownAt(frame)
 
     /** The face a caption is set in: its own file if it brought one, else its system face, in its weight and slant. */
     fun typefaceOf(item: TextOverlayItem): Typeface {
@@ -169,11 +173,15 @@ object CaptionRenderer {
      * inside the box the full text needs - so typed text does not re-centre itself
      * letter by letter.
      */
-    fun render(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int): Bitmap =
-        paint(item, shown, frameWidth, frameHeight).bitmap
+    fun render(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState? = null): Bitmap =
+        paint(item, shown, frameWidth, frameHeight, words).bitmap
 
-    /** [render], with the part of the picture that is the letters and their own decoration. */
-    fun paint(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int): Painted {
+    /**
+     * [render], with the part of the picture that is the letters and their own
+     * decoration. [words] is the line's [WordState] at this frame, from
+     * [TextFrame.words]: which page is shown and which word is being said.
+     */
+    fun paint(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState? = null): Painted {
         if (item.isShape) return paintShape(item, frameWidth, frameHeight)
         val shortEdge = minOf(frameWidth, frameHeight).toFloat().coerceAtLeast(1f)
         val textSize = (item.sizeSp / 360f * shortEdge).coerceAtLeast(6f)
@@ -186,17 +194,39 @@ object CaptionRenderer {
         }
 
         val maxWidth = (frameWidth * 0.9f).roundToInt().coerceAtLeast(1)
-        val fullLayout = layout(item, item.text, paint, maxWidth)
-        val shownLayout = layout(item, shown, paint, fullLayout.width)
+
+        // The word being said (EDGE_PLAN E2). A page of a few words is laid
+        // out in the box that page needs, not the whole line's; a popped word
+        // is given room on every frame, so the box does not grow and shrink
+        // as the speech moves from word to word.
+        val wordStyle = item.wordStyle.takeIf { words != null && it.isOn }
+        val lineWords = CaptionWords.words(item.text).size
+        val sizing = if (words != null && (words.from > 0 || words.to < lineWords)) CaptionWords.pageText(item.text, words) else item.text
+        val shownWords = if (wordStyle != null && words != null && shown.isNotEmpty()) CaptionWords.words(shown) else null
+        val active = if (shownWords != null && words != null && words.active >= 0) CaptionWords.charRange(shownWords, words, words.active) else null
+        val lit = if (shownWords != null && words != null && wordStyle != null) CaptionWords.coloured(wordStyle.mode, shownWords, words) else null
+        val pops = wordStyle?.mode == WordMode.Pop
+        val grow = if (pops) WordStyle.POP_SCALE else 1f
+        val geometry: CharSequence = if (pops && active != null) SpannableString(shown).apply {
+            setSpan(RelativeSizeSpan(WordStyle.POP_SCALE), active.first, active.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        } else shown
+        val filled: CharSequence = if (wordStyle != null && lit != null) SpannableString(geometry).apply {
+            val ink = if (wordStyle.mode == WordMode.Box) CaptionWords.inkOn(wordStyle.colorArgb) else wordStyle.colorArgb
+            setSpan(ForegroundColorSpan(ink), lit.first, lit.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        } else geometry
+
+        val fullLayout = layout(item, sizing, paint, maxWidth, sizing, grow)
+        val shownLayout = layout(item, filled, paint, fullLayout.width, sizing, grow)
+        val popRoom = if (pops) (textSize * (WordStyle.POP_SCALE - 1f)).roundToInt() else 0
 
         // Room round the letters for the edge, the shadow, the glow or the box.
         val background = item.background
-        val pad = (textSize * padShare(item)).roundToInt()
+        val pad = (textSize * padShare(item)).roundToInt() + if (wordStyle?.mode == WordMode.Box) (textSize * 0.15f).roundToInt() else 0
         val band = background.isOn && background.bubble == TextBubble.Band
         val tail = if (background.isOn && background.bubble == TextBubble.Speech) (textSize * 0.5f).roundToInt() else 0
         val grabWidth = (fullLayout.width + pad * 2).coerceAtLeast(1)
         val width = if (band) frameWidth.coerceAtLeast(1) else grabWidth
-        val boxHeight = (fullLayout.height + pad * 2).coerceAtLeast(1)
+        val boxHeight = (fullLayout.height + popRoom + pad * 2).coerceAtLeast(1)
         val height = boxHeight + tail
         val textLeft = if (band) (width - fullLayout.width) / 2f else pad.toFloat()
 
@@ -207,6 +237,16 @@ object CaptionRenderer {
 
         canvas.save()
         canvas.translate(textLeft, pad.toFloat())
+        if (wordStyle?.mode == WordMode.Box && active != null) {
+            // A rounded box in the highlight colour behind the word being said,
+            // read off the laid-out line so it sits on the word wherever it wrapped.
+            val line = shownLayout.getLineForOffset(active.first)
+            val a = shownLayout.getPrimaryHorizontal(active.first)
+            val b = shownLayout.getPrimaryHorizontal(active.last + 1).let { if (shownLayout.getLineForOffset(active.last + 1) != line) shownLayout.getLineRight(line) else it }
+            val reach = textSize * 0.14f
+            val box = RectF(minOf(a, b) - reach, shownLayout.getLineTop(line) - reach * 0.4f, maxOf(a, b) + reach, shownLayout.getLineBottom(line) + reach * 0.4f)
+            canvas.drawRoundRect(box, textSize * 0.22f, textSize * 0.22f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = wordStyle.colorArgb })
+        }
         val stroke = item.stroke
         val shadow = item.shadow
         if (shadow.isOn) {
@@ -226,7 +266,7 @@ object CaptionRenderer {
             val radians = Math.toRadians(shadow.angleDegrees.toDouble())
             canvas.save()
             canvas.translate((cos(radians) * shadow.offset * textSize).toFloat(), (sin(radians) * shadow.offset * textSize).toFloat())
-            layout(item, shown, cast, fullLayout.width).draw(canvas)
+            layout(item, geometry, cast, fullLayout.width, sizing, grow).draw(canvas)
             canvas.restore()
         }
         if (item.glow) {
@@ -235,9 +275,9 @@ object CaptionRenderer {
             val glow = TextPaint(paint).apply {
                 maskFilter = BlurMaskFilter(textSize * 0.45f, BlurMaskFilter.Blur.NORMAL)
             }
-            layout(item, shown, glow, fullLayout.width).draw(canvas)
+            layout(item, geometry, glow, fullLayout.width, sizing, grow).draw(canvas)
             glow.maskFilter = BlurMaskFilter(textSize * 0.15f, BlurMaskFilter.Blur.NORMAL)
-            layout(item, shown, glow, fullLayout.width).draw(canvas)
+            layout(item, geometry, glow, fullLayout.width, sizing, grow).draw(canvas)
         }
         if (stroke.isOn) {
             val edge = TextPaint(paint).apply {
@@ -246,7 +286,7 @@ object CaptionRenderer {
                 strokeJoin = Paint.Join.ROUND
                 color = stroke.colorArgb
             }
-            layout(item, shown, edge, fullLayout.width).draw(canvas)
+            layout(item, geometry, edge, fullLayout.width, sizing, grow).draw(canvas)
         }
         if (item.glow) paint.color = lighten(item.colorArgb)
         shownLayout.draw(canvas)
@@ -400,8 +440,21 @@ object CaptionRenderer {
         }
     }
 
-    private fun layout(item: TextOverlayItem, text: String, paint: TextPaint, width: Int): StaticLayout {
-        val measured = ceil(StaticLayout.getDesiredWidth(item.text, paint)).toInt()
+    /**
+     * [text] laid out as wide as [measure] wants (times [grow], the room a
+     * popped word takes), no wider than [width]. Measured on the line or the
+     * page rather than on [text], so revealed or highlighted words wrap where
+     * the whole would.
+     */
+    private fun layout(
+        item: TextOverlayItem,
+        text: CharSequence,
+        paint: TextPaint,
+        width: Int,
+        measure: CharSequence = item.text,
+        grow: Float = 1f
+    ): StaticLayout {
+        val measured = ceil(StaticLayout.getDesiredWidth(measure, paint) * grow).toInt()
         val lineWidth = measured.coerceIn(1, width.coerceAtLeast(1))
         return StaticLayout.Builder.obtain(text, 0, text.length, paint, lineWidth)
             // Typed text grows from the left, so the line does not slide about as

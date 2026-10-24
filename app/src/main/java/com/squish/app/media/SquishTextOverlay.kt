@@ -32,6 +32,7 @@ class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
     /** The last bitmap drawn and the text it shows, so an unchanging caption is drawn once. */
     private var cached: Bitmap? = null
     private var cachedText: String? = null
+    private var cachedActive = -1
 
     private val blank: Bitmap by lazy { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888) }
 
@@ -51,10 +52,12 @@ class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
         val shown = CaptionRenderer.shownText(item, frame)
         // A shape has no letters: it shows whenever its window does.
         if (shown.isBlank() && !item.isShape) return blank
-        if (shown == cachedText) cached?.let { return it }
-        val bitmap = CaptionRenderer.render(item, shown, frameWidth, frameHeight)
+        val active = frame.words?.active ?: -1
+        if (shown == cachedText && active == cachedActive) cached?.let { return it }
+        val bitmap = CaptionRenderer.render(item, shown, frameWidth, frameHeight, frame.words)
         cached = bitmap
         cachedText = shown
+        cachedActive = active
         return bitmap
     }
 

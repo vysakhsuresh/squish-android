@@ -85,6 +85,149 @@ data class TextBackground(val colorArgb: Int, val opacity: Float, val radius: Fl
     }
 }
 
+/** How the word being said stands out from the rest of its line (EDGE_PLAN E2). */
+enum class WordMode(val label: String) {
+    None("Off"),
+
+    /** The word being said in the highlight colour. */
+    Highlight("Colour"),
+
+    /** A box in the highlight colour behind the word being said. */
+    Box("Box"),
+
+    /** Every word said so far in the highlight colour, as a karaoke line fills. */
+    Karaoke("Karaoke"),
+
+    /** The word being said bigger, and in the highlight colour. */
+    Pop("Pop"),
+
+    /** Only the word being said, one at a time. */
+    One("One word")
+}
+
+/**
+ * A line's words styled by when each is said. Driven by the line's own word
+ * timings when it has them (auto-captions do), else spread evenly over the
+ * line - so a line typed by hand can be a karaoke line too.
+ *
+ * [perScreen] shows the words a few at a time, the page with the word being
+ * said: the short punchy captions of a reel. 0 is the whole line at once.
+ */
+data class WordStyle(
+    val mode: WordMode = WordMode.None,
+    val colorArgb: Int = HIGHLIGHT_YELLOW,
+    val perScreen: Int = 0
+) {
+    val isOn: Boolean get() = mode != WordMode.None || perScreen > 0
+
+    companion object {
+        val NONE = WordStyle()
+        const val HIGHLIGHT_YELLOW = 0xFFFFD60A.toInt()
+        const val MAX_PER_SCREEN = 8
+
+        /** How much bigger a popped word is than its neighbours. */
+        const val POP_SCALE = 1.22f
+    }
+}
+
+/**
+ * Which words of a line are on screen at a moment and which one is being said.
+ * [from] until [to] are indices into the line's words; [active] is the word
+ * being said, or -1 before the first has begun.
+ */
+data class WordState(val from: Int, val to: Int, val active: Int)
+
+/**
+ * The arithmetic of [WordStyle], with no Android in it, so
+ * tools/jvm/CaptionWordsChecks.kt executes it. The preview's caption layer and
+ * the export's overlay both get a line's [WordState] through
+ * [TextOverlayItem.frameAt] and paint it with the one CaptionRenderer.
+ */
+object CaptionWords {
+
+    /** A line's words, split as its timings were counted - on single spaces. */
+    fun words(text: String): List<String> = text.split(' ')
+
+    /**
+     * When each of [count] words starts, from the line's start: [wordStartsMs]
+     * when it has one per word, else even shares of [totalMs]. A timing list
+     * that has fallen out of step with the words - retyped, translated - would
+     * light the wrong ones, so it is not used at all.
+     */
+    fun starts(count: Int, wordStartsMs: List<Long>, totalMs: Long): List<Long> {
+        if (count <= 0) return emptyList()
+        if (wordStartsMs.size == count) return wordStartsMs
+        val total = totalMs.coerceAtLeast(1L)
+        return List(count) { i -> total * i / count }
+    }
+
+    /** The word being said [elapsedMs] into the line: the last to have started, or -1 before the first. */
+    fun activeAt(starts: List<Long>, elapsedMs: Long): Int = starts.indexOfLast { it <= elapsedMs }
+
+    /** The line's words at [elapsedMs] under [style]; null when the style is off. */
+    fun state(text: String, wordStartsMs: List<Long>, elapsedMs: Long, totalMs: Long, style: WordStyle): WordState? {
+        if (!style.isOn) return null
+        val count = words(text).size
+        if (count == 0) return null
+        val active = activeAt(starts(count, wordStartsMs, totalMs), elapsedMs)
+        val per = if (style.mode == WordMode.One) 1 else style.perScreen.coerceIn(0, WordStyle.MAX_PER_SCREEN)
+        if (per <= 0 || per >= count) return WordState(0, count, active)
+        // Before the first word the first page stands, so the line is never blank.
+        val from = active.coerceAtLeast(0) / per * per
+        return WordState(from, minOf(count, from + per), active)
+    }
+
+    /**
+     * The words on screen: the page, and of that only those a Words arrival has
+     * revealed, [revealed] counting from the line's first word.
+     */
+    fun shownWords(text: String, state: WordState, revealed: Int = Int.MAX_VALUE): List<String> {
+        val all = words(text)
+        val to = minOf(state.to, all.size, revealed.coerceAtLeast(state.from))
+        return if (state.from >= to) emptyList() else all.subList(state.from, to)
+    }
+
+    /** The whole page, for the box a page is laid out in - so revealing a word does not move the others. */
+    fun pageText(text: String, state: WordState): String =
+        words(text).let { all -> all.subList(state.from.coerceIn(0, all.size), state.to.coerceIn(state.from.coerceIn(0, all.size), all.size)) }.joinToString(" ")
+
+    /** Where word [index] of a line (an index into the whole line) sits in [shown]'s joined text, or null when it is not shown. */
+    fun charRange(shown: List<String>, state: WordState, index: Int): IntRange? {
+        val at = index - state.from
+        if (at !in shown.indices) return null
+        var start = 0
+        for (i in 0 until at) start += shown[i].length + 1
+        return start until start + shown[at].length
+    }
+
+    /** The stretch of [shown]'s text the highlight colour covers under [mode], or null for none. */
+    fun coloured(mode: WordMode, shown: List<String>, state: WordState): IntRange? {
+        if (state.active < 0) return null
+        return when (mode) {
+            WordMode.Highlight, WordMode.Pop, WordMode.Box -> charRange(shown, state, state.active)
+            WordMode.Karaoke -> {
+                // Everything said so far on this page: up to the end of the word being said.
+                val last = minOf(state.active, state.from + shown.size - 1)
+                if (last < state.from) null else charRange(shown, state, last)?.let { 0..it.last }
+            }
+            WordMode.None, WordMode.One -> null
+        }
+    }
+
+    /**
+     * Ink that reads on [argb]: black on a light highlight box, white on a dark
+     * one. A yellow box under white letters made the word being said the one
+     * that could not be read.
+     */
+    fun inkOn(argb: Int): Int {
+        val r = (argb shr 16) and 0xFF
+        val g = (argb shr 8) and 0xFF
+        val b = argb and 0xFF
+        val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+        return if (luma > 150f) BLACK else WHITE
+    }
+}
+
 /**
  * Everything about a line that is a matter of style rather than of words,
  * timing or place: what Apply to all, Copy style and a saved style carry from
@@ -110,7 +253,9 @@ data class TextStyleSpec(
     val background: TextBackground = TextBackground.NONE,
     /** The letter colour glowing outwards, as a neon tube. */
     val glow: Boolean = false,
-    val opacity: Float = 1f
+    val opacity: Float = 1f,
+    /** The word being said standing out, and how many words at a time. */
+    val words: WordStyle = WordStyle.NONE
 ) {
     companion object {
         const val DEFAULT_SIZE_SP = 28
@@ -337,7 +482,9 @@ data class TextFrame(
     val scale: Float = 1f,
     val rise: Float = 0f,
     val reveal: Float = 1f,
-    val tilt: Float = 0f
+    val tilt: Float = 0f,
+    /** Which words are on screen and which is being said, for a line with a [WordStyle]; null shows the line whole. */
+    val words: WordState? = null
 )
 
 /**
@@ -634,8 +781,44 @@ enum class CaptionStylePreset(val label: String, val style: TextStyleSpec) {
     Soft("Soft", TextLook.Shadow.applied(TextStyleSpec(font = TextFont.Serif, sizeSp = 30))),
     Pill("Pill", TextStyleSpec(background = TextBackground(WHITE, 0.9f, 1f, TextBubble.Pill), colorArgb = BLACK)),
     Neon("Neon", TextLook.Neon.applied(TextStyleSpec(font = TextFont.Hand, colorArgb = 0xFF5CE1E6.toInt(), sizeSp = 32))),
-    Mono("Mono", TextLook.Box.applied(TextStyleSpec(font = TextFont.Mono, letterSpacing = 0.08f)))
+    Mono("Mono", TextLook.Box.applied(TextStyleSpec(font = TextFont.Mono, letterSpacing = 0.08f))),
+
+    // Reels: the word being said stands out, a few words at a time (EDGE_PLAN E2).
+    Hype("Hype", reel(WordStyle(WordMode.Pop, WordStyle.HIGHLIGHT_YELLOW, 3))),
+    Karaoke("Karaoke", reel(WordStyle(WordMode.Karaoke, WordStyle.HIGHLIGHT_YELLOW, 0), size = 30)),
+    GreenBox("Green box", reel(WordStyle(WordMode.Box, 0xFF22C55E.toInt(), 3))),
+    YellowBox("Yellow box", reel(WordStyle(WordMode.Box, WordStyle.HIGHLIGHT_YELLOW, 3), stroke = false)),
+    OneWord("One word", reel(WordStyle(WordMode.One, perScreen = 1), size = 48)),
+    OneWordPop("One word pop", reel(WordStyle(WordMode.One, perScreen = 1), size = 52, colour = WordStyle.HIGHLIGHT_YELLOW, font = TextFont.Condensed)),
+    TwoWords("Two at a time", reel(WordStyle(WordMode.Highlight, 0xFF5CE1E6.toInt(), 2), size = 40)),
+    Gamer("Gamer", reel(WordStyle(WordMode.Pop, 0xFF7CFF6B.toInt(), 3), font = TextFont.Condensed)),
+    PinkPop("Pink pop", reel(WordStyle(WordMode.Pop, 0xFFFF4FA3.toInt(), 3))),
+    RedLine("Red word", reel(WordStyle(WordMode.Highlight, 0xFFFF3B30.toInt(), 4), size = 34)),
+    Purple("Purple box", reel(WordStyle(WordMode.Box, 0xFF8B5CF6.toInt(), 3))),
+    Orange("Orange fill", reel(WordStyle(WordMode.Karaoke, 0xFFFF9F1C.toInt(), 5), size = 34)),
+    Podcast("Podcast", TextLook.Box.applied(TextStyleSpec(font = TextFont.Sans, sizeSp = 28, words = WordStyle(WordMode.Highlight, WordStyle.HIGHLIGHT_YELLOW, 6)))),
+    NeonWord("Neon word", TextLook.Neon.applied(TextStyleSpec(font = TextFont.Bold, sizeSp = 38, colorArgb = WHITE, words = WordStyle(WordMode.Highlight, 0xFF5CE1E6.toInt(), 3)))),
+    Typed("Typed out", TextLook.Shadow.applied(TextStyleSpec(font = TextFont.Mono, sizeSp = 30, words = WordStyle(WordMode.Karaoke, 0xFF7CFF6B.toInt(), 4)))),
+    Clean("Clean", TextLook.Shadow.applied(TextStyleSpec(font = TextFont.Sans, sizeSp = 34, words = WordStyle(WordMode.Highlight, 0xFFB3B3B3.toInt(), 3)))),
+    PillWord("Pill word", TextStyleSpec(font = TextFont.Bold, sizeSp = 34, colorArgb = BLACK,
+        background = TextBackground(WHITE, 0.92f, 1f, TextBubble.Pill), words = WordStyle(WordMode.Highlight, 0xFFFF3B30.toInt(), 3)))
 }
+
+/** A bold, heavily outlined reel caption with [words]: what the reel presets share. */
+private fun reel(
+    words: WordStyle,
+    size: Int = 40,
+    colour: Int = WHITE,
+    font: TextFont = TextFont.Bold,
+    stroke: Boolean = true
+): TextStyleSpec = TextStyleSpec(
+    font = font,
+    colorArgb = colour,
+    sizeSp = size,
+    stroke = if (stroke) TextStroke(BLACK, 0.22f) else TextStroke.NONE,
+    shadow = if (stroke) TextShadow.NONE else TextLook.SHADOW,
+    words = words
+)
 
 /**
  * The voice effects live with the clip now (timeline/VoiceEffect.kt); the

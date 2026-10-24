@@ -550,6 +550,13 @@ private fun StyleTile(label: String, sample: String, style: TextStyleSpec, selec
                 )
             )
         }
+        // A word-timed preset shows its highlight as a bar under the sample.
+        if (style.words.isOn) Box(
+            Modifier
+                .size(width = 28.dp, height = 4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color(if (style.words.mode == WordMode.One) style.colorArgb else style.words.colorArgb))
+        )
         com.squish.app.ui.components.FitText(label, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
     }
 }
@@ -853,6 +860,29 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
                                     style = MaterialTheme.typography.labelSmall,
                                     color = SquishColors.TextMuted
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // The word being said (EDGE_PLAN E2): on auto-captions it follows the
+            // speech, on a typed line it steps evenly through the line.
+            if (!item.sticker && !item.isShape) {
+                val words = item.wordStyle
+                ChipRow(
+                    if (item.wordStartsMs.isNotEmpty()) "Word being said" else "Word by word (evenly, no speech timing)",
+                    WordMode.entries, words.mode, { it.label }
+                ) { mode -> restyle { it.copy(wordStyle = it.wordStyle.copy(mode = mode)) } }
+                ChipRow("Words at a time", listOf(0, 1, 2, 3, 4, 6), words.perScreen.takeIf { words.mode != WordMode.One } ?: 1,
+                    { if (it == 0) "All" else "$it" }
+                ) { n -> restyle { it.copy(wordStyle = it.wordStyle.copy(perScreen = n, mode = if (it.wordStyle.mode == WordMode.One && n != 1) WordMode.None else it.wordStyle.mode)) } }
+                if (words.mode != WordMode.None && words.mode != WordMode.One) {
+                    Text("Highlight colour", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        WORD_COLOURS.forEach { c ->
+                            ColourSwatch(c, selected = words.colorArgb == c) {
+                                restyle { it.copy(wordStyle = it.wordStyle.copy(colorArgb = c)) }
                             }
                         }
                     }
@@ -1513,6 +1543,12 @@ private fun TranslateCard(viewModel: EditorViewModel) {
 
 /** The colour Neon takes on white letters: the Neon title preset's pink. */
 private const val NEON_PINK = 0xFFFF4FD8.toInt()
+
+/** The highlight colours offered for the word being said: the ones reels use, each readable on a dark and a light shot. */
+private val WORD_COLOURS = listOf(
+    WordStyle.HIGHLIGHT_YELLOW, 0xFF22C55E.toInt(), 0xFF5CE1E6.toInt(), 0xFFFF4FA3.toInt(),
+    0xFFFF3B30.toInt(), 0xFFFF9F1C.toInt(), 0xFF8B5CF6.toInt(), 0xFFFFFFFF.toInt()
+)
 
 /**
  * Words on a phone with no on-device recognizer (EDGE_PLAN E1): a speech

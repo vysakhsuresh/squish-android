@@ -59,6 +59,8 @@ data class TextOverlayItem(
     val motionOutMs: Long = TextAnimation.DEFAULT_OUT_MS,
     val loop: TextLoop = TextLoop.None,
     val loopMs: Long = TextAnimation.DEFAULT_LOOP_MS,
+    /** The word being said standing out, and how many words at a time (EDGE_PLAN E2). */
+    val wordStyle: WordStyle = WordStyle.NONE,
     /**
      * Where each word of an auto-caption starts, from [startMs], as the
      * segmenter heard them; empty for a line typed by hand. Read by the Words
@@ -114,7 +116,7 @@ data class TextOverlayItem(
             font = font, fontFile = fontFile, bold = bold, italic = italic, underline = underline,
             align = align, letterSpacing = letterSpacing, lineSpacing = lineSpacing,
             colorArgb = colorArgb, sizeSp = sizeSp, stroke = stroke, shadow = shadow,
-            background = background, glow = glow, opacity = opacity
+            background = background, glow = glow, opacity = opacity, words = wordStyle
         )
 
     /** This line in [spec]'s style; its words, timing and place are its own still. */
@@ -122,7 +124,7 @@ data class TextOverlayItem(
         font = spec.font, fontFile = spec.fontFile, bold = spec.bold, italic = spec.italic, underline = spec.underline,
         align = spec.align, letterSpacing = spec.letterSpacing, lineSpacing = spec.lineSpacing,
         colorArgb = spec.colorArgb, sizeSp = spec.sizeSp, stroke = spec.stroke, shadow = spec.shadow,
-        background = spec.background, glow = spec.glow, opacity = spec.opacity
+        background = spec.background, glow = spec.glow, opacity = spec.opacity, wordStyle = spec.words
     )
 
     /** How it moves, on its own: what Animation's Apply to all carries. */
@@ -171,7 +173,32 @@ data class TextOverlayItem(
         // A shape has no words to be blank: it is on screen whenever its window is.
         if (timeMs < startMs || timeMs >= endMs || (text.isBlank() && !isShape)) return null
         val total = (endMs - startMs).coerceAtLeast(1L)
-        return TextAnimation.frameAt(motion, motionOut, loop, motionInMs, motionOutMs, loopMs, timeMs - startMs, total, wordStartsMs)
+        val frame = TextAnimation.frameAt(motion, motionOut, loop, motionInMs, motionOutMs, loopMs, timeMs - startMs, total, wordStartsMs)
+        // Letters typed one at a time are not words said one at a time: a
+        // Typewriter line keeps its reveal and shows no word style.
+        if (isShape || sticker || motion == TextMotion.Typewriter) return frame
+        val words = CaptionWords.state(text, wordStartsMs, timeMs - startMs, total, wordStyle) ?: return frame
+        return frame.copy(words = words)
+    }
+
+    /**
+     * The words showing at [frame]: the line, less what an arrival has not yet
+     * revealed, and - under a word style - only the page with the word being
+     * said. Pure, so tools/jvm/CaptionWordsChecks.kt runs it; CaptionRenderer
+     * paints what it answers, in the preview and in the file.
+     */
+    fun shownAt(frame: TextFrame): String {
+        if (isShape) return ""
+        val words = frame.words
+        if (words == null || motion == TextMotion.Typewriter) return when (motion) {
+            TextMotion.Typewriter -> TextAnimation.shownLetters(text, frame.reveal)
+            TextMotion.Words -> TextAnimation.shownWords(text, frame.reveal)
+            else -> text
+        }
+        val revealed = if (motion == TextMotion.Words) TextAnimation.shownWords(text, frame.reveal).let {
+            if (it.isEmpty()) 0 else CaptionWords.words(it).size
+        } else Int.MAX_VALUE
+        return CaptionWords.shownWords(text, words, revealed).joinToString(" ")
     }
 
     /**

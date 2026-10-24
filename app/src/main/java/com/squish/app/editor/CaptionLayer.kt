@@ -104,19 +104,21 @@ fun CaptionLayer(
         val live = HashSet<String>()
         for (item in captions) {
             val moving = CaptionRenderer.frameAt(item, timeMs) ?: continue
-            val look = if (atRest) TextFrame() else moving
+            // At rest the arrival is held still, but the word being said is not: a
+            // paused karaoke line shows the word under the playhead, so scrubbing reads it.
+            val look = if (atRest) TextFrame(words = moving.words) else moving
             val shown = CaptionRenderer.shownText(item, look)
             if (shown.isBlank() && !item.isShape) continue
 
             val key = "${item.id}/${item.style}/${item.flipped}/${item.align}/${item.motion}/" +
                 "${item.shape}/${item.shapeAspect}/${item.shapeFilled}/" +
-                "${item.text}/$shown@${boxWidth}x$boxHeight"
+                "${item.text}/$shown/${look.words?.active}@${boxWidth}x$boxHeight"
             live.add(key)
             val (glyph, grab) = glyphs.getOrPut(key) {
-                val painted = CaptionRenderer.paint(item, shown, boxWidth, boxHeight)
+                val painted = CaptionRenderer.paint(item, shown, boxWidth, boxHeight, look.words)
                 PaintedLetters(painted.bitmap.asImageBitmap(), TextBox(painted.grabWidth.toFloat(), painted.grabHeight.toFloat()))
             }
-            if (boxes != null && shown == item.text) {
+            if (boxes != null && (shown == item.text || look.words != null)) {
                 // Written only when it changed: every write wakes whoever builds
                 // the box from it, and that is every frame while playing. The
                 // letters' own extent, not a Band's full-width picture.

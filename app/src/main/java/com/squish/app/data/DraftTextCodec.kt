@@ -15,6 +15,8 @@ import com.squish.app.editor.TextOverlayItem
 import com.squish.app.editor.TextShadow
 import com.squish.app.editor.TextStroke
 import com.squish.app.editor.TextStyleSpec
+import com.squish.app.editor.WordMode
+import com.squish.app.editor.WordStyle
 import com.squish.app.media.video.MotionTrack
 import com.squish.app.media.video.TrackSample
 import org.json.JSONArray
@@ -160,6 +162,12 @@ object TextStyleJson {
         json.put("bubble", s.background.bubble.name)
         json.put("glow", s.glow)
         json.putFinite("opacity", s.opacity)
+        // Written only when on, so a line with none is the shape a draft always was.
+        if (s.words.isOn) {
+            json.put("wordMode", s.words.mode.name)
+            json.put("wordColor", s.words.colorArgb)
+            json.put("wordsPerScreen", s.words.perScreen)
+        }
     }
 
     fun encode(s: TextStyleSpec): JSONObject = JSONObject().also { write(it, s) }
@@ -204,7 +212,12 @@ object TextStyleJson {
                 enumOrNull<TextBubble>(json.optString("bubble")) ?: TextBubble.None
             ),
             glow = json.optBoolean("glow", false),
-            opacity = json.optDouble("opacity", 1.0).toFloat()
+            opacity = json.optDouble("opacity", 1.0).toFloat(),
+            words = WordStyle(
+                mode = enumOrNull<WordMode>(json.optString("wordMode")) ?: WordMode.None,
+                colorArgb = json.optInt("wordColor", WordStyle.HIGHLIGHT_YELLOW),
+                perScreen = json.optInt("wordsPerScreen", 0).coerceIn(0, WordStyle.MAX_PER_SCREEN)
+            )
         )
     }
 
