@@ -33,6 +33,7 @@ class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
     private var cached: Bitmap? = null
     private var cachedText: String? = null
     private var cachedActive = -1
+    private var cachedCut: CaptionRenderer.Cut? = null
 
     private val blank: Bitmap by lazy { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888) }
 
@@ -53,11 +54,14 @@ class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
         // A shape has no letters: it shows whenever its window does.
         if (shown.isBlank() && !item.isShape) return blank
         val active = frame.words?.active ?: -1
-        if (shown == cachedText && active == cachedActive) cached?.let { return it }
-        val bitmap = CaptionRenderer.render(item, shown, frameWidth, frameHeight, frame.words)
+        // A knockout card's letters are cut where the line stands (EDGE_PLAN E4).
+        val cut = if (item.knockout) CaptionRenderer.Cut(item.cutAt(presentationTimeUs / 1000L), item.cutTurn(frame)) else null
+        if (shown == cachedText && active == cachedActive && cut == cachedCut) cached?.let { return it }
+        val bitmap = CaptionRenderer.render(item, shown, frameWidth, frameHeight, frame.words, cut)
         cached = bitmap
         cachedText = shown
         cachedActive = active
+        cachedCut = cut
         return bitmap
     }
 
@@ -65,15 +69,17 @@ class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
         val timeMs = presentationTimeUs / 1000L
         val frame = CaptionRenderer.frameAt(item, timeMs)
             ?: return StaticOverlaySettings.Builder().setAlphaScale(0f).build()
-        val (x, y) = item.anchorAt(timeMs)
+        // A knockout card at the frame's middle, never turned or raised (drawnAt).
+        val drawn = item.drawnFrame(frame)
+        val (x, y) = item.drawnAt(timeMs)
         return StaticOverlaySettings.Builder()
-            .setBackgroundFrameAnchor(x * 2 - 1, 1 - (y - frame.rise) * 2)
-            .setScale(frame.scale, frame.scale)
+            .setBackgroundFrameAnchor(x * 2 - 1, 1 - (y - drawn.rise) * 2)
+            .setScale(drawn.scale, drawn.scale)
             // Media3 turns counter-clockwise in a frame whose y runs up; the
             // editor's degrees are clockwise on screen, as the preview's
             // graphicsLayer and ExportPlan.placementMatrix take them.
-            .setRotationDegrees(-(item.rotationDegrees + frame.tilt))
-            .setAlphaScale((frame.alpha * item.opacity).coerceIn(0f, 1f))
+            .setRotationDegrees(-item.drawnTurn(frame))
+            .setAlphaScale((drawn.alpha * item.opacity).coerceIn(0f, 1f))
             .build()
     }
 }

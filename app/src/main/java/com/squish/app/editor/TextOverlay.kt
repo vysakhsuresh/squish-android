@@ -76,6 +76,12 @@ data class TextOverlayItem(
      */
     val wordColors: Map<Int, Int> = emptyMap(),
     /**
+     * Video seen through the letters (EDGE_PLAN E4): the line drawn as a card
+     * the size of the frame in its colour, its letters cut out. The line's
+     * own, not its style.
+     */
+    val knockout: Boolean = false,
+    /**
      * Where each word of an auto-caption starts, from [startMs], as the
      * segmenter heard them; empty for a line typed by hand. Read by the Words
      * arrival, so the words land on the speech.
@@ -123,6 +129,30 @@ data class TextOverlayItem(
         val sample = track?.sampleAt(timelineMs) ?: return xFraction to yFraction
         return sample.xFraction to sample.yFraction
     }
+
+    /**
+     * Where the painted picture of this line is drawn: its anchor - or, for a
+     * knockout card the size of the frame, the frame's middle. The letters of
+     * a card are cut at [cutAt] inside it instead.
+     */
+    fun drawnAt(timelineMs: Long): Pair<Float, Float> = if (knockout) 0.5f to 0.5f else anchorAt(timelineMs)
+
+    /** Where a knockout card's letters are cut: where the line stands. */
+    fun cutAt(timelineMs: Long): Pair<Float, Float> = anchorAt(timelineMs)
+
+    /** The turn the painted picture is drawn at: the line's own and its motion's; none for a card, whose letters are cut turned. */
+    fun drawnTurn(frame: TextFrame): Float = if (knockout) 0f else rotationDegrees + frame.tilt
+
+    /** The turn a knockout card's letters are cut at. */
+    fun cutTurn(frame: TextFrame): Float = rotationDegrees + frame.tilt
+
+    /**
+     * The motion the painted picture is drawn with. A card never rises off the
+     * frame or shrinks inside it - its edge would show the picture round it -
+     * so it keeps only its fade and a scale that grows it.
+     */
+    fun drawnFrame(frame: TextFrame): TextFrame =
+        if (!knockout) frame else frame.copy(rise = 0f, tilt = 0f, scale = frame.scale.coerceAtLeast(1f))
 
     /** The style alone: what Apply to all, Copy style and a saved style carry. */
     val style: TextStyleSpec

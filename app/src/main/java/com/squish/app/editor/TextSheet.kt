@@ -1057,6 +1057,22 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
         // colour, a colour for single words.
         if (!item.isShape) PanelSurface(accent = SquishColors.Amber) {
             PanelHeading("Depth", "Gradient, bend and glow", accent = SquishColors.Amber)
+            if (!item.sticker) {
+                // EDGE_PLAN E4: the video seen through the letters, the rest of
+                // the frame a card in the line's colour.
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Video through the letters", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+                        Text("The frame fills with the text colour; the video shows only inside the words.",
+                            style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+                    }
+                    com.squish.app.ui.components.SquishToggleSwitch(
+                        checked = item.knockout,
+                        onCheckedChange = { on -> restyle { it.copy(knockout = on) } },
+                        label = "Video through the letters"
+                    )
+                }
+            }
             ChipRow("Fill", GRADIENT_FILLS, GRADIENT_FILLS.firstOrNull { it.second == item.fill.colors } ?: GRADIENT_FILLS.first().takeIf { !item.fill.isGradient }, { it.first }) { pick ->
                 restyle { it.copy(fill = if (pick.second.isEmpty()) TextFill.SOLID else TextFill(pick.second, it.fill.angleDegrees)) }
             }

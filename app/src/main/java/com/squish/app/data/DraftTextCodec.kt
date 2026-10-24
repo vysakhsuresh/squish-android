@@ -59,6 +59,7 @@ internal object DraftTextCodec {
         if (item.wordStartsMs.isNotEmpty()) put("wordStarts", JSONArray(item.wordStartsMs))
         // A colour for single words (EDGE_PLAN E3), by their place in the line.
         if (item.wordColors.isNotEmpty()) put("wordColors", JSONObject().apply { item.wordColors.forEach { (k, v) -> put(k.toString(), v) } })
+        if (item.knockout) put("knockout", true)
         put("sticker", item.sticker)
         // Written only when it is one, so a draft of words is the shape it
         // always was and an older build reading this one simply finds no shape.
@@ -106,6 +107,7 @@ internal object DraftTextCodec {
             loop = enumOrNull<TextLoop>(json.optString("loop")) ?: TextLoop.None,
             loopMs = json.optLong("loopMs", TextAnimation.DEFAULT_LOOP_MS),
             wordStartsMs = json.optJSONArray("wordStarts")?.let { a -> (0 until a.length()).map { a.optLong(it) } }.orEmpty(),
+            knockout = json.optBoolean("knockout", false),
             wordColors = json.optJSONObject("wordColors")?.let { o -> o.keys().asSequence().mapNotNull { k -> k.toIntOrNull()?.let { it to o.optInt(k) } }.toMap() }.orEmpty(),
             sticker = json.optBoolean("sticker", false),
             shape = AnnotationShape.named(json.optString("shape").takeIf { it.isNotEmpty() }),

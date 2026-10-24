@@ -241,6 +241,15 @@ fun main() {
     check("24 reads 24", ExportSettings.rateLabel(24.0f) == "24 fps")
     check("an unknown rate reads as unknown", ExportSettings.rateLabel(0f) == "…")
 
+    // The encoder is told the rate the file is written at (seen on the moto 25 Oct:
+    // 240 fps footage dropped to 60 was still configured at 240, and the H.264
+    // encoder failed the export at once).
+    check("240 fps footage written at 60 tells the encoder 60", ExportSettings.encoderFrameRate(240f, 60) == 60f)
+    check("120 fps footage written at 30 tells the encoder 30", ExportSettings.encoderFrameRate(119.88f, 30) == 30f)
+    check("30 fps footage written at 60 tells the encoder its own 30", ExportSettings.encoderFrameRate(30f, 60) == 30f)
+    check("29.97 written at 30 keeps 29.97", ExportSettings.encoderFrameRate(29.97f, 30) == 29.97f)
+    check("an unknown rate tells the encoder the written one", ExportSettings.encoderFrameRate(0f, 30) == 30f)
+
     if (failures.isEmpty()) {
         println("PASS - the export sheet's arithmetic holds: rates, quality, the ceiling, defaults, the fit and the retry")
     } else {

@@ -8,6 +8,7 @@ import androidx.media3.common.C
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.Format
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.audio.SpeedChangingAudioProcessor
@@ -233,7 +234,7 @@ class VideoProcessor(private val context: Context) {
             // Left at its defaults for a cut. Media3 reads any requested encoder
             // setting - a bitrate included - as "this must be re-encoded", and
             // quietly re-encodes the whole file instead of copying it.
-            val encoderFactory = DefaultEncoderFactory.Builder(context)
+            val defaultEncoders = DefaultEncoderFactory.Builder(context)
                 .apply {
                     if (!trimOnly) {
                         setRequestedVideoEncoderSettings(
@@ -245,6 +246,23 @@ class VideoProcessor(private val context: Context) {
                     }
                 }
                 .build()
+            // The encoder told the rate the file is written at
+            // (ExportSettings.encoderFrameRate): Media3 configures it from the
+            // decoded footage, and 240 fps slow motion dropped to 60 failed the
+            // export before its first frame on the moto's H.264 encoder.
+            val writtenFps = frameRateOf(state)
+            val encoderFactory = if (trimOnly) defaultEncoders else object : androidx.media3.transformer.Codec.EncoderFactory {
+                override fun createForAudioEncoding(format: Format, logSessionId: android.media.metrics.LogSessionId?) =
+                    defaultEncoders.createForAudioEncoding(format, logSessionId)
+                override fun createForVideoEncoding(format: Format, logSessionId: android.media.metrics.LogSessionId?): androidx.media3.transformer.Codec {
+                    val rate = ExportSettings.encoderFrameRate(format.frameRate, writtenFps)
+                    val told = if (format.frameRate == rate) format else format.buildUpon().setFrameRate(rate).build()
+                    return defaultEncoders.createForVideoEncoding(told, logSessionId)
+                }
+                override fun isVideoFormatSupported(format: Format) = defaultEncoders.isVideoFormatSupported(format)
+                override fun audioNeedsEncoding() = defaultEncoders.audioNeedsEncoding()
+                override fun videoNeedsEncoding() = defaultEncoders.videoNeedsEncoding()
+            }
 
             // HEVC only where the sheet found an encoder for it (EditorUiState
             // .exportCodecHevc); asked of a phone without one, Media3 stops at

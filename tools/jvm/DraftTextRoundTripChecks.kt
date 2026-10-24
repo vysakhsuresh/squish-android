@@ -94,6 +94,7 @@ private fun wildLine(): TextOverlayItem = TextOverlayItem(
     padding = 1.4f,
     arc = -0.35f,
     wordColors = mapOf(0 to 0xFFFF00FF.toInt(), 2 to 0xFF00FFFF.toInt()),
+    knockout = true,
     wordStartsMs = listOf(0L, 420L, 910L, 1_500L),
     // A sticker *and* a shape is not a state the editor can make - a line is one
     // of the three kinds. It is set that way on purpose: the shape's three keys

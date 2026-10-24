@@ -177,16 +177,20 @@ object CaptionRenderer {
      * inside the box the full text needs - so typed text does not re-centre itself
      * letter by letter.
      */
-    fun render(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState? = null): Bitmap =
-        paint(item, shown, frameWidth, frameHeight, words).bitmap
+    fun render(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState? = null, cut: Cut? = null): Bitmap =
+        paint(item, shown, frameWidth, frameHeight, words, cut).bitmap
+
+    /** Where a knockout card's letters are cut (EDGE_PLAN E4): the line's place on the frame, 0..1, and its turn. */
+    data class Cut(val at: Pair<Float, Float>, val turnDegrees: Float)
 
     /**
      * [render], with the part of the picture that is the letters and their own
      * decoration. [words] is the line's [WordState] at this frame, from
      * [TextFrame.words]: which page is shown and which word is being said.
      */
-    fun paint(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState? = null): Painted {
+    fun paint(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState? = null, cut: Cut? = null): Painted {
         if (item.isShape) return paintShape(item, frameWidth, frameHeight)
+        if (item.knockout) return paintKnockout(item, shown, frameWidth, frameHeight, words, cut ?: Cut(item.xFraction to item.yFraction, item.rotationDegrees))
         val shortEdge = minOf(frameWidth, frameHeight).toFloat().coerceAtLeast(1f)
         val textSize = (item.sizeSp / 360f * shortEdge).coerceAtLeast(6f)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -417,6 +421,38 @@ object CaptionRenderer {
             bitmapWidth,
             bitmapHeight
         )
+    }
+
+    /**
+     * Video seen through the letters (EDGE_PLAN E4): a card the size of the
+     * frame in the line's colour, its letters cut out where the line stands,
+     * at its turn. The letters are the line's own painting - its font, size,
+     * bend and edge - so the hole is the shape of what the straight line
+     * would show. Its grab is the letters', so the box sits round them.
+     */
+    private fun paintKnockout(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState?, cut: Cut): Painted {
+        val w = frameWidth.coerceAtLeast(1)
+        val h = frameHeight.coerceAtLeast(1)
+        // The letters alone, solid, with nothing round them but their own edge.
+        val letters = paint(
+            item.copy(knockout = false, flipped = false, colorArgb = Color.WHITE, fill = TextFill.SOLID, glow = false,
+                shadow = com.squish.app.editor.TextShadow.NONE, background = com.squish.app.editor.TextBackground.NONE, wordColors = emptyMap()),
+            shown, frameWidth, frameHeight, words
+        )
+        val card = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(card)
+        canvas.drawColor(withOpacity(item.colorArgb, 1f))
+        val cx = cut.at.first * w
+        val cy = cut.at.second * h
+        canvas.save()
+        canvas.rotate(cut.turnDegrees, cx, cy)
+        if (item.flipped) canvas.scale(-1f, 1f, cx, cy)
+        canvas.drawBitmap(
+            letters.bitmap, cx - letters.bitmap.width / 2f, cy - letters.bitmap.height / 2f,
+            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT) }
+        )
+        canvas.restore()
+        return Painted(card, letters.grabWidth, letters.grabHeight)
     }
 
     /** The second edge (EDGE_PLAN E3): its width reaches past the first edge by its own. */

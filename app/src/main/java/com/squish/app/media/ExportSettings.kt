@@ -51,6 +51,20 @@ object ExportSettings {
      */
     const val AUTO_MAX_FPS = 60f
 
+    /**
+     * The frame rate an encoder is configured with: the footage's own, unless
+     * frames are dropped to write [writtenFps], and never more than what is
+     * written. Media3 configures the encoder from the decoded footage, so 240
+     * fps slow-motion footage written at 60 asked the phone's H.264 encoder
+     * for 240 frames a second, and it failed the export before the first
+     * (seen on the moto, 25 October).
+     */
+    fun encoderFrameRate(sourceFps: Float, writtenFps: Int): Float = when {
+        !sourceFps.isFinite() || sourceFps <= 0f -> writtenFps.toFloat()
+        sourceFps > writtenFps + 0.5f -> writtenFps.toFloat()
+        else -> sourceFps
+    }
+
     /** The rate the file is written at: the choice, or the footage's own (up to [AUTO_MAX_FPS]) when none was made. */
     fun effectiveFps(outputFps: Int, sourceFps: Float): Float = when {
         outputFps > 0 -> outputFps.toFloat()

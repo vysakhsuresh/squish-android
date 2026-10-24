@@ -135,6 +135,7 @@ run noisereduce "$SRC/media/audio/Fft.kt" "$SRC/media/audio/NoiseReducer.kt" too
 run effectkeys $TIMELINE tools/jvm/EffectKeysChecks.kt
 run groups $TIMELINE tools/jvm/GroupChecks.kt
 run textdepth $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" "$SRC/editor/Annotation.kt" "$SRC/editor/TextOverlay.kt" tools/jvm/TextDepthChecks.kt
+run knockout $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" "$SRC/editor/Annotation.kt" "$SRC/editor/TextOverlay.kt" tools/jvm/KnockoutChecks.kt
 run draftfields tools/jvm/DraftFieldChecks.kt
 run runners   tools/jvm/RunnerChecks.kt
 run draftkeys tools/jvm/DraftKeyChecks.kt

@@ -110,12 +110,15 @@ fun CaptionLayer(
             val shown = CaptionRenderer.shownText(item, look)
             if (shown.isBlank() && !item.isShape) continue
 
+            // A knockout card (EDGE_PLAN E4) has its letters cut where the line
+            // stands, at its turn: those are part of what is painted.
+            val cut = if (item.knockout) CaptionRenderer.Cut(item.cutAt(timeMs), item.cutTurn(look)) else null
             val key = "${item.id}/${item.style}/${item.flipped}/${item.align}/${item.motion}/" +
-                "${item.shape}/${item.shapeAspect}/${item.shapeFilled}/" +
+                "${item.shape}/${item.shapeAspect}/${item.shapeFilled}/${item.wordColors}/$cut/" +
                 "${item.text}/$shown/${look.words?.active}@${boxWidth}x$boxHeight"
             live.add(key)
             val (glyph, grab) = glyphs.getOrPut(key) {
-                val painted = CaptionRenderer.paint(item, shown, boxWidth, boxHeight, look.words)
+                val painted = CaptionRenderer.paint(item, shown, boxWidth, boxHeight, look.words, cut)
                 PaintedLetters(painted.bitmap.asImageBitmap(), TextBox(painted.grabWidth.toFloat(), painted.grabHeight.toFloat()))
             }
             if (boxes != null && (shown == item.text || look.words != null)) {
@@ -125,19 +128,22 @@ fun CaptionLayer(
                 if (boxes[item.id] != grab) boxes[item.id] = grab
             }
 
-            val (x, y) = item.anchorAt(timeMs)
+            // A knockout card is drawn at the frame's middle, never turned or
+            // raised as a whole; its letters were cut in place (drawnAt).
+            val drawn = item.drawnFrame(look)
+            val (x, y) = item.drawnAt(timeMs)
             val cx = boxLeft + x * boxWidth
-            val cy = boxTop + (y - look.rise) * boxHeight
-            val w = glyph.width * look.scale
-            val h = glyph.height * look.scale
-            rotate(degrees = item.rotationDegrees + look.tilt, pivot = Offset(cx, cy)) {
+            val cy = boxTop + (y - drawn.rise) * boxHeight
+            val w = glyph.width * drawn.scale
+            val h = glyph.height * drawn.scale
+            rotate(degrees = item.drawnTurn(look), pivot = Offset(cx, cy)) {
                 drawImage(
                     image = glyph,
                     srcOffset = IntOffset.Zero,
                     srcSize = IntSize(glyph.width, glyph.height),
                     dstOffset = IntOffset((cx - w / 2f).roundToInt(), (cy - h / 2f).roundToInt()),
                     dstSize = IntSize(w.roundToInt().coerceAtLeast(1), h.roundToInt().coerceAtLeast(1)),
-                    alpha = (look.alpha * item.opacity).coerceIn(0f, 1f)
+                    alpha = (drawn.alpha * item.opacity).coerceIn(0f, 1f)
                 )
             }
         }
