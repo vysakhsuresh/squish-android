@@ -31,9 +31,9 @@ one line of evidence. P items are also ticked in `docs/INSHOT_PARITY.md`.
 - [ ] **C3** Timeline at the panel's rate
 - [ ] **C7** Flows like water (owner's standing bar - see below)
 - [ ] **C4** More layers
-- [ ] **D3** Keyframes on effects
-- [ ] **D4** Group editing
-- [ ] **D5** Before/after hold
+- [~] **D3** Keyframes on effects - Strength and the knob keyed on a placed effect with the keyframe button and D2's curves, diamonds on its row, read by the effects pass in the preview and the file (83fce6c; EffectKeysChecks and the state round trip, negative-tested). Not seen on the phone yet
+- [~] **D4** Group editing - Group/Ungroup and a set Duplicate on the multi-selection toolbar; a group selects whole and moves, shifts and deletes as the selection does; copies keep their spacing one span later (c6cb1f8; GroupChecks and the state round trip, negative-tested). Not seen on the phone yet
+- [x] **D5** Before/after hold - on Looks, Filters, Adjust, Effects and an effect's Strength (holdShowsBefore, checked), a finger held still on the picture for 400 ms draws it ungraded with no effects until it lifts (946ee8e). SEEN on the moto 25 Oct on Filters with Moonlit: the yellow bar (241,255,17) graded, (255,255,0) held, (241,255,17) again on release, and the hold did not start playback. A preview-only control, so there is no file to check
 - [~] **E3** Text depth - built (db060c1): gradient fill, glow colour and reach, a second edge, bubble padding, a bend, a colour per word, 31 title templates, one renderer (TextDepthChecks, negative-tested; drafts round-trip every new field). SEEN on the moto 25 Oct: the Fire template's gradient and red glow; Bend at 41% drew the line from the arc's middle off its end at first - fixed (path text runs from its offset whatever the alignment) and seen as an even arch. Not seen: Pop art/Comic second edges, word colours, the padding slider, a bent line in a file other than through E4
 - [x] **E4** Text mask - knockout text: the line drawn as a full-frame card in its colour with its letters cut out, through the one caption renderer, the card never turned or raised (KnockoutChecks, negative-tested). SEEN on the moto 25 Oct in the preview and a 480p export: a bent, gradient "HOT DEAL" as a yellow card with the video through the letters, in the same place in both
 - [ ] **E5** Downloadable on-device voices
