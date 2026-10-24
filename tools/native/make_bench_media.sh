@@ -121,7 +121,7 @@ run matrix/h264.flv -f lavfi -i "testsrc2=size=1280x720:rate=30" $(aud 5 440) -f
 run matrix/h264.mkv -f lavfi -i "testsrc2=size=1280x720:rate=30" $(aud 5 440) -filter_complex "$MIX" -map 0:v -map "[a]" -t 5 $SMALL
 run matrix/vp9.webm -f lavfi -i "testsrc2=size=1280x720:rate=30" $(aud 5 440) -filter_complex "$MIX" -map 0:v -map "[a]" -t 5 -c:v libvpx-vp9 -b:v 2M -deadline realtime -c:a libopus
 run matrix/h264.mov -f lavfi -i "testsrc2=size=1280x720:rate=30" $(aud 5 440) -filter_complex "$MIX" -map 0:v -map "[a]" -t 5 $SMALL
-run matrix/h263.3gp -f lavfi -i "testsrc2=size=352x288:rate=15" -f lavfi -i "sine=frequency=440:sample_rate=8000:duration=5" -map 0:v -map 1:a -t 5 -c:v h263 -c:a libopencore_amrnb -ar 8000 -ac 1
+run matrix/h263.3gp -f lavfi -i "testsrc2=size=352x288:rate=15" -f lavfi -i "sine=frequency=440:sample_rate=16000:duration=5" -map 0:v -map 1:a -t 5 -c:v h263 -c:a aac -ar 16000 -ac 1 -b:a 32k
 
 # Sound: six channels, and none at all.
 run matrix/audio_6ch.mp4 -f lavfi -i "testsrc2=size=1280x720:rate=30" -f lavfi -i "sine=frequency=300:sample_rate=48000:duration=5" \
