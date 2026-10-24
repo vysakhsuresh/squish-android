@@ -640,7 +640,12 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             return
         }
 
-        val canTranscribe = Transcriber.isAvailable(app)
+        // The system recognizer where the phone has one (the fast path); Whisper
+        // where a speech model has been downloaded (EDGE_PLAN E1), which also
+        // gives every word its own time.
+        val system = Transcriber.isAvailable(app)
+        val whisper = !system && com.squish.app.media.audio.WhisperTranscriber.isReady(app)
+        val canTranscribe = system || whisper
         _state.update {
             it.copy(
                 captions = CaptionProgress(
@@ -667,9 +672,14 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         // missed than not speech at all.
         val wordless = ArrayList<PlannedCaption>()
         planned.forEachIndexed { index, plan ->
-            val words = if (canTranscribe) {
-                Transcriber.transcribe(app, plan.pcm, plan.segment, language)
-            } else null
+            // Whisper names its own language unless one was chosen: a phone set
+            // to English captioning a Malayalam clip is the case it exists for.
+            val heard = if (whisper) com.squish.app.media.audio.WhisperTranscriber.transcribe(app, plan.pcm, plan.segment, _state.value.captionLanguage) else null
+            val words = when {
+                system -> Transcriber.transcribe(app, plan.pcm, plan.segment, language)
+                whisper -> heard?.text
+                else -> null
+            }
             // A recogniser that ignores cancellation can still hand back words
             // after Stop; they must not land.
             currentCoroutineContext().ensureActive()
@@ -680,12 +690,17 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             } else {
                 // Where each word begins, from the sound, so the Words arrival lands them on the speech.
                 val count = text.split(' ').count { it.isNotBlank() }
-                val starts = if (count > 1) withContext(Dispatchers.Default) { SpeechSegmenter.wordStarts(plan.pcm, plan.segment, count) } else emptyList()
+                val starts = when {
+                    heard != null && heard.words.size == count && count > 1 -> heard.words.map { it.startMs }
+                    count > 1 -> withContext(Dispatchers.Default) { SpeechSegmenter.wordStarts(plan.pcm, plan.segment, count) }
+                    else -> emptyList()
+                }
                 if (landAutoCaption(run, plan, text, starts)) made++
             }
             _state.update { it.copy(captions = it.captions.copy(transcribed = transcribed, done = index + 1)) }
         }
         if (transcribed > 0) wordless.forEach { if (landAutoCaption(run, it, "", emptyList())) made++ }
+        if (whisper) com.squish.app.media.audio.WhisperTranscriber.release()
 
         _state.update {
             it.copy(

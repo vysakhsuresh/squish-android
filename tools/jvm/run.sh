@@ -128,6 +128,7 @@ run framecompare tools/jvm/FrameCompare.kt
 run exportjournal "$SRC/media/ExportJournal.kt" tools/jvm/ExportJournalChecks.kt
 run syncanalysis "$SRC/media/SyncAnalysis.kt" tools/jvm/SyncAnalysisChecks.kt
 run easing "$SRC/timeline/Keyframe.kt" tools/jvm/EasingChecks.kt
+run whispertext "$SRC/media/audio/WhisperText.kt" tools/jvm/WhisperTextChecks.kt
 run draftfields tools/jvm/DraftFieldChecks.kt
 run runners   tools/jvm/RunnerChecks.kt
 run draftkeys tools/jvm/DraftKeyChecks.kt

@@ -23,7 +23,7 @@ one line of evidence. P items are also ticked in `docs/INSHOT_PARITY.md`.
 - [~] **D1** Main clip on the picture: drag, pinch, turn - the selected main shot takes the overlay box (drag, pinch, turn, snap, the Resize and Edit corners; no Delete or Copy-on-top), measured in the canvas frame its placement is in, through withOverlayGeometry so it keys at the playhead when animated; not on a padded canvas yet (its frame differs); not seen on the phone (build with clean: TimelinePreview changed)
 - [~] **D2** Keyframe curves - Ease in, Ease out, Strong, Back, Bounce, Elastic and a two-handle Custom curve per key on placement, opacity, level, look strength and mask; one function for preview and export; EasingChecks (endpoints, monotone, overshoot, bezier inverse < 1e-4, fails with the solver weakened), ValueEasingChecks, draft round trip (fails 4 ways without the curve read back); not seen on the phone
 - [ ] **D6** Live preview audit: every slider previews live
-- [ ] **E1** Captions on every phone (Whisper on device)
+- [~] **E1** Captions on every phone (Whisper on device) - whisper.cpp (MIT, v1.7.5) as libsquishwhisper.so built by .github/workflows/whisper.yml (not yet fetched into jniLibs), model downloaded once through the online gate (Standard 57 MB / Better 181 MB, MIT weights), word times into wordStartsMs, auto language; WhisperTextChecks; system recognizer stays the fast path. Not seen: the library has not been built yet, nothing run on a phone
 - [ ] **E2** Caption styles for reels (+ P4 bilingual)
 - [ ] **F1** Smooth slow-mo (= P1)
 - [ ] **G1** Sound-effects library through an export (= P7)

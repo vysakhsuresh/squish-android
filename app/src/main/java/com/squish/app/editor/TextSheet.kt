@@ -360,12 +360,14 @@ fun TextPanel(
 
                 else -> Text(
                     "Squish listens for where the speech is and lays a caption on each line. " +
-                        "Where the device has on-device speech recognition it fills in the words too — " +
-                        "nothing is ever uploaded, so if your phone cannot do it here, it does not happen.",
+                        "Where the phone has speech recognition of its own, or a speech model you download once, " +
+                        "it fills in the words too - here on the phone; your video is never uploaded.",
                     style = MaterialTheme.typography.bodySmall,
                     color = SquishColors.TextSecondary
                 )
             }
+
+            SpeechModelCard()
 
             // The same place starts and stops it. While it runs, the button is the
             // way out - there was none, and a stuck run could only be left by
@@ -1511,3 +1513,72 @@ private fun TranslateCard(viewModel: EditorViewModel) {
 
 /** The colour Neon takes on white letters: the Neon title preset's pink. */
 private const val NEON_PINK = 0xFFFF4FD8.toInt()
+
+/**
+ * Words on a phone with no on-device recognizer (EDGE_PLAN E1): a speech
+ * model downloaded once, its size said first, through the online gate. After
+ * that Whisper runs here, on the phone; nothing about the video is sent - only
+ * the model is fetched. Shown only where it would change something.
+ */
+@Composable
+private fun SpeechModelCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val gate = com.squish.app.online.rememberOnlineGate()
+    var installed by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.squish.app.media.audio.WhisperModels.installed(context)) }
+    var progress by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Pair<Long, Long>?>(null) }
+    var job by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var failed by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    if (com.squish.app.media.audio.Transcriber.isAvailable(context) || !com.squish.app.media.audio.WhisperNative.loaded) return
+    installed?.let {
+        Text(
+            "Words come from the ${it.label.lowercase()} speech model on this phone - nothing is sent anywhere.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.Teal
+        )
+        return
+    }
+    Text(
+        "This phone has no speech recognition of its own. Download a speech model once and Squish writes the " +
+            "words itself, here on the phone - only the model is downloaded; your video is never sent.",
+        style = MaterialTheme.typography.bodySmall,
+        color = SquishColors.TextSecondary
+    )
+    val running = job
+    if (running != null) {
+        val (done, total) = progress ?: (0L to -1L)
+        Text(
+            if (total > 0) "Downloading ${done / 1_000_000} of ${total / 1_000_000} MB…" else "Downloading ${done / 1_000_000} MB…",
+            style = MaterialTheme.typography.bodySmall,
+            color = SquishColors.TextPrimary
+        )
+        com.squish.app.ui.components.SquishOutlinedButton(text = "Cancel download", modifier = Modifier.fillMaxWidth()) {
+            running.cancel(); job = null; progress = null
+        }
+        return
+    }
+    failed?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = SquishColors.Yellow) }
+    com.squish.app.media.audio.WhisperModels.all.forEach { model ->
+        com.squish.app.ui.components.SquishOutlinedButton(
+            text = "${model.label} speech model · ${model.approxMb} MB",
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            gate.request("A speech model (${model.approxMb} MB)") {
+                failed = null
+                job = scope.launch {
+                    try {
+                        com.squish.app.media.audio.WhisperModels.download(context, model) { d, t -> progress = d to t }
+                        installed = com.squish.app.media.audio.WhisperModels.installed(context)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        failed = "Couldn't download the model - check the connection and try again."
+                    } finally {
+                        job = null; progress = null
+                    }
+                }
+            }
+        }
+        Text(model.note, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+    }
+}
