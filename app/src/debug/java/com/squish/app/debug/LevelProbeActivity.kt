@@ -45,7 +45,9 @@ class LevelProbeActivity : Activity() {
                 var loud = -200.0
                 var at = 0
                 while (at + rate <= pcm.samples.size) { loud = maxOf(loud, db(at, at + rate)); at += rate / 4 }
-                "floor ${"%.1f".format(quiet)} dBFS, loudest second ${"%.1f".format(loud)} dBFS, gap ${"%.1f".format(loud - quiet)} dB"
+                // And the level every quarter second, for telling where sounds are.
+                val quarters = (0 until pcm.samples.size / (rate / 4)).joinToString(" ") { q -> "%.0f".format(db(q * rate / 4, (q + 1) * rate / 4)) }
+                "floor ${"%.1f".format(quiet)} dBFS, loudest second ${"%.1f".format(loud)} dBFS, gap ${"%.1f".format(loud - quiet)} dB; quarters: $quarters"
             }
             Log.i(TAG, "$uri: $line")
             text.text = line
