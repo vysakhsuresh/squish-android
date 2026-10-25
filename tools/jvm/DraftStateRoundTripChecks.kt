@@ -127,7 +127,8 @@ private fun wildState(): EditorUiState = EditorUiState(
     // Not the whole frame: a crop that came back full used not to be written at
     // all, and the panel still read Custom.
     cropRect = CropRect(0.08f, 0.12f, 0.9f, 0.94f),
-    canvasBackground = CanvasBackground(CanvasFill.Image, 0xFF334455.toInt(), "stills/backdrop.png"),
+    // Every field off its default, the F5 ones too, so a key the codec forgets to write fails here.
+    canvasBackground = CanvasBackground(CanvasFill.Image, 0xFF334455.toInt(), "stills/backdrop.png", color2Argb = 0xFF778899.toInt(), angleDegrees = 33f, pattern = com.squish.app.editor.CanvasPattern.Waves, patternCells = 17),
     textOverlays = listOf(
         TextOverlayItem(id = "line-1", text = "A line", startMs = 0L, endMs = 1_500L, colorArgb = 0xFFFFFFFF.toInt())
     ),

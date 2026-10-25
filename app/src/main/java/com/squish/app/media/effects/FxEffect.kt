@@ -14,6 +14,7 @@ import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
 import com.squish.app.editor.FxParams
 import com.squish.app.editor.TimedEffect
+import com.squish.app.media.ExportPlan
 import java.io.IOException
 
 /**
@@ -46,11 +47,23 @@ class FxEffect(
      * softening here and two in the file. From 13 up the library is on the
      * canvas, this pass carries the join alone, and the two agree.
      */
-    private val extraBlur: () -> Float = { 0f }
+    private val extraBlur: () -> Float = { 0f },
+    /**
+     * A transition's warp at the frame's presentation time (EDGE_PLAN F3,
+     * TransitionWarp): the surface's join in the preview, the shot's own join
+     * in the file, where this pass is put into that shot's chain for it.
+     */
+    private val warpAt: (Long) -> ExportPlan.Warp = { ExportPlan.Warp.NONE },
+    /**
+     * Straight alpha out, as it came in, instead of opaque: the file's pass on
+     * one shot of a join, whose fit margins and cut-outs the compositor must
+     * still see through to the backdrop under them.
+     */
+    private val keepAlpha: Boolean = false
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        FxShaderProgram(context, useHdr, effectsNow, overBlack, extraBlur)
+        FxShaderProgram(context, useHdr, effectsNow, overBlack, extraBlur, warpAt, keepAlpha)
 }
 
 private class FxShaderProgram(
@@ -58,7 +71,9 @@ private class FxShaderProgram(
     useHdr: Boolean,
     private val effectsNow: () -> List<TimedEffect>,
     private val overBlack: Boolean,
-    private val extraBlur: () -> Float
+    private val extraBlur: () -> Float,
+    private val warpAt: (Long) -> ExportPlan.Warp,
+    private val keepAlpha: Boolean
 ) : BaseGlShaderProgram(useHdr, /* texturePoolCapacity= */ 1) {
 
     private val glProgram: GlProgram = try {
@@ -77,11 +92,17 @@ private class FxShaderProgram(
         )
     }
 
-    override fun configure(inputWidth: Int, inputHeight: Int): Size = Size(inputWidth, inputHeight)
+    // The frame's width over its height, for the stages that draw round things.
+    private var aspect = 1f
+
+    override fun configure(inputWidth: Int, inputHeight: Int): Size {
+        aspect = if (inputHeight > 0) inputWidth.toFloat() / inputHeight else 1f
+        return Size(inputWidth, inputHeight)
+    }
 
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
         try {
-            val p = FxParams.at(effectsNow(), presentationTimeUs / 1000L)
+            val p = TransitionWarp.merged(FxParams.at(effectsNow(), presentationTimeUs / 1000L), warpAt(presentationTimeUs))
             glProgram.use()
             glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
             glProgram.setFloatsUniform("uOffset", floatArrayOf(p.offsetX, p.offsetY))
@@ -103,6 +124,14 @@ private class FxShaderProgram(
             glProgram.setFloatsUniform("uHue", floatArrayOf(p.hue))
             glProgram.setFloatsUniform("uTime", floatArrayOf(p.timeSec))
             glProgram.setFloatsUniform("uOverBlack", floatArrayOf(if (overBlack) 1f else 0f))
+            glProgram.setFloatsUniform("uLensA", p.lensA.toArray())
+            glProgram.setFloatsUniform("uLensB", p.lensB.toArray())
+            glProgram.setFloatsUniform("uLight", p.light.toArray())
+            glProgram.setFloatsUniform("uTone", p.tone.toArray())
+            glProgram.setFloatsUniform("uParticles", p.particles.toArray())
+            glProgram.setFloatsUniform("uGlitch2", p.glitch2.toArray())
+            glProgram.setFloatsUniform("uAspect", floatArrayOf(aspect))
+            glProgram.setFloatsUniform("uKeepAlpha", floatArrayOf(if (keepAlpha) 1f else 0f))
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         } catch (e: GlUtil.GlException) {

@@ -129,6 +129,15 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             _state.update { it.copy(canvasBackground = it.canvasBackground.copy(fill = CanvasFill.Colour, colorArgb = argb)) }
         }
 
+    /**
+     * A gradient's or a pattern's settings changed (EDGE_PLAN F5): a tap one
+     * step, a drag one step for the drag.
+     */
+    fun restyleCanvas(dragging: Boolean = false, change: (CanvasBackground) -> CanvasBackground) =
+        record("Background", gesture = if (dragging) "Canvas paint" else null) {
+            _state.update { it.copy(canvasBackground = change(it.canvasBackground)) }
+        }
+
     /** Background's Reset: the picture fills the frame again. */
     fun resetCanvasBackground() = record("Background") {
         _state.update { it.copy(canvasBackground = CanvasBackground.NONE) }

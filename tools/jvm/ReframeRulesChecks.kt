@@ -14,6 +14,33 @@ private val problems = mutableListOf<String>()
 private fun check(ok: Boolean, msg: String) { if (!ok) problems += msg }
 
 fun main() {
+    // --- EDGE_PLAN F8: choosing among what the detectors saw. ---
+    run {
+        val person = ReframeRules.Seen(0.3f, 0.5f, 0.2f, 0.6f, 0.8f, "person")
+        val chair = ReframeRules.Seen(0.7f, 0.6f, 0.4f, 0.5f, 0.9f, "chair")
+        val pick = ReframeRules.pickSubject(listOf(chair, person), previous = null)
+        check(pick != null && abs(pick[0] - 0.3f) < 1e-4f, "a bigger, surer chair was followed over a person: ${pick?.toList()}")
+        // A dog is followed when there is no person, a car when there is no dog.
+        val dog = ReframeRules.Seen(0.6f, 0.7f, 0.15f, 0.15f, 0.7f, "dog")
+        val car = ReframeRules.Seen(0.2f, 0.5f, 0.5f, 0.3f, 0.9f, "car")
+        check(ReframeRules.pickSubject(listOf(car, dog), null)?.get(0) == 0.6f, "a car was followed over a dog")
+        check(ReframeRules.pickSubject(listOf(car, chair), null)?.get(0) == 0.2f, "a chair was followed over a car")
+        // Two dogs alike: the one it was following, not the other.
+        val left = ReframeRules.Seen(0.25f, 0.5f, 0.15f, 0.15f, 0.7f, "dog")
+        val right = ReframeRules.Seen(0.75f, 0.5f, 0.16f, 0.16f, 0.72f, "dog")
+        check(ReframeRules.pickSubject(listOf(right, left), previous = floatArrayOf(0.27f, 0.5f))?.get(0) == 0.25f, "the crop jumped to the other dog")
+        // Guesses and nothing: nothing.
+        check(ReframeRules.pickSubject(listOf(person.copy(score = 0.2f)), null) == null, "a 20% guess was followed")
+        check(ReframeRules.pickSubject(emptyList(), null) == null, "nothing seen picked something")
+        // An object ranks under a person found by the cut-out model and over motion.
+        val aimed = ReframeRules.aim(null, null, motion = floatArrayOf(0.1f, 0.1f), thing = floatArrayOf(0.6f, 0.7f))
+        check(aimed[0] == 0.6f && aimed[2] == ReframeRules.OBJECT, "an object did not outrank motion: ${aimed.toList()}")
+        check(ReframeRules.aim(null, floatArrayOf(0.4f, 0.4f, 0.2f), motion = null, thing = floatArrayOf(0.6f, 0.7f))[2] == ReframeRules.PERSON, "an object outranked a person")
+        // The faces' middle, weighted to the bigger.
+        val faces = ReframeRules.faceCentre(listOf(ReframeRules.Seen(0.2f, 0.3f, 0.1f, 0.1f, 0.9f, "face"), ReframeRules.Seen(0.8f, 0.3f, 0.3f, 0.3f, 0.9f, "face")))
+        check(faces != null && faces[0] > 0.7f, "the faces' middle is not weighted to the near one: ${faces?.toList()}")
+    }
+
     // A person standing in the left third of a 64 x 36 frame.
     val w = 64
     val h = 36

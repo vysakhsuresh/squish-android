@@ -1,5 +1,7 @@
 package com.squish.app.editor
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.graphics.asImageBitmap
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -58,9 +60,13 @@ fun StickersPanel(viewModel: EditorViewModel) {
     var query by rememberSaveable { mutableStateOf("") }
     var recents by remember { mutableStateOf(StickerRecents.list(context)) }
 
+    // A GIF plays as a sticker (EDGE_PLAN F4, P6): copied in, read, placed.
+    val pickGif = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) viewModel.importGifWhenOpened(uri)
+    }
     val pickImages = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_STICKER_PICK)) { uris ->
         uris.forEach { context.keepReadAccess(it) }
-        viewModel.layers.addOverlayClips(uris)
+        viewModel.addOverlaysWhenOpened(uris)
     }
     // The keyboard goes once a sticker is picked from a search: left up, it kept
     // the picture shrunk to a corner just when the sticker was to be placed.
@@ -79,6 +85,13 @@ fun StickersPanel(viewModel: EditorViewModel) {
         // an emoji is what someone decorating one is after - and the first is
         // the harder thing to find elsewhere.
         ShapesCard(viewModel)
+
+        // The designed pack (EDGE_PLAN F4): drawn in code, so any size and colour.
+        DesignsCard(onAdd = { design ->
+            focus.clearFocus(force = true)
+            keyboard?.hide()
+            viewModel.text.addDesign(design)
+        })
 
         PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
@@ -198,7 +211,7 @@ fun StickersPanel(viewModel: EditorViewModel) {
         PanelSurface(accent = SquishColors.Amber) {
             PanelHeading(
                 "Your own",
-                "A PNG with transparency, a logo, a cut-out: it goes on an overlay row",
+                "A PNG with transparency, a logo, a cut-out on an overlay row - or a GIF, which plays",
                 accent = SquishColors.Amber
             )
             SquishOutlinedButton(text = "Import an image", modifier = Modifier.fillMaxWidth()) {
@@ -207,6 +220,9 @@ fun StickersPanel(viewModel: EditorViewModel) {
                         .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         .build()
                 )
+            }
+            SquishOutlinedButton(text = "Add a GIF that moves", modifier = Modifier.fillMaxWidth()) {
+                pickGif.launch(PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.SingleMimeType("image/gif")).build())
             }
         }
     }
@@ -218,7 +234,7 @@ fun StickersPanel(viewModel: EditorViewModel) {
  * precise one, each drag one undo step.
  */
 @Composable
-fun StickerPlacementPanel(sticker: TextOverlayItem, viewModel: EditorViewModel) {
+fun StickerPlacementPanel(sticker: TextOverlayItem, viewModel: EditorViewModel, onEyedropper: ((Int) -> Unit) -> Unit = {}) {
     val onDrag = { change: (TextOverlayItem) -> TextOverlayItem ->
         viewModel.text.restyleCaption(sticker.id, change, dragging = true)
     }
@@ -240,6 +256,28 @@ fun StickerPlacementPanel(sticker: TextOverlayItem, viewModel: EditorViewModel) 
         }
         LabeledSlider("Turn", sticker.rotationDegrees, -180f..180f, readout = Readout.degrees, onFinished = viewModel::endGesture) { v ->
             onDrag { it.copy(rotationDegrees = v) }
+        }
+        // A designed sticker (EDGE_PLAN F4) is a colour and a width as well: a
+        // price tag can be any colour and a label as long as its words.
+        if (sticker.isDesign) {
+            var pickerOpen by remember(sticker.id) { mutableStateOf(false) }
+            LabeledSlider(
+                "Width",
+                sticker.shapeAspect,
+                ShapeGeometry.MIN_ASPECT..ShapeGeometry.MAX_ASPECT,
+                readout = Readout.times,
+                onFinished = viewModel::endGesture
+            ) { v -> onDrag { it.copy(shapeAspect = v) } }
+            ColourRow(
+                title = "Colour",
+                argb = sticker.colorArgb,
+                open = pickerOpen,
+                onOpen = { pickerOpen = it },
+                onPick = { colour -> viewModel.text.restyleCaption(sticker.id, { it.copy(colorArgb = colour) }) },
+                onDrag = { colour -> onDrag { it.copy(colorArgb = colour) } },
+                onFinished = viewModel::endGesture,
+                onEyedropper = onEyedropper
+            )
         }
         OptionToggle(label = if (sticker.flipped) "Facing the other way" else "Flip to face the other way", active = sticker.flipped) {
             viewModel.text.flip(sticker.id)
@@ -362,3 +400,67 @@ private const val RECENT = "recent"
 
 /** The most images one pick brings in as stickers. */
 private const val MAX_STICKER_PICK = 10
+
+/**
+ * The designed stickers, a shelf at a time: callouts, the follow-and-like
+ * buttons, arrows, frames, highlights and price tags. Each tile is the
+ * sticker itself, painted by the renderer that paints it on the picture and
+ * in the file, so the tile is what lands.
+ */
+@Composable
+private fun DesignsCard(onAdd: (StickerDesign) -> Unit) {
+    var shelf by rememberSaveable { mutableStateOf(StickerDesign.Shelf.Callouts) }
+    PanelSurface(accent = SquishColors.Amber) {
+        PanelHeading(
+            "Designs",
+            "Buttons, callouts, frames and tags - recolour and retype them",
+            icon = androidx.compose.material.icons.Icons.Filled.EmojiEmotions,
+            accent = SquishColors.Amber
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
+            StickerDesign.Shelf.entries.forEach { s ->
+                SelectableChip(label = s.label, selected = shelf == s, accentColor = SquishColors.Amber) { shelf = s }
+            }
+        }
+        StickerDesign.offered.filter { it.shelf == shelf }.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                row.forEach { design ->
+                    val image = remember(design) { designTile(design) }
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(SquishColors.Background)
+                            .clickable(onClickLabel = "Add ${design.label}") { onAdd(design) }
+                            .padding(8.dp)
+                    ) {
+                        Box(modifier = Modifier.fillMaxWidth().height(56.dp), contentAlignment = Alignment.Center) {
+                            androidx.compose.foundation.Image(
+                                bitmap = image,
+                                contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                modifier = Modifier.fillMaxWidth().height(56.dp)
+                            )
+                        }
+                        Text(design.label, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted, maxLines = 1)
+                    }
+                }
+                repeat(3 - row.size) { Box(modifier = Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** A design as it lands, painted once for its tile. */
+private fun designTile(design: StickerDesign): androidx.compose.ui.graphics.ImageBitmap {
+    val item = TextOverlayItem(
+        id = "tile", text = design.words, startMs = 0, endMs = 1, colorArgb = design.colour,
+        sizeSp = 120, bold = true, sticker = true, design = design, shapeAspect = design.aspect
+    )
+    return com.squish.app.media.CaptionRenderer.paint(item, design.words, 360, 360).bitmap.asImageBitmap()
+}

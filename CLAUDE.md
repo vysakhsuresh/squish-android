@@ -255,6 +255,20 @@ not here.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **25 October, with the phone away: EDGE_PLAN F2, F3 and F4.** Forty more
+  effects, twenty-five more transitions, a designed sticker pack and GIF
+  stickers - `docs/EDGE_PLAN.md` says what each is and what checks it. First on
+  a device, because a shader that does not compile takes every effect with it:
+  open Effects and see the Light, Particles and Lens tiles move, then export
+  one effect from each shelf and one transition from each tab and read the
+  frames against the preview. Then a Heart and a Cube between two different
+  shots; a GIF from the phone on a clip, exported, with no black box behind
+  it; a Price tag retyped and recoloured. **Also found that day:**
+  `tools/jvm/run_media3.sh` had not parsed since the G2 commit (a literal `\n`
+  and a `| tail` on a line of its own), so every Media3 suite after its first
+  two - the draft round trips among them - had silently stopped running.
+  `RunnerChecks` now refuses both marks.
+
 - **24 October: the FFmpeg seek deadlock and the library.** Seen on the moto:
   a 51-minute 10-bit HEVC MKV froze black after a jump down the strip
   (`AvCodecAdapter.flush` and its worker deadlocked - jdb thread dump); fixed,

@@ -14,8 +14,15 @@ enum class CanvasFill(val label: String) {
     Colour("Colour"),
     /** A blurred copy of the shot itself, the way reels are made from landscape footage. */
     Blur("Blur"),
-    Image("Image")
+    Image("Image"),
+    /** Two colours blended across the canvas at an angle (EDGE_PLAN F5, P5). */
+    Gradient("Gradient"),
+    /** Dots, stripes, a grid, checks or waves in two colours (EDGE_PLAN F5, P5). */
+    Pattern("Pattern")
 }
+
+/** The patterns a canvas can be filled with; CanvasPaint draws them. */
+enum class CanvasPattern(val label: String) { Dots("Dots"), Stripes("Stripes"), Grid("Grid"), Checks("Checks"), Waves("Waves") }
 
 /**
  * The edit's background: what a ratio's canvas is filled with around the
@@ -27,7 +34,14 @@ data class CanvasBackground(
     val fill: CanvasFill = CanvasFill.Crop,
     val colorArgb: Int = DEFAULT_COLOUR,
     /** The picture behind the footage, for [CanvasFill.Image]; a file this app keeps under files/stills/. */
-    val imageUri: String? = null
+    val imageUri: String? = null,
+    /** A gradient's or a pattern's second colour; [colorArgb] is the first. */
+    val color2Argb: Int = DEFAULT_COLOUR_2,
+    /** Which way a gradient runs, in degrees clockwise from left-to-right. */
+    val angleDegrees: Float = 90f,
+    val pattern: CanvasPattern = CanvasPattern.Dots,
+    /** How many of a pattern's cells across the canvas's short edge. */
+    val patternCells: Int = 10
 ) {
     /** Whether the footage is fitted inside the canvas over a backdrop rather than filling it. */
     val pads: Boolean get() = fill != CanvasFill.Crop && (fill != CanvasFill.Image || imageUri != null)
@@ -35,6 +49,9 @@ data class CanvasBackground(
     companion object {
         val NONE = CanvasBackground()
         const val DEFAULT_COLOUR: Int = 0xFF101828.toInt()
+        const val DEFAULT_COLOUR_2: Int = 0xFF7C4DFF.toInt()
+        const val MIN_CELLS = 3
+        const val MAX_CELLS = 40
     }
 }
 

@@ -130,6 +130,11 @@ internal object DraftCodec {
             put("canvasFill", state.canvasBackground.fill.name)
             put("canvasColour", state.canvasBackground.colorArgb)
             state.canvasBackground.imageUri?.let { put("canvasImage", it) }
+            // A gradient's and a pattern's (EDGE_PLAN F5); read back as the defaults where an older build wrote none.
+            put("canvasColour2", state.canvasBackground.color2Argb)
+            putFinite("canvasAngle", state.canvasBackground.angleDegrees)
+            put("canvasPattern", state.canvasBackground.pattern.name)
+            put("canvasCells", state.canvasBackground.patternCells)
         }
         putFinite("pixelsPerSecond", state.pixelsPerSecond)
         put("markers", JSONArray().apply { state.markers.forEach { put(it) } })
@@ -266,7 +271,12 @@ internal object DraftCodec {
                 CanvasBackground(
                     fill = fill,
                     colorArgb = json.optInt("canvasColour", CanvasBackground.DEFAULT_COLOUR),
-                    imageUri = json.optString("canvasImage").takeIf { it.isNotBlank() }
+                    imageUri = json.optString("canvasImage").takeIf { it.isNotBlank() },
+                    color2Argb = json.optInt("canvasColour2", CanvasBackground.DEFAULT_COLOUR_2),
+                    // With its default named, as optDouble alone answers NaN for a draft that has no such key.
+                    angleDegrees = json.optDouble("canvasAngle", 90.0).toFloat().takeIf { it.isFinite() } ?: 90f,
+                    pattern = enumOrNull<com.squish.app.editor.CanvasPattern>(json.optString("canvasPattern")) ?: com.squish.app.editor.CanvasPattern.Dots,
+                    patternCells = json.optInt("canvasCells", 10).coerceIn(CanvasBackground.MIN_CELLS, CanvasBackground.MAX_CELLS)
                 )
             } ?: CanvasBackground.NONE,
             effects = json.optJSONArray("effects")?.let { array ->

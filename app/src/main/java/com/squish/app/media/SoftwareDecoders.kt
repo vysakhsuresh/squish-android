@@ -111,7 +111,13 @@ object SoftwareDecoders {
     }
 
     private class FallbackDecoderFactory(private val context: Context) : Codec.DecoderFactory {
-        private val platform = DefaultDecoderFactory.Builder(context).build()
+        // With fallback on, a decoder that will not start is followed by the
+        // next one that takes the format, the phone's software decoder among
+        // them. Off - Media3's default - the first refusal failed the export:
+        // seen on the moto on 25 October, two 1080p H.264 shots with a join,
+        // the hardware decoder's second instance refusing its format ("failed
+        // to set format on port:IN") while the software one was never asked.
+        private val platform = DefaultDecoderFactory.Builder(context).setEnableDecoderFallback(true).build()
 
         private fun software(format: Format): Boolean =
             AvCodecs.isOwn(format) || (!MediaCompat.platformDecodes(context, format) && decodes(format))
@@ -129,7 +135,18 @@ object SoftwareDecoders {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && software(format)) {
                 AvTransformerCodecs.video(format, outputSurface)
             } else {
-                platform.createForVideoDecoding(format, outputSurface, requestSdrToneMapping, logSessionId)
+                try {
+                    platform.createForVideoDecoding(format, outputSurface, requestSdrToneMapping, logSessionId)
+                } catch (e: androidx.media3.transformer.ExportException) {
+                    // Every platform decoder refused to start: FFmpeg's, where
+                    // it can paint the surface (Android 13 on) and reads the
+                    // format, rather than the export failing. Not for a tone
+                    // map, which only the platform's decoders do.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !requestSdrToneMapping && decodes(format)) {
+                        android.util.Log.w("SquishExport", "no platform decoder would start for ${format.sampleMimeType}; FFmpeg's instead", e)
+                        AvTransformerCodecs.video(format, outputSurface)
+                    } else throw e
+                }
             }
     }
 }

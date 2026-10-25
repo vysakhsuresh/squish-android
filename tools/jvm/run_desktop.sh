@@ -20,7 +20,7 @@ run() {
 }
 TIMELINE="$SRC/timeline/SpeedRamp.kt $SRC/timeline/TimelineModels.kt $SRC/timeline/VoiceEffect.kt
   $SRC/timeline/TimelineLanes.kt $SRC/timeline/TimelineWindow.kt $SRC/timeline/Keyframe.kt $SRC/timeline/ValueTracks.kt $SRC/timeline/Mask.kt $SRC/timeline/ChromaKey.kt
-  $SRC/timeline/Background.kt $SRC/timeline/LayerBlend.kt $SRC/editor/TimedEffect.kt $SRC/editor/MotionPreset.kt $SRC/editor/PolishRules.kt
+  $SRC/timeline/Background.kt $SRC/timeline/LayerBlend.kt $SRC/media/TransitionShapes.kt $SRC/editor/TimedEffect.kt $SRC/editor/MotionPreset.kt $SRC/editor/PolishRules.kt
   $SRC/media/effects/ToneCurve.kt $SRC/media/effects/Lut.kt $SRC/media/effects/ColorWheels.kt $SRC/media/effects/SkinTone.kt $SRC/media/effects/Look.kt $SRC/editor/ClipCrop.kt $SRC/editor/CropRect.kt
   tools/jvm/stub/Waveform.kt tools/jvm/stub/EffectSpan.kt
   $SRC/media/video/ObjectTracker.kt $SRC/media/video/MotionEstimator.kt
@@ -71,6 +71,7 @@ run layerblend $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/LayerBlendChecks.k
 run editrules  $TIMELINE "$SRC/editor/EditRules.kt" tools/jvm/EditRulesChecks.kt
 run audiorules $TIMELINE "$SRC/editor/AudioRules.kt" tools/jvm/AudioRulesChecks.kt
 run exportplan $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/ExportPlanChecks.kt
+run tshapes    "$SRC/media/TransitionShapes.kt" tools/jvm/TransitionShapeChecks.kt
 run lanes      $TIMELINE tools/jvm/LaneChecks.kt
 run overlay    $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/media/ExportPlan.kt" tools/jvm/OverlayChecks.kt
 run text       $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" \
@@ -93,6 +94,8 @@ run stillprune "$SRC/media/StillPrune.kt" tools/jvm/StillPruneChecks.kt
 run timecode   $TIMELINE "$SRC/editor/Timecode.kt" tools/jvm/TimecodeChecks.kt
 run framerules $TIMELINE "$SRC/editor/PreviewBox.kt" "$SRC/media/ExportPresets.kt" tools/jvm/stub/Quality.kt \
                "$SRC/editor/FrameRules.kt" tools/jvm/FrameRulesChecks.kt
+run canvaspaint $TIMELINE "$SRC/editor/PreviewBox.kt" "$SRC/media/ExportPresets.kt" tools/jvm/stub/Quality.kt \
+               "$SRC/editor/FrameRules.kt" "$SRC/editor/CanvasPaint.kt" tools/jvm/CanvasPaintChecks.kt
 
 # 30 September: the listening tools, layouts, GIF, auto adjust, translation.
 run voicecleaner "$SRC/media/audio/VoiceCleaner.kt" tools/jvm/VoiceCleanerChecks.kt
@@ -104,6 +107,7 @@ run beatspread $TIMELINE $SRC/timeline/BeatSpread.kt tools/jvm/BeatSpreadChecks.
 run liveliness $TIMELINE "$SRC/timeline/Liveliness.kt" tools/jvm/LivelinessChecks.kt
 run maskkeys   $TIMELINE tools/jvm/MaskKeyChecks.kt
 run shapes     "$SRC/editor/Annotation.kt" tools/jvm/ShapeChecks.kt
+run stickerart "$SRC/editor/Annotation.kt" "$SRC/editor/StickerArt.kt" tools/jvm/StickerArtChecks.kt
 run soundstickers "$SRC/editor/SoundStickers.kt" "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" tools/jvm/SoundStickerChecks.kt
 run templates  tools/jvm/TemplateChecks.kt
 run skin       "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/SpatialMoves.kt" tools/jvm/SkinChecks.kt
@@ -115,16 +119,20 @@ run exportjournal "$SRC/media/ExportJournal.kt" tools/jvm/ExportJournalChecks.kt
 run syncanalysis "$SRC/media/SyncAnalysis.kt" tools/jvm/SyncAnalysisChecks.kt
 run easing "$SRC/timeline/Keyframe.kt" tools/jvm/EasingChecks.kt
 run whispertext "$SRC/media/audio/WhisperText.kt" tools/jvm/WhisperTextChecks.kt
-run captionwords $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" "$SRC/editor/Annotation.kt" "$SRC/editor/TextOverlay.kt" tools/jvm/CaptionWordsChecks.kt
+run captionwords $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" "$SRC/editor/Annotation.kt" "$SRC/editor/StickerArt.kt" "$SRC/editor/TextOverlay.kt" tools/jvm/CaptionWordsChecks.kt
 run flowinterp "$SRC/media/video/MotionEstimator.kt" "$SRC/media/video/FlowInterp.kt" tools/jvm/FlowInterpChecks.kt
 run noisereduce "$SRC/media/audio/Fft.kt" "$SRC/media/audio/NoiseReducer.kt" tools/jvm/NoiseReduceChecks.kt
 run effectkeys $TIMELINE tools/jvm/EffectKeysChecks.kt
 run groups $TIMELINE tools/jvm/GroupChecks.kt
-run textdepth $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" "$SRC/editor/Annotation.kt" "$SRC/editor/TextOverlay.kt" tools/jvm/TextDepthChecks.kt
-run knockout $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" "$SRC/editor/Annotation.kt" "$SRC/editor/TextOverlay.kt" tools/jvm/KnockoutChecks.kt
+run textdepth $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" "$SRC/editor/Annotation.kt" "$SRC/editor/StickerArt.kt" "$SRC/editor/TextOverlay.kt" tools/jvm/TextDepthChecks.kt
+run knockout $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" "$SRC/editor/Annotation.kt" "$SRC/editor/StickerArt.kt" "$SRC/editor/TextOverlay.kt" tools/jvm/KnockoutChecks.kt
 run draftfields tools/jvm/DraftFieldChecks.kt
 run splitscreen $TIMELINE "$SRC/editor/MaskOutline.kt" "$SRC/timeline/SplitScreen.kt" tools/jvm/SplitScreenChecks.kt
 run gif        "$SRC/media/gif/GifEncoder.kt" "$SRC/media/gif/GifSize.kt" tools/jvm/GifChecks.kt
+run gifdecode  "$SRC/media/gif/GifEncoder.kt" "$SRC/media/gif/GifDecoder.kt" tools/jvm/GifDecodeChecks.kt
+run maskrefine "$SRC/media/video/MaskRefine.kt" tools/jvm/MaskRefineChecks.kt
+run cleanup    "$SRC/media/video/CleanUp.kt" tools/jvm/CleanUpChecks.kt
+run exporterrors "$SRC/media/ExportErrorKinds.kt" tools/jvm/ExportErrorKindsChecks.kt
 run autoadjust "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/ColorWheels.kt" "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
 run translatechunks "$SRC/online/OnlineTranslate.kt" tools/jvm/stub/translate/OnlineStub.kt tools/jvm/stub/translate/ContextStub.kt tools/jvm/stub/translate/JsonStub.kt tools/jvm/TranslateChunkChecks.kt
 # These four were in run.sh and not here, so the desktop - the only machine that

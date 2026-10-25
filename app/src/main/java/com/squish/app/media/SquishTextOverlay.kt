@@ -52,12 +52,13 @@ class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
         val frame = CaptionRenderer.frameAt(item, presentationTimeUs / 1000L) ?: return blank
         val shown = CaptionRenderer.shownText(item, frame)
         // A shape has no letters: it shows whenever its window does.
-        if (shown.isBlank() && !item.isShape) return blank
-        val active = frame.words?.active ?: -1
+        if (shown.isBlank() && !item.drawsWithoutWords) return blank
+        // A GIF's frame stands where the word being said does: it is what changes the picture.
+        val active = if (item.isGif) com.squish.app.media.gif.GifStickers.frameIndex(item, presentationTimeUs / 1000L - item.startMs) else frame.words?.active ?: -1
         // A knockout card's letters are cut where the line stands (EDGE_PLAN E4).
         val cut = if (item.knockout) CaptionRenderer.Cut(item.cutAt(presentationTimeUs / 1000L), item.cutTurn(frame)) else null
         if (shown == cachedText && active == cachedActive && cut == cachedCut) cached?.let { return it }
-        val bitmap = CaptionRenderer.render(item, shown, frameWidth, frameHeight, frame.words, cut)
+        val bitmap = CaptionRenderer.render(item, shown, frameWidth, frameHeight, frame.words, cut, presentationTimeUs / 1000L - item.startMs)
         cached = bitmap
         cachedText = shown
         cachedActive = active

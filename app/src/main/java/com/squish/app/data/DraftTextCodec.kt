@@ -63,6 +63,16 @@ internal object DraftTextCodec {
         put("sticker", item.sticker)
         // Written only when it is one, so a draft of words is the shape it
         // always was and an older build reading this one simply finds no shape.
+        // A designed sticker (EDGE_PLAN F4): its design, and its width over its height as a shape keeps it.
+        // A GIF sticker (EDGE_PLAN F4, P6): the copy it plays from, and its shape.
+        if (item.isGif) {
+            put("gif", item.gif)
+            putFinite("shapeAspect", item.shapeAspect)
+        }
+        if (item.isDesign) {
+            put("design", item.design.name)
+            putFinite("shapeAspect", item.shapeAspect)
+        }
         if (item.isShape) {
             put("shape", item.shape.name)
             putFinite("shapeAspect", item.shapeAspect)
@@ -114,6 +124,8 @@ internal object DraftTextCodec {
             shapeAspect = json.optDouble("shapeAspect", 1.0).toFloat()
                 .coerceIn(ShapeGeometry.MIN_ASPECT, ShapeGeometry.MAX_ASPECT),
             shapeFilled = json.optBoolean("shapeFilled", false),
+            design = com.squish.app.editor.StickerDesign.named(json.optString("design").takeIf { it.isNotEmpty() }),
+            gif = json.optString("gif").takeIf { it.isNotEmpty() },
             stripRow = json.optInt("stripRow", 0).coerceAtLeast(0),
             track = json.optJSONArray("track")?.let { array ->
                 MotionTrack(

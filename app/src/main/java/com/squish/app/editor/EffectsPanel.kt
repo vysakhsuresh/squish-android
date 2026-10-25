@@ -7,6 +7,14 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -87,7 +95,19 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
                 icon = Icons.Filled.Bolt,
                 accent = SquishColors.Blue
             )
-            EffectKind.entries.chunked(3).forEach { row ->
+            // Sixty-one effects in one grid was a scroll past every one to find
+            // any; one shelf at a time, as CapCut's library is. Remembered for
+            // the session, so a second effect of the same kind is one tap away.
+            var category by rememberSaveable { mutableStateOf(EffectCategory.Motion) }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            ) {
+                EffectCategory.entries.forEach { c ->
+                    SelectableChip(label = c.label, selected = category == c, onClick = { category = c })
+                }
+            }
+            EffectKind.entries.filter { it.category == category }.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     row.forEach { kind ->
                         EffectTile(kind = kind, frame = frame, modifier = Modifier.weight(1f)) {
@@ -147,17 +167,34 @@ private fun EffectTile(kind: EffectKind, frame: ImageBitmap?, modifier: Modifier
             .clickable(onClick = onClick, onClickLabel = "Add this effect")
             .padding(6.dp)
     ) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color.Black)
-        ) {
-            // The effect over a two-second stretch, at the strength it is added at.
-            val sample = TimedEffect(id = "sample", kind = kind, startMs = 0L, endMs = 2_000L)
-            val p = FxParams.at(listOf(sample), t.toLong())
-            if (frame != null) drawFrame(frame, p) else drawSample(p)
+        // The effect over a two-second stretch, at the strength it is added at.
+        val sample = remember(kind) { listOf(TimedEffect(id = "sample", kind = kind, startMs = 0L, endMs = 2_000L)) }
+        if (frame != null && CanvasFx.enabled) {
+            // From Android 13 the tile is the preview's own shader on the shot,
+            // so a lens, a light or a particle effect looks as it will - the
+            // Compose approximation below knows only the first twenty-one.
+            Image(
+                bitmap = frame,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black)
+                    .canvasFxTile(sample) { t.toLong() }
+            )
+        } else {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black)
+            ) {
+                val p = FxParams.at(sample, t.toLong())
+                if (frame != null) drawFrame(frame, p) else drawSample(p)
+            }
         }
         Text(
             kind.label,
@@ -490,7 +527,8 @@ fun EffectStrengthPanel(effect: TimedEffect, playheadMs: Long, viewModel: Editor
         // Another effect over the same stretch, at the same strength: CapCut's
         // Replace. It was delete, add again and drag both ends back.
         Text("Swap for", style = MaterialTheme.typography.labelMedium, color = SquishColors.TextSecondary)
-        SideScrollChips(EffectKind.entries.toList(), { it == effect.kind }, Modifier.fillMaxWidth()) { kind ->
+        // Its own shelf first: sixty-one chips in one row put the likely swaps a long scroll away.
+        SideScrollChips(EffectKind.entries.sortedBy { if (it.category == effect.kind.category) 0 else 1 }, { it == effect.kind }, Modifier.fillMaxWidth()) { kind ->
             SelectableChip(
                 label = kind.label,
                 selected = kind == effect.kind,

@@ -257,6 +257,16 @@ fun RatioPanel(state: EditorUiState, viewModel: EditorViewModel) {
     }
 }
 
+/** A few gradients to start from, each two of the swatches' kind of colour. */
+private val GRADIENT_PRESETS = listOf(
+    Triple("Sunset", 0xFFFF7A59.toInt(), 0xFF7C3AED.toInt()),
+    Triple("Ocean", 0xFF0EA5E9.toInt(), 0xFF1E3A8A.toInt()),
+    Triple("Mint", 0xFF34D399.toInt(), 0xFF0F766E.toInt()),
+    Triple("Peach", 0xFFFDE68A.toInt(), 0xFFF472B6.toInt()),
+    Triple("Night", 0xFF101828.toInt(), 0xFF4338CA.toInt()),
+    Triple("Fire", 0xFFFBBF24.toInt(), 0xFFEF4444.toInt())
+)
+
 private val CANVAS_COLOURS = listOf(
     0xFF000000.toInt(), 0xFF101828.toInt(), 0xFFFFFFFF.toInt(), 0xFF2563EB.toInt(),
     0xFF00B140.toInt(), 0xFFF472B6.toInt(), 0xFFFBBF24.toInt(), 0xFF7C3AED.toInt(), 0xFFEF4444.toInt()
@@ -318,6 +328,8 @@ fun CanvasPanel(
                 background.fill == CanvasFill.Crop -> "The picture fills the frame and is cut to its shape."
                 background.fill == CanvasFill.Colour -> "The picture is kept whole, on a colour."
                 background.fill == CanvasFill.Blur -> "The picture is kept whole, over a blurred copy of the shot."
+                background.fill == CanvasFill.Gradient -> "The picture is kept whole, on two colours blended across."
+                background.fill == CanvasFill.Pattern -> "The picture is kept whole, on a pattern."
                 else -> "The picture is kept whole, over a picture of your own."
             },
             style = MaterialTheme.typography.bodySmall,
@@ -353,6 +365,79 @@ fun CanvasPanel(
         }
         if (background.fill == CanvasFill.Image) {
             SquishOutlinedButton(text = "Choose another picture", modifier = Modifier.fillMaxWidth(), onClick = onPickImage)
+        }
+        // EDGE_PLAN F5: a gradient's two colours and its angle; a pattern's
+        // kind, its two colours and how fine it is. Each is painted once to the
+        // still the preview shows and the file lays under the picture.
+        if (background.fill == CanvasFill.Gradient || background.fill == CanvasFill.Pattern) {
+            val gradient = background.fill == CanvasFill.Gradient
+            if (gradient) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                ) {
+                    GRADIENT_PRESETS.forEach { (name, a, b) ->
+                        SelectableChip(
+                            label = name,
+                            selected = background.colorArgb == a && background.color2Argb == b,
+                            accentColor = SquishColors.Violet,
+                            onClick = { viewModel.clips.restyleCanvas { it.copy(colorArgb = a, color2Argb = b) } }
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                ) {
+                    CanvasPattern.entries.forEach { p ->
+                        SelectableChip(
+                            label = p.label,
+                            selected = background.pattern == p,
+                            accentColor = SquishColors.Violet,
+                            onClick = { viewModel.clips.restyleCanvas { it.copy(pattern = p) } }
+                        )
+                    }
+                }
+            }
+            listOf(
+                Triple(if (gradient) "From" else "Ground", background.colorArgb) { c: Int -> { b: CanvasBackground -> b.copy(colorArgb = c) } },
+                Triple(if (gradient) "To" else "Pattern", background.color2Argb) { c: Int -> { b: CanvasBackground -> b.copy(color2Argb = c) } }
+            ).forEach { (title, current, set) ->
+                Text(title, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                ) {
+                    CANVAS_COLOURS.forEach { argb ->
+                        ColourSwatch(colour = argb, selected = current == argb, onPick = { viewModel.clips.restyleCanvas(change = set(argb)) })
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(SquishColors.SurfaceElevated)
+                            .border(1.dp, SquishColors.Border, CircleShape)
+                            .clickable { onEyedropper { picked -> viewModel.clips.restyleCanvas(change = set(picked)) } },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.Colorize, contentDescription = "Pick the $title colour from the picture", tint = SquishColors.TextPrimary, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+            if (gradient) {
+                LabeledSlider("Angle", background.angleDegrees, 0f..360f, readout = Readout.degrees, onFinished = viewModel::endGesture) { v ->
+                    viewModel.clips.restyleCanvas(dragging = true) { it.copy(angleDegrees = v) }
+                }
+            } else {
+                LabeledSlider(
+                    "Size",
+                    background.patternCells.toFloat(),
+                    CanvasBackground.MIN_CELLS.toFloat()..CanvasBackground.MAX_CELLS.toFloat(),
+                    readout = { v -> "${v.toInt()} across" },
+                    onFinished = viewModel::endGesture
+                ) { v -> viewModel.clips.restyleCanvas(dragging = true) { it.copy(patternCells = v.toInt()) } }
+            }
         }
     }
 }

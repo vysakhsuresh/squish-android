@@ -170,6 +170,18 @@ sealed class SquishError(
         fix = "Add music or a voiceover, or convert the sound to AAC on a computer to keep it."
     )
 
+    /**
+     * Every decoder that could read the clip refused to start - the hardware
+     * holding as many streams as it will, the software one refusing too. Not
+     * the file: the same clip decodes when fewer are open (ExportErrorKinds).
+     */
+    class DecoderBusy(cause: Throwable? = null) : SquishError(
+        title = "No video decoder free right now",
+        detail = "This phone can only decode so many videos at once, and the export needed one more than it had free. The clip itself is fine.",
+        fix = "Close other apps that play or record video and export again. A lower size or fewer overlapping clips also needs fewer at once.",
+        cause = cause
+    )
+
     class EncoderUnavailable(cause: Throwable? = null) : SquishError(
         title = "No encoder free right now",
         detail = "Android gives out a limited number of hardware encoders. Another app - a camera, a screen recorder, a call - is holding the one Squish needs.",
@@ -367,6 +379,13 @@ sealed class SquishError(
         title = "Couldn't read that aloud",
         detail = "The phone's text-to-speech engine made no sound for this line. Nothing was sent anywhere; the voice is the phone's own.",
         fix = "Check a text-to-speech voice is installed under Settings › Accessibility › Text-to-speech, then try again."
+    )
+
+    /** A GIF picked for a sticker that GifDecoder could not read (EDGE_PLAN F4); [why] is its own sentence. */
+    class GifUnreadable(why: String?) : SquishError(
+        title = "That GIF can't be used as a sticker",
+        detail = why ?: "The file opened, but it did not read as a GIF.",
+        fix = "Try another GIF, or save it again from where it came from."
     )
 
     class FontUnreadable : SquishError(
@@ -630,24 +649,19 @@ sealed class SquishError(
 
         private fun soundName(label: String): String = label.takeIf { it.isNotBlank() } ?: "sound"
 
-        private fun fromExport(e: ExportException): SquishError = when {
-            e.cause is OutOfMemoryError -> OutOfMemory(e)
-            else -> when (e.errorCode) {
-                CODE_IO_FILE_NOT_FOUND, CODE_IO_NO_PERMISSION -> FileUnreadable(e)
-                CODE_DECODING_FORMAT_UNSUPPORTED -> UnsupportedCodec(codecHintOf(e), e)
-                CODE_ENCODING_FORMAT_UNSUPPORTED -> ResolutionTooHigh(e)
-                CODE_ENCODER_INIT_FAILED -> EncoderUnavailable(e)
-                // A composition the pipeline refused to start. The commonest
-                // reason by far is inputs that disagree with each other.
-                CODE_FAILED_RUNTIME_CHECK -> MixedSources(e)
-                in BAND_IO -> FileUnreadable(e)
-                in BAND_DECODING -> UnsupportedCodec(codecHintOf(e), e)
-                in BAND_ENCODING -> EncoderUnavailable(e)
-                in BAND_VIDEO_FRAME -> FrameProcessingFailed(e)
-                in BAND_AUDIO -> AudioProcessingFailed(e)
-                in BAND_MUXING -> MuxingFailed(e)
-                else -> Unknown(e)
-            }
+        // The mapping is ExportErrorKinds', which is checked on the JVM.
+        private fun fromExport(e: ExportException): SquishError = when (ExportErrorKinds.of(e.errorCode, e.cause is OutOfMemoryError)) {
+            ExportErrorKinds.Kind.OutOfMemory -> OutOfMemory(e)
+            ExportErrorKinds.Kind.FileUnreadable, ExportErrorKinds.Kind.FileUnreadableBand -> FileUnreadable(e)
+            ExportErrorKinds.Kind.DecoderBusy -> DecoderBusy(e)
+            ExportErrorKinds.Kind.UnsupportedCodec -> UnsupportedCodec(codecHintOf(e), e)
+            ExportErrorKinds.Kind.ResolutionTooHigh -> ResolutionTooHigh(e)
+            ExportErrorKinds.Kind.EncoderBusy -> EncoderUnavailable(e)
+            ExportErrorKinds.Kind.MixedSources -> MixedSources(e)
+            ExportErrorKinds.Kind.FrameProcessing -> FrameProcessingFailed(e)
+            ExportErrorKinds.Kind.AudioProcessing -> AudioProcessingFailed(e)
+            ExportErrorKinds.Kind.Muxing -> MuxingFailed(e)
+            ExportErrorKinds.Kind.Unknown -> Unknown(e)
         }
 
         /** Pulls a codec name out of the message when Media3 put one there. */

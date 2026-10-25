@@ -177,8 +177,8 @@ object CaptionRenderer {
      * inside the box the full text needs - so typed text does not re-centre itself
      * letter by letter.
      */
-    fun render(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState? = null, cut: Cut? = null): Bitmap =
-        paint(item, shown, frameWidth, frameHeight, words, cut).bitmap
+    fun render(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState? = null, cut: Cut? = null, elapsedMs: Long = 0L): Bitmap =
+        paint(item, shown, frameWidth, frameHeight, words, cut, elapsedMs).bitmap
 
     /** Where a knockout card's letters are cut (EDGE_PLAN E4): the line's place on the frame, 0..1, and its turn. */
     data class Cut(val at: Pair<Float, Float>, val turnDegrees: Float)
@@ -188,8 +188,11 @@ object CaptionRenderer {
      * decoration. [words] is the line's [WordState] at this frame, from
      * [TextFrame.words]: which page is shown and which word is being said.
      */
-    fun paint(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState? = null, cut: Cut? = null): Painted {
+    fun paint(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState? = null, cut: Cut? = null, elapsedMs: Long = 0L): Painted {
         if (item.isShape) return paintShape(item, frameWidth, frameHeight)
+        if (item.isDesign) return StickerPainter.paint(item, shown, frameWidth, frameHeight)
+        // A GIF plays by the time into the sticker ([elapsedMs]), round and round.
+        if (item.isGif) return com.squish.app.media.gif.GifStickers.paint(item, elapsedMs, frameWidth, frameHeight)
         if (item.knockout) return paintKnockout(item, shown, frameWidth, frameHeight, words, cut ?: Cut(item.xFraction to item.yFraction, item.rotationDegrees))
         val shortEdge = minOf(frameWidth, frameHeight).toFloat().coerceAtLeast(1f)
         val textSize = (item.sizeSp / 360f * shortEdge).coerceAtLeast(6f)

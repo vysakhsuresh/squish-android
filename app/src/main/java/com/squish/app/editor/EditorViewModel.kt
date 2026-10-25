@@ -1523,6 +1523,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Media picked for an overlay row, once the edit is open. */
     fun addOverlaysWhenOpened(uris: List<Uri>) = onceOpened { layers.addOverlayClips(uris) }
+    fun importGifWhenOpened(uri: Uri) = onceOpened { text.importGif(uri) }
 
     /** A picture picked for the canvas's background, once the edit is open. */
     fun setCanvasImageWhenOpened(uri: Uri) = onceOpened { clips.setCanvasImage(uri) }

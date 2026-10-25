@@ -111,6 +111,20 @@ data class TextOverlayItem(
     val shapeFilled: Boolean = false,
 
     /**
+     * A designed sticker (EDGE_PLAN F4, StickerArt): a callout, a button, a
+     * frame, a price tag. Its words are [text]; [sizeSp] is its height and
+     * [shapeAspect] its width over that, as a shape's are.
+     */
+    val design: StickerDesign = StickerDesign.None,
+
+    /**
+     * An animated GIF sticker (EDGE_PLAN F4, P6): the copy under
+     * files/stickers/ it plays from, frame by its own delays and round again.
+     * [sizeSp] is its height and [shapeAspect] its width over that.
+     */
+    val gif: String? = null,
+
+    /**
      * Pins this caption to something moving. Stored in timeline time, matching
      * [startMs] and [endMs], because that is the clock the overlay renderer is
      * already handed.
@@ -202,8 +216,17 @@ data class TextOverlayItem(
     /** A shape rather than words. */
     val isShape: Boolean get() = shape.isShape
 
+    /** A designed sticker: drawn from StickerArt, its words its own text. */
+    val isDesign: Boolean get() = design.isDesign
+
+    /** An animated GIF sticker. */
+    val isGif: Boolean get() = gif != null
+
+    /** Drawn whether or not it has words: a shape, a design, a GIF. */
+    val drawsWithoutWords: Boolean get() = isShape || isDesign || isGif
+
     /** What the strip and the lists call it: its words, or - a shape having none - the shape's name. */
-    val stripLabel: String get() = if (isShape) shape.label else text
+    val stripLabel: String get() = if (isShape) shape.label else if (isGif) "GIF" else if (isDesign && text.isBlank()) design.label else text
 
     /**
      * What this is, for the places that treat the three differently - Apply to
@@ -219,7 +242,7 @@ data class TextOverlayItem(
     /** The caption's state at [timeMs] of the timeline, or null when it is not on screen. */
     fun frameAt(timeMs: Long): TextFrame? {
         // A shape has no words to be blank: it is on screen whenever its window is.
-        if (timeMs < startMs || timeMs >= endMs || (text.isBlank() && !isShape)) return null
+        if (timeMs < startMs || timeMs >= endMs || (text.isBlank() && !drawsWithoutWords)) return null
         val total = (endMs - startMs).coerceAtLeast(1L)
         val frame = TextAnimation.frameAt(motion, motionOut, loop, motionInMs, motionOutMs, loopMs, timeMs - startMs, total, wordStartsMs)
         // Letters typed one at a time are not words said one at a time: a

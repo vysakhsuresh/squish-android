@@ -76,12 +76,14 @@ fun composite(rolls: List<List<Clip>>, colours: Map<String, Float>, timeUs: Long
  * whitened, then straight alpha over what is there.
  */
 fun drawPixel(d: ExportPlan.Draw, src: Float, dst: Float, x: Float, y: Float): Float {
-    val sx = (x - d.shiftX - 0.5f) / d.scale + 0.5f
-    val sy = (y - d.shiftY - 0.5f) / d.scale + 0.5f
+    // The squash and the turn undone first, about the pivot (EDGE_PLAN F3), on a square frame.
+    val (ux, uy) = d.unbent(x, y, 1f)
+    val sx = (ux - d.shiftX - 0.5f) / d.scale + 0.5f
+    val sy = (uy - d.shiftY - 0.5f) / d.scale + 0.5f
     val inside = sx >= 0f && sx <= 1f && sy >= 0f && sy <= 1f &&
         x >= d.keepFrom && x <= d.keepTo && y >= d.keepFromY && y <= d.keepToY
-    val a = if (inside) d.alpha.coerceIn(0f, 1f) else 0f
-    val lit = src + (1f - src) * d.white.coerceIn(0f, 1f)
+    val a = if (inside) d.alpha.coerceIn(0f, 1f) * d.coverageAt(x, y, 1f) else 0f
+    val lit = (src + (1f - src) * d.white.coerceIn(0f, 1f)) * (1f - d.shade.coerceIn(0f, 1f))
     return lit * a + dst * (1 - a)
 }
 
@@ -96,12 +98,30 @@ fun drawPixel(d: ExportPlan.Draw, src: Float, dst: Float, x: Float, y: Float): F
 fun shaderPixel(u: ExportPlan.ShaderUniforms, src: Float, dst: Float, x: Float, y: Float): Float {
     val uvx = x
     val uvy = 1f - y
-    val sx = (uvx - u.shiftX - 0.5f) / maxOf(u.scale, 0.001f) + 0.5f
-    val sy = (uvy - u.shiftY - 0.5f) / maxOf(u.scale, 0.001f) + 0.5f
+    // bent(): squish_transition_es2.glsl's, in the texture's own space, on a square frame.
+    var bx = uvx; var by = uvy
+    if (u.turn != 0f || u.squashX != 1f || u.squashY != 1f) {
+        var dx = uvx - u.pivotX
+        var dy = uvy - u.pivotY
+        val s = kotlin.math.sin(-u.turn); val k = kotlin.math.cos(-u.turn)
+        val rx = dx * k - dy * s
+        dy = dx * s + dy * k
+        dx = rx
+        bx = u.pivotX + dx / u.squashX
+        by = u.pivotY + dy / u.squashY
+    }
+    val sx = (bx - u.shiftX - 0.5f) / maxOf(u.scale, 0.001f) + 0.5f
+    val sy = (by - u.shiftY - 0.5f) / maxOf(u.scale, 0.001f) + 0.5f
     val inside = sx >= 0f && sx <= 1f && sy >= 0f && sy <= 1f &&
         uvx >= u.keepFromX && uvx <= u.keepToX && uvy >= u.keepFromY && uvy <= u.keepToY
-    val lit = src + (1f - src) * u.white
-    val a = if (inside) u.alpha else 0f
+    // The shape is read in the draw's space, the row turned back over.
+    var cover = 1f
+    if (u.shape > 0.5f) {
+        val c = com.squish.app.media.TransitionShapes.coverage(u.shape.toInt(), u.shapeAt, uvx, 1f - uvy, 1f)
+        cover = if (u.shapeInvert > 0.5f) 1f - c else c
+    }
+    val lit = (src + (1f - src) * u.white) * (1f - u.shade)
+    val a = if (inside) u.alpha * cover else 0f
     return lit * a + dst * (1 - a)
 }
 
@@ -228,7 +248,10 @@ fun main() {
                     // Exactly on a moving edge the two sides are one pixel apart; skip it.
                     val (inDraw, outDraw) = ExportPlan.blend(type, p, incomingOnTop = true)
                     val edges = listOf(inDraw, outDraw).flatMap { d ->
-                        listOf(d.keepFrom to x, d.keepTo to x, d.shiftX to x, 1f + d.shiftX to x, d.keepFromY to y, d.keepToY to y, d.shiftY to y, 1f + d.shiftY to y)
+                        listOf(d.keepFrom to x, d.keepTo to x, d.shiftX to x, 1f + d.shiftX to x, d.keepFromY to y, d.keepToY to y, d.shiftY to y, 1f + d.shiftY to y,
+                            // A squeezed face's two edges (a cube, a flip).
+                            d.pivotX * (1f - d.squashX) to x, d.pivotX + (1f - d.pivotX) * d.squashX to x,
+                            d.pivotY * (1f - d.squashY) to y, d.pivotY + (1f - d.pivotY) * d.squashY to y)
                     }
                     if (edges.any { (edge, at) -> edge >= 0f && edge <= 1f && abs(at - edge) < 0.02f }) continue
                     val got = composite(rolls, colours, tUs, x, y)
@@ -260,7 +283,8 @@ fun main() {
         check(compared > 5000 && kept > 1000, "only $compared pixels compared, $kept against the record")
         // Every kind draws something a hard cut does not, somewhere in its run.
         val samples = listOf(0.01f, 0.25f, 0.5f, 0.75f, 0.99f)
-        for (type in types.filter { it != TransitionType.None }) {
+        // A warp is the picture's own (Draw.warp) and a flat shot cannot show one; those are held below.
+        for (type in types.filter { it != TransitionType.None && it !in ExportPlan.WARPED }) {
             var differs = false
             for (pi in 1..19) for (x in samples) for (y in samples) {
                 val p = pi / 20f
@@ -269,7 +293,14 @@ fun main() {
             }
             check(differs, "$type is a plain cut")
         }
-        check(TransitionType.entries.map { it.category }.distinct().size == 4, "a tab has no transitions")
+        check(TransitionType.entries.map { it.category }.toSet() == com.squish.app.timeline.TransitionCategory.entries.toSet(), "a tab has no transitions")
+        check(TransitionType.entries.count { it != TransitionType.None } >= 50, "only ${TransitionType.entries.count { it != TransitionType.None }} transitions")
+        // Each warp peaks on the cut and is gone at both ends, on whichever shot is showing.
+        for (type in ExportPlan.WARPED) {
+            fun shown(p: Float) = ExportPlan.blend(type, p, true).let { (i, o) -> if (p < 0.5f) o else i }
+            check(shown(0f).warp.isNone && shown(1f).warp.isNone, "$type warps the shots either side of the join")
+            check(!shown(0.45f).warp.isNone && !shown(0.55f).warp.isNone, "$type does nothing at the cut")
+        }
 
         // --- The softness of a Defocus join, which no pixel above can see. ---
         //

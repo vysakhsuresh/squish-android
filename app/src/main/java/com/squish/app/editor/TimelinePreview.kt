@@ -141,6 +141,11 @@ fun TimelinePreview(
      * finger lifts (EDGE_PLAN D5).
      */
     holdShowsBefore: Boolean = false,
+    /**
+     * An export is running: every surface lets its decoder go (PreviewEngine.holdForExport),
+     * so the export has the phone's hardware decoders to itself.
+     */
+    exporting: Boolean = false,
     /** The editor asking the transport to play or pause; see [TransportRequest]. */
     transportRequest: TransportRequest? = null,
     /** The shape of the picture after the rotation. */
@@ -269,6 +274,7 @@ fun TimelinePreview(
     val textStarts = remember { HashMap<String, Pair<TextPlacement, Transform>>() }
 
     LaunchedEffect(muted) { engine.setMuted(muted) }
+    LaunchedEffect(exporting) { engine.holdForExport(exporting) }
 
     // The editor's ask of the transport - a recording starting the timeline, a
     // song auditioned stopping it - answered once each. The request standing
@@ -829,6 +835,7 @@ private fun VideoSurface(
     pictureFrame: PreviewBox.Frame,
     kept: PreviewBox.Frame
 ) {
+    val shapeMask = remember { TransitionMask() }
     // The outer box is the canvas: the clip's placement and the transition act
     // on it, in the canvas's own units, after the fit and the rotation - the
     // order the export applies them in. On a padded canvas it used to be the
@@ -838,6 +845,8 @@ private fun VideoSurface(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(draw.zIndex.toFloat())
+            // A shape, a turn, a squeeze (EDGE_PLAN F3): outside the slide below, as the file undoes them first.
+            .transitionShaped(draw.shaped, kept, shapeMask)
             .graphicsLayer {
                 alpha = if (draw.visible) draw.alpha.coerceIn(0f, 1f) else 0f
                 // The clip's own animated placement, plus whatever the transition
@@ -1164,20 +1173,22 @@ private fun Backdrop(background: CanvasBackground, shot: Clip?, fallbackUri: Uri
     when (background.fill) {
         CanvasFill.Crop -> Unit
         CanvasFill.Colour -> Box(modifier = modifier.background(Color(background.colorArgb)))
-        CanvasFill.Image, CanvasFill.Blur -> {
+        CanvasFill.Image, CanvasFill.Blur, CanvasFill.Gradient, CanvasFill.Pattern -> {
             val uri = if (background.fill == CanvasFill.Image) background.imageUri?.let(Uri::parse) else shot?.let { it.uri ?: fallbackUri }
             val atMs = shot?.let { FrameRules.backdropMomentMs(it) } ?: 0L
             // The last still stays up while the next is made, so a cut does
             // not flash the colour for the frames the decode takes.
             var still by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-            LaunchedEffect(uri, atMs, canvasAspect, background.fill) {
-                if (uri == null) {
+            val painted = background.fill == CanvasFill.Gradient || background.fill == CanvasFill.Pattern
+            LaunchedEffect(uri, atMs, canvasAspect, background) {
+                if (uri == null && !painted) {
                     still = null
                     return@LaunchedEffect
                 }
                 val file = withContext(Dispatchers.IO) {
-                    if (background.fill == CanvasFill.Image) CanvasBackdrop.fromImage(context, uri, canvasAspect)
-                    else CanvasBackdrop.blurred(context, uri, atMs, canvasAspect)
+                    if (painted) CanvasBackdrop.painted(context, background, canvasAspect)
+                    else if (background.fill == CanvasFill.Image) CanvasBackdrop.fromImage(context, uri!!, canvasAspect)
+                    else CanvasBackdrop.blurred(context, uri!!, atMs, canvasAspect)
                 }
                 still = file?.let { StillPictures.load(context, Uri.fromFile(it)) }
             }
@@ -1203,11 +1214,12 @@ private fun Backdrop(background: CanvasBackground, shot: Clip?, fallbackUri: Uri
  */
 @Composable
 private fun OverlaySurface(engine: PreviewEngine, player: ExoPlayer, placement: OverlayPlacement) {
+    val shapeMask = remember { TransitionMask() }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(10f + placement.layer)
-            .drawnAs(placement.draw)
+            .drawnAs(placement.draw, shapeMask)
             .graphicsLayer {
                 alpha = if (placement.visible) placement.opacity.coerceIn(0f, 1f) else 0f
                 // Measured against the canvas, not the layer's own box, so an
@@ -1278,11 +1290,12 @@ private fun StillOverlay(clip: Clip, transform: Transform, layerTime: Long, bare
     val aspect = if (image.height > 0) image.width.toFloat() / image.height else null
     // Its fade and its transition over its head, as the export draws them.
     val own = ExportPlan.ownDrawAt(clip, layerTime - clip.timelineStartMs)
+    val shapeMask = remember { TransitionMask() }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(10f + clip.layer)
-            .drawnAs(own)
+            .drawnAs(own, shapeMask)
             .graphicsLayer {
                 alpha = own.alpha.coerceIn(0f, 1f)
                 place(transform)
@@ -1479,11 +1492,13 @@ private fun Modifier.turnedInside(quarterTurns: Int, mirrored: Boolean, aspect: 
  * whitened - on the canvas, outside the layer's own placement. Its alpha is
  * the caller's, folded into the layer's opacity.
  */
-private fun Modifier.drawnAs(draw: ExportPlan.Draw): Modifier {
+private fun Modifier.drawnAs(draw: ExportPlan.Draw, mask: TransitionMask): Modifier {
     val still = draw.shiftX == 0f && draw.shiftY == 0f && draw.scale == 1f && draw.white == 0f &&
-        draw.keepFrom <= 0f && draw.keepTo >= 1f && draw.keepFromY <= 0f && draw.keepToY >= 1f
+        draw.keepFrom <= 0f && draw.keepTo >= 1f && draw.keepFromY <= 0f && draw.keepToY >= 1f && draw.isFlat
     if (still) return this
     return this
+        // On the canvas, which is this layer's own frame here (EDGE_PLAN F3).
+        .transitionShaped(draw, PreviewBox.Frame(), mask)
         .graphicsLayer {
             scaleX = draw.scale
             scaleY = draw.scale

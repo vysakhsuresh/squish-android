@@ -87,6 +87,22 @@ object CanvasBackdrop {
         }
     }
 
+    /**
+     * A gradient or a pattern at [aspect] (EDGE_PLAN F5): CanvasPaint's pixels
+     * written once per setting and shape, the file the preview shows and the
+     * export lays under the picture. Blocking.
+     */
+    fun painted(context: Context, background: com.squish.app.editor.CanvasBackground, aspect: Float): File? {
+        val key = listOf(background.fill, background.colorArgb, background.color2Argb, background.angleDegrees, background.pattern, background.patternCells)
+        val file = File(dir(context), "paint_${key.hashCode().toUInt().toString(16)}_${aspectName(aspect)}.png")
+        if (file.exists() && file.length() > 0) return file
+        // A gradient is smooth at any size and is scaled up cleanly; a pattern's edges want the full size.
+        val (w, h) = sizeFor(aspect, if (background.fill == com.squish.app.editor.CanvasFill.Gradient) GRADIENT_LONG_SIDE else IMAGE_LONG_SIDE)
+        val pixels = com.squish.app.editor.CanvasPaint.pixels(background, w, h)
+        val bitmap = Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888).copy(Bitmap.Config.ARGB_8888, false)
+        return write(file, bitmap)?.also { prune(context, keep = it) }
+    }
+
     /** A picture of one colour at [aspect], for a coloured canvas. Blocking. */
     fun solid(context: Context, argb: Int, aspect: Float): File? {
         val file = File(dir(context), "solid_${(argb.toLong() and 0xFFFFFFFFL).toString(16)}_${aspectName(aspect)}.png")
@@ -193,6 +209,8 @@ object CanvasBackdrop {
         // cleared and grew with every Background picked.
         prune(dir(context).listFiles { f -> f.name.startsWith("blur_") }, BLUR_KEEP, keep)
         prune(dir(context).listFiles { f -> f.name.startsWith("image_") }, IMAGE_KEEP, keep)
+        // And the painted ones (EDGE_PLAN F5): one per setting tried, so a colour dragged across the picker leaves a trail.
+        prune(dir(context).listFiles { f -> f.name.startsWith("paint_") }, IMAGE_KEEP, keep)
     }
 
     private fun prune(found: Array<File>?, keep: Int, keeping: File?) {
@@ -223,6 +241,7 @@ object CanvasBackdrop {
     private const val BLUR_SIDE = 28
     private const val IMAGE_LONG_SIDE = 1920
     private const val SOLID_LONG_SIDE = 64
+    private const val GRADIENT_LONG_SIDE = 960
     private const val DARKEN_ALPHA = 64
 
     /** Enough for every shot of a long edit at a couple of shapes; the rest are made again when wanted. */

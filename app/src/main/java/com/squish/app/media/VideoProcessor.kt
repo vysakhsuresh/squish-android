@@ -741,6 +741,21 @@ class VideoProcessor(private val context: Context) {
             // one-sequence path there is no compositor to read an alpha, so the
             // fade is drawn towards black there (TransitionEffect).
             val blends = rolls != null && ExportPlan.takesPartInBlend(rolls, clip)
+            // A join that warps the picture (EDGE_PLAN F3: a ripple, a zoom
+            // blur, a glitch) does it in the effects pass, which has those
+            // stages, on this shot alone and before its draw - as the preview's
+            // surface does. Only for a shot beside such a join: a pass a frame
+            // is a cost every other shot need not pay.
+            if (blends) {
+                val near = ExportPlan.neighbourhood(rolls!!, clip)
+                if (near.flatten().any { it.transitionIn.isActive && it.transitionIn.type in ExportPlan.WARPED }) {
+                    var originUs = Long.MIN_VALUE
+                    add(com.squish.app.media.effects.FxEffect({ emptyList() }, keepAlpha = true, warpAt = { us ->
+                        if (originUs == Long.MIN_VALUE) originUs = us
+                        ExportPlan.drawAt(near, clip, ExportPlan.timelineUs(clip, us - originUs)).warp
+                    }))
+                }
+            }
             if (blends || ExportPlan.drawsOwn(clip)) {
                 add(TransitionEffect(clip, if (blends) ExportPlan.neighbourhood(rolls!!, clip) else null, opaque = rolls == null))
             }
@@ -1035,6 +1050,8 @@ class VideoProcessor(private val context: Context) {
             com.squish.app.editor.CanvasFill.Crop -> emptyList()
             com.squish.app.editor.CanvasFill.Colour ->
                 listOfNotNull(CanvasBackdrop.solid(context, background.colorArgb, aspect)?.let { backdrop(it, 0L, end) })
+            com.squish.app.editor.CanvasFill.Gradient, com.squish.app.editor.CanvasFill.Pattern ->
+                listOfNotNull(CanvasBackdrop.painted(context, background, aspect)?.let { backdrop(it, 0L, end) })
             com.squish.app.editor.CanvasFill.Image -> listOfNotNull(
                 background.imageUri?.let { CanvasBackdrop.fromImage(context, android.net.Uri.parse(it), aspect) }
                     ?.let { backdrop(it, 0L, end) }

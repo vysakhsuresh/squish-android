@@ -61,13 +61,19 @@ object Reframer {
         val step = ReframeRules.sampleStepMs(fromMs, toMs, SAMPLES_PER_SECOND, MAX_SAMPLES)
         val count = (span / step + 1).toInt()
         val segmenter = Segmenter.create(context)
+        // EDGE_PLAN F8: MediaPipe's faces and things, bundled, nothing sent anywhere.
+        val faces = Detectors.faces(context)
+        val things = Detectors.things(context)
+        var aimed: FloatArray? = null
         val mask = ByteArray(Segmenter.MASK_SIZE * Segmenter.MASK_SIZE)
         val raw = ArrayList<TrackSample>(count)
         var previous: FloatArray? = null
 
         fun read(at: Long, frame: Bitmap) {
             val grid = lumaGrid(frame)
-            val face = faceCentre(frame)?.let { floatArrayOf(it.x, it.y) }
+            val image = runCatching { com.google.mediapipe.framework.image.BitmapImageBuilder(frame).build() }.getOrNull()
+            val face = faces?.let { d -> image?.let { Detectors.seenFaces(d, it, frame.width, frame.height) } }?.let { ReframeRules.faceCentre(it) }
+                ?: faceCentre(frame)?.let { floatArrayOf(it.x, it.y) }
             val person = if (face == null && segmenter != null) {
                 java.util.Arrays.fill(mask, 0)
                 runCatching { Segmenter.segment(segmenter, frame, mask) }
@@ -75,7 +81,10 @@ object Reframer {
             } else null
             val motion = previous?.let { motionCentre(it, grid) }?.let { floatArrayOf(it.x, it.y) }
             previous = grid
-            val (x, y, confidence) = ReframeRules.aim(face, person, motion).let { Triple(it[0], it[1], it[2]) }
+            // A thing - a dog, a car - only where no face or person was found, as the rules rank them.
+            val thing = if (face == null && person == null) things?.let { d -> image?.let { Detectors.seenThings(d, it, frame.width, frame.height) } }?.let { ReframeRules.pickSubject(it, aimed) } else null
+            val (x, y, confidence) = ReframeRules.aim(face, person, motion, thing).let { Triple(it[0], it[1], it[2]) }
+            aimed = floatArrayOf(x, y)
             raw.add(TrackSample(atMs = at, xFraction = x, yFraction = y, confidence = confidence))
             onProgress(((at - fromMs) * count / span).toInt().coerceIn(1, count), count)
         }
@@ -119,6 +128,8 @@ object Reframer {
             android.util.Log.w("SquishReframe", "analysing $uri", t)
         } finally {
             runCatching { segmenter?.close() }
+            runCatching { faces?.close() }
+            runCatching { things?.close() }
         }
         if (!currentCoroutineContext().isActive) return@withContext null
         if (raw.isEmpty()) return@withContext null

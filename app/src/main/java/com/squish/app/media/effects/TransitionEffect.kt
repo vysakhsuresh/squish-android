@@ -78,7 +78,13 @@ private class TransitionShaderProgram(
         )
     }
 
-    override fun configure(inputWidth: Int, inputHeight: Int): Size = Size(inputWidth, inputHeight)
+    // The frame's width over its height: a shape is round, and a turn turns round, in pixels.
+    private var aspect = 1f
+
+    override fun configure(inputWidth: Int, inputHeight: Int): Size {
+        aspect = if (inputHeight > 0) inputWidth.toFloat() / inputHeight else 1f
+        return Size(inputWidth, inputHeight)
+    }
 
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
         try {
@@ -99,6 +105,10 @@ private class TransitionShaderProgram(
             glProgram.setFloatsUniform("uWhite", floatArrayOf(u.white))
             glProgram.setFloatsUniform("uBlur", floatArrayOf(u.blur))
             glProgram.setFloatsUniform("uOpaque", floatArrayOf(if (opaque) 1f else 0f))
+            glProgram.setFloatsUniform("uShape", floatArrayOf(u.shape, u.shapeAt, u.shapeInvert))
+            glProgram.setFloatsUniform("uBend", floatArrayOf(u.turn, u.squashX, u.squashY, u.shade))
+            glProgram.setFloatsUniform("uPivot", floatArrayOf(u.pivotX, u.pivotY))
+            glProgram.setFloatsUniform("uAspect", floatArrayOf(aspect))
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         } catch (e: GlUtil.GlException) {

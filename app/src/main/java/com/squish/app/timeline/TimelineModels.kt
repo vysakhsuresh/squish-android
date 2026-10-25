@@ -16,7 +16,10 @@ enum class TransitionCategory(val label: String) {
     Basic("Basic"),
     Camera("Camera"),
     Glitch("Glitch"),
-    Light("Light")
+    Light("Light"),
+    Shape("Shapes"),
+    Depth("3D"),
+    Lens("Lens")
 }
 
 /**
@@ -81,7 +84,38 @@ enum class TransitionType(val label: String, val category: TransitionCategory) {
      * one hangs over it as a white ghost of itself, thinning away. The same reel
      * uses it four times, and it is what a blown-out dissolve looks like.
      */
-    BurnOut("Burn out", TransitionCategory.Light)
+    BurnOut("Burn out", TransitionCategory.Light),
+
+    // EDGE_PLAN F3 (INSHOT_PARITY P3's geometric pack and more). The shapes are
+    // reveal masks, TransitionShapes; the rest turn, squeeze or warp the
+    // picture. Names are what a draft stores, so they never change.
+    Iris("Circle open", TransitionCategory.Shape),
+    IrisClose("Circle close", TransitionCategory.Shape),
+    Diamond("Diamond", TransitionCategory.Shape),
+    Star("Star", TransitionCategory.Shape),
+    Heart("Heart", TransitionCategory.Shape),
+    Clock("Clock wipe", TransitionCategory.Shape),
+    Blinds("Blinds", TransitionCategory.Shape),
+    BlindsSide("Blinds side", TransitionCategory.Shape),
+    Doors("Doors", TransitionCategory.Shape),
+    Split("Split", TransitionCategory.Shape),
+    Diagonal("Wipe diagonal", TransitionCategory.Shape),
+    Checker("Checker", TransitionCategory.Shape),
+    PixelDissolve("Pixel dissolve", TransitionCategory.Shape),
+    Stripes("Stripes", TransitionCategory.Shape),
+    /** The old shot turns edge-on and the new one turns face-on: a card flipped. */
+    Flip("Flip", TransitionCategory.Depth),
+    FlipUp("Flip up", TransitionCategory.Depth),
+    /** Two faces of a box turning left: the old one folds away as the new one opens. */
+    Cube("Cube", TransitionCategory.Depth),
+    CubeUp("Cube up", TransitionCategory.Depth),
+    Spin("Spin", TransitionCategory.Depth),
+    ZoomBlur("Zoom blur", TransitionCategory.Lens),
+    Ripple("Ripple", TransitionCategory.Lens),
+    Pixelate("Pixelate", TransitionCategory.Lens),
+    MirrorFold("Mirror", TransitionCategory.Lens),
+    GlitchCut("Glitch", TransitionCategory.Glitch),
+    RgbSplit("RGB split", TransitionCategory.Glitch)
 }
 
 /**

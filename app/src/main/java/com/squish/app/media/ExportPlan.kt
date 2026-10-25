@@ -365,11 +365,70 @@ object ExportPlan {
         val keepFromY: Float = 0f,
         val keepToY: Float = 1f,
         val white: Float = 0f,
-        val blur: Float = 0f
+        val blur: Float = 0f,
+        // ---- EDGE_PLAN F3 ----
+        /**
+         * A reveal mask (TransitionShapes): the draw shows [shapeAt] of the
+         * way through [shape], or - [shapeInvert] - what that leaves. The
+         * shape goes on whichever shot is on top, so the picture is the same
+         * from either roll.
+         */
+        val shape: Int = TransitionShapes.NONE,
+        val shapeAt: Float = 1f,
+        val shapeInvert: Boolean = false,
+        /** Turned clockwise on screen by this many radians, about the pivot. */
+        val turn: Float = 0f,
+        /** Squeezed to this much of its width and height about ([pivotX], [pivotY]): a flip, a cube's face. */
+        val squashX: Float = 1f,
+        val squashY: Float = 1f,
+        val pivotX: Float = 0.5f,
+        val pivotY: Float = 0.5f,
+        /** Mixed towards black, by the picture's own coverage: a cube's face turning away. */
+        val shade: Float = 0f,
+        /**
+         * What the picture itself goes through (Warp): not drawn by this
+         * draw's shader or layer but by the effects pass under it - the
+         * surface's own in the preview, one added to the shot's chain in the
+         * file (VideoProcessor) - which already has every one of them.
+         */
+        val warp: Warp = Warp.NONE
     ) {
         val isPlain: Boolean
             get() = alpha >= 1f && shiftX == 0f && shiftY == 0f && scale == 1f && white == 0f && blur == 0f &&
-                keepFrom <= 0f && keepTo >= 1f && keepFromY <= 0f && keepToY >= 1f
+                keepFrom <= 0f && keepTo >= 1f && keepFromY <= 0f && keepToY >= 1f &&
+                isFlat && warp.isNone
+
+        /** Nothing of F3's shape, turn, squash or shade. */
+        val isFlat: Boolean
+            get() = (shape == TransitionShapes.NONE || (!shapeInvert && shapeAt >= 1f)) &&
+                turn == 0f && squashX == 1f && squashY == 1f && shade == 0f
+
+        /** How much of the picture the shape lets through at ([x], [y]), on a frame [aspect] wide. */
+        fun coverageAt(x: Float, y: Float, aspect: Float): Float {
+            if (shape == TransitionShapes.NONE) return 1f
+            val c = TransitionShapes.coverage(shape, shapeAt, x, y, aspect)
+            return if (shapeInvert) 1f - c else c
+        }
+
+        /**
+         * Where in the picture the pixel at ([x], [y]) reads from, before the
+         * shift and scale: the squash and the turn undone about the pivot, the
+         * turn measured in pixels so a frame [aspect] wide turns round.
+         */
+        fun unbent(x: Float, y: Float, aspect: Float): Pair<Float, Float> {
+            if (turn == 0f && squashX == 1f && squashY == 1f) return x to y
+            var dx = (x - pivotX) * aspect
+            var dy = y - pivotY
+            if (turn != 0f) {
+                val s = kotlin.math.sin(-turn); val c = kotlin.math.cos(-turn)
+                val rx = dx * c - dy * s
+                dy = dx * s + dy * c
+                dx = rx
+            }
+            dx /= safeSquash(squashX)
+            dy /= safeSquash(squashY)
+            return (pivotX + dx / aspect) to (pivotY + dy)
+        }
 
         /** This draw at [factor] of its opacity: a clip's own fade under its transition. */
         fun faded(factor: Float): Draw = if (factor >= 1f) this else copy(alpha = alpha * factor.coerceIn(0f, 1f))
@@ -389,7 +448,20 @@ object ExportPlan {
             // same picture are one softening, and adding them would take a
             // defocus join on a clip that is also being blurred past the reach
             // the nine taps are shaped for.
-            blur = maxOf(blur, own.blur)
+            blur = maxOf(blur, own.blur),
+            // An overlay's own draw never shapes, turns or squeezes it unless
+            // it is its arrival, which a base shot's blend never is: whichever
+            // of the two has one, it is that one.
+            shape = if (shape != TransitionShapes.NONE) shape else own.shape,
+            shapeAt = if (shape != TransitionShapes.NONE) shapeAt else own.shapeAt,
+            shapeInvert = if (shape != TransitionShapes.NONE) shapeInvert else own.shapeInvert,
+            turn = turn + own.turn,
+            squashX = squashX * own.squashX,
+            squashY = squashY * own.squashY,
+            pivotX = if (squashX != 1f || squashY != 1f || turn != 0f) pivotX else own.pivotX,
+            pivotY = if (squashX != 1f || squashY != 1f || turn != 0f) pivotY else own.pivotY,
+            shade = maxOf(shade, own.shade),
+            warp = warp.with(own.warp)
         )
 
         /**
@@ -413,8 +485,53 @@ object ExportPlan {
             keepToY = 1f - keepFromY,
             white = white.coerceIn(0f, 1f),
             // Symmetric about the pixel, so it needs no turning over.
-            blur = blur.coerceIn(0f, MAX_BLUR)
+            blur = blur.coerceIn(0f, MAX_BLUR),
+            // The shape is measured in the draw's own space, y down: the shader
+            // turns its coordinate over to read it (squish_transition_es2.glsl).
+            shape = shape.toFloat(),
+            shapeAt = shapeAt,
+            shapeInvert = if (shapeInvert) 1f else 0f,
+            // Turned over with the axis: a clockwise turn on screen is the
+            // other way round in a space whose y runs up, and the pivot's row
+            // is counted from the other edge.
+            turn = -turn,
+            squashX = safeSquash(squashX),
+            squashY = safeSquash(squashY),
+            pivotX = pivotX,
+            pivotY = 1f - pivotY,
+            shade = shade.coerceIn(0f, 1f)
         )
+    }
+
+    /** A squash of nothing is a picture drawn nowhere, not a division by it. */
+    fun safeSquash(s: Float): Float = if (kotlin.math.abs(s) < 0.001f) (if (s < 0f) -0.001f else 0.001f) else s
+
+    /**
+     * What a transition does to the picture itself (EDGE_PLAN F3): rippled,
+     * blurred towards the middle, pixelated, broken into blocks, its colours
+     * pulled apart, mirrored. Each is a stage the effects pass already has
+     * (squish_fx_es2.glsl's second set), so the preview and the file run one
+     * program on one number (TransitionWarp.fx turns it into those numbers).
+     */
+    data class Warp(
+        val ripple: Float = 0f,
+        val zoomBlur: Float = 0f,
+        val pixel: Float = 0f,
+        val glitch: Float = 0f,
+        val rgb: Float = 0f,
+        val mirror: Float = 0f
+    ) {
+        // Field by field: a data class compares floats by their bits, so -0 would not be none.
+        val isNone: Boolean get() = ripple == 0f && zoomBlur == 0f && pixel == 0f && glitch == 0f && rgb == 0f && mirror == 0f
+
+        fun with(o: Warp): Warp = if (o.isNone) this else if (isNone) o else Warp(
+            maxOf(ripple, o.ripple), maxOf(zoomBlur, o.zoomBlur), maxOf(pixel, o.pixel),
+            maxOf(glitch, o.glitch), maxOf(rgb, o.rgb), maxOf(mirror, o.mirror)
+        )
+
+        companion object {
+            val NONE = Warp()
+        }
     }
 
     /** [Draw.shaderUniforms]: what goes into uAlpha, uShift, uScale, uKeep, uWhite and uBlur, texture-space Y. */
@@ -428,7 +545,16 @@ object ExportPlan {
         val keepToX: Float,
         val keepToY: Float,
         val white: Float,
-        val blur: Float
+        val blur: Float,
+        val shape: Float = 0f,
+        val shapeAt: Float = 1f,
+        val shapeInvert: Float = 0f,
+        val turn: Float = 0f,
+        val squashX: Float = 1f,
+        val squashY: Float = 1f,
+        val pivotX: Float = 0.5f,
+        val pivotY: Float = 0.5f,
+        val shade: Float = 0f
     )
 
     /**
@@ -640,7 +766,95 @@ object ExportPlan {
         TransitionType.Blackout ->
             if (p < 0.5f) HIDDEN to Draw(alpha = 1f - smoothstep(0.3f, 0.45f, p))
             else Draw(alpha = smoothstep(0.55f, 0.7f, p)) to HIDDEN
+
+        // ---- EDGE_PLAN F3 ----
+        // A shape opens the new shot - on whichever is on top: over the old one
+        // it is the shape, under it the old one is cut to what the shape leaves.
+        TransitionType.Iris, TransitionType.IrisClose, TransitionType.Diamond, TransitionType.Star,
+        TransitionType.Heart, TransitionType.Clock, TransitionType.Blinds, TransitionType.BlindsSide,
+        TransitionType.Doors, TransitionType.Split, TransitionType.Diagonal, TransitionType.Checker,
+        TransitionType.PixelDissolve, TransitionType.Stripes -> {
+            val k = shapeOf(type)
+            if (incomingOnTop) Draw(shape = k, shapeAt = p) to PLAIN
+            else PLAIN to Draw(shape = k, shapeAt = p, shapeInvert = true)
+        }
+
+        // Edge-on at the middle, each shot on its own half: one at a time.
+        TransitionType.Flip, TransitionType.FlipUp -> {
+            val across = type == TransitionType.Flip
+            val w = kotlin.math.abs(kotlin.math.cos(p * Math.PI)).toFloat()
+            val face = Draw(squashX = if (across) w else 1f, squashY = if (across) 1f else w, shade = FLIP_SHADE * (1f - w))
+            if (p < 0.5f) HIDDEN to face else face to HIDDEN
+        }
+
+        // Two faces of a box, side by side and never over each other: the old
+        // one folds against the left (or top) edge as the new one opens from
+        // the right (or bottom), each darker as it turns away.
+        TransitionType.Cube -> Draw(squashX = p, pivotX = 1f, shade = CUBE_SHADE * (1f - p)) to
+            Draw(squashX = 1f - p, pivotX = 0f, shade = CUBE_SHADE * p)
+        TransitionType.CubeUp -> Draw(squashY = p, pivotY = 1f, shade = CUBE_SHADE * (1f - p)) to
+            Draw(squashY = 1f - p, pivotY = 0f, shade = CUBE_SHADE * p)
+
+        // The old shot spins away into the middle and the new one spins out of it.
+        TransitionType.Spin ->
+            if (p < 0.5f) {
+                val q = smoothstep(0f, 1f, 2f * p)
+                HIDDEN to Draw(turn = q * PI_F, scale = 1f - SPIN_SHRINK * q)
+            } else {
+                val q = smoothstep(0f, 1f, 2f * p - 1f)
+                Draw(turn = -(1f - q) * PI_F, scale = 1f - SPIN_SHRINK * (1f - q)) to HIDDEN
+            }
+
+        // The picture's own warp, peaking on the cut that it hides.
+        TransitionType.ZoomBlur, TransitionType.Ripple, TransitionType.Pixelate, TransitionType.MirrorFold,
+        TransitionType.GlitchCut, TransitionType.RgbSplit -> {
+            val a = 1f - kotlin.math.abs(2f * p - 1f)
+            val warp = when (type) {
+                TransitionType.ZoomBlur -> Warp(zoomBlur = a)
+                TransitionType.Ripple -> Warp(ripple = a)
+                TransitionType.Pixelate -> Warp(pixel = if (a < 0.05f) 0f else PIXEL_PEAK * a)
+                TransitionType.MirrorFold -> Warp(mirror = if (a > 0.35f) 1f else 0f)
+                TransitionType.GlitchCut -> Warp(glitch = a, rgb = 0.6f * RGB_PEAK * a)
+                else -> Warp(rgb = RGB_PEAK * a)
+            }
+            // A punch in with the blur, so the pull reads as motion towards the middle.
+            val grow = if (type == TransitionType.ZoomBlur) 1f + 0.15f * a else 1f
+            val shown = if (type == TransitionType.GlitchCut) jitter(p, a).copy(warp = warp) else Draw(scale = grow, warp = warp)
+            if (p < 0.5f) HIDDEN to shown else shown to HIDDEN
+        }
     }
+
+    /** The mask each shape transition draws (TransitionShapes). */
+    fun shapeOf(type: TransitionType): Int = when (type) {
+        TransitionType.Iris -> TransitionShapes.IRIS
+        TransitionType.IrisClose -> TransitionShapes.IRIS_CLOSE
+        TransitionType.Diamond -> TransitionShapes.DIAMOND
+        TransitionType.Star -> TransitionShapes.STAR
+        TransitionType.Heart -> TransitionShapes.HEART
+        TransitionType.Clock -> TransitionShapes.CLOCK
+        TransitionType.Blinds -> TransitionShapes.BLINDS
+        TransitionType.BlindsSide -> TransitionShapes.BLINDS_SIDE
+        TransitionType.Doors -> TransitionShapes.DOORS
+        TransitionType.Split -> TransitionShapes.SPLIT
+        TransitionType.Diagonal -> TransitionShapes.DIAGONAL
+        TransitionType.Checker -> TransitionShapes.CHECKER
+        TransitionType.PixelDissolve -> TransitionShapes.PIXELS
+        TransitionType.Stripes -> TransitionShapes.STRIPES
+        else -> TransitionShapes.NONE
+    }
+
+    /** The kinds that change the picture itself, through the effects pass (Draw.warp). */
+    val WARPED = setOf(
+        TransitionType.ZoomBlur, TransitionType.Ripple, TransitionType.Pixelate, TransitionType.MirrorFold,
+        TransitionType.GlitchCut, TransitionType.RgbSplit
+    )
+
+    private const val PI_F = Math.PI.toFloat()
+    private const val FLIP_SHADE = 0.5f
+    private const val CUBE_SHADE = 0.45f
+    private const val SPIN_SHRINK = 0.85f
+    private const val PIXEL_PEAK = 0.06f
+    private const val RGB_PEAK = 0.035f
 
     /** 0 to 1, slow at both ends and fast through the middle: a whip pan's travel. */
     private fun whip(p: Float): Float {
@@ -734,13 +948,18 @@ object ExportPlan {
             val q = p.coerceIn(0f, 1f)
             return Draw(alpha = q, white = 1f - q)
         }
+        // A warp is the effects pass's, and an overlay's chain has none (it ends
+        // in the premultiply pass, in the preview as in the file): on an
+        // overlay these arrive as a dissolve rather than as nothing at all.
+        if (type in WARPED) return Draw(alpha = p.coerceIn(0f, 1f))
         val q = if (type in ONE_AT_A_TIME) 0.5f + p.coerceIn(0f, 1f) / 2f else p
         return blend(type, q, incomingOnTop = true).first
     }
 
     private val ONE_AT_A_TIME = setOf(
         TransitionType.DipToBlack, TransitionType.DipToWhite, TransitionType.Jitter,
-        TransitionType.Flash, TransitionType.Flicker, TransitionType.PopIn, TransitionType.Blackout
+        TransitionType.Flash, TransitionType.Flicker, TransitionType.PopIn, TransitionType.Blackout,
+        TransitionType.Flip, TransitionType.FlipUp, TransitionType.Spin
     )
 
     /** Whether [clip], an overlay, has another overlay on its row ending where it starts: the model's rule (Clip.hasOverlayJoin). */

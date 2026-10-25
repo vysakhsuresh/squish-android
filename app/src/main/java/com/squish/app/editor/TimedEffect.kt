@@ -11,6 +11,7 @@ import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.pow
 import kotlin.math.sin
+import kotlin.math.roundToInt
 
 /** Punch's hits a second at knob [a]. The slider's readout and [FxParams] share it. */
 fun punchPerSecond(a: Float): Float = 0.5f + 3f * a.coerceIn(0f, 1f)
@@ -59,7 +60,90 @@ enum class EffectKind(
     NegativePulse("Negative pulse", "Speed"),
     Trippy("Trippy", "Speed"),
     Sway("Sway", "Speed"),
-    ZoomOut("Slow zoom out", "Reach")
+    ZoomOut("Slow zoom out", "Reach"),
+
+    // EDGE_PLAN F2: the library past sixty, each a recipe over the shader's
+    // stages - the old ones above and the lens, light, tone, particle and
+    // glitch stages added with them - so the preview and the file still agree
+    // by construction. Light:
+    LightLeak("Light leak", "Warmth"),
+    FilmBurn("Film burn", "Speed"),
+    Bokeh("Bokeh", "Brightness"),
+    LensFlare("Lens flare", "Drift"),
+    GlowPulse("Glow pulse", "Speed"),
+    Vignette("Vignette", "Darkness"),
+    // Particles:
+    Snow("Snow", "Density"),
+    Rain("Rain", "Density"),
+    Sparkles("Sparkles", "Density"),
+    Hearts("Hearts", "Density"),
+    Confetti("Confetti", "Density"),
+    Dust("Dust", "Density"),
+    // Lens:
+    ZoomBlur("Zoom blur", "Reach"),
+    Fisheye("Fisheye", "Bulge"),
+    Kaleidoscope("Kaleidoscope", "Pieces"),
+    Mirror("Mirror"),
+    MirrorUp("Mirror up"),
+    Split2("Split x2"),
+    Split3("Split x3"),
+    Split4("Split x4"),
+    Ripple("Ripple", "Depth"),
+    Pixelate("Pixelate", "Size"),
+    // Retro:
+    VhsTracking("VHS tracking", "Roll"),
+    Super8("Super 8", "Grain"),
+    EightBit("8-bit", "Pixels"),
+    Camcorder("Camcorder"),
+    Sepia("Sepia"),
+    WashedOut("Washed out"),
+    // Glitch:
+    BlockGlitch("Block glitch", "Bursts"),
+    Tear("Tear", "Speed"),
+    ChromaWave("Chroma wave", "Width"),
+    Scramble("Scramble", "Bursts"),
+    // Motion:
+    Shake3D("3D shake", "Speed"),
+    Spin("Spin", "Speed"),
+    Pendulum("Pendulum", "Speed"),
+    BounceZoom("Bounce zoom", "Speed"),
+    // Colour:
+    Duotone("Duotone"),
+    Posterize("Posterize", "Levels"),
+    Warm("Warm"),
+    Cool("Cool")
+}
+
+/** The Effects sheet's categories (EDGE_PLAN F2). */
+enum class EffectCategory(val label: String) {
+    Motion("Motion"), Light("Light"), Particles("Particles"), Lens("Lens"), Retro("Retro"), Glitch("Glitch"), Colour("Colour")
+}
+
+/** Which of [EffectCategory] an effect is listed under. */
+val EffectKind.category: EffectCategory
+    get() = when (this) {
+        EffectKind.Shake, EffectKind.Punch, EffectKind.ZoomIn, EffectKind.Earthquake, EffectKind.Heartbeat, EffectKind.Sway,
+        EffectKind.ZoomOut, EffectKind.Shake3D, EffectKind.Spin, EffectKind.Pendulum, EffectKind.BounceZoom -> EffectCategory.Motion
+        EffectKind.Flash, EffectKind.Strobe, EffectKind.Dream, EffectKind.LightLeak, EffectKind.FilmBurn, EffectKind.Bokeh,
+        EffectKind.LensFlare, EffectKind.GlowPulse, EffectKind.Vignette -> EffectCategory.Light
+        EffectKind.Snow, EffectKind.Rain, EffectKind.Sparkles, EffectKind.Hearts, EffectKind.Confetti, EffectKind.Dust -> EffectCategory.Particles
+        EffectKind.Blur, EffectKind.ZoomBlur, EffectKind.Fisheye, EffectKind.Kaleidoscope, EffectKind.Mirror, EffectKind.MirrorUp,
+        EffectKind.Split2, EffectKind.Split3, EffectKind.Split4, EffectKind.Ripple, EffectKind.Pixelate -> EffectCategory.Lens
+        EffectKind.Vhs, EffectKind.Static, EffectKind.OldFilm, EffectKind.VhsTracking, EffectKind.Super8, EffectKind.EightBit,
+        EffectKind.Camcorder, EffectKind.Sepia, EffectKind.WashedOut -> EffectCategory.Retro
+        EffectKind.Glitch, EffectKind.RgbSplit, EffectKind.BlockGlitch, EffectKind.Tear, EffectKind.ChromaWave, EffectKind.Scramble -> EffectCategory.Glitch
+        EffectKind.Mono, EffectKind.Invert, EffectKind.Rainbow, EffectKind.NegativePulse, EffectKind.Trippy, EffectKind.Duotone,
+        EffectKind.Posterize, EffectKind.Warm, EffectKind.Cool -> EffectCategory.Colour
+    }
+
+/**
+ * Four numbers for one of the shader's newer stages, as it takes them (one
+ * vec4 uniform each). Zero everywhere is the stage at rest.
+ */
+data class Vec4(val x: Float = 0f, val y: Float = 0f, val z: Float = 0f, val w: Float = 0f) {
+    val isZero: Boolean get() = x == 0f && y == 0f && z == 0f && w == 0f
+    fun toList(): List<Float> = listOf(x, y, z, w)
+    fun toArray(): FloatArray = floatArrayOf(x, y, z, w)
 }
 
 /**
@@ -170,12 +254,26 @@ data class FxParams(
     val noise: Float = 0f,
     val blur: Float = 0f,
     val hue: Float = 0f,
-    val timeSec: Float = 0f
+    val timeSec: Float = 0f,
+    // EDGE_PLAN F2's stages, a vec4 each in both shaders.
+    /** fisheye 0..1, kaleidoscope pieces (0 or 3..12), ripple 0..1, tiles (0 or 2..4). */
+    val lensA: Vec4 = Vec4(),
+    /** mirror (0 none, 1 left onto right, 2 bottom onto top), spin in radians, zoom blur 0..1, pixel size (0 or 0.004..0.06 of the frame). */
+    val lensB: Vec4 = Vec4(),
+    /** light leak, film burn, bokeh, lens flare - each 0..1. */
+    val light: Vec4 = Vec4(),
+    /** vignette 0..1, tint 0..1, tint kind (0 sepia, 1 duotone, 2 warm, 3 cool), posterize levels (0 or 2..12). */
+    val tone: Vec4 = Vec4(),
+    /** particle kind (0 none, 1 snow, 2 rain, 3 sparkles, 4 hearts, 5 confetti, 6 dust), density 0..1, amount 0..1, the camcorder's REC 0..1. */
+    val particles: Vec4 = Vec4(),
+    /** block glitch, tear, chroma wave - each 0..1. */
+    val glitch2: Vec4 = Vec4()
 ) {
     val isIdentity: Boolean
         get() = offsetX == 0f && offsetY == 0f && zoom == 1f && split == 0f && glitch == 0f &&
             flash == 0f && mono == 0f && invert == 0f && scan == 0f && noise == 0f &&
-            blur == 0f && hue == 0f
+            blur == 0f && hue == 0f && lensA.isZero && lensB.isZero && light.isZero && tone.isZero &&
+            particles.isZero && glitch2.isZero
 
     companion object {
         fun at(effects: List<TimedEffect>, timeMs: Long): FxParams {
@@ -288,6 +386,94 @@ data class FxParams(
                     )
                     // k, not a: from a, it opened on a jump straight to its widest.
                     EffectKind.ZoomOut -> p.copy(zoom = p.zoom * (1f + 0.3f * twice * k * (1f - (t / span).coerceIn(0f, 1f))))
+
+                    // ---- EDGE_PLAN F2 -----------------------------------------
+                    EffectKind.LightLeak -> p.copy(light = p.light.copy(x = maxOf(p.light.x, k)), tone = p.tone.copy(y = maxOf(p.tone.y, 0.3f * k * amount), z = 2f))
+                    EffectKind.FilmBurn -> {
+                        val rate = 0.5f + 2f * amount
+                        p.copy(light = p.light.copy(y = maxOf(p.light.y, k * (0.6f + 0.4f * sin(t * rate * 2.0 * PI).toFloat()))))
+                    }
+                    EffectKind.Bokeh -> p.copy(light = p.light.copy(z = maxOf(p.light.z, k * (0.5f + 0.5f * amount))))
+                    EffectKind.LensFlare -> p.copy(light = p.light.copy(w = maxOf(p.light.w, k)), offsetX = p.offsetX + 0.004f * k * amount * sin(t * 0.7).toFloat())
+                    EffectKind.GlowPulse -> {
+                        val rate = 0.5f + 2.5f * amount
+                        val pulse = 0.5f + 0.5f * sin(t * rate * 2.0 * PI).toFloat()
+                        p.copy(flash = maxOf(p.flash, 0.22f * k * pulse), blur = p.blur + 0.004f * k * pulse)
+                    }
+                    EffectKind.Vignette -> p.copy(tone = p.tone.copy(x = maxOf(p.tone.x, k * (0.4f + 0.6f * amount))))
+                    EffectKind.Snow, EffectKind.Rain, EffectKind.Sparkles, EffectKind.Hearts, EffectKind.Confetti, EffectKind.Dust -> {
+                        val kindCode = when (e.kind) {
+                            EffectKind.Snow -> 1f; EffectKind.Rain -> 2f; EffectKind.Sparkles -> 3f
+                            EffectKind.Hearts -> 4f; EffectKind.Confetti -> 5f; else -> 6f
+                        }
+                        p.copy(particles = p.particles.copy(x = kindCode, y = 0.2f + 0.8f * amount, z = maxOf(p.particles.z, k)))
+                    }
+                    EffectKind.ZoomBlur -> p.copy(lensB = p.lensB.copy(z = maxOf(p.lensB.z, k * (0.3f + 0.7f * amount))))
+                    EffectKind.Fisheye -> p.copy(lensA = p.lensA.copy(x = maxOf(p.lensA.x, k * (0.3f + 0.7f * amount))), zoom = p.zoom * (1f + 0.05f * k))
+                    // The counted stages switch rather than fade: half a kaleidoscope
+                    // is not a thing. Past the edge's first tenth of a second, on.
+                    EffectKind.Kaleidoscope -> if (k > 0.05f) p.copy(lensA = p.lensA.copy(y = (3f + 9f * amount).roundToInt().toFloat()), hue = p.hue + 0.3f * k * sin(t * 0.5).toFloat()) else p
+                    EffectKind.Mirror -> if (k > 0.05f) p.copy(lensB = p.lensB.copy(x = 1f)) else p
+                    EffectKind.MirrorUp -> if (k > 0.05f) p.copy(lensB = p.lensB.copy(x = 2f)) else p
+                    EffectKind.Split2 -> if (k > 0.05f) p.copy(lensA = p.lensA.copy(w = 2f)) else p
+                    EffectKind.Split3 -> if (k > 0.05f) p.copy(lensA = p.lensA.copy(w = 3f)) else p
+                    EffectKind.Split4 -> if (k > 0.05f) p.copy(lensA = p.lensA.copy(w = 4f)) else p
+                    EffectKind.Ripple -> p.copy(lensA = p.lensA.copy(z = maxOf(p.lensA.z, k * (0.3f + 0.7f * amount))))
+                    EffectKind.Pixelate -> p.copy(lensB = p.lensB.copy(w = maxOf(p.lensB.w, 0.004f + (0.002f + 0.05f * amount) * k)))
+                    EffectKind.VhsTracking -> p.copy(
+                        glitch2 = p.glitch2.copy(y = maxOf(p.glitch2.y, k * (0.4f + 0.6f * amount) * (0.5f + 0.5f * sin(t * 1.3).toFloat()))),
+                        scan = p.scan + 0.6f * k, noise = p.noise + 0.08f * k, split = p.split + 0.004f * k
+                    )
+                    EffectKind.Super8 -> {
+                        val flicker = if (sin(t * 19.0 + sin(t * 4.3) * 3.0) > 0.7) 1f else 0f
+                        p.copy(
+                            tone = p.tone.copy(x = maxOf(p.tone.x, 0.55f * k), y = maxOf(p.tone.y, 0.55f * k), z = 2f),
+                            noise = p.noise + 0.1f * k * twice, flash = maxOf(p.flash, 0.06f * k * flicker), zoom = p.zoom * (1f + 0.02f * k)
+                        )
+                    }
+                    EffectKind.EightBit -> p.copy(
+                        lensB = p.lensB.copy(w = maxOf(p.lensB.w, 0.004f + (0.01f + 0.035f * amount) * k)),
+                        tone = if (k > 0.05f) p.tone.copy(w = 4f) else p.tone
+                    )
+                    EffectKind.Camcorder -> p.copy(
+                        particles = p.particles.copy(w = if (k > 0.05f) 1f else 0f),
+                        scan = p.scan + 0.35f * k, noise = p.noise + 0.05f * k, tone = p.tone.copy(x = maxOf(p.tone.x, 0.35f * k))
+                    )
+                    EffectKind.Sepia -> p.copy(tone = p.tone.copy(y = maxOf(p.tone.y, k), z = 0f))
+                    EffectKind.WashedOut -> p.copy(flash = maxOf(p.flash, 0.18f * k), mono = maxOf(p.mono, 0.3f * k))
+                    EffectKind.BlockGlitch, EffectKind.Scramble -> {
+                        val burst = if (sin(t * 9.0 + sin(t * 2.9) * 4.0) > 0.6 - 0.8 * amount) 1f else 0.2f
+                        val base = p.copy(glitch2 = p.glitch2.copy(x = maxOf(p.glitch2.x, k * burst)))
+                        if (e.kind == EffectKind.Scramble) base.copy(hue = base.hue + 1.5f * k * burst, split = base.split + 0.01f * k * burst) else base
+                    }
+                    EffectKind.Tear -> {
+                        val rate = 0.5f + 3f * amount
+                        p.copy(glitch2 = p.glitch2.copy(y = maxOf(p.glitch2.y, k * (0.5f + 0.5f * sin(t * rate * 2.0 * PI).toFloat()))))
+                    }
+                    EffectKind.ChromaWave -> p.copy(glitch2 = p.glitch2.copy(z = maxOf(p.glitch2.z, k * (0.4f + 0.6f * amount))))
+                    EffectKind.Shake3D -> p.copy(
+                        offsetX = p.offsetX + wobble(t, 13f * (0.5f + amount)) * 0.02f * k,
+                        offsetY = p.offsetY + wobble(t, 17f * (0.5f + amount)) * 0.02f * k,
+                        lensB = p.lensB.copy(y = p.lensB.y + wobble(t, 11f * (0.5f + amount)) * 0.06f * k),
+                        zoom = p.zoom * (1f + 0.1f * k + 0.04f * k * wobble(t, 7f))
+                    )
+                    EffectKind.Spin -> {
+                        val rate = 0.15f + 0.6f * amount
+                        // Zoomed in far enough that a turned frame never shows its corners.
+                        p.copy(lensB = p.lensB.copy(y = p.lensB.y + (t * rate % 1f) * 2f * PI.toFloat() * k), zoom = p.zoom * (1f + 1.1f * k))
+                    }
+                    EffectKind.Pendulum -> {
+                        val rate = 0.3f + 1.2f * amount
+                        p.copy(lensB = p.lensB.copy(y = p.lensB.y + 0.16f * k * sin(t * rate * 2.0 * PI).toFloat()), zoom = p.zoom * (1f + 0.22f * k))
+                    }
+                    EffectKind.BounceZoom -> {
+                        val rate = 0.5f + 2f * amount
+                        p.copy(zoom = p.zoom * (1f + 0.14f * k * kotlin.math.abs(sin(t * rate * PI).toFloat())))
+                    }
+                    EffectKind.Duotone -> p.copy(tone = p.tone.copy(y = maxOf(p.tone.y, k), z = 1f))
+                    EffectKind.Posterize -> if (k > 0.05f) p.copy(tone = p.tone.copy(w = (3f + 7f * amount).roundToInt().toFloat())) else p
+                    EffectKind.Warm -> p.copy(tone = p.tone.copy(y = maxOf(p.tone.y, 0.7f * k), z = 2f))
+                    EffectKind.Cool -> p.copy(tone = p.tone.copy(y = maxOf(p.tone.y, 0.7f * k), z = 3f))
                 }
             }
             return p

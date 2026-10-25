@@ -1,5 +1,11 @@
 package com.squish.app.editor
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -116,13 +122,13 @@ fun TransitionPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel
                 icon = TransitionGlyph,
                 accent = accent
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            // Seven shelves since F3: scrolled rather than squeezed into seven equal slots.
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 TransitionCategory.entries.forEach { category ->
                     SelectableChip(
                         label = category.label,
                         selected = tab == category.ordinal,
                         accentColor = accent,
-                        modifier = Modifier.weight(1f),
                         onClick = { tab = category.ordinal }
                     )
                 }
@@ -238,6 +244,8 @@ private fun TransitionTile(
         // up until it reads. Below Android 12 Modifier.blur does nothing and
         // the tile is the dissolve underneath - a thumbnail, not the file.
         val soft = shots.maxOf { it.first.blur }
+        // One mask for each of the tile's shots: a drawing records the bitmap, not its pixels.
+        val masks = remember { listOf(TransitionMask(64), TransitionMask(64)) }
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -245,9 +253,11 @@ private fun TransitionTile(
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color.Black)
                 .then(if (soft > 0f) Modifier.blur((soft * TILE_BLUR_DP).dp) else Modifier)
+                // A warp is the effects pass's own (EDGE_PLAN F3), and so is the tile's.
+                .then(if (type in ExportPlan.WARPED) Modifier.canvasFxParams { warpOnTile(type, p) } else Modifier)
         ) {
-            shots.forEach { (draw, colour) ->
-                drawShot(draw, colour, if (colour == INCOMING) incomingFrame else outgoingFrame)
+            shots.forEachIndexed { i, (draw, colour) ->
+                drawShaped(draw, masks[i]) { drawShot(draw, colour, if (colour == INCOMING) incomingFrame else outgoingFrame) }
             }
         }
         // Two lines' room, every tile the same height: four across on a narrow
@@ -342,3 +352,41 @@ internal fun EditorUiState.shotName(clip: Clip): String =
 /** A clip's name at the head of its sheet: "Shot 2" for a picture, a song's own title for sound. */
 internal fun EditorUiState.clipTitle(clip: Clip): String =
     if (clip.kind == ClipKind.Video) shotName(clip).replaceFirstChar { it.uppercase() } else clip.label
+
+/**
+ * EDGE_PLAN F3's parts of a draw on a tile, as TransitionMask's modifier draws
+ * them on the preview: turned and squeezed about the pivot, darkened, cut to
+ * its shape - in a layer of its own, so the shape cuts this shot alone.
+ */
+private fun DrawScope.drawShaped(draw: ExportPlan.Draw, mask: TransitionMask, shot: DrawScope.() -> Unit) {
+    if (draw.isFlat) { shot(); return }
+    val bounds = androidx.compose.ui.geometry.Rect(Offset.Zero, size)
+    drawIntoCanvas { it.saveLayer(bounds, androidx.compose.ui.graphics.Paint()) }
+    val pivot = Offset(size.width * draw.pivotX, size.height * draw.pivotY)
+    withTransform({
+        rotate(Math.toDegrees(draw.turn.toDouble()).toFloat(), pivot)
+        scale(draw.squashX, draw.squashY, pivot)
+    }) { shot() }
+    if (draw.shade > 0f) drawRect(Color.Black, alpha = draw.shade.coerceIn(0f, 1f), blendMode = BlendMode.SrcAtop)
+    if (draw.shape != com.squish.app.media.TransitionShapes.NONE && size.height > 0f) {
+        val aspect = size.width / size.height
+        drawImage(
+            mask.of(draw, aspect),
+            srcOffset = IntOffset.Zero,
+            srcSize = IntSize(mask.width, mask.heightFor(aspect)),
+            dstOffset = IntOffset.Zero,
+            dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
+            blendMode = BlendMode.DstIn
+        )
+    }
+    drawIntoCanvas { it.restore() }
+}
+
+/** What the effects pass is handed for a warp transition's tile at [p]: the shot showing's warp. */
+private fun warpOnTile(type: com.squish.app.timeline.TransitionType, p: Float): FxParams? {
+    val at = p.coerceIn(0f, 1f)
+    val (incoming, outgoing) = ExportPlan.blend(type, at, incomingOnTop = true)
+    val shown = if (at < 0.5f) outgoing else incoming
+    if (shown.warp.isNone) return null
+    return com.squish.app.media.effects.TransitionWarp.merged(FxParams(timeSec = at * 2.4f), shown.warp)
+}

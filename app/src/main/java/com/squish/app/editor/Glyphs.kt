@@ -30,6 +30,45 @@ import androidx.compose.material.icons.filled.InvertColors
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Voicemail
 import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.WbTwilight
+import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material.icons.filled.BubbleChart
+import androidx.compose.material.icons.filled.Flare
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Vignette
+import androidx.compose.material.icons.filled.AcUnit
+import androidx.compose.material.icons.filled.Umbrella
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Celebration
+import androidx.compose.material.icons.filled.Grain
+import androidx.compose.material.icons.filled.FilterTiltShift
+import androidx.compose.material.icons.filled.Lens
+import androidx.compose.material.icons.filled.FilterVintage
+import androidx.compose.material.icons.filled.Flip
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Water
+import androidx.compose.material.icons.filled.Grid4x4
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.CameraRoll
+import androidx.compose.material.icons.filled.VideogameAsset
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Coffee
+import androidx.compose.material.icons.filled.Opacity
+import androidx.compose.material.icons.filled.ViewQuilt
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.RotateRight
+import androidx.compose.material.icons.filled.Rotate90DegreesCcw
+import androidx.compose.material.icons.filled.SportsBasketball
+import androidx.compose.material.icons.filled.Tonality
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -141,12 +180,59 @@ val EffectKind.icon: ImageVector
         EffectKind.Trippy -> Icons.Filled.Cyclone
         EffectKind.Sway -> Icons.Filled.Waves
         EffectKind.ZoomOut -> Icons.Filled.ZoomOut
+        EffectKind.LightLeak -> Icons.Filled.WbTwilight
+        EffectKind.FilmBurn -> Icons.Filled.Whatshot
+        EffectKind.Bokeh -> Icons.Filled.BubbleChart
+        EffectKind.LensFlare -> Icons.Filled.Flare
+        EffectKind.GlowPulse -> Icons.Filled.LightMode
+        EffectKind.Vignette -> Icons.Filled.Vignette
+        EffectKind.Snow -> Icons.Filled.AcUnit
+        EffectKind.Rain -> Icons.Filled.Umbrella
+        EffectKind.Sparkles -> Icons.Filled.AutoAwesome
+        EffectKind.Hearts -> Icons.Filled.FavoriteBorder
+        EffectKind.Confetti -> Icons.Filled.Celebration
+        EffectKind.Dust -> Icons.Filled.Grain
+        EffectKind.ZoomBlur -> Icons.Filled.FilterTiltShift
+        EffectKind.Fisheye -> Icons.Filled.Lens
+        EffectKind.Kaleidoscope -> Icons.Filled.FilterVintage
+        EffectKind.Mirror -> Icons.Filled.Flip
+        EffectKind.MirrorUp -> Icons.Filled.SwapVert
+        EffectKind.Split2 -> Icons.Filled.GridView
+        EffectKind.Split3 -> Icons.Filled.ViewModule
+        EffectKind.Split4 -> Icons.Filled.Apps
+        EffectKind.Ripple -> Icons.Filled.Water
+        EffectKind.Pixelate -> Icons.Filled.Grid4x4
+        EffectKind.VhsTracking -> Icons.Filled.Tune
+        EffectKind.Super8 -> Icons.Filled.CameraRoll
+        EffectKind.EightBit -> Icons.Filled.VideogameAsset
+        EffectKind.Camcorder -> Icons.Filled.Videocam
+        EffectKind.Sepia -> Icons.Filled.Coffee
+        EffectKind.WashedOut -> Icons.Filled.Opacity
+        EffectKind.BlockGlitch -> Icons.Filled.ViewQuilt
+        EffectKind.Tear -> Icons.Filled.ContentCut
+        EffectKind.ChromaWave -> Icons.Filled.GraphicEq
+        EffectKind.Scramble -> Icons.Filled.Shuffle
+        EffectKind.Shake3D -> Icons.Filled.Rotate90DegreesCw
+        EffectKind.Spin -> Icons.Filled.RotateRight
+        EffectKind.Pendulum -> Icons.Filled.Rotate90DegreesCcw
+        EffectKind.BounceZoom -> Icons.Filled.SportsBasketball
+        EffectKind.Duotone -> Icons.Filled.Tonality
+        EffectKind.Posterize -> Icons.Filled.Palette
+        EffectKind.Warm -> Icons.Filled.WbSunny
+        EffectKind.Cool -> Icons.Filled.Thermostat
     }
 
 /** Each effect's colour on the timeline, so neighbours on the one lane can be told apart. */
 val EffectKind.color: Color
-    get() = Color(
-        when (this) {
+    get() = firstColours() ?: Color.hsv((ordinal * 137.5f) % 360f, 0.55f, 1f)
+
+/**
+ * The first twenty-one's own colours, kept as they were. The forty after them
+ * take a hue each round the wheel by the golden angle, so neighbours in the
+ * list - which are often neighbours on the lane - never share one.
+ */
+private fun EffectKind.firstColours(): Color? {
+    val argb = when (this) {
             EffectKind.Shake -> 0xFFFF7A59
             EffectKind.Punch -> 0xFFFF5B7A
             EffectKind.ZoomIn -> 0xFF4FD1FF
@@ -168,8 +254,10 @@ val EffectKind.color: Color
             EffectKind.Trippy -> 0xFF7CFF6B
             EffectKind.Sway -> 0xFF6BC4FF
             EffectKind.ZoomOut -> 0xFF4FA8FF
+            else -> return null
         }
-    )
+    return Color(argb)
+}
 
 val VoiceEffect.glyph: Glyph
     get() = when (this) {

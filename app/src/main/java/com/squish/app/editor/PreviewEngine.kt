@@ -111,7 +111,13 @@ data class SurfaceDraw(
      * cropped or placed much smaller the softness reads a little wider on
      * screen than in the file.
      */
-    val blur: Float = 0f
+    val blur: Float = 0f,
+    /**
+     * EDGE_PLAN F3's parts of the draw: its shape, turn, squeeze and shade,
+     * drawn by the Compose layer (TimelinePreview's transitionShaped), and its
+     * warp, which - like [blur] - goes to the surface's own effects pass.
+     */
+    val shaped: ExportPlan.Draw = ExportPlan.PLAIN
 ) {
     companion object {
         /** [draw] as the screen draws it, on top ([zIndex] 1) or under. */
@@ -127,7 +133,8 @@ data class SurfaceDraw(
             revealFromY = draw.keepFromY,
             revealToY = draw.keepToY,
             white = draw.white,
-            blur = draw.blur
+            blur = draw.blur,
+            shaped = draw
         )
     }
 }
@@ -307,6 +314,9 @@ class PreviewEngine(private val context: Context) {
          * is and changes on every tick of a transition.
          */
         val transitionBlur = AtomicReference(0f)
+
+        /** A join's warp (SurfaceDraw.shaped), carried the same way as [transitionBlur]. */
+        val transitionWarp = AtomicReference(ExportPlan.Warp.NONE)
 
         /**
          * The blended still this surface draws under, in this surface's own
@@ -498,7 +508,7 @@ class PreviewEngine(private val context: Context) {
                         blendStill.get()?.placementAt?.invoke(atMs)
                     })
                     // Writes alpha 1, so a base frame reaches its view opaque.
-                    add(FxEffect({ effects.get() }, overBlack = true, extraBlur = { transitionBlur.get() }))
+                    add(FxEffect({ effects.get() }, overBlack = true, extraBlur = { transitionBlur.get() }, warpAt = { transitionWarp.get() }))
                 } else {
                     // A layer keeps its transparency all the way to the screen,
                     // where its view blends it premultiplied; see PremultiplyEffect.
@@ -1118,6 +1128,26 @@ class PreviewEngine(private val context: Context) {
         primeAudio(positionMs)
     }
 
+    /**
+     * While an export runs, every surface gives its decoder back and nothing
+     * loads again until it ends. A phone's hardware decoder holds only so many
+     * streams: on the moto on 25 October the two base surfaces kept theirs
+     * under the export sheet, and an export of a join between two 1080p shots
+     * - needing two more - had its second refused. The next tick after the
+     * hold lifts loads what the playhead needs, as after a long scroll.
+     */
+    fun holdForExport(hold: Boolean) {
+        if (released || hold == heldForExport) return
+        heldForExport = hold
+        if (hold) {
+            pause()
+            allSurfaces().forEach { unload(it) }
+            Log.i(TAG, "decoders let go for the export")
+        } else requestRedraw()
+    }
+
+    private var heldForExport = false
+
     fun pause() {
         if (released) return
         if (playing) com.squish.app.av.Perf.took("pause", SystemClock.elapsedRealtime() - anchorWallMs, "at=$positionMs")
@@ -1249,6 +1279,8 @@ class PreviewEngine(private val context: Context) {
 
     fun tick(): PreviewFrame {
         if (released) return PreviewFrame()
+        // Nothing loads under an export (holdForExport): a tick would put the decoders straight back.
+        if (heldForExport) return PreviewFrame(positionMs = positionMs, durationMs = durationMs)
         val now = SystemClock.elapsedRealtime()
 
         // A scrub has gone quiet, or the finger has lifted. Never while a finger
@@ -1534,7 +1566,9 @@ class PreviewEngine(private val context: Context) {
         // Both set, then asked: `||` would short-circuit past the second one.
         val blurMovedA = surfaceA.transitionBlur.getAndSet(a.blur) != a.blur
         val blurMovedB = surfaceB.transitionBlur.getAndSet(b.blur) != b.blur
-        if (blurMovedA || blurMovedB) requestRedraw()
+        val warpMovedA = surfaceA.transitionWarp.getAndSet(a.shaped.warp) != a.shaped.warp
+        val warpMovedB = surfaceB.transitionWarp.getAndSet(b.shaped.warp) != b.shaped.warp
+        if (blurMovedA || blurMovedB || warpMovedA || warpMovedB) requestRedraw()
         return a to b
     }
 

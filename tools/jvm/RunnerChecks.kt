@@ -86,6 +86,22 @@ fun main() {
     }
 
     println("runners: run.sh and run_desktop.sh list ${sandbox.size} and ${desktop.size} suites")
+    // A runner that will not parse runs nothing past the fault, and says so only
+    // once, in the middle of an hour of output. That happened: a shell edit on
+    // 25 October wrote a literal "\n" into run_media3.sh and put a "| tail" on a
+    // line of its own, and every Media3 suite after it - the draft round trips
+    // among them - stopped running while the pass above it still read ok. The
+    // two marks of that edit are what this looks for: a pipe opening a line, and
+    // a backslash-n between two words of a command.
+    for (path in listOf("tools/jvm/run.sh", "tools/jvm/run_desktop.sh", "tools/jvm/run_media3.sh")) {
+        val lines = File(path).takeIf { it.isFile }?.readLines().orEmpty()
+        lines.forEachIndexed { i, line ->
+            val code = line.substringBefore(" #").trimStart()
+            if (code.startsWith("|")) problems += "$path line ${i + 1} opens with a pipe - the shell refuses it and runs nothing after"
+            if (!code.startsWith("#") && Regex("""\S \\n \S|\\n  """).containsMatchIn(code)) problems += "$path line ${i + 1} has a literal \\n in a command: $line"
+        }
+    }
+
     if (problems.isEmpty()) println("PASS - every suite is run on both machines, and every file named exists")
     else { println("FAIL (${problems.size})"); problems.forEach { println("  - $it") }; exitProcess(1) }
 }

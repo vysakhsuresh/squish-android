@@ -108,17 +108,17 @@ fun CaptionLayer(
             // paused karaoke line shows the word under the playhead, so scrubbing reads it.
             val look = if (atRest) TextFrame(words = moving.words) else moving
             val shown = CaptionRenderer.shownText(item, look)
-            if (shown.isBlank() && !item.isShape) continue
+            if (shown.isBlank() && !item.drawsWithoutWords) continue
 
             // A knockout card (EDGE_PLAN E4) has its letters cut where the line
             // stands, at its turn: those are part of what is painted.
             val cut = if (item.knockout) CaptionRenderer.Cut(item.cutAt(timeMs), item.cutTurn(look)) else null
             val key = "${item.id}/${item.style}/${item.flipped}/${item.align}/${item.motion}/" +
-                "${item.shape}/${item.shapeAspect}/${item.shapeFilled}/${item.wordColors}/$cut/" +
-                "${item.text}/$shown/${look.words?.active}@${boxWidth}x$boxHeight"
+                "${item.shape}/${item.design}/${item.shapeAspect}/${item.shapeFilled}/${item.wordColors}/$cut/" +
+                "${item.text}/$shown/${look.words?.active}/${if (item.isGif) com.squish.app.media.gif.GifStickers.frameIndex(item, timeMs - item.startMs) else 0}@${boxWidth}x$boxHeight"
             live.add(key)
             val (glyph, grab) = glyphs.getOrPut(key) {
-                val painted = CaptionRenderer.paint(item, shown, boxWidth, boxHeight, look.words, cut)
+                val painted = CaptionRenderer.paint(item, shown, boxWidth, boxHeight, look.words, cut, timeMs - item.startMs)
                 PaintedLetters(painted.bitmap.asImageBitmap(), TextBox(painted.grabWidth.toFloat(), painted.grabHeight.toFloat()))
             }
             if (boxes != null && (shown == item.text || look.words != null)) {

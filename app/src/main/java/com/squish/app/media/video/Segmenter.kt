@@ -125,6 +125,8 @@ object Segmenter {
             val decoded = LumaDecoder.decodeColour(context, uri, fromMs, toMs, step, FRAME_SIDE) { at, frame ->
                 val mask = ByteArray(MASK_SIZE * MASK_SIZE)
                 runCatching { segment(segmenter, frame, mask) }
+                // Its edge onto the picture's own (EDGE_PLAN F7, MaskRefine).
+                runCatching { refine(frame, mask) }
                 frame.recycle()
                 times += at
                 masks += mask
@@ -146,6 +148,7 @@ object Segmenter {
                         val argb = if (frame.config == Bitmap.Config.ARGB_8888) frame
                         else frame.copy(Bitmap.Config.ARGB_8888, false).also { frame.recycle() }
                         runCatching { segment(segmenter, argb, mask) }
+                        runCatching { refine(argb, mask) }
                         argb.recycle()
                     } else {
                         masks.lastOrNull()?.copyInto(mask)
@@ -158,7 +161,9 @@ object Segmenter {
             onProgress(count, count)
             val dir = File(context.filesDir, "segments").apply { mkdirs() }
             val file = File(dir, "${uri.toString().hashCode().toUInt().toString(16)}_${fromMs}_$toMs.bin")
-            PersonMasks.write(file, PersonMasks(MASK_SIZE, MASK_SIZE, times.toLongArray(), masks.toTypedArray()))
+            // The flicker between samples taken out (EDGE_PLAN F7): the outline no longer boils.
+            val steady = MaskRefine.temporal(masks, MASK_SIZE * MASK_SIZE)
+            PersonMasks.write(file, PersonMasks(MASK_SIZE, MASK_SIZE, times.toLongArray(), steady.toTypedArray()))
             file.absolutePath
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -226,5 +231,20 @@ object Segmenter {
                 out[y * MASK_SIZE + x] = (v.coerceIn(0f, 1f) * 255f).roundToInt().toByte()
             }
         }
+    }
+
+    /** [mask]'s edge pulled onto [frame]'s own edges, at the mask's size (MaskRefine.guided). */
+    internal fun refine(frame: Bitmap, mask: ByteArray) {
+        val small = Bitmap.createScaledBitmap(frame, MASK_SIZE, MASK_SIZE, true)
+        val px = IntArray(MASK_SIZE * MASK_SIZE)
+        small.getPixels(px, 0, MASK_SIZE, 0, 0, MASK_SIZE, MASK_SIZE)
+        if (small !== frame) small.recycle()
+        val guide = FloatArray(px.size) { i ->
+            val c = px[i]
+            (0.2126f * ((c shr 16) and 0xFF) + 0.7152f * ((c shr 8) and 0xFF) + 0.0722f * (c and 0xFF)) / 255f
+        }
+        val m = FloatArray(mask.size) { (mask[it].toInt() and 0xFF) / 255f }
+        val out = MaskRefine.guided(guide, m, MASK_SIZE, MASK_SIZE)
+        for (i in out.indices) mask[i] = (out[i] * 255f).roundToInt().coerceIn(0, 255).toByte()
     }
 }

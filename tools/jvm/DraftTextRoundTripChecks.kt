@@ -105,6 +105,9 @@ private fun wildLine(): TextOverlayItem = TextOverlayItem(
     shape = AnnotationShape.entries.last(),
     shapeAspect = 2.4f,
     shapeFilled = true,
+    // And a design (EDGE_PLAN F4) on the same fixture, for the same reason: its key is written only when there is one.
+    design = com.squish.app.editor.StickerDesign.entries.last(),
+    gif = "/data/user/0/com.squish.app/files/stickers/a.gif",
     track = MotionTrack(
         listOf(
             TrackSample(0L, 0.4f, 0.7f, 1.1f, 0.9f),

@@ -1038,13 +1038,14 @@ private fun EditorPreview(
                 onEdit = { id ->
                     viewModel.selectClip(id)
                     val item = textItem(id)
-                    latestOpenToolSheet(if (item == null || item.sticker) Tool.Placement else Tool.Edit)
+                    // A designed sticker with words (a price, a label) is typed, as a line is.
+                    latestOpenToolSheet(if (item == null || (item.sticker && !item.design.hasWords)) Tool.Placement else Tool.Edit)
                 },
                 onOpen = { id ->
                     val item = textItem(id)
                     if (item != null) {
                         viewModel.selectClip(id)
-                        latestOpenToolSheet(if (item.sticker) Tool.Placement else Tool.Edit)
+                        latestOpenToolSheet(if (item.sticker && !item.design.hasWords) Tool.Placement else Tool.Edit)
                     }
                 },
                 // Only a line or a sticker has anything to open. On a clip
@@ -1094,6 +1095,7 @@ private fun EditorPreview(
         // Nor while a colour is being picked: that one tap is the eyedropper's.
         val overlayActions = boxActions.takeIf { !editingCrop && eyedropper == null && pictureTool == null }
         TimelinePreview(
+            exporting = state.isExporting,
             videoClips = state.videoClips,
             audioClips = state.audioClips,
             captions = state.textOverlays,

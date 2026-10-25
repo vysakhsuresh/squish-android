@@ -246,6 +246,42 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * - subtitle files, the transcript, Read aloud - leaves it out without being
      * told about shapes at all.
      */
+    /**
+     * A designed sticker at the playhead (EDGE_PLAN F4): a callout, a button, a
+     * frame, a price tag, in its own colour and saying its own words, which are
+     * the line's text and so typed on the keyboard like a title's. Each lands
+     * with a move that suits it - a button keeps pulsing, as a real one asks to
+     * be pressed; a frame or a highlight simply appears.
+     */
+    fun addDesign(design: com.squish.app.editor.StickerDesign) = record("Add ${design.label.lowercase()}") {
+        val span = placeNewText(_state.value, DEFAULT_TITLE_MS)
+        val spot = com.squish.app.editor.TextPlacementRules.freeSpot(
+            _state.value.textOverlays.filter { it.startMs < span.endMs && it.endMs > span.startMs }.map { it.xFraction to it.yFraction }
+        )
+        val shelf = design.shelf
+        val calm = shelf == com.squish.app.editor.StickerDesign.Shelf.Frames || shelf == com.squish.app.editor.StickerDesign.Shelf.Highlights
+        val item = TextOverlayItem(
+            id = UUID.randomUUID().toString(),
+            text = design.words,
+            startMs = span.startMs,
+            endMs = span.endMs,
+            colorArgb = design.colour,
+            // A frame goes round the middle of the picture; the rest find a free spot.
+            xFraction = if (shelf == com.squish.app.editor.StickerDesign.Shelf.Frames) 0.5f else spot.first,
+            yFraction = if (shelf == com.squish.app.editor.StickerDesign.Shelf.Frames) 0.5f else spot.second,
+            sizeSp = if (shelf == com.squish.app.editor.StickerDesign.Shelf.Frames) DESIGN_FRAME_SP else DESIGN_SIZE_SP,
+            bold = true,
+            stroke = TextStroke.NONE,
+            motion = if (calm) TextMotion.Fade else TextMotion.Pop,
+            motionOut = TextExit.Fade,
+            loop = if (shelf == com.squish.app.editor.StickerDesign.Shelf.Social) com.squish.app.editor.TextLoop.Pulse else com.squish.app.editor.TextLoop.None,
+            sticker = true,
+            design = design,
+            shapeAspect = design.aspect
+        )
+        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id).stilled() }
+    }
+
     fun addShape(shape: AnnotationShape) = record("Add ${shape.label.lowercase()}") {
         val span = placeNewText(_state.value, DEFAULT_TITLE_MS)
         val spot = com.squish.app.editor.TextPlacementRules.freeSpot(
@@ -424,6 +460,55 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * The copy is made off the main thread; a file that is not a font is
      * refused with a card rather than drawn as the default face.
      */
+    /**
+     * A GIF from the phone as an animated sticker (EDGE_PLAN F4, P6): copied
+     * under files/stickers/ so the edit keeps it whatever happens to the
+     * original, read once off the main thread to be sure it plays, then placed
+     * at the playhead as one step at its own shape. A file that is not a GIF
+     * the decoder can read is refused with its reason.
+     */
+    fun importGif(uri: Uri) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val bytes = app.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw com.squish.app.media.gif.GifDecoder.Failure("The file could not be opened.")
+                    val anim = com.squish.app.media.gif.GifDecoder.decode(bytes)
+                    val dir = File(app.filesDir, GIF_DIR).apply { mkdirs() }
+                    val file = File(dir, "${UUID.randomUUID()}.gif")
+                    file.writeBytes(bytes)
+                    file.absolutePath to anim.width.toFloat() / anim.height.coerceAtLeast(1)
+                }
+            }
+            result.onSuccess { (path, aspect) -> addGif(path, aspect) }
+                .onFailure { e -> _state.update { it.copy(failure = SquishError.GifUnreadable((e as? com.squish.app.media.gif.GifDecoder.Failure)?.message)) } }
+        }
+    }
+
+    private fun addGif(path: String, aspect: Float) = record("Add GIF") {
+        val span = placeNewText(_state.value, DEFAULT_TITLE_MS)
+        val spot = com.squish.app.editor.TextPlacementRules.freeSpot(
+            _state.value.textOverlays.filter { it.startMs < span.endMs && it.endMs > span.startMs }.map { it.xFraction to it.yFraction }
+        )
+        val item = TextOverlayItem(
+            id = UUID.randomUUID().toString(),
+            text = "",
+            startMs = span.startMs,
+            endMs = span.endMs,
+            colorArgb = android.graphics.Color.WHITE,
+            xFraction = spot.first,
+            yFraction = spot.second,
+            sizeSp = GIF_SIZE_SP,
+            stroke = TextStroke.NONE,
+            motion = TextMotion.Pop,
+            motionOut = TextExit.Fade,
+            sticker = true,
+            gif = path,
+            shapeAspect = aspect.coerceIn(ShapeGeometry.MIN_ASPECT, ShapeGeometry.MAX_ASPECT)
+        )
+        _state.update { it.copy(textOverlays = it.textOverlays + item, selectedClipId = item.id).stilled() }
+    }
+
     fun importFont(uri: Uri, onto: String?, onDone: (String?) -> Unit = {}) {
         viewModelScope.launch {
             val name = withContext(Dispatchers.IO) { CustomFonts.import(app, uri) }
@@ -1142,6 +1227,18 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
 
         /** The size a sticker lands at, which Placement's Reset goes back to. */
         const val STICKER_SIZE_SP = 64
+
+        /** A designed sticker's height: a fifth of the short edge, a button's size on a phone screen. */
+        const val DESIGN_SIZE_SP = 70
+
+        /** A frame's: half the short edge, so at 16:9 it spans most of a portrait frame's width and none of it is lost off the edge. */
+        const val DESIGN_FRAME_SP = 180
+
+        /** A GIF sticker's height: a third of the short edge, as a GIF from a keyboard is usually seen. */
+        const val GIF_SIZE_SP = 120
+
+        /** Where GIF stickers are kept, apart from anything the storage card clears. */
+        const val GIF_DIR = "stickers"
 
         /**
          * The colour a new shape lands in: the red every reviewer's circle is

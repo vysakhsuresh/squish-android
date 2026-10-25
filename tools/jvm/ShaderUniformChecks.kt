@@ -192,6 +192,54 @@ fun main() {
         }
     }
 
+    // --- The library's second set, written twice. -----------------------------
+    //
+    // EDGE_PLAN F2's forty effects are one block of stages that the export's
+    // pass (GLSL) and the preview's canvas pass (AGSL, Android 13+) both hold.
+    // The block is the same text in both but for the type names, so a stage
+    // retuned in one and not the other - a preview that disagrees with its
+    // file - is a difference this can see. And the AGSL is a string in a
+    // Kotlin file that the asset loop above never reads, so its uniforms are
+    // held to its setters here: RuntimeShader throws on a name it lacks, and a
+    // uniform nothing sets reads as zero.
+    run {
+        val begin = "// ---- The library's second set of stages (EDGE_PLAN F2) ----"
+        val end = "// ---- end of the second set ----"
+        fun block(path: String): String? {
+            val text = File(path).takeIf { it.isFile }?.readText() ?: return null
+            val a = text.indexOf(begin); val b = text.indexOf(end)
+            if (a < 0 || b < a || text.indexOf(begin, a + 1) >= 0) return null
+            return text.substring(a, b).lines().joinToString("\n") { it.trim() }.trim()
+        }
+        val glslPath = "app/src/main/assets/squish_fx_es2.glsl"
+        val agslPath = "app/src/main/java/com/squish/app/editor/CanvasFx.kt"
+        val glsl = block(glslPath)
+        val agsl = block(agslPath)
+        if (glsl == null || agsl == null) {
+            flag("the second set of effect stages is missing, or there twice, in ${if (glsl == null) glslPath else agslPath}")
+        } else {
+            val spelled = glsl.replace(Regex("""\bvec([234])\b"""), "float$1")
+            if (spelled != agsl) {
+                val g = spelled.lines(); val s = agsl.lines()
+                val at = g.indices.firstOrNull { it >= s.size || g[it] != s[it] } ?: g.size
+                flag("the effect stages in $glslPath and $agslPath part at line ${at + 1} of the block: '${g.getOrNull(at)}' against '${s.getOrNull(at)}'")
+            }
+            listOf("warp(uv)", "resample(c, uv)", "lightAndTone(c, ").forEach { call ->
+                listOf(glslPath, agslPath).forEach { path ->
+                    val main = File(path).readText().substringAfter("main(", "")
+                    if (call !in main.substringAfter(end, main)) flag("$path never calls $call - the stage is written and not run")
+                }
+            }
+        }
+        val canvas = File(agslPath).readText()
+        val shaderText = canvas.substringAfter("AGSL = \"\"\"", "").substringBefore("\"\"\"")
+        val agslUniforms = Regex("""(?m)^\s*uniform\s+(\w+)\s+(\w+)\s*;""").findAll(shaderText)
+            .filter { it.groupValues[1] != "shader" }.map { it.groupValues[2] }.toSet()
+        val agslSet = SET_FLOAT.findAll(canvas).map { it.groupValues[1] }.toSet()
+        (agslUniforms - agslSet).sorted().forEach { flag("CanvasFx.kt: the AGSL declares '$it' and nothing sets it - it reads as zero") }
+        (agslSet - agslUniforms).sorted().forEach { flag("CanvasFx.kt: sets '$it', which its AGSL does not declare - RuntimeShader throws") }
+    }
+
     println("shaders: ${shaders.size} checked against the Kotlin that drives them")
     if (problems.isEmpty()) println("PASS - every uniform a shader declares is set, and every uniform set is declared")
     else { println("FAIL (${problems.size})"); problems.forEach { println("  - $it") }; exitProcess(1) }
