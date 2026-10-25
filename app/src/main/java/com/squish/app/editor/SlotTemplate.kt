@@ -72,6 +72,44 @@ enum class SlotTemplate(
     fun joinInto(index: Int): TransitionType = if (index <= 0 || joins.isEmpty()) TransitionType.None else joins[(index - 1) % joins.size]
 }
 
+/**
+ * AutoCut (EDGE_PLAN H2): every shot once, cut to a Squish original at one of
+ * three paces, slid to its liveliest bit, with a look - and for Hype a sound on
+ * every cut. The slot templates' machinery with the slots made from the shots:
+ * one slot a shot, its length from [pattern] in turn.
+ */
+enum class AutoCutStyle(
+    val label: String,
+    val blurb: String,
+    val base: String,
+    val songId: String,
+    /** Beats per shot, in turn. */
+    val pattern: List<Int>,
+    val joins: List<TransitionType>,
+    val cutSounds: Boolean
+) {
+    Calm("Calm", "Long shots, soft dissolves, a gentle song", "Vlog", "acoustic-morning",
+        listOf(8), listOf(TransitionType.CrossFade), cutSounds = false),
+    Upbeat("Upbeat", "A shot a bar, slides and cuts, a happy song", "Travel", "summer-pop",
+        listOf(4), listOf(TransitionType.None, TransitionType.SlideLeft), cutSounds = false),
+    Hype("Hype", "Fast cuts, flashes and a whoosh on every one", "Reel", "festival",
+        listOf(2, 2, 4), listOf(TransitionType.None, TransitionType.Flash, TransitionType.Whip), cutSounds = true);
+
+    /** One slot for each of [shots] shots, the pattern in turn, held to the song's [songBeats]. */
+    fun slotsFor(shots: Int, songBeats: Int): List<Int> {
+        var room = songBeats
+        val out = ArrayList<Int>(shots)
+        for (i in 0 until shots) {
+            val want = pattern[i % pattern.size]
+            if (room < 1) break
+            val take = minOf(want, room)
+            out += take
+            room -= take
+        }
+        return out
+    }
+}
+
 /** The slot arithmetic, apart from the editor (SlotTemplateChecks). */
 object SlotRules {
 

@@ -69,6 +69,25 @@ fun main() {
     }
     check(SlotRules.joinMs(60_000.0 / 60) == SlotRules.MAX_JOIN_MS && SlotRules.joinMs(60_000.0 / 150) == 200L, "join lengths")
 
+    // --- AutoCut (H2): three styles, every shot once, held to the song. --------
+    check(com.squish.app.editor.AutoCutStyle.entries.size == 3, "AutoCut has ${com.squish.app.editor.AutoCutStyle.entries.size} styles, not 3")
+    for (s in com.squish.app.editor.AutoCutStyle.entries) {
+        check(s.base in templates, "AutoCut ${s.label} names a template \"${s.base}\" that Template.kt does not have")
+        val song = MusicSynth.byId(s.songId)
+        check(song != null, "AutoCut ${s.label} names an original \"${s.songId}\" that MusicSynth does not have")
+        val beats = (song?.bars ?: 0) * 4
+        val five = s.slotsFor(5, beats)
+        check(five.size == 5, "AutoCut ${s.label} gave ${five.size} slots for 5 shots")
+        check(five.indices.all { five[it] == s.pattern[it % s.pattern.size] }, "AutoCut ${s.label}: slots $five against ${s.pattern}")
+        // More shots than the song can carry: the slots stop at the song's end, never past it.
+        val many = s.slotsFor(500, beats)
+        check(many.sum() <= beats && many.sum() >= beats - s.pattern.max(), "AutoCut ${s.label}: 500 shots ran ${many.sum()} of $beats beats")
+        check(many.all { it >= 1 }, "AutoCut ${s.label}: a slot of no beats past the song's end")
+    }
+    val paces = com.squish.app.editor.AutoCutStyle.entries.map { it.pattern.average() }
+    check(paces == paces.sortedDescending(), "AutoCut's styles are not slowest first: $paces")
+    check(com.squish.app.editor.AutoCutStyle.Hype.cutSounds && !com.squish.app.editor.AutoCutStyle.Calm.cutSounds, "cut sounds on the wrong styles")
+
     if (problems.isEmpty()) println("SlotTemplateChecks: all checks passed (${SlotTemplate.entries.size} slot templates)")
     else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
 }

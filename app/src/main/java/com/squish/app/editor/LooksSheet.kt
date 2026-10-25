@@ -565,6 +565,29 @@ fun TemplatesPanel(viewModel: EditorViewModel) {
                 style = MaterialTheme.typography.labelSmall,
                 color = SquishColors.TextMuted
             )
+            // AutoCut (EDGE_PLAN H2): every shot once, at one of three paces.
+            Text("AutoCut - every shot once, cut to a song", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                com.squish.app.editor.AutoCutStyle.entries.forEach { style ->
+                    SquishOutlinedButton(
+                        text = style.label,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            if (working != null) return@SquishOutlinedButton
+                            working = "AutoCut ${style.label}"
+                            note = null
+                            viewModel.clips.autoCut(style) { said ->
+                                working = null
+                                note = said ?: style.blurb
+                                if (said == null) {
+                                    viewModel.analysis.keepBestBits()
+                                    if (style.cutSounds) viewModel.audio.soundOnEveryCut()
+                                }
+                            }
+                        }
+                    )
+                }
+            }
             SlotTemplate.entries.chunked(2).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     row.forEach { slot ->

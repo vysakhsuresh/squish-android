@@ -589,22 +589,42 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * step of its own because it is measured after. [onDone] is told a sentence
      * to show, or null when it landed.
      */
-    fun applySlotTemplate(slot: SlotTemplate, onDone: (String?) -> Unit) {
-        val style = com.squish.app.media.audio.MusicSynth.byId(slot.songId) ?: return onDone("That song is not in this build.")
-        val base = runCatching { Template.valueOf(slot.base) }.getOrNull() ?: return onDone("That template is not in this build.")
+    fun applySlotTemplate(slot: SlotTemplate, onDone: (String?) -> Unit) =
+        laySlots("Template ${slot.label}", slot.base, slot.songId, { _, _ -> slot.slots }, slot::joinInto, onDone)
+
+    /**
+     * AutoCut (EDGE_PLAN H2): every main-track shot once, cut to [style]'s song at
+     * its pace, with its joins and look; the caller slides each to its liveliest
+     * bit and, for a style that asks, lays a sound on every cut.
+     */
+    fun autoCut(style: com.squish.app.editor.AutoCutStyle, onDone: (String?) -> Unit) =
+        laySlots("AutoCut ${style.label}", style.base, style.songId, style::slotsFor, { i ->
+            if (i <= 0 || style.joins.isEmpty()) com.squish.app.timeline.TransitionType.None else style.joins[(i - 1) % style.joins.size]
+        }, onDone)
+
+    private fun laySlots(
+        label: String,
+        baseName: String,
+        songId: String,
+        slotsOf: (shots: Int, songBeats: Int) -> List<Int>,
+        joinInto: (Int) -> com.squish.app.timeline.TransitionType,
+        onDone: (String?) -> Unit
+    ) {
+        val style = com.squish.app.media.audio.MusicSynth.byId(songId) ?: return onDone("That song is not in this build.")
+        val base = runCatching { Template.valueOf(baseName) }.getOrNull() ?: return onDone("That template is not in this build.")
         if (_state.value.videoClips.none { it.isMain }) return onDone("Add your shots first - the template fills its slots with them.")
         viewModelScope.launch {
             val song = com.squish.app.media.audio.MusicLibrary.original(app, style) ?: return@launch onDone("Couldn't make the song.")
             val beatMs = 60_000.0 / style.bpm
             val beats = com.squish.app.media.audio.MusicSynth.beatMap(style).beatsMs
-            recordLate("Template ${slot.label}", edit = { s ->
+            recordLate(label, edit = { s ->
                 val shots = s.videoClips.filter { it.isMain }.sortedBy { it.timelineStartMs }
                 if (shots.isEmpty()) return@recordLate s
-                val fills = SlotRules.fill(slot.slots, beatMs, shots.map { if (it.isStillPicture) null else it.sourceDurationMs })
+                val fills = SlotRules.fill(slotsOf(shots.size, style.bars * 4), beatMs, shots.map { if (it.isStillPicture) null else it.sourceDurationMs })
                 val used = HashSet<String>()
                 val laid = fills.mapIndexed { i, f ->
                     val from = shots[f.shot]
-                    val join = slot.joinInto(i)
+                    val join = joinInto(i)
                     val length = SlotRules.laidLengthMs(fills, i, beatMs, joinIn = join != com.squish.app.timeline.TransitionType.None)
                     val fileMs = if (from.isStillPicture) Long.MAX_VALUE else from.sourceDurationMs
                     // Its own in-point where the file has room after it; else as late as fits.
