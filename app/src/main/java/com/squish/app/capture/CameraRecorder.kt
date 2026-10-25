@@ -395,7 +395,8 @@ private fun ScriptEditor(initial: String, bars: androidx.compose.foundation.layo
                 value = text,
                 onValueChange = { text = it },
                 label = { Text("What to say, word for word") },
-                modifier = Modifier.fillMaxWidth().height(tall * 0.4f)
+                // A name of its own: the label above is gone from the reader once anything is typed.
+                modifier = Modifier.fillMaxWidth().height(tall * 0.4f).semantics { contentDescription = "Teleprompter script" }
             )
         }
     }
