@@ -379,6 +379,84 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
     }
 
     /**
+     * Voice only or Remove voice (EDGE_PLAN G3) on a sound or a shot: its window
+     * rendered through DTLN to a WAV (VoiceSplitter), landed as one step when it
+     * is done. A sound takes the file in place of its own, the same window on the
+     * strip; a shot's sound is extracted onto the sound rows as the rendered file
+     * and the shot silenced, as Extract audio does. [onDone] is told a sentence
+     * to show, or null when it landed.
+     */
+    fun splitVoice(
+        clipId: String,
+        mode: com.squish.app.media.audio.VoiceSplit.Mode,
+        level: Float,
+        onProgress: (Float) -> Unit,
+        onDone: (String?) -> Unit
+    ) {
+        val current = _state.value
+        val clip = (current.audioClips + current.videoClips).firstOrNull { it.id == clipId } ?: return onDone(null)
+        val uri = clip.uri ?: current.sourceUri ?: return onDone(null)
+        val isShot = clip.kind != ClipKind.Audio
+        if (isShot && (clip.isStillPicture || MediaCompat.cached(uri)?.hasAudio == false || (uri == current.sourceUri && !current.sourceHasAudio))) {
+            return onDone("This shot has no sound to split.")
+        }
+        viewModelScope.launch {
+            val result = com.squish.app.media.audio.VoiceSplitter.render(
+                app, uri, clip.sourceInMs, clip.sourceOutMs, mode, level
+            ) { p -> viewModelScope.launch(Dispatchers.Main) { onProgress(p) } }
+            val done = when (result) {
+                is com.squish.app.media.audio.VoiceSplitter.Result.Done -> result
+                com.squish.app.media.audio.VoiceSplitter.Result.TooLong ->
+                    return@launch onDone("${mode.label} works on up to five minutes at a time - split the clip first.")
+                com.squish.app.media.audio.VoiceSplitter.Result.NoSound -> return@launch onDone("This clip has no sound to split.")
+                com.squish.app.media.audio.VoiceSplitter.Result.Failed -> return@launch onDone("Couldn't split this sound.")
+            }
+            val file = Uri.fromFile(done.file)
+            val from = clip.sourceInMs
+            // Re-read: the clip may have been trimmed or moved while it rendered.
+            val now = _state.value
+            val sound = now.audioClips.firstOrNull { it.id == clipId }
+            val shot = now.videoClips.firstOrNull { it.id == clipId }
+            fun inFile(c: Clip): Clip {
+                val inMs = (c.sourceInMs - from).coerceIn(0L, done.spanMs)
+                val outMs = (c.sourceOutMs - from).coerceIn(inMs, done.spanMs)
+                return c.copy(
+                    uri = file, sourceDurationMs = done.spanMs, sourceInMs = inMs, sourceOutMs = outMs,
+                    // Beats are in the file's time: carried into the rendered one's.
+                    beats = c.beats.map { it - from }.filter { it in 0L..done.spanMs }
+                )
+            }
+            when {
+                sound != null -> recordLate(mode.label, edit = { s ->
+                    s.copy(audioClips = s.audioClips.map { if (it.id == clipId) inFile(it) else it })
+                })
+                shot != null -> {
+                    val heard = OverlayRules.effectiveVolume(shot, now.muteOriginal, now.originalVolume)
+                    val extraction = AudioRules.extracted(
+                        inFile(shot), UUID.randomUUID().toString(), heardAt = heard, name = "${now.clipTitle(shot)} · ${mode.label}",
+                        heardOf = { v -> OverlayRules.effectiveVolume(shot, now.muteOriginal, now.originalVolume, v) }
+                    )
+                    // The shot itself keeps its own file: only its sound is the render.
+                    val mutedShot = extraction.muted.copy(
+                        uri = shot.uri, sourceDurationMs = shot.sourceDurationMs,
+                        sourceInMs = shot.sourceInMs, sourceOutMs = shot.sourceOutMs, beats = shot.beats
+                    )
+                    recordLate(mode.label, edit = { s ->
+                        s.copy(
+                            videoClips = s.videoClips.map { if (it.id == clipId) mutedShot else it },
+                            audioClips = s.audioClips + extraction.sound
+                        )
+                    }, alongside = { it.copy(selectedClipId = extraction.sound.id) })
+                }
+                else -> return@launch onDone(null)
+            }
+            recomputeEstimate()
+            ensureWaveform(file)
+            onDone(null)
+        }
+    }
+
+    /**
      * A sound repeated to the end of the picture (AudioRules.loopToFit), as one
      * step. Nothing happens - and nothing is recorded - when there is no room.
      */

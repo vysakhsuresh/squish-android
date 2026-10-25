@@ -16,6 +16,7 @@ media3 = "1.11.1"
 # On-device person segmentation for background removal. Runs locally; the model
 # ships in assets, nothing is downloaded at run time.
 mediapipe = "0.10.14"
+tensorflowLite = "2.16.1"
 # FFmpeg software decoders for Media3 (media/SoftwareDecoders.kt). The first
 # number is the Media3 version the build is for and must track `media3`.
 # GPL-3.0; THIRD_PARTY_NOTICES.md has the notice.
@@ -53,6 +54,7 @@ media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "medi
 media3-common = { group = "androidx.media3", name = "media3-common", version.ref = "media3" }
 media3-inspector = { group = "androidx.media3", name = "media3-inspector", version.ref = "media3" }
 mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipe" }
+tensorflow-lite = { group = "org.tensorflow", name = "tensorflow-lite", version.ref = "tensorflowLite" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

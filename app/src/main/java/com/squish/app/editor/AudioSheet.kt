@@ -696,6 +696,43 @@ fun VoicePanel(clip: Clip, viewModel: EditorViewModel) {
                 onFinished = viewModel::endGesture
             ) { viewModel.audio.setNoiseReduction(clip.id, it, dragging = true) }
         }
+        // Voice isolation (EDGE_PLAN G3): DTLN, on the phone, rendered to a file
+        // that takes the clip's sound's place - one undo step, Undo for the original.
+        Text("Voice isolation", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+        var splitMode by remember(clip.id) { mutableStateOf(com.squish.app.media.audio.VoiceSplit.Mode.VoiceOnly) }
+        var splitLevel by remember(clip.id) { mutableStateOf(1f) }
+        var splitProgress by remember(clip.id) { mutableStateOf<Float?>(null) }
+        var splitNote by remember(clip.id) { mutableStateOf<String?>(null) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            com.squish.app.media.audio.VoiceSplit.Mode.entries.forEach { m ->
+                SelectableChip(label = m.label, selected = splitMode == m, accentColor = SquishColors.Teal) { splitMode = m }
+            }
+        }
+        LabeledSlider(
+            if (splitMode == com.squish.app.media.audio.VoiceSplit.Mode.VoiceOnly) "Rest taken out" else "Voice taken out",
+            splitLevel, 0f..1f,
+            readout = { "${(it * 100).toInt()}%" }
+        ) { splitLevel = it }
+        SquishOutlinedButton(
+            text = splitProgress?.let { "Working… ${(it * 100).toInt()}%" } ?: splitMode.label,
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                if (splitProgress != null) return@SquishOutlinedButton
+                splitProgress = 0f
+                splitNote = null
+                viewModel.audio.splitVoice(clip.id, splitMode, splitLevel, onProgress = { splitProgress = it }) { note ->
+                    splitProgress = null
+                    splitNote = note
+                }
+            }
+        )
+        Text(
+            splitNote ?: "Finds speech with a small model on the phone and keeps it, or takes it out. Made for talking over noise or music; " +
+                "a singing voice is only partly found. The voice comes out up to 8 kHz - clear for speech, not studio-bright. " +
+                "Lands as this clip's sound, in mono; Undo brings the original back.",
+            style = MaterialTheme.typography.labelSmall,
+            color = SquishColors.TextMuted
+        )
         // Finishing (EDGE_PLAN G4): a shape for the sound, evened out, and brought to
         // where the platforms play things. Heard live and written alike.
         Text("Finishing", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)

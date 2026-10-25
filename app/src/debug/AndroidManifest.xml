@@ -21,5 +21,11 @@
             android:name="com.squish.app.debug.LevelProbeActivity"
             android:exported="true"
             android:label="Squish level probe" />
+        <!-- Voice only / Remove voice run on a file and measured (debug/VoiceSplitProbeActivity.kt, EDGE_PLAN G3). -->
+        <activity
+            android:name="com.squish.app.debug.VoiceSplitProbeActivity"
+            android:exported="true"
+            android:showWhenLocked="true"
+            android:label="Squish voice split probe" />
     </application>
 </manifest>

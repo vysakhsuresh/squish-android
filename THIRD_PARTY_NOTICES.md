@@ -60,3 +60,17 @@ normalized device coordinates to texture coordinates and does nothing else. The
 fragment shader beside it (`squish_chroma_key_es2.glsl`) is original.
 
     http://www.apache.org/licenses/LICENSE-2.0
+
+## DTLN - voice isolation models
+
+`app/src/main/assets/dtln/model_1.tflite` and `model_2.tflite` are the
+pretrained real-time models of DTLN, "Dual-Signal Transformation LSTM Network
+for Real-Time Noise Suppression" (Nils L. Westhausen and Bernd T. Meyer,
+Interspeech 2020), https://github.com/breizhn/DTLN, MIT License, Copyright (c)
+2020 Nils L. Westhausen. They run Voice only and Remove voice
+(`media/audio/VoiceSplit.kt`, `DtlnTflite.kt`).
+
+## TensorFlow Lite
+
+`org.tensorflow:tensorflow-lite` 2.16.1, Apache License 2.0 -
+http://www.apache.org/licenses/LICENSE-2.0. Runs the DTLN models.

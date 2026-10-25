@@ -32,7 +32,12 @@ object PcmDecoder {
         context: Context,
         uri: Uri,
         targetSampleRate: Int = 8_000,
-        maxDurationMs: Long = 60_000L
+        maxDurationMs: Long = 60_000L,
+        /**
+         * Where to start keeping: the sound before it is walked and not stored, so a
+         * window late in a long file costs its own length in memory (EDGE_PLAN G3).
+         */
+        fromMs: Long = 0L
     ): MonoPcm? = withContext(Dispatchers.IO) {
         var out = FloatArray(0)
         var written = 0
@@ -40,13 +45,19 @@ object PcmDecoder {
         var analysisRate = 0
         var limit = 0
         var framesSeen = 0L
+        var skip = 0L
         val ok = decodeFrames(context, uri, onFormat = { sourceRate ->
             stride = max(1, sourceRate / targetSampleRate)
             analysisRate = sourceRate / stride
             limit = ((maxDurationMs / 1000.0) * analysisRate).toInt().coerceAtLeast(1024)
             out = FloatArray(minOf(limit, 1 shl 20))
+            skip = fromMs.coerceAtLeast(0L) * sourceRate / 1000L
         }) { sample ->
-            if (framesSeen % stride == 0L) {
+            if (framesSeen < skip) {
+                framesSeen++
+                return@decodeFrames true
+            }
+            if ((framesSeen - skip) % stride == 0L) {
                 if (written == out.size) out = out.copyOf(minOf(out.size * 2, limit))
                 if (written < out.size) out[written++] = sample
             }
