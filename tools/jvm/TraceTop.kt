@@ -36,7 +36,10 @@ fun main(args: Array<String>) {
             }
         }
     }
-    val tid = threads.entries.firstOrNull { it.value == threadName }?.key ?: error("no thread $threadName: ${threads.values}")
+    // "name#2" picks the second thread of that name - an export and the preview each have a GlThread.
+    val wantedName = threadName.substringBefore('#')
+    val nth = threadName.substringAfter('#', "1").toIntOrNull() ?: 1
+    val tid = threads.entries.filter { it.value == wantedName }.sortedBy { it.key }.getOrNull(nth - 1)?.key ?: error("no thread $threadName: ${threads.values}")
 
     val b = ByteBuffer.wrap(bytes, headerEnd, bytes.size - headerEnd).order(ByteOrder.LITTLE_ENDIAN)
     b.int // magic
