@@ -105,6 +105,11 @@ dependencies {
     implementation(libs.mediapipe.tasks.vision)
     // DTLN (EDGE_PLAN G3): 3.4 MB on arm64, Apache-2.0.
     implementation(libs.tensorflow.lite)
+    // The in-app camera (EDGE_PLAN G5), Apache-2.0.
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.video)
+    implementation(libs.camerax.view)
     // SVG pictures, drawn for the photo path where Android has no decoder
     // (av/AvImages.kt). Apache 2.0.
     implementation(libs.androidsvg)

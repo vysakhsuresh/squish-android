@@ -160,6 +160,7 @@ run cleanup    "$SRC/media/video/CleanUp.kt" tools/jvm/CleanUpChecks.kt
 run exporterrors "$SRC/media/ExportErrorKinds.kt" tools/jvm/ExportErrorKindsChecks.kt
 run audiofinish "$SRC/media/audio/AudioFinish.kt" tools/jvm/AudioFinishChecks.kt
 run voicesplit "$SRC/media/audio/Fft.kt" "$SRC/media/audio/VoiceSplit.kt" tools/jvm/VoiceSplitChecks.kt
+run capturerules "$SRC/capture/CaptureRules.kt" tools/jvm/CaptureRulesChecks.kt
 run autoadjust "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/ColorWheels.kt" "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
 run translatechunks "$SRC/online/OnlineTranslate.kt" tools/jvm/stub/translate/OnlineStub.kt tools/jvm/stub/translate/ContextStub.kt tools/jvm/stub/translate/JsonStub.kt tools/jvm/TranslateChunkChecks.kt
 

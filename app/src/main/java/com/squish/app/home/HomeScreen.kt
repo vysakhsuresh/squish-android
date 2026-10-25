@@ -211,6 +211,34 @@ fun HomeScreen(
         }
     }
 
+    fun launchPhoneCamera() {
+        val dir = File(context.filesDir, IMPORTS_DIR).apply { mkdirs() }
+        val file = File(dir, "rec_${System.currentTimeMillis()}.mp4")
+        val target = runCatching {
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }.getOrNull()
+        if (target == null) viewModel.say("Couldn't make room for a recording. Free some space and try again.")
+        else {
+            recording = file.absolutePath
+            runCatching { record.launch(target) }.onFailure {
+                recording = null
+                viewModel.say("No camera app on this phone could record a video.")
+            }
+        }
+    }
+    var cameraOpen by rememberSaveable { mutableStateOf(false) }
+    if (cameraOpen) {
+        com.squish.app.capture.CameraRecorder(
+            newFile = { File(File(context.filesDir, IMPORTS_DIR).apply { mkdirs() }, "rec_${System.currentTimeMillis()}.mp4") },
+            onTaken = { file ->
+                cameraOpen = false
+                viewModel.startProject(listOf(Uri.fromFile(file)), onOpenProject)
+            },
+            onPhoneCamera = { cameraOpen = false; launchPhoneCamera() },
+            onClose = { cameraOpen = false }
+        )
+    }
+
     var renaming by remember { mutableStateOf<DraftSummary?>(null) }
     var previewing by remember { mutableStateOf<DraftSummary?>(null) }
     var reverting by remember { mutableStateOf<DraftSummary?>(null) }
@@ -302,21 +330,8 @@ fun HomeScreen(
                     NewProjectCard(
                         onPick = { showLibrary = true },
                         onBrowse = { browseFiles.launch(com.squish.app.av.AvTypes.PICTURES_AND_FOOTAGE) },
-                        onRecord = {
-                            val dir = File(context.filesDir, IMPORTS_DIR).apply { mkdirs() }
-                            val file = File(dir, "rec_${System.currentTimeMillis()}.mp4")
-                            val target = runCatching {
-                                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                            }.getOrNull()
-                            if (target == null) viewModel.say("Couldn't make room for a recording. Free some space and try again.")
-                            else {
-                                recording = file.absolutePath
-                                runCatching { record.launch(target) }.onFailure {
-                                    recording = null
-                                    viewModel.say("No camera app on this phone could record a video.")
-                                }
-                            }
-                        }
+                        // Squish's own camera (EDGE_PLAN G5); the phone's app is one tap away inside it.
+                        onRecord = { cameraOpen = true }
                     )
                 }
 
