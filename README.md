@@ -51,11 +51,12 @@ recorder — the timbre is wildly different, the loudness shape is not.
   comes out. Crops in by exactly as much as the correction needs and no more, and
   composes with your own keyframes rather than overwriting them.
 - **Auto-captions.** Finds every line of speech and times it to the frame — the
-  half of captioning that actually takes an afternoon — then transcribes it where
-  the device has on-device speech recognition. Nothing is uploaded, so if your
-  phone cannot do it locally, it does not happen; you get perfectly timed cards to
-  type into instead. Import and export .srt to use any transcript you like.
-- **Shape masks.** Rectangle, ellipse, linear and mirror, each feathered,
+  half of captioning that actually takes an afternoon — then transcribes it on the
+  phone, with Whisper (a one-time download, its size said first) or the phone's
+  own on-device recognition. Nothing is uploaded. Import and export .srt to use
+  any transcript you like.
+- **Shape masks.** Rectangle, ellipse, linear, mirror, heart, star, filmstrip and
+  split, each feathered,
   rotatable and invertible. Rotation is aspect-corrected, so a turned rectangle
   stays a rectangle instead of shearing. Composes with the chroma key rather than
   replacing it, and applied by the preview's own shader so the sliders move the
@@ -83,7 +84,7 @@ recorder — the timbre is wildly different, the loudness shape is not.
 person who just needs a smaller file never meets an editor:
 
 - **Video editor** — the full suite
-- **Quick tools** — Compress, Trim, Extract audio, Merge. One job each, one tap
+- **Quick tools** — Squeeze, Snip, Rip and Stitch. One job each, one tap
   from home, and every one also lives inside the editor. Each quick tool offers
   "open in the full editor" so simple work can grow up without starting over.
 
@@ -96,34 +97,61 @@ opens as a sheet in the toolbar's place, and the timeline stays above it.
 
 ## Everything else
 
-**16 graded looks** in three families — Essentials, Film, Mood — each with a
-strength dial, applied live in the preview by the same code that renders them, so
-what you see is what gets written. The filter chips are painted by running each
-grade over a reference ramp with the identical arithmetic the shaders use, so a
-chip can never advertise something the look does not do.
+**Looks, effects and transitions.** 49 graded looks with a strength
+dial, curves, LUT import and thirteen adjustment sliders, applied live in the
+preview by the same shaders that render the file. 61 timed effects on seven
+shelves and 51 transitions on seven tabs, each previewed on a moving tile.
+Blend modes on photo and video overlays.
 
-Trim · compress by preset or to a target size (16/25/50 MB) · crop to 9:16, 1:1
-or 16:9 · speed 0.5–2x with pitch preserved · mute camera audio independently of
-any added track · per-track volume · rotate · brightness/contrast/saturation ·
-burned-in captions · multi-clip merge · export straight to the gallery
-(Movies/Squish) · direct share to WhatsApp, Instagram, Email · on-device history.
+**Templates.** Forty-two one-tap styles (a look, a frame, a title and effects),
+twenty slot templates that cut your own shots to a Squish song's beats, and
+AutoCut - every shot once, cut to a song at one of three paces.
 
-No cloud upload. No watermark. No paywalled resolution.
+**Sound.** 37 original songs and 76 sound effects made on the phone, music from
+the phone, a voiceover recorder, voice effects, Reduce noise, Voice only and
+Remove voice (a small speech model on the phone), EQ presets, a compressor and
+"Bring to -14 LUFS", fades, ducking under speech and volume keyframes.
+
+**Text.** Styled captions and stickers, auto-captions by Whisper on the phone
+(a one-time download), editing by transcript, .srt in and out, read-aloud.
+
+**Camera.** Squish's own camera with a 3-2-1 count-in, a 9:16 guide and a
+teleprompter.
+
+**Speed.** 0.1x to 100x, curves and ramps, pitch held or following the speed,
+frame blending and motion-compensated slow motion.
+
+**Export.** Original size up to 4K where the phone's encoder allows, H.264 or
+HEVC, a frame rate and a quality step, fit to a size (16, 25 or 50 MB), Keep
+HDR, sound only, GIF. A shot left as it came in is copied rather than encoded.
+Straight to the gallery (Movies/Squish), with direct share.
+
+**Quick tools.** Squeeze (smaller), Snip (cut), Rip (sound out) and Stitch
+(join), one job each from the dashboard, each able to open in the full editor.
+
+Every format FFmpeg reads plays, cuts and exports, through Squish's own build of
+it behind the phone's decoders.
+
+No watermark. No paywalled resolution. No account.
 
 ## Three promises, implemented
 
 These are the reasons to pick Squish over the big names, and they are code, not
 marketing copy. [ARCHITECTURE.md](ARCHITECTURE.md) has the detail.
 
-**Nothing leaves your device.** No network permission is requested, no SDK phones
-home, there is no account and no upload step. Every frame is decoded, composed
-and encoded here. Verify it from the manifest.
+**Your footage never leaves the phone.** Nothing in Squish uploads a video, a
+photo, a sound or a project. It does hold the internet permission, for online
+features that are off until you turn them on and that only fetch: free music,
+stock footage and fonts, caption translation, and the speech models for
+captions (each says its size before it downloads). Every request goes through
+one gate (`online/Online.kt`) that refuses while the switch in Settings is off.
+No analytics SDK is included, and there is no account.
 
 **No edit is ever lost.** The whole timeline is written to disk every 1.5 seconds,
 atomically — a temp file is `fsync`ed, then `rename`d over the live document, so
 the saved project is always a complete version — never a truncated one, however
-abruptly Android kills the app. Reopen and the edit is offered back, with the
-previous version kept alongside as a second parachute.
+abruptly Android kills the app. A ten-minute snapshot is kept as an earlier
+version, and a deleted project goes to a bin first.
 
 **Failures are explained.** Every error carries what happened, why, and the one
 action that fixes it — "This phone can't decode that clip (HEVC)", not "Export
@@ -139,7 +167,8 @@ about the finished file is degraded.
 ## Stack
 
 Kotlin · Jetpack Compose (Material 3) · Media3 Transformer for export · Media3
-ExoPlayer for preview · MediaCodec/MediaExtractor for audio analysis.
+ExoPlayer for preview · Squish's own FFmpeg build behind the phone's decoders ·
+MediaPipe and TensorFlow Lite for the on-device models · CameraX for the camera.
 
 Deliberately small dependency surface: no Room, no Hilt, no DataStore, no image
 loader. History is a JSON file; DI is a constructor call.
@@ -183,14 +212,11 @@ against the Kotlin compiler but compiled for the first time on your machine.
 
 ## Not built yet
 
-Honest list, not silent omissions: hand-keyframed mask shapes,
-true 3D LUTs, per-clip looks, keyframed opacity and color (the transform hook
-Media3 gives does not cover those), and a bundled speech model so transcription
-works on every device rather than only those with on-device recognition — all scoped with
-real timescales in [ARCHITECTURE.md](ARCHITECTURE.md). Plus reverse clip (needs
-frame-by-frame re-encoding, not a Transformer flag), numeric export progress
-(currently an indeterminate spinner), background/queued export via WorkManager,
-batch export, and audio fades and ducking.
+Honest list, not silent omissions: copying stretches of a several-shot edit
+without re-encoding them (only an edit of one untouched shot is copied today),
+more than three rows of video overlays playing at once, downloadable read-aloud
+voices, and a teleprompter for the voiceover recorder. `docs/EDGE_PLAN.md` is
+the working list, with what has been seen on a phone and what has not.
 
 ## Brand
 

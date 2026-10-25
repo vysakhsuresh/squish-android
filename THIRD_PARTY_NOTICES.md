@@ -74,3 +74,20 @@ Interspeech 2020), https://github.com/breizhn/DTLN, MIT License, Copyright (c)
 
 `org.tensorflow:tensorflow-lite` 2.16.1, Apache License 2.0 -
 http://www.apache.org/licenses/LICENSE-2.0. Runs the DTLN models.
+
+## whisper.cpp - captions
+
+`libsquishwhisper.so` is built from whisper.cpp (Georgi Gerganov and
+contributors, MIT License), https://github.com/ggerganov/whisper.cpp. The
+speech models it runs are OpenAI's Whisper weights in ggml form (MIT),
+downloaded once by the person, never bundled.
+
+## MediaPipe - masks, faces and objects
+
+`com.google.mediapipe:tasks-vision` (Apache License 2.0) and its bundled
+models - the selfie segmenter, BlazeFace and EfficientDet-Lite0 (Apache 2.0) -
+under `app/src/main/assets/`.
+
+## CameraX - the in-app camera
+
+`androidx.camera` 1.3.4, Apache License 2.0.

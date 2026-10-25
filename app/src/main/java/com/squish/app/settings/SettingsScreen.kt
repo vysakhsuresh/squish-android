@@ -524,7 +524,7 @@ private fun PrivacyCard() {
         )
         Promise("No account, ever.")
         Promise("No upload. Your videos, photos and projects never leave the phone - there is nothing in Squish that sends them.")
-        Promise("Offline until you say otherwise. Online features - free music, stock footage and fonts, and caption translation - are off until you turn them on, and only fetch.")
+        Promise("Offline until you say otherwise. Online features - free music, stock footage and fonts, caption translation, and the speech models for captions - are off until you turn them on, and only fetch.")
         Promise("No watermark and no paywalled resolution.")
         Promise("Speech recognition runs on the device or not at all — it never falls back to a server.")
     }
@@ -621,7 +621,9 @@ private fun LicencesCard() {
         Text(
             "Jetpack Compose and AndroidX Media3, both Apache 2.0. The files and pictures this phone " +
                 "cannot read are read by FFmpeg, dav1d, libjxl and LibRaw, built into the app under the " +
-                "GPL 3.0, and SVG drawings by AndroidSVG under Apache 2.0. The typeface is " +
+                "GPL 3.0, and SVG drawings by AndroidSVG under Apache 2.0. The camera is CameraX, and the " +
+                "on-device models run on MediaPipe and TensorFlow Lite, all Apache 2.0; captions use " +
+                "whisper.cpp and voice isolation DTLN, both MIT. The typeface is " +
                 "Space Grotesk under the SIL Open Font License. Full notices ship with the source in " +
                 "THIRD_PARTY_NOTICES.md.",
             style = MaterialTheme.typography.bodySmall,
