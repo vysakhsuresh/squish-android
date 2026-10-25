@@ -174,7 +174,8 @@ class HistoryRepository(context: Context) {
                     createdAtMillis = obj.getLong("createdAtMillis"),
                     savedToGallery = if (obj.has("savedToGallery")) obj.getBoolean("savedToGallery") else null,
                     galleryUri = obj.optString("galleryUri").takeIf { it.isNotEmpty() },
-                    named = obj.optBoolean("named", false)
+                    named = obj.optBoolean("named", false),
+                    renderMs = obj.optLong("renderMs", 0L)
                 )
             }
         }.getOrDefault(emptyList())
@@ -197,6 +198,7 @@ class HistoryRepository(context: Context) {
                     r.savedToGallery?.let { put("savedToGallery", it) }
                     r.galleryUri?.let { put("galleryUri", it) }
                     if (r.named) put("named", true)
+                    if (r.renderMs > 0L) put("renderMs", r.renderMs)
                 }
             )
         }

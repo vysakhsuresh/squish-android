@@ -1273,10 +1273,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked, EncoderCeiling.mimeFor(current.exportCodecHevc)) }
             val rendering = current.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written))
 
+            val renderStarted = android.os.SystemClock.elapsedRealtime()
             val result = processor.export(SquishError.exportable(rendering), outputFile) { progress ->
                 _state.update { it.copy(exportProgress = progress) }
                 ExportService.update(progress)
             }
+            val renderTook = android.os.SystemClock.elapsedRealtime() - renderStarted
             // From here the file exists and is being handed over; there is
             // nothing left to stop. See cancelExport.
             if (exportJob === coroutineContext[Job]) exportJob = null
@@ -1319,7 +1321,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                             height = if (written.height > 0) written.height else current.framedHeight,
                             createdAtMillis = System.currentTimeMillis(),
                             savedToGallery = published != null,
-                            galleryUri = published?.toString()
+                            galleryUri = published?.toString(),
+                            renderMs = renderTook
                         )
                     )
                     // The edit stays, marked as exported. It used to be deleted here

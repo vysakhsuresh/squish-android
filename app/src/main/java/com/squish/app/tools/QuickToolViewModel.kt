@@ -908,10 +908,12 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked) }
             val rendering = editorState.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written))
 
+            val renderStarted = android.os.SystemClock.elapsedRealtime()
             val result = processor.export(SquishError.exportable(rendering), outputFile) { progress ->
                 _state.update { it.copy(exportProgress = progress) }
                 ExportService.update(progress)
             }
+            val renderTook = android.os.SystemClock.elapsedRealtime() - renderStarted
             // From here the file exists and is being handed over; there is
             // nothing left to stop. See cancelExport.
             if (exportJob === coroutineContext[Job]) exportJob = null
@@ -953,7 +955,8 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                             height = rendering.writtenResolution.height.takeIf { it > 0 } ?: current.height,
                             createdAtMillis = System.currentTimeMillis(),
                             savedToGallery = published != null,
-                            galleryUri = published?.toString()
+                            galleryUri = published?.toString(),
+                            renderMs = renderTook
                         )
                     )
                     withContext(Dispatchers.IO) { markExported(rendered) }

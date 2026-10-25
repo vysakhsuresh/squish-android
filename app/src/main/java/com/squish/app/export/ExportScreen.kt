@@ -175,6 +175,10 @@ fun ExportScreen(
                     color = SquishColors.TextSecondary,
                     textAlign = TextAlign.Center
                 )
+                // Measured, not claimed (EDGE_PLAN I2): start of the render to the file written.
+                record?.let { ExportFacts.speedLine(it.renderMs, it.durationMs) }?.let { line ->
+                    Text(line, style = MaterialTheme.typography.bodySmall, color = SquishColors.TextMuted, textAlign = TextAlign.Center)
+                }
 
                 ExportedFile(
                     uri = fileUri,

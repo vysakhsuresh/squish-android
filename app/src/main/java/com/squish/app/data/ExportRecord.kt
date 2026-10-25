@@ -28,7 +28,9 @@ data class ExportRecord(
     /** The gallery copy's content URI, when there is one. */
     val galleryUri: String? = null,
     /** Whether [title] is a name the person gave the project: shown as it is, never replaced by the moment. */
-    val named: Boolean = false
+    val named: Boolean = false,
+    /** How long the render took, start to file written (EDGE_PLAN I2); 0 when it was not measured. */
+    val renderMs: Long = 0L
 ) {
     val isAudio: Boolean get() = outputPath.endsWith(".m4a", ignoreCase = true)
 
