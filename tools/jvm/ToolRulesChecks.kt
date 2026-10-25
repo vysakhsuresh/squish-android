@@ -98,6 +98,13 @@ fun main() {
     // --- Sheets across a change of selection. -------------------------------------
     run {
         check(sheetSurvives(Tool.Stickers, SelectionKind.Sticker, false), "adding a sticker closed the sticker sheet")
+        // A sticker with words of its own - a price tag, a Follow button (EDGE_PLAN F4) - is
+        // retyped from its box's Edit: seen on the POCO on 25 October, the keyboard opened
+        // and was closed at once, because the sticker's row had no Edit for the sheet to survive on.
+        check(sheetSurvives(Tool.Edit, SelectionKind.WordedSticker, false), "a sticker with words cannot be retyped: its Edit sheet closes at once")
+        check(Tool.Placement in toolsFor(SelectionKind.WordedSticker) && Tool.Flip in toolsFor(SelectionKind.WordedSticker), "a sticker with words lost the sticker tools")
+        check(Tool.Speak !in toolsFor(SelectionKind.WordedSticker), "a sticker with words is read aloud like a caption")
+        check(!sheetSurvives(Tool.Edit, SelectionKind.Sticker, false), "an emoji sticker offers a keyboard")
         check(sheetSurvives(Tool.Sound, SelectionKind.None, false), "deselecting closed the Sound sheet")
         check(sheetSurvives(Tool.Speed, SelectionKind.Audio, false), "Speed closed moving from a shot to a sound")
         check(!sheetSurvives(Tool.Speed, SelectionKind.Text, false), "Speed stayed open over a caption")

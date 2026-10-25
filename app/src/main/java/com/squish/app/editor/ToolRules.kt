@@ -13,7 +13,8 @@ package com.squish.app.editor
  * work on footage in the player's shaders (mask, cutout, stabilize, track) have
  * nothing to act on there.
  */
-enum class SelectionKind { None, MainVideo, Overlay, PhotoOverlay, Audio, Text, Sticker, Effect }
+/** [WordedSticker]: a designed sticker that says something (a price, a label) - a sticker's tools, and its words typed. */
+enum class SelectionKind { None, MainVideo, Overlay, PhotoOverlay, Audio, Text, Sticker, WordedSticker, Effect }
 
 /**
  * Every tool on either level of the toolbar. [sheet] tools open a sheet over
@@ -194,6 +195,11 @@ fun toolsFor(kind: SelectionKind, canTransition: Boolean = false, multi: Boolean
         )
         kind == SelectionKind.Text -> listOf(
             Tool.Edit, Tool.Style, Tool.Animation, Tool.Opacity, Tool.Delete, Tool.Speak, Tool.Track, Tool.Split,
+            Tool.Duplicate, Tool.SelectMore
+        )
+        // Its words first, then everything a sticker has; not Read aloud, which is for lines.
+        kind == SelectionKind.WordedSticker -> listOf(
+            Tool.Edit, Tool.Placement, Tool.Animation, Tool.Opacity, Tool.Delete, Tool.Flip, Tool.Track, Tool.Split,
             Tool.Duplicate, Tool.SelectMore
         )
         kind == SelectionKind.Sticker -> listOf(

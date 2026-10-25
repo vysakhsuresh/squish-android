@@ -45,6 +45,12 @@ class MainActivity : ComponentActivity() {
         // straight to the dashboard. No second in-app splash.
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        // Debug builds take taps from adb themselves, for phones that refuse
+        // `input` (debug/DebugTouch). By name, so a release build - which has
+        // no such class - carries none of it.
+        if (BuildConfig.DEBUG) runCatching {
+            Class.forName("com.squish.app.debug.DebugTouch").getMethod("attach", android.app.Activity::class.java).invoke(null, this)
+        }
         // Dark bars, always. The default reads the phone's light/dark setting to
         // pick the icon colour, but this app is navy whatever the phone is set
         // to - so on a phone in light mode the clock and the gesture pill were

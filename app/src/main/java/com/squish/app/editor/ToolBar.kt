@@ -112,7 +112,7 @@ val SelectionKind.concept: Concept?
         SelectionKind.Overlay, SelectionKind.PhotoOverlay -> Concept.Overlay
         SelectionKind.Audio -> Concept.Sound
         SelectionKind.Text -> Concept.Text
-        SelectionKind.Sticker -> Concept.Sticker
+        SelectionKind.Sticker, SelectionKind.WordedSticker -> Concept.Sticker
         SelectionKind.Effect -> Concept.Effects
     }
 
@@ -213,7 +213,13 @@ val EditorUiState.selectionKind: SelectionKind
             }
         }
         if (audioClips.any { it.id == id }) return SelectionKind.Audio
-        textOverlays.firstOrNull { it.id == id }?.let { return if (it.sticker) SelectionKind.Sticker else SelectionKind.Text }
+        textOverlays.firstOrNull { it.id == id }?.let {
+            return when {
+                it.sticker && it.design.hasWords -> SelectionKind.WordedSticker
+                it.sticker -> SelectionKind.Sticker
+                else -> SelectionKind.Text
+            }
+        }
         if (effects.any { it.id == id }) return SelectionKind.Effect
         return SelectionKind.None
     }
