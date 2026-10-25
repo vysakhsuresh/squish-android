@@ -83,7 +83,9 @@ private val RENAMED = mapOf(
     // three keys rather than one object.
     "canvasBackground" to "canvasFill",
     // "quality" is the export's, and the key says so.
-    "quality" to "exportQuality"
+    "quality" to "exportQuality",
+    // A clip's five band gains (EDGE_PLAN G4), as one short array.
+    "eqGains" to "eq"
 )
 
 /**

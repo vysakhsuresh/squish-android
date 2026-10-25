@@ -47,7 +47,13 @@ class LevelProbeActivity : Activity() {
                 while (at + rate <= pcm.samples.size) { loud = maxOf(loud, db(at, at + rate)); at += rate / 4 }
                 // And the level every quarter second, for telling where sounds are.
                 val quarters = (0 until pcm.samples.size / (rate / 4)).joinToString(" ") { q -> "%.0f".format(db(q * rate / 4, (q + 1) * rate / 4)) }
-                "floor ${"%.1f".format(quiet)} dBFS, loudest second ${"%.1f".format(loud)} dBFS, gap ${"%.1f".format(loud - quiet)} dB; quarters: $quarters"
+                // The peak, and how many samples sit at full scale: a boost clipped flat
+                // shows as many, a limited one as none (EDGE_PLAN G4). Read off the
+                // 16 kHz mono fold-down, so a peak is approximate.
+                val peak = pcm.samples.maxOf { kotlin.math.abs(it) }
+                val atFull = pcm.samples.count { kotlin.math.abs(it) >= 0.98f }
+                "floor ${"%.1f".format(quiet)} dBFS, loudest second ${"%.1f".format(loud)} dBFS, gap ${"%.1f".format(loud - quiet)} dB; " +
+                    "peak ${"%.1f".format(20 * log10(peak.toDouble().coerceAtLeast(1e-9)))} dBFS, $atFull at full scale; quarters: $quarters"
             }
             Log.i(TAG, "$uri: $line")
             text.text = line

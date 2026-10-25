@@ -15,7 +15,11 @@ enum class MaskShape(val label: String) {
     Mirror("Mirror"),
     /** The two CapCut has that the four above do not: filled to the same box as the ellipse. */
     Heart("Heart"),
-    Star("Star");
+    Star("Star"),
+    /** Three bars across a band, as a filmstrip's frames (EDGE_PLAN F10). */
+    Filmstrip("Filmstrip"),
+    /** Everything but a band across the middle: the picture split in two (EDGE_PLAN F10). */
+    Split("Split");
 
     /** Whether the shape has a width and a height of its own to set, rather than an edge or a band. */
     val hasBox: Boolean get() = this == Rectangle || this == Ellipse || this == Heart || this == Star

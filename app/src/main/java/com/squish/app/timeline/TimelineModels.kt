@@ -176,6 +176,14 @@ data class Clip(
     val noiseReduction: Float = 0f,
 
     /**
+     * Finishing (EDGE_PLAN G4, AudioFinish): the five band gains in dB - empty is
+     * flat - and how much the sound is compressed, 0 off to 1. With either on, a
+     * limiter keeps the result from clipping.
+     */
+    val eqGains: List<Float> = emptyList(),
+    val compress: Float = 0f,
+
+    /**
      * Beats on this sound, in the file's own time, so they travel with the clip
      * and through its speed curve. Found by the beat detector or tapped in by
      * ear; drawn as dots on the clip, and what the cuts snap to.
@@ -336,6 +344,14 @@ data class Clip(
      * footage has.
      */
     val frameBlend: Boolean = false,
+
+    /**
+     * Picture clean-up (EDGE_PLAN F9, CleanUp): [denoise] takes the jitter out of
+     * a still picture, [deflicker] evens the frame-to-frame brightness of mains
+     * lighting or a timelapse; 0 is off, 1 the most.
+     */
+    val denoise: Float = 0f,
+    val deflicker: Float = 0f,
 
     /**
      * Whether the sound's pitch follows the speed, tape-style, or is held. Held
@@ -745,6 +761,8 @@ data class Clip(
             speedRamp = speedRamp,
             speedSpanMs = sourceSpanMs,
             noiseReduction = noiseReduction,
+            eqGains = eqGains,
+            compress = compress,
             opacity = opacity,
             transform = staticTransform,
             keyframes = keyframes,
@@ -764,6 +782,8 @@ data class Clip(
             loop = loop,
             loopMs = loopMs,
             frameBlend = frameBlend,
+            denoise = denoise,
+            deflicker = deflicker,
             pitchFollowsSpeed = pitchFollowsSpeed
         )
 
@@ -792,6 +812,9 @@ data class Clip(
      * Whether the picture's opacity ever changes over the clip, or is below
      * full: what decides whether the export draws it through a per-frame pass.
      */
+    /** Whether the picture is cleaned up (EDGE_PLAN F9): what puts CleanUpEffect on its chain. */
+    val cleansPicture: Boolean get() = denoise > 0f || deflicker > 0f
+
     val fadesPicture: Boolean
         get() = opacity < 1f || opacityKeys.isNotEmpty() ||
             arrival.fades || leaving != ClipLeaving.None || loop.fades
@@ -880,6 +903,8 @@ data class ClipAttributes(
     val speedSpanMs: Long,
     /** Noise reduction, a sound setting like the voice. */
     val noiseReduction: Float = 0f,
+    val eqGains: List<Float> = emptyList(),
+    val compress: Float = 0f,
     val opacity: Float,
     val transform: Transform,
     val keyframes: List<Keyframe>,
@@ -907,6 +932,8 @@ data class ClipAttributes(
     val loop: ClipLoop = ClipLoop.None,
     val loopMs: Long = ClipAnimation.DEFAULT_LOOP_MS,
     val frameBlend: Boolean = false,
+    val denoise: Float = 0f,
+    val deflicker: Float = 0f,
     /** Whether the pitch follows the speed: a sound's, carried with the curve. */
     val pitchFollowsSpeed: Boolean = false,
     /** The Mute switch over the level (Clip.muted). */
@@ -1973,6 +2000,8 @@ fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): T
         voice = attrs.voice,
         speedRamp = attrs.rampFor(clip.sourceSpanMs),
         noiseReduction = attrs.noiseReduction,
+        eqGains = attrs.eqGains,
+        compress = attrs.compress,
         pitchFollowsSpeed = attrs.pitchFollowsSpeed,
         // The Mute switch goes with the level it silences: copied from a muted
         // shot the level came across and the target played at it.
@@ -2003,7 +2032,9 @@ fun TimelineState.withAttributesPasted(clipId: String, attrs: ClipAttributes): T
             leavingMs = attrs.leavingMs,
             loop = attrs.loop,
             loopMs = attrs.loopMs,
-            frameBlend = attrs.frameBlend
+            frameBlend = attrs.frameBlend,
+            denoise = attrs.denoise,
+            deflicker = attrs.deflicker
         // Through withLook, like every other place a look is set: pasting from
         // a clip with no filter nulls `lookId` and has to take the target's own
         // strength track with it, or the clip keeps diamonds on the strip and a

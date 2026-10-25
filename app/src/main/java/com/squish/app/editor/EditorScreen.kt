@@ -535,11 +535,13 @@ fun EditorScreen(
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     // Transparent: the window is already this colour (themes.xml windowBackground),
     // and a second full-screen fill under everything was GPU time on every frame
     // - the editor drew at 4x overdraw over the picture and the strip on the moto.
+    // (18 October put this on a second Scaffold *around* the opaque one, in place
+    // of the Box, so the fill it meant to take off stayed and lint said so.)
     Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent) { padding ->
-    Scaffold(containerColor = SquishColors.Background) { padding ->
         // Which way up is decided before the keyboard takes its share: a short
         // phone with the keyboard up is not a phone on its side, and switching
         // layouts mid-word would rebuild the sheet being typed in.

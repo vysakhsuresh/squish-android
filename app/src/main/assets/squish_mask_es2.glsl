@@ -113,7 +113,7 @@ void main() {
       d = sqrt(min(dot(a, a), dot(b, b))) * sign(h.x - h.y);
     }
     sd = d * min(rr.x / 0.6, rr.y / 0.55);
-  } else {
+  } else if (uShape < 5.5) {
     // A five-pointed star filling the box, its top point up.
     vec2 rr = max(r, vec2(0.0001));
     vec2 p = vec2(q.x / rr.x, q.y / rr.y);
@@ -127,6 +127,14 @@ void main() {
     vec2 ba = 0.45 * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
     float hh = clamp(dot(p, ba) / dot(ba, ba), 0.0, 1.0);
     sd = length(p - ba * hh) * sign(p.y * ba.x - p.x * ba.y) * min(rr.x, rr.y);
+  } else if (uShape < 6.5) {
+    // Filmstrip (EDGE_PLAN F10): three bars inside the band, MaskOutline.distance's own.
+    float per = max(2.0 * r.y / 3.0, 0.0001);
+    float t = mod(q.y + r.y, per) - per / 2.0;
+    sd = max(abs(q.y) - r.y, abs(t) - 0.35 * per);
+  } else {
+    // Split: everything but the band across the middle.
+    sd = r.y - abs(q.y);
   }
 
   float mask = 1.0 - smoothstep(-uFeather, uFeather, sd);

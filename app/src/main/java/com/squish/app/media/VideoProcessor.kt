@@ -192,6 +192,9 @@ class VideoProcessor(private val context: Context) {
             // has to come off or nothing is ever pruned again.
             withContext(NonCancellable + Dispatchers.IO) {
                 runCatching { CanvasBackdrop.releaseStills(context) }
+                // The blended videos' decoders (EDGE_PLAN F6), opened for this export.
+                blendDecoders.values.forEach { runCatching { it.close() } }
+                blendDecoders.clear()
             }
             // A file that did not finish is not an export. Left behind, a
             // cancelled or failed render sat in exports/ as a broken MP4 nobody
@@ -259,6 +262,7 @@ class VideoProcessor(private val context: Context) {
                     val told = if (format.frameRate == rate) format else format.buildUpon().setFrameRate(rate).build()
                     return defaultEncoders.createForVideoEncoding(told, logSessionId)
                 }
+                @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.ExperimentalApi::class])
                 override fun isVideoFormatSupported(format: Format) = defaultEncoders.isVideoFormatSupported(format)
                 override fun audioNeedsEncoding() = defaultEncoders.audioNeedsEncoding()
                 override fun videoNeedsEncoding() = defaultEncoders.videoNeedsEncoding()
@@ -337,7 +341,10 @@ class VideoProcessor(private val context: Context) {
         // layers and put back on the composition's own output instead, where
         // the finished picture is a texture a shader of ours can read. Video
         // overlays cannot be blended at all; the sheet only offers it on stills.
-        val blended = state.videoClips.filter { it.isOverlay && it.blend != LayerBlend.Normal && StillClips.isStill(it.uri) }
+        // A blended *video* overlay the same way (EDGE_PLAN F6): decoded by hand,
+        // frame by frame, into the shots under it (blendEffectFor). When its
+        // sound is heard it stays a layer, drawn at nothing, so the mix keeps it.
+        val blended = state.videoClips.filter { it.isOverlay && it.blend != LayerBlend.Normal }
         // One decode per still, not one per shot it covers.
         //
         // A blended still is drawn into every shot underneath it, and each of
@@ -348,7 +355,13 @@ class VideoProcessor(private val context: Context) {
         // also running a decoder and an encoder. Shared, for this export only:
         // the map is local, so nothing is held after it.
         val stillBitmaps = HashMap<String, android.graphics.Bitmap?>()
-        val track = state.videoClips - blended.toSet()
+        val track = state.videoClips.mapNotNull { clip ->
+            when {
+                clip !in blended -> clip
+                StillClips.isStill(clip.uri) || !overlayHeard(clip) -> null
+                else -> clip.copy(opacity = 0f, opacityKeys = emptyList())
+            }
+        }
         val videoOut = !state.audioOnly
         // A sound-only export keeps the camera's track even when the mute is on;
         // whether it is heard is decided per shot (editedClip's cameraKept).
@@ -519,12 +532,15 @@ class VideoProcessor(private val context: Context) {
         clip: Clip,
         canvas: ExportPresets.Resolution?,
         under: Clip,
-        bitmaps: MutableMap<String, android.graphics.Bitmap?>
+        bitmaps: MutableMap<String, android.graphics.Bitmap?>,
+        /** Which base roll [under] is on: each roll walks its own decoder forward (see [videoBlendEffectFor]). */
+        roll: Int = 0
     ): Effect? {
         // Only on the shots it actually covers, so a still near the end costs
         // nothing on the shots before it.
         if (clip.timelineEndMs <= under.timelineStartMs || clip.timelineStartMs >= under.timelineEndMs) return null
         val uri = clip.uri ?: return null
+        if (!StillClips.isStill(uri)) return videoBlendEffectFor(clip, uri, under, canvas, roll)
         // Decoded once for the export. By containsKey rather than getOrPut: that
         // one treats a stored null as absent and calls the lambda again, so a
         // picture that cannot be read would have been opened afresh for every
@@ -556,6 +572,46 @@ class VideoProcessor(private val context: Context) {
         return com.squish.app.media.effects.LayerBlendEffect(bitmap, clip.blend) { itemMs: Long ->
             val atMs = under.timelineAtSource(under.sourceInMs + itemMs)
             if (atMs < startMs || atMs > endMs) null
+            else com.squish.app.media.effects.LayerBlendEffect.Placement(
+                lookup = com.squish.app.media.effects.LayerBlendEffect.WHOLE_FRAME,
+                alpha = clip.opacityAt(atMs).coerceIn(0f, 1f)
+            )
+        }
+    }
+
+    /**
+     * The blended videos' decoders for one export (EDGE_PLAN F6), by overlay
+     * and base roll, closed when the export ends.
+     */
+    private val blendDecoders = java.util.concurrent.ConcurrentHashMap<String, com.squish.app.media.video.BlendVideoFrames>()
+
+    /**
+     * A blended video overlay on one shot under it: the overlay's frame at each
+     * moment, decoded by hand, through the shader a blended still uses, over the
+     * whole frame at the overlay's opacity - the preview's blendedVideoFor.
+     *
+     * A decoder per base roll, not per overlay: two rolls of a transition are
+     * worked at once and a frame or two apart, and one decoder asked by both
+     * would seek back and forth between them on every frame. Within a roll the
+     * shots come in time order, so its decoder only goes forward.
+     */
+    private fun videoBlendEffectFor(
+        clip: Clip,
+        uri: android.net.Uri,
+        under: Clip,
+        canvas: ExportPresets.Resolution?,
+        roll: Int
+    ): Effect {
+        val side = canvas?.let { maxOf(it.width, it.height) }?.takeIf { it > 0 } ?: 1920
+        val frames = blendDecoders.getOrPut("${clip.id}#$roll") {
+            com.squish.app.media.video.BlendVideoFrames(context, uri, side)
+        }
+        return com.squish.app.media.effects.VideoLayerBlendEffect({ itemMs ->
+            val atMs = under.timelineAtSource(under.sourceInMs + itemMs)
+            com.squish.app.media.video.BlendFrameRules.sourceMsAt(clip, atMs)?.let { frames.frameAt(it) }
+        }, clip.blend) { itemMs ->
+            val atMs = under.timelineAtSource(under.sourceInMs + itemMs)
+            if (atMs < clip.timelineStartMs || atMs >= clip.timelineEndMs) null
             else com.squish.app.media.effects.LayerBlendEffect.Placement(
                 lookup = com.squish.app.media.effects.LayerBlendEffect.WHOLE_FRAME,
                 alpha = clip.opacityAt(atMs).coerceIn(0f, 1f)
@@ -681,6 +737,8 @@ class VideoProcessor(private val context: Context) {
         val effects: List<Effect> = if (state.audioOnly) emptyList() else buildList {
             // First, so the key, the grade and the mask see the HDR picture as it will be seen.
             hdrLift(uri)?.let { add(it) }
+            // Picture clean-up (EDGE_PLAN F9) on the decoded frame, first after the HDR lift, as the preview has it.
+            if (clip.cleansPicture) add(com.squish.app.media.effects.CleanUpEffect({ clip.denoise }, { clip.deflicker }))
             clip.chromaKey?.let { add(ChromaKeyEffect(it)) }
             clip.background?.let { add(BackgroundEffect(it, clip.sourceInMs)) }
             clip.mask?.let { add(MaskEffect(it, clip.sourceInMs)) }
@@ -711,8 +769,9 @@ class VideoProcessor(private val context: Context) {
             // shot with a crop, a turn or a placement the file and the screen
             // showed the leak in different places. The two agreeing is worth
             // more than where it sits, so the file follows the screen.
+            val roll = rolls?.indexOfFirst { r -> r.any { it.id == clip.id } }?.coerceAtLeast(0) ?: 0
             blendedStills.forEach { still ->
-                blendEffectFor(state, still, canvas, under = clip, bitmaps = stillBitmaps)?.let { add(it) }
+                blendEffectFor(state, still, canvas, under = clip, bitmaps = stillBitmaps, roll = roll)?.let { add(it) }
             }
             ClipTransformEffect.of(clip, ExportPlan.MotionPart.Stabilizer)?.let { add(it) }
             // The clip's own mirror and turn belong to its footage, so they go
@@ -824,7 +883,7 @@ class VideoProcessor(private val context: Context) {
             .setRemoveVideo(state.audioOnly)
             .setEffects(
                 Effects(
-                    buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, level, clip.voice, fadeOf(clip), clip.pitchFollowsSpeed, curveOf(clip), noise = clip.noiseReduction),
+                    buildAudioProcessors(clip.speedRamp, clip.sourceSpanMs, level, clip.voice, fadeOf(clip), clip.pitchFollowsSpeed, curveOf(clip), noise = clip.noiseReduction, finish = com.squish.app.media.audio.finishOf(clip.eqGains, clip.compress)),
                     ImmutableList.copyOf(effects)
                 )
             )
@@ -884,7 +943,7 @@ class VideoProcessor(private val context: Context) {
                 Effects(
                     if (heard) buildAudioProcessors(
                         clip.speedRamp, clip.sourceSpanMs, if (keyed) 1f else clip.volume.coerceIn(0f, AudioMixing.MAX_GAIN), clip.voice, fadeOf(clip),
-                        clip.pitchFollowsSpeed, curveOf(clip), noise = clip.noiseReduction
+                        clip.pitchFollowsSpeed, curveOf(clip), noise = clip.noiseReduction, finish = com.squish.app.media.audio.finishOf(clip.eqGains, clip.compress)
                     )
                     else ImmutableList.of(),
                     ImmutableList.copyOf(effects)
@@ -1148,7 +1207,7 @@ class VideoProcessor(private val context: Context) {
                             // A muted sound is silent in the file as in the preview
                             // (Clip.volumeAtTimeline answers nothing there).
                             ramp, span, if (clip.muted) 0f else if (keyed) 1f else clip.volume, clip.voice, fadeOf(clip, skippedPlayedMs),
-                            clip.pitchFollowsSpeed, curveOf(clip, skippedPlayedMs), noise = clip.noiseReduction
+                            clip.pitchFollowsSpeed, curveOf(clip, skippedPlayedMs), noise = clip.noiseReduction, finish = com.squish.app.media.audio.finishOf(clip.eqGains, clip.compress)
                         ),
                         ImmutableList.of()
                     )
@@ -1185,7 +1244,9 @@ class VideoProcessor(private val context: Context) {
         pitchFollowsSpeed: Boolean = false,
         curve: GainCurveProcessor? = null,
         /** Reduce noise, 0 off to 1 (NoiseProcessor, EDGE_PLAN G2): after the fold-down, before the voice. */
-        noise: Float = 0f
+        noise: Float = 0f,
+        /** Finishing (EDGE_PLAN G4, FinishProcessor): after the level, so its limiter sees what is heard - the preview's order. */
+        finish: com.squish.app.media.audio.FinishSettings = com.squish.app.media.audio.FinishSettings.OFF
     ): ImmutableList<AudioProcessor> {
         // The voice's processing first, on the file's own time, and its pitch last:
         // the order the preview runs them (its sink's processors, then its speed
@@ -1205,7 +1266,18 @@ class VideoProcessor(private val context: Context) {
         // just carries no gain any more.
         val level = volume.coerceIn(0f, AudioMixing.MAX_GAIN)
         val processors = mutableListOf<AudioProcessor>()
-        if (voice == VoiceEffect.None) {
+        // A boost, or any finishing, takes the level in FinishProcessor's float
+        // path, ahead of its limiter: given to the mixer or a GainProcessor it came
+        // out as 16-bit already clipped flat, and the limiter could only turn that
+        // down (FinishProcessorChecks). Still after the voice, as the preview has it.
+        val finished = !finish.isOff || level > 1f + 1e-4f
+        if (finished) {
+            processors.add(AudioMixing.processor(1f))
+            if (noise > 0f) processors.add(NoiseProcessor { noise })
+            if (voice != VoiceEffect.None) processors.add(VoiceProcessor { voice })
+            val settings = finish.copy(level = level)
+            processors.add(com.squish.app.media.audio.FinishProcessor { settings })
+        } else if (voice == VoiceEffect.None) {
             // Nothing to be before or after: one processor, as it was.
             processors.add(AudioMixing.processor(level))
             if (noise > 0f) processors.add(NoiseProcessor { noise })

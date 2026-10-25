@@ -25,7 +25,6 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import com.squish.app.media.AudioMixing
 import com.squish.app.media.ExportPlan
 import com.squish.app.media.StillClips
-import com.squish.app.media.audio.GainProcessor
 import com.squish.app.media.audio.VoiceProcessor
 import com.squish.app.av.AvRenderersFactory
 import com.squish.app.media.SoftwareDecoders
@@ -255,6 +254,8 @@ class PreviewEngine(private val context: Context) {
         val voice = AtomicReference(VoiceEffect.None)
         /** The clip's Reduce noise, read by its sink every buffer (NoiseProcessor). */
         val denoise = AtomicReference(0f)
+        /** The clip's finishing (EDGE_PLAN G4), read by its sink every buffer (FinishProcessor). */
+        val finish = AtomicReference(com.squish.app.media.audio.FinishSettings.OFF)
     }
 
     /**
@@ -281,7 +282,9 @@ class PreviewEngine(private val context: Context) {
         val boost = java.util.concurrent.atomic.AtomicReference(1f)
         /** The clip's Reduce noise, read by its sink every buffer (NoiseProcessor). */
         val denoise = AtomicReference(0f)
-        val player: ExoPlayer = newVideoPlayer({ voice.get() }, { boost.get() }, { denoise.get() })
+        /** The clip's finishing (EDGE_PLAN G4), read by its sink every buffer (FinishProcessor). */
+        val finish = AtomicReference(com.squish.app.media.audio.FinishSettings.OFF)
+        val player: ExoPlayer = newVideoPlayer({ voice.get() }, { boost.get() }, { denoise.get() }, { finish.get() })
 
         // Read by the shaders every frame; written by the tick.
         val chroma = AtomicReference<ChromaKey?>(null)
@@ -319,6 +322,18 @@ class PreviewEngine(private val context: Context) {
         val transitionWarp = AtomicReference(ExportPlan.Warp.NONE)
 
         /**
+         * The clip's picture clean-up (EDGE_PLAN F9) as (denoise, deflicker), and
+         * whether the chain on the player carries the pass for it. The pass is a
+         * full frame of GPU time, so a surface carries it only while its clip
+         * asks: the chains are swapped on a load, never mid-play.
+         */
+        val cleanUp = AtomicReference(0f to 0f)
+        var cleanInChain = false
+        val chainClean: List<Effect> by lazy {
+            listOf<Effect>(com.squish.app.media.effects.CleanUpEffect({ cleanUp.get().first }, { cleanUp.get().second })) + chain
+        }
+
+        /**
          * The blended still this surface draws under, in this surface's own
          * clock. One at a time: a second would need a second sampler and a
          * second branch in the shader, and nobody stacks two light leaks.
@@ -340,6 +355,9 @@ class PreviewEngine(private val context: Context) {
          */
         var blendStillClip: Clip? = null
         var blendUnderClip: Clip? = null
+
+        /** A blended video overlay's decoder for this surface, by its file, kept across edits to the clip (EDGE_PLAN F6). */
+        var blendVideo: Pair<String, com.squish.app.media.video.BlendVideoFrames.Async>? = null
         var effectsClip: Clip? = null
         var effectsFrom: List<TimedEffect>? = null
 
@@ -504,7 +522,7 @@ class PreviewEngine(private val context: Context) {
                     // a Compose layer: Compose cannot blend against a TextureView,
                     // and this way the preview and the export are the same program
                     // on the same numbers.
-                    add(LiveLayerBlendEffect({ blendStill.get()?.bitmap }, { blendStill.get()?.mode ?: LayerBlend.Normal }) { atMs ->
+                    add(LiveLayerBlendEffect({ atMs -> blendStill.get()?.frameAt?.invoke(atMs) }, { blendStill.get()?.mode ?: LayerBlend.Normal }) { atMs ->
                         blendStill.get()?.placementAt?.invoke(atMs)
                     })
                     // Writes alpha 1, so a base frame reaches its view opaque.
@@ -575,7 +593,8 @@ class PreviewEngine(private val context: Context) {
     class BlendedStill(
         val clipId: String,
         val underId: String,
-        val bitmap: android.graphics.Bitmap?,
+        /** The layer's picture at a moment of the surface's clock: a still's one picture, or a blended video's frame. */
+        val frameAt: (Long) -> com.squish.app.media.video.BlendFrame?,
         val mode: LayerBlend,
         val placementAt: (Long) -> LayerBlendEffect.Placement?
     )
@@ -620,13 +639,45 @@ class PreviewEngine(private val context: Context) {
             Log.w(TAG, "could not read the blended still $uri")
             return null
         }
-        return BlendedStill(still.id, under.id, bitmap, still.blend) { sourceMs ->
+        val frame = com.squish.app.media.video.BlendFrame(bitmap, 0L)
+        return BlendedStill(still.id, under.id, { frame }, still.blend) { sourceMs ->
             // Source time of the shot under it, back to the edit's own clock.
             val atMs = under.timelineAtSource(sourceMs)
             if (atMs < still.timelineStartMs || atMs > still.timelineEndMs) null
             else LayerBlendEffect.Placement(
                 lookup = LayerBlendEffect.WHOLE_FRAME,
                 alpha = still.opacityAt(atMs).coerceIn(0f, 1f)
+            )
+        }
+    }
+
+    /**
+     * A blended *video* overlay as base surface [s] reads it (EDGE_PLAN F6): its
+     * frames decoded by hand for this surface, through the same shader and the
+     * same placement as a still - the whole frame, at the overlay's opacity.
+     * The decoder is the surface's and outlives an edit to the clip; a new file
+     * opens a new one.
+     */
+    private fun blendedVideoFor(overlay: Clip, under: Clip, s: Surface): BlendedStill? {
+        val uri = overlay.uri ?: return null
+        val key = uri.toString()
+        val async = s.blendVideo?.takeIf { it.first == key }?.second ?: run {
+            s.blendVideo?.second?.close()
+            val made = com.squish.app.media.video.BlendVideoFrames.Async(
+                com.squish.app.media.video.BlendVideoFrames(context, uri, BLEND_VIDEO_MAX_SIDE)
+            ) { mainHandler.post { if (!released) requestRedraw() } }
+            s.blendVideo = key to made
+            made
+        }
+        return BlendedStill(overlay.id, under.id, { sourceMs ->
+            val atMs = under.timelineAtSource(sourceMs)
+            com.squish.app.media.video.BlendFrameRules.sourceMsAt(overlay, atMs)?.let { async.latest(it) }
+        }, overlay.blend) { sourceMs ->
+            val atMs = under.timelineAtSource(sourceMs)
+            if (atMs < overlay.timelineStartMs || atMs >= overlay.timelineEndMs) null
+            else LayerBlendEffect.Placement(
+                lookup = LayerBlendEffect.WHOLE_FRAME,
+                alpha = overlay.opacityAt(atMs).coerceIn(0f, 1f)
             )
         }
     }
@@ -721,7 +772,7 @@ class PreviewEngine(private val context: Context) {
     /**
      * Renderers whose audio passes through the given processors - a
      * [VoiceProcessor] reading the clip's voice, and for a sound player a
-     * [GainProcessor] before it - so robot, echo, radio and a boost past full
+     * FinishProcessor carrying the boost after it - so robot, echo, radio and a boost past full
      * are heard in the preview and change without the player being rebuilt.
      *
      * Built on Squish's factory rather than Media3's so FFmpeg stands behind
@@ -751,7 +802,7 @@ class PreviewEngine(private val context: Context) {
             .build()
     }
 
-    private fun newVideoPlayer(voiceNow: () -> VoiceEffect, boostNow: () -> Float, denoiseNow: () -> Float) =
+    private fun newVideoPlayer(voiceNow: () -> VoiceEffect, boostNow: () -> Float, denoiseNow: () -> Float, finishNow: () -> com.squish.app.media.audio.FinishSettings) =
         // The fold-down in front of the voice, as the export has it: see
         // AudioMixing.processor. At unity on a mono or stereo file it makes
         // itself inactive and costs nothing.
@@ -760,7 +811,7 @@ class PreviewEngine(private val context: Context) {
             // And the part of a level past full after the voice (AudioRules.gainSplit),
             // as a sound player has it: a shot or an overlay goes to 400% now.
             // Noise out before the voice, as the export orders them.
-            processedRenderers(AudioMixing.processor(1f), com.squish.app.media.audio.NoiseProcessor(denoiseNow), VoiceProcessor(voiceNow), GainProcessor(boostNow))
+            processedRenderers(AudioMixing.processor(1f), com.squish.app.media.audio.NoiseProcessor(denoiseNow), VoiceProcessor(voiceNow), com.squish.app.media.audio.FinishProcessor { finishNow().copy(level = boostNow()) })
         )
         // Media3's readers, or FFmpeg's for a file they do not read whole (AvRoute).
         .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(context))
@@ -826,7 +877,10 @@ class PreviewEngine(private val context: Context) {
             AudioMixing.processor(1f),
             com.squish.app.media.audio.NoiseProcessor { chain.denoise.get() },
             VoiceProcessor { chain.voice.get() },
-            GainProcessor { chain.gain.get() }
+            // The boost and the finishing in one float pass, the boost ahead of the
+            // limiter, as the export has them (EDGE_PLAN G4): a GainProcessor here
+            // clipped the boost at 16 bits before the limiter could hold it.
+            com.squish.app.media.audio.FinishProcessor { chain.finish.get().copy(level = chain.gain.get()) }
         )
     )
         .setMediaSourceFactory(SoftwareDecoders.mediaSourceFactory(context))
@@ -891,7 +945,9 @@ class PreviewEngine(private val context: Context) {
         if (effects != this.effects) requestRedraw()
         // Blended stills are not surfaces of their own - they are drawn into the
         // shot under them, as the file draws them.
-        val stills = videoClips.filter { it.isOverlay && !it.blend.isPlain && StillClips.isStill(it.uri) }
+        // A blended video overlay too (EDGE_PLAN F6): its picture is drawn into the
+        // shots under it through its own decoder, and its player only plays its sound.
+        val stills = videoClips.filter { it.isOverlay && !it.blend.isPlain }
         if (stills != blendStills) {
             blendStills = stills
             blendBitmaps.keys.retainAll(stills.mapNotNull { it.uri?.toString() }.toSet())
@@ -1074,7 +1130,14 @@ class PreviewEngine(private val context: Context) {
             if (s.blendStillClip !== still || s.blendUnderClip !== clip) {
                 s.blendStillClip = still
                 s.blendUnderClip = clip
-                s.blendStill.set(still?.let { blendedStillFor(it, clip) })
+                s.blendStill.set(still?.let {
+                    if (StillClips.isStill(it.uri)) blendedStillFor(it, clip) else blendedVideoFor(it, clip, s)
+                })
+                // A surface no longer under a blended video lets its decoder go.
+                if (still == null || StillClips.isStill(still.uri)) {
+                    s.blendVideo?.second?.close()
+                    s.blendVideo = null
+                }
                 changed = true
             }
         }
@@ -1703,7 +1766,9 @@ class PreviewEngine(private val context: Context) {
             if (s.transitionBlur.getAndSet(own.blur) != own.blur) requestRedraw()
             OverlayPlacement(
                 layer = layer,
-                visible = s.shownClipId == clip.id,
+                // A blended video's picture is drawn into the shots under it
+                // (blendedVideoFor); this player is kept for its sound alone.
+                visible = s.shownClipId == clip.id && clip.blend.isPlain,
                 opacity = own.alpha,
                 transform = clip.placedAt(t),
                 stabilizer = clip.stabilizerAt(t),
@@ -1746,6 +1811,11 @@ class PreviewEngine(private val context: Context) {
         // when the clip asks for that, as the file writes it.
         s.voice.set(clip.voice)
         s.denoise.set(clip.noiseReduction)
+        s.finish.set(com.squish.app.media.audio.finishOf(clip.eqGains, clip.compress))
+        s.cleanUp.set(clip.denoise to clip.deflicker)
+        // Clean-up switched on or off for the clip already loaded: load it again,
+        // so the branch below puts the other chain on first.
+        if (s.effectsOn && clip.cleansPicture != s.cleanInChain) s.loadedUri = null
         val speed = clip.speedAt(if (park) clip.timelineStartMs else t)
         setSpeed(player, s.rate, clip.id, speed, pitch = pitchFor(clip, speed))
         val wanted = PreviewRules.seekTarget(clip.sourceAt(t), clip.sourceInMs, clip.sourceOutMs)
@@ -1765,6 +1835,7 @@ class PreviewEngine(private val context: Context) {
                 // off for good, every mask, look and key on the surface stopped showing.
                 if (!s.effectsOn && s.chain.isNotEmpty() && now - s.chainDroppedAt >= CHAIN_RETRY_MS) {
                     s.effectsOn = runCatching { player.setVideoEffects(s.chain) }.isSuccess
+                    s.cleanInChain = false
                     if (s.effectsOn) Log.i(TAG, "effects back on ${s.key}")
                 }
                 // This is the swap that tripped Media3's
@@ -1781,6 +1852,12 @@ class PreviewEngine(private val context: Context) {
                 // code in the app, and the crash could not be reproduced on
                 // demand to show the guard helps. Worth doing by whoever can
                 // make it happen twice.
+                // The chain with or without the clean-up pass, before the file goes on.
+                if (s.effectsOn && clip.cleansPicture != s.cleanInChain) {
+                    val want = clip.cleansPicture
+                    s.effectsOn = runCatching { player.setVideoEffects(if (want) s.chainClean else s.chain) }.isSuccess
+                    s.cleanInChain = want && s.effectsOn
+                }
                 player.setMediaItem(MediaItem.fromUri(source))
                 player.prepare()
                 s.loadedUri = source.toString()
@@ -1976,6 +2053,7 @@ class PreviewEngine(private val context: Context) {
                 chain.gain.set(boost)
                 chain.voice.set(clip.voice)
                 chain.denoise.set(clip.noiseReduction)
+                chain.finish.set(com.squish.app.media.audio.finishOf(clip.eqGains, clip.compress))
             }
             val speed = clip.speedAt(t)
             setSpeed(player, rate, clip.id, speed, pitch = pitchFor(clip, speed))
@@ -2046,6 +2124,7 @@ class PreviewEngine(private val context: Context) {
                         it.gain.set(AudioRules.gainSplit(clip.volume).second)
                         it.voice.set(clip.voice)
                         it.denoise.set(clip.noiseReduction)
+                        it.finish.set(com.squish.app.media.audio.finishOf(clip.eqGains, clip.compress))
                     }
                     audioChains[clip.id] = chain
                     audioPlayers[clip.id] = newAudioPlayer(chain).apply {
@@ -2099,6 +2178,7 @@ class PreviewEngine(private val context: Context) {
         released = true
         focus.drop()
         stillDecoder.shutdown()
+        listOf(surfaceA, surfaceB).forEach { it.blendVideo?.second?.close(); it.blendVideo = null }
         allSurfaces().forEach { it.player.release() }
         audioPlayers.values.forEach { it.release() }
         overlaySurfaces.clear()
@@ -2164,6 +2244,9 @@ class PreviewEngine(private val context: Context) {
          * picture drawn at the same size - the export reads the file itself.
          */
         const val BLEND_STILL_MAX_SIDE = 1440
+
+        /** A blended video's frames in the preview: screen-sized, and small enough to decode and upload thirty times a second. */
+        const val BLEND_VIDEO_MAX_SIDE = 720
 
         /** Generous on purpose: correction is for a jump, not for playback. */
         const val VIDEO_RESYNC_MS = 120L

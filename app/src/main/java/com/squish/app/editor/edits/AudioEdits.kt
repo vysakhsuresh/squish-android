@@ -1334,6 +1334,48 @@ internal class AudioEdits(host: EditHost) : EditArea(host) {
         }
     }
 
+    /** A clip's finishing (EDGE_PLAN G4): its band gains and compression; a tap one step, a drag one step for the drag. */
+    fun setFinish(clipId: String, eqGains: List<Float>? = null, compress: Float? = null, dragging: Boolean = false) =
+        record("Finishing", gesture = if (dragging) "Finishing $clipId" else null) {
+            updateAnyClip(clipId) { c ->
+                c.copy(
+                    eqGains = eqGains?.map { it.coerceIn(-com.squish.app.media.audio.AudioFinish.MAX_DB, com.squish.app.media.audio.AudioFinish.MAX_DB) } ?: c.eqGains,
+                    compress = (compress ?: c.compress).coerceIn(0f, 1f)
+                )
+            }
+        }
+
+    /**
+     * Brings [clipId] to -14 LUFS, where the platforms play things (EDGE_PLAN G4):
+     * its own sound measured over its window the broadcast way (AudioFinish.lufs)
+     * and its Volume set to the level that lands it there, at most four times its
+     * own. [onDone] gets the loudness it was measured at, or null when it could
+     * not be read or is silent. Lands late, as one step, and only on a clip
+     * whose level is still what it was when measured.
+     */
+    fun bringToStreamingLoudness(clipId: String, onDone: (Float?, com.squish.app.media.audio.AudioFinish.Leveled?) -> Unit) {
+        viewModelScope.launch {
+            val clip = (_state.value.audioClips + _state.value.videoClips).firstOrNull { it.id == clipId }
+                ?: return@launch onDone(null, null)
+            var measured: Float? = null
+            listenTo(listOf(clip)) { _, pcm ->
+                if (pcm != null) withContext(Dispatchers.Default) {
+                    val from = (clip.sourceInMs * pcm.sampleRate / 1000L).toInt().coerceIn(0, pcm.samples.size)
+                    val to = (clip.sourceOutMs * pcm.sampleRate / 1000L).toInt().coerceIn(from, pcm.samples.size)
+                    measured = com.squish.app.media.audio.AudioFinish.lufs(pcm.samples.copyOfRange(from, to), pcm.sampleRate, 1)
+                }
+            }
+            val lufs = measured?.takeIf { it.isFinite() } ?: return@launch onDone(null, null)
+            val leveled = com.squish.app.media.audio.AudioFinish.levelFor(lufs, com.squish.app.timeline.MAX_SOUND_GAIN)
+            val level = leveled.level
+            recordLate("Loudness to -14 LUFS", edit = { snapshot ->
+                fun fit(c: Clip) = if (c.id == clipId && c.volume == clip.volume && c.volumeKeys.isEmpty()) c.copy(volume = level) else c
+                snapshot.copy(audioClips = snapshot.audioClips.map(::fit), videoClips = snapshot.videoClips.map(::fit))
+            })
+            onDone(lufs, leveled)
+        }
+    }
+
     /**
      * Takes the quiet stretches out of main-track shot [clipId]: listens to its
      * own sound, keeps what has talking in it (SilenceRules), and cuts it into

@@ -461,6 +461,14 @@ fun AdjustPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
         }
 
         ApplyToAllRow(clip, what = "adjustments") { viewModel.clips.applyAdjustToAll(clip.id) }
+
+        // Picture clean-up (EDGE_PLAN F9): two slow-moving problems, each a strength.
+        // Footage only - a still has no frames to compare.
+        if (!clip.isStillPicture) PanelSurface(accent = SquishColors.Blue) {
+            PanelHeading("Clean up", "Takes the grain out of a still shot, and the flicker out of mains light or a timelapse", accent = SquishColors.Blue)
+            LabeledSlider("Reduce noise", clip.denoise, 0f..1f, onFinished = done) { viewModel.clips.setCleanUp(clip.id, denoise = it, dragging = true) }
+            LabeledSlider("Remove flicker", clip.deflicker, 0f..1f, onFinished = done) { viewModel.clips.setCleanUp(clip.id, deflicker = it, dragging = true) }
+        }
     }
 }
 

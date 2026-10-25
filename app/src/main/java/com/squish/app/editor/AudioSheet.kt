@@ -1,5 +1,8 @@
 package com.squish.app.editor
 
+import com.squish.app.ui.components.SelectableChip
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -693,6 +696,41 @@ fun VoicePanel(clip: Clip, viewModel: EditorViewModel) {
                 onFinished = viewModel::endGesture
             ) { viewModel.audio.setNoiseReduction(clip.id, it, dragging = true) }
         }
+        // Finishing (EDGE_PLAN G4): a shape for the sound, evened out, and brought to
+        // where the platforms play things. Heard live and written alike.
+        Text("Finishing", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+        val current = com.squish.app.media.audio.AudioFinish.Preset.of(clip.eqGains)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            com.squish.app.media.audio.AudioFinish.Preset.entries.forEach { p ->
+                SelectableChip(label = p.label, selected = current == p, accentColor = SquishColors.Teal) {
+                    viewModel.audio.setFinish(clip.id, eqGains = if (p == com.squish.app.media.audio.AudioFinish.Preset.Flat) emptyList() else p.gains.toList())
+                }
+            }
+        }
+        LabeledSlider(
+            "Compress", clip.compress, 0f..1f,
+            readout = { if (it <= 0f) "Off" else "${(it * 100).toInt()}%" },
+            onFinished = viewModel::endGesture
+        ) { viewModel.audio.setFinish(clip.id, compress = it, dragging = true) }
+        var measuring by remember(clip.id) { mutableStateOf(false) }
+        var measuredNote by remember(clip.id) { mutableStateOf<String?>(null) }
+        SquishOutlinedButton(
+            text = if (measuring) "Measuring…" else "Bring to -14 LUFS (streaming loudness)",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                if (measuring) return@SquishOutlinedButton
+                measuring = true
+                viewModel.audio.bringToStreamingLoudness(clip.id) { lufs, leveled ->
+                    measuring = false
+                    measuredNote = when {
+                        lufs == null || leveled == null -> "Couldn't measure this sound."
+                        leveled.onTarget -> "Was ${"%.1f".format(lufs)} LUFS; its level is set for -14."
+                        else -> "Was ${"%.1f".format(lufs)} LUFS; at the most it can take (400%) it reaches ${"%.1f".format(leveled.reachesLufs)}."
+                    }
+                }
+            }
+        )
+        measuredNote?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted) }
         SquishOutlinedButton(
             // "Shot and overlay", because setVoiceForAll maps over every video
             // clip, overlay rows included - the button said shots and changed

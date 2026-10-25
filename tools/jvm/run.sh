@@ -72,6 +72,7 @@ run spanremoval $TIMELINE $SRC/timeline/SpanRemoval.kt tools/jvm/SpanRemovalChec
 run lookkeys $TIMELINE tools/jvm/LookKeysChecks.kt
 run valueeasing $TIMELINE tools/jvm/ValueEasingChecks.kt
 run layerblend $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/LayerBlendChecks.kt
+run blendframes $TIMELINE "$SRC/media/video/BlendFrameRules.kt" tools/jvm/BlendFrameChecks.kt
 run editrules  $TIMELINE "$SRC/editor/EditRules.kt" tools/jvm/EditRulesChecks.kt
 run audiorules $TIMELINE "$SRC/editor/AudioRules.kt" tools/jvm/AudioRulesChecks.kt
 run exportplan $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/ExportPlanChecks.kt
@@ -157,6 +158,7 @@ run gifdecode  "$SRC/media/gif/GifEncoder.kt" "$SRC/media/gif/GifDecoder.kt" too
 run maskrefine "$SRC/media/video/MaskRefine.kt" tools/jvm/MaskRefineChecks.kt
 run cleanup    "$SRC/media/video/CleanUp.kt" tools/jvm/CleanUpChecks.kt
 run exporterrors "$SRC/media/ExportErrorKinds.kt" tools/jvm/ExportErrorKindsChecks.kt
+run audiofinish "$SRC/media/audio/AudioFinish.kt" tools/jvm/AudioFinishChecks.kt
 run autoadjust "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/ColorWheels.kt" "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
 run translatechunks "$SRC/online/OnlineTranslate.kt" tools/jvm/stub/translate/OnlineStub.kt tools/jvm/stub/translate/ContextStub.kt tools/jvm/stub/translate/JsonStub.kt tools/jvm/TranslateChunkChecks.kt
 

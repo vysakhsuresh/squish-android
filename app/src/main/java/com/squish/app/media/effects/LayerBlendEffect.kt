@@ -58,8 +58,24 @@ class LayerBlendEffect(
         val WHOLE_FRAME = floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f)
     }
 
+    private val frame = com.squish.app.media.video.BlendFrame(bitmap, 0L)
+
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        Program(context, useHdr, { bitmap }, { mode }, `when`)
+        Program(context, useHdr, { frame }, { mode }, `when`)
+}
+
+/**
+ * A blended *video* overlay on the finished picture of one shot (EDGE_PLAN F6):
+ * the overlay decoded by hand, [frameAt] answering its frame at the item's
+ * moment (null: not showing), through the same shader as a still.
+ */
+class VideoLayerBlendEffect(
+    private val frameAt: (Long) -> com.squish.app.media.video.BlendFrame?,
+    private val mode: LayerBlend,
+    private val `when`: (Long) -> LayerBlendEffect.Placement?
+) : GlEffect {
+    override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
+        Program(context, useHdr, frameAt, { mode }, `when`)
 }
 
 /**
@@ -71,7 +87,8 @@ class LayerBlendEffect(
  * leaves every frame alone.
  */
 class LiveLayerBlendEffect(
-    private val still: () -> Bitmap?,
+    /** The layer's picture at the item's moment: a still's one picture, or a blended video's frame. */
+    private val still: (Long) -> com.squish.app.media.video.BlendFrame?,
     private val mode: () -> LayerBlend,
     private val `when`: (Long) -> LayerBlendEffect.Placement?
 ) : GlEffect {
@@ -82,7 +99,7 @@ class LiveLayerBlendEffect(
 private class Program(
     context: Context,
     useHdr: Boolean,
-    private val bitmapNow: () -> Bitmap?,
+    private val frameAt: (Long) -> com.squish.app.media.video.BlendFrame?,
     private val modeNow: () -> LayerBlend,
     private val placementAt: (Long) -> LayerBlendEffect.Placement?
 ) : BaseGlShaderProgram(/* useHighPrecisionColorComponents= */ useHdr, /* texturePoolCapacity= */ 1) {
@@ -90,6 +107,7 @@ private class Program(
     private val glProgram: GlProgram
     private var layerTexId = UNSET
     private var loadedBitmap: Bitmap? = null
+    private var loadedVersion = -1L
 
     init {
         glProgram = try {
@@ -111,8 +129,9 @@ private class Program(
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
         try {
             glProgram.use()
-            val bitmap = bitmapNow()
-            uploadLayer(bitmap)
+            val layer = frameAt(presentationTimeUs / 1_000L)
+            val bitmap = layer?.bitmap
+            uploadLayer(layer)
             glProgram.setFloatsUniform("uMode", floatArrayOf(modeNow().ordinal.toFloat()))
             glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
             glProgram.setSamplerTexIdUniform("uLayer", if (layerTexId == UNSET) inputTexId else layerTexId, /* texUnitIndex= */ 1)
@@ -136,9 +155,13 @@ private class Program(
         }
     }
 
-    private fun uploadLayer(bitmap: Bitmap?) {
-        if (bitmap == null || bitmap === loadedBitmap) return
+    private fun uploadLayer(layer: com.squish.app.media.video.BlendFrame?) {
+        // By version as well as by picture: a video's frames are new pictures, a
+        // still's is one, and either way the texture is filled only when it changes.
+        val bitmap = layer?.bitmap
+        if (bitmap == null || bitmap.isRecycled || (bitmap === loadedBitmap && layer.version == loadedVersion)) return
         loadedBitmap = bitmap
+        loadedVersion = layer.version
         GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
         if (layerTexId == UNSET) {
             val ids = IntArray(1)

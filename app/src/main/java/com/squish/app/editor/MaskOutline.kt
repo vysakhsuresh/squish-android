@@ -43,7 +43,13 @@ object MaskOutline {
         val far = 4f * max(aspect, 1f)
         return when (mask.shape) {
             MaskShape.Linear -> listOf(listOf(-far to 0f, far to 0f).map { (x, y) -> toFrame(x, y, mask, centre, aspect, w, h) })
-            MaskShape.Mirror -> listOf(
+            // A split's edges are the mirror's, inside out; a filmstrip's are each bar's two.
+            MaskShape.Filmstrip -> (0 until 3).flatMap { k ->
+                val p = 2f * ry / 3f
+                val mid = -ry + p * (k + 0.5f)
+                listOf(mid - 0.35f * p, mid + 0.35f * p).map { y -> listOf(-far to y, far to y).map { (x, yy) -> toFrame(x, yy, mask, centre, aspect, w, h) } }
+            }
+            MaskShape.Mirror, MaskShape.Split -> listOf(
                 listOf(-far to ry, far to ry).map { (x, y) -> toFrame(x, y, mask, centre, aspect, w, h) },
                 listOf(-far to -ry, far to -ry).map { (x, y) -> toFrame(x, y, mask, centre, aspect, w, h) }
             )
@@ -89,6 +95,14 @@ object MaskOutline {
         }
         MaskShape.Linear -> qy
         MaskShape.Mirror -> abs(qy) - ry
+        // Three bars inside the band, each seven tenths of its third; the band's own edge closes them top and bottom.
+        MaskShape.Filmstrip -> {
+            val p = max(2f * ry / 3f, 0.0001f)
+            val v = qy + ry
+            val t = v - p * kotlin.math.floor(v / p) - p / 2f
+            max(abs(qy) - ry, abs(t) - 0.35f * p)
+        }
+        MaskShape.Split -> ry - abs(qy)
         MaskShape.Heart -> {
             val rrx = max(rx, 0.0001f)
             val rry = max(ry, 0.0001f)

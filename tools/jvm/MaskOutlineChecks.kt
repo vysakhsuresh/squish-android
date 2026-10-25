@@ -107,6 +107,30 @@ fun main() {
             "a track on the right of the frame is not on the right")
     }
 
+
+    // --- EDGE_PLAN F10: the filmstrip's three bars, and the split. ---
+    run {
+        val ry = 0.6f
+        val p = 2f * ry / 3f
+        for (k in 0 until 3) {
+            val mid = -ry + p * (k + 0.5f)
+            check(MaskOutline.distance(MaskShape.Filmstrip, 0.3f, mid, 1f, ry, 0f) < 0f, "the filmstrip's bar $k is not shown")
+            check(near(MaskOutline.distance(MaskShape.Filmstrip, 0f, mid + 0.35f * p, 1f, ry, 0f), 0f), "the filmstrip's bar $k does not end at seven tenths of its third")
+        }
+        // The gap between two bars, and past the band, are cut.
+        check(MaskOutline.distance(MaskShape.Filmstrip, 0f, -ry + p, 1f, ry, 0f) > 0f, "the gap between the filmstrip's bars is shown")
+        check(MaskOutline.distance(MaskShape.Filmstrip, 0f, ry + 0.2f, 1f, ry, 0f) > 0f, "the filmstrip shows past its band")
+        check(MaskOutline.distance(MaskShape.Split, 0f, 0f, 1f, 0.2f, 0f) > 0f, "the split shows its middle band")
+        check(MaskOutline.distance(MaskShape.Split, 0f, 0.5f, 1f, 0.2f, 0f) < 0f, "the split hides what is either side")
+        check(near(MaskOutline.distance(MaskShape.Split, 0f, 0.2f, 1f, 0.2f, 0f), 0f), "the split's edge is not its half height")
+        val strip = MaskOutline.outline(Mask(shape = MaskShape.Filmstrip, heightFraction = 0.6f), 0f to 0f, 200f, 100f)
+        check(strip.size == 6, "a filmstrip is drawn with ${strip.size} lines, not six")
+        check(MaskOutline.outline(Mask(shape = MaskShape.Split, heightFraction = 0.3f), 0f to 0f, 200f, 100f).size == 2, "a split is not drawn with two lines")
+        // The shader has a branch for every shape: its last one is the last shape's index.
+        val glsl = java.io.File("app/src/main/assets/squish_mask_es2.glsl").readText()
+        check("uShape < ${MaskShape.entries.size - 1.5f}" in glsl || "uShape < ${MaskShape.entries.size - 2}.5" in glsl, "the mask shader has no branch for the second-last shape (${MaskShape.entries.size} shapes)")
+    }
+
     println("mask outline: ${MaskShape.entries.size} shapes on the shader's own field")
     if (problems.isEmpty()) println("PASS - the edge drawn is the edge cut, for every shape")
     else { println("FAIL (${problems.size})"); problems.take(30).forEach { println("  - $it") }; exitProcess(1) }

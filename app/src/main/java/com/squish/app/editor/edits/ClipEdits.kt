@@ -453,6 +453,14 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * writing `Adjust.NONE` here cleared it too, so Reset on one tab threw away
      * a cube imported on the other.
      */
+    /** Picture clean-up (EDGE_PLAN F9): a tap one step, a drag one step for the drag. */
+    fun setCleanUp(clipId: String, denoise: Float? = null, deflicker: Float? = null, dragging: Boolean = false) =
+        record("Clean up", gesture = if (dragging) "Clean up $clipId" else null) {
+            updateVideoClip(clipId) { c ->
+                c.copy(denoise = (denoise ?: c.denoise).coerceIn(0f, 1f), deflicker = (deflicker ?: c.deflicker).coerceIn(0f, 1f))
+            }
+        }
+
     fun resetAdjust(clipId: String) = record("Adjust") {
         updateVideoClip(clipId) {
             it.copy(adjust = Adjust.NONE.copy(lutFile = it.adjust.lutFile, lutStrength = it.adjust.lutStrength))

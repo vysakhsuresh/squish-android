@@ -71,10 +71,11 @@ fun OpacityPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
             viewModel.layers.setOpacity(clip.id, it)
         }
 
-        // Blend modes, on a still only. A video overlay's layers meet inside
-        // Media3's compositor, which blends one way and offers no way in, so a
-        // blend set on one would show here and not in the file.
-        if (com.squish.app.media.StillClips.isStill(clip.uri)) {
+        // Blend modes, on a still and (EDGE_PLAN F6) on a video: a blended video
+        // leaves Media3's compositor, which blends one way with no way in, and
+        // is decoded by hand into the shots under it, preview and file alike.
+        val isStill = com.squish.app.media.StillClips.isStill(clip.uri)
+        run {
             Text(
                 "Blend",
                 style = MaterialTheme.typography.bodyMedium,
@@ -95,8 +96,10 @@ fun OpacityPanel(state: EditorUiState, clip: Clip, viewModel: EditorViewModel) {
             }
             if (!clip.blend.isPlain) {
                 Text(
-                    "A blended picture covers the whole frame - that is what a light leak or a dust overlay is for. " +
-                        "Place it, or turn it, with Blend off.",
+                    if (isStill) "A blended picture covers the whole frame - that is what a light leak or a dust overlay is for. " +
+                        "Place it, or turn it, with Blend off."
+                    else "A blended video covers the whole frame, over the shots under it - film burns, light leaks, a double exposure. " +
+                        "Its place, crop, turn and look wait until Blend is off; its sound plays as before.",
                     style = MaterialTheme.typography.labelSmall,
                     color = SquishColors.TextMuted
                 )

@@ -81,6 +81,12 @@ internal object DraftClipCodec {
         if (clip.fadeOutMs > 0L) put("fadeOutMs", clip.fadeOutMs)
         if (clip.voice != VoiceEffect.None) put("voice", clip.voice.name)
         if (clip.noiseReduction > 0f) putFinite("noiseReduction", clip.noiseReduction)
+        // Picture clean-up (EDGE_PLAN F9): written only when on, so an older draft reads as off.
+        if (clip.denoise > 0f) putFinite("denoise", clip.denoise)
+        if (clip.deflicker > 0f) putFinite("deflicker", clip.deflicker)
+        // Finishing (EDGE_PLAN G4).
+        if (clip.eqGains.any { kotlin.math.abs(it) >= 0.05f }) put("eq", org.json.JSONArray().apply { clip.eqGains.forEach { g -> putFinite(g) } })
+        if (clip.compress > 0f) putFinite("compress", clip.compress)
         if (clip.beats.isNotEmpty()) put("beats", JSONArray().apply { clip.beats.forEach { put(it) } })
         put(
             "speedPoints",
@@ -471,6 +477,10 @@ internal object DraftClipCodec {
             fadeOutMs = json.optLong("fadeOutMs").coerceAtLeast(0L),
             voice = enumOrNull<VoiceEffect>(json.optString("voice")) ?: VoiceEffect.None,
             noiseReduction = json.optDouble("noiseReduction", 0.0).toFloat().takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f,
+            denoise = json.optDouble("denoise", 0.0).toFloat().takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f,
+            deflicker = json.optDouble("deflicker", 0.0).toFloat().takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f,
+            eqGains = json.optJSONArray("eq")?.let { a -> (0 until a.length()).map { i -> a.optDouble(i, 0.0).toFloat().takeIf { it.isFinite() }?.coerceIn(-12f, 12f) ?: 0f } }.orEmpty(),
+            compress = json.optDouble("compress", 0.0).toFloat().takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f,
             beats = json.optJSONArray("beats")?.let { array ->
                 (0 until array.length()).map { i -> array.optLong(i) }
             }.orEmpty().sorted(),

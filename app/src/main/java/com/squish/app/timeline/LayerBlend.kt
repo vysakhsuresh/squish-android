@@ -12,11 +12,10 @@ import kotlin.math.sqrt
  * the matching mode) and the file (whose shader mirrors these lines) are
  * saying the same thing, and so the formulas can be executed.
  *
- * Only offered on a photo or a sticker. A *video* overlay cannot be blended in
- * the file at all on Media3 1.11.1 - its layers only meet inside a compositor
- * with no blend knob and no way to replace it - and a blend that worked on
- * screen and not in the export would be worse than none. See
- * docs/COMPETITORS.md, G1.
+ * Offered on any overlay. A still is drawn into the shots under it by
+ * LayerBlendEffect; a *video* overlay, whose layers would otherwise meet in
+ * Media3's compositor with no blend knob, is decoded by hand and drawn into
+ * them the same way (EDGE_PLAN F6, BlendVideoFrames). See docs/COMPETITORS.md, G1.
  */
 enum class LayerBlend(val label: String) {
     Normal("Normal"),
