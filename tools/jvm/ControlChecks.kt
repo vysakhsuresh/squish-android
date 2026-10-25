@@ -685,7 +685,9 @@ fun main() {
         )
         val preview = read("$SRC/editor/PreviewEngine.kt")
         val pVoice = preview.indexOf("VoiceProcessor { chain.voice")
-        val pGain = preview.indexOf("GainProcessor { chain.gain")
+        // The boost rides in FinishProcessor's float pass since G4 (ahead of its limiter);
+        // either way it has to come after the voice.
+        val pGain = preview.indexOf("copy(level = chain.gain.get())").takeIf { it >= 0 } ?: preview.indexOf("GainProcessor { chain.gain")
         check(pVoice >= 0 && pGain >= 0, "the preview's sound chain has been rewritten - this check has rotted")
         check(
             pGain > pVoice,

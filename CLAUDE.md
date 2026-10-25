@@ -198,6 +198,13 @@ function first; if it can, it can be checked.
   every `squish_` export too, because `_` is a wildcard.
 - **Git Bash rewrites `/data/...` and `/sdcard/...` paths** into Windows ones.
   Prefix `adb push`/`adb shell` with `MSYS_NO_PATHCONV=1`.
+- **Taps, by phone.** On the moto (Android 14) `adb shell input tap/swipe` works and the
+  debug build's own tap hook (`debug/DebugTouch.kt`, broadcasts `com.squish.app.debug.TAP`
+  and `SWIPE`) is refused - an app may not inject even into itself there. On a MIUI
+  phone with no SIM it is the other way round: `input` is refused and the hook works.
+  Either way neither reaches another app's window: the system file picker cannot be
+  driven, so test media goes in by draft (`run-as` into `files/imports/`, a clip added
+  to a test project's JSON with the app stopped), never through the picker.
 - **Two-finger gestures:** `sendevent` is refused by SELinux and `input` is one
   finger only. A monkey script does it: a file containing
   `type= raw events` / `count= 1` / `speed= 1.0` / `start data >>` /
