@@ -539,11 +539,14 @@ fun TemplatesPanel(viewModel: EditorViewModel) {
         // Five shelves rather than one list of forty-two: a new person opens
         // this looking for the one that is near enough, and near enough is a
         // glance, not a scroll.
-        var shelf by rememberSaveable { mutableStateOf(TemplateFamily.entries.first().name) }
+        var shelf by rememberSaveable { mutableStateOf(SLOT_SHELF) }
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
         ) {
+            // The slot templates first (EDGE_PLAN H1): a song, cuts on its beats and
+            // joins, filled with the edit's own shots - the shelf people come for.
+            SelectableChip(label = "To the beat", selected = shelf == SLOT_SHELF, accentColor = SquishColors.Blue, onClick = { shelf = SLOT_SHELF })
             TemplateFamily.entries.forEach {
                 SelectableChip(
                     label = it.label,
@@ -551,6 +554,55 @@ fun TemplatesPanel(viewModel: EditorViewModel) {
                     accentColor = SquishColors.Blue,
                     onClick = { shelf = it.name }
                 )
+            }
+        }
+        if (shelf == SLOT_SHELF) {
+            var working by remember { mutableStateOf<String?>(null) }
+            var note by remember { mutableStateOf<String?>(null) }
+            Text(
+                note ?: working?.let { "Laying your shots into $it…" }
+                    ?: "Your shots, in order, cut to a Squish song with its joins and look - each slid to its liveliest bit. Every cut stays editable.",
+                style = MaterialTheme.typography.labelSmall,
+                color = SquishColors.TextMuted
+            )
+            SlotTemplate.entries.chunked(2).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    row.forEach { slot ->
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(SquishColors.Background)
+                                .border(1.dp, SquishColors.Border, RoundedCornerShape(14.dp))
+                                .clickable(onClickLabel = "Use this template", enabled = working == null) {
+                                    working = slot.label
+                                    note = null
+                                    viewModel.clips.applySlotTemplate(slot) { said ->
+                                        working = null
+                                        note = said
+                                        if (said == null) viewModel.analysis.keepBestBits()
+                                    }
+                                }
+                                .padding(12.dp)
+                        ) {
+                            Text(slot.label, style = MaterialTheme.typography.titleSmall, color = SquishColors.TextPrimary)
+                            Text(
+                                "${slot.slots.size} cuts · " + (com.squish.app.media.audio.MusicSynth.byId(slot.songId)?.title ?: ""),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SquishColors.Blue
+                            )
+                            Text(
+                                slot.blurb,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SquishColors.TextMuted,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    repeat(2 - row.size) { Column(modifier = Modifier.weight(1f)) {} }
+                }
             }
         }
         Template.entries.filter { it.family.name == shelf }.chunked(2).forEach { row ->
@@ -671,3 +723,6 @@ private fun LookChip(
 }
 
 private val IntrinsicChipWidth = 64.dp
+
+/** The Templates panel's shelf for the slot templates (EDGE_PLAN H1). */
+private const val SLOT_SHELF = "slots"

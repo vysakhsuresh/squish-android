@@ -33,6 +33,7 @@ import com.squish.app.timeline.withValueKeyRemoved
 import com.squish.app.timeline.withValueKeyEasing
 import com.squish.app.timeline.withValueKeysCleared
 import com.squish.app.timeline.rippleVideo
+import com.squish.app.timeline.withShotsFittedToBeats
 import com.squish.app.timeline.withClipMoved
 import com.squish.app.timeline.withClipRemoved
 import com.squish.app.timeline.withClipDuplicated
@@ -577,6 +578,89 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 textOverlays = current.textOverlays.filterNot { it.id.startsWith(TEMPLATE_PREFIX) } +
                     listOfNotNull(title)
             )
+        }
+    }
+
+    /**
+     * A slot template (EDGE_PLAN H1): the edit's own shots, in order, laid into
+     * the template's slots on a Squish original's beats, with its joins, its song
+     * from the start, and its template's look, frame, title and effects - one
+     * undo step - and then each shot slid to its liveliest stretch, which is a
+     * step of its own because it is measured after. [onDone] is told a sentence
+     * to show, or null when it landed.
+     */
+    fun applySlotTemplate(slot: SlotTemplate, onDone: (String?) -> Unit) {
+        val style = com.squish.app.media.audio.MusicSynth.byId(slot.songId) ?: return onDone("That song is not in this build.")
+        val base = runCatching { Template.valueOf(slot.base) }.getOrNull() ?: return onDone("That template is not in this build.")
+        if (_state.value.videoClips.none { it.isMain }) return onDone("Add your shots first - the template fills its slots with them.")
+        viewModelScope.launch {
+            val song = com.squish.app.media.audio.MusicLibrary.original(app, style) ?: return@launch onDone("Couldn't make the song.")
+            val beatMs = 60_000.0 / style.bpm
+            val beats = com.squish.app.media.audio.MusicSynth.beatMap(style).beatsMs
+            recordLate("Template ${slot.label}", edit = { s ->
+                val shots = s.videoClips.filter { it.isMain }.sortedBy { it.timelineStartMs }
+                if (shots.isEmpty()) return@recordLate s
+                val fills = SlotRules.fill(slot.slots, beatMs, shots.map { if (it.isStillPicture) null else it.sourceDurationMs })
+                val used = HashSet<String>()
+                val laid = fills.mapIndexed { i, f ->
+                    val from = shots[f.shot]
+                    val join = slot.joinInto(i)
+                    val length = SlotRules.laidLengthMs(fills, i, beatMs, joinIn = join != com.squish.app.timeline.TransitionType.None)
+                    val fileMs = if (from.isStillPicture) Long.MAX_VALUE else from.sourceDurationMs
+                    // Its own in-point where the file has room after it; else as late as fits.
+                    val inMs = from.sourceInMs.coerceAtMost((fileMs - length).coerceAtLeast(0L))
+                    from.copy(
+                        id = if (used.add(from.id)) from.id else UUID.randomUUID().toString(),
+                        sourceInMs = inMs,
+                        sourceOutMs = if (from.isStillPicture) inMs + length else (inMs + length).coerceAtMost(fileMs),
+                        speedRamp = SpeedRamp(),
+                        timelineStartMs = 0L,
+                        transitionIn = com.squish.app.timeline.Transition(join, SlotRules.joinMs(beatMs)),
+                        lookId = base.lookId,
+                        lookIntensity = 1f
+                    )
+                }
+                val songClip = Clip(
+                    id = UUID.randomUUID().toString(),
+                    kind = ClipKind.Audio,
+                    uri = song,
+                    label = style.title,
+                    sourceInMs = 0L,
+                    sourceOutMs = (fills.last().endMs).coerceAtMost(style.seconds * 1000L),
+                    timelineStartMs = 0L,
+                    sourceDurationMs = style.seconds * 1000L,
+                    beats = beats
+                )
+                val withTrack = s.copy(videoClips = s.videoClips.filter { !it.isMain } + laid)
+                    .withTimeline { t -> t.rippleVideo().withShotsFittedToBeats(beats) }
+                val end = withTrack.videoClips.filter { it.isMain }.maxOfOrNull { it.timelineEndMs } ?: 0L
+                val placed = base.effects.map { (kind, at) ->
+                    val start = (end * at).toLong().coerceIn(0L, (end - MIN_EFFECT_MS).coerceAtLeast(0L))
+                    val length = if (kind == EffectKind.ZoomIn) end else DEFAULT_EFFECT_MS
+                    TimedEffect(id = TEMPLATE_PREFIX + UUID.randomUUID(), kind = kind, startMs = start, endMs = (start + length).coerceAtMost(end))
+                }
+                val title = base.title?.let { preset ->
+                    TextOverlayItem(
+                        id = TEMPLATE_PREFIX + UUID.randomUUID(),
+                        text = base.titleText ?: preset.sample,
+                        startMs = 0L,
+                        endMs = DEFAULT_TITLE_MS.coerceAtMost(end),
+                        colorArgb = preset.colorArgb
+                    ).styledBy(preset)
+                }
+                withTrack.copy(
+                    audioClips = withTrack.audioClips + songClip,
+                    cropAspect = base.crop ?: CropAspect.Original,
+                    // The song is the sound of a template; the shots' own goes quiet under it.
+                    muteOriginal = true,
+                    effects = withTrack.effects.filterNot { it.id.startsWith(TEMPLATE_PREFIX) } + placed,
+                    textOverlays = withTrack.textOverlays.filterNot { it.id.startsWith(TEMPLATE_PREFIX) } + listOfNotNull(title),
+                    selectedClipId = null
+                )
+            })
+            recomputeEstimate()
+            // The caller then runs "Use the liveliest bit" (AnalysisEdits), once the slots are laid.
+            onDone(null)
         }
     }
 
