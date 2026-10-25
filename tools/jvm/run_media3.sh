@@ -78,3 +78,9 @@ EXTRA_CP="$(cygpath -m "$JSON");$(cygpath -m "$REFLECT")" \
   "$SRC/data/ProjectSnapshot.kt" "$SRC/data/DraftNumbers.kt" "$SRC/data/DraftClipCodec.kt" \
   "$SRC/data/DraftTextCodec.kt" "$SRC/data/DraftCodec.kt" \
   tools/jvm/DraftStateRoundTripChecks.kt 2>&1 | grep -v "^warning" | tail -30
+
+# Smart render (EDGE_PLAN C2): which shots an export may copy, every Clip field
+# nudged off its default by reflection - kotlin-reflect again, so here.
+EXTRA_CP="$(cygpath -m "$REFLECT")" \
+  sh tools/jvm/jc.sh SmartRenderChecks $TIMELINE "$SRC/media/SmartRender.kt" \
+  tools/jvm/SmartRenderChecks.kt 2>&1 | grep -v "^warning" | tail -10

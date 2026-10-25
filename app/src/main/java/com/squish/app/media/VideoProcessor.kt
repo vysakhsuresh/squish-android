@@ -376,6 +376,15 @@ class VideoProcessor(private val context: Context) {
             // One file and no clips: the quick tools. The sequence takes whatever
             // tracks the file has, which is what lets a plain cut be copied
             // rather than re-encoded.
+            // One untouched shot, copied as Snip copies (EDGE_PLAN C2): its own file and window.
+            isPlainTrim(state) && SmartRender.copyableShot(state.videoClips) != null -> {
+                val shot = checkNotNull(SmartRender.copyableShot(state.videoClips))
+                @Suppress("DEPRECATION")
+                val single = EditedMediaItemSequence.Builder(
+                    listOf(editedVideo(state, shot.uri, shot.sourceInMs, shot.sourceOutMs, true))
+                ).build()
+                listOf(single)
+            }
             track.isEmpty() -> {
                 @Suppress("DEPRECATION")
                 val single = EditedMediaItemSequence.Builder(
@@ -625,7 +634,8 @@ class VideoProcessor(private val context: Context) {
      * carries its own speed, motion and masks, none of which a copied stream keeps.
      */
     private fun isPlainTrim(state: EditorUiState): Boolean =
-        state.videoClips.isEmpty() &&
+        // Snip, or (EDGE_PLAN C2) an edit of one shot left as it came in.
+        (state.videoClips.isEmpty() || SmartRender.copyableShot(state.videoClips) != null) &&
             !state.audioOnly &&
             !state.muteOriginal &&
             state.audioClips.isEmpty() &&
