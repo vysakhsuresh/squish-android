@@ -1830,7 +1830,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 proxyPercent = null
             )
         }
-        if (!ProxyEngine.isWorthProxying(meta.displayWidth, meta.displayHeight, meta.durationMs)) {
+        // The codec, its depth and its bitrate as FFmpeg reads them (EDGE_PLAN C5):
+        // 1080p at 60, 10-bit, HEVC or a very high bitrate stutters as surely as 4K.
+        val stream = withContext(Dispatchers.IO) {
+            runCatching { com.squish.app.av.AvFile.probe(app, uri)?.video }.getOrNull()
+        }
+        val footage = com.squish.app.media.ProxyRules.Footage(
+            width = meta.displayWidth, height = meta.displayHeight,
+            fps = if (meta.fps > 0f) meta.fps else stream?.fps ?: 0f,
+            durationMs = meta.durationMs,
+            codec = stream?.codec.orEmpty(), bits = stream?.bits ?: 0, bitRate = stream?.bitRate ?: 0L
+        )
+        if (!com.squish.app.media.ProxyRules.worth(footage, com.squish.app.settings.Preferences.previewQuality(app))) {
             status(ProxyStatus.NotNeeded)
             return
         }

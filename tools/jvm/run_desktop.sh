@@ -139,6 +139,7 @@ run voicesplit "$SRC/media/audio/Fft.kt" "$SRC/media/audio/VoiceSplit.kt" tools/
 run capturerules "$SRC/capture/CaptureRules.kt" tools/jvm/CaptureRulesChecks.kt
 run slottemplates $TIMELINE "$SRC/media/audio/Fft.kt" "$SRC/media/audio/BeatDetector.kt" "$SRC/media/audio/MusicSynth.kt" "$SRC/editor/SlotTemplate.kt" tools/jvm/SlotTemplateChecks.kt
 run exportfacts "$SRC/export/ExportFacts.kt" tools/jvm/ExportFactsChecks.kt
+run proxyrules "$SRC/media/ProxyRules.kt" tools/jvm/ProxyRulesChecks.kt
 run autoadjust "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/ColorWheels.kt" "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
 run translatechunks "$SRC/online/OnlineTranslate.kt" tools/jvm/stub/translate/OnlineStub.kt tools/jvm/stub/translate/ContextStub.kt tools/jvm/stub/translate/JsonStub.kt tools/jvm/TranslateChunkChecks.kt
 # These four were in run.sh and not here, so the desktop - the only machine that

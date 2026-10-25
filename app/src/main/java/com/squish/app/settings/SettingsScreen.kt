@@ -179,6 +179,16 @@ private fun DefaultsCard() {
             checked = defaults.keepScreenOn,
             onChange = { Preferences.setKeepScreenOn(context, it); reload() }
         )
+        // Preview quality (EDGE_PLAN C5): when the editor plays a light copy rather than the original.
+        var quality by remember { mutableStateOf(Preferences.previewQuality(context)) }
+        SettingLabel("Preview quality", quality.blurb)
+        ChipRow(
+            options = com.squish.app.media.ProxyRules.Quality.entries.map { it.label },
+            selected = quality.ordinal
+        ) { i ->
+            quality = com.squish.app.media.ProxyRules.Quality.entries[i]
+            Preferences.setPreviewQuality(context, quality)
+        }
     }
 }
 
@@ -677,7 +687,7 @@ private fun OnlineCard() {
         )
         SwitchRow(
             title = "Online features",
-            blurb = "Free music and stock footage from the Internet Archive, free fonts from Google Fonts, and caption translation. Only your search, a caption's words and the name of " +
+            blurb = "Free music and stock footage from the Internet Archive, free fonts from Google Fonts, caption translation, and the speech models for captions (each says its size first). Only your search, a caption's words and the name of " +
                 "what you pick are sent - never your videos, photos or projects. Anything already downloaded stays when this is off.",
             checked = enabled == true,
             onChange = { Online.setEnabled(context, it) }

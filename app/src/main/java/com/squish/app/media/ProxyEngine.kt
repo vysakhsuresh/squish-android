@@ -43,8 +43,7 @@ import kotlin.coroutines.resume
  */
 object ProxyEngine {
 
-    /** Footage below this needs no help; making a proxy would cost more than it saves. */
-    private const val PROXY_THRESHOLD_LONG_EDGE = 1920
+    // Which footage is worth a proxy is ProxyRules' (EDGE_PLAN C5), with Settings' Preview quality.
 
     const val PROXY_HEIGHT = 540
     private const val PROXY_BITRATE = 2_500_000
@@ -58,7 +57,7 @@ object ProxyEngine {
      */
     const val PROXY_WIDTH_HINT = 1280
 
-    /**
+    /*
      * Longest source worth making a proxy of.
      *
      * A proxy is a full re-encode of the whole file. That is a fine trade on a
@@ -70,16 +69,11 @@ object ProxyEngine {
      * touched anything.
      *
      * Past this the editor plays the original. Heavier per frame, but the whole
-     * file is not re-encoded to find that out.
+     * file is not re-encoded to find that out. (The limit itself is
+     * ProxyRules.MAX_DURATION_MS now.)
      */
-    private const val PROXY_MAX_DURATION_MS = 15L * 60_000
-
     /** How often the encoder is asked how far it has got, for the notice over the strip. */
     private const val PROGRESS_POLL_MS = 500L
-
-    fun isWorthProxying(width: Int, height: Int, durationMs: Long): Boolean =
-        maxOf(width, height) > PROXY_THRESHOLD_LONG_EDGE &&
-            durationMs in 1..PROXY_MAX_DURATION_MS
 
     /**
      * The proxy for this clip if one is already on disk. Instant and side-effect

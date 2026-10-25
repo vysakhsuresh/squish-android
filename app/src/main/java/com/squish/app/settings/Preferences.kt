@@ -121,6 +121,15 @@ object Preferences {
     fun setDefaultTransitionMs(context: Context, ms: Long) = edit(context) { putLong(KEY_TRANSITION_MS, ms) }
     fun setKeepScreenOn(context: Context, on: Boolean) = edit(context) { putBoolean(KEY_KEEP_SCREEN_ON, on) }
 
+    /** When the editor plays a light copy rather than the original (EDGE_PLAN C5). */
+    fun previewQuality(context: Context): com.squish.app.media.ProxyRules.Quality =
+        context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).getString(KEY_PREVIEW_QUALITY, null)
+            ?.let { name -> com.squish.app.media.ProxyRules.Quality.entries.firstOrNull { it.name == name } }
+            ?: com.squish.app.media.ProxyRules.Quality.Auto
+
+    fun setPreviewQuality(context: Context, quality: com.squish.app.media.ProxyRules.Quality) =
+        edit(context) { putString(KEY_PREVIEW_QUALITY, quality.name) }
+
     /** The voice Read aloud speaks in. */
     fun speechVoice(context: Context): com.squish.app.media.audio.SpeechVoice =
         context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).getString(KEY_SPEECH_VOICE, null)
@@ -189,6 +198,7 @@ object Preferences {
     private const val KEY_TRANSITION_MS = "defaultTransitionMs"
     private const val KEY_HAPTICS = "haptics"
     private const val KEY_KEEP_SCREEN_ON = "keepScreenOn"
+    private const val KEY_PREVIEW_QUALITY = "previewQuality"
     private const val KEY_SPEECH_VOICE = "speechVoice"
 }
 
