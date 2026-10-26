@@ -1817,7 +1817,8 @@ private fun Lane(
                     waveform = clip.uri?.let { waveforms[it.toString()] },
                     missing = clip.uri?.toString() in missingUris,
                     window = scale,
-                    span = span,
+                    spanStartMs = span.first,
+                    spanEndMs = span.last,
                     drawn = drawn,
                     accent = clipColor?.invoke(clip) ?: accent,
                     onSelect = onSelect,
@@ -1857,10 +1858,10 @@ private fun Lane(
             // goes when the join does, as the transition itself does.
             onTransitionTap?.let { tap ->
                 val joined = if (clips.any { it.isMain }) clips.drop(1) else clips.filter { it.hasOverlayJoin(clips) }
-                // One badge where two would overlap: across a shot narrower than
-                // a badge at this zoom the two joins' marks lay one on the other,
-                // and a tap went to whichever was drawn last. The next one shows
-                // again on zooming in.
+                // One badge where two would crowd the shot between them (see
+                // BADGE_SPACING_DP): across a short shot at this zoom the marks
+                // lay one on the other, or left the shot nowhere to be tapped.
+                // The next one shows again on zooming in.
                 var lastDp = Float.NEGATIVE_INFINITY
                 joined.sortedBy { it.timelineStartMs }.forEach { clip ->
                     if (!window.intersects(clip.timelineStartMs, clip.timelineStartMs)) return@forEach
@@ -2038,8 +2039,15 @@ private fun ClipView(
      * recomposition (EDGE_PLAN C3). Widths, diamonds and handles need only this.
      */
     window: TimelineWindow,
-    /** The part of the clip on the drawn window, worked out by its lane. */
-    span: LongRange,
+    /**
+     * The part of the clip on the drawn window, worked out by its lane - as two
+     * numbers, not a LongRange: the compiler holds a range unstable and compares
+     * it by identity, and the lane makes a new one every time it recomposes, so
+     * every clip on screen recomposed with it (27 Oct: 230 a second scrubbing 200
+     * short shots, every argument else unchanged; app_perf-composables.txt).
+     */
+    spanStartMs: Long,
+    spanEndMs: Long,
     /** The drawn window itself, read when the clip is placed - the layout, not the composition. */
     drawn: State<TimelineWindow>,
     accent: Color,
@@ -2062,8 +2070,8 @@ private fun ClipView(
      * been - which looks identical and costs the same whatever the clip's length.
      */
     com.squish.app.util.PerfFlags.hit("ClipView")
-    val drawnStartMs = span.first
-    val drawnEndMs = span.last
+    val drawnStartMs = spanStartMs
+    val drawnEndMs = spanEndMs
     val width = window.widthDp(drawnEndMs - drawnStartMs).dp
 
     /** Whether the clip's real edges are in the part being drawn. */
@@ -3016,5 +3024,11 @@ class StripMemory : ViewModel() {
     var fittedNonce: Long = 0L
 }
 
-/** How far apart two join badges must be to both show: the 20 dp badge and a little air. */
-private const val BADGE_SPACING_DP = 24f
+/**
+ * How far apart two join badges must be to both show: the 20 dp badge and
+ * 36 dp of shot beside it - a finger's width. It was 24, a badge and a little
+ * air, and over 200 half-second shots at the fitted zoom (27 Oct, on the
+ * moto) the badges covered the shots, so a tap meant for a shot opened the
+ * Transition sheet. Zoomed in, every join has its badge again.
+ */
+private const val BADGE_SPACING_DP = 56f

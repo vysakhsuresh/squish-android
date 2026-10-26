@@ -1917,6 +1917,24 @@ fun main() {
                 !Regex("""Text\(\s*Timecode\.format\(positionMs\(\)\)""").containsMatchIn(preview),
             "the transport's timecode is composed from the playhead again - every scrub frame changes the window's semantics"
         )
+        // A clip on the strip takes nothing the compiler compares by identity
+        // that its lane makes afresh: a LongRange span recomposed every clip on
+        // screen at every recomposition of its lane (27 Oct, 230 a second
+        // scrubbing 200 short shots).
+        val clipViewParams = editor.substringAfter("private fun ClipView(", "").substringBefore(") {")
+        check(
+            clipViewParams.isNotEmpty() && !clipViewParams.contains(": LongRange") && !clipViewParams.contains(": IntRange"),
+            "ClipView takes a range again - unstable, so every clip on screen recomposes whenever its lane does"
+        )
+        // A join's badge never covers its shots: 27 Oct, 200 half-second shots
+        // at the fitted zoom, a badge every 24 dp over shots 26 dp wide, and
+        // a tap meant for a shot opened the Transition sheet. Badges are
+        // spaced so a finger's width of each shot is left beside them.
+        val spacing = Regex("""BADGE_SPACING_DP = ([0-9.]+)f""").find(editor)?.groupValues?.get(1)?.toFloatOrNull()
+        check(
+            spacing != null && spacing >= 20f + 36f,
+            "join badges are spaced $spacing dp apart - with 20 dp badges that leaves under 36 dp of a short shot to tap"
+        )
         check(
             read("$SRC/editor/CaptionLayer.kt").contains("timeMs: () -> Long"),
             "the caption layer is handed the moment as a value, so the preview recomposes to move a caption"
