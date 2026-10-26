@@ -34,6 +34,14 @@ fun main() {
     check(TtsRules.sentences("x".repeat(25), 10).map { it.length } == listOf(10, 10, 5), "an overlong word is not cut at the limit")
     check(TtsRules.sentences(" . ! ", 50).isEmpty(), "punctuation alone was spoken")
 
+    // ---- The app reads text exactly as Coqui does, for a real voice ------------
+    // VoiceFixture_ml: the Malayalam voice's own id table and Coqui's ids for six
+    // sentences (tools/voices/convert.py wrote them into voice.json).
+    for ((text, want) in VoiceFixture_ml.tests) {
+        val got = TtsRules.ids(text, VoiceFixture_ml.ids).toList()
+        check(got == want, "Coqui reads \"$text\" as $want, the app as $got")
+    }
+
     // ---- Durations, as FastPitch rounds them ----------------------------------
     val log = floatArrayOf(0f, kotlin.math.ln(4.0).toFloat(), kotlin.math.ln(10.5).toFloat(), -3f)
     check(TtsRules.durations(log).toList() == listOf(1, 3, 10, 1), "durations: ${TtsRules.durations(log).toList()}")

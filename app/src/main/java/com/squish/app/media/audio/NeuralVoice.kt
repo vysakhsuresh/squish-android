@@ -137,11 +137,13 @@ class NeuralVoice private constructor(dir: File) : Closeable {
         val t = ids.size
         // The encoder: ids, mask and speaker in; features [1,T,C] and log durations [1,T] out.
         val idsIn = intBuffer(maxChars).apply { asIntBuffer().put(ids) }
+        val idsValues = IntArray(maxChars).also { ids.copyInto(it) }
         val maskIn = floatBuffer(maxChars).apply { asFloatBuffer().put(FloatArray(t) { 1f }) }
         val speakerIn = intBuffer(1).apply { asIntBuffer().put(speaker) }
+        val speakerValues = intArrayOf(speaker)
         val featsOut = floatBuffer(maxChars * channels)
         val durOut = floatBuffer(maxChars)
-        run(encoder, listOf(Input(idsIn, 2, true), Input(maskIn, 2, false), Input(speakerIn, 1, true)), listOf(featsOut to 3, durOut to 2))
+        run(encoder, listOf(Input(idsIn, 2, true, idsValues), Input(maskIn, 2, false), Input(speakerIn, 1, true, speakerValues)), listOf(featsOut to 3, durOut to 2))
         val feats = FloatArray(t * channels).also { featsOut.rewind(); featsOut.asFloatBuffer().get(it) }
         val logDur = FloatArray(t).also { durOut.rewind(); durOut.asFloatBuffer().get(it) }
         var durations = TtsRules.durations(logDur, lengthScale)
@@ -156,7 +158,7 @@ class NeuralVoice private constructor(dir: File) : Closeable {
         val yMask = floatBuffer(maxFrames).apply { asFloatBuffer().put(FloatArray(n) { 1f }) }
         speakerIn.rewind()
         val melOut = floatBuffer(maxFrames * MELS)
-        run(decoder, listOf(Input(fIn, 3, false), Input(yMask, 2, false), Input(speakerIn, 1, true)), listOf(melOut to 3))
+        run(decoder, listOf(Input(fIn, 3, false), Input(yMask, 2, false), Input(speakerIn, 1, true, speakerValues)), listOf(melOut to 3))
         val mel = FloatArray(n * MELS).also { melOut.rewind(); melOut.asFloatBuffer().get(it) }
 
         // The vocoder, chunk by chunk ([1,80,M] in, frames by band), faded into each other.
@@ -176,7 +178,8 @@ class NeuralVoice private constructor(dir: File) : Closeable {
         return TtsRules.stitch(chunks, starts.map { it * hop }, OVERLAP * hop, n * hop)
     }
 
-    private class Input(val buffer: ByteBuffer, val rank: Int, val integer: Boolean)
+    /** An input: its buffer, rank and kind - and, for an integer, its values, so it can be handed over as the 32- or 64-bit integers the model was written with. */
+    private class Input(val buffer: ByteBuffer, val rank: Int, val integer: Boolean, val values: IntArray? = null)
 
     /**
      * Runs [interpreter], each input put where a tensor of its rank and kind
@@ -192,8 +195,13 @@ class NeuralVoice private constructor(dir: File) : Closeable {
             val k = inputs.indices.firstOrNull { !taken[it] && inputs[it].rank == tensor.shape().size && inputs[it].integer == integer }
                 ?: error("voice model input $i ${tensor.shape().toList()} has no match")
             taken[k] = true
-            inputs[k].buffer.rewind()
-            ins[i] = inputs[k].buffer
+            val given = inputs[k]
+            ins[i] = if (given.integer && tensor.dataType() == org.tensorflow.lite.DataType.INT64 && given.values != null) {
+                ByteBuffer.allocateDirect(given.values.size * 8).order(ByteOrder.nativeOrder()).apply { asLongBuffer().put(LongArray(given.values.size) { given.values[it].toLong() }) }
+            } else {
+                given.buffer.rewind()
+                given.buffer
+            }
         }
         val outs = HashMap<Int, Any>()
         val used = BooleanArray(outputs.size)
