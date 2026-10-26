@@ -1,19 +1,16 @@
 package com.squish.app.timeline
 
-import android.graphics.Bitmap
 import android.net.Uri
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import kotlin.math.roundToInt
 import androidx.compose.ui.platform.LocalContext
 import com.squish.app.media.video.FilmstripLoader
 import com.squish.app.media.video.FilmstripPlan
@@ -59,28 +56,28 @@ internal fun Filmstrip(
         FilmstripLoader.request(context, uri, times)
     }
 
-    Row(modifier = modifier) {
-        frames.forEach { frame -> Tile(frame) }
-    }
-}
-
-/**
- * One frame's worth of strip.
- *
- * Weighted rather than fixed-width so the tiles always divide the clip exactly.
- * Past [FilmstripPlan.MAX_TILES] that means they stretch, which is the intended
- * trade: a very long clip zoomed right in shows fewer, wider frames rather than
- * decoding without limit.
- */
-@Composable
-private fun RowScope.Tile(frame: Bitmap?) {
-    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-        if (frame != null) {
-            Image(
-                bitmap = frame.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+    // One Canvas for the whole row (FilmstripPlan.tileSpan says why not a
+    // Row of Images), each frame cropped to cover its tile as
+    // ContentScale.Crop did.
+    val images = remember(frames) { frames.map { it?.asImageBitmap() } }
+    Canvas(modifier = modifier) {
+        val w = size.width.roundToInt()
+        val h = size.height.roundToInt()
+        if (w <= 0 || h <= 0) return@Canvas
+        val n = images.size
+        for (i in 0 until n) {
+            val image = images[i] ?: continue
+            val span = FilmstripPlan.tileSpan(i, n, w)
+            val tw = span[1] - span[0]
+            if (tw <= 0) continue
+            val src = FilmstripPlan.coverSource(image.width, image.height, tw, h)
+            drawImage(
+                image = image,
+                srcOffset = IntOffset(src[0], src[1]),
+                srcSize = IntSize(src[2] - src[0], src[3] - src[1]),
+                dstOffset = IntOffset(span[0], 0),
+                dstSize = IntSize(tw, h),
+                filterQuality = FilterQuality.Low
             )
         }
     }

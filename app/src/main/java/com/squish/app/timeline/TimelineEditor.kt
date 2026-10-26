@@ -80,6 +80,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -1679,36 +1681,44 @@ private fun Ruler(
                 )
             }
     ) {
-        // Drawn first so the second ticks and their labels sit over them.
-        markers.forEach { at ->
-            if (!window.intersects(at, at)) return@forEach
-            val isBar = at in barMarkers
-            Box(
-                modifier = Modifier
-                    .offset(x = window.xDp(at).dp)
-                    .width(if (isBar) 2.dp else 1.dp)
-                    .height(if (isBar) RULER_HEIGHT else RULER_HEIGHT * 0.5f)
-                    .background(SquishColors.Cyan.copy(alpha = if (isBar) 0.8f else 0.4f))
-            )
-        }
-
-        // Only the ticks on screen, and none before the start of the edit: with
-        // the playhead in the middle, the left half of the strip is before zero
-        // whenever the playhead is near the start.
-        var t = (window.firstDrawnMs / stepMs) * stepMs
-        if (t < 0L) t = 0L
-        val lastTick = minOf(maxOf(durationMs, 0L) + stepMs, window.lastDrawnMs)
-        while (t <= lastTick) {
-            val label = t
-            Column(modifier = Modifier.offset(x = window.xDp(label).dp)) {
-                Box(modifier = Modifier.width(1.dp).height(6.dp).background(SquishColors.Border))
-                Text(
-                    Timecode.format(label, withMillis = false),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SquishColors.TextMuted
+        // One Canvas, not a Box per marker and a Column, Box and Text per tick:
+        // those came and went with every step of a scrub, and with an
+        // accessibility service on, Compose walks every layout node in the
+        // window each time one does (26 Oct, traced on the moto: about 8 ms a
+        // walk, a quarter of the main thread while scrubbing). The labels say
+        // nothing a screen reader needs - the timecode under the picture does.
+        val measurer = rememberTextMeasurer(cacheSize = 48)
+        val labelStyle = MaterialTheme.typography.labelSmall.copy(color = SquishColors.TextMuted)
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val h = size.height
+            // Drawn first so the second ticks and their labels sit over them.
+            markers.forEach { at ->
+                if (!window.intersects(at, at)) return@forEach
+                val isBar = at in barMarkers
+                drawRect(
+                    color = SquishColors.Cyan.copy(alpha = if (isBar) 0.8f else 0.4f),
+                    topLeft = Offset(window.xDp(at).dp.toPx(), 0f),
+                    size = Size((if (isBar) 2.dp else 1.dp).toPx(), if (isBar) h else h * 0.5f)
                 )
             }
-            t += stepMs
+
+            // Only the ticks on screen, and none before the start of the edit: with
+            // the playhead in the middle, the left half of the strip is before zero
+            // whenever the playhead is near the start.
+            var t = (window.firstDrawnMs / stepMs) * stepMs
+            if (t < 0L) t = 0L
+            val lastTick = minOf(maxOf(durationMs, 0L) + stepMs, window.lastDrawnMs)
+            val tickW = 1.dp.toPx()
+            val tickH = 6.dp.toPx()
+            while (t <= lastTick) {
+                val x = window.xDp(t).dp.toPx()
+                drawRect(SquishColors.Border, topLeft = Offset(x, 0f), size = Size(tickW, tickH))
+                drawText(
+                    textLayoutResult = measurer.measure(Timecode.format(t, withMillis = false), labelStyle),
+                    topLeft = Offset(x, tickH)
+                )
+                t += stepMs
+            }
         }
     }
 }

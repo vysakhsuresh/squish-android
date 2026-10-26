@@ -54,6 +54,7 @@ run previewspan "$SRC/ui/components/PreviewSpan.kt" tools/jvm/PreviewSpanChecks.
 run window     "$SRC/timeline/TimelineWindow.kt" tools/jvm/WindowChecks.kt
 run span       "$SRC/timeline/TimelineSpan.kt" tools/jvm/SpanChecks.kt
 run filmstrip  $TIMELINE "$SRC/media/video/Filmstrip.kt" tools/jvm/FilmstripChecks.kt
+run passstage  "$SRC/media/effects/PassStage.kt" tools/jvm/PassStageChecks.kt
 run stripdraw  $TIMELINE "$SRC/timeline/StripDraw.kt" tools/jvm/StripDrawChecks.kt
 run undo       "$SRC/editor/UndoStack.kt" tools/jvm/UndoChecks.kt
 run housekeeping "$SRC/data/DraftHousekeeping.kt" "$SRC/data/DraftFiles.kt" tools/jvm/HousekeepingChecks.kt

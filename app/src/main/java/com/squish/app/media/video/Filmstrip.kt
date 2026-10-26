@@ -41,6 +41,41 @@ object FilmstripPlan {
      */
     const val QUANTUM_MS = 200L
 
+    /**
+     * Tile [i] of [n] across [widthPx], as its left and right pixel. The
+     * tiles are drawn by one Canvas per clip rather than a Row of Images: a
+     * Box and an Image per tile were up to forty layout nodes a clip, and with
+     * an accessibility service on, Compose walks every layout node in the
+     * window each time one comes or goes - which a scrub does all the time.
+     * Edges from one rounding of the same products, so neighbours meet with
+     * no seam and the last tile ends exactly at the width.
+     */
+    fun tileSpan(i: Int, n: Int, widthPx: Int): IntArray {
+        val l = (i.toLong() * widthPx / n).toInt()
+        val r = ((i + 1).toLong() * widthPx / n).toInt()
+        return intArrayOf(l, r)
+    }
+
+    /**
+     * The part of a [bw]x[bh] frame that fills a [tw]x[th] tile when cropped
+     * to cover it, centred - what ContentScale.Crop did for each Image -
+     * as left, top, right, bottom in the frame's pixels.
+     */
+    fun coverSource(bw: Int, bh: Int, tw: Int, th: Int): IntArray {
+        if (bw <= 0 || bh <= 0 || tw <= 0 || th <= 0) return intArrayOf(0, 0, bw.coerceAtLeast(0), bh.coerceAtLeast(0))
+        // Compare the shapes by cross-multiplying, in Long, rather than by
+        // dividing: no rounding decides which side is cut.
+        return if (bw.toLong() * th > tw.toLong() * bh) {
+            val sw = (tw.toLong() * bh / th).toInt().coerceIn(1, bw)
+            val l = (bw - sw) / 2
+            intArrayOf(l, 0, l + sw, bh)
+        } else {
+            val sh = (th.toLong() * bw / tw).toInt().coerceIn(1, bh)
+            val t = (bh - sh) / 2
+            intArrayOf(0, t, bw, t + sh)
+        }
+    }
+
     /** How many tiles fit across [widthDp], or zero if the clip is too narrow to bother. */
     fun tileCount(widthDp: Float, maxTiles: Int = MAX_TILES): Int {
         if (widthDp < MIN_WIDTH_DP) return 0

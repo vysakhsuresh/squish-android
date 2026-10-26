@@ -162,6 +162,35 @@ fun rampedTileChecks() {
         half.all { it >= FilmstripPlan.quantize(clip.sourceAt(played / 2)) - FilmstripPlan.QUANTUM_MS }
     )
 
+    // --- One Canvas per clip: the tiles divide the width with no seam. -------
+    for (n in 1..20) for (w in listOf(1, 7, 33, 340, 1081)) {
+        var at = 0
+        for (i in 0 until n) {
+            val (l, r) = FilmstripPlan.tileSpan(i, n, w).let { it[0] to it[1] }
+            check("tile $i of $n across $w starts at $l, not where the last ended ($at)", l == at)
+            check("tile $i of $n across $w runs backwards: $l..$r", r >= l)
+            at = r
+        }
+        check("$n tiles across $w end at $at, not at the width", at == w)
+    }
+    // And each is cropped to cover its tile, centred, as ContentScale.Crop did.
+    run {
+        // A 16:9 frame into a 34x48 tile: full height, the middle 270 of 1920 x 1080's width... 1080*34/48 = 765.
+        val wide = FilmstripPlan.coverSource(1920, 1080, 34, 48).toList()
+        check("a wide frame is not cut to its middle: $wide", wide == listOf(577, 0, 1342, 1080))
+        // A portrait frame into a wide tile: full width, the middle band.
+        val tall = FilmstripPlan.coverSource(1080, 1920, 100, 50).toList()
+        check("a tall frame is not cut to its middle band: $tall", tall == listOf(0, 690, 1080, 1230))
+        // The shape kept: the source's aspect is the tile's, to within a pixel.
+        for ((bw, bh) in listOf(1920 to 1080, 1080 to 1920, 640 to 480, 3 to 1000)) for ((tw, th) in listOf(34 to 48, 200 to 48, 48 to 48)) {
+            val s = FilmstripPlan.coverSource(bw, bh, tw, th)
+            val sw = s[2] - s[0]; val sh = s[3] - s[1]
+            check("$bw x $bh into $tw x $th leaves the frame: ${s.toList()}", s[0] >= 0 && s[1] >= 0 && s[2] <= bw && s[3] <= bh && sw > 0 && sh > 0)
+            check("$bw x $bh into $tw x $th is not the tile's shape: ${sw}x$sh", kotlin.math.abs(sw.toLong() * th - sh.toLong() * tw) <= maxOf(tw, th).toLong())
+            check("$bw x $bh into $tw x $th is not centred: ${s.toList()}", kotlin.math.abs(s[0] - (bw - s[2])) <= 1 && kotlin.math.abs(s[1] - (bh - s[3])) <= 1)
+        }
+    }
+
     // --- Degenerate: no width, no tiles, a window of nothing. ----------------
     check("no tiles gave times", FilmstripPlan.tileTimes(0L, played, 0) { clip.sourceAt(it) }.isEmpty())
     val still = FilmstripPlan.tileTimes(1_000L, 1_000L, 3) { clip.sourceAt(it) }

@@ -506,19 +506,31 @@ class PreviewEngine(private val context: Context) {
                 }
             })
 
+            // Each pass hands a frame on undrawn while it would leave it as it
+            // is (IdlePassEffect, PassStage): seven full-frame passes for every
+            // frame shown were the scrub's GPU budget on the moto. Every test
+            // below reads the very state its pass reads.
+            val skipIdle = !com.squish.app.util.PerfFlags.on("noskip")
+            fun Effect.unlessIdle(idle: (Long) -> Boolean): Effect =
+                if (skipIdle && this is androidx.media3.effect.GlEffect) com.squish.app.media.effects.IdlePassEffect(this, idle) else this
+            // Nothing cut out, keyed or masked: the picture's alpha is still the
+            // decoder's 1 everywhere, which is what lets the last pass skip.
+            fun opaque() = chroma.get() == null && background.get().first == null && mask.get().first == null
             chain = buildList<Effect> {
                 // First, so the key, the grade and the mask see the HDR picture as it will be seen.
-                add(com.squish.app.media.effects.HdrLiftEffect { hdrLift.get() })
+                add(com.squish.app.media.effects.HdrLiftEffect { hdrLift.get() }.unlessIdle { !hdrLift.get() })
                 // Keyed first, then background, then masked - the export's order.
-                add(ChromaKeyEffect { chroma.get() })
-                add(BackgroundEffect({ background.get().first }, { background.get().second }, timesAreSourceTime = true))
+                add(ChromaKeyEffect { chroma.get() }.unlessIdle { chroma.get() == null })
+                add(BackgroundEffect({ background.get().first }, { background.get().second }, timesAreSourceTime = true)
+                    .unlessIdle { background.get().first == null })
                 // The player holds the whole source file, so its clock is source time.
-                add(MaskEffect({ mask.get().first }, { mask.get().second }, timesAreSourceTime = true))
+                add(MaskEffect({ mask.get().first }, { mask.get().second }, timesAreSourceTime = true)
+                    .unlessIdle { mask.get().first == null })
                 // Every picture has its own grade now, an overlay's as much as a
                 // shot's; the export grades each item the same way. The effects
                 // library still belongs to the whole picture, and only the base
                 // carries it.
-                add(LiveLookEffect(grade))
+                add(LiveLookEffect(grade).unlessIdle { grade.get().isIdentity })
                 if (isBase) {
                     // A blended still, through the file's own shader rather than
                     // a Compose layer: Compose cannot blend against a TextureView,
@@ -526,13 +538,19 @@ class PreviewEngine(private val context: Context) {
                     // on the same numbers.
                     add(LiveLayerBlendEffect({ atMs -> blendStill.get()?.frameAt?.invoke(atMs) }, { blendStill.get()?.mode ?: LayerBlend.Normal }) { atMs ->
                         blendStill.get()?.placementAt?.invoke(atMs)
-                    })
-                    // Writes alpha 1, so a base frame reaches its view opaque.
-                    add(FxEffect({ effects.get() }, overBlack = true, extraBlur = { transitionBlur.get() }, warpAt = { transitionWarp.get() }))
+                    }.unlessIdle { blendStill.get() == null })
+                    // Writes alpha 1, so a base frame reaches its view opaque -
+                    // already so when nothing before it cut anything out.
+                    add(FxEffect({ effects.get() }, overBlack = true, extraBlur = { transitionBlur.get() }, warpAt = { transitionWarp.get() })
+                        .unlessIdle {
+                            effects.get().isEmpty() && transitionBlur.get() <= 0f &&
+                                transitionWarp.get() == ExportPlan.Warp.NONE && blendStill.get() == null && opaque()
+                        })
                 } else {
                     // A layer keeps its transparency all the way to the screen,
                     // where its view blends it premultiplied; see PremultiplyEffect.
-                    add(PremultiplyEffect { transitionBlur.get() })
+                    // An opaque layer premultiplied is itself.
+                    add(PremultiplyEffect { transitionBlur.get() }.unlessIdle { transitionBlur.get() <= 0f && opaque() })
                 }
             }
             // Installed on an empty player, before anything is loaded: the order a
