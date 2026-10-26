@@ -25,18 +25,22 @@ import kotlin.math.abs
 object EncoderCeiling {
 
     /**
-     * The HDR [state]'s file is written in when it keeps it - HLG where a shot
-     * is HLG, else PQ, on BT.2020 - for the ceiling to narrow by, as Media3
-     * narrows its encoders (ROADMAP 6.3). Null when the file is SDR. Here, not
-     * on EditorUiState: that file is kept free of Media3, and the draft round
-     * trips compile it without it.
+     * The HDR [state]'s file is written in when it keeps it - true for HLG
+     * (a shot is HLG), false for PQ, null when the file is SDR - for the
+     * ceiling to narrow by, as Media3 narrows its encoders (ROADMAP 6.3). A
+     * plain answer, not a ColorInfo: that is one of Media3's unstable types,
+     * and the view model holding one would need the opt-in; EditorUiState is
+     * kept free of Media3 altogether, as the draft round trips compile it.
      */
-    fun keptHdrColor(state: com.squish.app.editor.EditorUiState): androidx.media3.common.ColorInfo? {
-        if (!state.effectiveKeepHdr) return null
+    fun keptHdr(state: com.squish.app.editor.EditorUiState): Boolean? = if (state.effectiveKeepHdr) state.keptHdrIsHlg else null
+
+    /** [hlg] (from [keptHdr]) as the ColorInfo Media3 narrows by: HLG when true, PQ when false, nothing for SDR. */
+    private fun colorOf(hlg: Boolean?): androidx.media3.common.ColorInfo? {
+        if (hlg == null) return null
         return androidx.media3.common.ColorInfo.Builder()
             .setColorSpace(androidx.media3.common.C.COLOR_SPACE_BT2020)
             .setColorRange(androidx.media3.common.C.COLOR_RANGE_LIMITED)
-            .setColorTransfer(if (state.keptHdrIsHlg) androidx.media3.common.C.COLOR_TRANSFER_HLG else androidx.media3.common.C.COLOR_TRANSFER_ST2084)
+            .setColorTransfer(if (hlg) androidx.media3.common.C.COLOR_TRANSFER_HLG else androidx.media3.common.C.COLOR_TRANSFER_ST2084)
             .build()
     }
 
@@ -69,15 +73,15 @@ object EncoderCeiling {
      * size only an encoder the render drops would write. Where none can, the
      * render tone-maps to SDR (VideoEncoderWrapper), so the SDR set stands.
      */
-    private fun candidates(mime: String, hdr: androidx.media3.common.ColorInfo? = null): List<android.media.MediaCodecInfo> {
-        val hdrCapable = hdr?.let { runCatching { EncoderUtil.getSupportedEncodersForHdrEditing(mime, it) }.getOrNull() }.orEmpty()
+    private fun candidates(mime: String, hdrHlg: Boolean? = null): List<android.media.MediaCodecInfo> {
+        val hdrCapable = colorOf(hdrHlg)?.let { runCatching { EncoderUtil.getSupportedEncodersForHdrEditing(mime, it) }.getOrNull() }.orEmpty()
         val all = if (hdrCapable.isNotEmpty()) hdrCapable else EncoderUtil.getSupportedEncoders(mime)
         val hardware = all.filter { it.isHardwareAccelerated }
         return if (hardware.isEmpty()) all else hardware
     }
 
     /** The frame the encoder writes for [asked]; [asked] itself when nothing can be said. Blocking: opens the codec list. */
-    fun written(asked: ExportPresets.Resolution, mime: String = MimeTypes.VIDEO_H264, hdr: androidx.media3.common.ColorInfo? = null): ExportPresets.Resolution {
+    fun written(asked: ExportPresets.Resolution, mime: String = MimeTypes.VIDEO_H264, hdrHlg: Boolean? = null): ExportPresets.Resolution {
         if (asked.width <= 0 || asked.height <= 0) return asked
         // The encoder is handed landscape frames: a portrait output is turned a
         // quarter turn for it and the turn written into the file (Transformer's
@@ -86,7 +90,7 @@ object EncoderCeiling {
         val w = if (portrait) asked.height else asked.width
         val h = if (portrait) asked.width else asked.height
         val fitted = runCatching {
-            candidates(mime, hdr)
+            candidates(mime, hdrHlg)
                 .mapNotNull { info -> runCatching { EncoderUtil.getSupportedResolution(info, mime, w, h) }.getOrNull() }
                 // The factory keeps the encoders nearest by area and takes the
                 // first's size; the first of the nearest is the same encoder.
@@ -102,9 +106,9 @@ object EncoderCeiling {
      * size above it (ExportSettings.aboveCeiling) rather than offering a size
      * that fails at the start of a render, or quietly halves. Blocking.
      */
-    fun ceilingShortEdge(asked: ExportPresets.Resolution, mime: String, hdr: androidx.media3.common.ColorInfo? = null): Int {
+    fun ceilingShortEdge(asked: ExportPresets.Resolution, mime: String, hdrHlg: Boolean? = null): Int {
         if (asked.width <= 0 || asked.height <= 0) return 0
-        val got = written(asked, mime, hdr)
+        val got = written(asked, mime, hdrHlg)
         return minOf(got.width, got.height).coerceAtLeast(0)
     }
 }
