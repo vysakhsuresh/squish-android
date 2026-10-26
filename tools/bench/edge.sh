@@ -130,7 +130,7 @@ photos() { # N generated photos (PNG) into Pictures/SquishEdge, for the photo pi
   sh_ mkdir -p /sdcard/Pictures/SquishEdge
   local dir="$WORK/edge_photos"; mkdir -p "$dir"
   powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Drawing; for (\$i = 1; \$i -le $n; \$i++) { \$b = New-Object System.Drawing.Bitmap 1600, 1200; \$g = [System.Drawing.Graphics]::FromImage(\$b); \$g.Clear([System.Drawing.Color]::FromArgb(255, (\$i * 37) % 256, (\$i * 91) % 256, (\$i * 53) % 256)); \$g.DrawString(\"Squish \$i\", (New-Object System.Drawing.Font 'Arial', 120), [System.Drawing.Brushes]::White, 100, 450); \$b.Save(\"$(cygpath -w "$dir")\\edge_photo_\$i.jpg\", [System.Drawing.Imaging.ImageFormat]::Jpeg); \$g.Dispose(); \$b.Dispose() }"
-  for i in $(seq 1 $n); do MSYS_NO_PATHCONV=1 $ADB push "$dir/edge_photo_$i.jpg" /sdcard/Pictures/SquishEdge/ >/dev/null; done
+  for i in $(seq 1 $n); do MSYS_NO_PATHCONV=1 $ADB push "$(cygpath -m "$dir/edge_photo_$i.jpg")" /sdcard/Pictures/SquishEdge/ >/dev/null; done
   sleep 5
   local ids=""
   for i in $(seq 1 $n); do local id; id=$(media_id "edge_photo_$i.jpg" images); [ -n "$id" ] && ids="$ids images:$id"; done
@@ -147,6 +147,8 @@ whisper() {
   [ -f "$wav" ] || { echo "no $wav"; return 1; }
   MSYS_NO_PATHCONV=1 $ADB push "$wav" /data/local/tmp/sq_speech.wav >/dev/null
   sh_ run-as $PKG cp /data/local/tmp/sq_speech.wav files/sq_speech.wav
+  # A probe still open from the last run would only come to the front.
+  sh_ am force-stop $PKG
   sh_ logcat -c
   local extra=""; [ -n "$lang" ] && extra="--es lang $lang"
   sh_ am start -n $PKG/.debug.WhisperProbeActivity --es path /data/data/$PKG/files/sq_speech.wav $extra >/dev/null
@@ -183,15 +185,17 @@ voice() {
   sh_ run-as $PKG mkdir -p files/voices/$code
   local f
   for f in encoder.tflite decoder.tflite vocoder.tflite voice.json; do
-    MSYS_NO_PATHCONV=1 $ADB push "$dir/$f" /data/local/tmp/sq_$f >/dev/null
+    # A Windows path: MSYS_NO_PATHCONV keeps Git Bash off the local side too.
+    MSYS_NO_PATHCONV=1 $ADB push "$(cygpath -m "$dir/$f")" /data/local/tmp/sq_$f >/dev/null
     sh_ run-as $PKG cp /data/local/tmp/sq_$f files/voices/$code/$f
     sh_ rm -f /data/local/tmp/sq_$f
   done
   # The first three sentences of the reference: long enough to score, short enough to be quick.
-  local text; text=$(tr '\n' ' ' < "$MEDIA/speech/$name.txt" | awk 'BEGIN{RS="[.?!।]"} NR<=3 {printf "%s%s", $0, "."}')
+  local text; text=$(perl "$ROOT/tools/bench/first_sentences.pl" "$MEDIA/speech/$name.txt" 3)
   printf '%s' "$text" > "$WORK/voice_$code.txt"
-  MSYS_NO_PATHCONV=1 $ADB push "$WORK/voice_$code.txt" /data/local/tmp/sq_voice.txt >/dev/null
+  MSYS_NO_PATHCONV=1 $ADB push "$(cygpath -m "$WORK/voice_$code.txt")" /data/local/tmp/sq_voice.txt >/dev/null
   sh_ run-as $PKG cp /data/local/tmp/sq_voice.txt files/sq_voice.txt
+  sh_ am force-stop $PKG
   sh_ logcat -c
   sh_ am start -n $PKG/.debug.VoiceProbeActivity --es lang $code --es speaker $speaker --es textFile /data/data/$PKG/files/sq_voice.txt >/dev/null
   local i; for i in $(seq 60); do sh_ logcat -d -s SquishVoice:I | grep -q "wrote\|failed" && break; sleep 3; done

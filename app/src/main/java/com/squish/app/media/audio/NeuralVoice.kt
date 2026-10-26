@@ -147,6 +147,7 @@ class NeuralVoice private constructor(dir: File) : Closeable {
         val feats = FloatArray(t * channels).also { featsOut.rewind(); featsOut.asFloatBuffer().get(it) }
         val logDur = FloatArray(t).also { durOut.rewind(); durOut.asFloatBuffer().get(it) }
         var durations = TtsRules.durations(logDur, lengthScale)
+        lastDurations = durations
         // A sentence held longer than one decoder call is sped up to fit rather than cut.
         val n0 = durations.sum()
         if (n0 > maxFrames) durations = TtsRules.durations(logDur, lengthScale * maxFrames.toFloat() / n0 * 0.98f)
@@ -213,6 +214,17 @@ class NeuralVoice private constructor(dir: File) : Closeable {
             outs[o] = outputs[k].first
         }
         interpreter.runForMultipleInputsOutputs(ins, outs)
+    }
+
+    /** The last sentence's durations, in frames, for the debug probe to set beside the converter's. */
+    @Volatile var lastDurations: IntArray = IntArray(0)
+        private set
+
+    /** Each model's tensors, name, shape and type, for the debug probe: what [run] is matching against. */
+    fun describe(): String = listOf("encoder" to encoder, "decoder" to decoder, "vocoder" to vocoder).joinToString("\n") { (name, m) ->
+        val ins = (0 until m.inputTensorCount).joinToString { i -> m.getInputTensor(i).let { "in$i ${it.name()} ${it.shape().toList()} ${it.dataType()}" } }
+        val outs = (0 until m.outputTensorCount).joinToString { o -> m.getOutputTensor(o).let { "out$o ${it.name()} ${it.shape().toList()} ${it.dataType()}" } }
+        "$name: $ins | $outs"
     }
 
     override fun close() {

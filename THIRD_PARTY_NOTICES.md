@@ -70,10 +70,11 @@ Interspeech 2020), https://github.com/breizhn/DTLN, MIT License, Copyright (c)
 2020 Nils L. Westhausen. They run Voice only and Remove voice
 (`media/audio/VoiceSplit.kt`, `DtlnTflite.kt`).
 
-## TensorFlow Lite
+## LiteRT (TensorFlow Lite)
 
-`org.tensorflow:tensorflow-lite` 2.16.1, Apache License 2.0 -
-http://www.apache.org/licenses/LICENSE-2.0. Runs the DTLN models.
+`com.google.ai.edge.litert:litert` 1.4.0 (Google), Apache License 2.0 -
+http://www.apache.org/licenses/LICENSE-2.0. Runs the DTLN models and the
+downloaded voices.
 
 ## whisper.cpp - captions
 

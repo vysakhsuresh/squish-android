@@ -20,6 +20,37 @@ object WhisperNative {
     @JvmStatic external fun open(modelPath: String): Long
     @JvmStatic external fun close(handle: Long)
     @JvmStatic external fun transcribe(handle: Long, pcm16k: FloatArray, language: String, threads: Int): String?
+
+    /** The same as raw bytes (WhisperText.parseBytes says why); not in a library built before 26 Oct. */
+    @JvmStatic external fun transcribeBytes(handle: Long, pcm16k: FloatArray, language: String, threads: Int): ByteArray?
+
+    // The library also has transcribePrompted (a starting line in the
+    // language's script). It is not called: a Malayalam prompt did not move
+    // the small model off Devanagari on the moto and made it slower, so the
+    // script is put right afterwards instead (WhisperText.inScriptOf).
+
+    /** Whether the library has [transcribeBytes]; found out on the first call. */
+    @Volatile private var hasBytes = true
+
+    /**
+     * The words, read through the byte surface where the library has it (the
+     * first, string one's NewStringUTF aborts on a character cut in two), and
+     * carried into the script of the language asked for - or, under "auto",
+     * of the language heard.
+     */
+    fun words(handle: Long, pcm16k: FloatArray, language: String, threads: Int, offsetMs: Long): WhisperText.Result? {
+        val result = run {
+            if (hasBytes) {
+                try {
+                    return@run WhisperText.parseBytes(transcribeBytes(handle, pcm16k, language, threads), offsetMs)
+                } catch (_: UnsatisfiedLinkError) {
+                    hasBytes = false
+                }
+            }
+            WhisperText.parse(transcribe(handle, pcm16k, language, threads), offsetMs)
+        } ?: return null
+        return result.inScript(if (language == "auto") result.language else language)
+    }
 }
 
 /**
@@ -86,7 +117,7 @@ object WhisperTranscriber {
                 if (handle == 0L) return@withLock null
                 val lang = languageTag?.substringBefore('-')?.lowercase()?.takeIf { it.length in 2..3 } ?: "auto"
                 val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
-                WhisperText.parse(WhisperNative.transcribe(handle, slice, lang, threads), offsetMs = segment.startMs)
+                WhisperNative.words(handle, slice, lang, threads, offsetMs = segment.startMs)
             }
         }
 

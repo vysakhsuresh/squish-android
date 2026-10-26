@@ -103,8 +103,8 @@ dependencies {
     implementation(libs.media3.common)
     implementation(libs.media3.inspector)
     implementation(libs.mediapipe.tasks.vision)
-    // DTLN (EDGE_PLAN G3): 3.4 MB on arm64, Apache-2.0.
-    implementation(libs.tensorflow.lite)
+    // DTLN (EDGE_PLAN G3) and the downloaded voices (E5), Apache-2.0: LiteRT (see libs.versions.toml).
+    implementation(libs.litert)
     // The in-app camera (EDGE_PLAN G5), Apache-2.0.
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)

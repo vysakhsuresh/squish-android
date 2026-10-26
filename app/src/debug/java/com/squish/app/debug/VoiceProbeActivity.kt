@@ -57,12 +57,14 @@ class VoiceProbeActivity : Activity() {
         val opened = System.currentTimeMillis() - t0
         val speaker = speakerName?.let { voice.speakers[it] } ?: voice.speakers.values.firstOrNull() ?: 0
         say("voice $code opened in $opened ms; speakers ${voice.speakers}; speaking as $speaker, ${text.length} characters")
+        voice.describe().lines().forEach { say(it) }
         val t1 = System.currentTimeMillis()
         val samples = runCatching { voice.speak(text, speaker) }.getOrElse { e ->
             Log.w(TAG, "speak", e)
             return say("failed: ${e.javaClass.simpleName}: ${e.message}")
         }
         val took = System.currentTimeMillis() - t1
+        say("durations ${voice.lastDurations.toList()} = ${voice.lastDurations.sum()} frames")
         val lengthMs = samples.size * 1000L / voice.sampleRate
         val peak = samples.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
         val out = File(filesDir, "voice_probe.wav")
