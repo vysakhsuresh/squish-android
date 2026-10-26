@@ -36,7 +36,8 @@ Java_com_squish_app_media_audio_WhisperNative_close(JNIEnv *, jclass, jlong h) {
 // Transcribes [pcm] (16 kHz mono floats). [lang] is a code ("en", "hi", "ml")
 // or "auto". Fills [out] with one line per word: "t0ms\tt1ms\ttext", then a
 // last line "lang\t<code>"; false when whisper.cpp failed.
-static bool run(JNIEnv *env, jlong h, jfloatArray jpcm, jstring jlang, jint threads, std::string &out) {
+static bool run(JNIEnv *env, jlong h, jfloatArray jpcm, jstring jlang, jint threads, std::string &out,
+                jstring jprompt = nullptr) {
     auto *ctx = reinterpret_cast<whisper_context *>(h);
     if (ctx == nullptr) return false;
     const char *lang = env->GetStringUTFChars(jlang, nullptr);
@@ -61,6 +62,16 @@ static bool run(JNIEnv *env, jlong h, jfloatArray jpcm, jstring jlang, jint thre
     p.max_len = 1;
     p.split_on_word = true;
     p.suppress_blank = true;
+    // A line in the language's own script, as the text before the first
+    // window: told only "ml", whisper.cpp's small model heard Malayalam right
+    // and wrote it in Devanagari (26 Oct, on the moto).
+    std::string prompt;
+    if (jprompt != nullptr) {
+        const char *pr = env->GetStringUTFChars(jprompt, nullptr);
+        prompt = pr;
+        env->ReleaseStringUTFChars(jprompt, pr);
+    }
+    if (!prompt.empty()) p.initial_prompt = prompt.c_str();
 
     if (whisper_full(ctx, p, pcm.data(), n) != 0) return false;
 
@@ -103,6 +114,18 @@ Java_com_squish_app_media_audio_WhisperNative_transcribeBytes(JNIEnv *env, jclas
                                                                jstring jlang, jint threads) {
     std::string out;
     if (!run(env, h, jpcm, jlang, threads, out)) return nullptr;
+    jbyteArray bytes = env->NewByteArray(static_cast<jsize>(out.size()));
+    if (bytes == nullptr) return nullptr;
+    env->SetByteArrayRegion(bytes, 0, static_cast<jsize>(out.size()), reinterpret_cast<const jbyte *>(out.data()));
+    return bytes;
+}
+
+// transcribeBytes with a starting prompt in the language's script (see run).
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_squish_app_media_audio_WhisperNative_transcribePrompted(JNIEnv *env, jclass, jlong h, jfloatArray jpcm,
+                                                                  jstring jlang, jstring jprompt, jint threads) {
+    std::string out;
+    if (!run(env, h, jpcm, jlang, threads, out, jprompt)) return nullptr;
     jbyteArray bytes = env->NewByteArray(static_cast<jsize>(out.size()));
     if (bytes == nullptr) return nullptr;
     env->SetByteArrayRegion(bytes, 0, static_cast<jsize>(out.size()), reinterpret_cast<const jbyte *>(out.data()));
