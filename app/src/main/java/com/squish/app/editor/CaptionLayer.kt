@@ -116,7 +116,7 @@ fun CaptionLayer(
             val key = "${item.id}/${item.style}/${item.flipped}/${item.align}/${item.motion}/" +
                 "${item.shape}/${item.design}/${item.shapeAspect}/${item.shapeFilled}/${item.wordColors}/$cut/" +
                 "${item.emphasis}/${item.wordEmoji}/${item.showBoth}/${item.secondLine}/" +
-                "${item.text}/$shown/${look.words?.active}/${if (item.isGif) com.squish.app.media.gif.GifStickers.frameIndex(item, timeMs - item.startMs) else 0}@${boxWidth}x$boxHeight"
+                "${item.text}/$shown/${look.words?.active}/${if (item.isGif) com.squish.app.media.gif.GifStickers.frameIndex(item, timeMs - item.startMs) else com.squish.app.editor.StickerArt.frameOf(item.design, timeMs - item.startMs)}@${boxWidth}x$boxHeight"
             live.add(key)
             val (glyph, grab) = glyphs.getOrPut(key) {
                 val painted = CaptionRenderer.paint(item, shown, boxWidth, boxHeight, look.words, cut, timeMs - item.startMs)

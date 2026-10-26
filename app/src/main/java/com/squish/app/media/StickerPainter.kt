@@ -39,11 +39,12 @@ import kotlin.math.min
  */
 internal object StickerPainter {
 
-    fun paint(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int): CaptionRenderer.Painted {
+    fun paint(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, elapsedMs: Long = 0L): CaptionRenderer.Painted {
         val shortEdge = minOf(frameWidth, frameHeight).toFloat().coerceAtLeast(1f)
         val h = (item.sizeSp / 360f * shortEdge).coerceAtLeast(4f)
         val w = (h * item.shapeAspect.coerceIn(ShapeGeometry.MIN_ASPECT, ShapeGeometry.MAX_ASPECT)).coerceAtLeast(4f)
-        val parts = StickerArt.parts(item.design, w, h)
+        // An animated design at the moment of its loop (EDGE_PLAN F4).
+        val parts = StickerArt.parts(item.design, w, h, elapsedMs)
         val s = min(w, h)
         val pad = (parts.maxOfOrNull { it.strokeShare } ?: 0f) * s * 0.6f + 2f
         val bw = ceil(w + pad * 2).toInt().coerceAtLeast(1)
@@ -53,7 +54,8 @@ internal object StickerPainter {
         canvas.translate(pad, pad)
 
         for (part in parts) {
-            val colour = colourOf(part.colour, item.colorArgb)
+            if (part.alpha <= 0f) continue
+            val colour = withAlpha(colourOf(part.colour, item.colorArgb), part.alpha)
             if (part.icon != null && part.rect != null) {
                 drawIcon(canvas, part.icon, part.rect.left, part.rect.top, part.rect.width, part.rect.height, colour)
                 continue
@@ -100,6 +102,12 @@ internal object StickerPainter {
         if (!item.flipped) return CaptionRenderer.Painted(bitmap, bw, bh)
         val mirror = Matrix().apply { preScale(-1f, 1f) }
         return CaptionRenderer.Painted(Bitmap.createBitmap(bitmap, 0, 0, bw, bh, mirror, true), bw, bh)
+    }
+
+    private fun withAlpha(argb: Int, alpha: Float): Int {
+        if (alpha >= 1f) return argb
+        val a = (((argb ushr 24) and 0xFF) * alpha.coerceIn(0f, 1f)).toInt()
+        return (argb and 0x00FFFFFF) or (a shl 24)
     }
 
     private fun colourOf(c: Int, accent: Int): Int = when (c) {

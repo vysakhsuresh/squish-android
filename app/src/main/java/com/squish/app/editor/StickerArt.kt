@@ -46,7 +46,9 @@ data class ArtPart(
     val strokeShare: Float = 0f,
     val evenOdd: Boolean = false,
     val icon: ArtIcon? = null,
-    val rect: ArtRect? = null
+    val rect: ArtRect? = null,
+    /** How much of the part shows, 0..1: an animated design fades a ring or a tick (EDGE_PLAN F4). */
+    val alpha: Float = 1f
 )
 
 /** Where a design's words go, and in what. */
@@ -62,7 +64,9 @@ enum class StickerDesign(
     val shelf: Shelf,
     val aspect: Float,
     val words: String = "",
-    val colour: Int = 0xFFFFD43B.toInt()
+    val colour: Int = 0xFFFFD43B.toInt(),
+    /** One time round an animated design, or 0 for a still one (EDGE_PLAN F4, the animated pack). */
+    val loopMs: Long = 0L
 ) {
     None("None", Shelf.Callouts, 1f),
 
@@ -96,14 +100,29 @@ enum class StickerDesign(
 
     PriceTag("Price tag", Shelf.Prices, 2.1f, "$9.99", 0xFFFFD43B.toInt()),
     SaleBadge("Sale badge", Shelf.Prices, 1f, "-50%", 0xFFE53935.toInt()),
-    Deal("Deal burst", Shelf.Prices, 1.2f, "ONLY $5", 0xFFFFD43B.toInt());
+    Deal("Deal burst", Shelf.Prices, 1.2f, "ONLY $5", 0xFFFFD43B.toInt()),
+
+    // The animated pack: drawn from the same description at each moment, round and round.
+    Sparkles("Sparkles", Shelf.Animated, 1.2f, colour = 0xFFFFE066.toInt(), loopMs = 1_200L),
+    Heartbeat("Heartbeat", Shelf.Animated, 1f, colour = 0xFFFF2D55.toInt(), loopMs = 1_000L),
+    Flame("Flame", Shelf.Animated, 1f, colour = 0xFFFF7A1A.toInt(), loopMs = 600L),
+    BounceArrow("Bounce arrow", Shelf.Animated, 0.7f, colour = 0xFFFFFFFF.toInt(), loopMs = 900L),
+    SpinStar("Spinning star", Shelf.Animated, 1f, colour = 0xFFFFD43B.toInt(), loopMs = 2_000L),
+    Pulse("Pulse", Shelf.Animated, 1f, colour = 0xFF5CE1E6.toInt(), loopMs = 1_400L),
+    Typing("Typing", Shelf.Animated, 2.2f, colour = 0xFFFFFFFF.toInt(), loopMs = 1_200L),
+    Tick("Tick", Shelf.Animated, 1f, colour = 0xFF2EBD6B.toInt(), loopMs = 1_600L),
+    Confetti("Confetti", Shelf.Animated, 1f, colour = 0xFFFF2D7A.toInt(), loopMs = 2_000L),
+    TapPulse("Tap pulse", Shelf.Animated, 1f, colour = 0xFFFFFFFF.toInt(), loopMs = 1_200L),
+    Spinner("Spinner", Shelf.Animated, 1f, colour = 0xFFFFFFFF.toInt(), loopMs = 1_000L),
+    SpeedLines("Speed lines", Shelf.Animated, 1.6f, colour = 0xFFFFFFFF.toInt(), loopMs = 500L);
 
     enum class Shelf(val label: String) {
-        Callouts("Callouts"), Social("Social"), Arrows("Arrows"), Frames("Frames"), Highlights("Highlights"), Prices("Prices")
+        Callouts("Callouts"), Social("Social"), Arrows("Arrows"), Frames("Frames"), Highlights("Highlights"), Prices("Prices"), Animated("Animated")
     }
 
     val isDesign: Boolean get() = this != None
     val hasWords: Boolean get() = words.isNotEmpty()
+    val animated: Boolean get() = loopMs > 0L
 
     companion object {
         val offered: List<StickerDesign> get() = entries.filter { it.isDesign }
@@ -116,8 +135,13 @@ object StickerArt {
     private const val INK = 0xFF141414.toInt()
     private const val WHITE = 0xFFFFFFFF.toInt()
 
-    fun parts(design: StickerDesign, w: Float, h: Float): List<ArtPart> {
+    /**
+     * [design] laid out in [w] by [h], [atMs] into it: the same at every moment
+     * for a still design, and for an animated one the moment of its loop.
+     */
+    fun parts(design: StickerDesign, w: Float, h: Float, atMs: Long = 0L): List<ArtPart> {
         val s = min(w, h)
+        if (design.animated) return animatedParts(design, w, h, phaseOf(design, atMs))
         return when (design) {
             StickerDesign.None -> emptyList()
 
@@ -245,8 +269,164 @@ object StickerArt {
                 )
             )
             StickerDesign.SaleBadge -> listOf(ArtPart(listOf(starburst(w / 2f, h / 2f, w / 2f, h / 2f, 24, 0.9f)), ACCENT))
+            // The animated pack is drawn by animatedParts, above.
+            else -> emptyList()
         }
     }
+
+    /** How far round its loop an animated design is, [atMs] into it: 0 until 1. */
+    fun phaseOf(design: StickerDesign, atMs: Long): Float {
+        if (!design.animated) return 0f
+        val loop = design.loopMs
+        return (((atMs % loop) + loop) % loop).toFloat() / loop
+    }
+
+    /**
+     * Which picture of its loop an animated design shows [atMs] in, at thirty a
+     * second: what the preview's and the export's caches key on, so a still
+     * design is painted once and an animated one once a frame.
+     */
+    fun frameOf(design: StickerDesign, atMs: Long): Int =
+        if (!design.animated) 0 else ((((atMs % design.loopMs) + design.loopMs) % design.loopMs) * FRAMES_A_SECOND / 1000L).toInt()
+
+    private const val FRAMES_A_SECOND = 30L
+
+    private fun animatedParts(design: StickerDesign, w: Float, h: Float, t: Float): List<ArtPart> {
+        val s = min(w, h)
+        val tau = 2.0 * PI
+        fun wave(x: Float) = sin(tau * x).toFloat()
+        return when (design) {
+            StickerDesign.Sparkles -> {
+                // Four four-pointed stars, each twinkling a quarter of a turn after the last.
+                val spots = listOf(Triple(0.28f, 0.32f, 0.26f), Triple(0.72f, 0.24f, 0.18f), Triple(0.62f, 0.7f, 0.3f), Triple(0.2f, 0.76f, 0.14f))
+                spots.mapIndexed { i, (x, y, size) ->
+                    val grow = 0.25f + 0.75f * (0.5f + 0.5f * wave(t + i * 0.25f))
+                    val r = s * size * 0.5f * grow
+                    ArtPart(listOf(starburst(w * x, h * y, r, r, 4, 0.28f)), ACCENT)
+                }
+            }
+            StickerDesign.Heartbeat -> {
+                // Lub-dub: two quick swells a beat, then rest.
+                fun bump(at: Float, width: Float) = kotlin.math.exp(-((t - at) / width) * ((t - at) / width))
+                val beat = 0.78f + 0.16f * bump(0.12f, 0.06f) + 0.1f * bump(0.32f, 0.06f)
+                val side = s * beat
+                ArtPart(icon = ArtIcon.Heart, colour = ACCENT, rect = centred(w, h, side, side)).let(::listOf)
+            }
+            StickerDesign.Flame -> {
+                // Flickers: taller and narrower in turn, always standing on the same floor.
+                val tall = 0.86f + 0.12f * (0.5f + 0.5f * wave(t)) * (0.7f + 0.3f * wave(t * 3f).coerceAtLeast(0f))
+                val wide = 0.94f - 0.06f * (0.5f + 0.5f * wave(t + 0.5f))
+                val fw = s * wide
+                val fh = s * tall
+                listOf(ArtPart(icon = ArtIcon.Fire, colour = ACCENT, rect = ArtRect((w - fw) / 2f, h - fh, (w + fw) / 2f, h)))
+            }
+            StickerDesign.BounceArrow -> {
+                // Pointing down at something, bouncing, as "look below" does.
+                val travel = h * 0.18f
+                val dy = travel * kotlin.math.abs(wave(t * 0.5f))
+                val top = dy
+                val headTop = top + (h - travel) * 0.45f
+                val bottom = top + (h - travel)
+                listOf(
+                    ArtPart(listOf(rect(w * 0.36f, top, w * 0.64f, headTop + 1f), poly(p(0f, headTop), p(w, headTop), p(w / 2f, bottom))), ACCENT)
+                )
+            }
+            StickerDesign.SpinStar -> {
+                val turn = tau * t
+                val pts = (0 until 10).map { i ->
+                    val a = -PI / 2 + PI * i / 5 + turn
+                    val r = if (i % 2 == 0) s * 0.48f else s * 0.2f
+                    p(w / 2f + r * cos(a).toFloat(), h / 2f + r * sin(a).toFloat())
+                }
+                listOf(ArtPart(listOf(ShapePoly(pts, closed = true)), ACCENT))
+            }
+            StickerDesign.Pulse -> {
+                // Three rings leaving the middle in turn, fading as they go.
+                (0 until 3).map { k ->
+                    val age = (t + k / 3f) % 1f
+                    val r = s * (0.08f + 0.36f * age)
+                    ArtPart(listOf(ellipse(w / 2f, h / 2f, r, r)), ACCENT, strokeShare = 0.05f, alpha = (1f - age).coerceIn(0f, 1f))
+                } + ArtPart(listOf(ellipse(w / 2f, h / 2f, s * 0.08f, s * 0.08f)), ACCENT)
+            }
+            StickerDesign.Typing -> {
+                // A bubble and three dots rising in turn, as a chat app shows someone typing.
+                val dots = (0 until 3).map { k ->
+                    val lift = (0.5f + 0.5f * wave(t - k * 0.15f)).coerceIn(0f, 1f)
+                    val r = h * 0.11f
+                    ArtPart(listOf(ellipse(w * (0.3f + 0.2f * k), h * 0.5f - h * 0.12f * lift, r, r)), 0xFF141414.toInt())
+                }
+                listOf(ArtPart(listOf(roundRect(0f, 0f, w, h, h / 2f)), ACCENT)) + dots
+            }
+            StickerDesign.Tick -> {
+                // A ring, then a tick drawn into it, held, and gone again for the next time round.
+                val draw = (t / 0.45f).coerceIn(0f, 1f)
+                val fade = if (t > 0.85f) (1f - (t - 0.85f) / 0.15f).coerceIn(0f, 1f) else 1f
+                val a = p(w * 0.28f, h * 0.52f)
+                val b = p(w * 0.44f, h * 0.68f)
+                val c = p(w * 0.74f, h * 0.36f)
+                val first = 0.4f
+                val tick = when {
+                    draw <= first -> listOf(a, lerp(a, b, draw / first))
+                    else -> listOf(a, b, lerp(b, c, (draw - first) / (1f - first)))
+                }
+                listOf(
+                    ArtPart(listOf(ellipse(w / 2f, h / 2f, s * 0.45f, s * 0.45f)), ACCENT, alpha = fade),
+                    ArtPart(listOf(ShapePoly(tick, closed = false)), 0xFFFFFFFF.toInt(), strokeShare = 0.09f, alpha = if (draw <= 0f) 0f else fade)
+                )
+            }
+            StickerDesign.Confetti -> {
+                // Pieces falling and turning; where one leaves the bottom it comes back in at the top.
+                val colours = listOf(ACCENT, 0xFFFFD43B.toInt(), 0xFF5CE1E6.toInt(), 0xFF2EBD6B.toInt(), 0xFF8B5CF6.toInt())
+                (0 until 14).map { i ->
+                    val x0 = ((i * 0.37f) % 1f) * 0.84f + 0.08f
+                    val fall = (t + i * 0.071f) % 1f
+                    val cx = w * (x0 + 0.04f * wave(t * 2f + i * 0.3f))
+                    val cy = h * (0.06f + 0.88f * fall)
+                    val half = s * 0.04f
+                    val turn = tau * (t * 2f + i * 0.17f)
+                    val corners = listOf(-1f to -0.5f, 1f to -0.5f, 1f to 0.5f, -1f to 0.5f).map { (u, v) ->
+                        p(cx + half * (u * cos(turn).toFloat() - v * sin(turn).toFloat()), cy + half * (u * sin(turn).toFloat() + v * cos(turn).toFloat()))
+                    }
+                    ArtPart(listOf(ShapePoly(corners, closed = true)), colours[i % colours.size])
+                }
+            }
+            StickerDesign.TapPulse -> {
+                val age = t
+                // Out from the fingertip, never further than its nearest edge (0.36 of the box).
+                val r = s * (0.08f + 0.27f * age)
+                listOf(
+                    ArtPart(listOf(ellipse(w * 0.42f, h * 0.36f, r, r)), ACCENT, strokeShare = 0.04f, alpha = (1f - age).coerceIn(0f, 1f)),
+                    ArtPart(icon = ArtIcon.TouchApp, colour = ACCENT, rect = ArtRect(w * 0.16f, h * 0.16f, w * 0.9f, h * 0.9f))
+                )
+            }
+            StickerDesign.Spinner -> {
+                val start = tau * t
+                val arc = (0..30).map { i ->
+                    val a = start + 1.5 * PI * i / 30
+                    p(w / 2f + s * 0.4f * cos(a).toFloat(), h / 2f + s * 0.4f * sin(a).toFloat())
+                }
+                listOf(
+                    ArtPart(listOf(ellipse(w / 2f, h / 2f, s * 0.4f, s * 0.4f)), ACCENT, strokeShare = 0.1f, alpha = 0.25f),
+                    ArtPart(listOf(ShapePoly(arc, closed = false)), ACCENT, strokeShare = 0.1f)
+                )
+            }
+            StickerDesign.SpeedLines -> {
+                // Lines streaming past to the left: each scrolls a whole width a loop and wraps.
+                (0 until 7).map { k ->
+                    val y = h * (0.12f + 0.76f * k / 6f)
+                    val len = w * (0.25f + 0.2f * ((k * 0.61f) % 1f))
+                    val x = (w + len) * ((1f - (t + k * 0.29f) % 1f)) - len
+                    val l = x.coerceIn(0f, w)
+                    val r = (x + len).coerceIn(0f, w)
+                    ArtPart(listOf(ShapePoly(listOf(p(l, y), p(maxOf(r, l + 0.01f), y)), closed = false)), ACCENT, strokeShare = 0.05f)
+                }
+            }
+            else -> emptyList()
+        }
+    }
+
+    private fun centred(w: Float, h: Float, bw: Float, bh: Float) = ArtRect((w - bw) / 2f, (h - bh) / 2f, (w + bw) / 2f, (h + bh) / 2f)
+    private fun lerp(a: ShapePoint, b: ShapePoint, t: Float) = p(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
 
     /** Where a design's words go, or null for one that has none. */
     fun words(design: StickerDesign, w: Float, h: Float): ArtWords? {

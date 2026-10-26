@@ -34,6 +34,35 @@ fun main() {
         check((words != null) == d.hasWords, "$d says it has words (${d.hasWords}) and has a place for them (${words != null})")
         words?.let { r -> check(r.rect.left >= 0f && r.rect.top >= 0f && r.rect.right <= w + 0.5f && r.rect.bottom <= h + 0.5f && r.rect.width > 0f && r.rect.height > 0f, "$d's words fall outside it: ${r.rect}") }
     }
+    // ---- The animated pack: inside its box at every moment, seamless round the loop, and moving ----
+    val animated = StickerDesign.offered.filter { it.animated }
+    check(animated.size >= 10, "only ${animated.size} animated designs")
+    for (d in animated) {
+        val h = 200f
+        val w = h * d.aspect
+        fun sig(atMs: Long) = StickerArt.parts(d, w, h, atMs).joinToString("|") { part ->
+            part.polys.joinToString(";") { poly -> poly.points.joinToString(",") { "%.2f/%.2f".format(java.util.Locale.ROOT, it.x, it.y) } } +
+                "#${part.rect}#${"%.3f".format(java.util.Locale.ROOT, part.alpha)}"
+        }
+        for (step in 0 until 24) {
+            val at = d.loopMs * step / 24
+            for (part in StickerArt.parts(d, w, h, at)) {
+                for (poly in part.polys) for (pt in poly.points) {
+                    check(pt.x >= -0.5f && pt.x <= w + 0.5f && pt.y >= -0.5f && pt.y <= h + 0.5f, "$d at ${at} ms has a point outside its box: (${pt.x}, ${pt.y})")
+                }
+                part.rect?.let { r -> check(r.left >= -0.5f && r.top >= -0.5f && r.right <= w + 0.5f && r.bottom <= h + 0.5f, "$d at $at ms has its icon outside its box: $r") }
+                check(part.alpha in 0f..1f, "$d at $at ms fades to ${part.alpha}")
+            }
+        }
+        check(sig(0) == sig(d.loopMs) && sig(d.loopMs / 4) == sig(d.loopMs + d.loopMs / 4), "$d is not the same a loop later - it jumps where it goes round")
+        val frames = (0 until 12).map { sig(d.loopMs * it / 12) }.toSet()
+        check(frames.size >= 6, "$d hardly moves: ${frames.size} different pictures in 12")
+        // The caches' frame: thirty a second round the loop, the same a loop later.
+        check(StickerArt.frameOf(d, 0) == 0 && StickerArt.frameOf(d, d.loopMs + 100) == StickerArt.frameOf(d, 100), "$d's frame number does not go round with it")
+        check((0 until d.loopMs.toInt() step 33).map { StickerArt.frameOf(d, it.toLong()) }.toSet().size >= d.loopMs / 40, "$d's frame number hardly changes over its loop - the caches would hold one picture")
+    }
+    check(StickerArt.frameOf(StickerDesign.PriceTag, 12_345) == 0, "a still design changes its frame")
+
     check(StickerDesign.offered.size >= 24, "only ${StickerDesign.offered.size} designs")
     check(StickerDesign.offered.map { it.label }.toSet().size == StickerDesign.offered.size, "two designs share a name")
     for (shelf in StickerDesign.Shelf.entries) check(StickerDesign.offered.count { it.shelf == shelf } >= 3, "${shelf.label} has fewer than three")

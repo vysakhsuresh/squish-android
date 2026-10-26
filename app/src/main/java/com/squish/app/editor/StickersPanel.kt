@@ -462,5 +462,6 @@ private fun designTile(design: StickerDesign): androidx.compose.ui.graphics.Imag
         id = "tile", text = design.words, startMs = 0, endMs = 1, colorArgb = design.colour,
         sizeSp = 120, bold = true, sticker = true, design = design, shapeAspect = design.aspect
     )
-    return com.squish.app.media.CaptionRenderer.paint(item, design.words, 360, 360).bitmap.asImageBitmap()
+    // An animated design a third of the way round, where it shows what it does (a tick drawn, rings out).
+    return com.squish.app.media.CaptionRenderer.paint(item, design.words, 360, 360, elapsedMs = design.loopMs / 3).bitmap.asImageBitmap()
 }

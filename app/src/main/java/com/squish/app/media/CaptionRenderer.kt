@@ -190,7 +190,7 @@ object CaptionRenderer {
      */
     fun paint(item: TextOverlayItem, shownIn: String, frameWidth: Int, frameHeight: Int, words: WordState? = null, cut: Cut? = null, elapsedMs: Long = 0L): Painted {
         if (item.isShape) return paintShape(item, frameWidth, frameHeight)
-        if (item.isDesign) return StickerPainter.paint(item, shownIn, frameWidth, frameHeight)
+        if (item.isDesign) return StickerPainter.paint(item, shownIn, frameWidth, frameHeight, elapsedMs)
         // A GIF plays by the time into the sticker ([elapsedMs]), round and round.
         if (item.isGif) return com.squish.app.media.gif.GifStickers.paint(item, elapsedMs, frameWidth, frameHeight)
         if (item.knockout) return paintKnockout(item, shownIn, frameWidth, frameHeight, words, cut ?: Cut(item.xFraction to item.yFraction, item.rotationDegrees))
