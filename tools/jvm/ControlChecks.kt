@@ -1915,6 +1915,24 @@ fun main() {
         )
     }
 
+    // ---- An HDR shot in the preview is tone-mapped, as the file is. --------
+    //
+    // EDGE_PLAN B4: a PQ (HDR10) clip played washed out in the editor while
+    // its export was right. Media3's video graph passes PQ straight through
+    // to the output on API 33+ unless asked to tone-map, and a TextureView
+    // composites as SDR, so the preview showed PQ code values as if they were
+    // SDR ones. Nothing in ExoPlayer asks (read in the 1.11.1 jar: no caller of
+    // setRequestOpenGlToneMapping), so the renderer's own graph has to.
+    run {
+        val renderers = read("$SRC/av/AvRenderers.kt")
+        check(
+            renderers.contains("override fun createPlaybackVideoGraphWrapper(") &&
+                renderers.contains("setRequestOpenGlToneMapping(true)"),
+            "the preview's video graph no longer asks for OpenGL tone mapping - an HDR10 (PQ) shot " +
+                "reaches the TextureView as PQ and plays washed out, unlike its export"
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the film goes where the finger goes under a playhead that holds in the middle, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

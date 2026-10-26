@@ -17,6 +17,8 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
+import androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper
+import androidx.media3.exoplayer.video.VideoFrameReleaseControl
 import androidx.media3.exoplayer.video.VideoRendererEventListener
 
 /**
@@ -159,6 +161,30 @@ private class AvVideoRenderer(private val appContext: Context, builder: MediaCod
         if (info != null && AvCodecs.isOurs(info)) return false
         return super.shouldDiscardDecoderInputBuffer(buffer)
     }
+
+    /**
+     * The graph is built only for a player given video effects - the editor's
+     * preview - and its output there is a TextureView, which composites as
+     * SDR. Left alone, Media3 hands a PQ (HDR10) picture through as PQ on API
+     * 33+, so the preview showed it washed out (EDGE_PLAN B4) while the
+     * export, which tone-maps, was right; and the effect shaders assume SDR
+     * values. Asking for OpenGL tone mapping makes the preview the file's
+     * picture for HLG and PQ alike; an SDR input is unchanged by it.
+     *
+     * The class is restricted to Media3's library group, but this protected
+     * method is the renderer's own hook for building it and there is no other
+     * way in (no ExoPlayer setting reaches setRequestOpenGlToneMapping in
+     * 1.11.1). Media3 is pinned; ControlChecks holds the override, so an
+     * upgrade that changes the hook breaks the build, not the picture.
+     */
+    @android.annotation.SuppressLint("RestrictedApi")
+    override fun createPlaybackVideoGraphWrapper(
+        context: Context,
+        videoFrameReleaseControl: VideoFrameReleaseControl
+    ): PlaybackVideoGraphWrapper =
+        super.createPlaybackVideoGraphWrapper(context, videoFrameReleaseControl).apply {
+            setRequestOpenGlToneMapping(true)
+        }
 }
 
 private class AvAudioRenderer(
