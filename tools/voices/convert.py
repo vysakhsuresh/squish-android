@@ -3,7 +3,7 @@ three TensorFlow Lite models the app runs on the phone (media/audio/NeuralVoice.
 
   encoder.tflite  ids [1,T] int32, mask [1,T] f32, speaker [1] int32
                   -> features [1,T,C] (pitch already added), logdur [1,T]
-  decoder.tflite  features [1,N,C] f32, mask [1,N] f32, speaker [1] int32 -> mel [1,N,80]
+  decoder.tflite  features [1,N,C] f32, mask [1,N] f32 -> mel [1,N,80]
   vocoder.tflite  mel [1,80,M] f32 -> wav [1,M*256]
   voice.json      the symbols in id order, the speakers, T, N, M, the sample rate
 
@@ -78,10 +78,15 @@ class Encoder(torch.nn.Module):
         self.m = m
 
     def forward(self, ids, mask, speaker):
+        # As ForwardTTS.inference (coqui-tts 0.28): the speaker conditions the
+        # encoder, the durations are read before the pitch is added, and the
+        # decoder is run with no speaker.
         x_mask = mask.unsqueeze(1)                       # [1,1,T]
-        o_en, x_mask, g, _ = self.m._forward_encoder(ids.long(), x_mask, speaker.long())
+        g = self.m._get_speaker_conditioning({"speaker_ids": speaker.long(), "d_vectors": None}, "emb_g",
+                                             normalize_d_vector=False, normalize_embedding=False)
+        o_en, x_mask, g, _ = self.m._forward_encoder(ids.long(), x_mask, g)
         logdur = self.m.duration_predictor(o_en, x_mask)  # [1,1,T]
-        pitch_emb, _ = self.m._forward_pitch_predictor(o_en, x_mask)
+        pitch_emb, _, _ = self.m._forward_pitch_predictor(o_en, x_mask)
         o_en = o_en + pitch_emb
         return (o_en * x_mask).transpose(1, 2), logdur.squeeze(1) * mask
 
@@ -91,12 +96,14 @@ class Decoder(torch.nn.Module):
         super().__init__()
         self.m = m
 
-    def forward(self, feats, mask, speaker):
+    def forward(self, feats, mask):
+        # ForwardTTS._forward_decoder after its expansion, which the app does.
         y_mask = mask.unsqueeze(1)                       # [1,1,N]
-        g = self.m.emb_g(speaker.long()).unsqueeze(-1) if hasattr(self.m, "emb_g") else None
         o = feats.transpose(1, 2) * y_mask              # [1,C,N]
-        mel = self.m._forward_decoder(o, y_mask, g)     # [1,N,80]
-        return mel * mask.unsqueeze(-1)
+        if hasattr(self.m, "pos_encoder"):
+            o = self.m.pos_encoder(o, y_mask)
+        o_de = self.m.decoder(o, y_mask, g=None)        # [1,80,N]
+        return o_de.transpose(1, 2) * mask.unsqueeze(-1)
 
 
 class Vocoder(torch.nn.Module):
@@ -133,7 +140,7 @@ def split_pipeline(text, speaker_id):
     f = np.zeros((1, N, feats.shape[1]), np.float32); f[0, :n] = ex
     my = np.zeros((1, N), np.float32); my[0, :n] = 1
     with torch.no_grad():
-        mel = dec(torch.from_numpy(f), torch.from_numpy(my), torch.from_numpy(spk)).numpy()[0, :n]
+        mel = dec(torch.from_numpy(f), torch.from_numpy(my)).numpy()[0, :n]
     return ids, x, mk, spk, f, my, mel
 
 
@@ -181,7 +188,7 @@ def convert(name, module, args):
 
 
 enc_edge = convert("encoder.tflite", enc, (x, mk, spk))
-dec_edge = convert("decoder.tflite", dec, (f, my, spk))
+dec_edge = convert("decoder.tflite", dec, (f, my))
 mel_chunk = np.zeros((1, 80, M), np.float32)
 k = min(M, mel.shape[0]); mel_chunk[0, :, :k] = mel[:k].T
 voc_edge = convert("vocoder.tflite", voc, (mel_chunk,))
@@ -195,7 +202,7 @@ ex = np.repeat(np.asarray(feats_t)[0, :t], d, axis=0)
 n = ex.shape[0]
 f2 = np.zeros((1, N, ex.shape[1]), np.float32); f2[0, :n] = ex
 my2 = np.zeros((1, N), np.float32); my2[0, :n] = 1
-mel_t = np.asarray(dec_edge(f2, my2, spk))[0, :n]
+mel_t = np.asarray(dec_edge(f2, my2))[0, :n]
 wav = []
 for s in range(0, n, M):
     chunk = np.zeros((1, 80, M), np.float32)
@@ -208,9 +215,18 @@ with wave.open(os.path.join(OUT, "sample.wav"), "wb") as w:
     w.setnchannels(1); w.setsampwidth(2); w.setframerate(22050); w.writeframes(pcm.tobytes())
 log("sample", n, "frames,", len(pcm) / 22050.0, "s, peak", float(np.abs(wav).max()))
 
+# Coqui's own reading of text, for the app's to be checked against
+# (tools/jvm/TtsRulesChecks.kt reads these out of voice.json).
+reference = [sample, "Hello, World! 123 - (test); done: yes.", "  two   spaces\tand\na line  "]
+reference += list(cfg.test_sentences or [])[:3]
+tests = [{"text": t, "ids": [int(i) for i in tok.text_to_ids(t)]} for t in reference]
+char_to_id = {c: int(tok.characters.char_to_id(c)) for c in dict.fromkeys(symbols) if c}
+
 json.dump({
     "lang": LANG,
     "symbols": symbols,
+    "ids": char_to_id,
+    "tests": tests,
     "speakers": {str(k): int(v) for k, v in (speakers.items() if isinstance(speakers, dict) else [])},
     "maxChars": T, "maxFrames": N, "vocoderFrames": M,
     "hop": 256, "sampleRate": 22050, "channels": int(f.shape[2]),
