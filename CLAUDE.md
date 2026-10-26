@@ -262,6 +262,48 @@ not here.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **26 October, the phone away from about 08:00: C3, C4, C6, E2, E5, F4, F7,
+  F8, B3, B4, P4.** All built and compiled, the arithmetic executed on the JVM
+  and negative-tested; nothing below seen yet. What the phone answers, in order:
+  C3 - the strip's composition no longer follows the playhead (a derived
+  drawn window, the slide read in an offscreen layer, clips placed in layout
+  from the drawn window's state), scrub seeks coalesced
+  (`PreviewRules.scrubSeekDue`), filmstrip arrivals told in 120 ms batches,
+  and the preview's position kept out of its frame (captions and the
+  timecode read it while drawing, the layout through `PreviewRules.layoutTime`,
+  rebuilt at a cut while playing or scrubbing a still edit) - measure with
+  `sh tools/bench/bench.sh <serial> <media> scrubfs` on the release build
+  (before: median 30 ms, p90 71 ms, 32-49% of frames shown twice), and check a
+  caption still animates while playing, the timecode moves, a photo overlay and
+  an effect still move, and Track/Crop/Mask tools stand on the frame shown;
+  `util/PerfFlags.kt` is temporary instrumentation (counts per composable
+  under `debug.squish.counts`, switches `noseek`, `nofilm`, `nosurface`,
+  `serialstills`) to be removed when C3 is done. C4 - footage rows from the
+  decoder's own throughput (`DecoderBudget`, `DecoderCapacity`: the moto's
+  489,600 blocks a second give six rows) and 540p copies for footage stacked
+  past it - six video overlays (`edge.sh project ... overlays=6:FILE`) must
+  play and export. C6 - photos rendered three at a time (time 50 with
+  `edge.sh photos 50` against `serialstills`), and SquishPerf now logs undo,
+  redo and add-media. E2 - Bigger and an emoji per word, "Edit all" on the
+  Lines list, and Translate's "Keep the original too" drawing both languages
+  (kept inside the frame, `CaptionWords.keptInFrame`), retranslated after a
+  transcript cut. E5 - Settings' Downloaded voices: AI4Bharat's Indic-TTS (MIT)
+  converted by `tools/voices` (stage one Coqui, stage two litert-torch, each
+  checked against the original; the app's tokenizer held to Coqui's ids for
+  all three voices); the zips are about 100 MB each and need a GitHub release
+  `voices-v1` on this repo, which the session could not create (a new public
+  surface) - push a voice into `files/voices/<code>/` by run-as to test, and
+  check Listen, Read aloud and the WAV with Whisper. F4 - twelve animated
+  stickers on an Animated shelf, in the preview and a file. F7 - Background's
+  "Tap a thing" (MagicTouch, bundled, Apache-2.0 by its card): cut out a thing
+  from its first frame and follow it. F8 - the tracker's size followed and a
+  lost subject found again. B3 - `SquishPerf sync` logs the preview's sound
+  against its picture every two seconds of playing. B4 - the encoder ceiling
+  narrowed by HDR editing support under Keep HDR. Test footage for all of it
+  is the `edgemedia` workflow's artifact (fast motion, flicker, grain, 1080p60,
+  HEVC 1080p, two minutes of espeak speech in English, Hindi and Malayalam with
+  the words in a .txt beside each, scored by `tools/jvm/Wer.kt`).
+
 - **25 October, with the phone away: EDGE_PLAN F2, F3 and F4.** Forty more
   effects, twenty-five more transitions, a designed sticker pack and GIF
   stickers - `docs/EDGE_PLAN.md` says what each is and what checks it. First on
