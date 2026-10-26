@@ -796,6 +796,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             // Counted down only once the clips are on the timeline, not when each
             // photo finishes rendering: probing and placing them comes after, and
             // an export started in that gap left the photo out of the file.
+            val t0 = android.os.SystemClock.elapsedRealtime()
             try {
                 val sources = uris.map { uri ->
                     if (isPhoto[uri] == true) {
@@ -805,6 +806,8 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     }
                 }
                 addSources(sources.filterNotNull(), failedAny = sources.any { it == null }, at = at)
+                // EDGE_PLAN C6: pick to placed, photos rendered and all.
+                com.squish.app.av.Perf.took("add-media", android.os.SystemClock.elapsedRealtime() - t0, "${uris.size} items, $photos photos")
             } finally {
                 if (photos > 0) {
                     _state.update { s -> s.copy(preparingStills = (s.preparingStills - photos).coerceAtLeast(0)) }

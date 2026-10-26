@@ -535,6 +535,24 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
      * when the sound lands - selecting the sound closed the Edit sheet under
      * whoever was still styling the line.
      */
+    /** [text] in the downloaded voice Settings names, into [file]; false when there is none or it failed. */
+    private suspend fun speakWithDownloadedVoice(text: String, file: File): Boolean {
+        val (code, speakerName) = com.squish.app.settings.Preferences.neuralVoice(app) ?: return false
+        val language = com.squish.app.media.audio.NeuralVoices.byCode(code) ?: return false
+        val voice = com.squish.app.media.audio.NeuralVoice.of(app, language) ?: return false
+        val speaker = voice.speakers[speakerName] ?: voice.speakers.values.firstOrNull() ?: 0
+        return runCatching {
+            val samples = voice.speak(text, speaker)
+            if (samples.isEmpty()) return false
+            withContext(kotlinx.coroutines.Dispatchers.IO) { com.squish.app.media.audio.NeuralVoice.writeWav(samples, voice.sampleRate, file) }
+            file.length() > 44L
+        }.getOrElse { e ->
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            android.util.Log.w("SquishVoice", "the downloaded voice could not speak", e)
+            false
+        }
+    }
+
     fun speak(id: String) {
         val item = _state.value.textOverlays.firstOrNull { it.id == id } ?: return
         if (!canSpeak(_state.value, id)) return
@@ -542,7 +560,10 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         viewModelScope.launch {
             val dir = File(app.filesDir, SPEECH_DIR).apply { mkdirs() }
             val file = File(dir, "speech-${UUID.randomUUID()}.wav")
-            val ok = Tts.synthesize(app, item.text, _state.value.captionLanguage, file, com.squish.app.settings.Preferences.speechVoice(app))
+            // A downloaded voice when one is chosen and on the phone (EDGE_PLAN E5);
+            // the phone's own engine otherwise, or if the voice could not speak.
+            val ok = speakWithDownloadedVoice(item.text, file) ||
+                Tts.synthesize(app, item.text, _state.value.captionLanguage, file, com.squish.app.settings.Preferences.speechVoice(app))
             val uri = Uri.fromFile(file)
             val duration = if (ok) ThumbnailExtractor.probeDurationMs(app, uri) else 0L
             if (!ok || duration <= 0L) {

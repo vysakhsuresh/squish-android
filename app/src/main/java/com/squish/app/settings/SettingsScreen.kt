@@ -166,6 +166,7 @@ private fun DefaultsCard() {
             selected = voice.ordinal,
             onPick = { voice = com.squish.app.media.audio.SpeechVoice.entries[it]; Preferences.setSpeechVoice(context, voice) }
         )
+        DownloadedVoices()
 
         SwitchRow(
             title = "Ticks when snapping",

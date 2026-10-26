@@ -114,6 +114,9 @@ object FilmstripLoader {
      */
     private const val MAX_PENDING = 4 * FilmstripPlan.MAX_TILES
 
+    /** The longest a decoded tile waits to be told, so the strip is redrawn a few times a second while filling, not per tile. */
+    private const val ARRIVAL_BATCH_MS = 120L
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Tiles still to decode, oldest first. Guarded by itself, as is [worker]. */
@@ -150,8 +153,25 @@ object FilmstripLoader {
         var retriever: com.squish.app.av.AvRetriever? = null
         var frames: com.squish.app.av.AvFrameSource? = null
         var openUri: Uri? = null
+        // Arrivals told in batches (EDGE_PLAN C3, C6): each bump of [arrivals]
+        // recomposes every filmstrip on the strip and redraws the strip's layer,
+        // and told per tile a fill of thirty tiles was thirty of those, during
+        // the scrub that asked for them. At most one per [ARRIVAL_BATCH_MS], and
+        // always one when the queue runs dry, so the last tile is never held.
+        var unsaid = 0
+        var saidAt = 0L
+        suspend fun say(force: Boolean) {
+            if (unsaid == 0) return
+            val now = android.os.SystemClock.uptimeMillis()
+            if (!force && now - saidAt < ARRIVAL_BATCH_MS) return
+            unsaid = 0
+            saidAt = now
+            withContext(Dispatchers.Main) { arrivals.intValue++ }
+        }
         try {
             while (true) {
+                val empty = synchronized(pending) { pending.isEmpty() }
+                if (empty) say(force = true)
                 val next = synchronized(pending) {
                     val newest = pending.entries.lastOrNull()
                     if (newest == null) {
@@ -170,7 +190,8 @@ object FilmstripLoader {
                     StillClips.previewBitmap(context, uri, TILE_PX)?.let { picture ->
                         cache.put(key, picture)
                         noteDecoded(uri, timeMs)
-                        withContext(Dispatchers.Main) { arrivals.intValue++ }
+                        unsaid++
+                        say(force = false)
                     }
                     continue
                 }
@@ -205,7 +226,8 @@ object FilmstripLoader {
                 }.getOrNull() ?: continue
                 cache.put(key, frame)
                 noteDecoded(uri, timeMs)
-                withContext(Dispatchers.Main) { arrivals.intValue++ }
+                unsaid++
+                say(force = false)
             }
         } finally {
             runCatching { retriever?.release() }

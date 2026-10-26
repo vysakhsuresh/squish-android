@@ -702,7 +702,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var probedMime: String? = null
 
     /** The frame shape the ceiling was measured for, so it is measured once per shape and codec. */
-    private var ceilingFor: Pair<ExportPresets.Resolution, String>? = null
+    private var ceilingFor: Triple<ExportPresets.Resolution, String, Boolean>? = null
 
     /**
      * Asks the phone's encoder what it will write for the size now chosen, so
@@ -719,19 +719,24 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (current.hevcAvailable == null) probeCodecs()
         val mime = EncoderCeiling.mimeFor(current.exportCodecHevc)
         val shape = current.resolutionAt(OutputSize.MAX_P)
-        if (shape.width > 0 && shape.height > 0 && ceilingFor != shape to mime) {
-            ceilingFor = shape to mime
+        val hdr = current.keptHdrColor
+        val key = Triple(shape, mime, hdr != null)
+        if (shape.width > 0 && shape.height > 0 && ceilingFor != key) {
+            ceilingFor = key
             viewModelScope.launch {
-                val ceiling = withContext(Dispatchers.IO) { EncoderCeiling.ceilingShortEdge(shape, mime) }
-                if (ceilingFor == shape to mime) _state.update { it.copy(encoderCeilingP = ceiling) }
+                val ceiling = withContext(Dispatchers.IO) { EncoderCeiling.ceilingShortEdge(shape, mime, hdr) }
+                if (ceilingFor == key) _state.update { it.copy(encoderCeilingP = ceiling) }
             }
         }
         val asked = current.outputResolution
-        if (!probes.ask(asked to mime)) return
+        // Keyed on the HDR too: the same size and codec can be written smaller when Keep HDR narrows the encoders.
+        val probeKey = if (hdr != null) "$mime+hdr" else mime
+        if (!probes.ask(asked to probeKey)) return
         viewModelScope.launch {
-            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked, mime) }
+            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked, mime, hdr) }
             val now = _state.value
-            if (!probes.keep(asked to mime, now.outputResolution to EncoderCeiling.mimeFor(now.exportCodecHevc))) return@launch
+            val nowKey = EncoderCeiling.mimeFor(now.exportCodecHevc).let { if (now.keptHdrColor != null) "$it+hdr" else it }
+            if (!probes.keep(asked to probeKey, now.outputResolution to nowKey)) return@launch
             probedMime = mime
             _state.update { it.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written)) }
             recomputeEstimate()
@@ -1071,20 +1076,25 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun undo() {
+        val t0 = android.os.SystemClock.elapsedRealtime()
         text.stopIfUndoingRun()
         val restored = history.undo(_state.value.editSnapshot) ?: return
         _state.update { it.restoring(restored).playheadInside() }
         refreshMissingMedia()
         publishHistory()
         recomputeEstimate()
+        // EDGE_PLAN C6: the main thread's share of an undo, which a big edit makes longer.
+        com.squish.app.av.Perf.took("undo", android.os.SystemClock.elapsedRealtime() - t0, "${_state.value.videoClips.size} clips")
     }
 
     fun redo() {
+        val t0 = android.os.SystemClock.elapsedRealtime()
         val restored = history.redo(_state.value.editSnapshot) ?: return
         _state.update { it.restoring(restored).playheadInside() }
         refreshMissingMedia()
         publishHistory()
         recomputeEstimate()
+        com.squish.app.av.Perf.took("redo", android.os.SystemClock.elapsedRealtime() - t0, "${_state.value.videoClips.size} clips")
     }
 
     /**
@@ -1279,7 +1289,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             // trusted from the sheet: the answer there may be to a size chosen
             // since. The record below says the same size.
             val asked = current.outputResolution
-            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked, EncoderCeiling.mimeFor(current.exportCodecHevc)) }
+            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked, EncoderCeiling.mimeFor(current.exportCodecHevc), current.keptHdrColor) }
             val rendering = current.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written))
 
             val renderStarted = android.os.SystemClock.elapsedRealtime()

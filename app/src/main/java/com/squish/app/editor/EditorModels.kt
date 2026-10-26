@@ -1085,6 +1085,24 @@ data class EditorUiState(
         get() = keepHdr && canKeepHdr
 
     /**
+     * The HDR the file is written in when it keeps it - HLG where a shot is
+     * HLG, else PQ, on BT.2020 - for the encoder ceiling to narrow by, as
+     * Media3 narrows its encoders (EncoderCeiling, ROADMAP 6.3). Null when the
+     * file is SDR.
+     */
+    val keptHdrColor: androidx.media3.common.ColorInfo?
+        get() {
+            if (!effectiveKeepHdr) return null
+            val hlg = (videoClips.filter { !it.isOverlay }.mapNotNull { it.uri } + listOfNotNull(sourceUri))
+                .any { MediaCompat.cached(it)?.hlg == true }
+            return androidx.media3.common.ColorInfo.Builder()
+                .setColorSpace(androidx.media3.common.C.COLOR_SPACE_BT2020)
+                .setColorRange(androidx.media3.common.C.COLOR_RANGE_LIMITED)
+                .setColorTransfer(if (hlg) androidx.media3.common.C.COLOR_TRANSFER_HLG else androidx.media3.common.C.COLOR_TRANSFER_ST2084)
+                .build()
+        }
+
+    /**
      * Whether this edit *could* keep its HDR if asked - which is what the
      * switch's own enabled state and tick have to read, or the sheet promises
      * what the render will not do. See [effectiveKeepHdr] for why a line of

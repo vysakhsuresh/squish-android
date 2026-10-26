@@ -47,18 +47,21 @@ object EncoderCeiling {
      * wrote 1920x1088. VideoProcessor.cbrSupported already asks the question
      * this way; the two places that model "what Media3 will pick" disagreed.
      *
-     * Media3 narrows the set again by HDR editing support before it filters by
-     * resolution, which this does not model - so a "Keep HDR" ceiling is still
-     * measured against encoders the render may drop.
+     * With [hdr] (a "Keep HDR" export, ROADMAP 6.3) the set is first narrowed
+     * to the encoders that can edit that HDR, as Media3 narrows it before it
+     * filters by size - measured against every encoder, a ceiling could name a
+     * size only an encoder the render drops would write. Where none can, the
+     * render tone-maps to SDR (VideoEncoderWrapper), so the SDR set stands.
      */
-    private fun candidates(mime: String): List<android.media.MediaCodecInfo> {
-        val all = EncoderUtil.getSupportedEncoders(mime)
+    private fun candidates(mime: String, hdr: androidx.media3.common.ColorInfo? = null): List<android.media.MediaCodecInfo> {
+        val hdrCapable = hdr?.let { runCatching { EncoderUtil.getSupportedEncodersForHdrEditing(mime, it) }.getOrNull() }.orEmpty()
+        val all = if (hdrCapable.isNotEmpty()) hdrCapable else EncoderUtil.getSupportedEncoders(mime)
         val hardware = all.filter { it.isHardwareAccelerated }
         return if (hardware.isEmpty()) all else hardware
     }
 
     /** The frame the encoder writes for [asked]; [asked] itself when nothing can be said. Blocking: opens the codec list. */
-    fun written(asked: ExportPresets.Resolution, mime: String = MimeTypes.VIDEO_H264): ExportPresets.Resolution {
+    fun written(asked: ExportPresets.Resolution, mime: String = MimeTypes.VIDEO_H264, hdr: androidx.media3.common.ColorInfo? = null): ExportPresets.Resolution {
         if (asked.width <= 0 || asked.height <= 0) return asked
         // The encoder is handed landscape frames: a portrait output is turned a
         // quarter turn for it and the turn written into the file (Transformer's
@@ -67,7 +70,7 @@ object EncoderCeiling {
         val w = if (portrait) asked.height else asked.width
         val h = if (portrait) asked.width else asked.height
         val fitted = runCatching {
-            candidates(mime)
+            candidates(mime, hdr)
                 .mapNotNull { info -> runCatching { EncoderUtil.getSupportedResolution(info, mime, w, h) }.getOrNull() }
                 // The factory keeps the encoders nearest by area and takes the
                 // first's size; the first of the nearest is the same encoder.
@@ -83,9 +86,9 @@ object EncoderCeiling {
      * size above it (ExportSettings.aboveCeiling) rather than offering a size
      * that fails at the start of a render, or quietly halves. Blocking.
      */
-    fun ceilingShortEdge(asked: ExportPresets.Resolution, mime: String): Int {
+    fun ceilingShortEdge(asked: ExportPresets.Resolution, mime: String, hdr: androidx.media3.common.ColorInfo? = null): Int {
         if (asked.width <= 0 || asked.height <= 0) return 0
-        val got = written(asked, mime)
+        val got = written(asked, mime, hdr)
         return minOf(got.width, got.height).coerceAtLeast(0)
     }
 }

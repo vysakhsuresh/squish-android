@@ -137,6 +137,18 @@ object Preferences {
             ?: com.squish.app.media.audio.SpeechVoice.Natural
 
     fun setSpeechVoice(context: Context, voice: com.squish.app.media.audio.SpeechVoice) = edit(context) { putString(KEY_SPEECH_VOICE, voice.name) }
+
+    /**
+     * The downloaded voice Read aloud speaks in (EDGE_PLAN E5): its language's
+     * code and the speaker's name ("ml" to "female"), or null for the phone's own.
+     */
+    fun neuralVoice(context: Context): Pair<String, String>? =
+        context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).getString(KEY_NEURAL_VOICE, null)
+            ?.split(':')?.takeIf { it.size == 2 && it[0].isNotEmpty() }?.let { it[0] to it[1] }
+
+    fun setNeuralVoice(context: Context, code: String?, speaker: String?) = edit(context) {
+        if (code == null || speaker == null) remove(KEY_NEURAL_VOICE) else putString(KEY_NEURAL_VOICE, "$code:$speaker")
+    }
     fun setHaptics(context: Context, on: Boolean) {
         hapticsOn = on
         edit(context) { putBoolean(KEY_HAPTICS, on) }
@@ -200,6 +212,7 @@ object Preferences {
     private const val KEY_KEEP_SCREEN_ON = "keepScreenOn"
     private const val KEY_PREVIEW_QUALITY = "previewQuality"
     private const val KEY_SPEECH_VOICE = "speechVoice"
+    private const val KEY_NEURAL_VOICE = "neuralVoice"
 }
 
 /**
