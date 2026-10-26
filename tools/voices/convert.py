@@ -71,6 +71,59 @@ params = sum(p.numel() for p in model.parameters())
 log("fastpitch params", params, "vocoder params", sum(p.numel() for p in gen.parameters()))
 
 
+# ---- Padding that does not leak --------------------------------------------------
+# The app pads every call to T characters and N frames. Coqui's FFTransformerBlock
+# masks padded keys in attention but leaves the padded positions' values in
+# place from layer to layer, and the 3-wide convolution after the attention
+# then reads them into the last real characters - measured: log durations off
+# by up to 0.57 padded, exactly the original's unpadded. Zeroing the padded
+# positions before each layer is what the unpadded run sees (zeros past the
+# end), so it changes nothing there and makes a padded call agree with it.
+from TTS.tts.layers.generic.transformer import FFTransformer, FFTransformerBlock
+import torch.nn.functional as F
+
+
+# Inside each layer too: the attention's output at padded positions, and the
+# first convolution's, are read by the next convolution. Zeroed before each.
+def _fft_forward(self, src, src_mask=None, src_key_padding_mask=None):
+    keep = None if src_key_padding_mask is None else (~src_key_padding_mask).to(src.dtype).unsqueeze(1)  # [B,1,T]
+    src = src.permute(2, 0, 1)
+    src2, enc_align = self.self_attn(src, src, src, attn_mask=src_mask, key_padding_mask=src_key_padding_mask)
+    src = src + self.dropout1(src2)
+    src = self.norm1(src + src2)
+    src = src.permute(1, 2, 0)
+    if keep is not None:
+        src = src * keep
+    h = F.relu(self.conv1(src))
+    if keep is not None:
+        h = h * keep
+    src2 = self.conv2(h)
+    src2 = self.dropout2(src2)
+    src = src + src2
+    src = src.transpose(1, 2)
+    src = self.norm2(src)
+    src = src.transpose(1, 2)
+    return src, enc_align
+
+
+FFTransformer.forward = _fft_forward
+
+
+def _masked_forward(self, x, mask=None, g=None):
+    keep = None
+    if mask is not None and mask.ndim == 3:
+        keep = mask.to(x.dtype)
+        mask = ~mask.squeeze(1).bool()
+    for layer in self.fft_layers:
+        if keep is not None:
+            x = x * keep
+        x, _ = layer(x, src_key_padding_mask=mask)
+    return x * keep if keep is not None else x
+
+
+FFTransformerBlock.forward = _masked_forward
+
+
 # ---- The halves, as ForwardTTS.inference runs them ------------------------------
 class Encoder(torch.nn.Module):
     def __init__(self, m):
@@ -183,57 +236,37 @@ log("durations padded  ", d_pad.tolist())
 log("durations unpadded", d_unpad.tolist())
 log("log-duration gap padded vs unpadded: max", float(np.abs(lp.numpy()[0, :t] - lu.numpy()[0, :t]).max()),
     "| unpadded vs original:", float(np.abs(lu.numpy()[0, :t] - out["durations_log"].squeeze().numpy()).max()))
+# A voice that speaks differently padded is not shipped.
+if mel.shape != ref.shape or not np.array_equal(d_pad, d_orig):
+    raise SystemExit("the padded run does not speak as the original does - padding still leaks")
+mel_gap = float(np.abs(mel - ref).max())
+if mel_gap > 1e-2 * float(np.abs(ref).max()):
+    raise SystemExit(f"the padded mel is {mel_gap} from the original's")
+log("padded run agrees with the original: durations equal, mel within", mel_gap)
 
 
-# ---- To TensorFlow Lite ---------------------------------------------------------
-try:
-    import litert_torch as edge_torch      # the converter's name from 2025
-except ImportError:
-    import ai_edge_torch as edge_torch
-
-
-def convert(name, module, args):
-    edge = edge_torch.convert(module, args)
-    path = os.path.join(OUT, name)
-    edge.export(path)
-    with torch.no_grad():
-        want = module(*[torch.from_numpy(a) for a in args])
-    got = edge(*args)
-    want = want if isinstance(want, (tuple, list)) else (want,)
-    got = got if isinstance(got, (tuple, list)) else (got,)
-    for w, g in zip(want, got):
-        log(name, "tflite vs torch: max abs", float(np.abs(np.asarray(g) - w.numpy()).max()))
-    log(name, os.path.getsize(path), "bytes")
-    return edge
-
-
-enc_edge = convert("encoder.tflite", enc, (x, mk, spk))
-dec_edge = convert("decoder.tflite", dec, (f, my))
+# ---- Saved for the second stage (tools/voices/tflite.py, its own environment) ----
+# Coqui and the TFLite converter want different transformers, so they cannot
+# share one: each half goes out as a torch.export program, with its sample
+# inputs and what the original gave for them, and the second stage converts
+# and checks against those.
 mel_chunk = np.zeros((1, 80, M), np.float32)
 k = min(M, mel.shape[0]); mel_chunk[0, :, :k] = mel[:k].T
-voc_edge = convert("vocoder.tflite", voc, (mel_chunk,))
-
-
-# ---- The sample, spoken through the TFLite models alone -----------------------
-feats_t, logdur_t = enc_edge(x, mk, spk)
-t = len(ids)
-d = durations(np.asarray(logdur_t)[0, :t])
-ex = np.repeat(np.asarray(feats_t)[0, :t], d, axis=0)
-n = ex.shape[0]
-f2 = np.zeros((1, N, ex.shape[1]), np.float32); f2[0, :n] = ex
-my2 = np.zeros((1, N), np.float32); my2[0, :n] = 1
-mel_t = np.asarray(dec_edge(f2, my2))[0, :n]
-wav = []
-for s in range(0, n, M):
-    chunk = np.zeros((1, 80, M), np.float32)
-    part = mel_t[s:s + M]
-    chunk[0, :, :part.shape[0]] = part.T
-    wav.append(np.asarray(voc_edge(chunk))[0, :part.shape[0] * 256])
-wav = np.concatenate(wav)
-pcm = (np.clip(wav, -1, 1) * 32767).astype(np.int16)
-with wave.open(os.path.join(OUT, "sample.wav"), "wb") as w:
-    w.setnchannels(1); w.setsampwidth(2); w.setframerate(22050); w.writeframes(pcm.tobytes())
-log("sample", n, "frames,", len(pcm) / 22050.0, "s, peak", float(np.abs(wav).max()))
+samples = {}
+for name, module, args in (("encoder", enc, (x, mk, spk)), ("decoder", dec, (f, my)), ("vocoder", voc, (mel_chunk,))):
+    targs = tuple(torch.from_numpy(a) for a in args)
+    with torch.no_grad():
+        want = module(*targs)
+    want = want if isinstance(want, (tuple, list)) else (want,)
+    program = torch.export.export(module, targs)
+    torch.export.save(program, os.path.join(OUT, f"{name}.pt2"))
+    for i, a in enumerate(args):
+        samples[f"{name}_in{i}"] = a
+    for i, w in enumerate(want):
+        samples[f"{name}_out{i}"] = w.numpy()
+    log(name, "exported")
+samples["ids"] = np.array(ids, np.int64)
+np.savez(os.path.join(OUT, "samples.npz"), **samples)
 
 # Coqui's own reading of text, for the app's to be checked against
 # (tools/jvm/TtsRulesChecks.kt reads these out of voice.json).
@@ -253,4 +286,4 @@ json.dump({
     "lowercase": True,
     "source": "AI4Bharat Indic-TTS v1 (MIT), github.com/AI4Bharat/Indic-TTS",
 }, open(os.path.join(OUT, "voice.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-log("done")
+log("stage one done")

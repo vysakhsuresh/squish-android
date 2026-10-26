@@ -1,0 +1,9 @@
+# Stage two, tools/voices/tflite.py: litert-torch (Apache-2.0, ai-edge-torch's
+# new name) writes TensorFlow Lite from the saved programs. Its own environment:
+# it pulls a transformers Coqui cannot import. The same torch as stage one, so
+# the saved programs load; torchao built for that torch.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.8.0
+torchao==0.13.0
+litert-torch
+ai-edge-quantizer
