@@ -159,6 +159,25 @@ fun main() {
     check("each wait is longer than the last until the cap", gaps.zipWithNext().all { (a, b) -> b >= a })
     check("no reload storm: fewer than 6 reloads in 40 s", reloadTimes.size < 6)
 
+    // ---- The layout is rebuilt at boundaries, not every tick (EDGE_PLAN C3) -----
+    run {
+        val b = longArrayOf(0, 1_000, 4_000, 4_500, 9_000)
+        check("moving and static: the stretch's start", PreviewRules.layoutTime(3_999, moving = true, continuous = false, boundaries = b) == 1_000L)
+        check("on a boundary: that boundary", PreviewRules.layoutTime(4_000, true, false, b) == 4_000L)
+        check("past the last: the last", PreviewRules.layoutTime(12_000, true, false, b) == 9_000L)
+        check("before the first: 0", PreviewRules.layoutTime(5, true, false, longArrayOf(100, 200)) == 0L)
+        check("at rest: the moment itself", PreviewRules.layoutTime(3_999, moving = false, continuous = false, boundaries = b) == 3_999L)
+        check("something moving with time: the moment itself", PreviewRules.layoutTime(3_999, true, continuous = true, boundaries = b) == 3_999L)
+        // A second of playback at 30 ticks a second asks for one layout per stretch crossed, not thirty.
+        val times = (0 until 30).map { PreviewRules.layoutTime(3_500L + it * 33L, true, false, b) }.toSet()
+        check("a second of playing across one cut builds two layouts (${times.size})", times.size == 2)
+        // Every value it gives is a boundary or the moment, never a moment no tick asked for.
+        for (t in listOf(0L, 999L, 1_000L, 4_499L, 4_500L, 8_999L, 9_000L)) {
+            val got = PreviewRules.layoutTime(t, true, false, b)
+            check("the layout time $got for $t is a boundary at or before it", got <= t && got in b)
+        }
+    }
+
     // ---- Scrub seeks are coalesced (EDGE_PLAN C3) -------------------------------
     run {
         // A drag's steps every 16 ms against a decoder that takes 70 ms to land each seek.

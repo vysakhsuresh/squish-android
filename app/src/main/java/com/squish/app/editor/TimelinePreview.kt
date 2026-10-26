@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -237,6 +238,15 @@ fun TimelinePreview(
 
     com.squish.app.util.PerfFlags.hit("Preview")
     var frame by remember { mutableStateOf(PreviewFrame()) }
+    /**
+     * Where the playhead is, apart from [frame] (EDGE_PLAN C3): it moves every
+     * tick of playback and every step of a scrub, and kept inside [frame] it
+     * rebuilt the whole preview each time. Read while drawing (the captions,
+     * the timecode) and through [layoutTime] by the layout, which follows it
+     * only where something in the layout moves with time. [frame] now changes
+     * only when what the engine draws does.
+     */
+    val position = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
 
     DisposableEffect(engine) {
         onDispose {
@@ -336,7 +346,11 @@ fun TimelinePreview(
     // tick's position, so the film moves every frame while playing rather than
     // in 30 steps a second. Each tick re-anchors it, so nothing drifts.
     var playAnchor by remember { mutableStateOf<PlayAnchor?>(null) }
-    LaunchedEffect(playAnchor != null, livePosition) {
+    // Whether there is an anchor, through a derived state: a new anchor lands
+    // every tick while playing, and read plainly here that recomposed the
+    // whole preview every tick (EDGE_PLAN C3).
+    val anchored by remember { derivedStateOf { playAnchor != null } }
+    LaunchedEffect(anchored, livePosition) {
         val live = livePosition ?: return@LaunchedEffect
         if (playAnchor == null) return@LaunchedEffect
         while (true) {
@@ -348,18 +362,19 @@ fun TimelinePreview(
     LaunchedEffect(engine) {
         var lastEcho = 0L
         var lastShown = 0L
+        var lastPos = -1L
+        var lastPlaying = frame.isPlaying
         while (true) {
             val next = engine.tick()
-            // Under a finger on the strip, the preview's layers are recomposed at
-            // most ten times a second: each new position recomposed the whole
-            // preview - every caption, overlay and effect - about seventeen
-            // times a second of a drag on the moto, the largest part of a
-            // scrub's frame, while the picture itself is the player's and moves
-            // regardless. The first tick after the finger lifts is never held.
             val tickNow = android.os.SystemClock.uptimeMillis()
-            val held = latestScrubbing && next.isPlaying == frame.isPlaying && tickNow - lastShown < SCRUB_FRAME_MS
-            if (next != frame && !held) {
-                lastShown = tickNow
+            val moved = next.positionMs != lastPos
+            val stopping = next.isPlaying != lastPlaying
+            // The position, every tick: only what draws and the layout's own
+            // moment (layoutTime) follow it, so a tick that only moves the
+            // playhead redraws the captions and the timecode and nothing else.
+            if (moved || stopping) {
+                lastPos = next.positionMs
+                position.longValue = next.positionMs
                 // The strip reads livePosition every tick; the edit's own playhead
                 // gets the position a few times a second while playing, at once
                 // when paused or stopping, and never under a finger on the strip
@@ -372,9 +387,7 @@ fun TimelinePreview(
                 // tick's, and gated on a change the edit kept a playhead up to a
                 // quarter-second stale - the first frame step after a pause went
                 // *backwards* by a frame on the phone (14 October).
-                val moved = next.positionMs != frame.positionMs
-                val stopping = next.isPlaying != frame.isPlaying
-                if (moved || stopping) {
+                run {
                     livePosition?.longValue = next.positionMs
                     // The anchor the strip is carried from between ticks, with the
                     // rate the last two ticks ran at (a retimed shot plays faster
@@ -394,11 +407,51 @@ fun TimelinePreview(
                         latestPosition(next.positionMs)
                     }
                 }
-                if (next.isPlaying != frame.isPlaying) latestPlaying(next.isPlaying)
-                frame = next
-                if (!next.isPlaying) playAnchor = null
             }
+            if (stopping) {
+                lastPlaying = next.isPlaying
+                latestPlaying(next.isPlaying)
+            }
+            // The frame, only when what the engine draws has changed - the
+            // surfaces, the overlays, play or pause - and under a finger on the
+            // strip at most ten times a second: each new frame recomposes the
+            // preview, every caption, overlay and effect, while the picture
+            // itself is the player's and moves regardless. The first tick after
+            // the finger lifts is never held.
+            val drawnChanged = next.copy(positionMs = 0L) != frame.copy(positionMs = 0L)
+            val held = latestScrubbing && !stopping && tickNow - lastShown < SCRUB_FRAME_MS
+            if ((drawnChanged || stopping) && !held) {
+                lastShown = tickNow
+                frame = next
+            }
+            if (!next.isPlaying) playAnchor = null
             delay(TICK)
+        }
+    }
+
+    // The moment the layout is built for (PreviewRules.layoutTime): the
+    // playhead itself at rest, or where something in the layout moves with
+    // time - the effects library over the canvas, an auto-reframe track, a
+    // photo overlay (its own keys and look), a tool on the picture - and
+    // otherwise, while playing or scrubbing, the start of the stretch between
+    // cuts the playhead is in, so the layout is rebuilt at a cut rather than
+    // on every tick. A derived state: the composition hears of a new value
+    // only when it is one.
+    val layoutContinuous = shownEffects.isNotEmpty() || pictureTool != null ||
+        videoClips.any { it.reframe != null || (it.isOverlay && StillClips.isStill(it.uri)) }
+    val layoutBoundaries = remember(videoClips, captions, shownEffects) {
+        (listOf(0L) + videoClips.flatMap { listOf(it.timelineStartMs, it.timelineEndMs) } +
+            captions.flatMap { listOf(it.startMs, it.endMs) } + shownEffects.flatMap { listOf(it.startMs, it.endMs) })
+            .distinct().sorted().toLongArray()
+    }
+    val layoutInputs = rememberUpdatedState(LayoutInputs(layoutContinuous, layoutBoundaries, frame.isPlaying || scrubbing, frame.durationMs))
+    val layoutTime = remember {
+        derivedStateOf {
+            val inputs = layoutInputs.value
+            PreviewRules.layoutTime(
+                PreviewRules.lastFrameTime(position.longValue, inputs.durationMs),
+                moving = inputs.moving, continuous = inputs.continuous, boundaries = inputs.boundaries
+            )
         }
     }
 
@@ -479,7 +532,7 @@ fun TimelinePreview(
     ) {
         // The moment the layers are drawn for - parked on the very end, the
         // last frame, as the engine does.
-        val layerTime = PreviewRules.lastFrameTime(frame.positionMs, frame.durationMs)
+        val layerTime = layoutTime.value
         // The picture's own shape before the edit's turn: what a shot's frame
         // is taken as until its player has said otherwise.
         val unrotatedPicture = if (PreviewBox.isQuarterTurn(rotationDegrees)) 1f / pictureAspect else pictureAspect
@@ -678,7 +731,7 @@ fun TimelinePreview(
                 captions = captions,
                 // Parked on the very end, a caption that runs to it is still up, as it
                 // is on the export's last frame.
-                timeMs = PreviewRules.lastFrameTime(frame.positionMs, frame.durationMs),
+                timeMs = { PreviewRules.lastFrameTime(position.longValue, frame.durationMs) },
                 atRest = !frame.isPlaying,
                 frame = kept,
                 modifier = Modifier.fillMaxSize().zIndex(25f),
@@ -809,6 +862,7 @@ fun TimelinePreview(
 
         Transport(
             frame = frame,
+            positionMs = { position.longValue },
             onToggle = { engine.togglePlay() },
             onStep = onStep,
             fullscreen = fullscreen,
@@ -1555,6 +1609,8 @@ private fun Modifier.fitted(aspect: Float?): Modifier = layout { measurable, con
 @Composable
 private fun Transport(
     frame: PreviewFrame,
+    /** Where the playhead is, read here alone (the timecode and the bar) rather than recomposing the preview for it. */
+    positionMs: () -> Long,
     onToggle: () -> Unit,
     /** A frame back (-1) or forward (+1). */
     onStep: (Int) -> Unit,
@@ -1577,7 +1633,7 @@ private fun Transport(
             val latestBarScrubbing by rememberUpdatedState(onBarScrubbing)
             DisposableEffect(Unit) { onDispose { if (dragging != null) latestBarScrubbing(false) } }
             SquishSlider(
-                value = dragging ?: (frame.positionMs.toFloat() / frame.durationMs).coerceIn(0f, 1f),
+                value = dragging ?: (positionMs().toFloat() / frame.durationMs).coerceIn(0f, 1f),
                 onValueChange = { v ->
                     if (dragging == null) onBarScrubbing(true)
                     dragging = v
@@ -1624,7 +1680,7 @@ private fun Transport(
             TransportButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Forward one frame") { onStep(1) }
 
             Text(
-                Timecode.format(frame.positionMs),
+                Timecode.format(positionMs()),
                 style = MaterialTheme.typography.labelLarge.tabularFigures(),
                 color = SquishColors.TextPrimary,
                 maxLines = 1,
@@ -1677,6 +1733,9 @@ private const val SCRUB_FRAME_MS = 100L
 
 /** Where playback was at a tick, when, and how fast it was going; see the tick loop. */
 private class PlayAnchor(val positionMs: Long, val atNanos: Long, val rate: Double)
+
+/** What the layout's moment is worked out from (PreviewRules.layoutTime). */
+private class LayoutInputs(val continuous: Boolean, val boundaries: LongArray, val moving: Boolean, val durationMs: Long)
 
 /** Long enough for the view system to finish a resize the layout pass started. */
 private val REDRAW_SETTLE = 150.milliseconds

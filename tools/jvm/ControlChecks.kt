@@ -1889,6 +1889,22 @@ fun main() {
             Regex("""translationX = drawShift\(\)[\s\S]{0,400}compositingStrategy = CompositingStrategy\.Offscreen""").containsMatchIn(editor),
             "the strip's rows are not slid in the draw phase as one offscreen layer - the GPU redraws every tile and wave each frame"
         )
+        // And the preview: the playhead's moment kept out of the frame that
+        // recomposes it, read by the captions and the timecode while drawing,
+        // and by the layout through PreviewRules.layoutTime.
+        val preview = read("$SRC/editor/TimelinePreview.kt")
+        check(
+            preview.contains("next.copy(positionMs = 0L) != frame.copy(positionMs = 0L)"),
+            "the preview's frame is replaced on a tick that only moves the playhead - the whole preview recomposes every tick"
+        )
+        check(
+            preview.contains("val layerTime = layoutTime.value") && preview.contains("PreviewRules.layoutTime("),
+            "the preview's layout reads the playhead directly rather than PreviewRules.layoutTime"
+        )
+        check(
+            read("$SRC/editor/CaptionLayer.kt").contains("timeMs: () -> Long"),
+            "the caption layer is handed the moment as a value, so the preview recomposes to move a caption"
+        )
     }
 
     println("controls: the conventions that, broken, make a control lie")

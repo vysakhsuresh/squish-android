@@ -33,6 +33,29 @@ object PreviewRules {
         return !busy || since >= SCRUB_SEEK_MAX_WAIT_MS
     }
 
+    /**
+     * The moment the preview's layout is built for (EDGE_PLAN C3). The layout -
+     * which shot's backdrop, which photo overlays, the canvas - is the same
+     * from one cut to the next unless something in it moves with time, so
+     * while the picture is moving ([moving]: playing or scrubbing) and nothing
+     * in it is [continuous], it is built for the start of the stretch [t] is
+     * in (the last of [boundaries], sorted, at or before it) and rebuilt only
+     * when a boundary is crossed. It used to be rebuilt for every tick of
+     * playback and every step of a scrub. At rest it is [t] exactly, so the
+     * handles and tools on the picture stand on the frame shown.
+     */
+    fun layoutTime(t: Long, moving: Boolean, continuous: Boolean, boundaries: LongArray): Long {
+        if (!moving || continuous || boundaries.isEmpty()) return t
+        var lo = 0
+        var hi = boundaries.size - 1
+        if (t < boundaries[0]) return 0L
+        while (lo < hi) {
+            val mid = (lo + hi + 1) / 2
+            if (boundaries[mid] <= t) lo = mid else hi = mid - 1
+        }
+        return boundaries[lo]
+    }
+
     const val SCRUB_SEEK_GAP_MS = 50L
     const val SCRUB_SEEK_MAX_WAIT_MS = 200L
 

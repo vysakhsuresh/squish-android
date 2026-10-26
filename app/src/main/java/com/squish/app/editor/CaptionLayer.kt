@@ -73,8 +73,12 @@ data class TextBox(val width: Float, val height: Float)
 @Composable
 fun CaptionLayer(
     captions: List<TextOverlayItem>,
-    /** Timeline time. */
-    timeMs: Long,
+    /**
+     * Timeline time, read while drawing (EDGE_PLAN C3): the moment moves every
+     * tick of playback and every step of a scrub, and read here it redraws this
+     * layer alone rather than recomposing the preview around it.
+     */
+    timeMs: () -> Long,
     /**
      * True while paused. A paused editor shows every caption as it looks at rest -
      * a pop-in is invisible on its first frame, which is exactly where one is
@@ -95,6 +99,7 @@ fun CaptionLayer(
     val glyphs = remember { HashMap<String, PaintedLetters>() }
 
     Canvas(modifier = modifier) {
+        val timeMs = timeMs()
         val boxLeft = frame.left * size.width
         val boxTop = frame.top * size.height
         val boxWidth = (frame.width * size.width).roundToInt()
