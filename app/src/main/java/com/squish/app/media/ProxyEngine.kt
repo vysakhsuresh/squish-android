@@ -198,7 +198,24 @@ object ProxyEngine {
                 handler.removeCallbacks(poll)
                 runCatching { session.cancel() }
             }
-            runCatching { session.start(item, output.absolutePath) }
+            // HDR10 that Squish's FFmpeg decodes is tone-mapped in that decoder
+            // (HdrRules): through Media3's own, the copy came out with its red,
+            // magenta and blue black, and the preview showed the copy. Anything
+            // else starts as it always has.
+            val report = MediaCompat.cached(uri)
+            val decoderToneMap = report != null && HdrRules.decoderToneMaps(HdrRules.Clip(report.hdr, report.hlg, report.videoSoftware))
+            runCatching {
+                if (decoderToneMap) {
+                    val types = if (report?.hasAudio == true) setOf(androidx.media3.common.C.TRACK_TYPE_VIDEO, androidx.media3.common.C.TRACK_TYPE_AUDIO)
+                    else setOf(androidx.media3.common.C.TRACK_TYPE_VIDEO)
+                    val composition = Composition.Builder(androidx.media3.transformer.EditedMediaItemSequence.Builder(types).addItem(item).build())
+                        .setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_MEDIACODEC)
+                        .build()
+                    session.start(composition, output.absolutePath)
+                } else {
+                    session.start(item, output.absolutePath)
+                }
+            }
                 .onSuccess { handler.postDelayed(poll, PROGRESS_POLL_MS) }
                 .onFailure { finish(false) }
         }
@@ -212,6 +229,9 @@ object ProxyEngine {
      */
     private fun fileFor(context: Context, uri: Uri): File {
         val key = uri.toString().hashCode().toUInt().toString(16)
-        return File(proxyDir(context), "proxy_$key.mp4")
+        // A copy tone-mapped in the decoder (HdrRules) has its own name, so one
+        // made before - the colours wrong - is never picked up in its place.
+        val toned = MediaCompat.cached(uri)?.let { HdrRules.decoderToneMaps(HdrRules.Clip(it.hdr, it.hlg, it.videoSoftware)) } == true
+        return File(proxyDir(context), if (toned) "proxy_${key}_toned.mp4" else "proxy_$key.mp4")
     }
 }

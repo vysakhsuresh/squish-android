@@ -131,22 +131,28 @@ object SoftwareDecoders {
             outputSurface: Surface,
             requestSdrToneMapping: Boolean,
             logSessionId: LogSessionId?
-        ): Codec =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && software(format)) {
-                AvTransformerCodecs.video(format, outputSurface)
+        ): Codec {
+            // Asked for SDR (Transformer's MediaCodec mode, which HdrRules
+            // chooses for HDR10 that FFmpeg reads): FFmpeg's decoder tone-maps.
+            val pq = format.colorInfo?.colorTransfer == androidx.media3.common.C.COLOR_TRANSFER_ST2084
+            val toneMap = requestSdrToneMapping && pq
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && software(format)) {
+                AvTransformerCodecs.video(format, outputSurface, toneMap)
             } else {
                 try {
                     platform.createForVideoDecoding(format, outputSurface, requestSdrToneMapping, logSessionId)
                 } catch (e: androidx.media3.transformer.ExportException) {
                     // Every platform decoder refused to start: FFmpeg's, where
                     // it can paint the surface (Android 13 on) and reads the
-                    // format, rather than the export failing. Not for a tone
-                    // map, which only the platform's decoders do.
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !requestSdrToneMapping && decodes(format)) {
+                    // format, rather than the export failing. A tone map it can
+                    // do only for PQ (ToneMap's tables), so HLG asked for one
+                    // still fails as it did.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && (!requestSdrToneMapping || pq) && decodes(format)) {
                         android.util.Log.w("SquishExport", "no platform decoder would start for ${format.sampleMimeType}; FFmpeg's instead", e)
-                        AvTransformerCodecs.video(format, outputSurface)
+                        AvTransformerCodecs.video(format, outputSurface, toneMap)
                     } else throw e
                 }
             }
+        }
     }
 }

@@ -473,9 +473,20 @@ class VideoProcessor(private val context: Context) {
      * to be cut. That is Snip's path alone - the editor always has clips -
      * and Snip offers no colour choice to contradict.
      */
-    private fun hdrMode(state: EditorUiState): Int =
-        if (state.effectiveKeepHdr || isPlainTrim(state)) Composition.HDR_MODE_KEEP_HDR
-        else Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL
+    private fun hdrMode(state: EditorUiState): Int {
+        if (state.effectiveKeepHdr || isPlainTrim(state)) return Composition.HDR_MODE_KEEP_HDR
+        // HDR10 that Squish's FFmpeg decodes is tone-mapped in that decoder
+        // (HdrRules says why). A clip not yet probed counts as HDR the phone
+        // reads, which keeps the edit on Media3's tone map, as before.
+        val clips = state.videoClips.mapNotNull { it.uri }.map { uri ->
+            MediaCompat.cached(uri)?.let { HdrRules.Clip(it.hdr, it.hlg, it.videoSoftware) }
+                ?: HdrRules.Clip(hdr = true, hlg = false, software = false)
+        }
+        return when (HdrRules.mode(clips, keepHdr = false)) {
+            HdrRules.Mode.DECODER -> Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_MEDIACODEC
+            else -> Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL
+        }
+    }
 
     /**
      * The tracks the one-sequence export carries. The sound track is declared

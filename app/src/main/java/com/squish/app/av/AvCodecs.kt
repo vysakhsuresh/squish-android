@@ -146,14 +146,17 @@ object AvCodecs {
         held: Long,
         frame: AvDecoder.Frame,
         format: Format,
-        timestampNs: Long
+        timestampNs: Long,
+        /** The frame was tone-mapped in the decoder (decSetToneMap): limited-range BT.709 SDR, whatever the file was. */
+        sdr: Boolean = false
     ) {
         val width = frame.width
         val height = frame.height
         val rgb = isRgbFrame(frame)
         // An RGB picture is written out limited range (squishav.c), so the
         // DataSpace says limited whatever the file did.
-        val choice = choiceFor(frame, format).let { if (rgb) it.copy(range = YuvDataSpace.Range.LIMITED) else it }
+        val choice = if (sdr) YuvDataSpace.choose(2, height, YuvDataSpace.Transfer.SDR, false)
+        else choiceFor(frame, format).let { if (rgb) it.copy(range = YuvDataSpace.Range.LIMITED) else it }
         painter.paintWith(width, height, choice, timestampNs) { image -> fill(image, decoder, held, width, height) }
     }
 

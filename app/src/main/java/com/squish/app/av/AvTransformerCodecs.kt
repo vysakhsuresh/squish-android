@@ -40,10 +40,19 @@ object AvTransformerCodecs {
     fun audio(format: Format): Codec = AudioCodec(format)
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    fun video(format: Format, surface: Surface): Codec = VideoCodec(format, surface)
+    /**
+     * [toneMap]: the frames come out tone-mapped to SDR BT.709 in FFmpeg's
+     * decoder (ToneMap), as Transformer's MediaCodec mode asks a decoder to -
+     * for HDR10, whose hand-over to Media3's own tone map came out wrong
+     * (HdrRules).
+     */
+    fun video(format: Format, surface: Surface, toneMap: Boolean = false): Codec = VideoCodec(format, surface, toneMap)
 
     /** Pictures the painter may have on the surface before the renderer waits. */
     private const val PENDING_FRAMES = 3
+
+    /** FFmpeg's number for SMPTE 2084 (PQ), the transfer [ToneMap.cached] builds its tables for. */
+    private const val TRC_PQ = 16
 
     /** Frames held back from the renderer at most; FFmpeg's threads hold a few more. */
     private const val HELD_FRAMES = 4
@@ -222,7 +231,14 @@ object AvTransformerCodecs {
     }
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private class VideoCodec(format: Format, surface: Surface) : Base(format, video = true) {
+    private class VideoCodec(format: Format, surface: Surface, private val toneMap: Boolean) : Base(format, video = true) {
+        init {
+            if (toneMap) {
+                val tables = ToneMap.cached(TRC_PQ) ?: throw failure(IllegalStateException("no tone map"), format, true, "ffmpeg", init = true)
+                val r = AvNative.decSetToneMap(decoder.nativeHandle, tables)
+                if (r < 0) throw failure(AvException("setting the tone map", r), format, true, "ffmpeg", init = true)
+            }
+        }
         private class Held(val handle: Long, val meta: AvDecoder.Frame)
 
         private val painter = YuvImagePainter(surface)
@@ -284,7 +300,7 @@ object AvTransformerCodecs {
         }
 
         private fun paint(held: Held, timeUs: Long) = guarded {
-            AvCodecs.paint(painter, decoder, held.handle, held.meta, format, timeUs * 1000L)
+            AvCodecs.paint(painter, decoder, held.handle, held.meta, format, timeUs * 1000L, sdr = toneMap)
         }
 
         override fun release() {
