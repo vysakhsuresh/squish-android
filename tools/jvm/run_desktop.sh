@@ -142,6 +142,7 @@ run exportfacts "$SRC/export/ExportFacts.kt" tools/jvm/ExportFactsChecks.kt
 run proxyrules "$SRC/media/ProxyRules.kt" tools/jvm/ProxyRulesChecks.kt
 run decoderbudget "$SRC/media/DecoderBudget.kt" tools/jvm/DecoderBudgetChecks.kt
 run ttsrules "$SRC/media/audio/TtsRules.kt" tools/jvm/TtsRulesChecks.kt
+run wer tools/jvm/Wer.kt
 run autoadjust "$SRC/media/effects/ToneCurve.kt" "$SRC/media/effects/Lut.kt" "$SRC/media/effects/ColorWheels.kt" "$SRC/media/effects/SkinTone.kt" "$SRC/media/effects/Look.kt" "$SRC/media/effects/AutoAdjust.kt" tools/jvm/AutoAdjustChecks.kt
 run translatechunks "$SRC/online/OnlineTranslate.kt" tools/jvm/stub/translate/OnlineStub.kt tools/jvm/stub/translate/ContextStub.kt tools/jvm/stub/translate/JsonStub.kt tools/jvm/TranslateChunkChecks.kt
 # These four were in run.sh and not here, so the desktop - the only machine that
