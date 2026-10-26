@@ -30,17 +30,17 @@ PHONE="-c:v libx264 -preset veryfast -profile:v high -b:v 17M -maxrate 20M -bufs
 TONE="-f lavfi -i sine=frequency=440:sample_rate=48000"
 
 # ---- F1: fast, steady motion ----------------------------------------------------
-# A textured card crossing the frame in a second, a ball bouncing, and a bar
-# turning: steady motion whose in-between frames are known, so a blend shows
-# as a double image and a good interpolation as one sharp object.
+# A textured card crossing the frame in a second and a ball bouncing across
+# it: steady motion whose in-between frames are known, so a blend shows as a
+# double image and a good interpolation as one sharp object. (A turning bar
+# through ffmpeg's rotate came out a filled disc over everything; left out.)
 run motion/fast_motion_1080p30.mp4 \
   -f lavfi -i "gradients=size=1920x1080:rate=30:speed=0.01:seed=4" \
   -f lavfi -i "testsrc2=size=260x260:rate=30" \
   -f lavfi -i "color=c=white:size=60x60:rate=30,format=rgba,geq=r=255:g=180:b=40:a='if(lt(hypot(X-30,Y-30),29),255,0)'" \
-  -f lavfi -i "color=c=0x30e0ff:size=700x26:rate=30" \
   $TONE \
-  -filter_complex "[0:v][1:v]overlay=x='mod(t*1600,2180)-260':y=140[a];[a][2:v]overlay=x='200+t*500':y='700-abs(sin(t*3.2))*420'[b];[3:v]format=rgba,rotate=a='t*3.0':c=none:ow=760:oh=760[bar];[b][bar]overlay=x=1100:y=260,format=yuv420p[v]" \
-  -map "[v]" -map 4:a -t 6 $PHONE
+  -filter_complex "[0:v][1:v]overlay=x='mod(t*1600,2180)-260':y=140[a];[a][2:v]overlay=x='200+t*260':y='960-abs(sin(t*3.2))*520',format=yuv420p[v]" \
+  -map "[v]" -map 3:a -t 6 $PHONE
 
 # ---- F9: flicker and noise -------------------------------------------------------
 # Brightness swinging 8% at 7 Hz, as under mains light shot at the wrong shutter.
