@@ -106,6 +106,8 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.runtime.mutableLongStateOf
 
 /**
  * The preview surface: the composited edit, driven by [PreviewEngine].
@@ -1690,13 +1692,22 @@ private fun Transport(
             // layout tree (26 Oct, traced on the moto: ~6 ms a walk). The box
             // is as wide as the edit's own length, in tabular figures, so the
             // digits never jiggle; a screen reader is told the second the
-            // playhead is on, which changes once a second, not every frame.
+            // playhead rests on. Once a second of *timeline* was not enough:
+            // a fast scrub crosses twenty of them in a swipe (27 Oct, seen in
+            // `uiautomator events`), so it is told only after the playhead
+            // has held still for SPOKEN_SETTLE_MS.
             val timeMeasurer = rememberTextMeasurer(cacheSize = 4)
             val timeStyle = MaterialTheme.typography.labelLarge.tabularFigures().copy(color = SquishColors.TextPrimary)
             val widest = remember(timeStyle, frame.durationMs) {
                 timeMeasurer.measure(Timecode.format(maxOf(frame.durationMs, 0L)), timeStyle, softWrap = false, maxLines = 1)
             }
-            val spokenSecond by remember(positionMs) { derivedStateOf { positionMs() / 1000L } }
+            var spokenSecond by remember { mutableLongStateOf(positionMs() / 1000L) }
+            LaunchedEffect(positionMs) {
+                androidx.compose.runtime.snapshotFlow { positionMs() / 1000L }.collectLatest { s ->
+                    kotlinx.coroutines.delay(SPOKEN_SETTLE_MS)
+                    spokenSecond = s
+                }
+            }
             val spoken = "Playhead at ${Timecode.format(spokenSecond * 1000L, withMillis = false)}"
             val timeDensity = LocalDensity.current
             Box(
@@ -1751,6 +1762,9 @@ private val TICK = 33.milliseconds
 
 /** How often the playhead shown is written into the edit while playing; see the tick loop. */
 private const val ECHO_MS = 250L
+
+/** How long the playhead holds still before a screen reader is told where it is (Transport). */
+private const val SPOKEN_SETTLE_MS = 500L
 
 /** The least time between two recompositions of the preview's layers under a finger on the strip. */
 private const val SCRUB_FRAME_MS = 100L

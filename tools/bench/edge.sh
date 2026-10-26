@@ -37,6 +37,11 @@ push() {
     [ -f "$f" ] && MSYS_NO_PATHCONV=1 $ADB push "$f" /sdcard/Movies/SquishEdge/ >/dev/null
   done
   for f in "$MEDIA"/speech/*.wav; do MSYS_NO_PATHCONV=1 $ADB push "$f" /sdcard/Music/SquishEdge/ >/dev/null; done
+  # adb push leaves MediaStore without a duration (a NULL the project step then
+  # built a broken draft from); the scanner fills it in.
+  for f in "$MEDIA"/motion/*.mp4 "$MEDIA"/proxy/*.mp4 "$MEDIA"/speech/*.mp4; do
+    [ -f "$f" ] && sh_ am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file:///sdcard/Movies/SquishEdge/$(basename "$f")" >/dev/null
+  done
   sleep 6
   local ids=""
   for f in "$MEDIA"/motion/*.mp4 "$MEDIA"/proxy/*.mp4 "$MEDIA"/speech/*.mp4; do
