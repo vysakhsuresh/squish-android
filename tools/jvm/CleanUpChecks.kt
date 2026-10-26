@@ -64,6 +64,59 @@ fun main() {
     }
     check(CleanUp.denoiseWeight(0f, 0f) == 0f, "a strength of nothing still kept the last frame")
 
+    // ---- Whole frames, as the shader runs it (27 Oct, measured off exported
+    // files on the moto: grain of sd 5 levels taken down only 23% at strength
+    // 0.8, because each pixel judged "still or moved" from its own difference,
+    // which the grain alone makes as large as QUIET). Judged over the 3 x 3
+    // round each pixel, the grain averages out and motion does not.
+    // Frames are RGB, three floats a pixel, as the shader sees them.
+    run {
+        val w = 48; val h = 48
+        var seed = 11
+        fun noise(): Float { seed = seed * 1103515245 + 12345; return (((seed ushr 16) and 0x7FFF) / 32767f - 0.5f) * 0.10f }
+        fun sd(x: List<Float>): Double { val m = x.average(); return sqrt(x.map { (it - m) * (it - m) }.average()) }
+        fun frameOf(colour: (Int, Int) -> FloatArray) = FloatArray(w * h * 3) { i -> val p = i / 3; colour(p % w, p / w)[i % 3] + noise() }
+        // A still picture with grain of sd 0.03 in each channel (7.5 levels, low-light phone footage), at strength 0.8.
+        var last: FloatArray? = null
+        val rawAt = ArrayList<Float>(); val outAt = ArrayList<Float>()
+        val probe = (24 * w + 24) * 3 + 1
+        for (f in 0 until 80) {
+            val frame = frameOf { _, _ -> floatArrayOf(0.5f, 0.5f, 0.5f) }
+            val out = last?.let { CleanUp.denoiseFrame(frame, it, w, h, 0.8f) } ?: frame
+            if (f >= 20) { rawAt += frame[probe]; outAt += out[probe] }
+            last = out
+        }
+        check(sd(outAt) < sd(rawAt) * 0.6, "grain on a still frame at 0.8 went only from ${sd(rawAt)} to ${sd(outAt)}")
+        // A square moving 4 px a frame over a ground, with the same grain: where it
+        // arrives the output is the square, and where it left, the ground. Once
+        // bright over dark, and once red over a teal of the same luma - the trail
+        // a luma-only judgement left behind a moving test card on the moto.
+        val red = floatArrayOf(0.85f, 0.15f, 0.15f)
+        val teal = run { val l = 0.2126f * red[0] + 0.7152f * red[1] + 0.0722f * red[2]; floatArrayOf(0.05f, (l - 0.2126f * 0.05f - 0.0722f * 0.6f) / 0.7152f, 0.6f) }
+        for ((name, pair) in listOf("bright on dark" to (floatArrayOf(0.8f, 0.8f, 0.8f) to floatArrayOf(0.2f, 0.2f, 0.2f)), "red on teal of its luma" to (red to teal))) {
+            val (fg, bg) = pair
+            last = null
+            var worstArrive = 0f; var worstLeave = 0f
+            for (f in 0 until 8) {
+                val x0 = 4 + 4 * f
+                val frame = frameOf { x, y -> if (x in x0 until x0 + 12 && y in 18 until 30) fg else bg }
+                val out = last?.let { CleanUp.denoiseFrame(frame, it, w, h, 1f) } ?: frame
+                if (f > 0) {
+                    for (y in 20 until 28) for (c in 0 until 3) {
+                        worstArrive = maxOf(worstArrive, abs(out[(y * w + x0 + 11) * 3 + c] - fg[c]))
+                        worstLeave = maxOf(worstLeave, abs(out[(y * w + x0 - 2) * 3 + c] - bg[c]))
+                    }
+                }
+                last = out
+            }
+            check(worstArrive < 0.09f, "$name: a moving square arrived as a ghost, $worstArrive off the square")
+            check(worstLeave < 0.09f, "$name: a moving square left a trail, $worstLeave off the ground")
+        }
+        // Strength nothing: the frame as it came.
+        val f0 = frameOf { _, _ -> floatArrayOf(0.5f, 0.5f, 0.5f) }; val f1 = frameOf { _, _ -> floatArrayOf(0.5f, 0.5f, 0.5f) }
+        check(CleanUp.denoiseFrame(f1, f0, w, h, 0f).contentEquals(f1), "a strength of nothing changed a frame")
+    }
+
     if (problems.isEmpty()) println("CleanUpChecks: all checks passed")
     else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
 }

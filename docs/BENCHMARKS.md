@@ -93,6 +93,25 @@ Reading it:
   walk and 1.6 s over the ten swipes. The timecode under the picture changes on
   every frame of a scrub, which is enough to set it off.
 
+## C6, a long edit - moto g84 5G, 27 October 2026, 01:35-02:20
+
+"Edge 200 shots" (`edge.sh many 200`: 200 half-second shots cut from the six
+benchmark clips, 1:40), release-speed build, six 600 ms swipes over wireless adb.
+
+| | |
+|---|---|
+| opening it | editor shown in 195 ms, first frame at 985 ms |
+| scrub, before (ed7e8d4's parent) | p90 82 ms, main thread p90 70, ClipView recomposed up to 342 times a second |
+| scrub, after, thumbnails already in | p90 47-50 ms, main thread p90 38-40, ClipView 1-66 a second |
+
+Found on the way: every clip on screen recomposed whenever its lane did,
+because ClipView took its span as a `LongRange`, which the Compose compiler
+holds unstable and compares by identity (`app_perf-composables.txt` says
+which parameters are unstable - turn the reports on with a `composeCompiler {
+reportsDestination = ... }` block for one build). And at the fitted zoom the
+join badges, one every 24 dp over 26 dp shots, left a shot nowhere to be
+tapped. Both fixed in ed7e8d4.
+
 ## Competitors
 
 Not measured: neither InShot nor CapCut is installed on the moto (checked 24

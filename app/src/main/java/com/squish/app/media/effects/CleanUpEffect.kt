@@ -104,6 +104,7 @@ private class CleanUpShaderProgram(
             glProgram.setFloatsUniform("uGain", floatArrayOf(gain))
             glProgram.setFloatsUniform("uDenoise", floatArrayOf(if (hasHistory) strength else 0f))
             glProgram.setFloatsUniform("uRule", floatArrayOf(CleanUp.QUIET, CleanUp.MOVED, CleanUp.MAX_KEEP))
+            glProgram.setFloatsUniform("uTexel", floatArrayOf(1f / width.coerceAtLeast(1), 1f / height.coerceAtLeast(1)))
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             if (strength > 0f) {
@@ -138,6 +139,7 @@ private class CleanUpShaderProgram(
             glProgram.setFloatsUniform("uGain", floatArrayOf(1f))
             glProgram.setFloatsUniform("uDenoise", floatArrayOf(0f))
             glProgram.setFloatsUniform("uRule", floatArrayOf(CleanUp.QUIET, CleanUp.MOVED, CleanUp.MAX_KEEP))
+            glProgram.setFloatsUniform("uTexel", floatArrayOf(1f / width.coerceAtLeast(1), 1f / height.coerceAtLeast(1)))
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             cells.rewind()

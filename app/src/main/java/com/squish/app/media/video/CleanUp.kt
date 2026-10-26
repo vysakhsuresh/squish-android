@@ -34,6 +34,40 @@ object CleanUp {
         return MAX_KEEP * strength.coerceIn(0f, 1f) * still
     }
 
+    /**
+     * A whole frame's next output, as squish_cleanup_es2.glsl draws it: each
+     * pixel mixed towards the last output by how still its 3 x 3 neighbourhood
+     * is - the difference of the two frames' means round it, not of the pixel
+     * alone. Judged pixel by pixel, grain is its own difference: sd-7.5 grain
+     * (low-light phone footage) read as half moving and kept only a third off
+     * (27 Oct, on exported files from the moto), the heavier the grain the
+     * less done. Over nine pixels grain averages to a third while a moving
+     * edge does not, so the room goes quiet and a hand still leaves no ghost.
+     */
+    fun denoiseFrame(cur: FloatArray, last: FloatArray, w: Int, h: Int, strength: Float): FloatArray {
+        if (strength <= 0f) return cur.copyOf()
+        val out = FloatArray(w * h * 3)
+        val sc = FloatArray(3); val sl = FloatArray(3)
+        for (y in 0 until h) for (x in 0 until w) {
+            sc.fill(0f); sl.fill(0f)
+            for (dy in -1..1) for (dx in -1..1) {
+                val j = ((y + dy).coerceIn(0, h - 1) * w + (x + dx).coerceIn(0, w - 1)) * 3
+                for (c in 0 until 3) { sc[c] += cur[j + c]; sl[c] += last[j + c] }
+            }
+            var diff = 0f
+            // Each channel weighed apart: by luma alone, red moving over a teal
+            // as bright read as still and left a trail (seen on the moto).
+            for (c in 0 until 3) diff += LUMA[c] * abs(sc[c] - sl[c])
+            val k = denoiseWeight(diff / 9f, strength)
+            val i = (y * w + x) * 3
+            for (c in 0 until 3) out[i + c] = cur[i + c] + (last[i + c] - cur[i + c]) * k
+        }
+        return out
+    }
+
+    /** Rec. 709's weights, the shader's LUMA. */
+    private val LUMA = floatArrayOf(0.2126f, 0.7152f, 0.0722f)
+
     /** One pixel's next output from its new value and the last output. */
     fun denoise(current: Float, last: Float, strength: Float): Float {
         val k = denoiseWeight(abs(current - last), strength)

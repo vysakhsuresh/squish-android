@@ -19,6 +19,8 @@ uniform float uMode;
 uniform float uGain;
 uniform float uDenoise;
 uniform vec3 uRule;
+// One pixel, in texture coordinates: the step to the neighbours.
+uniform vec2 uTexel;
 
 varying vec2 vTexSamplingCoord;
 
@@ -40,7 +42,21 @@ void main() {
   vec3 cur = clamp(c.rgb * uGain, 0.0, 1.0);
   if (uDenoise > 0.001) {
     vec3 last = texture2D(uHistory, uv).rgb;
-    float diff = dot(abs(cur - last), LUMA);
+    // How still the 3 x 3 round the pixel is, not the pixel alone: judged
+    // alone, grain is its own difference and heavy grain read as moving
+    // (CleanUp.denoiseFrame says more; CleanUpChecks runs it).
+    vec3 sc = vec3(0.0);
+    vec3 sl = vec3(0.0);
+    for (int i = -1; i <= 1; i++) {
+      for (int j = -1; j <= 1; j++) {
+        vec2 o = uv + vec2(float(i), float(j)) * uTexel;
+        sc += clamp(texture2D(uTexSampler, o).rgb * uGain, 0.0, 1.0);
+        sl += texture2D(uHistory, o).rgb;
+      }
+    }
+    // Each channel weighed apart: by luma alone, red moving over a teal as
+    // bright read as still and left a trail (seen on the moto).
+    float diff = dot(abs(sc - sl), LUMA) / 9.0;
     float t = clamp((diff - uRule.x) / (uRule.y - uRule.x), 0.0, 1.0);
     float still = 1.0 - t * t * (3.0 - 2.0 * t);
     cur = mix(cur, last, uRule.z * uDenoise * still);
