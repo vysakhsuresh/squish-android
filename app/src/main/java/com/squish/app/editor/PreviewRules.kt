@@ -15,6 +15,28 @@ import kotlin.math.abs
 object PreviewRules {
 
     /**
+     * Whether a player in the middle of a scrub is given the next seek now
+     * (EDGE_PLAN C3). Every step of a drag asked every player for a fresh
+     * seek, up to sixty a second, and a seek is a decoder flush and a decode
+     * from the nearest key frame - which during a scrub is the same key frame
+     * for many steps running, decoded again each time. Measured on the moto's
+     * release build: with the preview's seeks off, a scrub's p90 frame fell
+     * from 52 ms to 22 ms and frames shown twice from 32% to 15%. So a player
+     * still working on its last seek ([busy]) is left to land it, unless it
+     * has been [SCRUB_SEEK_MAX_WAIT_MS] since; and none is sent within
+     * [SCRUB_SEEK_GAP_MS] of the last. The finger lifting settles on the exact
+     * frame whatever was skipped (ScrubDetector, settle()).
+     */
+    fun scrubSeekDue(nowMs: Long, lastSeekMs: Long, busy: Boolean): Boolean {
+        val since = nowMs - lastSeekMs
+        if (since < SCRUB_SEEK_GAP_MS) return false
+        return !busy || since >= SCRUB_SEEK_MAX_WAIT_MS
+    }
+
+    const val SCRUB_SEEK_GAP_MS = 50L
+    const val SCRUB_SEEK_MAX_WAIT_MS = 200L
+
+    /**
      * How far inside a clip's out point a seek to its end lands.
      *
      * An exact seek shows the first frame at or after the position asked for, so

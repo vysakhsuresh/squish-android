@@ -386,6 +386,8 @@ class PreviewEngine(private val context: Context) {
         var readyTicks = 0
         /** Set by a jump: the next sync seeks even though the clip has not changed. */
         var forceSeek = false
+        /** When this surface was last sent a seek mid-scrub (PreviewRules.scrubSeekDue). */
+        var lastScrubSeekAt = 0L
         /** A clip covers the playhead on this surface (rather than being parked ahead). */
         var covering = false
         var wasVisible = false
@@ -1871,8 +1873,14 @@ class PreviewEngine(private val context: Context) {
                 player.seekTo(wanted)
             }
             s.forceSeek -> {
-                s.forceSeek = false
-                player.seekTo(wanted)
+                // Mid-scrub, a player still landing its last seek is left to land
+                // it (PreviewRules.scrubSeekDue); forceSeek stays set, so the
+                // newest moment is asked for on a later tick.
+                if (!scrubbing || PreviewRules.scrubSeekDue(now, s.lastScrubSeekAt, player.playbackState == Player.STATE_BUFFERING)) {
+                    s.forceSeek = false
+                    if (scrubbing) s.lastScrubSeekAt = now
+                    player.seekTo(wanted)
+                }
             }
             // Zero by construction while this surface drives the clock, so playback
             // is never interrupted by its own correction.

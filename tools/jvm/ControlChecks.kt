@@ -1864,6 +1864,33 @@ fun main() {
         )
     }
 
+    // ---- A scrub moves a texture; it does not rebuild the strip. ------------
+    //
+    // EDGE_PLAN C3. The moment under the playhead was read in TimelineEditor's
+    // composition, so every frame of a scrub, a fling or playback rebuilt the
+    // whole function and every lane's arguments: on the moto's release build a
+    // scrub's median frame was 30 ms and its p90 71 ms against a 11.1 ms panel.
+    // The composition reads the drawn window, a derived state that moves in
+    // quarter-screen steps; the live one is read by the slide's graphics layer
+    // and by the gestures, which the composition never sees.
+    run {
+        val editor = read("$SRC/timeline/TimelineEditor.kt")
+        check(
+            editor.contains("derivedStateOf { TimelineWindow.slideFor(liveWindow()).drawn }"),
+            "the strip's drawn window is not a derived state of the live one - read plainly, the " +
+                "composition follows the playhead and rebuilds every lane on every frame of a scrub"
+        )
+        check(
+            !Regex("""(?m)^    val (window|centre) = """).containsMatchIn(editor),
+            "TimelineEditor reads the live playhead into its composition again (a top-level `val window =` " +
+                "or `val centre =`) - every frame of a scrub recomposes the strip"
+        )
+        check(
+            Regex("""translationX = drawShift\(\)[\s\S]{0,400}compositingStrategy = CompositingStrategy\.Offscreen""").containsMatchIn(editor),
+            "the strip's rows are not slid in the draw phase as one offscreen layer - the GPU redraws every tile and wave each frame"
+        )
+    }
+
     println("controls: the conventions that, broken, make a control lie")
     if (problems.isEmpty()) println("PASS - the film goes where the finger goes under a playhead that holds in the middle, and every list has a branch for every entry")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

@@ -179,14 +179,17 @@ object Transcript {
 
         val keptWords = mutableListOf<String>()
         val keptStarts = mutableListOf<Long>()
+        val keptAt = mutableListOf<Int>()
         parts.forEachIndexed { i, word ->
             val at = line.startMs + line.wordStartsMs[i]
             if (at < from) {
                 keptWords += word
                 keptStarts += at - start
+                keptAt += i
             } else if (at >= to) {
                 keptWords += word
                 keptStarts += at - span - start
+                keptAt += i
             }
         }
         if (keptWords.isEmpty()) return null
@@ -194,7 +197,8 @@ object Transcript {
             text = keptWords.joinToString(" "),
             startMs = start,
             endMs = maxOf(end, start + 1),
-            wordStartsMs = keptStarts
+            wordStartsMs = keptStarts,
+            kept = keptAt
         )
     }
 
@@ -210,6 +214,12 @@ object Transcript {
         val text: String,
         val startMs: Long,
         val endMs: Long,
-        val wordStartsMs: List<Long> = emptyList()
+        val wordStartsMs: List<Long> = emptyList(),
+        /**
+         * After [afterRemoval]: which of the line's words before it are its words
+         * now, by their old places - so what is kept per word (a colour, a picked-out
+         * word, an emoji) follows its word. Null when every word stayed.
+         */
+        val kept: List<Int>? = null
     )
 }

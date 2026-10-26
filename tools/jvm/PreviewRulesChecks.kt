@@ -159,6 +159,33 @@ fun main() {
     check("each wait is longer than the last until the cap", gaps.zipWithNext().all { (a, b) -> b >= a })
     check("no reload storm: fewer than 6 reloads in 40 s", reloadTimes.size < 6)
 
+    // ---- Scrub seeks are coalesced (EDGE_PLAN C3) -------------------------------
+    run {
+        // A drag's steps every 16 ms against a decoder that takes 70 ms to land each seek.
+        var last = -1_000L
+        var landsAt = -1L
+        var sent = 0
+        var t = 0L
+        var longestWait = 0L
+        var askedAt = -1L
+        while (t <= 2_000L) {
+            val busy = t < landsAt
+            if (askedAt < 0) askedAt = t
+            if (PreviewRules.scrubSeekDue(t, last, busy)) {
+                longestWait = maxOf(longestWait, t - askedAt)
+                askedAt = -1L
+                last = t; landsAt = t + 70; sent++
+            }
+            t += 16
+        }
+        check("a 2 s scrub against a 70 ms decoder sends at most ~one seek per landing ($sent)", sent in 20..30)
+        check("no step waits past the cap for its seek ($longestWait ms)", longestWait <= PreviewRules.SCRUB_SEEK_MAX_WAIT_MS + 16)
+        check("a free player is sent the next seek once the gap has passed", PreviewRules.scrubSeekDue(1_050L, 1_000L, busy = false))
+        check("never twice inside the gap", !PreviewRules.scrubSeekDue(1_049L, 1_000L, busy = false))
+        check("a stuck player is still sent the newest moment after the cap", PreviewRules.scrubSeekDue(1_200L, 1_000L, busy = true))
+        check("a busy player inside the cap is left to land", !PreviewRules.scrubSeekDue(1_150L, 1_000L, busy = true))
+    }
+
     // ---- Scrubs ---------------------------------------------------------------
     val scrub = ScrubDetector()
     check("a single jump is not a scrub", !scrub.onSeek(10_000L))

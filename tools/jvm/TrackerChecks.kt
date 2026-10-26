@@ -141,6 +141,52 @@ fun main() {
         check(!step.confidence.isNaN(), "a search at the edge scored NaN")
     }
 
+    // ---- Its size is followed, and a lost thing is found again (EDGE_PLAN F8) ----
+    run {
+        val w = 240
+        val h = 180
+        // A textured square, half-size [s], at ([cx], [cy]): the same pattern at every size.
+        fun scene(cx: Float, cy: Float, s: Float?): LumaFrame {
+            val px = FloatArray(w * h) { background(it % w, it / w) }
+            if (s != null) for (y in 0 until h) for (x in 0 until w) {
+                val u = (x - cx) / s
+                val v = (y - cy) / s
+                if (abs(u) <= 1f && abs(v) <= 1f) px[y * w + x] = 0.5f + 0.25f * kotlin.math.sin(4f * u) + 0.2f * kotlin.math.cos(5f * v + u) + if (u > 0.4f && v < -0.3f) 0.2f else 0f
+            }
+            return LumaFrame(w, h, px)
+        }
+        val s0 = 12f
+        val size = 25
+        val start = scene(70f, 90f, s0)
+        val tmpl = FloatArray(size * size) { i -> start.pixels[(90 - 12 + i / size) * w + (70 - 12 + i % size)] }
+        val tracker = ObjectTracker(tmpl, size, size)
+        var x = 70f
+        var y = 90f
+        // Twenty-five frames walking right and growing to 1.6 times its size.
+        for (f in 1..25) {
+            val step = tracker.step(scene(70f + f * 2f, 90f, s0 * (1f + 0.6f * f / 25f)), x, y, 16)
+            if (step.confidence >= com.squish.app.media.video.MotionTrack.LOST_BELOW) { x = step.x; y = step.y }
+        }
+        check(abs(tracker.scale - 1.6f) <= 0.12f, "the size was followed to ${tracker.scale}, not 1.6")
+        check(abs(x - 120f) <= 2f && abs(y - 90f) <= 2f, "the growing thing was followed to ($x, $y), not (120, 90)")
+        val grownAt = tracker.scale
+        // Gone for six frames: lost, and not found in the background.
+        var lostSaid = 0
+        for (f in 1..6) {
+            val step = tracker.step(scene(0f, 0f, null), x, y, 16)
+            if (step.confidence < com.squish.app.media.video.MotionTrack.LOST_BELOW) lostSaid++ else { x = step.x; y = step.y }
+        }
+        check(lostSaid == 6, "only $lostSaid of 6 empty frames were said to be lost")
+        // Back, 80 px away - far outside one step's search - and found again within three frames.
+        var foundIn = -1
+        for (f in 1..6) {
+            val step = tracker.step(scene(40f, 60f, s0 * grownAt), x, y, 16)
+            if (step.confidence >= com.squish.app.media.video.MotionTrack.LOST_BELOW) { x = step.x; y = step.y }
+            if (foundIn < 0 && abs(x - 40f) <= 2f && abs(y - 60f) <= 2f) foundIn = f
+        }
+        check(foundIn in 1..3, "the thing that came back was found ${if (foundIn < 0) "never" else "after $foundIn frames"}")
+    }
+
     println("tracker: ${13 * 13} offsets searched, $exact found exactly")
     if (problems.isEmpty()) println("PASS - the search finds the patch where the patch is, and holds still when it holds still")
     else { println("FAIL (${problems.size})"); problems.take(20).forEach { println("  - $it") }; exitProcess(1) }

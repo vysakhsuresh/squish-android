@@ -36,8 +36,9 @@ internal fun Filmstrip(
     times: List<Long>,
     modifier: Modifier = Modifier
 ) {
+    com.squish.app.util.PerfFlags.hit("Filmstrip")
     val context = LocalContext.current
-    if (times.isEmpty()) return
+    if (times.isEmpty() || com.squish.app.util.PerfFlags.on("nofilm")) return
 
     // Straight from the cache, so a zoom or a scroll redraws the strip in the
     // same frame instead of blanking it. Reading the arrival count is what

@@ -264,6 +264,53 @@ object CaptionWords {
         return start until start + shown[at].length
     }
 
+    /**
+     * [shown] with each word's picked emoji after it (EDGE_PLAN E2), [from]
+     * being the place in the whole line of its first word. Held to its word by
+     * a no-break space, so the text still splits into the same words and every
+     * range worked out on it - the word being said, a colour, a picked-out
+     * word - still lands on the right one.
+     */
+    fun decorated(shown: String, from: Int, emoji: Map<Int, String>): String {
+        if (emoji.isEmpty() || shown.isEmpty()) return shown
+        return words(shown).mapIndexed { i, w ->
+            val e = emoji[from + i]
+            if (e.isNullOrBlank() || w.isEmpty()) w else "$w${NO_BREAK_SPACE}$e"
+        }.joinToString(" ")
+    }
+
+    /** Where each picked-out word of the line (by its place in the whole line) sits in [shown], from [from]. */
+    fun emphasised(shown: String, from: Int, emphasis: Set<Int>): List<IntRange> {
+        if (emphasis.isEmpty() || shown.isEmpty()) return emptyList()
+        val out = ArrayList<IntRange>()
+        var at = 0
+        words(shown).forEachIndexed { i, w ->
+            if ((from + i) in emphasis && w.isNotEmpty()) out += at until at + w.length
+            at += w.length + 1
+        }
+        return out
+    }
+
+    /** U+00A0, spelled by its number: an invisible character in the source is one nobody can see to check. */
+    val NO_BREAK_SPACE: Char = Char(0xA0)
+
+    /** How much bigger a picked-out word is than the rest of its line. */
+    const val EMPHASIS_SCALE = 1.3f
+
+    /** How big the second language is beside the first. */
+    const val SECOND_LINE_SCALE = 0.72f
+
+    /**
+     * The block drawn for a line kept in two languages (EDGE_PLAN P4): the line,
+     * and under it the other language, when both are shown. Returns the text
+     * and where the second language starts in it, or -1 for none - appended
+     * after the first, so every range worked out on the first is unchanged.
+     */
+    fun withSecondLine(first: String, second: String?, showBoth: Boolean): Pair<String, Int> {
+        if (!showBoth || second.isNullOrBlank() || first.isEmpty()) return first to -1
+        return "$first\n${second.trim()}" to first.length + 1
+    }
+
     /** The stretch of [shown]'s text the highlight colour covers under [mode], or null for none. */
     fun coloured(mode: WordMode, shown: List<String>, state: WordState): IntRange? {
         if (state.active < 0) return null

@@ -91,6 +91,45 @@ fun main() {
     check(presets.map { it.label }.toSet().size == presets.size, "two caption presets share a name")
     check(presets.count { it.style.words.isOn } >= 12, "only ${presets.count { it.style.words.isOn }} presets style words")
 
+    // ---- Keyword emphasis, an emoji after a word, a second language (E2, P4) ----
+    run {
+        val line = "make it loud and proud"
+        // An emoji is held to its word: the line still splits into the same words.
+        val dec = CaptionWords.decorated(line, 0, mapOf(2 to "🔥"))
+        check(CaptionWords.words(dec).size == 5, "an emoji changed the word count: '$dec'")
+        check(CaptionWords.words(dec)[2].startsWith("loud") && CaptionWords.words(dec)[2].endsWith("🔥"), "the emoji is not after word 2: '$dec'")
+        check(CaptionWords.words(dec)[3] == "and", "the emoji moved the next word: '$dec'")
+        // On a page, the emoji goes by the word's place in the whole line.
+        val page = CaptionWords.decorated("loud and", 2, mapOf(2 to "🔥", 0 to "😂"))
+        check(page == "loud${CaptionWords.NO_BREAK_SPACE}🔥 and", "a page's emoji went by its place on the page: '$page'")
+        // The word being said is still the right one with an emoji before it.
+        val st = WordState(0, 5, 3)
+        val range = CaptionWords.charRange(CaptionWords.words(dec), st, 3)
+        check(range != null && dec.substring(range.first, range.last + 1) == "and", "the lit word after an emoji is '${range?.let { dec.substring(it.first, it.last + 1) }}'")
+        // Picked-out words, by their place in the line, on the decorated text and on a page.
+        val picked = CaptionWords.emphasised(dec, 0, setOf(0, 4))
+        check(picked.map { dec.substring(it.first, it.last + 1) } == listOf("make", "proud"), "picked-out ranges: ${picked.map { dec.substring(it.first, it.last + 1) }}")
+        check(CaptionWords.emphasised("loud and", 2, setOf(0, 3)).size == 1, "a page picked out a word not on it")
+        // The second language goes after the first, so every range on the first is unchanged.
+        val (both, at) = CaptionWords.withSecondLine(dec, "hazlo fuerte", showBoth = true)
+        check(at == dec.length + 1 && both.startsWith(dec) && both.substring(at) == "hazlo fuerte", "second line: '$both' at $at")
+        check(CaptionWords.charRange(CaptionWords.words(dec), st, 3) == range, "the second line moved the lit word")
+        check(CaptionWords.withSecondLine(dec, "hazlo", showBoth = false).second == -1, "a second line drawn with Show both off")
+        check(CaptionWords.withSecondLine(dec, "  ", showBoth = true).second == -1, "a blank second line drawn")
+
+        // Words taken out by the transcript take what they kept with them; the rest keep theirs.
+        val styled = TextOverlayItem(
+            id = "l", text = line, startMs = 0, endMs = 5_000, colorArgb = -1,
+            wordColors = mapOf(1 to 0xFF00FF00.toInt(), 4 to 0xFFFF0000.toInt()),
+            emphasis = setOf(2, 4), wordEmoji = mapOf(2 to "🔥", 3 to "😂")
+        )
+        // "it" (1) and "and" (3) went: kept are 0, 2, 4 -> now 0, 1, 2.
+        val after = styled.keptWords(listOf(0, 2, 4))
+        check(after.wordColors == mapOf(2 to 0xFFFF0000.toInt()), "colours after removal: ${after.wordColors}")
+        check(after.emphasis == setOf(1, 2), "picked-out words after removal: ${after.emphasis}")
+        check(after.wordEmoji == mapOf(1 to "🔥"), "emoji after removal: ${after.wordEmoji}")
+    }
+
     if (problems.isEmpty()) println("CaptionWordsChecks: all checks passed")
     else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
 }

@@ -82,6 +82,23 @@ data class TextOverlayItem(
      */
     val knockout: Boolean = false,
     /**
+     * Words picked out by hand (EDGE_PLAN E2, keyword emphasis), by their place
+     * in the line: drawn bigger and in the highlight colour - or their own
+     * colour from [wordColors]. The line's own, not its style.
+     */
+    val emphasis: Set<Int> = emptySet(),
+    /** An emoji after a word, picked by hand, by the word's place in the line (EDGE_PLAN E2). */
+    val wordEmoji: Map<Int, String> = emptyMap(),
+    /**
+     * The line in a second language, kept beside the first (EDGE_PLAN E2, P4):
+     * a translation made with "Keep the original". [showBoth] draws it under
+     * the line, smaller, as one block; [secondLangs] says which way it went
+     * ("en>hi"), so a line whose words change can be translated again.
+     */
+    val secondLine: String? = null,
+    val showBoth: Boolean = false,
+    val secondLangs: String? = null,
+    /**
      * Where each word of an auto-caption starts, from [startMs], as the
      * segmenter heard them; empty for a line typed by hand. Read by the Words
      * arrival, so the words land on the speech.
@@ -138,6 +155,22 @@ data class TextOverlayItem(
      */
     val stripRow: Int = 0
 ) {
+    /**
+     * What this line keeps per word - a colour, a picked-out word, an emoji -
+     * carried onto its words after some were taken out: [kept] lists, for each
+     * word it has now, that word's old place. A word that went takes its own
+     * with it, and the ones after it keep theirs rather than passing them along.
+     */
+    fun keptWords(kept: List<Int>): TextOverlayItem {
+        val newAt = kept.withIndex().associate { (now, was) -> was to now }
+        fun <V> carry(map: Map<Int, V>): Map<Int, V> = map.mapNotNull { (was, v) -> newAt[was]?.let { it to v } }.toMap()
+        return copy(
+            wordColors = carry(wordColors),
+            wordEmoji = carry(wordEmoji),
+            emphasis = emphasis.mapNotNull { newAt[it] }.toSet()
+        )
+    }
+
     /** Where the caption sits at a moment, following its track if it has one. */
     fun anchorAt(timelineMs: Long): Pair<Float, Float> {
         val sample = track?.sampleAt(timelineMs) ?: return xFraction to yFraction

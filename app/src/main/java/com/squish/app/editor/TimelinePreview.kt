@@ -235,6 +235,7 @@ fun TimelinePreview(
     val latestPosition by rememberUpdatedState(onPositionChange)
     val latestPlaying by rememberUpdatedState(onPlayingChange)
 
+    com.squish.app.util.PerfFlags.hit("Preview")
     var frame by remember { mutableStateOf(PreviewFrame()) }
 
     DisposableEffect(engine) {
@@ -302,7 +303,7 @@ fun TimelinePreview(
     LaunchedEffect(scrubNonce) { engine.seekTo(playheadMs) }
     // The strip's drag, moment by moment, without a recomposition per moment:
     // see EditorViewModel.scrubLive. Collected, not composed.
-    LaunchedEffect(liveSeeks) { liveSeeks?.collect { engine.seekTo(it) } }
+    LaunchedEffect(liveSeeks) { liveSeeks?.collect { if (!com.squish.app.util.PerfFlags.on("noseek")) engine.seekTo(it) } }
 
     // Nothing plays behind the user's back. Home, the lock button, a call, the
     // photo picker: the transport stops, and it is where it was on the way back.
@@ -836,6 +837,7 @@ private fun VideoSurface(
     kept: PreviewBox.Frame
 ) {
     val shapeMask = remember { TransitionMask() }
+    if (com.squish.app.util.PerfFlags.on("nosurface")) return
     // The outer box is the canvas: the clip's placement and the transition act
     // on it, in the canvas's own units, after the fit and the rotation - the
     // order the export applies them in. On a padded canvas it used to be the

@@ -951,6 +951,12 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
     fun translateCaptions(
         from: String,
         to: String,
+        /**
+         * Keep the words and put the translation beside them, both on the
+         * picture (EDGE_PLAN P4), rather than in their place: the timings stay,
+         * so the word being said still lights on the original line.
+         */
+        keepOriginal: Boolean = false,
         // Line by line over the network: thirty lines were tens of seconds
         // with nothing to count and no way to stop.
         onProgress: (sent: Int, of: Int) -> Unit = { _, _ -> },
@@ -981,11 +987,11 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                 } catch (e: Exception) { null }
                 if (out != null) done[line.id] = line.text to out
             }
-            landTranslation(done, lines.size, onDone)
+            landTranslation(done, lines.size, if (keepOriginal) "$from>$to" else null, onDone)
         }
     }
 
-    private fun landTranslation(done: Map<String, Pair<String, String>>, lines: Int, onDone: (Int, Int) -> Unit) {
+    private fun landTranslation(done: Map<String, Pair<String, String>>, lines: Int, keptAs: String?, onDone: (Int, Int) -> Unit) {
         run {
             if (done.isEmpty()) return onDone(0, lines)
             recordLate("Translate captions", edit = { snapshot ->
@@ -993,7 +999,11 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                     val (sent, got) = done[item.id] ?: return@map item
                     // Only a line still saying what was sent: one retyped meanwhile is the person's.
                     // New words are not the words the segmenter timed.
-                    if (item.text == sent) item.copy(text = got, wordStartsMs = emptyList()) else item
+                    when {
+                        item.text != sent -> item
+                        keptAs != null -> item.copy(secondLine = got, showBoth = true, secondLangs = keptAs)
+                        else -> item.copy(text = got, wordStartsMs = emptyList(), secondLine = null, showBoth = false, secondLangs = null)
+                    }
                 })
             })
             onDone(done.size, lines)
@@ -1175,19 +1185,63 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
                         textOverlays = s.textOverlays.mapNotNull { item ->
                             com.squish.app.editor.Transcript
                                 .afterRemoval(item.asTranscriptLine(), span.first, span.last)
-                                ?.let { line ->
-                                    item.copy(
-                                        text = line.text,
-                                        startMs = line.startMs,
-                                        endMs = line.endMs,
-                                        wordStartsMs = line.wordStartsMs
-                                    )
-                                }
+                                ?.let { line -> item.afterWordsKept(line) }
                         },
                         selectedClipId = null
                     )
                 }
             }
+        }
+        retranslatePending()
+    }
+
+    /**
+     * This line as the transcript left it: its words, span and timings, and
+     * what it keeps per word carried to the words that stayed
+     * (TextOverlayItem.keptWords). A line kept in two languages whose words
+     * changed loses its second line in the same step - the other language
+     * would still say the words just taken out - and has it translated again
+     * once the step has landed (EDGE_PLAN P4).
+     */
+    private fun TextOverlayItem.afterWordsKept(line: com.squish.app.editor.Transcript.Line): TextOverlayItem {
+        val moved = copy(text = line.text, startMs = line.startMs, endMs = line.endMs, wordStartsMs = line.wordStartsMs)
+        val kept = line.kept ?: return moved
+        val carried = moved.keptWords(kept)
+        if (secondLine == null || line.text == text) return carried
+        retranslateLater += id
+        return carried.copy(secondLine = null)
+    }
+
+    /** Lines whose second language went with their words; translated again after the step lands. */
+    private val retranslateLater = LinkedHashSet<String>()
+
+    /**
+     * Translates again the lines [removeSpans] took the second language off,
+     * each into what it was before ("en>hi"), as one step of its own landed
+     * late. Through the online gate's own switch: with the internet off the
+     * line simply stays in one language, which is true.
+     */
+    private fun retranslatePending() {
+        val ids = retranslateLater.toList()
+        retranslateLater.clear()
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            val done = HashMap<String, Pair<String, String>>()
+            for (id in ids) {
+                val line = _state.value.textOverlays.firstOrNull { it.id == id } ?: continue
+                val (from, to) = line.secondLangs?.split('>')?.takeIf { it.size == 2 } ?: continue
+                val out = try { com.squish.app.online.OnlineTranslate.translate(app, line.text, from, to) }
+                    catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (e: Exception) { null } ?: continue
+                done[id] = line.text to out
+            }
+            if (done.isEmpty()) return@launch
+            recordLate("Translate captions", edit = { snapshot ->
+                snapshot.copy(textOverlays = snapshot.textOverlays.map { item ->
+                    val (sent, got) = done[item.id] ?: return@map item
+                    if (item.text == sent && item.secondLine == null) item.copy(secondLine = got) else item
+                })
+            })
         }
     }
 

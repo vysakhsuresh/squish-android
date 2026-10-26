@@ -100,6 +100,7 @@ import com.squish.app.media.typeface
 import com.squish.app.ui.components.SquishSlider
 import com.squish.app.ui.components.ConfirmDialog
 import com.squish.app.ui.components.SelectableChip
+import com.squish.app.ui.components.SquishToggleSwitch
 import com.squish.app.ui.components.SquishOutlinedButton
 import com.squish.app.ui.components.SquishPrimaryButton
 import com.squish.app.ui.theme.SquishColors
@@ -132,6 +133,8 @@ fun TextPanel(
     val autoLines = lines.count { it.isAutoCaption }
     var notice by remember { mutableStateOf<String?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
+    // Every line a field, to correct a run of captions in one place (EDGE_PLAN E2).
+    var editingAll by rememberSaveable { mutableStateOf(false) }
     // A subtitle file picked while lines are on the timeline: beside them, or instead?
     var importing by remember { mutableStateOf<android.net.Uri?>(null) }
 
@@ -412,7 +415,10 @@ fun TextPanel(
                 accent = SquishColors.Amber,
                 trailing = {
                     if (lines.isNotEmpty()) {
-                        com.squish.app.ui.components.TextAction("Clear all", color = SquishColors.Pink) { confirmClear = true }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            com.squish.app.ui.components.TextAction(if (editingAll) "Done" else "Edit all", color = SquishColors.Amber) { editingAll = !editingAll }
+                            com.squish.app.ui.components.TextAction("Clear all", color = SquishColors.Pink) { confirmClear = true }
+                        }
                     }
                 }
             )
@@ -433,7 +439,10 @@ fun TextPanel(
                         viewModel.seekTo(line.startMs)
                     },
                     onEdit = { onEditLine(it.id) },
-                    onRemove = { viewModel.text.removeTextOverlay(it.id) }
+                    onRemove = { viewModel.text.removeTextOverlay(it.id) },
+                    editing = editingAll,
+                    onText = { line, text -> viewModel.text.updateCaptionText(line.id, text) },
+                    onTextDone = { viewModel.text.endCaptionTyping(it.id) }
                 )
             }
         }
@@ -453,12 +462,20 @@ private fun LinesList(
     selectedId: String?,
     onSelect: (TextOverlayItem) -> Unit,
     onEdit: (TextOverlayItem) -> Unit,
-    onRemove: (TextOverlayItem) -> Unit
+    onRemove: (TextOverlayItem) -> Unit,
+    /**
+     * Every line a field of its own (EDGE_PLAN E2, "edit all lines in one
+     * list"): a run of captions corrected top to bottom without opening each.
+     */
+    editing: Boolean = false,
+    onText: (TextOverlayItem, String) -> Unit = { _, _ -> },
+    onTextDone: (TextOverlayItem) -> Unit = {}
 ) {
     val listState = rememberLazyListState()
     val current = lines.indexOfFirst { playheadMs >= it.startMs && playheadMs < it.endMs }
-    LaunchedEffect(current) {
-        if (current >= 0) listState.animateScrollToItem(current)
+    LaunchedEffect(current, editing) {
+        // Not while typing: the list would scroll the field out from under the cursor.
+        if (current >= 0 && !editing) listState.animateScrollToItem(current)
     }
     LazyColumn(
         state = listState,
@@ -486,15 +503,54 @@ private fun LinesList(
                         style = MaterialTheme.typography.labelSmall,
                         color = SquishColors.Cyan
                     )
-                    Text(
-                        line.text.takeIf { it.isNotBlank() } ?: "Empty text",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (line.text.isBlank()) SquishColors.TextMuted else SquishColors.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    if (editing) {
+                        // Its own copy of the words while typing, so the cursor is not
+                        // put back to the end by each round trip through the edit.
+                        var field by remember(line.id) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(line.text)) }
+                        LaunchedEffect(line.text) { if (line.text != field.text) field = androidx.compose.ui.text.input.TextFieldValue(line.text) }
+                        var hadFocus by remember(line.id) { mutableStateOf(false) }
+                        OutlinedTextField(
+                            value = field,
+                            onValueChange = { typed ->
+                                field = typed
+                                if (typed.text != line.text) onText(line, typed.text)
+                            },
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onFocusChanged {
+                                    if (hadFocus && !it.isFocused) onTextDone(line)
+                                    hadFocus = it.isFocused
+                                }
+                                .semantics { contentDescription = "Line at ${Timecode.format(line.startMs)}" },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = SquishColors.Amber,
+                                unfocusedBorderColor = SquishColors.Border,
+                                focusedTextColor = SquishColors.TextPrimary,
+                                unfocusedTextColor = SquishColors.TextPrimary
+                            )
+                        )
+                    } else {
+                        Text(
+                            line.text.takeIf { it.isNotBlank() } ?: "Empty text",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (line.text.isBlank()) SquishColors.TextMuted else SquishColors.TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    // The line's second language, under it, as the picture shows both (EDGE_PLAN P4).
+                    line.secondLine?.takeIf { it.isNotBlank() }?.let { second ->
+                        Text(
+                            second,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SquishColors.TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
-                com.squish.app.ui.components.TextAction("Edit", color = SquishColors.Amber) { onEdit(line) }
+                if (!editing) com.squish.app.ui.components.TextAction("Edit", color = SquishColors.Amber) { onEdit(line) }
                 com.squish.app.ui.components.TextAction("Remove", color = SquishColors.Pink) { onRemove(line) }
             }
         }
@@ -1097,19 +1153,35 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
                     drag { it.copy(glowStrength = v) }
                 }
             }
+            // A line kept in two languages (EDGE_PLAN P4): both on the picture, or the first alone.
+            item.secondLine?.takeIf { it.isNotBlank() && !item.sticker }?.let { second ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Show both languages", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+                        Text(second, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    SquishToggleSwitch(
+                        checked = item.showBoth,
+                        onCheckedChange = { on -> restyle { it.copy(showBoth = on) } },
+                        label = "Show both languages",
+                        accent = SquishColors.Amber
+                    )
+                }
+            }
             if (!item.sticker) {
                 val lineWords = CaptionWords.words(item.text)
-                if (lineWords.size > 1) {
-                    Text("Colour a word", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
+                if (lineWords.isNotEmpty() && lineWords.any { it.isNotBlank() }) {
+                    // One word at a time: its colour, picked out bigger, an emoji after it (EDGE_PLAN E2, E3).
+                    Text("A word: colour, bigger, an emoji", style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted)
                     SideScrollChips(lineWords.indices.toList(), { it == colouringWord }, Modifier.fillMaxWidth()) { i ->
                         SelectableChip(
-                            label = lineWords[i].ifBlank { "·" },
-                            selected = i == colouringWord || i in item.wordColors,
+                            label = lineWords[i].ifBlank { "·" } + (item.wordEmoji[i]?.let { " $it" } ?: ""),
+                            selected = i == colouringWord || i in item.wordColors || i in item.emphasis,
                             accentColor = item.wordColors[i]?.let { Color(it) } ?: SquishColors.Amber,
                             onClick = { colouringWord = if (colouringWord == i) null else i }
                         )
                     }
-                    colouringWord?.let { i ->
+                    colouringWord?.takeIf { it in lineWords.indices }?.let { i ->
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                             ColourSwatch(item.colorArgb, selected = i !in item.wordColors) {
                                 restyle { it.copy(wordColors = it.wordColors - i) }
@@ -1118,6 +1190,22 @@ fun TextStylePanel(item: TextOverlayItem, viewModel: EditorViewModel, onEyedropp
                                 ColourSwatch(c, selected = item.wordColors[i] == c) {
                                     restyle { it.copy(wordColors = it.wordColors + (i to c)) }
                                 }
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            SelectableChip(
+                                label = "Bigger",
+                                selected = i in item.emphasis,
+                                accentColor = SquishColors.Amber,
+                                onClick = { restyle { it.copy(emphasis = if (i in it.emphasis) it.emphasis - i else it.emphasis + i) } }
+                            )
+                            WORD_EMOJI.forEach { e ->
+                                SelectableChip(
+                                    label = e,
+                                    selected = item.wordEmoji[i] == e,
+                                    accentColor = SquishColors.Amber,
+                                    onClick = { restyle { it.copy(wordEmoji = if (it.wordEmoji[i] == e) it.wordEmoji - i else it.wordEmoji + (i to e)) } }
+                                )
                             }
                         }
                     }
@@ -1575,6 +1663,8 @@ private fun TranslateCard(viewModel: EditorViewModel) {
     var stopped by remember { mutableStateOf(false) }
     var sent by remember { mutableStateOf(0) }
     var sentOf by remember { mutableStateOf(0) }
+    // Both languages on the picture, the original over the translation (EDGE_PLAN P4).
+    var keepBoth by rememberSaveable { mutableStateOf(true) }
     var note by remember { mutableStateOf<String?>(null) }
     PanelSurface(accent = SquishColors.Amber) {
         PanelHeading(
@@ -1595,6 +1685,16 @@ private fun TranslateCard(viewModel: EditorViewModel) {
                 SelectableChip(label = name, selected = to == code, accentColor = SquishColors.Amber, onClick = { to = code })
             }
         }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("Keep the original too", style = MaterialTheme.typography.bodyMedium, color = SquishColors.TextPrimary)
+                Text(
+                    if (keepBoth) "Both on the picture: the original, the translation under it" else "The translation replaces the words",
+                    style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted
+                )
+            }
+            SquishToggleSwitch(checked = keepBoth, onCheckedChange = { keepBoth = it }, label = "Keep the original too", accent = SquishColors.Amber)
+        }
         SquishOutlinedButton(
             text = if (working) (if (sentOf > 0) "Translating ${sent + 1} of $sentOf · tap to stop" else "Translating… · tap to stop") else "Translate captions",
             modifier = Modifier.fillMaxWidth(),
@@ -1614,7 +1714,7 @@ private fun TranslateCard(viewModel: EditorViewModel) {
                     stopped = false
                     sentOf = 0
                     note = null
-                    viewModel.text.translateCaptions(from, to, onProgress = { i, of -> sent = i; sentOf = of }) { n, of ->
+                    viewModel.text.translateCaptions(from, to, keepOriginal = keepBoth, onProgress = { i, of -> sent = i; sentOf = of }) { n, of ->
                         working = false
                         note = when {
                             of == 0 -> "No lines of words to translate."
@@ -1651,6 +1751,9 @@ private val GRADIENT_FILLS: List<Pair<String, List<Int>>> = listOf(
 )
 
 /** The highlight colours offered for the word being said: the ones reels use, each readable on a dark and a light shot. */
+/** The emoji offered after a word: the ones reels put after a word most. */
+private val WORD_EMOJI = listOf("🔥", "😂", "😍", "🤯", "👀", "💯", "✅", "❤️", "🎉", "👇", "😭", "🙌")
+
 private val WORD_COLOURS = listOf(
     WordStyle.HIGHLIGHT_YELLOW, 0xFF22C55E.toInt(), 0xFF5CE1E6.toInt(), 0xFFFF4FA3.toInt(),
     0xFFFF3B30.toInt(), 0xFFFF9F1C.toInt(), 0xFF8B5CF6.toInt(), 0xFFFFFFFF.toInt()

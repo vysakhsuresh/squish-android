@@ -60,6 +60,12 @@ internal object DraftTextCodec {
         // A colour for single words (EDGE_PLAN E3), by their place in the line.
         if (item.wordColors.isNotEmpty()) put("wordColors", JSONObject().apply { item.wordColors.forEach { (k, v) -> put(k.toString(), v) } })
         if (item.knockout) put("knockout", true)
+        // Keyword emphasis, an emoji after a word and a second language (EDGE_PLAN E2, P4).
+        if (item.emphasis.isNotEmpty()) put("emphasis", JSONArray(item.emphasis.sorted()))
+        if (item.wordEmoji.isNotEmpty()) put("wordEmoji", JSONObject().apply { item.wordEmoji.forEach { (k, v) -> put(k.toString(), v) } })
+        item.secondLine?.let { put("secondLine", it) }
+        if (item.showBoth) put("showBoth", true)
+        item.secondLangs?.let { put("secondLangs", it) }
         put("sticker", item.sticker)
         // Written only when it is one, so a draft of words is the shape it
         // always was and an older build reading this one simply finds no shape.
@@ -118,6 +124,11 @@ internal object DraftTextCodec {
             loopMs = json.optLong("loopMs", TextAnimation.DEFAULT_LOOP_MS),
             wordStartsMs = json.optJSONArray("wordStarts")?.let { a -> (0 until a.length()).map { a.optLong(it) } }.orEmpty(),
             knockout = json.optBoolean("knockout", false),
+            emphasis = json.optJSONArray("emphasis")?.let { a -> (0 until a.length()).map { a.optInt(it) }.toSet() }.orEmpty(),
+            wordEmoji = json.optJSONObject("wordEmoji")?.let { o -> o.keys().asSequence().mapNotNull { k -> k.toIntOrNull()?.let { it to o.optString(k) } }.filter { it.second.isNotEmpty() }.toMap() }.orEmpty(),
+            secondLine = json.optString("secondLine").takeIf { it.isNotEmpty() },
+            showBoth = json.optBoolean("showBoth", false),
+            secondLangs = json.optString("secondLangs").takeIf { it.isNotEmpty() },
             wordColors = json.optJSONObject("wordColors")?.let { o -> o.keys().asSequence().mapNotNull { k -> k.toIntOrNull()?.let { it to o.optInt(k) } }.toMap() }.orEmpty(),
             sticker = json.optBoolean("sticker", false),
             shape = AnnotationShape.named(json.optString("shape").takeIf { it.isNotEmpty() }),

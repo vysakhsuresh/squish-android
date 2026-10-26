@@ -13,6 +13,9 @@ class SquishApplication : Application() {
         // disk before the one asked for (MusicLibrary.warmUp).
         Thread({
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            // How many overlay rows take footage, from the decoder's own figure (EDGE_PLAN C4).
+            com.squish.app.timeline.FootageRows.value =
+                com.squish.app.media.DecoderBudget.footageRows(com.squish.app.media.DecoderCapacity.blocksPerSecond)
             com.squish.app.av.AvNative.loaded
             runCatching { com.squish.app.media.audio.MusicLibrary.warmUp(this) }
         }, "squish-warmup").start()

@@ -127,6 +127,7 @@ fun EditorScreen(
     onExported: (String) -> Unit,
     viewModel: EditorViewModel = viewModel()
 ) {
+    com.squish.app.util.PerfFlags.hit("EditorScreen")
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
 
@@ -629,6 +630,7 @@ fun EditorScreen(
                     )
                 }
                 val controls = @Composable { compactStrip: Boolean, rowsHeight: Dp ->
+                    com.squish.app.util.PerfFlags.hit("Controls")
                     val timeline = state.toTimeline()
                     TimelineEditor(
                         state = timeline,

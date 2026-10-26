@@ -64,6 +64,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -168,6 +169,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 // for no visible reason.
                 withContext(Dispatchers.IO) { saveNow() }
             }
+        }
+        // Footage laid over footage: once the edit asks the decoder for more
+        // than it can play at one moment, the files there get their light copy
+        // (EDGE_PLAN C4). Looked at a second after the edit stops changing.
+        viewModelScope.launch {
+            _state.map { s -> s.videoClips.map { Triple(it.uri, it.timelineStartMs, it.timelineEndMs) } }
+                .distinctUntilChanged()
+                .collectLatest { delay(BUDGET_SETTLE_MS); recheckDecoderBudget() }
         }
         // Told from the state rather than at each place an export starts or
         // stops - there are five - so nothing can be left counted as exporting.
@@ -1820,6 +1829,41 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /** Each video file's size and rate, as buildProxy probed it: what the decoder budget counts. */
+    private val footageOf = HashMap<Uri, com.squish.app.media.ProxyRules.Footage>()
+
+    /**
+     * The files that need a light copy for the edit to play on this phone's
+     * decoder (DecoderBudget.needingCopies): footage stacked over footage past
+     * what the decoder can play at once. Only files already probed are counted.
+     */
+    private fun decoderBudgetCopies(): Set<Uri> {
+        val streams = _state.value.videoClips.mapNotNull { clip ->
+            val uri = clip.uri ?: return@mapNotNull null
+            if (StillClips.isStill(uri)) return@mapNotNull null
+            val f = footageOf[uri] ?: return@mapNotNull null
+            val fps = if (f.fps > 0f) f.fps else 30f
+            com.squish.app.media.DecoderBudget.Stream(
+                uri.toString(), clip.timelineStartMs, clip.timelineEndMs,
+                com.squish.app.media.DecoderBudget.load(f.width, f.height, fps),
+                com.squish.app.media.DecoderBudget.proxyLoad(f.width, f.height, fps)
+            )
+        }
+        return com.squish.app.media.DecoderBudget.needingCopies(streams, com.squish.app.media.DecoderCapacity.blocksPerSecond)
+            .map { Uri.parse(it) }.toSet()
+    }
+
+    /** A file once judged not to need a copy is looked at again when the budget says it now does. */
+    private fun recheckDecoderBudget() {
+        val app = getApplication<Application>()
+        if (com.squish.app.settings.Preferences.previewQuality(app) == com.squish.app.media.ProxyRules.Quality.Full) return
+        val statuses = _state.value.proxyStatuses
+        val again = decoderBudgetCopies().filter { statuses[it] == ProxyStatus.NotNeeded }
+        if (again.isEmpty()) return
+        _state.update { it.copy(proxyStatuses = it.proxyStatuses - again.toSet()) }
+        ensureProxies(again)
+    }
+
     private suspend fun buildProxy(uri: Uri) {
         val app = getApplication<Application>()
         val meta = ThumbnailExtractor.probe(app, uri)
@@ -1841,7 +1885,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             durationMs = meta.durationMs,
             codec = stream?.codec.orEmpty(), bits = stream?.bits ?: 0, bitRate = stream?.bitRate ?: 0L
         )
-        if (!com.squish.app.media.ProxyRules.worth(footage, com.squish.app.settings.Preferences.previewQuality(app))) {
+        footageOf[uri] = footage
+        val quality = com.squish.app.settings.Preferences.previewQuality(app)
+        val overBudget = quality != com.squish.app.media.ProxyRules.Quality.Full && uri in decoderBudgetCopies()
+        if (!overBudget && !com.squish.app.media.ProxyRules.worth(footage, quality)) {
+            // Its size is known now: another file's place in the budget may change with it.
+            recheckDecoderBudget()
             status(ProxyStatus.NotNeeded)
             return
         }
@@ -1901,6 +1950,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private companion object {
         /** How long after the editor shows before a light preview copy starts (ensureProxies). */
         const val PROXY_START_DELAY_MS = 2_500L
+        /** How long the edit has to stay still before the decoder budget is looked at again. */
+        const val BUDGET_SETTLE_MS = 1_000L
 
         val AUTOSAVE_INTERVAL = 1_500.milliseconds
         /** Allowed on top of a shown moment for the seek and the start. */

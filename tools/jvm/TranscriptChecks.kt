@@ -165,6 +165,8 @@ fun main() {
         // "four" was at 4000 and the stretch was a second: it is at 3000 now,
         // which is 2000 into a line that still starts at 1000.
         check(cut.wordStartsMs == listOf(0L, 1_000L, 2_000L), "the kept words are timed ${cut.wordStartsMs}")
+        // Which words those are, by their old places, so what each word kept follows it (EDGE_PLAN E2).
+        check(cut.kept == listOf(0, 1, 3), "the kept words are said to be ${cut.kept}")
     }
 
     // --- A line straddling each edge. ---------------------------------------

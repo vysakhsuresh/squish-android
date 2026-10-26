@@ -58,6 +58,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -77,6 +78,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -355,6 +358,7 @@ fun TimelineEditor(
     // hundred lines, and a whitespace diff over all of them would bury the one
     // line that matters here and in every later blame.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+    com.squish.app.util.PerfFlags.hit("Strip")
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
 
@@ -378,25 +382,33 @@ fun TimelineEditor(
      * strip because the playhead moves.
      */
     var heldMs by remember { mutableStateOf<Double?>(null) }
-    val centre = heldMs ?: (livePlayheadMs?.invoke() ?: state.playheadMs).toDouble()
+    val latestState by rememberUpdatedState(state)
+    val latestLive by rememberUpdatedState(livePlayheadMs)
 
     /**
      * The window onto the edit. Only what is on screen is built, so what the strip
      * costs to lay out does not depend on how long the video is, and a three-hour
      * clip zooms to the frame exactly like a three-second one.
+     *
+     * **Read, never captured** (EDGE_PLAN C3). The moment under the playhead moves
+     * every frame of a scrub, a fling and playback; read here in composition, it
+     * rebuilt this whole function - eight hundred lines, every lane's arguments -
+     * on every one of those frames, which was most of a scrub's 30 ms. Now the
+     * composition reads only [drawWindow], which moves in quarter-screen steps,
+     * and the live window is read where it is wanted: by the graphics layer that
+     * slides the drawn strip (the draw phase, no composition), and by the gestures
+     * at the moment they run.
      */
+    val pps = state.pixelsPerSecond.coerceIn(MIN_PPS, MAX_PPS)
+    val geometry = rememberUpdatedState(Triple(pps, density.density, viewportPx))
     // The playhead in the middle at every moment and the film moving under it,
     // 0:00 included. See TimelineWindow.PLAYHEAD_FRACTION for the three earlier
     // models and what each was reported as.
-    val window = TimelineWindow.linedOn(
-        atMs = centre,
-        pixelsPerSecond = state.pixelsPerSecond.coerceIn(MIN_PPS, MAX_PPS),
-        density = density.density,
-        viewportPx = viewportPx
-    )
-    // Where the playhead line is drawn. A constant, but read off the window
-    // rather than recomputed, so the line and the film cannot part.
-    val playheadPx = window.pxForMs(centre - window.scrollMs)
+    fun liveWindow(): TimelineWindow {
+        val (p, d, v) = geometry.value
+        val centre = heldMs ?: (latestLive?.invoke() ?: latestState.playheadMs).toDouble()
+        return TimelineWindow.linedOn(atMs = centre, pixelsPerSecond = p, density = d, viewportPx = v)
+    }
 
     /**
      * The window the ruler and the rows are *drawn* from: the same scale, a
@@ -404,27 +416,24 @@ fun TimelineEditor(
      * side. Between steps the drawn strip is slid on the GPU by what the live
      * centre is past the drawn one (the graphicsLayer on the rows' column), so
      * playing and scrubbing move pixels instead of rebuilding every clip, tile
-     * and wave on every frame - which they did, since [window] is new each
-     * frame and every lane took it (a scrub ran at 20 ms a frame on a phone).
-     * Gestures and the layout keep [window]: what a finger lands on is exact.
+     * and wave on every frame. A derived state, so the composition that reads it
+     * is told only when the step changes, not when the centre moves inside it.
      */
-    val slide = remember(window) { TimelineWindow.slideFor(window) }
-    val drawPadPx = slide.padPx
-    val drawWindow = slide.drawn
-    val drawShiftPx = slide.shiftPx
-    val drawShiftState = rememberUpdatedState(drawShiftPx)
-    // The add button sits on the playhead. Zero while the line is where the
-    // window puts it, which is always - kept as the difference so that the two
-    // cannot silently part if either ever moves.
-    val playheadOffState = rememberUpdatedState(playheadPx - window.linePx)
-    val counterShift: () -> Float = remember { { -drawShiftState.value + playheadOffState.value } }
+    val drawnState = remember { derivedStateOf { TimelineWindow.slideFor(liveWindow()).drawn } }
+    val drawWindow = drawnState.value
+    val drawPadPx = viewportPx / 2
+    /** How far the drawn strip is slid this frame: read in a graphics layer, so the draw phase reads it and nothing recomposes. */
+    val drawShift: () -> Float = remember { { TimelineWindow.slideFor(liveWindow()).shiftPx } }
+    // Where the playhead line is drawn: a constant fraction of the strip, the
+    // same number the window puts the centre at, so the line and the film cannot part.
+    val playheadPx = viewportPx * TimelineWindow.PLAYHEAD_FRACTION
+    // The add button sits on the playhead, so it undoes the slide.
+    val counterShift: () -> Float = remember { { -drawShift() } }
 
     // Read fresh inside gestures: the pointerInput blocks are keyed on Unit so
     // they survive a zoom, and a captured value would go stale on the first pinch.
     val latestZoomTo by rememberUpdatedState(onZoomTo)
-    val latestWindow by rememberUpdatedState(window)
-    val latestState by rememberUpdatedState(state)
-    val latestLive by rememberUpdatedState(livePlayheadMs)
+    // A gesture between frames reads the window of that moment through liveWindow().
     /** Where the playhead is right now, for a gesture that starts from it. */
     fun playheadNow(): Long = latestLive?.invoke() ?: latestState.playheadMs
     // What a drag snaps to: the markers and the beat dots alike - and neither
@@ -460,7 +469,7 @@ fun TimelineEditor(
      * nothing to catch up with when the finger lifts.
      */
     val scrollable = rememberScrollableState { deltaPx ->
-        val w = latestWindow
+        val w = liveWindow()
         val s = latestState
         val end = s.durationMs.coerceAtLeast(0L).toDouble()
         // From the edit as it is: a playhead left past the end of a shortened
@@ -719,7 +728,7 @@ fun TimelineEditor(
 
     val layout = StripLayout(
         state = state,
-        window = window,
+        windowNow = { liveWindow() },
         rows = rows,
         rowHeightsPx = rows.map { with(density) { it.height.toPx() } },
         rulerPx = with(density) { RULER_HEIGHT.toPx() },
@@ -730,7 +739,7 @@ fun TimelineEditor(
         handlePx = with(density) { HANDLE_WIDTH.toPx() },
         effectGripPx = with(density) { STACKED_GRIP.toPx() },
         markers = snapMarks,
-        snapMs = window.msForDp(SNAP_DP.value).roundToLong(),
+        snapMs = drawWindow.msForDp(SNAP_DP.value).roundToLong(),
         vertical = !compactShown
     )
     val latestLayout by rememberUpdatedState(layout)
@@ -766,7 +775,7 @@ fun TimelineEditor(
                 )
                 if (dy != 0.0) rowScroll.dispatchRawDelta(dy.toFloat())
             }
-            val w = latestWindow
+            val w = liveWindow()
             val step = TimelineLanes.edgeScrollMs(held.finger.x, viewportPx, zonePx, w.viewportMs / 60.0)
             if (step == 0.0) continue
             val from = heldMs ?: playheadNow().toDouble()
@@ -923,7 +932,7 @@ fun TimelineEditor(
                 // the initial pass before the scroll can claim it.
                 .pointerInput(Unit) {
                     detectPinch(guard) { zoom ->
-                        latestZoomTo((latestWindow.pixelsPerSecond * zoom).coerceIn(MIN_PPS, MAX_PPS))
+                        latestZoomTo((liveWindow().pixelsPerSecond * zoom).coerceIn(MIN_PPS, MAX_PPS))
                     }
                 }
                 .scrollable(state = scrollable, orientation = Orientation.Horizontal)
@@ -978,7 +987,13 @@ fun TimelineEditor(
                     .wrapContentWidth(align = Alignment.Start, unbounded = true)
                     .requiredWidth(with(density) { (viewportPx + 2 * drawPadPx).toDp() })
                     .offset { IntOffset(-drawPadPx, 0) }
-                    .graphicsLayer { translationX = drawShiftPx }
+                    .graphicsLayer {
+                        translationX = drawShift()
+                        // Kept as a texture: between steps a scrub only moves it, so the
+                        // GPU composites one layer instead of redrawing every tile,
+                        // wave and label in it (EDGE_PLAN C3).
+                        compositingStrategy = CompositingStrategy.Offscreen
+                    }
             ) {
                 Ruler(
                     durationMs = state.durationMs,
@@ -1102,24 +1117,28 @@ fun TimelineEditor(
 
             // Beat lines run the full height, behind the playhead. A grid you can
             // only see on the ruler tells you where the beats are; a grid that
-            // crosses the lanes tells you whether a cut is on one.
-            markers.forEach { at ->
-                if (!window.intersects(at, at)) return@forEach
-                val isBar = at in barMarkers
-                Box(
-                    modifier = Modifier
-                        .offset(x = window.xDp(at).dp)
-                        .width(1.dp)
-                        .height(stripHeight)
-                        .background(
-                            if (isBar) SquishColors.Cyan.copy(alpha = 0.42f)
-                            else SquishColors.Cyan.copy(alpha = 0.16f)
+            // crosses the lanes tells you whether a cut is on one. One canvas,
+            // placed from the live window when it draws: the lines move with the
+            // film every frame without anything recomposing for it.
+            if (markers.isNotEmpty()) {
+                val barSet = remember(barMarkers) { barMarkers.toHashSet() }
+                Canvas(modifier = Modifier.fillMaxWidth().height(stripHeight)) {
+                    val w = liveWindow()
+                    val line = 1.dp.toPx()
+                    markers.forEach { at ->
+                        if (!w.intersects(at, at)) return@forEach
+                        val x = w.xPx(at)
+                        drawRect(
+                            if (at in barSet) SquishColors.Cyan.copy(alpha = 0.42f) else SquishColors.Cyan.copy(alpha = 0.16f),
+                            topLeft = Offset(x, 0f), size = Size(line, size.height)
                         )
-                )
+                    }
+                }
             }
 
             // Where a carried shot would land: a bright bar on the join.
             drop?.slot?.let { slot ->
+                val window = liveWindow()
                 val top = layout.rowTopOnScreenPx(layout.rows.indexOfFirst { it.group == Group.Main })
                 if (top != null) {
                     Box(
@@ -1136,6 +1155,7 @@ fun TimelineEditor(
 
             // What a carried or trimmed edge has snapped to.
             snapLine?.let { at ->
+                val window = liveWindow()
                 Box(
                     modifier = Modifier
                         .offset(x = window.xDp(at).dp - 1.dp)
@@ -1152,6 +1172,7 @@ fun TimelineEditor(
             // The carried clip, under the finger, over everything.
             lift?.let { held ->
                 val landing = drop ?: return@let
+                val window = liveWindow()
                 Ghost(
                     lift = held,
                     x = with(density) { window.xPx(landing.startMs).toDp() },
@@ -1261,7 +1282,8 @@ private data class RowMaps(val sound: Map<String, Int>, val words: Map<String, I
  */
 private class StripLayout(
     val state: TimelineState,
-    val window: TimelineWindow,
+    /** The live window, read when a gesture asks: the layout is built only when the composition runs, which is no longer every frame of a scrub. */
+    val windowNow: () -> TimelineWindow,
     val rows: List<StripRow>,
     val rowHeightsPx: List<Float>,
     val rulerPx: Float,
@@ -1277,6 +1299,7 @@ private class StripLayout(
     /** Whether a carried thing may change row; not while only one row is shown. */
     val vertical: Boolean
 ) {
+    val window: TimelineWindow get() = windowNow()
     private val tops: List<Float> = rowHeightsPx.runningFold(0f) { acc, h -> acc + h }
 
     /** A height on the strip, as a height down the rows' content. */
@@ -1732,6 +1755,7 @@ private fun Lane(
     cameraMuted: Boolean = false,
     onToggleCameraSound: (() -> Unit)? = null
 ) {
+    com.squish.app.util.PerfFlags.hit("Lane")
     val latestBareTap by rememberUpdatedState(onBareTap)
 
     Box(
@@ -2003,6 +2027,7 @@ private fun ClipView(
      * been - which looks identical and costs the same whatever the clip's length.
      */
     val span = window.clampToView(clip.timelineStartMs, clip.timelineEndMs) ?: return
+    com.squish.app.util.PerfFlags.hit("ClipView")
     val drawnStartMs = span.first
     val drawnEndMs = span.last
     val width = window.widthDp(drawnEndMs - drawnStartMs).dp

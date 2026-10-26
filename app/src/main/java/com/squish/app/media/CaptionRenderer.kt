@@ -188,12 +188,12 @@ object CaptionRenderer {
      * decoration. [words] is the line's [WordState] at this frame, from
      * [TextFrame.words]: which page is shown and which word is being said.
      */
-    fun paint(item: TextOverlayItem, shown: String, frameWidth: Int, frameHeight: Int, words: WordState? = null, cut: Cut? = null, elapsedMs: Long = 0L): Painted {
+    fun paint(item: TextOverlayItem, shownIn: String, frameWidth: Int, frameHeight: Int, words: WordState? = null, cut: Cut? = null, elapsedMs: Long = 0L): Painted {
         if (item.isShape) return paintShape(item, frameWidth, frameHeight)
-        if (item.isDesign) return StickerPainter.paint(item, shown, frameWidth, frameHeight)
+        if (item.isDesign) return StickerPainter.paint(item, shownIn, frameWidth, frameHeight)
         // A GIF plays by the time into the sticker ([elapsedMs]), round and round.
         if (item.isGif) return com.squish.app.media.gif.GifStickers.paint(item, elapsedMs, frameWidth, frameHeight)
-        if (item.knockout) return paintKnockout(item, shown, frameWidth, frameHeight, words, cut ?: Cut(item.xFraction to item.yFraction, item.rotationDegrees))
+        if (item.knockout) return paintKnockout(item, shownIn, frameWidth, frameHeight, words, cut ?: Cut(item.xFraction to item.yFraction, item.rotationDegrees))
         val shortEdge = minOf(frameWidth, frameHeight).toFloat().coerceAtLeast(1f)
         val textSize = (item.sizeSp / 360f * shortEdge).coerceAtLeast(6f)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -212,16 +212,40 @@ object CaptionRenderer {
         // as the speech moves from word to word.
         val wordStyle = item.wordStyle.takeIf { words != null && it.isOn }
         val lineWords = CaptionWords.words(item.text).size
-        val sizing = if (words != null && (words.from > 0 || words.to < lineWords)) CaptionWords.pageText(item.text, words) else item.text
+        val paged = words != null && (words.from > 0 || words.to < lineWords)
+        val firstWord = if (words != null) words.from else 0
+        // An emoji after a picked word (EDGE_PLAN E2), held to it so the words
+        // are counted the same, in what is shown and in the box it is laid in.
+        val shown = CaptionWords.decorated(shownIn, firstWord, item.wordEmoji)
+        val sizingWords = CaptionWords.decorated(if (paged) CaptionWords.pageText(item.text, words!!) else item.text, if (paged) firstWord else 0, item.wordEmoji)
         val shownWords = if (wordStyle != null && words != null && shown.isNotEmpty()) CaptionWords.words(shown) else null
         val active = if (shownWords != null && words != null && words.active >= 0) CaptionWords.charRange(shownWords, words, words.active) else null
         val lit = if (shownWords != null && words != null && wordStyle != null) CaptionWords.coloured(wordStyle.mode, shownWords, words) else null
         val pops = wordStyle?.mode == WordMode.Pop
         val grow = if (pops) WordStyle.POP_SCALE else 1f
-        val geometry: CharSequence = if (pops && active != null) SpannableString(shown).apply {
-            setSpan(RelativeSizeSpan(WordStyle.POP_SCALE), active.first, active.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        } else shown
-        val filled: CharSequence = if ((wordStyle == null || lit == null) && item.wordColors.isEmpty()) geometry else SpannableString(geometry).apply {
+        // Words picked out by hand: bigger, in the box too, so nothing is clipped.
+        val picked = CaptionWords.emphasised(shown, firstWord, item.emphasis)
+        val pickedInBox = CaptionWords.emphasised(sizingWords, if (paged) firstWord else 0, item.emphasis)
+        // The line's second language under it, smaller (EDGE_PLAN P4), laid
+        // after the first so every range above still lands where it did.
+        val (sizingText, secondInBox) = CaptionWords.withSecondLine(sizingWords, item.secondLine, item.showBoth)
+        val (shownText, secondAt) = CaptionWords.withSecondLine(shown, item.secondLine, item.showBoth)
+        val sizing: CharSequence = if (pickedInBox.isEmpty() && secondInBox < 0) sizingText else SpannableString(sizingText).apply {
+            pickedInBox.forEach { setSpan(RelativeSizeSpan(CaptionWords.EMPHASIS_SCALE), it.first, it.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+            if (secondInBox >= 0) setSpan(RelativeSizeSpan(CaptionWords.SECOND_LINE_SCALE), secondInBox, sizingText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        val geometry: CharSequence = if (!(pops && active != null) && picked.isEmpty() && secondAt < 0) shownText else SpannableString(shownText).apply {
+            if (pops && active != null) setSpan(RelativeSizeSpan(WordStyle.POP_SCALE), active.first, active.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            picked.forEach { setSpan(RelativeSizeSpan(CaptionWords.EMPHASIS_SCALE), it.first, it.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+            if (secondAt >= 0) setSpan(RelativeSizeSpan(CaptionWords.SECOND_LINE_SCALE), secondAt, shownText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        val filled: CharSequence = if ((wordStyle == null || lit == null) && item.wordColors.isEmpty() && picked.isEmpty()) geometry else SpannableString(geometry).apply {
+            // A picked-out word in its own colour, else the highlight colour.
+            picked.forEachIndexed { _, r ->
+                val index = firstWord + CaptionWords.words(shown.substring(0, r.first)).size - 1
+                val colour = item.wordColors[index] ?: item.wordStyle.colorArgb
+                setSpan(ForegroundColorSpan(colour), r.first, r.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
             // A colour of its own for single words (EDGE_PLAN E3), by their place
             // in the whole line - so a page of a few words keeps each word's.
             // Set first, so the word being said still wears the highlight.

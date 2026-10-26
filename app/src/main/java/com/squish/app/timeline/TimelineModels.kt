@@ -1070,8 +1070,21 @@ const val MAX_LAYER = 6
  * to. Six rows of footage was eight, past what a mid-range phone (the moto g84's
  * hardware decoders) opens, and the failure is a black preview and an export
  * that stops at a decoder error.
+ *
+ * Read from the phone now (EDGE_PLAN C4): the decoder's throughput, not its
+ * instance count, is what runs out, and with every overlay's footage played
+ * from its 540p copy the moto holds six rows (media/DecoderBudget). Set once
+ * at start-up ([FootageRows]); three wherever nothing has said otherwise -
+ * the JVM checks, and a phone that states no figure.
  */
-const val MAX_FOOTAGE_LAYER = 3
+val MAX_FOOTAGE_LAYER: Int get() = FootageRows.value
+
+/** How many overlay rows take footage on this phone; see [MAX_FOOTAGE_LAYER]. */
+object FootageRows {
+    @Volatile
+    var value: Int = 3
+        set(v) { field = v.coerceIn(3, MAX_LAYER) }
+}
 
 /**
  * Whether [address] is a picture this app keeps for an overlay row - a PNG it

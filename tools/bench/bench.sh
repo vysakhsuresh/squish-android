@@ -121,7 +121,13 @@ coldstart() {
 
 open_project() { # variant
   home; sh_ logcat -c
-  tap_text "Bench $1(, [^\"]*)?" || return 1
+  # The grid lists the newest first, so a bench project made days ago is
+  # further down: scrolled a screen at a time until its card is in sight.
+  local tries=0 h w; h=$(screen_h); w=$(screen_w)
+  until tap_text "Bench $1(, [^\"]*)?" >/dev/null; do
+    tries=$((tries + 1)); [ $tries -gt 12 ] && { say "  (no project \"Bench $1\" on the grid)"; return 1; }
+    sh_ input swipe $(( w / 2 )) $(( h * 80 / 100 )) $(( w / 2 )) $(( h * 30 / 100 )) 300; sleep 1
+  done
   sleep 10
 }
 
@@ -143,6 +149,25 @@ scrub() {
   done
   sh_ dumpsys gfxinfo $PKG > "$WORK/gfx_scrub.txt"
   say "scrub (10 swipes): $(grep -E 'Total frames rendered|Janky frames:|50th percentile|90th percentile|95th percentile' "$WORK/gfx_scrub.txt" | head -5 | sed 's/^ *//' | tr '\n' ';')"
+}
+
+# The same swipes read through framestats, which keeps only the last ~120
+# frames: so reset, one swipe, dump, ten times, and the blocks parsed together
+# (tools/bench/framestats.awk) - the whole frame, and the app's part apart
+# from the GPU's, which a bare gfxinfo percentile does not say.
+scrubfs() {
+  free
+  open_project ${SCRUB_PROJECT:-n1} || return
+  local h w y i; h=$(screen_h); w=$(screen_w); y=$(( h * 58 / 100 ))
+  : > "$WORK/fs_scrub.txt"
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    sh_ dumpsys gfxinfo $PKG reset >/dev/null
+    if [ $((i % 2)) = 1 ]; then sh_ input swipe $(( w * 85 / 100 )) $y $(( w * 15 / 100 )) $y 600
+    else sh_ input swipe $(( w * 15 / 100 )) $y $(( w * 85 / 100 )) $y 600; fi
+    sleep 1
+    sh_ dumpsys gfxinfo $PKG framestats >> "$WORK/fs_scrub.txt"
+  done
+  say "scrub framestats (10 swipes): $(awk -f "$ROOT/tools/bench/framestats.awk" "$WORK/fs_scrub.txt" | tr '\n' ';')"
 }
 
 playback() {
@@ -245,7 +270,7 @@ teardown() {
 }
 
 case "$STEP" in
-  setup) setup ;; perf) perf_install ;; coldstart) coldstart ;; open) open ;; scrub) scrub ;;
+  setup) setup ;; perf) perf_install ;; coldstart) coldstart ;; open) open ;; scrub) scrub ;; scrubfs) scrubfs ;;
   playback) playback ;; export) do_export ;; quality) quality ;; import) import_ ;; teardown) teardown ;;
   measure) coldstart; open; scrub; playback; do_export; quality; import_ ;;
   projects) k=1; for v in plain n0 n1 n3; do make_project $v $k; k=$((k+1)); done ;;

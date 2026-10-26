@@ -2,12 +2,12 @@
 # The benchmark edit as a Squish draft (EDGE_PLAN A1), written from MediaStore
 # ids so every run edits the same thing.
 #
-#   sh tools/bench/fixture.sh <overlays 0|1|3> <id1> .. <id6> <id4k> <songUri> [plain]
+#   sh tools/bench/fixture.sh <overlays 0|1|3|6> <id1> .. <id6> <id4k> <songUri> [plain]
 #
 # Sixty seconds: six 1080p30 clips trimmed to 9 s and 6 s of a 4K30 clip; the
 # Vivid look on every shot; a Dissolve into shot 2 and a Slide left into shot
 # 4; a title over the first five seconds; a Squish original under it all; and
-# 0, 1 or 3 picture-in-picture overlays. "plain" writes the quality edit
+# 0, 1, 3 or 6 picture-in-picture overlays. "plain" writes the quality edit
 # instead: shot 1 alone, untrimmed, nothing on it.
 set -eu
 N=$1; shift
@@ -32,9 +32,12 @@ else
   CLIPS="$CLIPS$(clip main6 "$(uri $K4)" bench_4k30_hevc.mp4 0 6000 54000 0 None 1 0 0 10000)"
   # Overlays: a 40% picture in a corner, on layers 1..N, for eight seconds each.
   corners=("0.25 -0.25" "-0.25 -0.25" "0.25 0.25")
+  # Six (EDGE_PLAN C4): a 3 x 2 grid of 30% pictures, every overlay row taking footage.
+  [ $N -gt 3 ] && corners=("-0.33 -0.25" "0 -0.25" "0.33 -0.25" "-0.33 0.25" "0 0.25" "0.33 0.25")
+  SCALE=0.4; [ $N -gt 3 ] && SCALE=0.3
   for k in $(seq 1 $N); do
     set -- ${corners[$((k-1))]}
-    CLIPS="$CLIPS,$(clip pip$k "$(uri ${IDS[$((k+1))]})" bench_$((k+2)).mp4 0 8000 20000 $k None 0.4 $1 $2 10000 | sed 's/,"lookId":"vivid","lookIntensity":1//')"
+    CLIPS="$CLIPS,$(clip pip$k "$(uri ${IDS[$(( (k+1) % 6 ))]})" bench_$(( (k+1) % 6 + 1 )).mp4 0 8000 20000 $k None $SCALE $1 $2 10000 | sed 's/,"lookId":"vivid","lookIntensity":1//')"
   done
   TEXTS='{"id":"title1","text":"Squish benchmark","startMs":0,"endMs":5000,"xFraction":0.5,"yFraction":0.2,"sizeSp":40,"colorArgb":-1,"bold":true}'
   AUDIO="{\"id\":\"song1\",\"uri\":\"$SONG\",\"label\":\"Squish original\",\"sourceInMs\":0,\"sourceOutMs\":46000,\"timelineStartMs\":0,\"sourceDurationMs\":46000,\"volume\":0.8,\"speedPoints\":[],\"layer\":0}"

@@ -9,16 +9,12 @@ data class TrackSample(
     val xFraction: Float,
     val yFraction: Float,
     /**
-     * Relative to the size it was first selected at - estimated afresh on each
-     * frame from three candidates (1, 0.94, 1.06) at the winning position, and
-     * never accumulated, because the template is blended back at scale 1 and
-     * so never adopts a new size.
-     *
-     * So this is a coarse reading of *this* frame against the original patch,
-     * not a running measure of how much the subject has grown, and it can only
-     * ever be one of those three numbers. Multiplied straight into a layer's
-     * size per frame it pulsed by twelve per cent, which is why the one place
-     * that uses it smooths it first ([withSmoothedScale]).
+     * How big the thing is against the size it was first selected at, carried
+     * along the track (ObjectTracker.scale, EDGE_PLAN F8): a face walking to
+     * the camera grows from 1 towards 2. It used to be re-read each frame from
+     * 0.94, 1 and 1.06 and never accumulated, so it could only ever be one of
+     * those three, and pulsed by twelve per cent a frame. It still moves in 5%
+     * steps, so the one place that uses it smooths it first ([withSmoothedScale]).
      */
     val scale: Float = 1f,
     /** -1..1. Below [MotionTrack.LOST_BELOW] the tracker had lost it. */
@@ -184,33 +180,50 @@ class ObjectTracker(
     }
 
     /**
+     * How big the thing is now against the patch first selected (EDGE_PLAN F8),
+     * carried from step to step: each step tries a little bigger and a little
+     * smaller than the last, and the template is learned at the size it was
+     * found at. It used to be re-read each frame from 0.94, 1 and 1.06 against
+     * the original size and never kept, so a face walking towards the camera
+     * read as "1.06" for ever and a layer pinned to it stayed its first size.
+     */
+    var scale: Float = 1f
+        private set
+
+    /** Steps since the thing was last found with confidence; the search widens with each. */
+    private var lostSteps = 0
+
+    /**
      * Searches around [lastX], [lastY] for the template.
      *
      * Coarse then fine: every second offset first, then the immediate neighbours of
      * the winner. A full search costs four times as much and finds the same place.
+     *
+     * Once the thing is lost (a step under [MotionTrack.LOST_BELOW]) the next
+     * steps look further each time - twice the radius, three times, up to the
+     * whole frame - at a coarser stride, then refine round the best place; it
+     * is taken back only on a match as strong as [REFIND_ABOVE], so a person
+     * walking behind a tree is picked up where they come out, and a wall that
+     * merely looks a little like them is not.
      */
     fun step(frame: LumaFrame, lastX: Float, lastY: Float, searchRadius: Int): TrackStep {
-        val cx = lastX.roundToInt()
-        val cy = lastY.roundToInt()
+        var cx = lastX.roundToInt()
+        var cy = lastY.roundToInt()
 
-        var best = -2f
-        var bestX = cx
-        var bestY = cy
-
-        var offsetY = -searchRadius
-        while (offsetY <= searchRadius) {
-            var offsetX = -searchRadius
-            while (offsetX <= searchRadius) {
-                val score = correlate(frame, cx + offsetX, cy + offsetY, 1f)
-                if (score > best) {
-                    best = score
-                    bestX = cx + offsetX
-                    bestY = cy + offsetY
-                }
-                offsetX += 2
+        if (lostSteps > 0) {
+            val wide = searchRadius * (1 + lostSteps * 2)
+            val reach = minOf(wide, maxOf(frame.width, frame.height))
+            if (reach > searchRadius) {
+                val stride = (reach / 24).coerceAtLeast(2)
+                val wideBest = sweep(frame, cx, cy, reach, stride, scale)
+                if (wideBest.first > -2f) { cx = wideBest.second; cy = wideBest.third }
             }
-            offsetY += 2
         }
+
+        val local = sweep(frame, cx, cy, searchRadius, 2, scale)
+        var best = local.first
+        var bestX = local.second
+        var bestY = local.third
 
         // Measured from the coarse winner, which does not move while the nine
         // are scored. It used to read `bestX + dx` while assigning `bestX +=
@@ -225,7 +238,7 @@ class ObjectTracker(
         val coarseY = bestY
         for (dy in -1..1) {
             for (dx in -1..1) {
-                val score = correlate(frame, coarseX + dx, coarseY + dy, 1f)
+                val score = correlate(frame, coarseX + dx, coarseY + dy, scale)
                 if (score > best) {
                     best = score
                     bestX = coarseX + dx
@@ -234,20 +247,53 @@ class ObjectTracker(
             }
         }
 
-        // Scale is checked only at the winning position: three more template
-        // comparisons, rather than tripling the whole search.
-        var bestScale = 1f
-        for (candidate in SCALES) {
+        // The size, at the winning position only: a step either way from the
+        // size it was last found at, taken only when it is plainly better, so
+        // texture noise does not walk the size about.
+        var bestScale = scale
+        for (factor in SCALE_STEPS) {
+            val candidate = (scale * factor).coerceIn(MIN_SCALE, MAX_SCALE)
             val score = correlate(frame, bestX, bestY, candidate)
-            if (score > best) {
+            if (score > best + SCALE_MARGIN) {
                 best = score
                 bestScale = candidate
             }
         }
 
-        if (best >= TEMPLATE_UPDATE_ABOVE) blendTemplate(frame, bestX, bestY)
+        val found = if (lostSteps > 0) best >= REFIND_ABOVE else best >= MotionTrack.LOST_BELOW
+        if (found) {
+            lostSteps = 0
+            scale = bestScale
+            if (best >= TEMPLATE_UPDATE_ABOVE) blendTemplate(frame, bestX, bestY, scale)
+        } else {
+            lostSteps++
+            // Below the bar a re-find must clear, it is still lost: said so, whatever the score.
+            if (best >= MotionTrack.LOST_BELOW) best = MotionTrack.LOST_BELOW - 0.01f
+        }
 
-        return TrackStep(bestX.toFloat(), bestY.toFloat(), bestScale, best)
+        return TrackStep(bestX.toFloat(), bestY.toFloat(), scale, best)
+    }
+
+    /** The best match within [radius] of ([cx], [cy]) every [stride] pixels: (score, x, y). */
+    private fun sweep(frame: LumaFrame, cx: Int, cy: Int, radius: Int, stride: Int, atScale: Float): Triple<Float, Int, Int> {
+        var best = -2f
+        var bestX = cx
+        var bestY = cy
+        var offsetY = -radius
+        while (offsetY <= radius) {
+            var offsetX = -radius
+            while (offsetX <= radius) {
+                val score = correlate(frame, cx + offsetX, cy + offsetY, atScale)
+                if (score > best) {
+                    best = score
+                    bestX = cx + offsetX
+                    bestY = cy + offsetY
+                }
+                offsetX += stride
+            }
+            offsetY += stride
+        }
+        return Triple(best, bestX, bestY)
     }
 
     /** ZNCC of the template against the frame patch centered at (x, y). */
@@ -293,17 +339,24 @@ class ObjectTracker(
         return (dot / denominator).coerceIn(-1f, 1f)
     }
 
-    private fun blendTemplate(frame: LumaFrame, x: Int, y: Int) {
+    // Learned at the size it was found at, so the template stays the shape of
+    // the thing in its own coordinates as the thing grows or shrinks.
+    private fun blendTemplate(frame: LumaFrame, x: Int, y: Int, atScale: Float) {
         val halfW = templateWidth / 2
         val halfH = templateHeight / 2
-        if (x - halfW < 0 || y - halfH < 0 ||
-            x + halfW >= frame.width || y + halfH >= frame.height
-        ) return
+        for (ty in 0 until templateHeight) {
+            val sy = y + ((ty - halfH) * atScale).roundToInt()
+            if (sy < 0 || sy >= frame.height) return
+        }
+        for (tx in 0 until templateWidth) {
+            val sx = x + ((tx - halfW) * atScale).roundToInt()
+            if (sx < 0 || sx >= frame.width) return
+        }
 
         for (ty in 0 until templateHeight) {
-            val sy = y - halfH + ty
+            val sy = y + ((ty - halfH) * atScale).roundToInt()
             for (tx in 0 until templateWidth) {
-                val sx = x - halfW + tx
+                val sx = x + ((tx - halfW) * atScale).roundToInt()
                 val i = ty * templateWidth + tx
                 val seen = frame.pixels[sy * frame.width + sx]
                 val blended = current[i] * (1f - BLEND) + seen * BLEND
@@ -330,7 +383,16 @@ class ObjectTracker(
     }
 
     private companion object {
-        val SCALES = floatArrayOf(0.94f, 1.06f)
+        /** A step either way from the size it was last found at. */
+        val SCALE_STEPS = floatArrayOf(0.95f, 1.05f)
+
+        /** How much better a new size must match before it is taken. */
+        const val SCALE_MARGIN = 0.004f
+        const val MIN_SCALE = 0.25f
+        const val MAX_SCALE = 4f
+
+        /** How strong a match must be to take a lost thing back. */
+        const val REFIND_ABOVE = 0.6f
 
         /** How fast the template follows what it sees. */
         const val BLEND = 0.06f
