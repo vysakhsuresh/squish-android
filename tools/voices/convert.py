@@ -155,7 +155,15 @@ class Decoder(torch.nn.Module):
         o = feats.transpose(1, 2) * y_mask              # [1,C,N]
         if hasattr(self.m, "pos_encoder"):
             o = self.m.pos_encoder(o, y_mask)
-        o_de = self.m.decoder(o, y_mask, g=None)        # [1,80,N]
+        # FFTransformerDecoder runs its block with no mask at all - harmless
+        # unpadded, and over a padded call every frame attends to the padding.
+        # Its own two steps, the block given the mask.
+        dd = getattr(self.m.decoder, "decoder", None)
+        if dd is not None and hasattr(dd, "transformer_block") and hasattr(dd, "postnet"):
+            o_de = dd.transformer_block(o, y_mask) * y_mask
+            o_de = dd.postnet(o_de) * y_mask             # [1,80,N]
+        else:
+            o_de = self.m.decoder(o, y_mask, g=None)
         return o_de.transpose(1, 2) * mask.unsqueeze(-1)
 
 
