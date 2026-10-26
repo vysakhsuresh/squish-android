@@ -1,0 +1,50 @@
+# EDGE_PLAN E5: on-device voices. Turns AI4Bharat's Indic-TTS voices (MIT,
+# github.com/AI4Bharat/Indic-TTS, release v1-checkpoints-release) into small
+# TensorFlow Lite models the app downloads once (tools/voices/convert.py).
+# Step "inspect" lists what a language's checkpoint holds.
+name: voices
+
+on:
+  workflow_dispatch:
+    inputs:
+      lang:
+        description: 'language code (en, hi, ml)'
+        default: 'ml'
+      step:
+        description: 'inspect or convert'
+        default: 'inspect'
+  push:
+    paths:
+      - 'tools/voices/**'
+      - '.github/workflows/voices.yml'
+
+jobs:
+  voice:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.lang)) || fromJSON('["ml"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: checkpoint
+        run: |
+          curl -sL -o ckpt.zip "https://github.com/AI4Bharat/Indic-TTS/releases/download/v1-checkpoints-release/${{ matrix.lang }}.zip"
+          ls -la ckpt.zip
+          unzip -l ckpt.zip | head -60
+          mkdir ck && unzip -q ckpt.zip -d ck && rm ckpt.zip
+          find ck -type f -exec ls -la {} \; | head -60
+          for f in $(find ck -name '*.json' | head -6); do echo "== $f"; head -c 4000 "$f"; echo; done
+      - name: convert
+        if: ${{ github.event.inputs.step == 'convert' }}
+        run: |
+          python3 -m venv v && . v/bin/activate
+          pip install -q -r tools/voices/requirements.txt
+          pip freeze | grep -iE "torch|tts|tensorflow|numpy|ai.edge"
+          python tools/voices/convert.py ck out ${{ matrix.lang }}
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        if: ${{ github.event.inputs.step == 'convert' }}
+        with:
+          name: voice-${{ matrix.lang }}
+          path: out/

@@ -170,6 +170,44 @@ scrubfs() {
   say "scrub framestats (10 swipes): $(awk -f "$ROOT/tools/bench/framestats.awk" "$WORK/fs_scrub.txt" | tr '\n' ';')"
 }
 
+# EDGE_PLAN C7: every screen and sheet, each step measured on its own -
+# framestats reset, the gesture, the summary - so the report says which
+# screen drops frames, not only that something did. A step whose control is
+# not on screen says so and the tour goes on.
+tour_step() { # label, then a command
+  local label=$1; shift
+  sh_ dumpsys gfxinfo $PKG reset >/dev/null
+  "$@" || { say "tour $label: (skipped - not on screen)"; return; }
+  sleep 1
+  sh_ dumpsys gfxinfo $PKG framestats > "$WORK/fs_tour.txt"
+  say "tour $label: $(awk -f "$ROOT/tools/bench/framestats.awk" "$WORK/fs_tour.txt" | tr '\n' ';')"
+}
+fling_up() { local h w; h=$(screen_h); w=$(screen_w); sh_ input swipe $((w/2)) $((h*75/100)) $((w/2)) $((h*25/100)) 250; sleep 0.6; sh_ input swipe $((w/2)) $((h*25/100)) $((w/2)) $((h*75/100)) 250; }
+sheet_scroll() { local h w; h=$(screen_h); w=$(screen_w); sh_ input swipe $((w/2)) $((h*88/100)) $((w/2)) $((h*70/100)) 300; sleep 0.4; sh_ input swipe $((w/2)) $((h*70/100)) $((w/2)) $((h*88/100)) 300; }
+open_tool() { tap_text "$1" && sleep 1.2; }
+close_sheet() { tap_text "Done" || sh_ input keyevent KEYCODE_BACK; sleep 0.8; }
+tour() {
+  free
+  home
+  tour_step "home grid scroll" fling_up
+  tap_text "Settings" && sleep 1.5 && tour_step "settings scroll" fling_up; sh_ input keyevent KEYCODE_BACK; sleep 1
+  open_project ${SCRUB_PROJECT:-n1} || return
+  local t
+  for t in Edit Sound Text Stickers Overlay Effects Look; do
+    tour_step "open $t" open_tool "$t"
+    tour_step "$t sheet scroll" sheet_scroll
+    close_sheet
+  done
+  tour_step "export sheet" open_tool "Export"
+  sh_ input keyevent KEYCODE_BACK; sleep 1
+  local xy
+  tap_text "Play" >/dev/null; xy=$(grep -E '(text|content-desc)="Play"' "$WORK/ui.txt" | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | head -1 | grep -oE '[0-9]+' | tr '\n' ' ')
+  sh_ dumpsys gfxinfo $PKG reset >/dev/null; sleep 5
+  sh_ dumpsys gfxinfo $PKG framestats > "$WORK/fs_tour.txt"
+  say "tour playback 5 s: $(awk -f "$ROOT/tools/bench/framestats.awk" "$WORK/fs_tour.txt" | tr '\n' ';')"
+  [ -n "$xy" ] && { set -- $xy; sh_ input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )); }
+}
+
 playback() {
   free
   for v in n0 n1 n3; do
@@ -270,7 +308,7 @@ teardown() {
 }
 
 case "$STEP" in
-  setup) setup ;; perf) perf_install ;; coldstart) coldstart ;; open) open ;; scrub) scrub ;; scrubfs) scrubfs ;;
+  setup) setup ;; perf) perf_install ;; coldstart) coldstart ;; open) open ;; scrub) scrub ;; scrubfs) scrubfs ;; tour) tour ;;
   playback) playback ;; export) do_export ;; quality) quality ;; import) import_ ;; teardown) teardown ;;
   measure) coldstart; open; scrub; playback; do_export; quality; import_ ;;
   projects) k=1; for v in plain n0 n1 n3; do make_project $v $k; k=$((k+1)); done ;;

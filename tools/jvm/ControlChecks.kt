@@ -903,10 +903,10 @@ fun main() {
     // of three were translated with one still in the old language.
     run {
         val text = read("$SRC/editor/edits/TextEdits.kt")
-        val translate = text.substringAfter("fun translateCaptions(", "").substringBefore("viewModelScope").take(600)
+        val translate = text.substringAfter("fun translateCaptions(", "").substringBefore("viewModelScope").take(2000)
         check(translate.isNotEmpty(), "translateCaptions has moved - this check has rotted")
         check(
-            translate.contains("sticker"),
+            translate.contains("!it.sticker"),
             "Translate captions does not read the sticker flag, so it is guessing which lines are stickers"
         )
         check(

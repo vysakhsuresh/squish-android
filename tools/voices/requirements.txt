@@ -1,0 +1,7 @@
+# For tools/voices/convert.py, on the CI runner only (.github/workflows/voices.yml).
+# Coqui TTS reads AI4Bharat's checkpoints; ai-edge-torch (Apache-2.0) writes
+# TensorFlow Lite straight from the PyTorch modules. Versions resolved by pip
+# and recorded in the run's log (pip freeze).
+--extra-index-url https://download.pytorch.org/whl/cpu
+ai-edge-torch
+coqui-tts
