@@ -1,0 +1,10 @@
+// Written from voice.json of the en voice (tools/voices/convert.py, Coqui's own reading of text): do not edit by hand.
+object VoiceFixture_en {
+    val ids: Map<String, Int> = mapOf("<PAD>" to 0, "!" to 15, "¡" to 2, "'" to 3, "(" to 4, ")" to 5, "," to 17, "-" to 18, "." to 19, ":" to 30, ";" to 31, "¿" to 11, "?" to 32, " " to 14, "&" to 16, "0" to 20, "1" to 21, "2" to 22, "3" to 23, "4" to 24, "5" to 25, "6" to 26, "7" to 27, "8" to 28, "9" to 29, "A" to 33, "B" to 34, "C" to 35, "D" to 36, "E" to 37, "F" to 38, "G" to 39, "H" to 40, "I" to 41, "J" to 42, "K" to 43, "L" to 44, "M" to 45, "N" to 46, "O" to 47, "P" to 48, "Q" to 49, "R" to 50, "S" to 51, "T" to 52, "U" to 53, "V" to 54, "W" to 55, "Y" to 56, "Z" to 57, "`" to 58, "a" to 59, "b" to 60, "c" to 61, "d" to 62, "e" to 63, "f" to 64, "g" to 65, "h" to 66, "i" to 67, "j" to 68, "k" to 69, "l" to 70, "m" to 71, "n" to 72, "o" to 73, "p" to 74, "q" to 75, "r" to 76, "s" to 77, "t" to 78, "u" to 79, "v" to 80, "w" to 81, "x" to 82, "y" to 83, "z" to 84, "â" to 85, "˜" to 86, "–" to 87, "—" to 88, "€" to 89, "™" to 90, "<BLNK>" to 91)
+    val tests: List<Pair<String, List<Int>>> = listOf(
+        "hello, this is the voice of squish." to listOf(66, 63, 70, 70, 73, 17, 14, 78, 66, 67, 77, 14, 67, 77, 14, 78, 66, 63, 14, 80, 73, 67, 61, 63, 14, 73, 64, 14, 77, 75, 79, 67, 77, 66, 19),
+        "Hello, World! 123 - (test); done: yes." to listOf(66, 63, 70, 70, 73, 17, 14, 81, 73, 76, 70, 62, 15, 14, 21, 22, 23, 14, 78, 63, 77, 78, 17, 14, 62, 73, 72, 63, 17, 14, 83, 63, 77, 19),
+        "  two   spaces\tand\na line  " to listOf(78, 81, 73, 14, 77, 74, 59, 61, 63, 77, 14, 59, 72, 62, 14, 59, 14, 70, 67, 72, 63),
+        "Namaste! I can speak English too." to listOf(72, 59, 71, 59, 77, 78, 63, 15, 14, 67, 14, 61, 59, 72, 14, 77, 74, 63, 59, 69, 14, 63, 72, 65, 70, 67, 77, 66, 14, 78, 73, 73, 19)
+    )
+}

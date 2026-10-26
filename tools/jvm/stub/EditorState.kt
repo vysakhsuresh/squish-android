@@ -51,6 +51,7 @@ data class ExportProgress(
 object MediaCompat {
     data class Report(
         val hdr: Boolean = false,
+        val hlg: Boolean = false,
         val hasAudio: Boolean = false,
         val audioProblem: String? = null
     )

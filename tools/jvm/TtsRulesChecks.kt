@@ -37,9 +37,13 @@ fun main() {
     // ---- The app reads text exactly as Coqui does, for a real voice ------------
     // VoiceFixture_ml: the Malayalam voice's own id table and Coqui's ids for six
     // sentences (tools/voices/convert.py wrote them into voice.json).
-    for ((text, want) in VoiceFixture_ml.tests) {
-        val got = TtsRules.ids(text, VoiceFixture_ml.ids).toList()
-        check(got == want, "Coqui reads \"$text\" as $want, the app as $got")
+    for ((voice, fixture) in listOf("ml" to (VoiceFixture_ml.ids to VoiceFixture_ml.tests), "hi" to (VoiceFixture_hi.ids to VoiceFixture_hi.tests), "en" to (VoiceFixture_en.ids to VoiceFixture_en.tests))) {
+        val (table, tests) = fixture
+        check(tests.isNotEmpty(), "the $voice fixture has no sentences")
+        for ((text, want) in tests) {
+            val got = TtsRules.ids(text, table).toList()
+            check(got == want, "$voice: Coqui reads \"$text\" as $want, the app as $got")
+        }
     }
 
     // ---- Durations, as FastPitch rounds them ----------------------------------

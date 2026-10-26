@@ -24,6 +24,22 @@ import kotlin.math.abs
  */
 object EncoderCeiling {
 
+    /**
+     * The HDR [state]'s file is written in when it keeps it - HLG where a shot
+     * is HLG, else PQ, on BT.2020 - for the ceiling to narrow by, as Media3
+     * narrows its encoders (ROADMAP 6.3). Null when the file is SDR. Here, not
+     * on EditorUiState: that file is kept free of Media3, and the draft round
+     * trips compile it without it.
+     */
+    fun keptHdrColor(state: com.squish.app.editor.EditorUiState): androidx.media3.common.ColorInfo? {
+        if (!state.effectiveKeepHdr) return null
+        return androidx.media3.common.ColorInfo.Builder()
+            .setColorSpace(androidx.media3.common.C.COLOR_SPACE_BT2020)
+            .setColorRange(androidx.media3.common.C.COLOR_RANGE_LIMITED)
+            .setColorTransfer(if (state.keptHdrIsHlg) androidx.media3.common.C.COLOR_TRANSFER_HLG else androidx.media3.common.C.COLOR_TRANSFER_ST2084)
+            .build()
+    }
+
     /** The codec an export is written in, as Media3 names it. */
     fun mimeFor(hevc: Boolean): String = if (hevc) MimeTypes.VIDEO_H265 else MimeTypes.VIDEO_H264
 

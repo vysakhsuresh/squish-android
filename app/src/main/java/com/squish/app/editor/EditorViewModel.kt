@@ -719,7 +719,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (current.hevcAvailable == null) probeCodecs()
         val mime = EncoderCeiling.mimeFor(current.exportCodecHevc)
         val shape = current.resolutionAt(OutputSize.MAX_P)
-        val hdr = current.keptHdrColor
+        val hdr = EncoderCeiling.keptHdrColor(current)
         val key = Triple(shape, mime, hdr != null)
         if (shape.width > 0 && shape.height > 0 && ceilingFor != key) {
             ceilingFor = key
@@ -735,7 +735,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked, mime, hdr) }
             val now = _state.value
-            val nowKey = EncoderCeiling.mimeFor(now.exportCodecHevc).let { if (now.keptHdrColor != null) "$it+hdr" else it }
+            val nowKey = EncoderCeiling.mimeFor(now.exportCodecHevc).let { if (EncoderCeiling.keptHdrColor(now) != null) "$it+hdr" else it }
             if (!probes.keep(asked to probeKey, now.outputResolution to nowKey)) return@launch
             probedMime = mime
             _state.update { it.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written)) }
@@ -1289,7 +1289,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             // trusted from the sheet: the answer there may be to a size chosen
             // since. The record below says the same size.
             val asked = current.outputResolution
-            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked, EncoderCeiling.mimeFor(current.exportCodecHevc), current.keptHdrColor) }
+            val written = withContext(Dispatchers.IO) { EncoderCeiling.written(asked, EncoderCeiling.mimeFor(current.exportCodecHevc), EncoderCeiling.keptHdrColor(current)) }
             val rendering = current.copy(encoderAnswer = ExportPresets.EncoderAnswer(asked, written))
 
             val renderStarted = android.os.SystemClock.elapsedRealtime()
