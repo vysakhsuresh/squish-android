@@ -79,7 +79,34 @@ log("fastpitch params", params, "vocoder params", sum(p.numel() for p in gen.par
 # by up to 0.57 padded, exactly the original's unpadded. Zeroing the padded
 # positions before each layer is what the unpadded run sees (zeros past the
 # end), so it changes nothing there and makes a padded call agree with it.
-from TTS.tts.layers.generic.transformer import FFTransformerBlock
+from TTS.tts.layers.generic.transformer import FFTransformer, FFTransformerBlock
+import torch.nn.functional as F
+
+
+# Inside each layer too: the attention's output at padded positions, and the
+# first convolution's, are read by the next convolution. Zeroed before each.
+def _fft_forward(self, src, src_mask=None, src_key_padding_mask=None):
+    keep = None if src_key_padding_mask is None else (~src_key_padding_mask).to(src.dtype).unsqueeze(1)  # [B,1,T]
+    src = src.permute(2, 0, 1)
+    src2, enc_align = self.self_attn(src, src, src, attn_mask=src_mask, key_padding_mask=src_key_padding_mask)
+    src = src + self.dropout1(src2)
+    src = self.norm1(src + src2)
+    src = src.permute(1, 2, 0)
+    if keep is not None:
+        src = src * keep
+    h = F.relu(self.conv1(src))
+    if keep is not None:
+        h = h * keep
+    src2 = self.conv2(h)
+    src2 = self.dropout2(src2)
+    src = src + src2
+    src = src.transpose(1, 2)
+    src = self.norm2(src)
+    src = src.transpose(1, 2)
+    return src, enc_align
+
+
+FFTransformer.forward = _fft_forward
 
 
 def _masked_forward(self, x, mask=None, g=None):
