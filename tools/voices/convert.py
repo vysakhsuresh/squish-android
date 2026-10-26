@@ -167,13 +167,33 @@ if mel.shape == ref.shape:
 else:
     log("WARNING: frame counts differ (split %d, original %d)" % (mel.shape[0], ref.shape[0]))
 
+# Where the frames differ: the original's own durations, against the split's
+# padded to T and unpadded, so a difference is put down to the padding or not.
+with torch.no_grad():
+    ids_t = torch.tensor([tok.text_to_ids(sample)], dtype=torch.long)
+    out = model.inference(ids_t, aux_input={"speaker_ids": torch.tensor([first_speaker])})
+    d_orig = model.format_durations(out["durations_log"], torch.ones_like(out["durations_log"])).squeeze().numpy().astype(np.int64)
+    t = len(ids)
+    _, lp = enc(torch.from_numpy(x), torch.from_numpy(mk), torch.from_numpy(spk))
+    _, lu = enc(torch.from_numpy(x[:, :t]), torch.from_numpy(mk[:, :t]), torch.from_numpy(spk))
+d_pad = durations(lp.numpy()[0, :t])
+d_unpad = durations(lu.numpy()[0, :t])
+log("durations original", d_orig.tolist())
+log("durations padded  ", d_pad.tolist())
+log("durations unpadded", d_unpad.tolist())
+log("log-duration gap padded vs unpadded: max", float(np.abs(lp.numpy()[0, :t] - lu.numpy()[0, :t]).max()),
+    "| unpadded vs original:", float(np.abs(lu.numpy()[0, :t] - out["durations_log"].squeeze().numpy()).max()))
+
 
 # ---- To TensorFlow Lite ---------------------------------------------------------
-import ai_edge_torch
+try:
+    import litert_torch as edge_torch      # the converter's name from 2025
+except ImportError:
+    import ai_edge_torch as edge_torch
 
 
 def convert(name, module, args):
-    edge = ai_edge_torch.convert(module, args)
+    edge = edge_torch.convert(module, args)
     path = os.path.join(OUT, name)
     edge.export(path)
     with torch.no_grad():
