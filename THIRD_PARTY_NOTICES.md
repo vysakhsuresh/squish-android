@@ -85,7 +85,8 @@ downloaded once by the person, never bundled.
 ## MediaPipe - masks, faces and objects
 
 `com.google.mediapipe:tasks-vision` (Apache License 2.0) and its bundled
-models - the selfie segmenter, BlazeFace and EfficientDet-Lite0 (Apache 2.0) -
+models - the selfie segmenter, BlazeFace, EfficientDet-Lite0 and MagicTouch (Apache 2.0;
+MagicTouch's own model card, read 26 October 2026) -
 under `app/src/main/assets/`.
 
 ## CameraX - the in-app camera

@@ -1,0 +1,31 @@
+# Makes the footage for the rest of docs/EDGE_PLAN.md (fast motion, flicker
+# and grain, 1080p60 and HEVC, speech in three languages) with
+# tools/native/make_edge_media.sh, on Linux where ffmpeg and espeak-ng are an
+# apt-get away.
+name: edgemedia
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/native/make_edge_media.sh'
+      - 'tools/native/speech/**'
+      - '.github/workflows/edgemedia.yml'
+
+jobs:
+  make:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: ffmpeg and espeak-ng
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg espeak-ng
+          ffmpeg -hide_banner -version | head -1
+          espeak-ng --version
+      - name: Make
+        run: bash tools/native/make_edge_media.sh "$PWD/media"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edgemedia
+          path: media/

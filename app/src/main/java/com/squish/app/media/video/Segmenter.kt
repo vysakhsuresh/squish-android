@@ -106,13 +106,31 @@ object Segmenter {
         uri: Uri,
         fromMs: Long,
         toMs: Long,
+        /**
+         * Cut out the thing at this point (fractions of the picture) rather than
+         * the person (EDGE_PLAN F7): MediaPipe's MagicTouch, pointed at the tap
+         * on the first frame and, on each frame after, at the point deepest
+         * inside the last frame's cut-out (MaskRefine.innerPoint) - so the
+         * thing is followed as it moves and turns.
+         */
+        pointAt: Pair<Float, Float>? = null,
         onProgress: (done: Int, total: Int) -> Unit
     ): String? = withContext(Dispatchers.Default) {
         val span = (toMs - fromMs).coerceAtLeast(1L)
         val count = (span / 1000f * SAMPLES_PER_SECOND).roundToInt().coerceIn(2, MAX_SAMPLES)
         val step = span / (count - 1).coerceAtLeast(1)
 
-        val segmenter = create(context) ?: return@withContext null
+        val thing = pointAt?.let { createTouch(context) ?: return@withContext null }
+        var point = pointAt
+        // One frame's mask: the person, or the thing at the point carried along.
+        val segmentOne: (Bitmap, ByteArray) -> Unit = { frame, mask ->
+            val at = point
+            if (thing != null && at != null) {
+                segmentAt(thing, frame, at, mask)
+                MaskRefine.innerPoint(mask, MASK_SIZE, MASK_SIZE, at)?.let { point = it }
+            }
+        }
+        val segmenter = if (thing != null) null else (create(context) ?: return@withContext null)
 
         val retriever = com.squish.app.av.AvRetriever()
         try {
@@ -124,7 +142,7 @@ object Segmenter {
             // can be a second away - a mask of where the person *was*.
             val decoded = LumaDecoder.decodeColour(context, uri, fromMs, toMs, step, FRAME_SIDE) { at, frame ->
                 val mask = ByteArray(MASK_SIZE * MASK_SIZE)
-                runCatching { segment(segmenter, frame, mask) }
+                runCatching { if (segmenter != null) segment(segmenter, frame, mask) else segmentOne(frame, mask) }
                 // Its edge onto the picture's own (EDGE_PLAN F7, MaskRefine).
                 runCatching { refine(frame, mask) }
                 frame.recycle()
@@ -147,7 +165,7 @@ object Segmenter {
                     if (frame != null) {
                         val argb = if (frame.config == Bitmap.Config.ARGB_8888) frame
                         else frame.copy(Bitmap.Config.ARGB_8888, false).also { frame.recycle() }
-                        runCatching { segment(segmenter, argb, mask) }
+                        runCatching { if (segmenter != null) segment(segmenter, argb, mask) else segmentOne(argb, mask) }
                         runCatching { refine(argb, mask) }
                         argb.recycle()
                     } else {
@@ -160,7 +178,8 @@ object Segmenter {
             }
             onProgress(count, count)
             val dir = File(context.filesDir, "segments").apply { mkdirs() }
-            val file = File(dir, "${uri.toString().hashCode().toUInt().toString(16)}_${fromMs}_$toMs.bin")
+            val tag = pointAt?.let { (x, y) -> "_at${(x * 1000).roundToInt()}x${(y * 1000).roundToInt()}" } ?: ""
+            val file = File(dir, "${uri.toString().hashCode().toUInt().toString(16)}_${fromMs}_$toMs$tag.bin")
             // The flicker between samples taken out (EDGE_PLAN F7): the outline no longer boils.
             val steady = MaskRefine.temporal(masks, MASK_SIZE * MASK_SIZE)
             PersonMasks.write(file, PersonMasks(MASK_SIZE, MASK_SIZE, times.toLongArray(), steady.toTypedArray()))
@@ -171,7 +190,8 @@ object Segmenter {
             null
         } finally {
             runCatching { retriever.release() }
-            runCatching { segmenter.close() }
+            runCatching { segmenter?.close() }
+            runCatching { thing?.close() }
         }
     }
 
@@ -212,6 +232,55 @@ object Segmenter {
                 .build()
         )
     }.getOrNull()
+
+    /**
+     * MediaPipe's MagicTouch (EDGE_PLAN F7): cuts out whatever is at a point -
+     * a thing, an animal, a person. Apache-2.0 by its own model card (read
+     * 26 Oct 2026, storage.googleapis.com/mediapipe-assets/Model Card
+     * MagicTouch.pdf); the 6.2 MB float32 v1, bundled.
+     */
+    internal fun createTouch(context: Context): com.google.mediapipe.tasks.vision.interactivesegmenter.InteractiveSegmenter? = runCatching {
+        com.google.mediapipe.tasks.vision.interactivesegmenter.InteractiveSegmenter.createFromOptions(
+            context,
+            com.google.mediapipe.tasks.vision.interactivesegmenter.InteractiveSegmenter.InteractiveSegmenterOptions.builder()
+                .setBaseOptions(BaseOptions.builder().setModelAssetPath(TOUCH_MODEL).build())
+                .setOutputConfidenceMasks(true)
+                .setOutputCategoryMask(false)
+                .build()
+        )
+    }.getOrNull()
+
+    private const val TOUCH_MODEL = "magic_touch.tflite"
+
+    /** The thing at [point] in [frame], resampled into [out] as 0..255. */
+    internal fun segmentAt(
+        segmenter: com.google.mediapipe.tasks.vision.interactivesegmenter.InteractiveSegmenter,
+        frame: Bitmap,
+        point: Pair<Float, Float>,
+        out: ByteArray
+    ) {
+        val roi = com.google.mediapipe.tasks.vision.interactivesegmenter.InteractiveSegmenter.RegionOfInterest.create(
+            com.google.mediapipe.tasks.components.containers.NormalizedKeypoint.create(point.first.coerceIn(0f, 1f), point.second.coerceIn(0f, 1f))
+        )
+        val result = segmenter.segment(BitmapImageBuilder(frame).build(), roi)
+        val all = result.confidenceMasks().orElse(null) ?: return
+        if (all.isEmpty()) return
+        // One mask, the thing; or the background first and the thing after it.
+        writeMask(if (all.size >= 2) all[1] else all[0], out)
+    }
+
+    private fun writeMask(image: com.google.mediapipe.framework.image.MPImage, out: ByteArray) {
+        val buffer = ByteBufferExtractor.extract(image).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        val w = image.width
+        val h = image.height
+        for (y in 0 until MASK_SIZE) {
+            val sy = (y * h / MASK_SIZE).coerceIn(0, h - 1)
+            for (x in 0 until MASK_SIZE) {
+                val sx = (x * w / MASK_SIZE).coerceIn(0, w - 1)
+                out[y * MASK_SIZE + x] = (buffer.get(sy * w + sx).coerceIn(0f, 1f) * 255f).roundToInt().toByte()
+            }
+        }
+    }
 
     internal fun segment(segmenter: ImageSegmenter, frame: Bitmap, out: ByteArray) {
         val result = segmenter.segment(BitmapImageBuilder(frame).build())

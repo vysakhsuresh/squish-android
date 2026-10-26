@@ -74,6 +74,32 @@ fun main() {
         check(abs(at - (30 + t - 0.5f)) < 1.1f, "sample $t: the edge is at $at, the person at ${30 + t - 0.5f}")
     }
 
+    // ---- Where the next frame is pointed at (EDGE_PLAN F7, tap to cut out) ----
+    run {
+        val w = 64
+        val h = 64
+        fun mask(inside: (Int, Int) -> Boolean) = ByteArray(w * h) { if (inside(it % w, it / w)) 255.toByte() else 0 }
+        // A ring: its middle is not inside it, and pointed at there the next frame would cut out the hole.
+        val ring = mask { x, y -> val r = kotlin.math.hypot(x - 32.0, y - 32.0); r in 14.0..24.0 }
+        val p = MaskRefine.innerPoint(ring, w, h, 0.5f to 0.5f)
+        check(p != null, "a ring gave no point")
+        if (p != null) {
+            val x = (p.first * w).toInt(); val y = (p.second * h).toInt()
+            check(ring[y * w + x].toInt() != 0, "the point for a ring is not on the ring: ($x, $y)")
+            val r = kotlin.math.hypot(x - 32.0, y - 32.0)
+            check(r in 17.0..21.0, "the point is not deep in the ring (radius $r, the ring is 14..24)")
+        }
+        // Two things: the point stays on the one it was on, though the other is bigger.
+        val two = mask { x, y -> (x in 4..14 && y in 4..14) || (x in 30..60 && y in 20..60) }
+        val q = MaskRefine.innerPoint(two, w, h, 9f / w to 9f / h)
+        check(q != null && q.first < 16f / w && q.second < 16f / h, "the point jumped to the bigger thing: $q")
+        // A square: its middle.
+        val sq = MaskRefine.innerPoint(mask { x, y -> x in 10..30 && y in 20..40 }, w, h, 0.9f to 0.9f)
+        check(sq != null && abs(sq.first * w - 20.5f) <= 1.5f && abs(sq.second * h - 30.5f) <= 1.5f, "a square's point is $sq, not its middle")
+        // Nothing: no point.
+        check(MaskRefine.innerPoint(ByteArray(w * h), w, h, 0.5f to 0.5f) == null, "an empty mask gave a point")
+    }
+
     if (problems.isEmpty()) println("MaskRefineChecks: all checks passed (flicker $was -> $now)")
     else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
 }

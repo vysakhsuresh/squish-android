@@ -98,8 +98,12 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
             ?: state.videoClips.firstOrNull { it.layer == 0 }
             ?: state.videoClips.firstOrNull()
 
-    /** Finds the person through the clip, then blurs what is behind them. */
-    fun removeBackground() {
+    /**
+     * Finds the person through the clip, then blurs what is behind them - or,
+     * given [pointAt] on the clip's first frame (fractions of its picture),
+     * whatever is there: a thing, an animal (EDGE_PLAN F7, Segmenter.analyze).
+     */
+    fun removeBackground(pointAt: Pair<Float, Float>? = null) {
         val current = _state.value
         if (current.backgroundProgress.running) return
         val clip = backgroundTarget(current) ?: return
@@ -109,7 +113,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
         _state.update { it.copy(backgroundProgress = ReframeProgress(running = true)) }
         backgroundJob = viewModelScope.launch {
             val file = Segmenter.analyze(
-                app, uri, clip.sourceInMs, clip.sourceOutMs
+                app, uri, clip.sourceInMs, clip.sourceOutMs, pointAt
             ) { done, total ->
                 _state.update { it.copy(backgroundProgress = it.backgroundProgress.copy(done = done, total = total)) }
             }

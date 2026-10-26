@@ -14,9 +14,10 @@ import com.google.mediapipe.tasks.vision.objectdetector.ObjectDetector
  * (230 KB) and EfficientDet-Lite0 (4.6 MB, the 80 COCO kinds) - and run on
  * the phone; nothing is downloaded and no frame leaves it.
  *
- * Licences, as found on 25 October: BlazeFace's model card is reported
- * Apache-2.0 (a mirror quoting Google's card - the card itself did not open
- * here); EfficientDet-Lite0 is from TensorFlow's model garden, Apache-2.0.
+ * Licences: BlazeFace (short range) is Apache-2.0 by Google's own model card,
+ * read first-hand on 26 October 2026 (storage.googleapis.com/mediapipe-assets,
+ * "MediaPipe BlazeFace Model Card (Short Range).pdf"); EfficientDet-Lite0 is
+ * from TensorFlow's model garden, Apache-2.0.
  *
  * Each opener answers null where the model will not load, and Reframer then
  * falls back to what it had: the platform's faces, the cut-out's person and

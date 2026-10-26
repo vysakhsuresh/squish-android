@@ -105,4 +105,74 @@ object MaskRefine {
         }
         return if (n % 2 == 1) v[n / 2] else (v[n / 2 - 1] + v[n / 2]) / 2
     }
+
+    /**
+     * Where to point at the thing in the next frame (EDGE_PLAN F7, tap to cut
+     * out anything): the pixel deepest inside [mask]'s piece nearest [near]
+     * (fractions of the frame), as fractions again - or null for an empty mask.
+     *
+     * Deepest, not the middle: a ring, a C or a person with an arm out has a
+     * middle that is not inside it, and pointed at there the next frame cuts out
+     * the background. The piece nearest the last point, not the biggest: two
+     * things in the mask (the model may take a neighbour in) must not let the
+     * point jump to the other one.
+     */
+    fun innerPoint(mask: ByteArray, w: Int, h: Int, near: Pair<Float, Float>): Pair<Float, Float>? {
+        if (w <= 0 || h <= 0 || mask.size < w * h) return null
+        val inside = BooleanArray(w * h) { (mask[it].toInt() and 0xFF) >= 128 }
+        // The mask pixel nearest the last point, to start the piece from.
+        val px = (near.first * w).toInt().coerceIn(0, w - 1)
+        val py = (near.second * h).toInt().coerceIn(0, h - 1)
+        var seed = -1
+        var seedD = Int.MAX_VALUE
+        for (i in inside.indices) if (inside[i]) {
+            val dx = i % w - px
+            val dy = i / w - py
+            val d = dx * dx + dy * dy
+            if (d < seedD) { seedD = d; seed = i }
+        }
+        if (seed < 0) return null
+        // The piece: everything inside joined to the seed.
+        val piece = BooleanArray(w * h)
+        val stack = IntArray(w * h)
+        var top = 0
+        stack[top++] = seed; piece[seed] = true
+        while (top > 0) {
+            val i = stack[--top]
+            val x = i % w
+            val y = i / w
+            if (x > 0 && inside[i - 1] && !piece[i - 1]) { piece[i - 1] = true; stack[top++] = i - 1 }
+            if (x < w - 1 && inside[i + 1] && !piece[i + 1]) { piece[i + 1] = true; stack[top++] = i + 1 }
+            if (y > 0 && inside[i - w] && !piece[i - w]) { piece[i - w] = true; stack[top++] = i - w }
+            if (y < h - 1 && inside[i + w] && !piece[i + w]) { piece[i + w] = true; stack[top++] = i + w }
+        }
+        // Distance to the piece's edge (or the frame's), two chamfer passes.
+        val far = w + h
+        val d = IntArray(w * h) { if (piece[it]) far else 0 }
+        for (y in 0 until h) for (x in 0 until w) {
+            val i = y * w + x
+            if (d[i] == 0) continue
+            val up = if (y > 0) d[i - w] else 0
+            val left = if (x > 0) d[i - 1] else 0
+            d[i] = minOf(d[i], up + 1, left + 1)
+        }
+        for (y in h - 1 downTo 0) for (x in w - 1 downTo 0) {
+            val i = y * w + x
+            if (d[i] == 0) continue
+            val down = if (y < h - 1) d[i + w] else 0
+            val right = if (x < w - 1) d[i + 1] else 0
+            d[i] = minOf(d[i], down + 1, right + 1)
+        }
+        // The deepest; of equals, the one nearest the last point, so a flat-sided thing does not slide.
+        var best = seed
+        var bestDepth = -1
+        var bestNear = Int.MAX_VALUE
+        for (i in d.indices) if (piece[i]) {
+            val dx = i % w - px
+            val dy = i / w - py
+            val n = dx * dx + dy * dy
+            if (d[i] > bestDepth || (d[i] == bestDepth && n < bestNear)) { best = i; bestDepth = d[i]; bestNear = n }
+        }
+        return ((best % w) + 0.5f) / w to ((best / w) + 0.5f) / h
+    }
 }
