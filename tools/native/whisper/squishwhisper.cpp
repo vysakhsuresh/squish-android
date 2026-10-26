@@ -34,13 +34,11 @@ Java_com_squish_app_media_audio_WhisperNative_close(JNIEnv *, jclass, jlong h) {
 }
 
 // Transcribes [pcm] (16 kHz mono floats). [lang] is a code ("en", "hi", "ml")
-// or "auto". Returns one line per word: "t0ms\tt1ms\ttext", then a last line
-// "lang\t<code>"; null when whisper.cpp failed.
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_squish_app_media_audio_WhisperNative_transcribe(JNIEnv *env, jclass, jlong h, jfloatArray jpcm,
-                                                          jstring jlang, jint threads) {
+// or "auto". Fills [out] with one line per word: "t0ms\tt1ms\ttext", then a
+// last line "lang\t<code>"; false when whisper.cpp failed.
+static bool run(JNIEnv *env, jlong h, jfloatArray jpcm, jstring jlang, jint threads, std::string &out) {
     auto *ctx = reinterpret_cast<whisper_context *>(h);
-    if (ctx == nullptr) return nullptr;
+    if (ctx == nullptr) return false;
     const char *lang = env->GetStringUTFChars(jlang, nullptr);
     std::string language(lang);
     env->ReleaseStringUTFChars(jlang, lang);
@@ -64,9 +62,8 @@ Java_com_squish_app_media_audio_WhisperNative_transcribe(JNIEnv *env, jclass, jl
     p.split_on_word = true;
     p.suppress_blank = true;
 
-    if (whisper_full(ctx, p, pcm.data(), n) != 0) return nullptr;
+    if (whisper_full(ctx, p, pcm.data(), n) != 0) return false;
 
-    std::string out;
     const int segments = whisper_full_n_segments(ctx);
     for (int i = 0; i < segments; i++) {
         const char *text = whisper_full_get_segment_text(ctx, i);
@@ -84,5 +81,30 @@ Java_com_squish_app_media_audio_WhisperNative_transcribe(JNIEnv *env, jclass, jl
     }
     const int id = whisper_full_lang_id(ctx);
     out += std::string("lang\t") + (id >= 0 ? whisper_lang_str(id) : "") + "\n";
+    return true;
+}
+
+// The first surface, kept so an app built before transcribeBytes still runs.
+// NewStringUTF wants modified UTF-8, and whisper.cpp's pieces can end inside
+// a multi-byte character: the first Hindi file on the moto aborted the app
+// here (26 Oct). New callers use transcribeBytes.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_squish_app_media_audio_WhisperNative_transcribe(JNIEnv *env, jclass, jlong h, jfloatArray jpcm,
+                                                          jstring jlang, jint threads) {
+    std::string out;
+    if (!run(env, h, jpcm, jlang, threads, out)) return nullptr;
     return env->NewStringUTF(out.c_str());
+}
+
+// The same lines as raw bytes, read by WhisperText.parseBytes, which joins a
+// character cut across two pieces and decodes whatever is left as U+FFFD.
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_squish_app_media_audio_WhisperNative_transcribeBytes(JNIEnv *env, jclass, jlong h, jfloatArray jpcm,
+                                                               jstring jlang, jint threads) {
+    std::string out;
+    if (!run(env, h, jpcm, jlang, threads, out)) return nullptr;
+    jbyteArray bytes = env->NewByteArray(static_cast<jsize>(out.size()));
+    if (bytes == nullptr) return nullptr;
+    env->SetByteArrayRegion(bytes, 0, static_cast<jsize>(out.size()), reinterpret_cast<const jbyte *>(out.data()));
+    return bytes;
 }
