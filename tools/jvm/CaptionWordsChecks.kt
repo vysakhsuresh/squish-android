@@ -117,6 +117,20 @@ fun main() {
         check(CaptionWords.withSecondLine(dec, "hazlo", showBoth = false).second == -1, "a second line drawn with Show both off")
         check(CaptionWords.withSecondLine(dec, "  ", showBoth = true).second == -1, "a blank second line drawn")
 
+        // A two-language block placed low stays inside the frame, at every ratio, and is not moved when it fits.
+        for ((fw, fh) in listOf(1080 to 1920, 1080 to 1080, 1920 to 1080)) {
+            // Two lines at the default size: the line 28/360 of the short edge, the second at 0.72 of it, padding.
+            val lineH = 28f / 360f * minOf(fw, fh) * 1.25f
+            val blockH = lineH * (1f + CaptionWords.SECOND_LINE_SCALE) + lineH * 0.4f
+            val half = blockH / 2f / fh
+            for (placed in listOf(0.05f, 0.5f, 0.85f, 0.97f)) {
+                val y = CaptionWords.keptInFrame(placed, half)
+                check(y - half >= 0.02f - 1e-4f && y + half <= 0.98f + 1e-4f, "${fw}x$fh at $placed: the block runs from ${y - half} to ${y + half}")
+                if (placed - half >= 0.02f && placed + half <= 0.98f) check(y == placed, "${fw}x$fh: a block that fits at $placed was moved to $y")
+            }
+        }
+        check(CaptionWords.keptInFrame(0.9f, 0.7f) == 0.5f, "a block taller than the frame is not centred")
+
         // Words taken out by the transcript take what they kept with them; the rest keep theirs.
         val styled = TextOverlayItem(
             id = "l", text = line, startMs = 0, endMs = 5_000, colorArgb = -1,

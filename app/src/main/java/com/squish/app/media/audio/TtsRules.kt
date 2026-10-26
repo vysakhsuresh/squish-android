@@ -24,10 +24,37 @@ object TtsRules {
      * the script has case, runs of space made one, and anything the list does
      * not hold dropped rather than guessed at. A blank line is no ids.
      */
-    fun ids(text: String, symbols: List<String>, lowercase: Boolean = true): IntArray {
+    fun ids(text: String, symbols: List<String>, lowercase: Boolean = true): IntArray =
+        ids(text, idsOf(symbols), lowercase)
+
+    /**
+     * A symbol list as Coqui's tokenizer reads it: `{char: idx for idx, char in
+     * enumerate(vocab)}`, so where a symbol is listed twice - the space, the
+     * comma and the question mark are both punctuation and characters in
+     * AI4Bharat's lists - the later place is its id.
+     */
+    fun idsOf(symbols: List<String>): Map<String, Int> {
         val index = HashMap<String, Int>(symbols.size * 2)
-        symbols.forEachIndexed { i, s -> if (s.isNotEmpty() && s !in index) index[s] = i }
-        val clean = (if (lowercase) text.lowercase() else text).replace(Regex("\\s+"), " ").trim()
+        symbols.forEachIndexed { i, s -> if (s.isNotEmpty()) index[s] = i }
+        return index
+    }
+
+    /**
+     * Coqui's `multilingual_cleaners` with no language, which the voices were
+     * trained through: Unicode NFC, lower case, ";" and ":" to ",", "-" to a
+     * space, the brackets and double quotes dropped, runs of space made one.
+     */
+    fun clean(text: String, lowercase: Boolean = true): String {
+        var t = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFC)
+        if (lowercase) t = t.lowercase()
+        t = t.replace(";", ",").replace("-", " ").replace(":", ",")
+        t = t.replace(Regex("[<>()\\[\\]\"]+"), "")
+        return t.replace(Regex("\\s+"), " ").trim()
+    }
+
+    /** [text]'s ids by [index] (from [idsOf], or the voice's own table). */
+    fun ids(text: String, index: Map<String, Int>, lowercase: Boolean = true): IntArray {
+        val clean = clean(text, lowercase)
         if (clean.isEmpty()) return IntArray(0)
         val out = ArrayList<Int>(clean.length)
         // By code point, so a character outside the Basic plane is one symbol.

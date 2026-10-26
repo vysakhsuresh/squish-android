@@ -2022,6 +2022,29 @@ class PreviewEngine(private val context: Context) {
 
     // ---- Sound --------------------------------------------------------------------
 
+    private var syncMax = 0L
+    private var syncSum = 0L
+    private var syncCount = 0
+    private var syncSince = 0L
+
+    /**
+     * One playing sound's distance from the picture's clock. Every two
+     * seconds of playing, the largest and the mean go to SquishPerf as
+     * "sync N ms mean=M n=K" - the preview's A/V sync, which the file's own
+     * (measured off the export, B3) does not say.
+     */
+    private fun noteSync(driftMs: Long) {
+        val now = SystemClock.elapsedRealtime()
+        if (syncCount == 0) syncSince = now
+        syncMax = maxOf(syncMax, driftMs)
+        syncSum += driftMs
+        syncCount++
+        if (now - syncSince >= SYNC_LOG_MS) {
+            com.squish.app.av.Perf.took("sync", syncMax, "mean=${syncSum / syncCount} n=$syncCount")
+            syncMax = 0L; syncSum = 0L; syncCount = 0
+        }
+    }
+
     private fun syncAudio(t: Long, transportRunning: Boolean, now: Long) {
         // Mid-scrub a sound is only paused: positioning it on every pointer event
         // was hundreds of seeks a second with a few tracks. It is positioned once,
@@ -2066,6 +2089,9 @@ class PreviewEngine(private val context: Context) {
             val speed = clip.speedAt(t)
             setSpeed(player, rate, clip.id, speed, pitch = pitchFor(clip, speed))
             val wanted = clip.sourceAt(t).coerceAtLeast(0L)
+            // The preview's own A/V sync (EDGE_PLAN B3): how far each playing
+            // sound is from the picture's clock, summed for the line logged below.
+            if (transportRunning && player.isPlaying && player.playbackState == Player.STATE_READY) noteSync(abs(player.currentPosition - wanted))
 
             if (!holdPosition) {
                 if (!primed.contains(clip.id)) {
@@ -2203,6 +2229,8 @@ class PreviewEngine(private val context: Context) {
         const val KEY_A = "base-a"
         const val KEY_B = "base-b"
         const val KEY_OVERLAY = "overlay-"
+        /** How often the preview's A/V sync is logged while playing (noteSync). */
+        const val SYNC_LOG_MS = 2_000L
 
         /** How far back an ended player is sent to draw its last picture again: under two frames. */
         const val REDRAW_BACK_MS = 50L

@@ -102,6 +102,8 @@ class NeuralVoice private constructor(dir: File) : Closeable {
     val sampleRate: Int = meta.getInt("sampleRate")
     private val channels = meta.getInt("channels")
     private val lowercase = meta.optBoolean("lowercase", true)
+    /** Coqui's own character-to-id table, written by the converter; the list read as Coqui reads it otherwise. */
+    private val idOf: Map<String, Int> = meta.optJSONObject("ids")?.let { o -> o.keys().asSequence().associateWith { o.getInt(it) } } ?: TtsRules.idsOf(symbols)
 
     private fun open(f: File): Interpreter {
         val buffer = FileInputStream(f).channel.use { it.map(FileChannel.MapMode.READ_ONLY, 0, it.size()) }
@@ -122,7 +124,7 @@ class NeuralVoice private constructor(dir: File) : Closeable {
         val gap = FloatArray((sampleRate * GAP_S).toInt())
         for (sentence in TtsRules.sentences(text, maxChars)) {
             currentCoroutineContext().ensureActive()
-            val ids = TtsRules.ids(sentence, symbols, lowercase)
+            val ids = TtsRules.ids(sentence, idOf, lowercase)
             if (ids.isEmpty()) continue
             pieces += voice(ids, speaker, lengthScale)
             pieces += gap

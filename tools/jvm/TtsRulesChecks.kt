@@ -18,7 +18,10 @@ fun main() {
     val ml = listOf("<pad>", " ", "ന", "മ", "സ", "്", "ക", "ാ", "ര", "ം")
     check(TtsRules.ids("നമസ്കാരം", ml).toList() == listOf(2, 3, 4, 5, 6, 7, 8, 9), "Malayalam ids: ${TtsRules.ids("നമസ്കാരം", ml).toList()}")
     // The first of two equal symbols is the one used, and the pad is never produced by text.
-    check(TtsRules.ids("a", listOf("<pad>", "a", "a")).toList() == listOf(1), "a repeated symbol took the later id")
+    // A symbol listed twice has its later place, as Coqui's tokenizer reads the list.
+    check(TtsRules.ids("a", listOf("<pad>", "a", "a")).toList() == listOf(2), "a repeated symbol took the earlier id - Coqui's is the later")
+    // And the cleaner the voices were trained through.
+    check(TtsRules.clean("Hello: (World) - \"yes\"; OK") == "hello, world yes, ok", "cleaned: ${TtsRules.clean("Hello: (World) - \"yes\"; OK")}")
 
     // ---- Sentences the encoder takes in one call -------------------------------
     check(TtsRules.sentences("Hello there. How are you? Fine!", 192) == listOf("Hello there.", "How are you?", "Fine!"), "sentences: ${TtsRules.sentences("Hello there. How are you? Fine!", 192)}")

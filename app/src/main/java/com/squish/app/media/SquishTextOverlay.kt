@@ -77,7 +77,10 @@ class SquishTextOverlay(private val item: TextOverlayItem) : BitmapOverlay() {
             ?: return StaticOverlaySettings.Builder().setAlphaScale(0f).build()
         // A knockout card at the frame's middle, never turned or raised (drawnAt).
         val drawn = item.drawnFrame(frame)
-        val (x, y) = item.drawnAt(timeMs)
+        val (x, placedY) = item.drawnAt(timeMs)
+        // Both languages kept inside the picture (EDGE_PLAN P4), as the preview keeps them.
+        val tall = cached?.height?.takeIf { frameHeight > 0 }?.let { it * drawn.scale / 2f / frameHeight }
+        val y = if (item.showBoth && !item.secondLine.isNullOrBlank() && tall != null) com.squish.app.editor.CaptionWords.keptInFrame(placedY, tall) else placedY
         return StaticOverlaySettings.Builder()
             .setBackgroundFrameAnchor(x * 2 - 1, 1 - (y - drawn.rise) * 2)
             .setScale(drawn.scale, drawn.scale)

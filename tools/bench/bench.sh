@@ -208,6 +208,71 @@ tour() {
   [ -n "$xy" ] && { set -- $xy; sh_ input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )); }
 }
 
+# EDGE_PLAN D6: every slider on every picture sheet, held mid-drag. The paused
+# picture is screenshot before the finger lands and again while it is still
+# down, past where it started, and the two compared over "The picture"
+# (tools/desktop/regiondiff.ps1): a slider that changes the picture live moves
+# pixels while held. Each drag is undone, so the edit is left as it was.
+bounds_of() { # node line -> "l t r b"
+  echo "$1" | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | tr '\n' ' '
+}
+shot_to() { MSYS_NO_PATHCONV=1 $ADB exec-out screencap -p > "$1"; }
+diff_picture() { # a b "l t r b"
+  set -- "$1" "$2" $3
+  powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$ROOT/tools/desktop/regiondiff.ps1")" \
+    -A "$(cygpath -w "$1")" -B "$(cygpath -w "$2")" -Left $3 -Top $4 -Right $5 -Bottom $6 | tr -d '\r'
+}
+slider_test() { # tool, node line
+  local tool=$1 node=$2 name b pic
+  name=$(echo "$node" | grep -oE '(content-desc|text)="[^"]+"' | head -1 | cut -d'"' -f2)
+  b=$(bounds_of "$node"); set -- $b
+  local l=$1 t=$2 r=$3 bo=$4 y=$(( ($2 + $4) / 2 ))
+  pic=$(bounds_of "$(grep -E 'content-desc="The picture"' "$WORK/ui.txt" | head -1)")
+  [ -n "$pic" ] || { say "slider $tool/$name: (no picture on screen)"; return; }
+  shot_to "$WORK/sl_a.png"
+  sh_ input motionevent DOWN $(( l + (r - l) * 25 / 100 )) $y
+  local k; for k in 35 45 55 65 75; do sh_ input motionevent MOVE $(( l + (r - l) * k / 100 )) $y; done
+  sleep 0.6
+  shot_to "$WORK/sl_b.png"
+  sh_ input motionevent UP $(( l + (r - l) * 75 / 100 )) $y
+  sleep 0.4
+  local d; d=$(diff_picture "$WORK/sl_a.png" "$WORK/sl_b.png" "$pic")
+  set -- $d
+  local verdict="no change"; awk "BEGIN{exit !($2 > 0.5)}" && verdict="LIVE"
+  say "slider $tool/$name: $verdict (mean $1, ${2}% of the picture changed)"
+  tap_text "Undo" >/dev/null || true
+  sleep 0.5
+}
+sliders() {
+  free
+  open_project ${SCRUB_PROJECT:-plain} || return
+  # The first shot: on the main track, just right of the playhead in the middle of the strip.
+  dump
+  local mute; mute=$(bounds_of "$(grep -E '(text|content-desc)="Mute audio"' "$WORK/ui.txt" | head -1)")
+  local w; w=$(screen_w)
+  [ -n "$mute" ] && { set -- $mute; sh_ input tap $(( w * 60 / 100 )) $(( ($2 + $4) / 2 )); sleep 1.2; }
+  local tool seen
+  for tool in ${SLIDER_TOOLS:-Adjust Filters Opacity Placement Mask Effects Crop Blur Speed}; do
+    tap_text "$tool" || { say "slider $tool: (tool not on the toolbar)"; continue; }
+    sleep 1.5
+    seen=" "
+    local pass; for pass in 1 2 3; do
+      dump
+      grep -E 'class="android.widget.SeekBar"' "$WORK/ui.txt" > "$WORK/sl_nodes.txt"
+      while IFS= read -r node; do
+        local key; key=$(echo "$node" | grep -oE '(content-desc|text)="[^"]+"' | head -1)
+        case "$seen" in *"|$key|"*) continue ;; esac
+        seen="$seen|$key|"
+        slider_test "$tool" "$node"
+        dump
+      done < "$WORK/sl_nodes.txt"
+      sheet_scroll_up
+    done
+    close_sheet
+  done
+}
+sheet_scroll_up() { local h w; h=$(screen_h); w=$(screen_w); sh_ input swipe $((w/2)) $((h*90/100)) $((w/2)) $((h*72/100)) 350; sleep 0.6; }
+
 playback() {
   free
   for v in n0 n1 n3; do
@@ -308,7 +373,7 @@ teardown() {
 }
 
 case "$STEP" in
-  setup) setup ;; perf) perf_install ;; coldstart) coldstart ;; open) open ;; scrub) scrub ;; scrubfs) scrubfs ;; tour) tour ;;
+  setup) setup ;; perf) perf_install ;; coldstart) coldstart ;; open) open ;; scrub) scrub ;; scrubfs) scrubfs ;; tour) tour ;; sliders) sliders ;;
   playback) playback ;; export) do_export ;; quality) quality ;; import) import_ ;; teardown) teardown ;;
   measure) coldstart; open; scrub; playback; do_export; quality; import_ ;;
   projects) k=1; for v in plain n0 n1 n3; do make_project $v $k; k=$((k+1)); done ;;

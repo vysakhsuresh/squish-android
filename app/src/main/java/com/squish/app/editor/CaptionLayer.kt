@@ -132,11 +132,13 @@ fun CaptionLayer(
             // A knockout card is drawn at the frame's middle, never turned or
             // raised as a whole; its letters were cut in place (drawnAt).
             val drawn = item.drawnFrame(look)
-            val (x, y) = item.drawnAt(timeMs)
-            val cx = boxLeft + x * boxWidth
-            val cy = boxTop + (y - drawn.rise) * boxHeight
+            val (x, placedY) = item.drawnAt(timeMs)
             val w = glyph.width * drawn.scale
             val h = glyph.height * drawn.scale
+            // Both languages kept inside the picture (EDGE_PLAN P4), as the export keeps them.
+            val y = if (item.showBoth && !item.secondLine.isNullOrBlank()) CaptionWords.keptInFrame(placedY, h / 2f / boxHeight.coerceAtLeast(1)) else placedY
+            val cx = boxLeft + x * boxWidth
+            val cy = boxTop + (y - drawn.rise) * boxHeight
             rotate(degrees = item.drawnTurn(look), pivot = Offset(cx, cy)) {
                 drawImage(
                     image = glyph,

@@ -311,6 +311,21 @@ object CaptionWords {
         return "$first\n${second.trim()}" to first.length + 1
     }
 
+    /**
+     * Where a line kept in two languages is drawn (EDGE_PLAN P4): its centre
+     * [y] (a fraction of the frame's height) moved only as far as keeps the
+     * block - [halfHeight] each side of it, a fraction too - [margin] inside
+     * the frame. The second language makes a line taller than it was placed
+     * for, and one placed at the default 85% would otherwise hang its
+     * translation off the bottom of the picture. A block taller than the frame
+     * is centred.
+     */
+    fun keptInFrame(y: Float, halfHeight: Float, margin: Float = 0.02f): Float {
+        val lo = margin + halfHeight
+        val hi = 1f - margin - halfHeight
+        return if (lo > hi) 0.5f else y.coerceIn(lo, hi)
+    }
+
     /** The stretch of [shown]'s text the highlight colour covers under [mode], or null for none. */
     fun coloured(mode: WordMode, shown: List<String>, state: WordState): IntRange? {
         if (state.active < 0) return null
