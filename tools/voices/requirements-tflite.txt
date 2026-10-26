@@ -6,3 +6,4 @@
 torch==2.8.0
 torchao==0.13.0
 litert-torch
+ai-edge-quantizer

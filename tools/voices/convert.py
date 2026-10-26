@@ -71,6 +71,32 @@ params = sum(p.numel() for p in model.parameters())
 log("fastpitch params", params, "vocoder params", sum(p.numel() for p in gen.parameters()))
 
 
+# ---- Padding that does not leak --------------------------------------------------
+# The app pads every call to T characters and N frames. Coqui's FFTransformerBlock
+# masks padded keys in attention but leaves the padded positions' values in
+# place from layer to layer, and the 3-wide convolution after the attention
+# then reads them into the last real characters - measured: log durations off
+# by up to 0.57 padded, exactly the original's unpadded. Zeroing the padded
+# positions before each layer is what the unpadded run sees (zeros past the
+# end), so it changes nothing there and makes a padded call agree with it.
+from TTS.tts.layers.generic.transformer import FFTransformerBlock
+
+
+def _masked_forward(self, x, mask=None, g=None):
+    keep = None
+    if mask is not None and mask.ndim == 3:
+        keep = mask.to(x.dtype)
+        mask = ~mask.squeeze(1).bool()
+    for layer in self.fft_layers:
+        if keep is not None:
+            x = x * keep
+        x, _ = layer(x, src_key_padding_mask=mask)
+    return x * keep if keep is not None else x
+
+
+FFTransformerBlock.forward = _masked_forward
+
+
 # ---- The halves, as ForwardTTS.inference runs them ------------------------------
 class Encoder(torch.nn.Module):
     def __init__(self, m):
@@ -183,6 +209,13 @@ log("durations padded  ", d_pad.tolist())
 log("durations unpadded", d_unpad.tolist())
 log("log-duration gap padded vs unpadded: max", float(np.abs(lp.numpy()[0, :t] - lu.numpy()[0, :t]).max()),
     "| unpadded vs original:", float(np.abs(lu.numpy()[0, :t] - out["durations_log"].squeeze().numpy()).max()))
+# A voice that speaks differently padded is not shipped.
+if mel.shape != ref.shape or not np.array_equal(d_pad, d_orig):
+    raise SystemExit("the padded run does not speak as the original does - padding still leaks")
+mel_gap = float(np.abs(mel - ref).max())
+if mel_gap > 1e-2 * float(np.abs(ref).max()):
+    raise SystemExit(f"the padded mel is {mel_gap} from the original's")
+log("padded run agrees with the original: durations equal, mel within", mel_gap)
 
 
 # ---- Saved for the second stage (tools/voices/tflite.py, its own environment) ----
