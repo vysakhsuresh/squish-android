@@ -7,5 +7,7 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.8.0
 torchaudio==2.8.0
+# torchao built for torch 2.8; a newer one is pulled in by litert-torch and does not import.
+torchao==0.13.0
 litert-torch
 coqui-tts
