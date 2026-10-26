@@ -105,6 +105,7 @@ dependencies {
     implementation(libs.mediapipe.tasks.vision)
     // DTLN (EDGE_PLAN G3) and the downloaded voices (E5), Apache-2.0: LiteRT (see libs.versions.toml).
     implementation(libs.litert)
+    implementation(libs.litert.gpu)
     // The in-app camera (EDGE_PLAN G5), Apache-2.0.
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)

@@ -105,14 +105,38 @@ class NeuralVoice private constructor(dir: File) : Closeable {
     /** Coqui's own character-to-id table, written by the converter; the list read as Coqui reads it otherwise. */
     private val idOf: Map<String, Int> = meta.optJSONObject("ids")?.let { o -> o.keys().asSequence().associateWith { o.getInt(it) } } ?: TtsRules.idsOf(symbols)
 
-    private fun open(f: File): Interpreter {
+    private val delegates = ArrayList<AutoCloseable>()
+
+    /**
+     * [f] opened on the GPU when [gpu] and the phone takes it, else on the CPU.
+     * The vocoder goes to the GPU: on the moto (26 Oct) the CPU spent 11.5 s
+     * of 14 on it for 5.9 s of speech whatever the thread count, the GPU 5.7 s,
+     * and Whisper heard the GPU's every word. The compiled kernels are kept in
+     * the voice's folder, so only the first open pays for compiling them.
+     */
+    private fun open(f: File, gpu: Boolean = false): Interpreter {
         val buffer = FileInputStream(f).channel.use { it.map(FileChannel.MapMode.READ_ONLY, 0, it.size()) }
+        if (gpu) {
+            val made = runCatching {
+                val cache = File(f.parentFile, "gpu").apply { mkdirs() }
+                val options = org.tensorflow.lite.gpu.GpuDelegate.Options()
+                    .setSerializationParams(cache.absolutePath, "${f.name}-${f.length()}-${f.lastModified()}")
+                val d = org.tensorflow.lite.gpu.GpuDelegate(options)
+                runCatching { Interpreter(buffer, Interpreter.Options().addDelegate(d)) }
+                    .onFailure { d.close() }
+                    .getOrThrow()
+                    .also { delegates += d }
+            }
+            made.onFailure { android.util.Log.w("SquishVoice", "no GPU for ${f.name}; on the CPU", it) }
+            made.getOrNull()?.let { return it }
+        }
         return Interpreter(buffer, Interpreter.Options().setNumThreads(THREADS))
     }
 
     private val encoder = open(File(dir, "encoder.tflite"))
+    // The decoder stays on the CPU: the GPU delegate refuses it (tried on the moto, 26 Oct).
     private val decoder = open(File(dir, "decoder.tflite"))
-    private val vocoder = open(File(dir, "vocoder.tflite"))
+    private val vocoder = open(File(dir, "vocoder.tflite"), gpu = true)
 
     /**
      * [text] spoken by [speaker] (an id from [speakers]) at [lengthScale]
@@ -143,6 +167,7 @@ class NeuralVoice private constructor(dir: File) : Closeable {
         val speakerValues = intArrayOf(speaker)
         val featsOut = floatBuffer(maxChars * channels)
         val durOut = floatBuffer(maxChars)
+        val tEnc = System.nanoTime()
         run(encoder, listOf(Input(idsIn, 2, true, idsValues), Input(maskIn, 2, false), Input(speakerIn, 1, true, speakerValues)), listOf(featsOut to 3, durOut to 2))
         val feats = FloatArray(t * channels).also { featsOut.rewind(); featsOut.asFloatBuffer().get(it) }
         val logDur = FloatArray(t).also { durOut.rewind(); durOut.asFloatBuffer().get(it) }
@@ -159,7 +184,9 @@ class NeuralVoice private constructor(dir: File) : Closeable {
         val yMask = floatBuffer(maxFrames).apply { asFloatBuffer().put(FloatArray(n) { 1f }) }
         speakerIn.rewind()
         val melOut = floatBuffer(maxFrames * MELS)
+        val tDec = System.nanoTime()
         run(decoder, listOf(Input(fIn, 3, false), Input(yMask, 2, false), Input(speakerIn, 1, true, speakerValues)), listOf(melOut to 3))
+        val tVoc = System.nanoTime()
         val mel = FloatArray(n * MELS).also { melOut.rewind(); melOut.asFloatBuffer().get(it) }
 
         // The vocoder, chunk by chunk ([1,80,M] in, frames by band), faded into each other.
@@ -176,6 +203,7 @@ class NeuralVoice private constructor(dir: File) : Closeable {
             vocoder.run(inBuf, outBuf)
             FloatArray(vocoderFrames * hop).also { outBuf.rewind(); outBuf.asFloatBuffer().get(it) }
         }
+        stageMs[0] += (tDec - tEnc) / 1_000_000; stageMs[1] += (tVoc - tDec) / 1_000_000; stageMs[2] += (System.nanoTime() - tVoc) / 1_000_000
         return TtsRules.stitch(chunks, starts.map { it * hop }, OVERLAP * hop, n * hop)
     }
 
@@ -217,6 +245,9 @@ class NeuralVoice private constructor(dir: File) : Closeable {
     }
 
     /** The last sentence's durations, in frames, for the debug probe to set beside the converter's. */
+    /** Milliseconds spent in the encoder (with the durations), the decoder and the vocoder, summed over calls; for the debug probe. */
+    val stageMs = LongArray(3)
+
     @Volatile var lastDurations: IntArray = IntArray(0)
         private set
 
@@ -231,6 +262,7 @@ class NeuralVoice private constructor(dir: File) : Closeable {
         runCatching { encoder.close() }
         runCatching { decoder.close() }
         runCatching { vocoder.close() }
+        delegates.forEach { runCatching { it.close() } }
     }
 
     companion object {

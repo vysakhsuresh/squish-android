@@ -72,9 +72,9 @@ Interspeech 2020), https://github.com/breizhn/DTLN, MIT License, Copyright (c)
 
 ## LiteRT (TensorFlow Lite)
 
-`com.google.ai.edge.litert:litert` 1.4.0 (Google), Apache License 2.0 -
-http://www.apache.org/licenses/LICENSE-2.0. Runs the DTLN models and the
-downloaded voices.
+`com.google.ai.edge.litert:litert` and `litert-gpu` 1.4.0 (Google), Apache
+License 2.0 - http://www.apache.org/licenses/LICENSE-2.0. Runs the DTLN models
+and the downloaded voices (the vocoder on the GPU where the phone takes it).
 
 ## whisper.cpp - captions
 

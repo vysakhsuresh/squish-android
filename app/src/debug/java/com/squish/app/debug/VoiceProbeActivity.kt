@@ -65,6 +65,7 @@ class VoiceProbeActivity : Activity() {
         }
         val took = System.currentTimeMillis() - t1
         say("durations ${voice.lastDurations.toList()} = ${voice.lastDurations.sum()} frames")
+        say("stages ms: encoder ${voice.stageMs[0]}, decoder ${voice.stageMs[1]}, vocoder ${voice.stageMs[2]}")
         val lengthMs = samples.size * 1000L / voice.sampleRate
         val peak = samples.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
         val out = File(filesDir, "voice_probe.wav")
