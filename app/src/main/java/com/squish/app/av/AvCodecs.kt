@@ -107,6 +107,13 @@ object AvCodecs {
         else 256 * 1024
     }
 
+    /**
+     * Set as a Format's customData by the player's renderer (AvVideoRenderer)
+     * for HDR10 that only FFmpeg decodes, whose colour it has relabelled SDR:
+     * the adapter tone-maps it in the decoder (HdrRules says why).
+     */
+    object ToneMappedInDecoder
+
     /** The colour space a frame goes onto a surface in, from what the frame and its track say. */
     fun choiceFor(frame: AvDecoder.Frame, format: Format): YuvDataSpace.Choice {
         val transfer = when (frame.colorTrc.takeIf { it != 2 } ?: trcOf(format)) {

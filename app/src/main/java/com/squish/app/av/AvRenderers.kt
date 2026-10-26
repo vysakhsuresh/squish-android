@@ -156,6 +156,30 @@ private class AvVideoRenderer(private val appContext: Context, builder: MediaCod
      * jumps with this left on, none in six with it off; so FFmpeg is given
      * every sample and pays for decoding a few more frames on a seek.
      */
+    /**
+     * HDR10 that only FFmpeg decodes is handed to Media3 already SDR: its
+     * colour is relabelled BT.709 here, before the video graph is set up for
+     * it, and AvCodecAdapter tone-maps it in the decoder (HdrRules says why -
+     * through Media3's own tone map, red, magenta and blue came out black).
+     */
+    override fun onInputFormatChanged(formatHolder: androidx.media3.exoplayer.FormatHolder): androidx.media3.exoplayer.DecoderReuseEvaluation? {
+        val f = formatHolder.format
+        if (f != null && f.customData == null && f.colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084 &&
+            com.squish.app.media.HdrRules.decoderToneMaps(
+                com.squish.app.media.HdrRules.Clip(
+                    hdr = true, hlg = false,
+                    software = !com.squish.app.media.MediaCompat.platformDecodes(appContext, f) && AvCodecs.decodes(f)
+                )
+            )
+        ) {
+            formatHolder.format = f.buildUpon()
+                .setColorInfo(androidx.media3.common.ColorInfo.SDR_BT709_LIMITED)
+                .setCustomData(AvCodecs.ToneMappedInDecoder)
+                .build()
+        }
+        return super.onInputFormatChanged(formatHolder)
+    }
+
     override fun shouldDiscardDecoderInputBuffer(buffer: androidx.media3.decoder.DecoderInputBuffer): Boolean {
         val info = codecInfo
         if (info != null && AvCodecs.isOurs(info)) return false

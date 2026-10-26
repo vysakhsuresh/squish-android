@@ -50,6 +50,8 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
 
     private val format: Format = configuration.format
     private val video = MimeTypes.isVideo(format.sampleMimeType)
+    /** Relabelled SDR by the renderer: tone-mapped here (AvCodecs.ToneMappedInDecoder). */
+    private val toneMap = format.customData === AvCodecs.ToneMappedInDecoder
     private val decoder: AvDecoder
     private var surface: Surface? = configuration.surface
     private var painter: YuvImagePainter? = null
@@ -107,6 +109,11 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
         val params = AvCodecs.paramsFor(format) ?: throw IOException("FFmpeg has no decoder for ${format.sampleMimeType} ${format.codecs}")
         decoder = AvDecoder.open(params, if (video) AvDecoder.defaultThreads() else 1)
             ?: throw IOException("FFmpeg did not open a decoder for ${format.codecs ?: format.sampleMimeType}")
+        if (toneMap) {
+            val tables = ToneMap.cached(TRC_PQ) ?: throw IOException("no tone map for HDR10")
+            val r = AvNative.decSetToneMap(decoder.nativeHandle, tables)
+            if (r < 0) throw IOException("FFmpeg would not take the tone map ($r)")
+        }
         val capacity = maxOf(
             AvCodecs.inputCapacity(format),
             if (configuration.mediaFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE))
@@ -220,7 +227,7 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
                 // preview sat black with four frames painted - every file FFmpeg
                 // decoded, on the phone, 18 October.
                 val p = painter ?: YuvImagePainter(target, PLAYER_IMAGES).also { painter = it }
-                AvCodecs.paint(p, decoder, out.held, out.frame, format, timestampNs)
+                AvCodecs.paint(p, decoder, out.held, out.frame, format, timestampNs, sdr = toneMap)
             }
         } catch (e: Exception) {
             // A surface that has gone away under the frame - the view torn
@@ -467,6 +474,8 @@ class AvCodecAdapter(configuration: MediaCodecAdapter.Configuration) : MediaCode
     }
 
     private companion object {
+        /** FFmpeg's number for SMPTE 2084 (PQ), the transfer ToneMap.cached builds its tables for. */
+        const val TRC_PQ = 16
         /** Images the writer may have out at once on a player's surface (see paintOn). */
         const val PLAYER_IMAGES = 10
         const val VIDEO_INPUTS = 4
