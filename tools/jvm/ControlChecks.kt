@@ -1889,6 +1889,14 @@ fun main() {
             Regex("""translationX = drawShift\(\)[\s\S]{0,400}compositingStrategy = CompositingStrategy\.Offscreen""").containsMatchIn(editor),
             "the strip's rows are not slid in the draw phase as one offscreen layer - the GPU redraws every tile and wave each frame"
         )
+        // A step of the drawn window rebuilds only the clips crossing its
+        // edges: each clip is handed the scale alone and its span, and placed
+        // from the drawn window's state when laid out.
+        check(
+            editor.contains(".offset { IntOffset(drawn.value.xPx(drawnStartMs).roundToInt(), 0) }") &&
+                editor.contains("window.copy(scrollMs = 0.0)"),
+            "a clip on the strip takes the drawn window itself - every step of it recomposes every clip on screen"
+        )
         // And the preview: the playhead's moment kept out of the frame that
         // recomposes it, read by the captions and the timecode while drawing,
         // and by the layout through PreviewRules.layoutTime.

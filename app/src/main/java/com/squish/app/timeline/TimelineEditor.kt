@@ -58,6 +58,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -112,6 +113,7 @@ import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 private val LANE_HEIGHT = 54.dp
@@ -1022,6 +1024,7 @@ fun TimelineEditor(
                                     selectedId = state.selectedClipId,
                                     alsoSelected = state.selectedIds,
                                     window = drawWindow,
+                                    drawn = drawnState,
                                     accent = Concept.Overlay.accent,
                                     waveforms = state.waveforms,
                                     missingUris = state.missingUris,
@@ -1041,6 +1044,7 @@ fun TimelineEditor(
                                     selectedId = state.selectedClipId,
                                     alsoSelected = state.selectedIds,
                                     window = drawWindow,
+                                    drawn = drawnState,
                                     accent = Concept.Video.accent,
                                     waveforms = state.waveforms,
                                     missingUris = state.missingUris,
@@ -1064,6 +1068,7 @@ fun TimelineEditor(
                                     selectedId = state.selectedClipId,
                                     alsoSelected = state.selectedIds,
                                     window = drawWindow,
+                                    drawn = drawnState,
                                     accent = Concept.Sound.accent,
                                     waveforms = state.waveforms,
                                     missingUris = state.missingUris,
@@ -1084,6 +1089,7 @@ fun TimelineEditor(
                                     selectedId = state.selectedClipId,
                                     alsoSelected = state.selectedIds,
                                     window = drawWindow,
+                                    drawn = drawnState,
                                     accent = Concept.Text.accent,
                                     waveforms = state.waveforms,
                                     missingUris = state.missingUris,
@@ -1718,6 +1724,8 @@ private fun Lane(
      * or the scroll would put every clip in the wrong place.
      */
     window: TimelineWindow,
+    /** [window] as a state, which each clip reads when it is placed (ClipView). */
+    drawn: State<TimelineWindow>,
     accent: Color,
     waveforms: Map<String, com.squish.app.media.audio.Waveform>,
     /** The files that cannot be read; their clips are drawn as placeholders. */
@@ -1778,10 +1786,16 @@ private fun Lane(
                 detectTapGestures { latestBareTap() }
             }
     ) {
+        // The scale alone, the same at every step of the drawn window, and each
+        // sound's beats worked out once: so a clip that is on the drawn window
+        // before and after a step is handed the same arguments and is not
+        // recomposed for it (EDGE_PLAN C3). Only one crossing an edge is.
+        val scale = remember(window.pixelsPerSecond, window.density, window.viewportPx) { window.copy(scrollMs = 0.0) }
+        val beatsOf = remember(clips, soundBeats) { clips.filter { it.kind == ClipKind.Audio }.associate { it.id to soundBeats(it) } }
         clips.forEach { clip ->
             // Off-screen clips are not built at all. This is what makes a timeline
             // of a hundred cuts cost the same to lay out as one of three.
-            if (!window.intersects(clip.timelineStartMs, clip.timelineEndMs)) return@forEach
+            val span = window.clampToView(clip.timelineStartMs, clip.timelineEndMs) ?: return@forEach
             // Keyed by clip, so a clip that changes place keeps its own gestures
             // instead of handing the finger to whichever clip now sits in its slot.
             key(clip.id) {
@@ -1792,12 +1806,14 @@ private fun Lane(
                     lifted = clip.id == liftedId,
                     waveform = clip.uri?.let { waveforms[it.toString()] },
                     missing = clip.uri?.toString() in missingUris,
-                    window = window,
+                    window = scale,
+                    span = span,
+                    drawn = drawn,
                     accent = clipColor?.invoke(clip) ?: accent,
                     onSelect = onSelect,
                     trims = trims,
                     onKeyTap = onKeyTap,
-                    beats = if (clip.kind == ClipKind.Audio) soundBeats(clip) else emptyList()
+                    beats = beatsOf[clip.id] ?: emptyList()
                 )
             }
         }
@@ -2006,7 +2022,16 @@ private fun ClipView(
     waveform: com.squish.app.media.audio.Waveform?,
     /** The clip's file cannot be read: a hatched placeholder and a badge stand in for its frames. */
     missing: Boolean,
+    /**
+     * The strip's scale alone - its scroll left at nothing (TimelineWindow.copy) -
+     * so a step of the drawn window leaves it equal and the clip skips its
+     * recomposition (EDGE_PLAN C3). Widths, diamonds and handles need only this.
+     */
     window: TimelineWindow,
+    /** The part of the clip on the drawn window, worked out by its lane. */
+    span: LongRange,
+    /** The drawn window itself, read when the clip is placed - the layout, not the composition. */
+    drawn: State<TimelineWindow>,
     accent: Color,
     onSelect: (String?) -> Unit,
     trims: Trims,
@@ -2026,7 +2051,6 @@ private fun ClipView(
      * clip you can see, positioned where that part of the whole clip would have
      * been - which looks identical and costs the same whatever the clip's length.
      */
-    val span = window.clampToView(clip.timelineStartMs, clip.timelineEndMs) ?: return
     com.squish.app.util.PerfFlags.hit("ClipView")
     val drawnStartMs = span.first
     val drawnEndMs = span.last
@@ -2044,7 +2068,7 @@ private fun ClipView(
 
     Box(
         modifier = Modifier
-            .offset(x = window.xDp(drawnStartMs).dp)
+            .offset { IntOffset(drawn.value.xPx(drawnStartMs).roundToInt(), 0) }
             .spanWidth(width)
             .fillMaxHeight()
             .graphicsLayer { alpha = if (lifted) 0.35f else 1f }
