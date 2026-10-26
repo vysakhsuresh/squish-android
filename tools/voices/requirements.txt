@@ -4,4 +4,5 @@
 # and recorded in the run's log (pip freeze).
 --extra-index-url https://download.pytorch.org/whl/cpu
 ai-edge-torch
+torchaudio
 coqui-tts
