@@ -1909,6 +1909,14 @@ fun main() {
             preview.contains("val layerTime = layoutTime.value") && preview.contains("PreviewRules.layoutTime("),
             "the preview's layout reads the playhead directly rather than PreviewRules.layoutTime"
         )
+        // The timecode under the picture is drawn, and says its second to a
+        // screen reader: composed, it changed the window's semantics on every
+        // frame of a scrub, and each change set off a walk of the whole tree.
+        check(
+            preview.contains("drawText(timeMeasurer.measure(Timecode.format(positionMs())") &&
+                !Regex("""Text\(\s*Timecode\.format\(positionMs\(\)\)""").containsMatchIn(preview),
+            "the transport's timecode is composed from the playhead again - every scrub frame changes the window's semantics"
+        )
         check(
             read("$SRC/editor/CaptionLayer.kt").contains("timeMs: () -> Long"),
             "the caption layer is handed the moment as a value, so the preview recomposes to move a caption"

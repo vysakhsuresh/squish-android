@@ -158,7 +158,9 @@ whisper() {
     sleep 5
   done
   sh_ logcat -d -s SquishWhisper:I | grep -E "library|sound:|whisper:" | sed 's/^.*SquishWhisper: //'
-  printf '%s' "$text" > "$WORK/whisper_$name.txt"
+  # The whole text from the probe's own file: logcat cuts a line at about 4 KB, and two
+  # minutes of speech is longer than that, so the logged "text:" is only its start.
+  [ -n "$text" ] && MSYS_NO_PATHCONV=1 $ADB exec-out run-as $PKG cat files/whisper_report.txt | tail -1 > "$WORK/whisper_$name.txt" || : > "$WORK/whisper_$name.txt"
   local std; std=$(ls ~/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.20/*/kotlin-stdlib-2.0.20.jar | head -1)
   (cd "$ROOT" && sh tools/jvm/jc.sh Wer tools/jvm/Wer.kt >/dev/null 2>&1)
   local out="$(cygpath -m "${TMPDIR:-/tmp}")/squish-jvm/out-Wer"

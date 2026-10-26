@@ -60,6 +60,39 @@ Reading it:
 - **Export runs at 1.37x real time** - C1's target is InShot's time on the same
   edit, which needs InShot installed.
 
+## C3, scrubbing - moto g84 5G, 26 October 2026, 20:00-21:35
+
+`bench.sh scrubfs` on "Bench n1" (eight shots, a song, a title, Vivid on shot 1),
+the release-speed build (`assemblePerf`), ten 600 ms swipes, over wireless adb.
+"p90" is the whole frame's 90th percentile; "GPU" is gpu+render's p90; "twice"
+is the share of frame gaps where a vsync was shown twice.
+
+| build | p90 ms | GPU p90 ms | frames | twice |
+|---|---|---|---|---|
+| 06:01 build, before any C3 change | 67 | 40 | 341 | 41% |
+| 09:09: strip and preview recompose less | 69-75 | 38-43 | 479-496 | 46-50% |
+| + filmstrip and ruler drawn by one Canvas | 65-68 | 42-43 | 506-540 | 42-49% |
+| `debug.squish.nofx`: the preview's effect chain off (an experiment) | 35 | 16 | 710 | 32% |
+| 3088d07: a pass at its identity hands its frame on undrawn | 39-47 | 18-19 | 572-637 | 39-46% |
+| the same build, `debug.squish.noskip` 1 (skipping off) | 69 | 42 | 500 | 50% |
+
+Reading it:
+
+- **The recomposition work of the morning moved nothing on the phone.** Counted
+  after it (`debug.squish.counts`), the strip recomposes about ten times a second
+  under a scrub and the preview about eight - composition was no longer the cost.
+- **The GPU was.** The render thread spent most of each frame in `queueBuffer`
+  waiting on it, and every preview frame went through seven full-frame passes
+  (HDR lift, key, background, mask, look, blended still, effects) whatever they
+  had to do. Taking the chain off halved the p90; handing a frame past every pass
+  at its identity gets most of that back with the passes still there for any
+  clip that uses them (`PassStage`, checked against a model of Media3's chain).
+- **What is left is the main thread**, about 25-35 ms at p90, and the largest
+  single part of it is accessibility: with a service on (this phone has one),
+  Compose walks the whole layout tree on every semantics change, about 6 ms a
+  walk and 1.6 s over the ten swipes. The timecode under the picture changes on
+  every frame of a scrub, which is enough to set it off.
+
 ## Competitors
 
 Not measured: neither InShot nor CapCut is installed on the moto (checked 24

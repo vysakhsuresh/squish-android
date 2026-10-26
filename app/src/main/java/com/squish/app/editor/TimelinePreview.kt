@@ -101,6 +101,11 @@ import com.squish.app.ui.theme.tabularFigures
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.platform.LocalDensity
 
 /**
  * The preview surface: the composited edit, driven by [PreviewEngine].
@@ -1679,12 +1684,31 @@ private fun Transport(
             }
             TransportButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Forward one frame") { onStep(1) }
 
-            Text(
-                Timecode.format(positionMs()),
-                style = MaterialTheme.typography.labelLarge.tabularFigures(),
-                color = SquishColors.TextPrimary,
-                maxLines = 1,
-                softWrap = false
+            // Drawn, not composed: as a Text it recomposed this row and changed
+            // its accessibility text on every frame of a scrub, and with a
+            // service on, each change sets Compose walking the whole window's
+            // layout tree (26 Oct, traced on the moto: ~6 ms a walk). The box
+            // is as wide as the edit's own length, in tabular figures, so the
+            // digits never jiggle; a screen reader is told the second the
+            // playhead is on, which changes once a second, not every frame.
+            val timeMeasurer = rememberTextMeasurer(cacheSize = 4)
+            val timeStyle = MaterialTheme.typography.labelLarge.tabularFigures().copy(color = SquishColors.TextPrimary)
+            val widest = remember(timeStyle, frame.durationMs) {
+                timeMeasurer.measure(Timecode.format(maxOf(frame.durationMs, 0L)), timeStyle, softWrap = false, maxLines = 1)
+            }
+            val spokenSecond by remember(positionMs) { derivedStateOf { positionMs() / 1000L } }
+            val spoken = "Playhead at ${Timecode.format(spokenSecond * 1000L, withMillis = false)}"
+            val timeDensity = LocalDensity.current
+            Box(
+                modifier = Modifier
+                    .size(
+                        with(timeDensity) { widest.size.width.toDp() },
+                        with(timeDensity) { widest.size.height.toDp() }
+                    )
+                    .clearAndSetSemantics { contentDescription = spoken }
+                    .drawBehind {
+                        drawText(timeMeasurer.measure(Timecode.format(positionMs()), timeStyle, softWrap = false, maxLines = 1))
+                    }
             )
             Text(
                 "/ ${Timecode.format(frame.durationMs)}",
