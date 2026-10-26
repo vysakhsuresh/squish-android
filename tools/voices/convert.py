@@ -185,55 +185,28 @@ log("log-duration gap padded vs unpadded: max", float(np.abs(lp.numpy()[0, :t] -
     "| unpadded vs original:", float(np.abs(lu.numpy()[0, :t] - out["durations_log"].squeeze().numpy()).max()))
 
 
-# ---- To TensorFlow Lite ---------------------------------------------------------
-try:
-    import litert_torch as edge_torch      # the converter's name from 2025
-except ImportError:
-    import ai_edge_torch as edge_torch
-
-
-def convert(name, module, args):
-    edge = edge_torch.convert(module, args)
-    path = os.path.join(OUT, name)
-    edge.export(path)
-    with torch.no_grad():
-        want = module(*[torch.from_numpy(a) for a in args])
-    got = edge(*args)
-    want = want if isinstance(want, (tuple, list)) else (want,)
-    got = got if isinstance(got, (tuple, list)) else (got,)
-    for w, g in zip(want, got):
-        log(name, "tflite vs torch: max abs", float(np.abs(np.asarray(g) - w.numpy()).max()))
-    log(name, os.path.getsize(path), "bytes")
-    return edge
-
-
-enc_edge = convert("encoder.tflite", enc, (x, mk, spk))
-dec_edge = convert("decoder.tflite", dec, (f, my))
+# ---- Saved for the second stage (tools/voices/tflite.py, its own environment) ----
+# Coqui and the TFLite converter want different transformers, so they cannot
+# share one: each half goes out as a torch.export program, with its sample
+# inputs and what the original gave for them, and the second stage converts
+# and checks against those.
 mel_chunk = np.zeros((1, 80, M), np.float32)
 k = min(M, mel.shape[0]); mel_chunk[0, :, :k] = mel[:k].T
-voc_edge = convert("vocoder.tflite", voc, (mel_chunk,))
-
-
-# ---- The sample, spoken through the TFLite models alone -----------------------
-feats_t, logdur_t = enc_edge(x, mk, spk)
-t = len(ids)
-d = durations(np.asarray(logdur_t)[0, :t])
-ex = np.repeat(np.asarray(feats_t)[0, :t], d, axis=0)
-n = ex.shape[0]
-f2 = np.zeros((1, N, ex.shape[1]), np.float32); f2[0, :n] = ex
-my2 = np.zeros((1, N), np.float32); my2[0, :n] = 1
-mel_t = np.asarray(dec_edge(f2, my2))[0, :n]
-wav = []
-for s in range(0, n, M):
-    chunk = np.zeros((1, 80, M), np.float32)
-    part = mel_t[s:s + M]
-    chunk[0, :, :part.shape[0]] = part.T
-    wav.append(np.asarray(voc_edge(chunk))[0, :part.shape[0] * 256])
-wav = np.concatenate(wav)
-pcm = (np.clip(wav, -1, 1) * 32767).astype(np.int16)
-with wave.open(os.path.join(OUT, "sample.wav"), "wb") as w:
-    w.setnchannels(1); w.setsampwidth(2); w.setframerate(22050); w.writeframes(pcm.tobytes())
-log("sample", n, "frames,", len(pcm) / 22050.0, "s, peak", float(np.abs(wav).max()))
+samples = {}
+for name, module, args in (("encoder", enc, (x, mk, spk)), ("decoder", dec, (f, my)), ("vocoder", voc, (mel_chunk,))):
+    targs = tuple(torch.from_numpy(a) for a in args)
+    with torch.no_grad():
+        want = module(*targs)
+    want = want if isinstance(want, (tuple, list)) else (want,)
+    program = torch.export.export(module, targs)
+    torch.export.save(program, os.path.join(OUT, f"{name}.pt2"))
+    for i, a in enumerate(args):
+        samples[f"{name}_in{i}"] = a
+    for i, w in enumerate(want):
+        samples[f"{name}_out{i}"] = w.numpy()
+    log(name, "exported")
+samples["ids"] = np.array(ids, np.int64)
+np.savez(os.path.join(OUT, "samples.npz"), **samples)
 
 # Coqui's own reading of text, for the app's to be checked against
 # (tools/jvm/TtsRulesChecks.kt reads these out of voice.json).
@@ -253,4 +226,4 @@ json.dump({
     "lowercase": True,
     "source": "AI4Bharat Indic-TTS v1 (MIT), github.com/AI4Bharat/Indic-TTS",
 }, open(os.path.join(OUT, "voice.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-log("done")
+log("stage one done")

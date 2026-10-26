@@ -40,11 +40,22 @@ jobs:
         run: |
           python3 -m venv v && . v/bin/activate
           pip install -q -r tools/voices/requirements.txt
-          pip freeze | grep -iE "torch|tts|tensorflow|numpy|ai.edge"
+          pip freeze | grep -iE "torch|tts|transformers|numpy"
           python tools/voices/convert.py ck out ${{ matrix.lang }}
+          deactivate
+          rm -rf ck
+          python3 -m venv w && . w/bin/activate
+          pip install -q -r tools/voices/requirements-tflite.txt
+          pip freeze | grep -iE "torch|litert|tensorflow|numpy|transformers"
+          python tools/voices/tflite.py out
           ls -la out
+          (cd out && zip -q ../voice-${{ matrix.lang }}.zip encoder.tflite decoder.tflite vocoder.tflite voice.json)
+          ls -la voice-${{ matrix.lang }}.zip
       - uses: actions/upload-artifact@v4
         if: ${{ github.event.inputs.step == 'convert' }}
         with:
           name: voice-${{ matrix.lang }}
-          path: out/
+          path: |
+            voice-${{ matrix.lang }}.zip
+            out/sample.wav
+            out/voice.json
