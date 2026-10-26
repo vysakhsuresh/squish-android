@@ -138,6 +138,76 @@ photos() { # N generated photos (PNG) into Pictures/SquishEdge, for the photo pi
   echo "$(echo $ids | wc -w) photos on the phone"
 }
 
+# E1: Whisper on the phone over a speech file, scored against the words spoken.
+#   whisper NAME [lang]     NAME is english, hindi or malayalam (speech/NAME.wav and .txt)
+whisper() {
+  free
+  local name=$1 lang=${2:-}
+  local wav="$MEDIA/speech/$name.wav" ref="$MEDIA/speech/$name.txt"
+  [ -f "$wav" ] || { echo "no $wav"; return 1; }
+  MSYS_NO_PATHCONV=1 $ADB push "$wav" /data/local/tmp/sq_speech.wav >/dev/null
+  sh_ run-as $PKG cp /data/local/tmp/sq_speech.wav files/sq_speech.wav
+  sh_ logcat -c
+  local extra=""; [ -n "$lang" ] && extra="--es lang $lang"
+  sh_ am start -n $PKG/.debug.WhisperProbeActivity --es path /data/data/$PKG/files/sq_speech.wav $extra >/dev/null
+  local i text=""
+  for i in $(seq 120); do
+    text=$(sh_ logcat -d -s SquishWhisper:I | grep -m1 "text: " | sed 's/.*text: //')
+    [ -n "$text" ] && break
+    sh_ logcat -d -s SquishWhisper:I | grep -q "gave nothing\|could not" && break
+    sleep 5
+  done
+  sh_ logcat -d -s SquishWhisper:I | grep -E "library|sound:|whisper:" | sed 's/^.*SquishWhisper: //'
+  printf '%s' "$text" > "$WORK/whisper_$name.txt"
+  local std; std=$(ls ~/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.20/*/kotlin-stdlib-2.0.20.jar | head -1)
+  (cd "$ROOT" && sh tools/jvm/jc.sh Wer tools/jvm/Wer.kt >/dev/null 2>&1)
+  local out="$(cygpath -m "${TMPDIR:-/tmp}")/squish-jvm/out-Wer"
+  echo "$name: $("$HOME/.jdks/jbr-21.0.11/bin/java" -cp "$out;$(cygpath -m "$std")" WerKt "$(cygpath -m "$ref")" "$(cygpath -m "$WORK/whisper_$name.txt")")"
+  sh_ run-as $PKG rm -f files/sq_speech.wav
+  sh_ rm -f /data/local/tmp/sq_speech.wav
+}
+
+# E5: a converted voice put on the phone without the download (the release is the
+# owner's to publish), made to speak the opening of the reference text, and what
+# it said read back by Whisper and scored against what it was given.
+#   voice CODE NAME [speaker]    CODE ml|hi|en, NAME malayalam|hindi|english
+voice() {
+  free
+  local code=$1 name=$2 speaker=${3:-female}
+  local zip="C:/Users/vysak/AppData/Local/Temp/voice-$code/voice-$code.zip"
+  [ -f "$zip" ] || { echo "no $zip"; return 1; }
+  local dir="$WORK/voice_$code"; rm -rf "${dir:?}"; mkdir -p "$dir"
+  (cd "$dir" && unzip -q -o "$zip")
+  sh_ run-as $PKG mkdir -p files/voices/$code
+  local f
+  for f in encoder.tflite decoder.tflite vocoder.tflite voice.json; do
+    MSYS_NO_PATHCONV=1 $ADB push "$dir/$f" /data/local/tmp/sq_$f >/dev/null
+    sh_ run-as $PKG cp /data/local/tmp/sq_$f files/voices/$code/$f
+    sh_ rm -f /data/local/tmp/sq_$f
+  done
+  # The first three sentences of the reference: long enough to score, short enough to be quick.
+  local text; text=$(tr '\n' ' ' < "$MEDIA/speech/$name.txt" | awk 'BEGIN{RS="[.?!।]"} NR<=3 {printf "%s%s", $0, "."}')
+  printf '%s' "$text" > "$WORK/voice_$code.txt"
+  MSYS_NO_PATHCONV=1 $ADB push "$WORK/voice_$code.txt" /data/local/tmp/sq_voice.txt >/dev/null
+  sh_ run-as $PKG cp /data/local/tmp/sq_voice.txt files/sq_voice.txt
+  sh_ logcat -c
+  sh_ am start -n $PKG/.debug.VoiceProbeActivity --es lang $code --es speaker $speaker --es textFile /data/data/$PKG/files/sq_voice.txt >/dev/null
+  local i; for i in $(seq 60); do sh_ logcat -d -s SquishVoice:I | grep -q "wrote\|failed" && break; sleep 3; done
+  sh_ logcat -d -s SquishVoice:I | sed 's/^.*SquishVoice: //'
+  # Whisper over what the voice said, scored against the words it was given.
+  sh_ logcat -c
+  sh_ am start -n $PKG/.debug.WhisperProbeActivity --es path /data/data/$PKG/files/voice_probe.wav --es lang $code >/dev/null
+  local heard=""
+  for i in $(seq 90); do heard=$(sh_ logcat -d -s SquishWhisper:I | grep -m1 "text: " | sed 's/.*text: //'); [ -n "$heard" ] && break; sleep 4; done
+  printf '%s' "$heard" > "$WORK/voice_${code}_heard.txt"
+  local std; std=$(ls ~/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.20/*/kotlin-stdlib-2.0.20.jar | head -1)
+  (cd "$ROOT" && sh tools/jvm/jc.sh Wer tools/jvm/Wer.kt >/dev/null 2>&1)
+  local out="$(cygpath -m "${TMPDIR:-/tmp}")/squish-jvm/out-Wer"
+  echo "voice $code ($speaker), heard back by Whisper: $("$HOME/.jdks/jbr-21.0.11/bin/java" -cp "$out;$(cygpath -m "$std")" WerKt "$(cygpath -m "$WORK/voice_$code.txt")" "$(cygpath -m "$WORK/voice_${code}_heard.txt")")"
+  MSYS_NO_PATHCONV=1 $ADB exec-out run-as $PKG cat files/voice_probe.wav > "$WORK/voice_${code}_probe.wav"
+  sh_ run-as $PKG rm -f files/sq_voice.txt
+}
+
 teardown() {
   sh_ am force-stop $PKG
   local e
@@ -151,6 +221,6 @@ teardown() {
 }
 
 case "$STEP" in
-  push) push ;; project) project "$@" ;; many) many "$@" ;; photos) photos "$@" ;; teardown) teardown ;;
+  push) push ;; project) project "$@" ;; many) many "$@" ;; photos) photos "$@" ;; whisper) whisper "$@" ;; voice) voice "$@" ;; teardown) teardown ;;
   *) echo "unknown step $STEP"; exit 1 ;;
 esac

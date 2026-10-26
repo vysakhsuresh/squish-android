@@ -16,6 +16,11 @@
             android:name="com.squish.app.debug.WhisperProbeActivity"
             android:exported="true"
             android:label="Squish whisper probe" />
+        <!-- A downloaded voice made to speak into a file (debug/VoiceProbeActivity.kt, EDGE_PLAN E5). -->
+        <activity
+            android:name="com.squish.app.debug.VoiceProbeActivity"
+            android:exported="true"
+            android:label="Squish voice probe" />
         <!-- Sound levels read off a file (debug/LevelProbeActivity.kt, EDGE_PLAN G2). -->
         <activity
             android:name="com.squish.app.debug.LevelProbeActivity"
