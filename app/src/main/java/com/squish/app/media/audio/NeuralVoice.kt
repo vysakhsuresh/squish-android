@@ -42,9 +42,9 @@ object NeuralVoices {
     private const val RELEASE = "https://github.com/vysakhsuresh/squish-android/releases/download/voices-v1"
 
     val all = listOf(
-        Language("en", "English (Indian)", "en", 0, "$RELEASE/voice-en.zip"),
-        Language("hi", "Hindi", "hi", 0, "$RELEASE/voice-hi.zip"),
-        Language("ml", "Malayalam", "ml", 0, "$RELEASE/voice-ml.zip")
+        Language("en", "English (Indian)", "en", 103, "$RELEASE/voice-en.zip"),
+        Language("hi", "Hindi", "hi", 101, "$RELEASE/voice-hi.zip"),
+        Language("ml", "Malayalam", "ml", 101, "$RELEASE/voice-ml.zip")
     )
 
     fun byCode(code: String?): Language? = all.firstOrNull { it.code == code }

@@ -64,6 +64,9 @@ import com.squish.app.timeline.withFrozenFrame
 import com.squish.app.timeline.withOverlayTransitionsFitted
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -798,12 +801,21 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             // an export started in that gap left the photo out of the file.
             val t0 = android.os.SystemClock.elapsedRealtime()
             try {
-                val sources = uris.map { uri ->
+                fun one(uri: Uri): suspend () -> StillSource? = {
                     if (isPhoto[uri] == true) {
                         StillClips.fromImage(app, uri)?.let { StillSource(it, displayNameOf(uri) ?: "Photo") }
                     } else {
                         StillSource(uri, null)
                     }
+                }
+                // Up to three photos rendered at once, in the order picked
+                // (EDGE_PLAN C6): one at a time, fifty photos queued a render
+                // each behind the last. debug.squish.serialstills is the old way,
+                // for timing the two against each other on the phone.
+                val sources = if (com.squish.app.util.PerfFlags.on("serialstills")) uris.map { one(it)() }
+                else kotlinx.coroutines.coroutineScope {
+                    val gate = kotlinx.coroutines.sync.Semaphore(STILL_RENDERS_AT_ONCE)
+                    uris.map { uri -> async { gate.withPermit { one(uri)() } } }.awaitAll()
                 }
                 addSources(sources.filterNotNull(), failedAny = sources.any { it == null }, at = at)
                 // EDGE_PLAN C6: pick to placed, photos rendered and all.
@@ -2162,5 +2174,8 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
 }
 
 /** The frame Auto adjust measures: small, the frame's own 16:9-ish shape is enough for averages. */
+/** Photos rendered into clips at once when several are added (EDGE_PLAN C6). */
+private const val STILL_RENDERS_AT_ONCE = 3
+
 private const val AUTO_W = 96
 private const val AUTO_H = 54
