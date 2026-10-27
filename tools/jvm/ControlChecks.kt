@@ -1119,6 +1119,18 @@ fun main() {
         check(Regex(Regex.escape("TypedEcho()")).findAll(text).count() >= 2, "a text field in TextSheet no longer goes through TypedEcho")
     }
     run {
+        // Every item on a composited roll leaves its chain at the canvas's size.
+        // A filler left at its own 16 px changed the size of the roll's last
+        // stage at each clip-to-filler change, Media3 remade the textures the
+        // compositor was still holding, and one roll was drawn frames ahead of
+        // the other: F3's black band (28 Oct).
+        val factory = read("$SRC/media/CompositionFactory.kt")
+        val filler = Regex("""fun filler\([^)]*\)[\s\S]*?\n    }""").find(factory)?.value.orEmpty()
+        check(filler.contains("canvas") && filler.contains("Presentation.createForWidthAndHeight(canvas.width, canvas.height"), "CompositionFactory.filler no longer draws at the canvas's size")
+        val processor = read("$SRC/media/VideoProcessor.kt")
+        check(processor.contains("CompositionFactory.filler(checkNotNull(clear), ms, rate, canvas)"), "VideoProcessor hands the filler no canvas")
+    }
+    run {
         // One swatch, used by every palette.
         val text = read("$SRC/editor/TextSheet.kt")
         check(

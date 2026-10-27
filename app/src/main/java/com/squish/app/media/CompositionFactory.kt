@@ -210,14 +210,31 @@ object CompositionFactory {
      * stays invisible even if some step between the file and the compositor
      * drops its transparency and hands on black. As the clock's body its
      * [frameRate] is the file's: one output frame per frame of it.
+     *
+     * Drawn at the [canvas]'s size, the size every clip on a roll comes out of
+     * its chain at. At its own 16 px, each change on a roll from a clip to a
+     * filler or back changed the size of the roll's last stage, and Media3
+     * (1.11.1's TexturePool.ensureConfigured, under FinalShaderProgramWrapper)
+     * then deletes and remakes all its textures - the ones the compositor is
+     * still holding among them - without clearing the times it keeps for them.
+     * The compositor's queued frames then pointed at textures holding later
+     * pictures, and the roll's releases ran that many frames early: the shot
+     * leaving drawn up to six frames ahead of the one arriving, a black band
+     * between a Cube's faces, a Slide's or a Push's halves apart (EDGE_PLAN F3,
+     * read off the moto with tools/diag/f3_barcode.patch, 28 Oct).
      */
-    fun filler(clearFrame: File, durationMs: Long, frameRate: Int): EditedMediaItem {
+    fun filler(clearFrame: File, durationMs: Long, frameRate: Int, canvas: ExportPresets.Resolution?): EditedMediaItem {
         val item = MediaItem.Builder()
             .setUri(Uri.fromFile(clearFrame))
             .setMimeType(MimeTypes.IMAGE_PNG)
             .setImageDurationMs(durationMs.coerceAtLeast(1L))
             .build()
-        val hide: List<Effect> = listOf(AlphaScale(0f))
+        val hide: List<Effect> = buildList {
+            add(AlphaScale(0f))
+            if (canvas != null && canvas.width > 0 && canvas.height > 0) {
+                add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_STRETCH_TO_FIT))
+            }
+        }
         return EditedMediaItem.Builder(item)
             .setFrameRate(frameRate)
             .setEffects(Effects(ImmutableList.of(), ImmutableList.copyOf(hide)))

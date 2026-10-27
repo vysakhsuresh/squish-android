@@ -405,7 +405,7 @@ class VideoProcessor(private val context: Context) {
                     canvas = canvas,
                     videoOut = videoOut,
                     baseAudio = baseAudio,
-                    filler = { ms -> CompositionFactory.filler(checkNotNull(clear), ms, rate) },
+                    filler = { ms -> CompositionFactory.filler(checkNotNull(clear), ms, rate, canvas) },
                     clockLeadMs = ExportPlan.clockLeadMs(rate),
                     mixerSampleRateHz = ExportPlan.mixerSampleRate(soundSampleRates(state, baseAudio)),
                     overlaySound = ::overlayHeard,
