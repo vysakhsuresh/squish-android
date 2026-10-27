@@ -1063,6 +1063,15 @@ fun main() {
     // no node to focus, so the disc was skipped entirely and its value could
     // neither be read nor changed without a drag.
     run {
+        // A field with its own copy of the words follows the edit only through
+        // TypedEcho. Following every value that differed put the cursor at 0
+        // mid-word: "Handde wthlov" in the Edit sheet, then "dsGood morning, frie"
+        // in an Edit all row, which had kept the old rule (27 Oct).
+        val text = read("$SRC/editor/TextSheet.kt")
+        check(!text.contains("!= field.text"), "TextSheet compares the edit's words with a field's itself - use TypedEcho.follows")
+        check(Regex(Regex.escape("TypedEcho()")).findAll(text).count() >= 2, "a text field in TextSheet no longer goes through TypedEcho")
+    }
+    run {
         // One swatch, used by every palette.
         val text = read("$SRC/editor/TextSheet.kt")
         check(

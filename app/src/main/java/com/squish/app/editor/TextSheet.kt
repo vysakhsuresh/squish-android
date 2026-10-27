@@ -507,13 +507,23 @@ private fun LinesList(
                         // Its own copy of the words while typing, so the cursor is not
                         // put back to the end by each round trip through the edit.
                         var field by remember(line.id) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(line.text)) }
-                        LaunchedEffect(line.text) { if (line.text != field.text) field = androidx.compose.ui.text.input.TextFieldValue(line.text) }
+                        // The line comes back behind the keys; following every value that
+                        // differed put the cursor at 0 mid-word (TypedEcho says how).
+                        val echo = remember(line.id) { TypedEcho() }
+                        LaunchedEffect(line.text) {
+                            if (echo.follows(line.text, field.text, android.os.SystemClock.uptimeMillis())) {
+                                field = androidx.compose.ui.text.input.TextFieldValue(line.text, TextRange(line.text.length))
+                            }
+                        }
                         var hadFocus by remember(line.id) { mutableStateOf(false) }
                         OutlinedTextField(
                             value = field,
                             onValueChange = { typed ->
                                 field = typed
-                                if (typed.text != line.text) onText(line, typed.text)
+                                if (typed.text != line.text) {
+                                    echo.sent(typed.text, android.os.SystemClock.uptimeMillis())
+                                    onText(line, typed.text)
+                                }
                             },
                             textStyle = MaterialTheme.typography.bodySmall,
                             modifier = Modifier
@@ -666,9 +676,6 @@ private fun TextSlider(
 /** How long "Saved the subtitle file" stays up. */
 private const val NOTICE_MS = 4_000L
 
-/** How long a typed value is recognised as the field's own when the state echoes it back. */
-private const val ECHO_MS = 1_500L
-
 /** The lines list's height before it scrolls inside the sheet. */
 private val LINES_MAX_HEIGHT = 320.dp
 
@@ -738,11 +745,9 @@ fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel, selectAl
     // earlier letters' values - and following that is what dropped them. An
     // echo of a recent keystroke is ignored; anything else (an undo, a restyle)
     // is followed.
-    val sent = remember(caption.id) { LinkedHashMap<String, Long>() }
+    val echo = remember(caption.id) { TypedEcho() }
     LaunchedEffect(caption.text) {
-        val now = android.os.SystemClock.uptimeMillis()
-        sent.entries.removeAll { now - it.value > ECHO_MS }
-        if (caption.text != field.text && caption.text !in sent) {
+        if (echo.follows(caption.text, field.text, android.os.SystemClock.uptimeMillis())) {
             field = field.copy(text = caption.text, selection = TextRange(caption.text.length))
         }
     }
@@ -771,7 +776,7 @@ fun TextEditPanel(caption: TextOverlayItem, viewModel: EditorViewModel, selectAl
             onValueChange = { typed ->
                 field = typed
                 if (typed.text != caption.text) {
-                    sent[typed.text] = android.os.SystemClock.uptimeMillis()
+                    echo.sent(typed.text, android.os.SystemClock.uptimeMillis())
                     viewModel.text.updateCaptionText(caption.id, typed.text)
                 }
             },
