@@ -40,7 +40,6 @@ import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.filled.ContentCopy
@@ -200,11 +199,6 @@ private const val MIN_LABEL_GAP_DP = 52f
  */
 private const val SETTLE_MS = 150L
 
-/** How long the film must hold still before its clips are told to a screen reader again (filmMoving). */
-private const val FILM_SETTLE_MS = 400L
-
-/** How often the settling film is looked at. */
-private const val FILM_SETTLE_POLL_MS = 100L
 
 /**
  * A multi-track timeline in the way every phone editor has taught people to
@@ -441,31 +435,6 @@ fun TimelineEditor(
     val playheadPx = viewportPx * TimelineWindow.PLAYHEAD_FRACTION
     // The add button sits on the playhead, so it undoes the slide.
     val counterShift: () -> Float = remember { { -drawShift() } }
-    // Whether the film is moving under the playhead - a drag, a fling, playing -
-    // and until it has held still for FILM_SETTLE_MS. Moving, the strip is one
-    // node to accessibility: every frame it slid, Compose walked which of its
-    // labels and badges had moved for the screen reader the phone runs - a
-    // third of the main thread's 40 ms at p90 while scrubbing on the moto
-    // (EDGE_PLAN C3). Nothing on a moving strip can be touched to explore
-    // anyway; held still, every clip is back as it was.
-    var filmMoving by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        // Each frame of motion only notes the time; one short loop, alive only
-        // while the film moves, says when it has settled. (A delay restarted per
-        // frame was a coroutine made and cancelled ninety times a second.)
-        var lastMove = 0L
-        snapshotFlow { liveWindow().lineMs }.collect {
-            lastMove = android.os.SystemClock.uptimeMillis()
-            if (!filmMoving) {
-                filmMoving = true
-                launch {
-                    while (android.os.SystemClock.uptimeMillis() - lastMove < FILM_SETTLE_MS) kotlinx.coroutines.delay(FILM_SETTLE_POLL_MS)
-                    filmMoving = false
-                }
-            }
-        }
-    }
-    val quietFilm = filmMoving && !com.squish.app.util.PerfFlags.on("keepsemantics")
 
     // Read fresh inside gestures: the pointerInput blocks are keyed on Unit so
     // they survive a zoom, and a captured value would go stale on the first pinch.
@@ -1024,7 +993,11 @@ fun TimelineEditor(
                     .wrapContentWidth(align = Alignment.Start, unbounded = true)
                     .requiredWidth(with(density) { (viewportPx + 2 * drawPadPx).toDp() })
                     .offset { IntOffset(-drawPadPx, 0) }
-                    .then(if (quietFilm) Modifier.clearAndSetSemantics { contentDescription = "Timeline, moving" } else Modifier)
+                    // Not cleared from accessibility while it moves: that was tried
+                    // (C3, 27 Oct) and measured on the moto's release build, and the
+                    // scrub came out slower with it - median 25-27 ms a frame against
+                    // 21, the app's part 12-15 ms against 8.5 - the modifier flipping
+                    // as the film starts and stops recomposing the strip (28 Oct).
                     .graphicsLayer {
                         translationX = drawShift()
                         // Kept as a texture: between steps a scrub only moves it, so the

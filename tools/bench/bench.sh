@@ -125,7 +125,7 @@ open_project() { # variant
   # further down: scrolled a screen at a time until its card is in sight.
   local tries=0 h w; h=$(screen_h); w=$(screen_w)
   until tap_text "Bench $1(, [^\"]*)?" >/dev/null; do
-    tries=$((tries + 1)); [ $tries -gt 12 ] && { say "  (no project \"Bench $1\" on the grid)"; return 1; }
+    tries=$((tries + 1)); [ $tries -gt 30 ] && { say "  (no project \"Bench $1\" on the grid)"; return 1; }
     sh_ input swipe $(( w / 2 )) $(( h * 80 / 100 )) $(( w / 2 )) $(( h * 30 / 100 )) 300; sleep 1
   done
   sleep 10

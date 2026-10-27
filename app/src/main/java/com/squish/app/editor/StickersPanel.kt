@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -428,7 +429,14 @@ private fun DesignsCard(onAdd: (StickerDesign) -> Unit) {
         StickerDesign.offered.filter { it.shelf == shelf }.chunked(3).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 row.forEach { design ->
-                    val image = remember(design) { designTile(design) }
+                    // Painted off the main thread, once a process: 360 px each, a
+                    // shelf of them in one frame was 155 ms on the moto (C7 tour, 28 Oct).
+                    var image by remember(design) { mutableStateOf(designTiles[design]) }
+                    LaunchedEffect(design) {
+                        if (image == null) image = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                            designTiles.getOrPut(design) { designTile(design) }
+                        }
+                    }
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -440,12 +448,14 @@ private fun DesignsCard(onAdd: (StickerDesign) -> Unit) {
                             .padding(8.dp)
                     ) {
                         Box(modifier = Modifier.fillMaxWidth().height(56.dp), contentAlignment = Alignment.Center) {
+                            image?.let { painted ->
                             androidx.compose.foundation.Image(
-                                bitmap = image,
+                                bitmap = painted,
                                 contentDescription = null,
                                 contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                                 modifier = Modifier.fillMaxWidth().height(56.dp)
                             )
+                            }
                         }
                         Text(design.label, style = MaterialTheme.typography.labelSmall, color = SquishColors.TextMuted, maxLines = 1)
                     }
@@ -455,6 +465,9 @@ private fun DesignsCard(onAdd: (StickerDesign) -> Unit) {
         }
     }
 }
+
+/** Each design's tile, once painted: they do not change while the app runs. */
+private val designTiles = java.util.concurrent.ConcurrentHashMap<StickerDesign, androidx.compose.ui.graphics.ImageBitmap>()
 
 /** A design as it lands, painted once for its tile. */
 private fun designTile(design: StickerDesign): androidx.compose.ui.graphics.ImageBitmap {

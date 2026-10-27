@@ -118,6 +118,43 @@ reportsDestination = ... }` block for one build). And at the fitted zoom the
 join badges, one every 24 dp over 26 dp shots, left a shot nowhere to be
 tapped. Both fixed in ed7e8d4.
 
+## C3 and C7 - moto g84 5G, 28 October 2026, 02:00-02:45
+
+Release-speed build (assemblePerf), "Bench n1", over wireless adb, framestats
+(`bench.sh scrubfs` and `tour`), all in one session.
+
+**The strip cleared from accessibility while it moved (C3, 27 Oct) made the
+scrub slower, and was taken out.** Back to back, `debug.squish.keepsemantics`
+switching it:
+
+| scrub, 10 swipes | whole frame median / p90 | app's part median / p90 |
+|---|---|---|
+| cleared while moving (keepsemantics 0), three runs | 26.9 / 64.3, 25.7 / 57.8, 24.5 / 55.1 | 15.1 / 48.7, 12.1 / 42.3, 12.1 / 39.7 |
+| left alone (keepsemantics 1), two runs | 21.5 / 54.7, 20.8 / 54.8 | 8.6 / 37.2, 8.5 / 42.4 |
+| the feature removed (a later build) | 23.4 / 57.2 | 9.6 / 37.7 |
+
+The C7 tour, each step on its own (whole frame median / p90; the app's part
+median / p90; GPU and render median):
+
+| step | whole | app | GPU |
+|---|---|---|---|
+| home grid scroll | 15.4 / 21.0 | 4.3 / 7.8 | 11.3 |
+| Settings scroll | 12.1 / 14.5 | 4.9 / 6.4 | 8.0 |
+| open Edit | 18.5 / 26.2 | 2.4 / 7.8 | 16.2 |
+| open Sound / its scroll | 14.2 / 22.3; 14.3 / 18.9 | 3.4 / 8.1; 5.2 / 8.6 | 11.0; 9.2 |
+| open Text / its scroll | 17.9 / 43.4; 15.3 / 20.3 | 1.8 / 26.8; 5.4 / 6.9 | 15.6; 9.9 |
+| open Stickers / its scroll | 11.0 / 155.4; 14.7 / 19.5 | 2.4 / 13.9; 5.0 / 8.2 | 8.3; 10.3 |
+| open Overlay / its scroll | 6.9 / 10.4; 12.9 / 19.9 | 1.8 / 2.4; 3.7 / 7.5 | 5.0; 9.6 |
+| open Effects / its scroll | 21.2 / 21.9; 13.4 / 22.4 | 2.8 / 4.5; 1.8 / 7.7 | 17.8; 11.5 |
+
+So the bar (p90 under 11.1 ms everywhere) is not met, and what stands between
+is the GPU, not the app: the app's part is 2-5 ms at the median nearly
+everywhere, and even Settings, the plainest screen, spends 8 ms of GPU a
+frame. Two spikes are the app's: a 155 ms frame opening Stickers and an app p90
+of 27 ms opening Text. The Effects sheet's tiles, each its effect drawn live,
+hold the GPU at 18 ms a frame for as long as it is open. Look and Export were
+off the toolbar's screen and the tour skipped them.
+
 ## Competitors
 
 Not measured: neither InShot nor CapCut is installed on the moto (checked 24

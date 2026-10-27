@@ -1090,14 +1090,14 @@ fun main() {
         check(!Regex("""animate\w*AsState\([^)]*sheetHeight""").containsMatchIn(screen), "the sheet's height is animated - the preview resizes every frame of it")
     }
     run {
-        // EDGE_PLAN C3: a moving strip is one node to accessibility. Every frame
-        // it slid, Compose walked which labels had moved for the screen reader,
-        // a third of the scrub's main thread on the moto.
+        // EDGE_PLAN C3: the strip is NOT cleared from accessibility while it
+        // moves. Tried on 27 Oct and measured on the moto's release build on 28
+        // Oct: the scrub was slower with it (median 25-27 ms against 21), the
+        // modifier flipping as the film started and stopped recomposing it.
         val strip = read("$SRC/timeline/TimelineEditor.kt")
         check(
-            Regex("""snapshotFlow \{ liveWindow\(\)\.lineMs \}\.collect \{""").containsMatchIn(strip) &&
-                Regex("""if \(quietFilm\) Modifier\.clearAndSetSemantics""").containsMatchIn(strip),
-            "the strip no longer goes quiet to accessibility while the film moves - the screen reader's walk is back on every frame of a scrub"
+            !strip.contains("quietFilm") && !strip.contains("clearAndSetSemantics"),
+            "the strip is cleared from accessibility while it moves again - measured slower on the moto (28 Oct)"
         )
     }
     run {
