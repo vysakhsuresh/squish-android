@@ -29,6 +29,10 @@ uniform sampler2D uField;
 // 0 where the block measured differently each way round, and the frame is the
 // cross-fade there.
 uniform sampler2D uTrust;
+// Each block's second move (FlowInterp.Field.dx2), packed as uField is: what a
+// small fast thing in it did - a ball, a distant hand - or the block's own move
+// where nothing small moved.
+uniform sampler2D uField2;
 uniform float uMix;
 uniform vec2 uFieldSize;
 uniform vec2 uCellUv;
@@ -39,12 +43,27 @@ varying vec2 vTexSamplingCoord;
 
 const float DISAGREE_FROM = 0.12;
 const float DISAGREE_TO = 0.3;
+// FlowInterp.CHANGED and SMALL_AGREES.
+const float CHANGED = 0.1;
+const float SMALL_AGREES = 0.04;
 
 vec2 vectorAtCell(vec2 cell) {
   vec4 t = texture2D(uField, (cell + 0.5) / uFieldSize);
   float x = (t.r * 65280.0 + t.g * 255.0) / 65535.0;
   float y = (t.b * 65280.0 + t.a * 255.0) / 65535.0;
   return (vec2(x, y) - 0.5) * 2.0 * uRangeUv;
+}
+
+vec2 secondAtCell(vec2 cell) {
+  vec4 t = texture2D(uField2, (cell + 0.5) / uFieldSize);
+  float x = (t.r * 65280.0 + t.g * 255.0) / 65535.0;
+  float y = (t.b * 65280.0 + t.a * 255.0) / 65535.0;
+  return (vec2(x, y) - 0.5) * 2.0 * uRangeUv;
+}
+
+float changedBy(vec2 uv) {
+  vec3 d = abs(texture2D(uTexA, uv).rgb - texture2D(uTexB, uv).rgb);
+  return (d.r + d.g + d.b) / 3.0;
 }
 
 float diff(vec2 uv, vec2 v, float t) {
@@ -85,11 +104,37 @@ void main() {
   c = cost(uv, v01, t); if (c < bestCost - 0.000001) { bestCost = c; best = v01; }
   c = cost(uv, v11, t); if (c < bestCost - 0.000001) { bestCost = c; best = v11; }
 
+  // The four blocks' second moves, as FlowInterp.interpolate weighs them: one
+  // only counts where it is not the block's own move again, and it wins only
+  // where the pixel itself changed and it is clearly better, or where what it
+  // brings in is the thing in motion and the two frames agree along it.
+  vec2 s00 = secondAtCell(c0);
+  vec2 s10 = secondAtCell(vec2(c1.x, c0.y));
+  vec2 s01 = secondAtCell(vec2(c0.x, c1.y));
+  vec2 s11 = secondAtCell(c1);
+  float smallCost = 1.0e9;
+  vec2 small = vec2(0.0);
+  if (any(notEqual(s00, v00))) { c = cost(uv, s00, t); if (c < smallCost - 0.000001) { smallCost = c; small = s00; } }
+  if (any(notEqual(s10, v10))) { c = cost(uv, s10, t); if (c < smallCost - 0.000001) { smallCost = c; small = s10; } }
+  if (any(notEqual(s01, v01))) { c = cost(uv, s01, t); if (c < smallCost - 0.000001) { smallCost = c; small = s01; } }
+  if (any(notEqual(s11, v11))) { c = cost(uv, s11, t); if (c < smallCost - 0.000001) { smallCost = c; small = s11; } }
+  float smallWins = 0.0;
+  if (smallCost < 1.0e8) {
+    bool passing = changedBy(uv - t * small) > CHANGED && changedBy(uv + (1.0 - t) * small) > CHANGED;
+    bool changedHere = changedBy(uv) > CHANGED;
+    if ((changedHere && smallCost < bestCost * 0.5) || (passing && smallCost <= SMALL_AGREES * 5.0)) {
+      best = small;
+      smallWins = 1.0;
+    }
+  }
+
   vec4 a = texture2D(uTexA, uv - t * best);
   vec4 b = texture2D(uTexB, uv + (1.0 - t) * best);
   vec4 moved = mix(a, b, t);
   vec4 fade = mix(texture2D(uTexA, uv), texture2D(uTexB, uv), t);
   vec3 d = abs(a.rgb - b.rgb);
-  float back = max(smoothstep(DISAGREE_FROM, DISAGREE_TO, (d.r + d.g + d.b) / 3.0), 1.0 - texture2D(uTrust, clamp(uv / uCellUv / uFieldSize, 0.0, 1.0)).r);
+  // A block's trust is about its own move; a small thing's move chosen is tested by the agreement alone.
+  float distrust = (1.0 - smallWins) * (1.0 - texture2D(uTrust, clamp(uv / uCellUv / uFieldSize, 0.0, 1.0)).r);
+  float back = max(smoothstep(DISAGREE_FROM, DISAGREE_TO, (d.r + d.g + d.b) / 3.0), distrust);
   gl_FragColor = mix(moved, fade, back);
 }

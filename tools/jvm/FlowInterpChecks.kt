@@ -125,12 +125,58 @@ fun main() {
     check(FlowInterp.usesFlow(cutField) == false, "a cut was trusted as motion (held ${FlowInterp.heldShare(cutField)})")
     check(FlowInterp.usesFlow(field), "a trackable move was not trusted")
 
+    // A small thing moving fast over still ground (27 Oct, the edgemedia
+    // fast-motion clip on the moto: a dot drawn twice at half strength in
+    // every in-between frame). A 6 px dot - a fraction of one block - moving
+    // 36 px: the frame half way has it once, at +18, nearly whole, and nothing
+    // where it was or where it is going.
+    run {
+        fun dotFrame(x: Int): LumaFrame {
+            val px = FloatArray(W * H)
+            for (j in 0 until H) for (i in 0 until W) {
+                val bg = 0.15f + 0.3f * smoothNoise(i, j, 7)
+                px[j * W + i] = if (i in x until x + 6 && j in 80 until 86) 0.97f else bg
+            }
+            return LumaFrame(W, H, px)
+        }
+        val da = dotFrame(100); val db = dotFrame(136)
+        val dm = FlowInterp.interpolate(da, db, FlowInterp.field(da, db), 0.5f)
+        fun meanIn(f: LumaFrame, x: Int) = (x until x + 6).sumOf { i -> (80 until 86).sumOf { j -> f.pixels[j * W + i].toDouble() } } / 36.0
+        val atHalf = meanIn(dm, 118); val atStart = meanIn(dm, 100); val atEnd = meanIn(dm, 136)
+        val bgHere = meanIn(da, 118)
+        check(atHalf > 0.85, "a small fast dot is not at the half-way point in the frame between (it reads $atHalf there, the dot is 0.97)")
+        check(atStart < bgHere + 0.12 && atEnd < bgHere + 0.12, "a small fast dot left a ghost: $atStart where it was, $atEnd where it went, the ground ${"%.2f".format(java.util.Locale.ROOT, bgHere)}")
+    }
+
+    // Grain, which changes scattered pixels past CHANGED in every frame: no
+    // small thing is invented from it, and the frame between stays the
+    // cross-fade of the two to within a few percent.
+    run {
+        fun grainy(seed: Int): LumaFrame {
+            val base = frame(100)
+            return LumaFrame(W, H, FloatArray(W * H) { k -> (base.pixels[k] + (hash(k % W, k / W, seed) - 0.5f) * 0.3f).coerceIn(0f, 1f) })
+        }
+        val ga = grainy(11); val gb = grainy(12)
+        val gm = FlowInterp.interpolate(ga, gb, FlowInterp.field(ga, gb), 0.5f)
+        val gFade = crossFade(ga, gb, 0.5f)
+        val off = sad(gm, gFade) / sad(ga, gb)
+        check(off < 0.08, "grain was taken for motion: the frame between is ${"%.3f".format(java.util.Locale.ROOT, off)} of the two frames' difference away from their cross-fade")
+    }
+
     // The packed field the shader reads gives the field back.
     val packed = FlowInterp.pack(field)
     val back = FlowInterp.unpack(packed, field.cols, field.rows)
     var worst = 0f
     for (k in field.dx.indices) worst = maxOf(worst, abs(back.dx[k] - field.dx[k]), abs(back.dy[k] - field.dy[k]))
     check(worst < 0.02f, "the packed field is off by $worst analysis pixels")
+    // And the second moves, packed for the shader's third texture, come back as the CPU chose them.
+    run {
+        val da = FlowInterp.shrink(frame(100), 1); val fd = FlowInterp.field(da, frame(112))
+        val sb = FlowInterp.unpack(FlowInterp.packSecond(fd), fd.cols, fd.rows)
+        var w2 = 0f
+        for (k in fd.dx2.indices) w2 = maxOf(w2, abs(sb.dx[k] - fd.dx2[k]), abs(sb.dy[k] - fd.dy2[k]))
+        check(w2 < 0.02f, "the packed second moves are off by $w2 analysis pixels")
+    }
 
     if (problems.isEmpty()) println("FlowInterpChecks: all checks passed (half way at $at, error $flowError against a cross-fade's $fadeError)")
     else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }

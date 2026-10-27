@@ -68,7 +68,16 @@ object FlowInterp {
          * thin line, a turning edge, anything a block cannot pin down - so
          * the frame is the cross-fade there rather than a tear.
          */
-        val trust: FloatArray = FloatArray(cols * rows) { 1f }
+        val trust: FloatArray = FloatArray(cols * rows) { 1f },
+        /**
+         * A second move for each block, in the same pixels: what the few
+         * pixels that changed did, where only a few did - a ball, a distant
+         * hand, anything a fraction of a block that the block's own move
+         * (the still ground round it) does not carry. The block's own move
+         * where there is none, so a shader reading it always has a vector.
+         */
+        val dx2: FloatArray = dx,
+        val dy2: FloatArray = dy
     )
 
     /** The mean difference a believed block may leave between the earlier frame moved and the later one. */
@@ -83,6 +92,80 @@ object FlowInterp {
             n++
         }
         return if (n == 0) Float.MAX_VALUE else sum / n
+    }
+
+    /** A pixel has changed between the two frames by more than this (luma, 0 to 1): noise and grain stay under it. */
+    const val CHANGED = 0.1f
+
+    /** A block has a second move only where fewer than this share of its pixels changed: more is the block's own motion. */
+    const val SMALL_SHARE = 0.25f
+
+    /** How far, in analysis pixels, a small thing is looked for: a fast one crosses a block or more a frame. */
+    const val SMALL_REACH = 20
+
+    /** The mean difference, both ways round, the second move may leave over the changed pixels. */
+    const val SMALL_RESIDUAL = 0.12f
+
+    /** The share of a small thing's changed pixels that must have two changed neighbours: a blob, not grain. */
+    const val SMALL_JOINED = 0.5f
+
+    /**
+     * Where the few pixels of the block at ([c], [r]) that changed went: the
+     * offset that matches them both ways round - each changed pixel of [prev]
+     * against [next] moved on by it, and each of [next] against [prev] moved
+     * back - which pins a small thing down at both ends of its move, where it
+     * left and where it arrived. Null where too few or too many changed, or
+     * nothing explains them. In analysis pixels.
+     */
+    fun smallMove(prev: LumaFrame, next: LumaFrame, c: Int, r: Int): Pair<Int, Int>? {
+        val w = prev.width
+        val h = prev.height
+        val x0 = c * BLOCK; val y0 = r * BLOCK
+        val x1 = minOf(x0 + BLOCK, w); val y1 = minOf(y0 + BLOCK, h)
+        val area = (x1 - x0) * (y1 - y0)
+        if (area <= 0) return null
+        val changed = ArrayList<Int>()
+        for (j in y0 until y1) for (i in x0 until x1) {
+            if (abs(prev.pixels[j * w + i] - next.pixels[j * w + i]) > CHANGED) changed += j * w + i
+        }
+        if (changed.size < 2 || changed.size > area * SMALL_SHARE) return null
+        // A thing is a blob: most of its changed pixels have changed ones beside
+        // them. Grain changes pixels one at a time, scattered, and some offset
+        // always matches scattered pixels by chance.
+        val inSet = changed.toHashSet()
+        val joined = changed.count { k ->
+            val i = k % w
+            listOf(k - 1 to (i > 0), k + 1 to (i < w - 1), k - w to true, k + w to true).count { (q, ok) -> ok && q in inSet } >= 2
+        }
+        if (joined < changed.size * SMALL_JOINED) return null
+        fun cost(vx: Int, vy: Int): Float {
+            var sum = 0f
+            var n = 0
+            for (k in changed) {
+                val i = k % w; val j = k / w
+                val fi = i + vx; val fj = j + vy
+                val bi = i - vx; val bj = j - vy
+                if (fi in 0 until w && fj in 0 until h) { sum += abs(prev.pixels[k] - next.pixels[fj * w + fi]); n++ }
+                if (bi in 0 until w && bj in 0 until h) { sum += abs(next.pixels[k] - prev.pixels[bj * w + bi]); n++ }
+            }
+            return if (n < changed.size) Float.MAX_VALUE else sum / n
+        }
+        // Every other offset, then the eight round the best.
+        var best = 0 to 0
+        var bestCost = cost(0, 0)
+        val still = bestCost
+        for (vy in -SMALL_REACH..SMALL_REACH step 2) for (vx in -SMALL_REACH..SMALL_REACH step 2) {
+            val e = cost(vx, vy)
+            if (e < bestCost) { bestCost = e; best = vx to vy }
+        }
+        val (cx, cy) = best
+        for (vy in cy - 1..cy + 1) for (vx in cx - 1..cx + 1) {
+            if (abs(vx) > SMALL_REACH || abs(vy) > SMALL_REACH) continue
+            val e = cost(vx, vy)
+            if (e < bestCost) { bestCost = e; best = vx to vy }
+        }
+        if (best == (0 to 0) || bestCost > SMALL_RESIDUAL || bestCost > still * 0.5f) return null
+        return best
     }
 
     /** The field between [prev] and [next], smoothed. */
@@ -117,7 +200,15 @@ object FlowInterp {
             // which across a cut between two busy pictures can still be a lot.
             conf[k] = if (residual(p, n, c * BLOCK, r * BLOCK, m.dx, m.dy) <= MAX_RESIDUAL) m.confidence else 0f
         }
-        return smoothed(Field(cols, rows, (BLOCK * scale).toFloat(), dx, dy, conf, trust))
+        val smooth = smoothed(Field(cols, rows, (BLOCK * scale).toFloat(), dx, dy, conf, trust))
+        // The second moves after the smoothing, which must not average a ball
+        // into the ground round it; a block without one carries its own.
+        val dx2 = smooth.dx.copyOf()
+        val dy2 = smooth.dy.copyOf()
+        for (r in 0 until rows) for (c in 0 until cols) {
+            smallMove(p, n, c, r)?.let { (vx, vy) -> dx2[r * cols + c] = vx.toFloat() * scale; dy2[r * cols + c] = vy.toFloat() * scale }
+        }
+        return Field(cols, rows, smooth.cell, smooth.dx, smooth.dy, smooth.confidence, smooth.trust, dx2, dy2)
     }
 
     /**
@@ -141,7 +232,7 @@ object FlowInterp {
             val k = r * f.cols + c
             if (xs.isNotEmpty()) { dx[k] = median(xs); dy[k] = median(ys) }
         }
-        return Field(f.cols, f.rows, f.cell, dx, dy, f.confidence, f.trust)
+        return Field(f.cols, f.rows, f.cell, dx, dy, f.confidence, f.trust, if (f.dx2 === f.dx) dx else f.dx2, if (f.dy2 === f.dy) dy else f.dy2)
     }
 
     /** The share of blocks the estimator believed. */
@@ -181,14 +272,28 @@ object FlowInterp {
     /** Where round a pixel the two moved frames are compared: a plus, 1.5 px out. */
     val PATCH = listOf(0f to 0f, 1.5f to 0f, -1.5f to 0f, 0f to 1.5f, 0f to -1.5f)
 
-    /** The blended vector first (it wins a tie), then the four nearest blocks' own. */
+    /** Where in [candidates] the second moves begin: after the blend and the four blocks' own. */
+    const val FIRST_SMALL = 5
+
+    /** The mean difference a small thing's move may leave, per sample, and still be taken over standing still. */
+    const val SMALL_AGREES = 0.04f
+
+    /**
+     * The blended vector first (it wins a tie), then the four nearest blocks'
+     * own, then their second moves - the small fast thing, which is only ever
+     * chosen where the two frames moved along it agree.
+     */
     fun candidates(f: Field, x: Float, y: Float): List<Pair<Float, Float>> {
         val gx = (x / f.cell - 0.5f).coerceIn(0f, (f.cols - 1).toFloat())
         val gy = (y / f.cell - 0.5f).coerceIn(0f, (f.rows - 1).toFloat())
         val c0 = floor(gx).toInt(); val r0 = floor(gy).toInt()
         val c1 = minOf(c0 + 1, f.cols - 1); val r1 = minOf(r0 + 1, f.rows - 1)
         fun at(c: Int, r: Int) = f.dx[r * f.cols + c] to f.dy[r * f.cols + c]
-        return listOf(vectorAt(f, x, y), at(c0, r0), at(c1, r0), at(c0, r1), at(c1, r1))
+        fun second(c: Int, r: Int) = f.dx2[r * f.cols + c] to f.dy2[r * f.cols + c]
+        return listOf(
+            vectorAt(f, x, y), at(c0, r0), at(c1, r0), at(c0, r1), at(c1, r1),
+            second(c0, r0), second(c1, r0), second(c0, r1), second(c1, r1)
+        )
     }
 
     /** The frame [t] of the way from [prev] to [next]: what the shader draws, pixel for pixel. */
@@ -210,7 +315,12 @@ object FlowInterp {
             var bestCost = Float.MAX_VALUE
             var vx = 0f
             var vy = 0f
-            for (cand in candidates(f, x, y)) {
+            var small = false
+            val cands = candidates(f, x, y)
+            var smallCost = Float.MAX_VALUE
+            var sx = 0f
+            var sy = 0f
+            for ((index, cand) in cands.withIndex()) {
                 var cost = 0f
                 for (o in PATCH) {
                     cost += abs(
@@ -218,12 +328,34 @@ object FlowInterp {
                             sample(next, x + o.first + (1 - t) * cand.first, y + o.second + (1 - t) * cand.second)
                     )
                 }
-                if (cost < bestCost - 1e-6f) { bestCost = cost; vx = cand.first; vy = cand.second }
+                // A block with no second move offers its own again: not a small thing.
+                if (index >= FIRST_SMALL && cand != cands[index - (FIRST_SMALL - 1)]) {
+                    if (cost < smallCost - 1e-6f) { smallCost = cost; sx = cand.first; sy = cand.second }
+                } else if (cost < bestCost - 1e-6f) { bestCost = cost; vx = cand.first; vy = cand.second }
             }
+            // A small thing's move wins wherever the two frames agree along it,
+            // even where standing still agrees as well: half way along its path
+            // the ground shows in both frames, so "nothing moved" is just as
+            // consistent there - and is the ghost. Where it is wrong, on flat
+            // ground, moving flat ground changes nothing.
+            // Only where what it brings in is the thing in motion: where it was
+            // in the earlier frame is not that in the later one, and the other
+            // way round. Still ground beside a moving edge can match itself
+            // shifted, and was being moved.
+            val passing = smallCost < Float.MAX_VALUE &&
+                abs(sample(prev, x - t * sx, y - t * sy) - sample(next, x - t * sx, y - t * sy)) > CHANGED &&
+                abs(sample(next, x + (1 - t) * sx, y + (1 - t) * sy) - sample(prev, x + (1 - t) * sx, y + (1 - t) * sy)) > CHANGED
+            val changedHere = abs(prev.pixels[k] - next.pixels[k]) > CHANGED
+            if ((changedHere && smallCost < bestCost * 0.5f) || (passing && smallCost <= SMALL_AGREES * PATCH.size)) { vx = sx; vy = sy; small = true }
             val a = sample(prev, x - t * vx, y - t * vy)
             val b = sample(next, x + (1 - t) * vx, y + (1 - t) * vy)
             val moved = a * (1 - t) + b * t
-            val back = maxOf(smoothstep(DISAGREE_FROM, DISAGREE_TO, abs(a - b)), 1f - trustAt(f, x, y))
+            // A block's trust is about its own move. A small thing in it is
+            // what makes that move hard to pin down both ways round, so where
+            // the small thing's move is the one chosen, the two frames agreeing
+            // along it is the test, not the block's trust.
+            val distrust = if (small) 0f else 1f - trustAt(f, x, y)
+            val back = maxOf(smoothstep(DISAGREE_FROM, DISAGREE_TO, abs(a - b)), distrust)
             out[k] = moved + (fade - moved) * back
         }
         return LumaFrame(w, h, out)
@@ -234,10 +366,15 @@ object FlowInterp {
      * component as sixteen bits over ±[RANGE] - red and green for x, blue and
      * alpha for y. Eight bits alone were a step of half a pixel at 1080p.
      */
-    fun pack(f: Field): ByteArray {
-        val out = ByteArray(f.cols * f.rows * 4)
-        for (k in f.dx.indices) {
-            val ux = encode(f.dx[k]); val uy = encode(f.dy[k])
+    fun pack(f: Field): ByteArray = pack(f.dx, f.dy, f.cols * f.rows)
+
+    /** The second moves ([Field.dx2]) as the shader's third texture, packed as [pack] packs the first. */
+    fun packSecond(f: Field): ByteArray = pack(f.dx2, f.dy2, f.cols * f.rows)
+
+    private fun pack(xs: FloatArray, ys: FloatArray, n: Int): ByteArray {
+        val out = ByteArray(n * 4)
+        for (k in 0 until n) {
+            val ux = encode(xs[k]); val uy = encode(ys[k])
             out[k * 4] = (ux shr 8).toByte(); out[k * 4 + 1] = (ux and 0xFF).toByte()
             out[k * 4 + 2] = (uy shr 8).toByte(); out[k * 4 + 3] = (uy and 0xFF).toByte()
         }

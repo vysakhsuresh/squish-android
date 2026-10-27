@@ -82,6 +82,7 @@ private class FrameBlendShaderProgram(
     private var heldLuma: LumaFrame? = null
     private var fieldTexId = 0
     private var trustTexId = 0
+    private var secondTexId = 0
 
     private var width = -1
     private var height = -1
@@ -133,7 +134,7 @@ private class FrameBlendShaderProgram(
                 val flow = field != null && FlowInterp.usesFlow(field) && upload(field)
                 for (blend in blends) {
                     val out = free.removeFirst()
-                    if (flow) checkNotNull(flowProgram).draw(out, previous.texId, inputTexture.texId, blend.mix, field!!, fieldTexId, trustTexId, luma!!)
+                    if (flow) checkNotNull(flowProgram).draw(out, previous.texId, inputTexture.texId, blend.mix, field!!, fieldTexId, trustTexId, secondTexId, luma!!)
                     else draw(out, previous.texId, inputTexture.texId, blend.mix)
                     outputListener.onOutputFrameAvailable(out, blend.timeUs)
                 }
@@ -186,8 +187,10 @@ private class FrameBlendShaderProgram(
             probe = null
             if (fieldTexId != 0) GLES20.glDeleteTextures(1, intArrayOf(fieldTexId), 0)
             if (trustTexId != 0) GLES20.glDeleteTextures(1, intArrayOf(trustTexId), 0)
+            if (secondTexId != 0) GLES20.glDeleteTextures(1, intArrayOf(secondTexId), 0)
             fieldTexId = 0
             trustTexId = 0
+            secondTexId = 0
             flowProgram?.delete()
             glProgram.delete()
         } catch (e: GlUtil.GlException) {
@@ -302,11 +305,14 @@ private class FrameBlendShaderProgram(
         // Linear for the trust, blended between blocks as FlowInterp.trustAt does.
         if (fieldTexId == 0) fieldTexId = smallTexture(GLES20.GL_NEAREST)
         if (trustTexId == 0) trustTexId = smallTexture(GLES20.GL_LINEAR)
+        if (secondTexId == 0) secondTexId = smallTexture(GLES20.GL_NEAREST)
         GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 1)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fieldTexId)
         GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, field.cols, field.rows, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, direct(FlowInterp.pack(field)))
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, trustTexId)
         GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, field.cols, field.rows, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, direct(FlowInterp.packTrust(field)))
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, secondTexId)
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, field.cols, field.rows, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, direct(FlowInterp.packSecond(field)))
         GlUtil.checkGlError()
         true
     } catch (e: GlUtil.GlException) {

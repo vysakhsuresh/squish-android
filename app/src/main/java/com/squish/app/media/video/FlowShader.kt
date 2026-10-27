@@ -22,7 +22,7 @@ internal class FlowShader(context: Context) {
     }
 
     /** The frame [mix] of the way from [a] to [b], moved along [field] (in [fieldTexId]), measured on [analysis]'s grid. */
-    fun draw(target: GlTextureInfo, a: Int, b: Int, mix: Float, field: FlowInterp.Field, fieldTexId: Int, trustTexId: Int, analysis: LumaFrame) {
+    fun draw(target: GlTextureInfo, a: Int, b: Int, mix: Float, field: FlowInterp.Field, fieldTexId: Int, trustTexId: Int, secondTexId: Int, analysis: LumaFrame) {
         val aw = analysis.width.toFloat()
         val ah = analysis.height.toFloat()
         GlUtil.focusFramebufferUsingCurrentContext(target.fboId, target.width, target.height)
@@ -32,6 +32,7 @@ internal class FlowShader(context: Context) {
         program.setSamplerTexIdUniform("uTexB", b, 1)
         program.setSamplerTexIdUniform("uField", fieldTexId, 2)
         program.setSamplerTexIdUniform("uTrust", trustTexId, 3)
+        program.setSamplerTexIdUniform("uField2", secondTexId, 4)
         program.setFloatsUniform("uMix", floatArrayOf(mix))
         program.setFloatsUniform("uFieldSize", floatArrayOf(field.cols.toFloat(), field.rows.toFloat()))
         program.setFloatsUniform("uCellUv", floatArrayOf(field.cell / aw, field.cell / ah))
