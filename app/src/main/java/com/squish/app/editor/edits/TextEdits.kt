@@ -834,7 +834,9 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             }
             _state.update { it.copy(captions = it.captions.copy(transcribed = transcribed, done = index + 1)) }
         }
-        if (transcribed > 0) wordless.forEach { if (landAutoCaption(run, it, "", emptyList())) made++ }
+        if (com.squish.app.media.audio.WhisperWindows.keepsWordless(heardInWindows = whisper, anyWords = transcribed > 0)) {
+            wordless.forEach { if (landAutoCaption(run, it, "", emptyList())) made++ }
+        }
         if (whisper) com.squish.app.media.audio.WhisperTranscriber.release()
 
         _state.update {

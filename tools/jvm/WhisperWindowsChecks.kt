@@ -38,6 +38,13 @@ fun main() {
     check(back[1].map { it.text } == listOf("four", "five"), "the second line got ${back[1].map { it.text }}")
     check(back.flatten().none { it.text == "far" }, "a word a second and a half from every line was captioned")
 
+    // A line given no words: kept as a card to fill in only when each line was heard alone
+    // (the system recognizer misses speech), never when Whisper heard it with its window
+    // and found nothing - 27 Oct, a blank 0.4 s card at the end of the 109 s clip.
+    check(!WhisperWindows.keepsWordless(heardInWindows = true, anyWords = true), "a line Whisper heard and found empty was kept as a blank card")
+    check(WhisperWindows.keepsWordless(heardInWindows = false, anyWords = true), "a line the system recognizer missed was dropped")
+    check(!WhisperWindows.keepsWordless(heardInWindows = false, anyWords = false), "blank cards were kept from a run that heard no words at all")
+
     if (problems.isEmpty()) println("WhisperWindowsChecks: all checks passed")
     else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
 }
