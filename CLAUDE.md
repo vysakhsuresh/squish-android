@@ -262,6 +262,34 @@ not here.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **26-27 October, the night with the phone: most of the 26 October list
+  below seen, and seven faults found on the phone and fixed.** Seen, each
+  with the numbers in `docs/EDGE_PLAN.md`: six video overlays playing and
+  exported (C4); the downloaded voices speaking in Settings, in Read aloud and
+  in a file (E5, done); Whisper captions in English at 2.4% WER; the word box
+  following Whisper's word times in a file (E2); Remove flicker and Reduce
+  noise measured off exported files (F9, done); the effect shaders compiling
+  and an effect in a file (F2); HDR10 and HLG bars right (B4). Found and
+  fixed: **the converted voices spoke nothing intelligible** on TensorFlow
+  Lite 2.16.1 (now LiteRT 1.4.0, the vocoder on its GPU delegate);
+  **Whisper crashed the app on Hindi** (NewStringUTF on a character cut in
+  two - bytes now) and **wrote Malayalam in Devanagari** (carried into the
+  asked-for script); **auto-captions took a Whisper call a line**, each
+  padded to 30 s (windows of 28 s now: 57 lines in 160 s, not half an hour);
+  **HDR10 that FFmpeg decodes came out with red, magenta and blue black** in
+  the copy, the preview and the file (tone-mapped in FFmpeg's decoder now);
+  **the preview's clock lost about 160 ms at every cut**, so a song ran ahead
+  of the picture and was seeked back with a skip (carried over the cut now);
+  **every clip on the strip recomposed whenever its lane did** (a LongRange
+  parameter, compared by identity); **join badges covered short shots**;
+  Reduce noise judged stillness pixel by pixel and did little on heavy grain.
+  The scrub (C3) went from p90 67-75 ms to 39-64 by the GPU passes skipped
+  when idle, but its figure drifts 20 ms over a night - compare only back to
+  back. Still owed to the phone: Karaoke, Pop and One word styles; the
+  voices-v1 release (the owner's to publish); F1's small fast subjects slow
+  as a cross-fade (FlowInterp analyses at 160 px); E5's speed (0.72x real
+  time); the steady 70-100 ms the preview's song sits behind its picture.
+
 - **26 October, the phone away from about 08:00: C3, C4, C6, E2, E5, F4, F7,
   F8, B3, B4, P4.** All built and compiled, the arithmetic executed on the JVM
   and negative-tested; nothing below seen yet. What the phone answers, in order:
@@ -1478,6 +1506,23 @@ should work through it and then delete what holds up.
   of `docs/DEVICE_FINDINGS.md`.
 
 ## Conventions worth not rediscovering
+
+- **TensorFlow Lite is LiteRT 1.4.0, and must not go back to 2.16.1.** The
+  old runtime ran the litert-torch voices wrong without refusing them - every
+  character the same length, nothing Whisper could hear - with XNNPACK on or
+  off. When a converted model misbehaves on the phone, first print its
+  durations or outputs next to the converter's own (debug/VoiceProbeActivity
+  logs both) before suspecting the inputs.
+- **A Compose parameter the compiler holds unstable is compared by identity.**
+  `LongRange`, `List`, `Pair` and data classes holding lists are among them;
+  one that a parent makes afresh each time recomposes the child every time
+  (ClipView's span did, 230 times a second). The compiler says which: one
+  build with `composeCompiler { reportsDestination = layout.buildDirectory.dir("compose_reports") }`
+  and `compilePerfKotlin --rerun`, then read `app_perf-composables.txt`.
+- **Whisper text comes back as bytes, a window at a time.** NewStringUTF
+  aborts on a character cut across whisper.cpp's pieces (any Indic script)
+  and cannot carry an emoji; a call shorter than 30 s costs a whole 30 s
+  window. `WhisperNative.words` and `WhisperWindows` are the doors.
 
 - **The network is for online features only.** Every request goes through
   `online/Online.kt` (`Online.get`, `Online.download`), which throws while the
