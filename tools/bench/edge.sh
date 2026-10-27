@@ -9,6 +9,7 @@
 #   project NAME FILE [speed=0.25] [blend] [denoise=0.8] [deflicker=0.8] [overlays=6:FILE]
 #                        a project of one clip of FILE (a name under the pushed set)
 #   many N               a project of N shots cut from the benchmark clips (C6)
+#   transitions          every transition kind once, one per join (F3)
 #   photos N             N generated photos into Pictures/SquishEdge (C6), for the picker
 #   teardown             every file and project this made, by MediaStore id and by slot
 #
@@ -129,6 +130,28 @@ many() { # N shots cut from the benchmark clips, half a second each (C6)
   slot_for "$first" "Edge $n shots" "$WORK/edge_draft.json"
 }
 
+transitions() { # every transition kind once, on the joins of 2 s shots that alternate between two benchmark clips (F3)
+  free
+  . "$WORK/state.$SERIAL" 2>/dev/null
+  [ -n "${IDS:-}" ] || { echo "the benchmark clips are not on the phone (bench.sh setup)"; return 1; }
+  # In TransitionType's order, Cut left out. 800 ms each into 2 s shots: shot k
+  # starts at 1200k and its join's middle is at 1200k + 400, an even 1.2 s apart,
+  # so frames.ps1 -Count 51 -FromSec 1.6 -ToSec 61.6 reads every middle.
+  local kinds="CrossFade DipToBlack DipToWhite SlideLeft SlideRight SlideUp SlideDown Push WipeRight WipeLeft ZoomIn Jitter Flicker Flash Glow PushRight PushUp PushDown Whip WipeUp WipeDown ZoomOut PopIn Blackout Defocus BurnOut Iris IrisClose Diamond Star Heart Clock Blinds BlindsSide Doors Split Diagonal Checker PixelDissolve Stripes Flip FlipUp Cube CubeUp Spin ZoomBlur Ripple Pixelate MirrorFold GlitchCut RgbSplit"
+  local a b; a=$(echo $IDS | cut -d" " -f1); b=$(echo $IDS | cut -d" " -f2)
+  local clips; clips=$(clip_json shot0 "$(uri $a)" bench_1.mp4 0 2000 0 0 "")
+  local k=0 kind id label
+  for kind in $kinds; do
+    k=$((k + 1))
+    if [ $((k % 2)) = 1 ]; then id=$b; label=bench_2.mp4; else id=$a; label=bench_1.mp4; fi
+    clips="$clips,$(clip_json shot$k "$(uri $id)" $label $(( (k % 4) * 1000 )) $(( (k % 4) * 1000 + 2000 )) $(( k * 1200 )) 0 "" | sed "s/\"transitionType\":\"None\",\"transitionMs\":500/\"transitionType\":\"$kind\",\"transitionMs\":800/")"
+  done
+  draft_json "Edge transitions" "$(uri $a)" $(( k * 1200 + 2000 )) "$clips" > "$WORK/edge_draft.json"
+  sed -i 's/"sourceDurationMs":[0-9]*/"sourceDurationMs":10000/g' "$WORK/edge_draft.json"
+  echo "$k joins"
+  slot_for "$a" "Edge transitions" "$WORK/edge_draft.json"
+}
+
 photos() { # N generated photos (PNG) into Pictures/SquishEdge, for the photo picker (C6)
   free
   local n=${1:-50} i
@@ -238,6 +261,6 @@ teardown() {
 }
 
 case "$STEP" in
-  push) push ;; project) project "$@" ;; many) many "$@" ;; photos) photos "$@" ;; whisper) whisper "$@" ;; voice) voice "$@" ;; teardown) teardown ;;
+  push) push ;; project) project "$@" ;; many) many "$@" ;; transitions) transitions ;; photos) photos "$@" ;; whisper) whisper "$@" ;; voice) voice "$@" ;; teardown) teardown ;;
   *) echo "unknown step $STEP"; exit 1 ;;
 esac

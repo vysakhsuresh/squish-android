@@ -44,3 +44,11 @@ Two things that cost an hour to find out, so they are written down:
   DLL loaded with `Assembly.LoadFrom`. PowerShell is the way in.
 
 The frames come back as **JPEG** whatever the extension says.
+
+**They are not frame-exact.** Asked for every frame of a 30 fps file (27 Oct),
+`GetThumbnailsAsync` handed back pairs that were identical to the pixel - from
+the benchmark clip itself as from an export of it - so a picture that seems to change
+fifteen times a second may be changing thirty, and a moment read off a frame's
+name can be a frame or two out. What *one* frame shows is trustworthy: where two
+edges sit against each other, a band, a colour. How long something took is not;
+for that, log the times on the phone, or count samples with `tools/jvm/Mp4Probe.kt`.
