@@ -150,7 +150,9 @@ median / p90; GPU and render median):
 So the bar (p90 under 11.1 ms everywhere) is not met, and what stands between
 is the GPU, not the app: the app's part is 2-5 ms at the median nearly
 everywhere, and even Settings, the plainest screen, spends 8 ms of GPU a
-frame. Two spikes are the app's: a 155 ms frame opening Stickers and an app p90
+frame. Two spikes are the app's: a 155 ms frame opening Stickers (its design tiles
+painted on the main thread - painted off it since cd9ae12, the step then measured
+p90 25.3, p95 35.2) and an app p90
 of 27 ms opening Text. The Effects sheet's tiles, each its effect drawn live,
 hold the GPU at 18 ms a frame for as long as it is open. Look and Export were
 off the toolbar's screen and the tour skipped them.
