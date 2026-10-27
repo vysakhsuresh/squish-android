@@ -69,6 +69,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -263,11 +264,22 @@ fun ToolBar(
     // A new row starts at its start: the clip's tools arriving scrolled to where
     // level 0 had been left put Split off-screen.
     val scroll = remember(tools) { androidx.compose.foundation.ScrollState(0) }
+    // A new set of tools slides in a little and fades up, rather than
+    // replacing the last in one frame (EDGE_PLAN C7) - in the draw phase only:
+    // the bar's height never changes, so nothing around it moves.
+    val arrive = remember(tools) { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(tools) {
+        arrive.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy, stiffness = androidx.compose.animation.core.Spring.StiffnessMedium))
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .background(SquishColors.Surface)
             .horizontalScroll(scroll)
+            .graphicsLayer {
+                translationX = (1f - arrive.value) * TOOLS_ARRIVE_DP.dp.toPx()
+                alpha = 0.3f + 0.7f * arrive.value
+            }
             .padding(horizontal = 8.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -370,3 +382,6 @@ val EditorUiState.canSplitHere: Boolean
         }
         return TimelineState(clips = videoClips + audioClips, selectedClipId = selected, playheadMs = at).canSplit()
     }
+
+/** How far a new row of tools slides in from as it arrives (C7). */
+private const val TOOLS_ARRIVE_DP = 14f
