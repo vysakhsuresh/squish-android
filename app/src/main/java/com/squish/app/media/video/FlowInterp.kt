@@ -32,6 +32,15 @@ object FlowInterp {
     /** The widest a frame is analysed at: wider frames are box-averaged down first. */
     const val ANALYSIS_WIDTH = 160
 
+    /**
+     * The width a frame is read back at for the analysis (FrameBlendEffect.readLuma):
+     * box-averaged to [ANALYSIS_WIDTH] for the blocks, which is what keeps a
+     * small thing from aliasing away there: a 56 px ball at 1080p is under five
+     * pixels at 160, and read at 160 directly its move came out a pixel or more
+     * off and the slow motion tore it (27 Oct). A multiple of [ANALYSIS_WIDTH].
+     */
+    const val READ_WIDTH = 480
+
     /** A block is believed above this confidence (MotionEstimator's own 0..1). */
     const val BELIEVED = 0.3f
 
@@ -284,7 +293,7 @@ object FlowInterp {
     const val SMALL_AGREES = 0.04f
 
     /**
-     * The blended vector first (it wins a tie), then the four nearest blocks'
+     * After standing still (interpolate tries it first), the blended vector (it wins a tie among these), then the four nearest blocks'
      * own, then their second moves - the small fast thing, which is only ever
      * chosen where the two frames moved along it agree.
      */
@@ -317,7 +326,11 @@ object FlowInterp {
             // blend - makes the two moved frames agree best round this pixel.
             // A blend alone smeared every edge where two motions meet: half
             // way between a still wall and a moving hand it moved both by half.
-            var bestCost = Float.MAX_VALUE
+            // Standing still first, so it wins a tie: over smooth ground a
+            // block's move can be any shift along it, and where a ball covers
+            // both frames that shift, blended in from the blocks round it, drew
+            // its middle from the ground (27 Oct).
+            var bestCost = stillCost(prev, next, x, y)
             var vx = 0f
             var vy = 0f
             var small = false
@@ -362,9 +375,64 @@ object FlowInterp {
             val distrust = if (small) 0f else 1f - trustAt(f, x, y)
             val back = maxOf(smoothstep(DISAGREE_FROM, DISAGREE_TO, abs(a - b)), distrust)
             out[k] = moved + (fade - moved) * back
+            // The small thing itself, from whichever frame has it here. Its
+            // move is measured on the analysis frame, where a 56 px ball at
+            // 1080p is under five pixels and aliased, so drawn at full size the
+            // move is out by a few pixels: the two copies miss each other, and
+            // where only one covers the pixel the frames disagree and the pixel
+            // fell back to the ground - the ball cut down to where its two
+            // copies overlapped, torn at its rim (27 Oct, the moto). A copy is
+            // the thing where its own pixel changed and its partner is within
+            // the slack of the other end, itself on something that changed.
+            if (smallCost < Float.MAX_VALUE) {
+                val r = f.cell / BLOCK * MATCH_SLACK
+                val pax = x - t * sx; val pay = y - t * sy
+                val pbx = x + (1 - t) * sx; val pby = y + (1 - t) * sy
+                val sa = sample(prev, pax, pay); val sb = sample(next, pbx, pby)
+                val aThing = abs(sa - sample(next, pax, pay)) > CHANGED && changedNear(prev, next, pbx, pby, r) && nearest(next, pbx, pby, r, sa) < CHANGED
+                val bThing = abs(sb - sample(prev, pbx, pby)) > CHANGED && changedNear(prev, next, pax, pay, r) && nearest(prev, pax, pay, r, sb) < CHANGED
+                // Where its two copies overlap, the ends of a pixel on its rim
+                // may both lie where it covers both frames, and nothing changed
+                // there; but this pixel changed, and the two ends agreeing is
+                // the thing passing (or the ground, which is right too).
+                val through = !aThing && !bThing && changedHere &&
+                    nearest(next, pbx, pby, r, sa) < CHANGED && nearest(prev, pax, pay, r, sb) < CHANGED
+                if (aThing || bThing || through) {
+                    out[k] = if (aThing == bThing) sa * (1 - t) + sb * t else if (aThing) sa else sb
+                    continue
+                }
+            }
         }
         return LumaFrame(w, h, out)
     }
+
+    /**
+     * How far, in analysis pixels, a small thing's move may be out when its
+     * two ends are matched: the move is measured on the analysis frame, and
+     * the picture is drawn at eight or twelve times that.
+     */
+    const val MATCH_SLACK = 1.0f
+
+    /** What standing still leaves round ([x], [y]), over [PATCH]: the first candidate. */
+    private fun stillCost(prev: LumaFrame, next: LumaFrame, x: Float, y: Float): Float {
+        var c = 0f
+        for (o in PATCH) c += abs(sample(prev, x + o.first, y + o.second) - sample(next, x + o.first, y + o.second))
+        return c
+    }
+
+    /** Whether [a] and [b] differ by more than CHANGED at ([x], [y]) or [r] either way along each axis. */
+    private fun changedNear(a: LumaFrame, b: LumaFrame, x: Float, y: Float, r: Float): Boolean =
+        abs(sample(a, x, y) - sample(b, x, y)) > CHANGED ||
+            abs(sample(a, x + r, y) - sample(b, x + r, y)) > CHANGED || abs(sample(a, x - r, y) - sample(b, x - r, y)) > CHANGED ||
+            abs(sample(a, x, y + r) - sample(b, x, y + r)) > CHANGED || abs(sample(a, x, y - r) - sample(b, x, y - r)) > CHANGED
+
+    /** The least difference between [value] and [f] at ([x], [y]) or [r] either way along each axis. */
+    private fun nearest(f: LumaFrame, x: Float, y: Float, r: Float, value: Float): Float =
+        minOf(
+            abs(sample(f, x, y) - value),
+            minOf(abs(sample(f, x + r, y) - value), abs(sample(f, x - r, y) - value)),
+            minOf(abs(sample(f, x, y + r) - value), abs(sample(f, x, y - r) - value))
+        )
 
     /**
      * The field as the shader's texture: a pixel a block, RGBA8, each vector

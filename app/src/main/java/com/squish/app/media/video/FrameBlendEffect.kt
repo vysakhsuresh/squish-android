@@ -253,11 +253,13 @@ private class FrameBlendShaderProgram(
     }
 
     /**
-     * [input] drawn at FlowInterp's analysis width and read back as luma. Null
+     * [input] drawn at FlowInterp's read width and read back as luma. Null
      * when it cannot be read; that pair then blends.
      */
     private fun readLuma(provider: GlObjectsProvider, input: GlTextureInfo): LumaFrame? = try {
-        val w = FlowInterp.ANALYSIS_WIDTH.coerceAtMost(input.width)
+        // Wider than the blocks are measured at: FlowInterp.field averages it down
+        // for them and measures a small thing's move on it whole.
+        val w = FlowInterp.READ_WIDTH.coerceAtMost(input.width)
         val h = (w.toLong() * input.height / input.width.coerceAtLeast(1)).toInt().coerceAtLeast(1)
         var target = probe
         if (target == null || target.width != w || target.height != h) {

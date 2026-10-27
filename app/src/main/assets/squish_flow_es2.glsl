@@ -46,6 +46,9 @@ const float DISAGREE_TO = 0.3;
 // FlowInterp.CHANGED and SMALL_AGREES.
 const float CHANGED = 0.1;
 const float SMALL_AGREES = 0.04;
+// FlowInterp.BLOCK and MATCH_SLACK: the small move may be an analysis pixel out.
+const float BLOCK = 16.0;
+const float MATCH_SLACK = 1.0;
 
 vec2 vectorAtCell(vec2 cell) {
   vec4 t = texture2D(uField, (cell + 0.5) / uFieldSize);
@@ -64,6 +67,26 @@ vec2 secondAtCell(vec2 cell) {
 float changedBy(vec2 uv) {
   vec3 d = abs(texture2D(uTexA, uv).rgb - texture2D(uTexB, uv).rgb);
   return (d.r + d.g + d.b) / 3.0;
+}
+
+// How far colour [c] is from uTexB (or uTexA) at [p] or [r] either way along
+// each axis - the small move's slack (FlowInterp.nearest).
+float off3(vec3 c, vec3 o) { vec3 d = abs(c - o); return (d.r + d.g + d.b) / 3.0; }
+float nearestB(vec2 p, vec2 r, vec3 c) {
+  return min(off3(c, texture2D(uTexB, p).rgb),
+    min(min(off3(c, texture2D(uTexB, p + vec2(r.x, 0.0)).rgb), off3(c, texture2D(uTexB, p - vec2(r.x, 0.0)).rgb)),
+        min(off3(c, texture2D(uTexB, p + vec2(0.0, r.y)).rgb), off3(c, texture2D(uTexB, p - vec2(0.0, r.y)).rgb))));
+}
+float nearestA(vec2 p, vec2 r, vec3 c) {
+  return min(off3(c, texture2D(uTexA, p).rgb),
+    min(min(off3(c, texture2D(uTexA, p + vec2(r.x, 0.0)).rgb), off3(c, texture2D(uTexA, p - vec2(r.x, 0.0)).rgb)),
+        min(off3(c, texture2D(uTexA, p + vec2(0.0, r.y)).rgb), off3(c, texture2D(uTexA, p - vec2(0.0, r.y)).rgb))));
+}
+// FlowInterp.changedNear.
+bool changedNear(vec2 p, vec2 r) {
+  return changedBy(p) > CHANGED
+    || changedBy(p + vec2(r.x, 0.0)) > CHANGED || changedBy(p - vec2(r.x, 0.0)) > CHANGED
+    || changedBy(p + vec2(0.0, r.y)) > CHANGED || changedBy(p - vec2(0.0, r.y)) > CHANGED;
 }
 
 float diff(vec2 uv, vec2 v, float t) {
@@ -95,10 +118,13 @@ void main() {
   vec2 v11 = vectorAtCell(c1);
   vec2 blended = mix(mix(v00, v10, f.x), mix(v01, v11, f.x), f.y);
 
-  // The blend first, so it wins a tie, as FlowInterp.candidates orders them.
-  vec2 best = blended;
-  float bestCost = cost(uv, blended, t);
+  // Standing still first, so it wins a tie (FlowInterp.interpolate): over
+  // smooth ground a block's move can be any shift along it. Then the blend,
+  // which wins a tie among the blocks' own, as FlowInterp.candidates orders them.
+  vec2 best = vec2(0.0);
+  float bestCost = cost(uv, vec2(0.0), t);
   float c;
+  c = cost(uv, blended, t); if (c < bestCost - 0.000001) { bestCost = c; best = blended; }
   c = cost(uv, v00, t); if (c < bestCost - 0.000001) { bestCost = c; best = v00; }
   c = cost(uv, v10, t); if (c < bestCost - 0.000001) { bestCost = c; best = v10; }
   c = cost(uv, v01, t); if (c < bestCost - 0.000001) { bestCost = c; best = v01; }
@@ -136,5 +162,26 @@ void main() {
   // A block's trust is about its own move; a small thing's move chosen is tested by the agreement alone.
   float distrust = (1.0 - smallWins) * (1.0 - texture2D(uTrust, clamp(uv / uCellUv / uFieldSize, 0.0, 1.0)).r);
   float back = max(smoothstep(DISAGREE_FROM, DISAGREE_TO, (d.r + d.g + d.b) / 3.0), distrust);
-  gl_FragColor = mix(moved, fade, back);
+  vec4 outColour = mix(moved, fade, back);
+  vec2 r = uCellUv / BLOCK * MATCH_SLACK;
+  // The small thing itself, from whichever frame has it here: its move is a
+  // few pixels out at full size, and where only one copy covers the pixel it
+  // is that copy, not the ground (FlowInterp.interpolate).
+  if (smallCost < 1.0e8) {
+    vec2 pa = uv - t * small;
+    vec2 pb = uv + (1.0 - t) * small;
+    vec4 sa = texture2D(uTexA, pa);
+    vec4 sb = texture2D(uTexB, pb);
+    bool aThing = changedBy(pa) > CHANGED && changedNear(pb, r) && nearestB(pb, r, sa.rgb) < CHANGED;
+    bool bThing = changedBy(pb) > CHANGED && changedNear(pa, r) && nearestA(pa, r, sb.rgb) < CHANGED;
+    // Where the two copies overlap, both ends of a rim pixel can lie where it
+    // covers both frames; this pixel changed, and the ends agreeing is the
+    // thing passing (or the ground, which is right too).
+    bool through = !aThing && !bThing && changedBy(uv) > CHANGED
+      && nearestB(pb, r, sa.rgb) < CHANGED && nearestA(pa, r, sb.rgb) < CHANGED;
+    if ((aThing && bThing) || through) { outColour = mix(sa, sb, t); }
+    else if (aThing) { outColour = sa; }
+    else if (bThing) { outColour = sb; }
+  }
+  gl_FragColor = outColour;
 }

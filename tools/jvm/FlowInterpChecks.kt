@@ -148,6 +148,74 @@ fun main() {
         check(atStart < bgHere + 0.12 && atEnd < bgHere + 0.12, "a small fast dot left a ghost: $atStart where it was, $atEnd where it went, the ground ${"%.2f".format(java.util.Locale.ROOT, bgHere)}")
     }
 
+    // The same dot as the phone draws it (27 Oct evening, the 720p export of
+    // fast_motion_1080p30 at 0.25x): read back point-sampled at READ_WIDTH as
+    // FrameBlendEffect.readLuma reads it, and drawn at full size. The
+    // in-between dot came out torn into pieces with grey arcs either side:
+    // its move, found at 160 px where the dot is under five pixels, was a
+    // pixel or more out, its two copies missed each other at full size, and
+    // every pixel where they missed fell back to the cross-fade; over the
+    // smooth sky any shift of the ground matched too, and drew the dot's old
+    // and new places back in. Round, moving on a diagonal by a fraction of a
+    // pixel, fast and slow: the frame between holds it whole and nothing else.
+    run {
+        // Two dots: a bright 40 px one at 720p on short moves, and the clip's own
+        // as the phone has it - 56 px at 1080p, a little brighter than its
+        // teal-to-blue ground, moving 83 px a frame, mostly up (measured off
+        // fast_motion_1080p30: 28 px across moving (17, -38) at 960 wide), and
+        // slowing near the top of its path until its two copies overlap.
+        class Case(val fw: Int, val fh: Int, val rad: Float, val dot: Float, val lo: Float, val span: Float, val moves: List<Pair<Float, Float>>)
+        for (case in listOf(
+            Case(1280, 720, 20f, 0.9f, 0.2f, 0.1f, listOf(37f to -23f, 29f to 31f, -45f to 13f)),
+            Case(1920, 1080, 28f, 0.68f, 0.25f, 0.07f, listOf(34f to -76f, 31f to -71f, 34f to -46f, 20f to -31f, 11f to -15f))
+        )) {
+        val fw = case.fw; val fh = case.fh; val rad = case.rad
+        fun ground(i: Int, j: Int) = case.lo + case.span * (i + j).toFloat() / (fw + fh)
+        val contrast = case.dot - case.lo
+        fun dotAt(cx: Float, cy: Float): LumaFrame {
+            val px = FloatArray(fw * fh)
+            for (j in 0 until fh) for (i in 0 until fw) {
+                val d = kotlin.math.hypot(i + 0.5f - cx, j + 0.5f - cy)
+                // Anti-aliased edge, as a drawn dot has.
+                val cover = (rad + 0.5f - d).coerceIn(0f, 1f)
+                px[j * fw + i] = ground(i, j) * (1 - cover) + case.dot * cover
+            }
+            return LumaFrame(fw, fh, px)
+        }
+        fun pointSampled(f: LumaFrame): LumaFrame {
+            val aw = FlowInterp.READ_WIDTH; val ah = aw * fh / fw
+            return LumaFrame(aw, ah, FloatArray(aw * ah) { k ->
+                val i = ((k % aw + 0.5f) * fw / aw).toInt(); val j = ((k / aw + 0.5f) * fh / ah).toInt()
+                f.pixels[j * fw + i]
+            })
+        }
+        val s = fw.toFloat() / FlowInterp.READ_WIDTH
+        for ((mx, my) in case.moves) {
+            val ax = fw * 0.39f + 0.3f; val ay = fh * 0.5f + 0.6f
+            val fa = dotAt(ax, ay); val fb = dotAt(ax + mx, ay + my)
+            val small = FlowInterp.field(pointSampled(fa), pointSampled(fb))
+            val full = FlowInterp.Field(small.cols, small.rows, small.cell * s,
+                FloatArray(small.dx.size) { small.dx[it] * s }, FloatArray(small.dy.size) { small.dy[it] * s },
+                small.confidence, small.trust,
+                FloatArray(small.dx2.size) { small.dx2[it] * s }, FloatArray(small.dy2.size) { small.dy2[it] * s })
+            for (t in listOf(0.25f, 0.5f, 0.75f)) {
+                val m = FlowInterp.interpolate(fa, fb, full, t)
+                val cx = ax + t * mx; val cy = ay + t * my
+                var inside = 0; var insideBad = 0; var outside = 0; var outsideBad = 0
+                for (j in (cy - 110).toInt()..(cy + 110).toInt()) for (i in (cx - 100).toInt()..(cx + 100).toInt()) {
+                    val d = kotlin.math.hypot(i + 0.5f - cx, j + 0.5f - cy)
+                    val v = m.pixels[j * fw + i]
+                    if (d < rad - 3) { inside++; if (abs(v - case.dot) > 0.25f * contrast) insideBad++ }
+                    else if (d > rad + 3) { outside++; if (abs(v - ground(i, j)) > 0.2f * contrast) outsideBad++ }
+                }
+                val what = "a ${(2 * rad).toInt()} px dot moving ($mx, $my) at ${fh}p"
+                check(insideBad <= inside * 0.03, "$what is torn at t=$t: $insideBad of $inside pixels inside it are not the dot")
+                check(outsideBad <= outside * 0.005, "$what leaves a ghost at t=$t: $outsideBad of $outside pixels round it are not the ground")
+            }
+        }
+        }
+    }
+
     // Grain, which changes scattered pixels past CHANGED in every frame: no
     // small thing is invented from it, and the frame between stays the
     // cross-fade of the two to within a few percent.
