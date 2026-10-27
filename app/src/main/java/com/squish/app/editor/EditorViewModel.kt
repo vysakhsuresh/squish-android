@@ -1231,13 +1231,6 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        // Checked before a single frame is encoded. A two-minute export that dies
-        // on the last chunk for want of disk space is the worst possible way to
-        // learn about it.
-        SquishError.preflight(getApplication(), current, current.estimatedOutputBytes)?.let { problem ->
-            _state.update { it.copy(failure = problem) }
-            return
-        }
 
         // The preview stops for the render: it played on audibly under the
         // progress card, its players decoding beside the encoder's own.
@@ -1259,6 +1252,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             // sent to the back and killed, and a nudge made a second before
             // Render is the edit the file was made from.
             withContext(Dispatchers.IO) { persist() }
+
+            // Checked before a single frame is encoded. A two-minute export that dies
+            // on the last chunk for want of disk space is the worst possible way to
+            // learn about it. Off the main thread: it opens every file the edit
+            // reads, and on the moto a 52-shot edit held the screen 1.3 s after
+            // Render was tapped (StrictMode, 28 Oct).
+            withContext(Dispatchers.IO) { SquishError.preflight(getApplication(), current, current.estimatedOutputBytes) }?.let { problem ->
+                if (exportJob === coroutineContext[Job]) exportJob = null
+                ExportService.end(getApplication())
+                _state.update { it.copy(isExporting = false, exportProgress = ExportProgress(), failure = problem) }
+                return@launch
+            }
 
             // The codec is settled before anything is built on it. The probe
             // starts on opening the clip, but Render tapped before it answers

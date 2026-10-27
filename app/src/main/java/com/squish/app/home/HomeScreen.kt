@@ -151,7 +151,12 @@ fun HomeScreen(
     val projectsChanged by com.squish.app.data.ProjectsChanged.count.collectAsState()
     LaunchedEffect(projectsChanged) { viewModel.refreshDrafts() }
     val context = LocalContext.current
-    var interrupted by remember { mutableStateOf(com.squish.app.media.ExportService.takeInterrupted(context)) }
+    // Read off the main thread: it is a file, and it was read in the
+    // dashboard's first composition (StrictMode, 28 Oct).
+    var interrupted by remember { mutableStateOf<com.squish.app.media.ExportEntry?>(null) }
+    LaunchedEffect(Unit) {
+        interrupted = withContext(Dispatchers.IO) { com.squish.app.media.ExportService.takeInterrupted(context) }
+    }
 
     // What is picked lands as one project, the picker's order kept.
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->

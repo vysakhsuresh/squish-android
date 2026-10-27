@@ -875,14 +875,6 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        // The same checks the editor runs. They were never run here, so a merge
-        // whose third file had been deleted since it was picked spent two minutes
-        // encoding before finding out.
-        SquishError.preflight(getApplication(), editorState, current.estimatedOutputBytes)?.let { problem ->
-            onError("${problem.title}. ${problem.fix}")
-            return
-        }
-
         _state.update { it.copy(isExporting = true, exportProgress = ExportProgress()) }
         // Carried by a foreground service until it is handed over, so a
         // locked screen does not get the process killed mid-encode.
@@ -894,6 +886,18 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             // tick later: a long export is exactly when the app is most likely
             // to be sent to the back and killed.
             withContext(Dispatchers.IO) { persist() }
+
+            // The same checks the editor runs. They were never run here, so a merge
+            // whose third file had been deleted since it was picked spent two minutes
+            // encoding before finding out. Off the main thread, as the editor's:
+            // they open every file.
+            withContext(Dispatchers.IO) { SquishError.preflight(getApplication(), editorState, current.estimatedOutputBytes) }?.let { problem ->
+                if (exportJob === coroutineContext[Job]) exportJob = null
+                ExportService.end(getApplication())
+                _state.update { it.copy(isExporting = false, exportProgress = ExportProgress()) }
+                onError("${problem.title}. ${problem.fix}")
+                return@launch
+            }
 
             // The folder the space check measured and Storage clears, with its
             // fallback: with no external volume, File(null, "exports") was a

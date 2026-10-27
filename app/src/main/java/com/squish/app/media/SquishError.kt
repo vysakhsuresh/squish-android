@@ -470,21 +470,25 @@ sealed class SquishError(
             // the edit a moment after the file was written without it.
             if (state.preparingStills > 0) return StillsPreparing(state.preparingStills)
 
+            // Each file opened once, however many clips play it: a 52-shot edit
+            // cut from two files opened them 52 times over (28 Oct).
+            val readable = HashMap<Uri, Boolean>()
+            fun canRead(uri: Uri) = readable.getOrPut(uri) { canRead(context, uri) }
             // Each clip by name, so the one to replace can be found. The source is
             // checked last: with clips on the timeline it may not be in the edit.
             for (clip in state.videoClips) {
                 val uri = clip.uri ?: state.sourceUri
-                if (canRead(context, uri)) continue
+                if (canRead(uri)) continue
                 return if (clip.isOverlay) LayerUnreadable(clip.label.ifBlank { "Overlay" }, clip.layer)
                 else FileUnreadable(name = clip.label.takeIf { it.isNotBlank() })
             }
-            if (state.videoClips.isEmpty() && !canRead(context, state.sourceUri)) return FileUnreadable()
+            if (state.videoClips.isEmpty() && !canRead(state.sourceUri)) return FileUnreadable()
             // Sounds are read too. They used to be left out, so a song whose grant
             // had lapsed failed minutes into the encode as "Can't open that file".
             if (!state.audioOnly || state.hasSeparateAudio) {
                 for (clip in state.audioClips) {
                     val uri = clip.uri ?: continue
-                    if (!canRead(context, uri)) return SoundUnreadable(soundName(clip.label))
+                    if (!canRead(uri)) return SoundUnreadable(soundName(clip.label))
                     MediaCompat.cached(uri)?.audioProblem?.let { return SoundUnsupported(soundName(clip.label), it) }
                 }
             }

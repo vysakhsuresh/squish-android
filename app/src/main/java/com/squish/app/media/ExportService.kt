@@ -191,11 +191,13 @@ class ExportService : Service() {
             hot.value = false
             // Written before anything else: if the process is killed from here on,
             // the next launch finds this and says so (ExportJournal).
-            runCatching {
+            // On one thread of its own, in order with the delete in end(): the
+            // screen that taps Render is not kept waiting on the disk.
+            journalling.execute { runCatching {
                 journal(context).writeText(
                     ExportJournal.encode(ExportEntry(title, projectId, System.currentTimeMillis(), android.os.Process.myPid()))
                 )
-            }
+            } }
             val intent = Intent(context, ExportService::class.java).putExtra(EXTRA_TITLE, title)
             runCatching { ContextCompat.startForegroundService(context, intent) }
                 .onFailure { android.util.Log.w("SquishExport", "could not start the export service", it) }
@@ -208,12 +210,15 @@ class ExportService : Service() {
 
         /** The export is over - handed over, failed or stopped - and so is the notification. */
         fun end(context: Context) {
-            runCatching { journal(context).delete() }
+            journalling.execute { runCatching { journal(context).delete() } }
             hot.value = false
             runCatching { context.stopService(Intent(context, ExportService::class.java)) }
         }
 
         private fun journal(context: Context) = java.io.File(context.filesDir, "export.journal")
+
+        /** The journal's writes and deletes, one at a time and in the order asked. */
+        private val journalling = java.util.concurrent.Executors.newSingleThreadExecutor()
 
         /**
          * An export a killed process left unfinished, once: the entry is taken
