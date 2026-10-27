@@ -32,6 +32,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -126,10 +127,19 @@ fun ToolSheet(
                 }
             }
         }
+        // A chip's panel starts at its top and fades up, rather than swapping in
+        // one frame part-way down the last one's scroll (EDGE_PLAN C7) - the
+        // draw phase only, so the sheet's size never moves.
+        val panelScroll = remember(chip) { androidx.compose.foundation.ScrollState(0) }
+        val panelShown = remember(chip) { androidx.compose.animation.core.Animatable(if (chips.isEmpty()) 1f else 0.25f) }
+        androidx.compose.runtime.LaunchedEffect(chip) {
+            panelShown.animateTo(1f, androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMedium))
+        }
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
+                .graphicsLayer { alpha = panelShown.value }
+                .verticalScroll(panelScroll)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
