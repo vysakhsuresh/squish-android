@@ -778,10 +778,38 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         // the run found words somewhere, when they are more likely speech it
         // missed than not speech at all.
         val wordless = ArrayList<PlannedCaption>()
+        // Whisper hears neighbouring lines of one clip together, up to 28 s a
+        // call (WhisperWindows says why: a call a line cost thirty seconds of
+        // speech each - 57 lines were at line 14 after seven minutes on the
+        // moto), and each line is handed back the words said in it.
+        val windows = ArrayList<List<Int>>()
+        if (whisper) {
+            var first = 0
+            while (first < planned.size) {
+                var last = first
+                while (last + 1 < planned.size && planned[last + 1].clipId == planned[first].clipId && planned[last + 1].pcm === planned[first].pcm) last++
+                val spans = (first..last).map { planned[it].segment.startMs..planned[it].segment.endMs }
+                com.squish.app.media.audio.WhisperWindows.group(spans).forEach { g -> windows += g.map { it + first } }
+                first = last + 1
+            }
+        }
+        val heardOf = HashMap<Int, com.squish.app.media.audio.WhisperText.Result?>()
+        suspend fun heardFor(index: Int): com.squish.app.media.audio.WhisperText.Result? {
+            if (!whisper) return null
+            if (heardOf.containsKey(index)) return heardOf[index]
+            val window = windows.firstOrNull { index in it } ?: listOf(index)
+            val plans = window.map { planned[it] }
+            val whole = com.squish.app.media.audio.WhisperTranscriber.transcribe(
+                app, plans.first().pcm, SpeechSegment(plans.first().segment.startMs, plans.last().segment.endMs), _state.value.captionLanguage
+            )
+            val per = whole?.let { com.squish.app.media.audio.WhisperWindows.assign(it.words, plans.map { p -> p.segment.startMs..p.segment.endMs }) }
+            window.forEachIndexed { k, i -> heardOf[i] = if (whole == null || per == null) null else com.squish.app.media.audio.WhisperText.Result(per[k], whole.language) }
+            return heardOf[index]
+        }
         planned.forEachIndexed { index, plan ->
             // Whisper names its own language unless one was chosen: a phone set
             // to English captioning a Malayalam clip is the case it exists for.
-            val heard = if (whisper) com.squish.app.media.audio.WhisperTranscriber.transcribe(app, plan.pcm, plan.segment, _state.value.captionLanguage) else null
+            val heard = heardFor(index)
             val words = when {
                 system -> Transcriber.transcribe(app, plan.pcm, plan.segment, language)
                 whisper -> heard?.text
