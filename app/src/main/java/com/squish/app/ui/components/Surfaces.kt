@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -172,5 +173,23 @@ fun CoachMark(text: String, onDismiss: () -> Unit, modifier: Modifier = Modifier
         TextButton(onClick = onDismiss) {
             Text("Got it", style = MaterialTheme.typography.labelLarge, color = SquishColors.Primary)
         }
+    }
+}
+
+/**
+ * Something that has just appeared - a notice, a card - fades up and drops the
+ * last few dp into place over a short spring, instead of being there in one
+ * frame (EDGE_PLAN C7, "nothing pops"). The draw phase only: its room in the
+ * layout is taken at once, so what is around it never moves twice.
+ */
+@Composable
+fun Modifier.arriving(): Modifier {
+    val shown = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        shown.animateTo(1f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
+    }
+    return this.graphicsLayer {
+        alpha = shown.value
+        translationY = (shown.value - 1f) * 8.dp.toPx()
     }
 }

@@ -66,6 +66,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.squish.app.ui.components.arriving
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -1360,7 +1361,7 @@ private fun StatusCards(
                 Preferences.markCoachSeen(context, Preferences.COACH_EDITOR)
                 coach = false
             },
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).arriving()
         )
     }
     val proxies = state.proxiesInEdit.values.filter { it != ProxyStatus.NotNeeded }
@@ -1384,7 +1385,7 @@ private fun StatusCards(
         FailureCard(
             error = failure,
             onDismiss = viewModel::clearFailure,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp).arriving()
         )
     }
     // A file the edit plays that can no longer be opened: the clips stay on
@@ -1407,7 +1408,7 @@ private fun StatusCards(
             onAllowAccess = { askAccess.launch(com.squish.app.media.MediaLibrary.permissions()) },
             onRelink = onRelink,
             onBrowse = onBrowseRelink,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp).arriving()
         )
     }
 }
