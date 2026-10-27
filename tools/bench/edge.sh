@@ -223,6 +223,12 @@ teardown() {
   sh_ am force-stop $PKG
   local e
   for e in ${PUSHED:-}; do sh_ content delete --uri "content://media/external/${e%%:*}/media/${e#*:}"; done
+  # The files the tests rendered, by the ids recorded as each landed - never by name.
+  for e in ${EXPORT_IDS:-}; do sh_ content delete --uri "content://media/external/video/media/$e"; done
+  # A test render makes its size the next project's default (480p for most of
+  # them); put the factory start back, as Settings' "Start new projects at
+  # Original again" does.
+  [ -n "${EXPORT_IDS:-}" ] && sh_ run-as $PKG rm -f shared_prefs/export_defaults.xml
   local slot
   for slot in ${SLOTS:-}; do
     for s in json bak.json meta.json pending.snap.json snap.json; do sh_ run-as $PKG rm -f "files/projects/$slot.$s" 2>/dev/null; done
