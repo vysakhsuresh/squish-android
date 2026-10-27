@@ -1063,6 +1063,15 @@ fun main() {
     // no node to focus, so the disc was skipped entirely and its value could
     // neither be read nor changed without a drag.
     run {
+        // EDGE_PLAN C7, "nothing pops": every sheet's panel is a SquishCard, and it
+        // grows and shrinks on a spring. It was the one place that covered them all.
+        val card = read("$SRC/ui/components/Surfaces.kt")
+        check(
+            Regex("""fun SquishCard\([\s\S]{0,600}?\.animateContentSize\(spring\(""").containsMatchIn(card),
+            "SquishCard no longer animates its size - every panel in every sheet jumps when a row opens"
+        )
+    }
+    run {
         // A field with its own copy of the words follows the edit only through
         // TypedEcho. Following every value that differed put the cursor at 0
         // mid-word: "Handde wthlov" in the Edit sheet, then "dsGood morning, frie"

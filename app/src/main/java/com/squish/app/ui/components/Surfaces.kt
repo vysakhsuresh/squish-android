@@ -1,5 +1,8 @@
 package com.squish.app.ui.components
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -59,6 +62,11 @@ fun SquishCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // A row a chip opens, a hint, a notice: the card grows to it on a
+            // spring rather than jumping (EDGE_PLAN C7, "nothing pops"). Every
+            // sheet's panel is one of these, so this is most of the app's growth.
+            // Before the clip, so what is still arriving is cut by the corners.
+            .animateContentSize(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
             .clip(RoundedCornerShape(18.dp))
             .background(SquishColors.Surface)
             .border(
