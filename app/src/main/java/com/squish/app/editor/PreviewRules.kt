@@ -209,6 +209,50 @@ object PreviewRules {
     fun holdAtCut(heldShowsOutgoing: Boolean, arrivedByPlaying: Boolean, heldForMs: Long, incomingFailed: Boolean): Boolean =
         heldShowsOutgoing && arrivedByPlaying && !incomingFailed && heldForMs <= HOLD_MAX_MS
 
+    /**
+     * The clock across a cut (EDGE_PLAN B3). [clipId] is the shot driving the
+     * clock, [mappedMs] its player's position on the timeline, [wallMs] where
+     * the clock would be had it run on at wall time since the last tick.
+     *
+     * Seen on the moto 27 Oct: at every cut the incoming player says it is
+     * playing at once while its position stands still for about 160 ms as its
+     * sink opens. Followed, the clock lost that at every cut and a song played
+     * on - most of a second out within ten seconds of a reel, then seeked back
+     * with a skip. So when the driving shot changes, the clock runs on at wall
+     * time until the new player's position moves, and the shot then keeps the
+     * gap as a lead to its end: nothing is lost and nothing piles up. A player
+     * slow past [MAX_CLOCK_LEAD_MS] is waited for, as a stall is.
+     */
+    fun carryClock(carry: ClockCarry, clipId: String, mappedMs: Long, wallMs: Long): Pair<Long, ClockCarry> {
+        if (clipId != carry.clipId) {
+            // A new shot: its first position, and the clock where it is.
+            return wallMs to ClockCarry(clipId = clipId, leadMs = 0L, startMappedMs = mappedMs, startClockMs = wallMs)
+        }
+        if (carry.startMappedMs != null) {
+            if (mappedMs > carry.startMappedMs + START_MOVED_MS) {
+                val lead = (wallMs - mappedMs).coerceIn(0L, MAX_CLOCK_LEAD_MS)
+                return (mappedMs + lead) to carry.copy(leadMs = lead, startMappedMs = null)
+            }
+            // Not moving yet: on at wall time, but no further than the lead allowed.
+            return minOf(wallMs, carry.startClockMs + MAX_CLOCK_LEAD_MS) to carry
+        }
+        return (mappedMs + carry.leadMs) to carry
+    }
+
+    /** [carryClock]'s memory: the shot it is following, its lead, and - until it moves - where it started. */
+    data class ClockCarry(
+        val clipId: String? = null,
+        val leadMs: Long = 0L,
+        val startMappedMs: Long? = null,
+        val startClockMs: Long = 0L
+    )
+
+    /** The most a shot's clock runs ahead of its own player; past it the clock waits for the shot. */
+    const val MAX_CLOCK_LEAD_MS = 400L
+
+    /** How far a new shot's position must move before it counts as playing. */
+    private const val START_MOVED_MS = 10L
+
     /** How far a sound may drift from the clock before it is put back. */
     const val SOUND_DRIFT_MS = 400L
 

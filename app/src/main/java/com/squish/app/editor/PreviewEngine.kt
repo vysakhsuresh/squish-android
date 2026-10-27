@@ -1194,6 +1194,7 @@ class PreviewEngine(private val context: Context) {
 
     fun play() {
         if (released) return
+        clockCarry = PreviewRules.ClockCarry()
         com.squish.app.av.Perf.took("play", 0, "at=$positionMs")
         if (durationMs > 0 && positionMs >= durationMs) seekTo(0)
         // Play from a scrub still settling: the surfaces may be on sync samples,
@@ -1248,6 +1249,8 @@ class PreviewEngine(private val context: Context) {
 
     fun seekTo(timelineMs: Long) {
         if (released) return
+        // A jump: the shot it lands in starts a fresh carry (PreviewRules.carryClock).
+        clockCarry = PreviewRules.ClockCarry()
         positionMs = timelineMs.coerceIn(0L, maxOf(durationMs, 0L))
         anchorTimelineMs = positionMs
         anchorWallMs = SystemClock.elapsedRealtime()
@@ -1360,6 +1363,9 @@ class PreviewEngine(private val context: Context) {
 
     // ---- The clock --------------------------------------------------------------
 
+    /** The clock carried across cuts (PreviewRules.carryClock); a fresh one at every play and jump. */
+    private var clockCarry = PreviewRules.ClockCarry()
+
     fun tick(): PreviewFrame {
         if (released) return PreviewFrame()
         // Nothing loads under an export (holdForExport): a tick would put the decoders straight back.
@@ -1403,8 +1409,13 @@ class PreviewEngine(private val context: Context) {
             soundHolding -> positionMs
             // Mapped back through the clip's own curve, so the playhead tracks a
             // ramp instead of racing it and then waiting.
-            driving ->
-                clockClip.timelineAtSource(clockPlayer.currentPosition)
+            // Carried across a cut while the new player's sink opens
+            // (PreviewRules.carryClock): followed as it was, the clock lost
+            // about 160 ms at every cut and a song ran ahead of the picture.
+            driving -> PreviewRules.carryClock(
+                clockCarry, clockClip.id, clockClip.timelineAtSource(clockPlayer.currentPosition),
+                anchorTimelineMs + (now - anchorWallMs)
+            ).also { clockCarry = it.second }.first
             // The timeline is played time, so it runs at wall time. Speed lives
             // inside each clip's length rather than on the clock.
             else -> anchorTimelineMs + (now - anchorWallMs)
@@ -1439,7 +1450,10 @@ class PreviewEngine(private val context: Context) {
             lastRedrawAt = now
             redraw()
         }
-        syncAudio(t, transportRunning = playing && !stalled, now = now)
+        // Sounds follow the picture: the clock less the lead its shot was
+        // carried over its cut with (PreviewRules.carryClock), which is where
+        // the frame on screen - and the shot's own sound - actually is.
+        syncAudio((t - clockCarry.leadMs).coerceAtLeast(0L), transportRunning = playing && !stalled, now = now)
 
         return PreviewFrame(
             positionMs = t,
@@ -1914,6 +1928,12 @@ class PreviewEngine(private val context: Context) {
             // frames came late was seeked, the exact seek came back late too,
             // and it stuttered through its first play; one faster than 8x lags
             // by design and was a slideshow of corrections.
+            // The surface driving the clock is never corrected against it: the
+            // clock is that player's position plus the lead it was carried
+            // over its cut with (PreviewRules.carryClock), so "behind the clock"
+            // is the lead itself, and seeking for it stalled the player, stalled
+            // the clock and came back a lead further on - round and round.
+            !(playing && s.key == clockKey) &&
             !park && !scrubbing && player.playbackState == Player.STATE_READY &&
                 (!playing || (player.isPlaying && now - s.startedAt >= PreviewRules.SOUND_START_GRACE_MS)) &&
                 PreviewRules.playerRate(speed) == speed &&
@@ -2042,6 +2062,7 @@ class PreviewEngine(private val context: Context) {
 
     private var syncMax = 0L
     private var syncSum = 0L
+    private var syncSigned = 0L
     private var syncCount = 0
     private var syncSince = 0L
 
@@ -2051,14 +2072,17 @@ class PreviewEngine(private val context: Context) {
      * "sync N ms mean=M n=K" - the preview's A/V sync, which the file's own
      * (measured off the export, B3) does not say.
      */
-    private fun noteSync(driftMs: Long) {
+    private fun noteSync(signedMs: Long) {
+        val driftMs = abs(signedMs)
         val now = SystemClock.elapsedRealtime()
-        if (syncCount == 0) syncSince = now
+        if (syncCount == 0) { syncSince = now; syncSigned = 0L }
         syncMax = maxOf(syncMax, driftMs)
         syncSum += driftMs
+        syncSigned += signedMs
         syncCount++
         if (now - syncSince >= SYNC_LOG_MS) {
-            com.squish.app.av.Perf.took("sync", syncMax, "mean=${syncSum / syncCount} n=$syncCount")
+            // Signed: above nought the sound is ahead of the picture.
+            com.squish.app.av.Perf.took("sync", syncMax, "mean=${syncSum / syncCount} signed=${syncSigned / syncCount} n=$syncCount")
             syncMax = 0L; syncSum = 0L; syncCount = 0
         }
     }
@@ -2109,7 +2133,7 @@ class PreviewEngine(private val context: Context) {
             val wanted = clip.sourceAt(t).coerceAtLeast(0L)
             // The preview's own A/V sync (EDGE_PLAN B3): how far each playing
             // sound is from the picture's clock, summed for the line logged below.
-            if (transportRunning && player.isPlaying && player.playbackState == Player.STATE_READY) noteSync(abs(player.currentPosition - wanted))
+            if (transportRunning && player.isPlaying && player.playbackState == Player.STATE_READY) noteSync(player.currentPosition - wanted)
 
             if (!holdPosition) {
                 if (!primed.contains(clip.id)) {

@@ -435,6 +435,49 @@ fun main() {
         check("a drift that lasts is corrected", PreviewRules.shouldResyncSound(true, true, -551L, 5_000L, 5_000L, driftForMs = 700L))
     }
 
+    // ---- EDGE_PLAN B3, seen on the moto 27 Oct: at every cut the incoming
+    // player said it was playing at once and its position stood still for
+    // about 160 ms while its sink opened, the clock followed that position,
+    // and so the picture lost 160 ms at every cut while a song played on -
+    // a reel cut every two seconds was most of a second out within ten, and
+    // the song was then seeked back with a skip. Across the gap the clock now
+    // carries on at wall time, and the shot keeps that lead to its end.
+    run {
+        fun simulate(carryOn: Boolean, startLatencyMs: Long, cuts: Int, shotMs: Long): Long {
+            var carry = PreviewRules.ClockCarry()
+            var t = 0L
+            var wall = 0L
+            var shotStartWall = 0L
+            var shotStartTimeline = 0L
+            var shot = 0
+            val tick = 33L
+            while (shot <= cuts) {
+                wall += tick
+                // The playing shot's position: it stands at its start for the latency, then runs at 1x.
+                val ran = (wall - shotStartWall - startLatencyMs).coerceAtLeast(0L)
+                val mapped = shotStartTimeline + ran
+                val wallGuess = t + tick
+                t = if (carryOn) PreviewRules.carryClock(carry, "s$shot", mapped, wallGuess).also { carry = it.second }.first else mapped
+                if (t >= shotStartTimeline + shotMs) {
+                    shot++
+                    shotStartTimeline += shotMs
+                    shotStartWall = wall
+                }
+            }
+            return wall - t
+        }
+        val lost = simulate(carryOn = false, startLatencyMs = 160, cuts = 5, shotMs = 2_000)
+        val carried = simulate(carryOn = true, startLatencyMs = 160, cuts = 5, shotMs = 2_000)
+        check("the old clock should lose about 160 ms a cut (the model is wrong otherwise): lost $lost", lost in 800L..1_100L)
+        check("the carried clock lost $carried ms against the wall over five cuts", carried in 0L..80L)
+        // A player genuinely slow to start is waited for, not raced: the clock holds past MAX_LEAD.
+        val slow = simulate(carryOn = true, startLatencyMs = 1_500, cuts = 1, shotMs = 2_000)
+        check("a shot that took 1.5 s to start was raced by ${1_500 - slow} ms past the lead allowed", slow >= 1_500 - PreviewRules.MAX_CLOCK_LEAD_MS - 80)
+        // No latency: the clock is the shot's own position, unchanged.
+        val none = simulate(carryOn = true, startLatencyMs = 0, cuts = 5, shotMs = 2_000)
+        check("with no start latency the carried clock drifted $none ms", none in 0L..40L)
+    }
+
     if (failures.isEmpty()) {
         println("PASS - the preview parks inside the trim, redraws without drifting, rattles no ramp, and never reloads a slow seek forever")
     } else {

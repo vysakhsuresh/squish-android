@@ -1926,6 +1926,16 @@ fun main() {
             clipViewParams.isNotEmpty() && !clipViewParams.contains(": LongRange") && !clipViewParams.contains(": IntRange"),
             "ClipView takes a range again - unstable, so every clip on screen recomposes whenever its lane does"
         )
+        // The preview's clock is carried over a cut while the new player's sink
+        // opens, sounds follow the picture's time, and the surface driving the
+        // clock is never corrected against it (27 Oct, on the moto: 160 ms lost
+        // at every cut, a song most of a second ahead within ten seconds).
+        val engine = read("$SRC/editor/PreviewEngine.kt")
+        check(
+            engine.contains("PreviewRules.carryClock(") && engine.contains("!(playing && s.key == clockKey)") &&
+                engine.contains("syncAudio((t - clockCarry.leadMs)"),
+            "the preview's clock follows a new shot's player through its start again - a song gains on the picture at every cut"
+        )
         // A join's badge never covers its shots: 27 Oct, 200 half-second shots
         // at the fitted zoom, a badge every 24 dp over shots 26 dp wide, and
         // a tap meant for a shot opened the Transition sheet. Badges are
