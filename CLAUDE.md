@@ -288,11 +288,12 @@ should work through it and then delete what holds up.
   with all of this, Edit all typed into fast once more; (2) F1 - the
   edgemedia fast-motion clip at 0.25x with Blend frames, exported, the small
   dot read frame by frame (one dot, not two half ones), and a slow pan still
-  clean; (3) F3 - `git apply tools/diag/f3_barcode.patch`, build,
-  `setprop debug.squish.trcode 1`, export `Edge transitions` with logcat at
-  16M, decode the Cube and Push joins (`tools/diag/codes.ps1`) and read each
-  roll's `SquishTr` times for a step backwards at the filler-to-clip
-  boundary; `git checkout` the three files after; (4) C3 - the perf build,
+  clean; (3) F3 - fixed blind (the fence Media3 drops, now a glFinish in
+  LayerSettings): `git apply tools/diag/f3_barcode.patch`, build,
+  `setprop debug.squish.trcode 1`, export `Edge transitions` three times and
+  decode the Cube and Push joins (`tools/diag/codes.ps1`) - both rolls on one
+  number and no band, or the fence was not the cause - and time the export
+  against this morning's 40 s; `git checkout` the three files after; (4) C3 - the perf build,
   `bench.sh <serial> x scrubfs` with `debug.squish.keepsemantics` 0 and 1;
   (5) C7 - `bench.sh <serial> x tour` and `sliders`, and a sheet's chip
   opening a row to see the panel grow rather than jump. Then teardown
@@ -1664,6 +1665,14 @@ should work through it and then delete what holds up.
   (`ImageWriter.Builder.setWidthAndHeight`); below it such pictures are
   "cannot be decoded", as before. `prepareMedia` is still the one door a
   video enters by; it now only warms `AvRoute`.
+- **Media3 1.11.1's compositor does not wait for a layer's frame to be drawn.**
+  Each layer's FinalShaderProgramWrapper fences its output texture, and
+  MultipleInputVideoGraph's listener drops the fence, so a composited export
+  could sample a half-written texture and show a layer a frame or two stale -
+  a black band in a slide's split, seen 27 October. `LayerSettings.getOverlaySettings`
+  is called inside the hand-over, in the producer's context, and glFinish()es
+  there. Check this again on any Media3 upgrade: if the fence is honoured
+  upstream, the glFinish is only a cost.
 - **A native handle can be negative.** arm64 Android tags heap pointers in
   their top byte (the moto's are 0xb4...), so a valid FFmpeg handle as a
   signed long is hugely negative. `AvHandles.failed` is the only test for a
