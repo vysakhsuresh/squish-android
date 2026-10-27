@@ -1063,6 +1063,17 @@ fun main() {
     // no node to focus, so the disc was skipped entirely and its value could
     // neither be read nor changed without a drag.
     run {
+        // EDGE_PLAN C3: a moving strip is one node to accessibility. Every frame
+        // it slid, Compose walked which labels had moved for the screen reader,
+        // a third of the scrub's main thread on the moto.
+        val strip = read("$SRC/timeline/TimelineEditor.kt")
+        check(
+            Regex("""snapshotFlow \{ liveWindow\(\)\.lineMs \}\.collectLatest""").containsMatchIn(strip) &&
+                Regex("""if \(quietFilm\) Modifier\.clearAndSetSemantics""").containsMatchIn(strip),
+            "the strip no longer goes quiet to accessibility while the film moves - the screen reader's walk is back on every frame of a scrub"
+        )
+    }
+    run {
         // EDGE_PLAN C7, "nothing pops": every sheet's panel is a SquishCard, and it
         // grows and shrinks on a spring. It was the one place that covered them all.
         val card = read("$SRC/ui/components/Surfaces.kt")
