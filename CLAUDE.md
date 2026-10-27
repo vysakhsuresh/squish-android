@@ -263,6 +263,25 @@ not here.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **27-28 October, the night with the phone.** Seen on the moto: Edit all
+  typed into fast keeps every letter and one Undo takes the row back; F1's
+  small fast dot first came out torn (one dot, its middle in pieces, grey
+  arcs either side), was fixed from the file (`FlowInterp.READ_WIDTH`, the
+  small thing drawn from whichever frame has it, standing still first) and
+  seen fixed - whole and round, a little narrow on a few frames where it
+  slows; **F3 found and fixed** - a roll's filler came out at 16 px, and
+  Media3 remakes a roll's textures under the compositor when the size
+  changes (see Conventions), so one roll ran frames ahead; fillers are at
+  the canvas size now and all 51 joins read clean off a file; F2's 61
+  effects all in a file and in the preview; C7's sheet rise and chip fades.
+  Built and linted, not seen: Render's preflight off the main thread
+  (StrictMode had it holding the screen 1.3 s on a 52-shot edit). Still to
+  do with the phone: install a0289cb and export once with
+  `logcat -s StrictMode` to see the preflight gone; C3 - the perf build,
+  `bench.sh <serial> x scrubfs` with `debug.squish.keepsemantics` 0 and 1;
+  C7's frame-time `tour` and `sliders` on the perf build; then
+  `edge.sh ... teardown` and Settings' Online left off.
+
 - **27 October, the morning with the phone and the day without it.** Seen
   on the moto: E2 done - One word, Karaoke across a wrapped line, Pop, a word
   Bigger with an emoji, and Translate's two-language line, each in the
@@ -1684,6 +1703,16 @@ should work through it and then delete what holds up.
   there that is mutated after it is handed on, and never mutate a list you
   have passed down: a composable given the same list will skip, and show the
   old content.
+- **Every item on a composited roll must leave its chain at one size.**
+  Media3 1.11.1's `TexturePool.ensureConfigured` (under
+  FinalShaderProgramWrapper) deletes and remakes all a roll's output
+  textures when the frame size changes, the ones the compositor is still
+  holding included, and keeps their old times: the compositor then draws
+  later pictures under earlier times, and the roll stays that many frames
+  off until it drains. That was F3's black band (28 Oct): fillers at 16 px
+  between clips fitted to the canvas. `CompositionFactory.filler` ends in a
+  Presentation to the canvas, and ControlChecks holds it; anything new put
+  on a roll has to end at the canvas size too.
 - **Every layer of a composited export and its compositor share one GL
   context on one thread** (Media3 1.11.1's MultipleInputVideoGraph,
   `SingleContextGlObjectsProvider`). So the fence MultipleInputVideoGraph drops

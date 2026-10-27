@@ -1,4 +1,4 @@
-# F3 diagnosis (27 Oct), never to be committed applied: every base clip's and every
+# F3 diagnosis (27 Oct; the band was fixed 28 Oct in 62f5fc5 - kept for any layer drawn stale), never to be committed applied: every base clip's and every
 # roll filler's frame time drawn as a 12-bit barcode in strips at both edges (bit 0 at
 # the bottom) and logged under SquishTr, with debug.squish.trcode 1. Apply with
 #   git apply tools/diag/f3_barcode.patch    (and git checkout the three files after)
@@ -27,21 +27,21 @@ index 6730dd8..3e96ec0 100644
 +  }
  }
 diff --git a/app/src/main/java/com/squish/app/media/CompositionFactory.kt b/app/src/main/java/com/squish/app/media/CompositionFactory.kt
-index b67878d..d870663 100644
+index e97f08f..5d4c304 100644
 --- a/app/src/main/java/com/squish/app/media/CompositionFactory.kt
 +++ b/app/src/main/java/com/squish/app/media/CompositionFactory.kt
-@@ -217,7 +217,10 @@ object CompositionFactory {
-             .setMimeType(MimeTypes.IMAGE_PNG)
+@@ -230,7 +230,10 @@ object CompositionFactory {
              .setImageDurationMs(durationMs.coerceAtLeast(1L))
              .build()
--        val hide: List<Effect> = listOf(AlphaScale(0f))
-+        val hide: List<Effect> = if (com.squish.app.util.PerfFlags.on("trcode")) listOf(
-+            // TEMPORARY (F3 diagnosis): the filler stamped with its frame times instead of hidden.
-+            com.squish.app.media.effects.TransitionEffect(com.squish.app.timeline.Clip(id = "filler$durationMs", kind = com.squish.app.timeline.ClipKind.Video, label = "filler", sourceInMs = 0, sourceOutMs = durationMs, timelineStartMs = 0, sourceDurationMs = durationMs), null)
-+        ) else listOf(AlphaScale(0f))
-         return EditedMediaItem.Builder(item)
-             .setFrameRate(frameRate)
-             .setEffects(Effects(ImmutableList.of(), ImmutableList.copyOf(hide)))
+         val hide: List<Effect> = buildList {
+-            add(AlphaScale(0f))
++            if (com.squish.app.util.PerfFlags.on("trcode")) {
++                // TEMPORARY (F3 diagnosis): the filler stamped with its frame times instead of hidden.
++                add(com.squish.app.media.effects.TransitionEffect(com.squish.app.timeline.Clip(id = "filler$durationMs", kind = com.squish.app.timeline.ClipKind.Video, label = "filler", sourceInMs = 0, sourceOutMs = durationMs, timelineStartMs = 0, sourceDurationMs = durationMs), null))
++            } else add(AlphaScale(0f))
+             if (canvas != null && canvas.width > 0 && canvas.height > 0) {
+                 add(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_STRETCH_TO_FIT))
+             }
 diff --git a/app/src/main/java/com/squish/app/media/effects/TransitionEffect.kt b/app/src/main/java/com/squish/app/media/effects/TransitionEffect.kt
 index 1708a14..11a90e9 100644
 --- a/app/src/main/java/com/squish/app/media/effects/TransitionEffect.kt
