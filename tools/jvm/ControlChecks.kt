@@ -1079,7 +1079,7 @@ fun main() {
         // a third of the scrub's main thread on the moto.
         val strip = read("$SRC/timeline/TimelineEditor.kt")
         check(
-            Regex("""snapshotFlow \{ liveWindow\(\)\.lineMs \}\.collectLatest""").containsMatchIn(strip) &&
+            Regex("""snapshotFlow \{ liveWindow\(\)\.lineMs \}\.collect \{""").containsMatchIn(strip) &&
                 Regex("""if \(quietFilm\) Modifier\.clearAndSetSemantics""").containsMatchIn(strip),
             "the strip no longer goes quiet to accessibility while the film moves - the screen reader's walk is back on every frame of a scrub"
         )

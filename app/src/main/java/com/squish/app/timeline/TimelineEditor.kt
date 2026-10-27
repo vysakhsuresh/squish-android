@@ -113,8 +113,8 @@ import com.squish.app.editor.effectRoomMs
 import com.squish.app.media.video.FilmstripPlan
 import com.squish.app.ui.theme.SquishColors
 import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -202,6 +202,9 @@ private const val SETTLE_MS = 150L
 
 /** How long the film must hold still before its clips are told to a screen reader again (filmMoving). */
 private const val FILM_SETTLE_MS = 400L
+
+/** How often the settling film is looked at. */
+private const val FILM_SETTLE_POLL_MS = 100L
 
 /**
  * A multi-track timeline in the way every phone editor has taught people to
@@ -447,10 +450,19 @@ fun TimelineEditor(
     // anyway; held still, every clip is back as it was.
     var filmMoving by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        snapshotFlow { liveWindow().lineMs }.collectLatest {
-            filmMoving = true
-            kotlinx.coroutines.delay(FILM_SETTLE_MS)
-            filmMoving = false
+        // Each frame of motion only notes the time; one short loop, alive only
+        // while the film moves, says when it has settled. (A delay restarted per
+        // frame was a coroutine made and cancelled ninety times a second.)
+        var lastMove = 0L
+        snapshotFlow { liveWindow().lineMs }.collect {
+            lastMove = android.os.SystemClock.uptimeMillis()
+            if (!filmMoving) {
+                filmMoving = true
+                launch {
+                    while (android.os.SystemClock.uptimeMillis() - lastMove < FILM_SETTLE_MS) kotlinx.coroutines.delay(FILM_SETTLE_POLL_MS)
+                    filmMoving = false
+                }
+            }
         }
     }
     val quietFilm = filmMoving && !com.squish.app.util.PerfFlags.on("keepsemantics")
