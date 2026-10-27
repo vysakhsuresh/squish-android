@@ -10,6 +10,7 @@
 #                        a project of one clip of FILE (a name under the pushed set)
 #   many N               a project of N shots cut from the benchmark clips (C6)
 #   transitions          every transition kind once, one per join (F3)
+#   effects              every placed effect once, a second each (F2)
 #   photos N             N generated photos into Pictures/SquishEdge (C6), for the picker
 #   teardown             every file and project this made, by MediaStore id and by slot
 #
@@ -152,6 +153,32 @@ transitions() { # every transition kind once, on the joins of 2 s shots that alt
   slot_for "$a" "Edge transitions" "$WORK/edge_draft.json"
 }
 
+effects() { # every placed effect once, a second each, over seven benchmark shots end to end (F2)
+  free
+  . "$WORK/state.$SERIAL" 2>/dev/null
+  [ -n "${IDS:-}" ] || { echo "the benchmark clips are not on the phone (bench.sh setup)"; return 1; }
+  # In EffectKind's order. Effect k runs from 1000k to 1000k + 1000, so the
+  # frame at 1000k + 500 is it: frames.ps1 -Count 61 -FromSec 0.5 -ToSec 60.5.
+  local kinds="Shake Punch ZoomIn Glitch Flash Vhs Mono Invert Blur Rainbow RgbSplit Strobe Earthquake Heartbeat Static OldFilm Dream NegativePulse Trippy Sway ZoomOut LightLeak FilmBurn Bokeh LensFlare GlowPulse Vignette Snow Rain Sparkles Hearts Confetti Dust ZoomBlur Fisheye Kaleidoscope Mirror MirrorUp Split2 Split3 Split4 Ripple Pixelate VhsTracking Super8 EightBit Camcorder Sepia WashedOut BlockGlitch Tear ChromaWave Scramble Shake3D Spin Pendulum BounceZoom Duotone Posterize Warm Cool"
+  local clips="" i id
+  for i in 0 1 2 3 4 5 6; do
+    id=$(echo $IDS | cut -d" " -f$(( i % 6 + 1 )))
+    [ -n "$clips" ] && clips="$clips,"
+    clips="$clips$(clip_json shot$i "$(uri $id)" "bench_$(( i % 6 + 1 )).mp4" 0 9000 $(( i * 9000 )) 0 "")"
+  done
+  local fx="" k=0 kind
+  for kind in $kinds; do
+    [ -n "$fx" ] && fx="$fx,"
+    fx="$fx{\"id\":\"fx$k\",\"kind\":\"$kind\",\"startMs\":$(( k * 1000 )),\"endMs\":$(( k * 1000 + 1000 )),\"intensity\":0.8,\"amount\":0.5}"
+    k=$((k + 1))
+  done
+  local first; first=$(echo $IDS | cut -d" " -f1)
+  draft_json "Edge effects" "$(uri $first)" 63000 "$clips" | sed "s/\"effects\":\[\]/\"effects\":[$fx]/" > "$WORK/edge_draft.json"
+  sed -i 's/"sourceDurationMs":[0-9]*/"sourceDurationMs":10000/g' "$WORK/edge_draft.json"
+  echo "$k effects"
+  slot_for "$first" "Edge effects" "$WORK/edge_draft.json"
+}
+
 photos() { # N generated photos (PNG) into Pictures/SquishEdge, for the photo picker (C6)
   free
   local n=${1:-50} i
@@ -261,6 +288,6 @@ teardown() {
 }
 
 case "$STEP" in
-  push) push ;; project) project "$@" ;; many) many "$@" ;; transitions) transitions ;; photos) photos "$@" ;; whisper) whisper "$@" ;; voice) voice "$@" ;; teardown) teardown ;;
+  push) push ;; project) project "$@" ;; many) many "$@" ;; transitions) transitions ;; effects) effects ;; photos) photos "$@" ;; whisper) whisper "$@" ;; voice) voice "$@" ;; teardown) teardown ;;
   *) echo "unknown step $STEP"; exit 1 ;;
 esac

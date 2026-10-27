@@ -295,6 +295,9 @@ should work through it and then delete what holds up.
   number and no band, or the fence was not the cause - and time the export
   against this morning's 40 s; `git checkout` the three files after; (4) C3 - the perf build,
   `bench.sh <serial> x scrubfs` with `debug.squish.keepsemantics` 0 and 1;
+  (4b) F2 - `edge.sh ... effects`, one export at 480p, then
+  `frames.ps1 -Count 61 -FromSec 0.5 -ToSec 60.5`: effect k is frame k, in
+  EffectKind's order - read each against its name and against the preview;
   (5) C7 - `bench.sh <serial> x tour` and `sliders`, and a sheet's chip
   opening a row to see the panel grow rather than jump; and through all of
   it `adb logcat -s StrictMode` on the debug build, where each line is the

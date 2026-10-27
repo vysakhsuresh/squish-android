@@ -1063,6 +1063,22 @@ fun main() {
     // no node to focus, so the disc was skipped entirely and its value could
     // neither be read nor changed without a drag.
     run {
+        // tools/bench/edge.sh's transitions and effects projects put every kind in
+        // one export to be read frame by frame; a kind added to the app and not to
+        // them would never be looked at.
+        val edge = java.io.File("tools/bench/edge.sh").readText()
+        fun enumNames(file: String, enum: String): List<String> {
+            // To the enum's own closing brace (or a ';' before it): its constants need no ';' in Kotlin.
+            val body = read("$SRC/$file").substringAfter("enum class $enum(").substringAfter("{").substringBefore("\n}").substringBefore(";\n")
+            return Regex("""^\s{4}([A-Z][A-Za-z0-9]+)\(""", RegexOption.MULTILINE).findAll(body).map { it.groupValues[1] }.toList()
+        }
+        fun listed(step: String) = Regex("""$step\(\) \{[\s\S]*?local kinds="([^"]+)"""").find(edge)?.groupValues?.get(1)?.split(" ").orEmpty()
+        val transitions = enumNames("timeline/TimelineModels.kt", "TransitionType") - "None"
+        val effects = enumNames("editor/TimedEffect.kt", "EffectKind")
+        check(transitions.isNotEmpty() && listed("transitions") == transitions, "edge.sh transitions does not list every transition in order: missing ${transitions - listed("transitions").toSet()}")
+        check(effects.isNotEmpty() && listed("effects") == effects, "edge.sh effects does not list every effect in order: missing ${effects - listed("effects").toSet()}")
+    }
+    run {
         // EDGE_PLAN F3: Media3 1.11.1 drops the fence between a layer's frame and
         // the compositor, which then read textures half written - a black band
         // in the splits of slides, pushes and cubes, in some exports. The wait
