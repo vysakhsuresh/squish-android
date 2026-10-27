@@ -28,15 +28,15 @@ Status marks: `[ ]` not started · `[~]` built, JVM-checked, not yet seen ·
 the commit and one line of evidence, e.g. `[x] a1b2c3d - Mp4Probe: 0.25x span
 written at 30.0 fps, distinct frames`. A `[~]` is not "done".
 
-- [ ] **P1** Smooth slow-mo (motion-compensated in-between frames)
-- [ ] **P2** Noise reduction under speech (spectral, not just the gate)
-- [ ] **P3** Geometric transitions
-- [ ] **P4** Bilingual captions
-- [ ] **P5** Gradient and pattern canvas backgrounds
-- [ ] **P6** Animated stickers (GIF)
-- [~] **P7** A real sound-effects library - 76 effects in 9 categories and 37 originals in 9, browsed by tile and search; MusicSynthChecks (level, DC, no two alike, categories) negative-tested; seen browsing and auditioning on the moto, not yet added to an edit and exported
-- [ ] **P8** Blend modes on video overlays
-- [ ] **P9** README and Settings say what the app actually does
+- [~] **P1** Smooth slow-mo (motion-compensated in-between frames) - tracked as EDGE_PLAN F1
+- [~] **P2** Noise reduction under speech (spectral, not just the gate) - tracked as EDGE_PLAN G2
+- [~] **P3** Geometric transitions - tracked as EDGE_PLAN F3
+- [x] **P4** Bilingual captions - EDGE_PLAN E2, seen in the preview and a file 27 Oct
+- [x] **P5** Gradient and pattern canvas backgrounds - EDGE_PLAN F5
+- [~] **P6** Animated stickers (GIF) - tracked as EDGE_PLAN F4
+- [~] **P7** A real sound-effects library - tracked as EDGE_PLAN G1 (five effects added to an edit and read off the exported file by level, 25 Oct; not yet judged by ear)
+- [x] **P8** Blend modes on video overlays - EDGE_PLAN F6
+- [x] **P9** README and Settings say what the app actually does - EDGE_PLAN I1
 - [ ] **R** Extended regression sweep
 
 ## How this list was made, and what it is not

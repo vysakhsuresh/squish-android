@@ -263,6 +263,27 @@ not here.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **27 October, the morning with the phone and the day without it.** Seen
+  on the moto: E2 done - One word, Karaoke across a wrapped line, Pop, a word
+  Bigger with an emoji, and Translate's two-language line, each in the
+  preview and a 480p file. Found and fixed there: **"Edit all" lost letters
+  typed quickly** (a row followed every lagging echo of its line and put the
+  cursor at 0 - the Edit sheet had been fixed for the same race; both now go
+  through `editor/TypedEcho.kt`), and **Whisper left blank caption cards** on
+  stretches it heard and found empty. **F3, not fixed:** all 51 transitions
+  read off one file (`edge.sh transitions`) and every direction right, but a
+  black band shows in some splits (Slide right/down, Push up/down, Whip,
+  Cube) in some exports and not others - the compositor laying the
+  just-started roll up to four frames stale against the other, settling in
+  half a second; `tools/diag/f3_barcode.patch` stamps each roll's frame time
+  into its picture to chase it (EDGE_PLAN F3 has the evidence). Built with
+  the phone away, unseen: every sheet's panel grows on a spring instead of
+  jumping (C7, `SquishCard`); slow motion follows small fast things (F1,
+  `FlowInterp.smallMove` and a third texture in the flow shader). New
+  tools: `tools/desktop/glsl_check.sh` compiles every shader with the NDK's
+  glslc; and **`frames.ps1` is not frame-exact** (it hands back pairs of
+  identical frames) - trust what one frame shows, not when.
+
 - **26-27 October, the night with the phone: most of the 26 October list
   below seen, and seven faults found on the phone and fixed.** Seen, each
   with the numbers in `docs/EDGE_PLAN.md`: six video overlays playing and
@@ -290,6 +311,8 @@ should work through it and then delete what holds up.
   voices-v1 release (the owner's to publish); F1's small fast subjects slow
   as a cross-fade (FlowInterp analyses at 160 px); E5's speed (0.72x real
   time); the steady 70-100 ms the preview's song sits behind its picture.
+  (Karaoke, Pop and One word were seen on 27 October; F1's small subjects
+  are built, not yet seen.)
 
 - **26 October, the phone away from about 08:00: C3, C4, C6, E2, E5, F4, F7,
   F8, B3, B4, P4.** All built and compiled, the arithmetic executed on the JVM

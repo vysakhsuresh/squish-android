@@ -168,7 +168,7 @@ about the finished file is degraded.
 
 Kotlin · Jetpack Compose (Material 3) · Media3 Transformer for export · Media3
 ExoPlayer for preview · Squish's own FFmpeg build behind the phone's decoders ·
-MediaPipe and TensorFlow Lite for the on-device models · CameraX for the camera.
+MediaPipe and LiteRT (TensorFlow Lite) for the on-device models · CameraX for the camera.
 
 Deliberately small dependency surface: no Room, no Hilt, no DataStore, no image
 loader. History is a JSON file; DI is a constructor call.
