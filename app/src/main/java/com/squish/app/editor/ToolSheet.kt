@@ -130,7 +130,7 @@ fun ToolSheet(
         // A chip's panel starts at its top and fades up, rather than swapping in
         // one frame part-way down the last one's scroll (EDGE_PLAN C7) - the
         // draw phase only, so the sheet's size never moves.
-        val panelScroll = remember(chip) { androidx.compose.foundation.ScrollState(0) }
+        val panelScroll = androidx.compose.runtime.saveable.rememberSaveable(chip, saver = androidx.compose.foundation.ScrollState.Saver) { androidx.compose.foundation.ScrollState(0) }
         val panelShown = remember(chip) { androidx.compose.animation.core.Animatable(if (chips.isEmpty()) 1f else 0.25f) }
         androidx.compose.runtime.LaunchedEffect(chip) {
             panelShown.animateTo(1f, androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMedium))

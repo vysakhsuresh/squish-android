@@ -50,6 +50,26 @@ fun main() {
     check(echo.follows("Good morning,", "Good morning, fr", 3_000), "an undo after typing was not followed")
     check(!TypedEcho().follows("same", "same", 0), "the same words were 'followed'")
 
+    // An undo back to a value the field itself sent a moment ago (review, 27 Oct):
+    // "a", "ab", Backspace ("a" again), "ac" - each echoed in turn - then Undo to "a".
+    run {
+        val e = TypedEcho()
+        var t = 0L
+        for (s in listOf("a", "ab", "a", "ac")) e.sent(s, t++)
+        for (s in listOf("a", "ab", "a", "ac")) check(!e.follows(s, "ac", t++), "its own echo \"$s\" was followed")
+        check(e.follows("a", "ac", t++), "an undo to \"a\", once every echo was home, was taken for an echo")
+    }
+    // The same keys with the echoes lagging two behind: the repeated "a" must not
+    // swallow the "ab" still on its way.
+    run {
+        val e = TypedEcho()
+        e.sent("a", 0); e.sent("ab", 1)
+        check(!e.follows("a", "ab", 2), "the first echo was followed")
+        e.sent("a", 3)
+        check(!e.follows("ab", "a", 4), "an echo still on its way was followed after a repeated value")
+        check(!e.follows("a", "a", 5), "the repeated value's echo was followed")
+    }
+
     if (problems.isEmpty()) println("TypedEchoChecks: all checks passed")
     else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }
 }

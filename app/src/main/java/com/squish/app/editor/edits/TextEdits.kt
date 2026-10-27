@@ -777,7 +777,7 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
         // three blank captions on a clip with music under it. Kept only if
         // the run found words somewhere, when they are more likely speech it
         // missed than not speech at all.
-        val wordless = ArrayList<PlannedCaption>()
+        val wordless = ArrayList<Pair<PlannedCaption, Boolean>>()
         // Whisper hears neighbouring lines of one clip together, up to 28 s a
         // call (WhisperWindows says why: a call a line cost thirty seconds of
         // speech each - 57 lines were at line 14 after seven minutes on the
@@ -821,7 +821,8 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             val text = words?.takeIf { it.isNotBlank() } ?: ""
             if (text.isNotEmpty()) transcribed++
             if (canTranscribe && text.isEmpty()) {
-                wordless += plan
+                // With whether Whisper heard it: a window whose call failed heard nothing, and its lines are kept.
+                wordless += plan to (whisper && heard != null)
             } else {
                 // Where each word begins, from the sound, so the Words arrival lands them on the speech.
                 val count = text.split(' ').count { it.isNotBlank() }
@@ -834,8 +835,8 @@ internal class TextEdits(host: EditHost) : EditArea(host) {
             }
             _state.update { it.copy(captions = it.captions.copy(transcribed = transcribed, done = index + 1)) }
         }
-        if (com.squish.app.media.audio.WhisperWindows.keepsWordless(heardInWindows = whisper, anyWords = transcribed > 0)) {
-            wordless.forEach { if (landAutoCaption(run, it, "", emptyList())) made++ }
+        wordless.forEach { (plan, heardByWhisper) ->
+            if (com.squish.app.media.audio.WhisperWindows.keepsWordless(heardByWhisper, anyWords = transcribed > 0) && landAutoCaption(run, plan, "", emptyList())) made++
         }
         if (whisper) com.squish.app.media.audio.WhisperTranscriber.release()
 

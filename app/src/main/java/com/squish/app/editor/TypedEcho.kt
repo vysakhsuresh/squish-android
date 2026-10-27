@@ -15,17 +15,28 @@ package com.squish.app.editor
  * (an undo, a restyle, a translation) is followed.
  */
 class TypedEcho(private val windowMs: Long = 1_500L) {
-    private val sent = LinkedHashMap<String, Long>()
+    /**
+     * What was sent and when, oldest first, repeats kept: echoes come back in
+     * the order they went, so each one consumes itself and everything before it.
+     * A value whose echo has been and gone is then a change again - an undo
+     * back to "a" after typing "a", "ab", Backspace, "c" was taken for an echo
+     * while any "a" sent in the last moment was remembered (review, 27 Oct).
+     */
+    private val sent = ArrayDeque<Pair<String, Long>>()
 
     /** The field handed [text] to the edit at [nowMs]. */
     fun sent(text: String, nowMs: Long) {
-        sent.remove(text)
-        sent[text] = nowMs
+        sent.addLast(text to nowMs)
     }
 
     /** Whether a field showing [fieldText] should take [editText], the edit's words at [nowMs]. */
     fun follows(editText: String, fieldText: String, nowMs: Long): Boolean {
-        sent.entries.removeAll { nowMs - it.value > windowMs }
-        return editText != fieldText && editText !in sent
+        while (sent.isNotEmpty() && nowMs - sent.first().second > windowMs) sent.removeFirst()
+        val echo = sent.indexOfFirst { it.first == editText }
+        if (echo >= 0) {
+            repeat(echo + 1) { sent.removeFirst() }
+            return false
+        }
+        return editText != fieldText
     }
 }

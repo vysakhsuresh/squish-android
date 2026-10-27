@@ -1115,7 +1115,7 @@ fun main() {
         // mid-word: "Handde wthlov" in the Edit sheet, then "dsGood morning, frie"
         // in an Edit all row, which had kept the old rule (27 Oct).
         val text = read("$SRC/editor/TextSheet.kt")
-        check(!text.contains("!= field.text"), "TextSheet compares the edit's words with a field's itself - use TypedEcho.follows")
+        check(!text.contains("!= field.text") && !text.contains("field.text !="), "TextSheet compares the edit's words with a field's itself - use TypedEcho.follows")
         check(Regex(Regex.escape("TypedEcho()")).findAll(text).count() >= 2, "a text field in TextSheet no longer goes through TypedEcho")
     }
     run {

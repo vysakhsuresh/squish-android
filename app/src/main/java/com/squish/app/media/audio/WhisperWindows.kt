@@ -40,14 +40,15 @@ object WhisperWindows {
 
     /**
      * Whether a line handed no words still lands, as a card to type into.
-     * Only when each line was heard on its own (the system recognizer, which
-     * misses speech) and the run found words somewhere - then an empty line is
+     * Only when it was not heard by Whisper - the system recognizer, which
+     * hears a line alone and misses speech, or a Whisper call that failed and
+     * heard nothing at all - and the run found words somewhere - then an empty line is
      * more likely speech it missed than not speech at all. Whisper hears the
      * line inside its window, so finding nothing there means nothing was
      * said: on the moto (27 Oct) that left a blank 0.4 s card at the end of
      * the 109 s clip, "Empty text" on the strip and nothing on the picture.
      */
-    fun keepsWordless(heardInWindows: Boolean, anyWords: Boolean): Boolean = anyWords && !heardInWindows
+    fun keepsWordless(heardByWhisper: Boolean, anyWords: Boolean): Boolean = anyWords && !heardByWhisper
 
     /**
      * Each of [words] to the span it was said in - the one its middle falls
