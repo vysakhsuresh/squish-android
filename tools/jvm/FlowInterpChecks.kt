@@ -167,7 +167,7 @@ fun main() {
         class Case(val fw: Int, val fh: Int, val rad: Float, val dot: Float, val lo: Float, val span: Float, val moves: List<Pair<Float, Float>>)
         for (case in listOf(
             Case(1280, 720, 20f, 0.9f, 0.2f, 0.1f, listOf(37f to -23f, 29f to 31f, -45f to 13f)),
-            Case(1920, 1080, 28f, 0.68f, 0.25f, 0.07f, listOf(34f to -76f, 31f to -71f, 34f to -46f, 20f to -31f, 11f to -15f))
+            Case(1920, 1080, 28f, 0.68f, 0.25f, 0.07f, listOf(34f to -76f, 31f to -71f, 34f to -46f, 20f to -31f, 11f to -15f, 22f to -6f, 14f to 2f))
         )) {
         val fw = case.fw; val fh = case.fh; val rad = case.rad
         fun ground(i: Int, j: Int) = case.lo + case.span * (i + j).toFloat() / (fw + fh)
@@ -201,16 +201,23 @@ fun main() {
             for (t in listOf(0.25f, 0.5f, 0.75f)) {
                 val m = FlowInterp.interpolate(fa, fb, full, t)
                 val cx = ax + t * mx; val cy = ay + t * my
-                var inside = 0; var insideBad = 0; var outside = 0; var outsideBad = 0
+                var inside = 0; var insideBad = 0; var outside = 0; var outsideBad = 0; var area = 0
                 for (j in (cy - 110).toInt()..(cy + 110).toInt()) for (i in (cx - 100).toInt()..(cx + 100).toInt()) {
                     val d = kotlin.math.hypot(i + 0.5f - cx, j + 0.5f - cy)
                     val v = m.pixels[j * fw + i]
+                    if (v > ground(i, j) + contrast * 0.5f) area++
                     if (d < rad - 3) { inside++; if (abs(v - case.dot) > 0.25f * contrast) insideBad++ }
                     else if (d > rad + 3) { outside++; if (abs(v - ground(i, j)) > 0.2f * contrast) outsideBad++ }
                 }
                 val what = "a ${(2 * rad).toInt()} px dot moving ($mx, $my) at ${fh}p"
                 check(insideBad <= inside * 0.03, "$what is torn at t=$t: $insideBad of $inside pixels inside it are not the dot")
                 check(outsideBad <= outside * 0.005, "$what leaves a ghost at t=$t: $outsideBad of $outside pixels round it are not the ground")
+                // Whole, not cut down to where its two copies overlap: on the moto a
+                // slow sideways ball came out an oval a fifth too narrow. A slow one
+                // whose copies overlap still loses up to a tenth at its rim (the
+                // pixels there cannot tell the ball from the ground), so 12%.
+                val truthArea = Math.PI * (rad + 0.5) * (rad + 0.5)
+                check(abs(area - truthArea) <= truthArea * 0.12, "$what is the wrong size at t=$t: ${area} pixels of dot against ${truthArea.toInt()}")
             }
         }
         }
