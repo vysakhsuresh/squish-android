@@ -282,7 +282,22 @@ should work through it and then delete what holds up.
   `FlowInterp.smallMove` and a third texture in the flow shader). New
   tools: `tools/desktop/glsl_check.sh` compiles every shader with the NDK's
   glslc; and **`frames.ps1` is not frame-exact** (it hands back pairs of
-  identical frames) - trust what one frame shows, not when.
+  identical frames) - trust what one frame shows, not when. Also built that
+  day, unseen: a moving strip is one node to accessibility (C3,
+  `filmMoving`). **The phone's evening, in this order:** (1) the debug build
+  with all of this, Edit all typed into fast once more; (2) F1 - the
+  edgemedia fast-motion clip at 0.25x with Blend frames, exported, the small
+  dot read frame by frame (one dot, not two half ones), and a slow pan still
+  clean; (3) F3 - `git apply tools/diag/f3_barcode.patch`, build,
+  `setprop debug.squish.trcode 1`, export `Edge transitions` with logcat at
+  16M, decode the Cube and Push joins (`tools/diag/codes.ps1`) and read each
+  roll's `SquishTr` times for a step backwards at the filler-to-clip
+  boundary; `git checkout` the three files after; (4) C3 - the perf build,
+  `bench.sh <serial> x scrubfs` with `debug.squish.keepsemantics` 0 and 1;
+  (5) C7 - `bench.sh <serial> x tour` and `sliders`, and a sheet's chip
+  opening a row to see the panel grow rather than jump. Then teardown
+  (`edge.sh ... teardown` deletes the renders by id and resets the export
+  defaults), and leave Settings' Online off.
 
 - **26-27 October, the night with the phone: most of the 26 October list
   below seen, and seven faults found on the phone and fixed.** Seen, each
