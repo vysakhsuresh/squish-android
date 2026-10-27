@@ -298,7 +298,10 @@ should work through it and then delete what holds up.
   (5) C7 - `bench.sh <serial> x tour` and `sliders`, and a sheet's chip
   opening a row to see the panel grow rather than jump; and through all of
   it `adb logcat -s StrictMode` on the debug build, where each line is the
-  main thread touching disk or network, with the stack that did it. Then teardown
+  main thread touching disk or network, with the stack that did it; and
+  throughout, anything on screen that does not update after a change (the
+  stability config makes composables skip on equal input - a caption retyped,
+  a waveform landing, a translation, a clip trimmed must all still show). Then teardown
   (`edge.sh ... teardown` deletes the renders by id and resets the export
   defaults), and leave Settings' Online off.
 
@@ -1667,6 +1670,15 @@ should work through it and then delete what holds up.
   (`ImageWriter.Builder.setWidthAndHeight`); below it such pictures are
   "cannot be decoded", as before. `prepareMedia` is still the one door a
   video enters by; it now only warms `AvRoute`.
+- **Compose compares a parameter by `equals` only if it is stable** - and under
+  Kotlin 2's strong skipping, by identity otherwise, so a new-but-equal object
+  re-runs its composable every pass. `app/compose_stability.conf` declares the
+  read-only collections, `Uri` and a few model classes stable (27 October):
+  the strip's composables take only stable parameters now.
+  `tools/desktop/compose_unstable.sh` lists what is left. Never add a class
+  there that is mutated after it is handed on, and never mutate a list you
+  have passed down: a composable given the same list will skip, and show the
+  old content.
 - **Media3 1.11.1's compositor does not wait for a layer's frame to be drawn.**
   Each layer's FinalShaderProgramWrapper fences its output texture, and
   MultipleInputVideoGraph's listener drops the fence, so a composited export
