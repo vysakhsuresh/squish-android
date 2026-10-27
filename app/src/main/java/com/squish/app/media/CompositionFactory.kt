@@ -335,33 +335,8 @@ object CompositionFactory {
             }
         }
 
-        /**
-         * Also the one moment we are handed a layer's frame while the GL context
-         * that drew it is still current - and the moment to make sure it is drawn.
-         *
-         * Each layer's processor renders its frame into a texture in its own
-         * context, makes a fence for the reader to wait on, and hands it over;
-         * Media3 1.11.1's MultipleInputVideoGraph drops that fence on the floor
-         * (its texture listener takes the syncObject and never passes it on, and
-         * DefaultVideoCompositor.queueInputTexture has nowhere to put one). So
-         * the compositor could sample a texture the GPU had not finished
-         * writing, and read what it held before: the frame from two before (the
-         * pool holds two), or at a shot's very start the transparent filler.
-         * Seen in exports on the moto, 27 Oct, as a black band in the splits of
-         * Slide right, Push down, Whip and Cube - in some exports and not others
-         * - and pinned by stamping each layer's frame time into its picture
-         * (tools/diag/f3_barcode.patch): the shot just starting read empty, then
-         * 1554 against the other layer's 1558. This is called from inside the
-         * producer's hand-over (FinalShaderProgramWrapper ->
-         * MultipleInputVideoGraph -> queueInputTexture), on its thread and in its
-         * context, so a glFinish here completes the frame before the compositor
-         * can draw with it. The clock is hidden and transparent, and waits for nothing.
-         */
-        override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
-            if (inputId == CLOCK_INPUT) return HIDDEN
-            android.opengl.GLES20.glFinish()
-            return SHOWN
-        }
+        override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings =
+            if (inputId == CLOCK_INPUT) HIDDEN else SHOWN
     }
 
     private const val CLOCK_INPUT = 0

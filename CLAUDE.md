@@ -288,12 +288,14 @@ should work through it and then delete what holds up.
   with all of this, Edit all typed into fast once more; (2) F1 -
   `edge.sh <serial> <media> project "Edge slowmo" fast_motion_1080p30.mp4
   speed=0.25 blend`, exported, the small dot read frame by frame (one dot,
-  not two half ones), and a slow pan still clean; (3) F3 - fixed blind (the fence Media3 drops, now a glFinish in
-  LayerSettings): `git apply tools/diag/f3_barcode.patch`, build,
-  `setprop debug.squish.trcode 1`, export `Edge transitions` three times and
-  decode the Cube and Push joins (`tools/diag/codes.ps1`) - both rolls on one
-  number and no band, or the fence was not the cause - and time the export
-  against this morning's 40 s; `git checkout` the three files after; (4) C3 - the perf build,
+  not two half ones), and a slow pan still clean; (3) F3 - cause still
+  open (see EDGE_PLAN F3; the fence theory is disproved):
+  `git apply tools/diag/f3_barcode.patch`, build, `setprop debug.squish.trcode 1`,
+  `adb logcat -G 16M`, export `Edge transitions`, decode the Cube and Push
+  joins (`tools/diag/codes.ps1` - the patch stamps the fillers too, so a
+  stale layer shows which frame it was), and read each roll's `SquishTr`
+  frame times around those joins for a gap or a step backwards;
+  `git checkout` the three files after; (4) C3 - the perf build,
   `bench.sh <serial> x scrubfs` with `debug.squish.keepsemantics` 0 and 1;
   (4b) F2 - `edge.sh ... effects`, one export at 480p, then
   `frames.ps1 -Count 61 -FromSec 0.5 -ToSec 60.5`: effect k is frame k, in
@@ -1682,14 +1684,13 @@ should work through it and then delete what holds up.
   there that is mutated after it is handed on, and never mutate a list you
   have passed down: a composable given the same list will skip, and show the
   old content.
-- **Media3 1.11.1's compositor does not wait for a layer's frame to be drawn.**
-  Each layer's FinalShaderProgramWrapper fences its output texture, and
-  MultipleInputVideoGraph's listener drops the fence, so a composited export
-  could sample a half-written texture and show a layer a frame or two stale -
-  a black band in a slide's split, seen 27 October. `LayerSettings.getOverlaySettings`
-  is called inside the hand-over, in the producer's context, and glFinish()es
-  there. Check this again on any Media3 upgrade: if the fence is honoured
-  upstream, the glFinish is only a cost.
+- **Every layer of a composited export and its compositor share one GL
+  context on one thread** (Media3 1.11.1's MultipleInputVideoGraph,
+  `SingleContextGlObjectsProvider`). So the fence MultipleInputVideoGraph drops
+  between a layer and the compositor does not matter, and GPU ordering is not
+  where a layer drawn stale comes from. That was taken for the cause of F3's
+  band on 27 October, "fixed" with a glFinish, and reverted the same day after
+  a review read the source - look at the compositor's frame pairing instead.
 - **A native handle can be negative.** arm64 Android tags heap pointers in
   their top byte (the moto's are 0xb4...), so a valid FFmpeg handle as a
   signed long is hugely negative. `AvHandles.failed` is the only test for a

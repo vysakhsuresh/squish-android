@@ -4725,13 +4725,13 @@ file (B4); the preview's clock steady through cuts (B3).
 - Whisper left blank caption cards on stretches it heard and found empty.
   Seen fixed: 56 lines, 56 transcribed.
 
-**Found, and fixed from the desk afterwards (not yet seen):** a black band in
-the splits of Slide right/down, Push up/down, Whip and Cube, in some exports
-and not others. A barcode of each layer's frame time drawn into its picture
-(`tools/diag/f3_barcode.patch`) showed the layer that had just started read
-stale - empty, then 1554 against the other's 1558, settling in half a
-second. Media3 1.11.1 drops the fence between a layer's frame and the
-compositor; `LayerSettings.getOverlaySettings` now finishes the frame first.
+**Found, not yet fixed:** a black band in the splits of Slide right/down,
+Push up/down, Whip and Cube, in some exports and not others. A barcode of
+each layer's frame time drawn into its picture (`tools/diag/f3_barcode.patch`)
+showed the layer that had just started read stale - empty, then 1554 against
+the other's 1558, settling in half a second. The cause is open: a dropped
+fence was blamed and "fixed" with a glFinish, then reverted the same day -
+every layer and the compositor share one GL context, so it could not be that.
 
 **Measured, not fixed:** the scrub at p90 39-64 ms after the GPU passes were
 skipped when idle (a figure that drifts 20 ms over a night - compare only
