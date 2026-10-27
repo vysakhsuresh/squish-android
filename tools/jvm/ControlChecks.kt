@@ -1063,6 +1063,17 @@ fun main() {
     // no node to focus, so the disc was skipped entirely and its value could
     // neither be read nor changed without a drag.
     run {
+        // EDGE_PLAN F3: Media3 1.11.1 drops the fence between a layer's frame and
+        // the compositor, which then read textures half written - a black band
+        // in the splits of slides, pushes and cubes, in some exports. The wait
+        // is ours, in the one callback made in the producer's context.
+        val factory = read("$SRC/media/CompositionFactory.kt")
+        check(
+            Regex("""override fun getOverlaySettings\(inputId: Int, presentationTimeUs: Long\): OverlaySettings \{\s*if \(inputId == CLOCK_INPUT\) return HIDDEN\s*android\.opengl\.GLES20\.glFinish\(\)""").containsMatchIn(factory),
+            "LayerSettings no longer finishes a layer's frame before the compositor takes it - Media3 drops that fence, and the transitions band again"
+        )
+    }
+    run {
         // EDGE_PLAN C7: a sheet rises into its room in the draw phase alone. Its
         // height must not be what is animated - that resizes the live preview
         // every frame of the opening.
