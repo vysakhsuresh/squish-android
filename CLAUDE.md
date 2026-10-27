@@ -285,10 +285,10 @@ should work through it and then delete what holds up.
   identical frames) - trust what one frame shows, not when. Also built that
   day, unseen: a moving strip is one node to accessibility (C3,
   `filmMoving`). **The phone's evening, in this order:** (1) the debug build
-  with all of this, Edit all typed into fast once more; (2) F1 - the
-  edgemedia fast-motion clip at 0.25x with Blend frames, exported, the small
-  dot read frame by frame (one dot, not two half ones), and a slow pan still
-  clean; (3) F3 - fixed blind (the fence Media3 drops, now a glFinish in
+  with all of this, Edit all typed into fast once more; (2) F1 -
+  `edge.sh <serial> <media> project "Edge slowmo" fast_motion_1080p30.mp4
+  speed=0.25 blend`, exported, the small dot read frame by frame (one dot,
+  not two half ones), and a slow pan still clean; (3) F3 - fixed blind (the fence Media3 drops, now a glFinish in
   LayerSettings): `git apply tools/diag/f3_barcode.patch`, build,
   `setprop debug.squish.trcode 1`, export `Edge transitions` three times and
   decode the Cube and Push joins (`tools/diag/codes.ps1`) - both rolls on one
