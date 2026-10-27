@@ -38,6 +38,7 @@ python3 tools/check_modifier_imports.py # a Modifier extension used unimported
 python3 tools/check_dependencies.py     # a library imported but never declared
 python3 tools/check_shaders.py          # a shader and its Kotlin disagreeing
 KOTLINC=<path>/kotlinc sh tools/jvm/run.sh   # the arithmetic, executed for real
+sh tools/desktop/glsl_check.sh            # every shader parsed and typed by the NDK's glslc (desktop)
 
 # On the desktop, additionally — and this is the one that settles things:
 ./gradlew assembleDebug
