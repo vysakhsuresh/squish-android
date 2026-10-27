@@ -52,3 +52,16 @@ fifteen times a second may be changing thirty, and a moment read off a frame's
 name can be a frame or two out. What *one* frame shows is trustworthy: where two
 edges sit against each other, a band, a colour. How long something took is not;
 for that, log the times on the phone, or count samples with `tools/jvm/Mp4Probe.kt`.
+
+## Two checks that are not about pictures
+
+- `sh tools/desktop/glsl_check.sh` compiles every shader in `app/src/main/assets`
+  with the NDK's own `glslc`, translated to GLSL 330 because glslc takes no
+  ES 100. It catches a typo, a type that does not match or a missing semicolon
+  before a phone does; it cannot catch ES 2's own limits (a loop bound that is
+  not a constant). Run it after touching any shader.
+- `sh tools/desktop/compose_unstable.sh [regex]` builds the Compose compiler's
+  reports and lists every composable with a parameter it compares by identity
+  (strong skipping) rather than by equals - the kind of parameter that re-ran
+  every clip on the strip on each pass. `app/compose_stability.conf` is where
+  an immutable class is declared stable.
