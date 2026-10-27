@@ -135,7 +135,12 @@ object FlowInterp {
         val inSet = changed.toHashSet()
         val joined = changed.count { k ->
             val i = k % w
-            listOf(k - 1 to (i > 0), k + 1 to (i < w - 1), k - w to true, k + w to true).count { (q, ok) -> ok && q in inSet } >= 2
+            var n = 0
+            if (i > 0 && (k - 1) in inSet) n++
+            if (i < w - 1 && (k + 1) in inSet) n++
+            if ((k - w) in inSet) n++
+            if ((k + w) in inSet) n++
+            n >= 2
         }
         if (joined < changed.size * SMALL_JOINED) return null
         fun cost(vx: Int, vy: Int): Float {
