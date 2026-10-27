@@ -73,6 +73,23 @@ kotlin {
     }
 }
 
+composeCompiler {
+    // What may be compared by equals: the read-only collections and Uri (the file says why).
+    stabilityConfigurationFile.set(layout.projectDirectory.file("compose_stability.conf"))
+}
+
+// The Compose compiler's own account of every composable - which parameters it
+// cannot compare, which functions it can never skip - with -PcomposeReports
+// (tools/desktop/compose_unstable.sh reads it). A parameter Compose compares by
+// identity re-ran every clip on the strip whenever its lane did (a LongRange,
+// 26 Oct); this lists the rest of that kind. Normal builds are untouched.
+if (project.hasProperty("composeReports")) {
+    composeCompiler {
+        reportsDestination.set(layout.buildDirectory.dir("compose_reports"))
+        metricsDestination.set(layout.buildDirectory.dir("compose_reports"))
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
