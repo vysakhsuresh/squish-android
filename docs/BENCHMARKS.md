@@ -93,6 +93,12 @@ Reading it:
   walk and 1.6 s over the ten swipes. The timecode under the picture changes on
   every frame of a scrub, which is enough to set it off.
 
+**How far one number moves over a night.** The same build and the same
+swipes read p90 39-47 ms at 21:30 on a phone just picked up and 57-65 ms
+from about 01:00 on, with the phone cool (thermal status 0) and on charge -
+so a scrub figure is only compared against another taken in the same
+session, back to back (`debug.squish.noskip` and the like exist for that).
+
 ## C6, a long edit - moto g84 5G, 27 October 2026, 01:35-02:20
 
 "Edge 200 shots" (`edge.sh many 200`: 200 half-second shots cut from the six
