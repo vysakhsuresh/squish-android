@@ -4688,3 +4688,64 @@ the project copied it in first and then converted the copy.
 **Left on the phone:** the test projects were binned through the app and
 the import copy and the converted copy removed; the owner's MKV is as it
 was.
+
+### 60. The nights of 26-27 October: EDGE_PLAN on the moto
+
+The numbers for each are in the item's own entry in `docs/EDGE_PLAN.md`; this
+is what the phone showed, in one place.
+
+**Seen working, preview and file:** six video overlays playing and exported
+whole (C4); 200 shots opening in under a quarter of a second (C6); the
+downloaded voices speaking in Settings, in Read aloud and in a file, read back
+by Whisper (E5); Whisper captions at 2.4% WER in English, a window of lines
+at a time (E1); every word style - Box, One word, Karaoke across a wrapped
+line, Pop, a word Bigger with an emoji - and Translate's two-language line
+(E2, done); Remove flicker and Reduce noise measured off files (F9); the
+effects shaders on the phone and one effect in a file (F2); all 51
+transitions in one file, every direction as named (F3, `edge.sh
+transitions`); HDR10 and HLG bars right in the copy, the preview and the
+file (B4); the preview's clock steady through cuts (B3).
+
+**Found on the phone and fixed:**
+- The converted voices spoke nothing intelligible on TensorFlow Lite 2.16.1;
+  LiteRT 1.4.0 runs them as the converter did.
+- Whisper took the app down on Hindi (a character cut across two pieces of
+  its output), and wrote Malayalam in Devanagari.
+- Auto-captions took a Whisper call a line, each padded to 30 s: 57 lines
+  were at line 14 after seven minutes. A call a window now: 160 s.
+- HDR10 that only FFmpeg decodes came out with its reds, magentas and blues
+  black; it is tone-mapped in the decoder now.
+- The preview's clock lost about 160 ms at every cut, so a song gained that
+  on the picture per cut until it was seeked back with a skip.
+- Every clip on the strip re-ran when its lane did (a LongRange compared by
+  identity), and join badges covered short shots.
+- "Edit all" lost letters typed quickly - a row followed every lagging echo
+  of its line and put the cursor at 0 ("dsGood morning, frie"); the Edit
+  sheet had been fixed for the same race before. Seen fixed.
+- Whisper left blank caption cards on stretches it heard and found empty.
+  Seen fixed: 56 lines, 56 transcribed.
+
+**Found, and fixed from the desk afterwards (not yet seen):** a black band in
+the splits of Slide right/down, Push up/down, Whip and Cube, in some exports
+and not others. A barcode of each layer's frame time drawn into its picture
+(`tools/diag/f3_barcode.patch`) showed the layer that had just started read
+stale - empty, then 1554 against the other's 1558, settling in half a
+second. Media3 1.11.1 drops the fence between a layer's frame and the
+compositor; `LayerSettings.getOverlaySettings` now finishes the frame first.
+
+**Measured, not fixed:** the scrub at p90 39-64 ms after the GPU passes were
+skipped when idle (a figure that drifts 20 ms over a night - compare only
+back to back); the song a steady 67-106 ms behind the picture in the preview,
+which needs an ear to tell a late sink from late reporting; small fast
+things slowing as a cross-fade in slow motion (since built, unseen); voices
+at 0.72x real time.
+
+**Tools learned:** the desktop frame reader is not frame-exact (pairs of
+identical frames from a clean 30 fps file) - trust what one frame shows, not
+when; `tools/desktop/luma.ps1` for a region's mean and swing; the export
+defaults follow the last render, so test renders at 480p change the owner's
+next project (`edge.sh teardown` resets them).
+
+**Left on the phone:** the test exports and projects listed in
+`build/bench/edge.<serial>`, for `edge.sh teardown`; Settings' Online turned
+back off; the owner's projects untouched.
