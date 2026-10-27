@@ -1063,6 +1063,17 @@ fun main() {
     // no node to focus, so the disc was skipped entirely and its value could
     // neither be read nor changed without a drag.
     run {
+        // EDGE_PLAN C7: a sheet rises into its room in the draw phase alone. Its
+        // height must not be what is animated - that resizes the live preview
+        // every frame of the opening.
+        val screen = read("$SRC/editor/EditorScreen.kt")
+        check(
+            Regex("""modifier = modifier\.graphicsLayer \{\s*translationY = \(1f - rise\.value\)""").containsMatchIn(screen),
+            "the tool sheet no longer rises into place - it pops in"
+        )
+        check(!Regex("""animate\w*AsState\([^)]*sheetHeight""").containsMatchIn(screen), "the sheet's height is animated - the preview resizes every frame of it")
+    }
+    run {
         // EDGE_PLAN C3: a moving strip is one node to accessibility. Every frame
         // it slid, Compose walked which labels had moved for the screen reader,
         // a third of the scrub's main thread on the moto.

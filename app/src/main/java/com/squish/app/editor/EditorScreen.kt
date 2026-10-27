@@ -66,6 +66,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -737,6 +738,14 @@ fun EditorScreen(
                 }
                 val sheet = @Composable { modifier: Modifier ->
                     openTool?.let { tool ->
+                        // The sheet rises into the room it lands in (EDGE_PLAN C7, "nothing
+                        // pops"). Its room itself still opens in one step: animating that
+                        // would resize the live preview every frame. This is the draw phase
+                        // only - a translation and a fade read in a graphics layer.
+                        val rise = remember(tool) { androidx.compose.animation.core.Animatable(0f) }
+                        LaunchedEffect(tool) {
+                            rise.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow))
+                        }
                         EditorToolSheet(
                             tool = tool,
                             state = state,
@@ -764,7 +773,10 @@ fun EditorScreen(
                                         .build()
                                 )
                             },
-                            modifier = modifier
+                            modifier = modifier.graphicsLayer {
+                                translationY = (1f - rise.value) * SHEET_RISE_DP.dp.toPx()
+                                alpha = SHEET_RISE_ALPHA + (1f - SHEET_RISE_ALPHA) * rise.value
+                            }
                         )
                     }
                 }
@@ -1460,6 +1472,10 @@ private fun RelinkCard(
 
 /** The most videos one pick adds. The picker needs a number; this is well past a normal batch. */
 private const val MAX_PICK = 30
+
+/** How far below its place a sheet starts as it opens, and how faint: it rises the rest of the way (C7). */
+private const val SHEET_RISE_DP = 36f
+private const val SHEET_RISE_ALPHA = 0.35f
 
 /** Which track the media library is open for. */
 enum class LibraryUse { Main, Overlay, Replace }
