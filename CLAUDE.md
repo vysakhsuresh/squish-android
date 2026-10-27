@@ -296,7 +296,9 @@ should work through it and then delete what holds up.
   against this morning's 40 s; `git checkout` the three files after; (4) C3 - the perf build,
   `bench.sh <serial> x scrubfs` with `debug.squish.keepsemantics` 0 and 1;
   (5) C7 - `bench.sh <serial> x tour` and `sliders`, and a sheet's chip
-  opening a row to see the panel grow rather than jump. Then teardown
+  opening a row to see the panel grow rather than jump; and through all of
+  it `adb logcat -s StrictMode` on the debug build, where each line is the
+  main thread touching disk or network, with the stack that did it. Then teardown
   (`edge.sh ... teardown` deletes the renders by id and resets the export
   defaults), and leave Settings' Online off.
 
