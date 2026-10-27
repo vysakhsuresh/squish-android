@@ -47,6 +47,23 @@ tap_text() {
   sh_ input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
 
+# A tool on the toolbar, scrolled along to if it is past the screen's edge:
+# a clip's row holds more tools than fit, and the sliders step found five of
+# nine "not on the toolbar" that were only further along it (28 Oct).
+tap_tool() {
+  tap_text "$1" >/dev/null 2>&1 && return 0
+  local h w y i; h=$(screen_h); w=$(screen_w); y=$(( h * 905 / 1000 ))
+  for i in 1 2 3 4; do
+    sh_ input swipe $(( w * 85 / 100 )) $y $(( w * 15 / 100 )) $y 300; sleep 0.8
+    tap_text "$1" >/dev/null 2>&1 && return 0
+  done
+  for i in 1 2 3 4 5 6 7 8; do
+    sh_ input swipe $(( w * 15 / 100 )) $y $(( w * 85 / 100 )) $y 300; sleep 0.8
+    tap_text "$1" >/dev/null 2>&1 && return 0
+  done
+  say "  (could not find \"$1\" on the toolbar)"; return 1
+}
+
 perf_lines() { sh_ logcat -d -s SquishPerf:I; }
 media_id() { sh_ "content query --uri content://media/external/video/media --projection _id --where \"_display_name='$1'\"" | grep -oE "_id=[0-9]+" | cut -d= -f2 | head -1; }
 newest_export() { sh_ "content query --uri content://media/external/video/media --projection _id:_display_name --sort 'date_added DESC'" | grep -m1 "squish_" | grep -oE "_id=[0-9]+" | cut -d= -f2; }
@@ -184,7 +201,7 @@ tour_step() { # label, then a command
 }
 fling_up() { local h w; h=$(screen_h); w=$(screen_w); sh_ input swipe $((w/2)) $((h*75/100)) $((w/2)) $((h*25/100)) 250; sleep 0.6; sh_ input swipe $((w/2)) $((h*25/100)) $((w/2)) $((h*75/100)) 250; }
 sheet_scroll() { local h w; h=$(screen_h); w=$(screen_w); sh_ input swipe $((w/2)) $((h*88/100)) $((w/2)) $((h*70/100)) 300; sleep 0.4; sh_ input swipe $((w/2)) $((h*70/100)) $((w/2)) $((h*88/100)) 300; }
-open_tool() { tap_text "$1" && sleep 1.2; }
+open_tool() { tap_tool "$1" && sleep 1.2; }
 close_sheet() { tap_text "Done" || sh_ input keyevent KEYCODE_BACK; sleep 0.8; }
 tour() {
   free
@@ -240,7 +257,10 @@ slider_test() { # tool, node line
   set -- $d
   local verdict="no change"; awk "BEGIN{exit !($2 > 0.5)}" && verdict="LIVE"
   say "slider $tool/$name: $verdict (mean $1, ${2}% of the picture changed)"
-  tap_text "Undo" >/dev/null || true
+  # The button names what it undoes ("Undo: Speed"): matched by its start. An
+  # exact "Undo" matched nothing, so every drag of every run stayed in the
+  # bench edit (28 Oct: Bench plain at 17x and zoomed).
+  tap_text "Undo(: [^\"]*)?" >/dev/null || say "  (could not undo $tool/$name - the bench edit keeps it)"
   sleep 0.5
 }
 sliders() {
@@ -253,7 +273,7 @@ sliders() {
   [ -n "$mute" ] && { set -- $mute; sh_ input tap $(( w * 60 / 100 )) $(( ($2 + $4) / 2 )); sleep 1.2; }
   local tool seen
   for tool in ${SLIDER_TOOLS:-Adjust Filters Opacity Placement Mask Effects Crop Blur Speed}; do
-    tap_text "$tool" || { say "slider $tool: (tool not on the toolbar)"; continue; }
+    tap_tool "$tool" || { say "slider $tool: (tool not on the toolbar)"; continue; }
     sleep 1.5
     seen=" "
     local pass; for pass in 1 2 3; do
