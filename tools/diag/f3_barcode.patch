@@ -1,0 +1,59 @@
+# F3 diagnosis (27 Oct), never to be committed applied: every base clip's and every
+# roll filler's frame time drawn as a 12-bit barcode in strips at both edges (bit 0 at
+# the bottom) and logged under SquishTr, with debug.squish.trcode 1. Apply with
+#   git apply tools/diag/f3_barcode.patch    (and git checkout the three files after)
+# Decode a frame: tools/diag/codes.ps1 -Dir <frames>. See EDGE_PLAN F3.
+diff --git a/app/src/main/assets/squish_transition_es2.glsl b/app/src/main/assets/squish_transition_es2.glsl
+index 6730dd8..3e96ec0 100644
+--- a/app/src/main/assets/squish_transition_es2.glsl
++++ b/app/src/main/assets/squish_transition_es2.glsl
+@@ -56,6 +56,8 @@ uniform vec3 uShape;
+ uniform vec4 uBend;
+ uniform vec2 uPivot;
+ uniform float uAspect;
++// TEMPORARY (F3 diagnosis): the frame's index as twelve bars at both edges.
++uniform float uCode;
+ 
+ float hash(vec2 p) {
+   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+@@ -163,4 +165,9 @@ void main() {
+   vec3 lit = mix(c.rgb, vec3(1.0), clamp(uWhite, 0.0, 1.0) * c.a) * (1.0 - clamp(uBend.w, 0.0, 1.0));
+   float a = uAlpha * inside * coverage(uv);
+   gl_FragColor = mix(vec4(lit, c.a * a), vec4(lit * a, c.a), uOpaque);
++  if (uCode >= 0.0 && a > 0.0 && (uv.x < 0.06 || uv.x > 0.94)) {
++    float bit = floor(uv.y * 12.0);
++    float v = mod(floor(uCode / pow(2.0, bit) + 0.001), 2.0);
++    gl_FragColor = vec4(vec3(v), 1.0);
++  }
+ }
+diff --git a/app/src/main/java/com/squish/app/media/CompositionFactory.kt b/app/src/main/java/com/squish/app/media/CompositionFactory.kt
+index b67878d..d870663 100644
+--- a/app/src/main/java/com/squish/app/media/CompositionFactory.kt
++++ b/app/src/main/java/com/squish/app/media/CompositionFactory.kt
+@@ -217,7 +217,10 @@ object CompositionFactory {
+             .setMimeType(MimeTypes.IMAGE_PNG)
+             .setImageDurationMs(durationMs.coerceAtLeast(1L))
+             .build()
+-        val hide: List<Effect> = listOf(AlphaScale(0f))
++        val hide: List<Effect> = if (com.squish.app.util.PerfFlags.on("trcode")) listOf(
++            // TEMPORARY (F3 diagnosis): the filler stamped with its frame times instead of hidden.
++            com.squish.app.media.effects.TransitionEffect(com.squish.app.timeline.Clip(id = "filler$durationMs", kind = com.squish.app.timeline.ClipKind.Video, label = "filler", sourceInMs = 0, sourceOutMs = durationMs, timelineStartMs = 0, sourceDurationMs = durationMs), null)
++        ) else listOf(AlphaScale(0f))
+         return EditedMediaItem.Builder(item)
+             .setFrameRate(frameRate)
+             .setEffects(Effects(ImmutableList.of(), ImmutableList.copyOf(hide)))
+diff --git a/app/src/main/java/com/squish/app/media/effects/TransitionEffect.kt b/app/src/main/java/com/squish/app/media/effects/TransitionEffect.kt
+index 1708a14..11a90e9 100644
+--- a/app/src/main/java/com/squish/app/media/effects/TransitionEffect.kt
++++ b/app/src/main/java/com/squish/app/media/effects/TransitionEffect.kt
+@@ -105,6 +105,10 @@ private class TransitionShaderProgram(
+             glProgram.setFloatsUniform("uWhite", floatArrayOf(u.white))
+             glProgram.setFloatsUniform("uBlur", floatArrayOf(u.blur))
+             glProgram.setFloatsUniform("uOpaque", floatArrayOf(if (opaque) 1f else 0f))
++            // TEMPORARY (F3 diagnosis): every frame's time, logged and drawn as a barcode.
++            val code = com.squish.app.util.PerfFlags.on("trcode")
++            if (code) android.util.Log.i("SquishTr", "${clip.id} pts=$presentationTimeUs")
++            glProgram.setFloatsUniform("uCode", floatArrayOf(if (code) Math.round(presentationTimeUs / (1_000_000.0 / 30.0)).toFloat() else -1f))
+             glProgram.setFloatsUniform("uShape", floatArrayOf(u.shape, u.shapeAt, u.shapeInvert))
+             glProgram.setFloatsUniform("uBend", floatArrayOf(u.turn, u.squashX, u.squashY, u.shade))
+             glProgram.setFloatsUniform("uPivot", floatArrayOf(u.pivotX, u.pivotY))
