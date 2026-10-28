@@ -179,10 +179,11 @@ class VideoProcessor(private val context: Context) {
             if (outcome.isSuccess) {
                 val took = SystemClock.elapsedRealtime() - started
                 val lengthMs = state.trimmedDurationMs
+                val bytes = withContext(Dispatchers.IO) { outputFile.length() }
                 com.squish.app.av.Perf.took(
                     "export", took,
                     "length=$lengthMs x=${if (took > 0) String.format(java.util.Locale.ROOT, "%.2f", lengthMs.toDouble() / took) else "?"} " +
-                        "bytes=${outputFile.length()} p=${state.outputP} fps=${state.outputFps}"
+                        "bytes=$bytes p=${state.outputP} fps=${state.outputFps}"
                 )
             }
             outcome

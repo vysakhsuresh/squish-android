@@ -37,5 +37,10 @@
             android:name="com.squish.app.debug.MagicProbeActivity"
             android:exported="true"
             android:label="Squish MagicTouch probe" />
+        <!-- The tracker run over a file, every sample logged (debug/TrackProbeActivity.kt, EDGE_PLAN F8). -->
+        <activity
+            android:name="com.squish.app.debug.TrackProbeActivity"
+            android:exported="true"
+            android:label="Squish tracker probe" />
     </application>
 </manifest>

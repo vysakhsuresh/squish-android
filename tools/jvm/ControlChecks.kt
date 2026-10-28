@@ -757,7 +757,7 @@ fun main() {
     // is only cleared when Android expires a pending item a week later. Both
     // files that insert one tidied up when the copy *threw*; one of them
     // returned straight past the tidying when the provider handed back no
-    // stream at all - `openOutputStream(target)?.use { … } ?: return`, which is
+    // stream at all - `openOutputStream(target)?.use { â¦ } ?: return`, which is
     // the shape this looks for.
     run {
         for (name in listOf("media/GallerySaver.kt", "media/gif/GifMaker.kt")) {
@@ -1135,9 +1135,14 @@ fun main() {
         // spans, and "good" picked green on an arched line stayed pink (28 Oct).
         val renderer = read("$SRC/media/CaptionRenderer.kt")
         check(Regex("""item\.wordColors\[firstWord \+ i\][\s\S]{0,200}?drawTextOnPath\(word, path""").containsMatchIn(renderer) &&
-            renderer.contains("paintArc(item, shown, textSize, paint, firstWord = words?.from ?: 0)") &&
+            renderer.contains("paintArc(item, shown, sizingWords, textSize, paint, firstWord = words?.from ?: 0)") &&
             renderer.contains("CaptionWords.words(shown).forEachIndexed { i, word ->"),
             "a bent line draws its words in one colour - CaptionRenderer's path text no longer takes wordColors")
+        // The arc is as long as what is laid on it, emoji included: measured on
+        // the bare text, "big 😀 bold word" ran off its path and "word"
+        // lost its middle letters (28 Oct, the moto).
+        check(renderer.contains("val lineW = paint.measureText(whole)") && !renderer.contains("val lineW = paint.measureText(item.text)"),
+            "a bent line's arc is measured without what is drawn on it - an emoji after a word pushes the last letters off the path")
     }
     run {
         // MagicTouch's point is in the frame's pixels, though its class is called
@@ -1228,7 +1233,7 @@ fun main() {
             "the x that forgets a saved style is unnamed again - a screen reader announces it as " +
                 "\"multiplication sign\", right after the chip it destroys, and there is no undo"
         )
-        // The "More…" pad behind the swatches. Two raw pointer inputs over a
+        // The "Moreâ¦" pad behind the swatches. Two raw pointer inputs over a
         // Canvas, and a Box whose only child is a Canvas has no node to focus -
         // so that route to a colour was not reachable by swipe at all, and the
         // only readable thing left was the hex readout, which is output rather
@@ -1237,7 +1242,7 @@ fun main() {
             text.contains("contentDescription = \"Shade and brightness\"") &&
                 text.contains("contentDescription = \"Colour\""),
             "the colour picker's square or its hue strip has no name - neither can be focused at all " +
-                "without one, so \"More…\" is not a route to a colour"
+                "without one, so \"Moreâ¦\" is not a route to a colour"
         )
         check(
             Regex("""customActions = actions\(\s*\n\s*"Stronger"""").containsMatchIn(text) &&
@@ -1622,7 +1627,7 @@ fun main() {
     // not on a cancellation - and a cancellation is the ordinary case, because
     // the only thing that cancels it is leaving the editor, which is what a
     // user does while the notice over the strip still says "Building a light
-    // preview copy · 37%". About a hundred megabytes for a fifteen-minute clip
+    // preview copy Â· 37%". About a hundred megabytes for a fifteen-minute clip
     // abandoned there, counted in Settings' storage figure, and one more orphan
     // for every different clip abandoned. ReverseRenderer has always wrapped
     // its body in runCatching for exactly this.

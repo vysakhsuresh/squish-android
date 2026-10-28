@@ -1285,7 +1285,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
 
-            val outputDir = SquishError.exportsDir(getApplication()).apply { mkdirs() }
+            // Off the main thread: StrictMode caught the folder's lookup and mkdirs (28 Oct).
+            val outputDir = withContext(Dispatchers.IO) { SquishError.exportsDir(getApplication()).apply { mkdirs() } }
             // A sound-only export is an .m4a, and lands in Music rather than the gallery.
             val extension = if (current.audioOnly) "m4a" else "mp4"
             val outputFile = File(outputDir, "squish_${System.currentTimeMillis()}.$extension")
@@ -1318,7 +1319,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 // Measured now, before retire below deletes the private copy:
                 // read after it, a fitted export that overshot measured as
                 // nothing and was handed over as if it had fitted.
-                val size = file.length()
+                val size = withContext(Dispatchers.IO) { file.length() }
                 // All or nothing: into the gallery, into history, and the draft
                 // stamped. Cancelled half-way - the screen leaving in the instant
                 // after the encode - the file was in the gallery and the draft

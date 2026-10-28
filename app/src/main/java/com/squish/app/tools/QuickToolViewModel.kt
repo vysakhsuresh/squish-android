@@ -902,7 +902,8 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
             // The folder the space check measured and Storage clears, with its
             // fallback: with no external volume, File(null, "exports") was a
             // relative path under "/", and the file could not be written.
-            val outputDir = SquishError.exportsDir(getApplication()).apply { mkdirs() }
+            // Off the main thread, as the editor's (StrictMode, 28 Oct).
+            val outputDir = withContext(Dispatchers.IO) { SquishError.exportsDir(getApplication()).apply { mkdirs() } }
             val extension = if (audioOnly) "m4a" else "mp4"
             val outputFile = File(outputDir, "squish_${tool.id}_${System.currentTimeMillis()}.$extension")
 
@@ -926,7 +927,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                 // Read here, while the private copy is still on disk: it is gone
                 // by the end of this block (GallerySaver.retire), and the fitted
                 // check below needs the number.
-                val size = file.length()
+                val size = withContext(Dispatchers.IO) { file.length() }
                 // Still exporting until the copy is in the gallery, so the button
                 // cannot start a second export over this one's hand-over.
                 val saving = _state.value.exportProgress.copy(stage = ExportStage.Saving)
@@ -952,7 +953,7 @@ class QuickToolViewModel(application: Application) : AndroidViewModel(applicatio
                             },
                             outputPath = file.absolutePath,
                             originalSizeBytes = current.originalSizeBytes,
-                            outputSizeBytes = file.length(),
+                            outputSizeBytes = size,
                             durationMs = editorState.trimmedDurationMs,
                             // The size written, which for a squeeze is not the source's.
                             width = rendering.writtenResolution.width.takeIf { it > 0 } ?: current.width,

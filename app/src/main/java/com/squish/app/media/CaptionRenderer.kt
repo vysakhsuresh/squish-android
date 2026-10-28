@@ -262,7 +262,7 @@ object CaptionRenderer {
             }
         }
         // A line bent into an arc is laid along a circle instead (EDGE_PLAN E3).
-        if (item.arc != 0f) return paintArc(item, shown, textSize, paint, firstWord = words?.from ?: 0)
+        if (item.arc != 0f) return paintArc(item, shown, sizingWords, textSize, paint, firstWord = words?.from ?: 0)
 
         val fullLayout = layout(item, sizing, paint, maxWidth, sizing, grow)
         val shownLayout = layout(item, filled, paint, fullLayout.width, sizing, grow)
@@ -507,11 +507,14 @@ object CaptionRenderer {
      * same order. One line only - a bend over wrapped lines would bend each
      * round a different circle - and the word styles stay with straight lines.
      */
-    private fun paintArc(item: TextOverlayItem, shown: String, textSize: Float, paint: TextPaint, firstWord: Int = 0): Painted {
+    private fun paintArc(item: TextOverlayItem, shown: String, whole: String, textSize: Float, paint: TextPaint, firstWord: Int = 0): Painted {
         val bend = item.arc.coerceIn(-1f, 1f)
         paint.textAlign = Paint.Align.LEFT
-        // The whole line's length, so revealed letters do not re-bend it.
-        val lineW = paint.measureText(item.text).coerceAtLeast(1f)
+        // The length of all that will be laid on it - the page, with its emoji -
+        // so revealed letters do not re-bend it. Measured on the bare line, an
+        // emoji after a word made the words longer than the arc and the last
+        // letters ran off its end (28 Oct, the moto: "word" drawn as "w d").
+        val lineW = paint.measureText(whole).coerceAtLeast(1f)
         val r = TextDepth.arcRadius(lineW, bend)
         val half = Math.toRadians(TextDepth.arcHalfDegrees(bend).toDouble())
         val fm = paint.fontMetrics
