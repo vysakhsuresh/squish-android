@@ -1,11 +1,5 @@
 package com.squish.app.editor
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
@@ -99,6 +93,19 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             // any; one shelf at a time, as CapCut's library is. Remembered for
             // the session, so a second effect of the same kind is one tap away.
             var category by rememberSaveable { mutableStateOf(EffectCategory.Motion) }
+            // One clock for every tile, stepping twenty times a second. Each tile
+            // ran its own at the panel's 90 Hz, and every frame drew every tile's
+            // effect again: the sheet held the GPU at 18 ms a frame for as long as it
+            // was open (C7 tour, 28 Oct). A thumbnail reads as moving at 20; read in
+            // the draw phase only, a step redraws the tiles and recomposes nothing.
+            val tileClock = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                while (true) {
+                    kotlinx.coroutines.delay(TILE_STEP_MS)
+                    tileClock.longValue = (tileClock.longValue + TILE_STEP_MS) % TILE_LOOP_MS
+                }
+            }
+            val tileTime: () -> Long = remember { { tileClock.longValue } }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
@@ -110,7 +117,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
             EffectKind.entries.filter { it.category == category }.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     row.forEach { kind ->
-                        EffectTile(kind = kind, frame = frame, modifier = Modifier.weight(1f)) {
+                        EffectTile(kind = kind, frame = frame, time = tileTime, modifier = Modifier.weight(1f)) {
                             viewModel.clips.addEffect(kind)
                             // Played once from where it lands: paused, a Shake or a Glitch added showed a still frame.
                             viewModel.state.value.effects.lastOrNull()?.let { e -> viewModel.showMoment(e.startMs, minOf(e.endMs - e.startMs, 2_000L)) }
@@ -145,14 +152,7 @@ fun EffectsPanel(state: EditorUiState, viewModel: EditorViewModel) {
 
 /** One effect in the library: its picture running, and its name. */
 @Composable
-private fun EffectTile(kind: EffectKind, frame: ImageBitmap?, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val loop = rememberInfiniteTransition(label = "effect")
-    val t by loop.animateFloat(
-        initialValue = 0f,
-        targetValue = 2_000f,
-        animationSpec = infiniteRepeatable(tween(2_000, easing = LinearEasing), RepeatMode.Restart),
-        label = "time"
-    )
+private fun EffectTile(kind: EffectKind, frame: ImageBitmap?, time: () -> Long, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -182,7 +182,7 @@ private fun EffectTile(kind: EffectKind, frame: ImageBitmap?, modifier: Modifier
                     .aspectRatio(16f / 9f)
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.Black)
-                    .canvasFxTile(sample) { t.toLong() }
+                    .canvasFxTile(sample, time)
             )
         } else {
             Canvas(
@@ -192,7 +192,7 @@ private fun EffectTile(kind: EffectKind, frame: ImageBitmap?, modifier: Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.Black)
             ) {
-                val p = FxParams.at(sample, t.toLong())
+                val p = FxParams.at(sample, time())
                 if (frame != null) drawFrame(frame, p) else drawSample(p)
             }
         }
@@ -544,3 +544,9 @@ fun EffectStrengthPanel(effect: TimedEffect, playheadMs: Long, viewModel: Editor
         }
     }
 }
+
+/** How often the library's tiles step their effect: twenty times a second. */
+private const val TILE_STEP_MS = 50L
+
+/** The stretch each tile plays, round and round: its effect's two seconds. */
+private const val TILE_LOOP_MS = 2_000L
