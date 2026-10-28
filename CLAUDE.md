@@ -263,6 +263,31 @@ not here.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **28-29 October, the night with the phone.** Seen on the moto, and the
+  faults found there fixed and seen fixed: the done screen (pinned bar, a
+  white brush tick, share tiles that bob three times and rest - bobbing for
+  ever kept uiautomator from ever reading the screen); Render's last
+  main-thread disk reads (0 StrictMode lines on a 52-shot render); a bent
+  line's word colours, paged and in Arabic, and **an emoji after a word
+  breaking a bent line's last word** (the arc was measured on the bare
+  text); the tracker over the hidden card (debug/TrackProbeActivity) and a
+  grown pinned line's box; Comic's edges and colours on a straight line
+  (E3 done); **a 240 fps clip slowed below the export rate written with
+  alternating 16.67/29.63 ms frames** (FrameGrid snapped frames it had none
+  to spare for; B5 done); **scrubbing 200 shots spent 26 ms a frame in the
+  app** - TimelineState's lists kept per clip list and clips under 8 dp drawn
+  as bars (ThinClips): 9-11 ms; **the media grid stopped at 30 picks without
+  a word** (100 now, and it says when full); **50 photos took 161 s to add**
+  - renders now as long as a photo lands plus a second, three at a time: 66 s,
+  still slow (next: open the editor first and render behind it, with a limit
+  on how many renders run and the export waiting for them); HDR10, HLG and
+  10-bit HEVC through the matrix with the bars right. Tools: TraceTop's
+  `TRACE_UNDER=<method>` lists one method's callees; bench.sh's tour finds
+  "Looks" and runs a subset (`TOUR_TOOLS`); edge.sh photos scans what it
+  pushes (a pushed file is pending, and no app's query sees it); matrix.sh
+  scrubs and cuts each file. **`docs/PENDING_TESTS.md` is the list of what
+  is left.**
+
 - **28 October, the morning with the phone.** Seen on the moto: F7's Tap a
   thing had never cut anything out (MagicTouch reads its point in pixels -
   see Conventions) and now cuts out and follows a moving card, preview and
