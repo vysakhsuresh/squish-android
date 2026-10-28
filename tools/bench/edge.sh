@@ -118,14 +118,22 @@ moving() { # a thing moving slowly across a busy ground, to cut out and to track
   . "$WORK/state.$SERIAL" 2>/dev/null
   [ -n "${IDS:-}" ] || { echo "the benchmark clips are not on the phone (bench.sh setup)"; return 1; }
   # The fractal zoom under, and the colour bars over it as a 30% picture
-  # keyed from left to right and a little down over nine seconds: one distinct
+  # keyed from left to right, a little down and growing from 25% to 40% over
+  # nine seconds (a tracker must follow its size, F8): one distinct
   # textured thing, at a speed a hand or a car moves, on a ground that moves too.
   local ground thing; ground=$(echo $IDS | cut -d" " -f1); thing=$(echo $IDS | cut -d" " -f6)
-  local keys='"keyframes":[{"atMs":0,"scale":0.3,"offsetXFraction":-0.32,"offsetYFraction":-0.1,"rotationDegrees":0,"easing":"Linear"},{"atMs":9000,"scale":0.3,"offsetXFraction":0.32,"offsetYFraction":0.12,"rotationDegrees":0,"easing":"Linear"}]'
-  local clips; clips="$(clip_json main0 "$(uri $ground)" bench_1.mp4 0 9000 0 0 ""),$(clip_json pip1 "$(uri $thing)" bench_6.mp4 0 9000 0 1 ",\"scale\":0.3,\"offsetXFraction\":-0.32,\"offsetYFraction\":-0.1" | sed 's/"scale":1,//; s/"keyframes":\[\]/'"$keys"'/')"
-  draft_json "Edge moving" "$(uri $ground)" 9000 "$clips" > "$WORK/edge_draft.json"
+  local keys='"keyframes":[{"atMs":0,"scale":0.25,"offsetXFraction":-0.32,"offsetYFraction":-0.1,"rotationDegrees":0,"easing":"Linear"},{"atMs":9000,"scale":0.4,"offsetXFraction":0.28,"offsetYFraction":0.12,"rotationDegrees":0,"easing":"Linear"}]'
+  # "moving hide": the thing gone for a second in the middle (3.6-4.6 s), for a
+  # tracker to lose it and find it again (F8).
+  local name="Edge moving" hide=""
+  if [ "${1:-}" = hide ]; then
+    name="Edge moving hidden"
+    hide=',"opacityKeys":[{"atMs":3500,"value":1,"easing":"Linear"},{"atMs":3600,"value":0,"easing":"Linear"},{"atMs":4600,"value":0,"easing":"Linear"},{"atMs":4700,"value":1,"easing":"Linear"}]'
+  fi
+  local clips; clips="$(clip_json main0 "$(uri $ground)" bench_1.mp4 0 9000 0 0 ""),$(clip_json pip1 "$(uri $thing)" bench_6.mp4 0 9000 0 1 ",\"scale\":0.3,\"offsetXFraction\":-0.32,\"offsetYFraction\":-0.1$hide" | sed 's/"scale":1,//; s/"keyframes":\[\]/'"$keys"'/')"
+  draft_json "$name" "$(uri $ground)" 9000 "$clips" > "$WORK/edge_draft.json"
   sed -i 's/"sourceDurationMs":[0-9]*/"sourceDurationMs":10000/g' "$WORK/edge_draft.json"
-  slot_for "$ground" "Edge moving" "$WORK/edge_draft.json"
+  slot_for "$ground" "$name" "$WORK/edge_draft.json"
 }
 
 many() { # N shots cut from the benchmark clips, half a second each (C6)
@@ -304,6 +312,6 @@ teardown() {
 }
 
 case "$STEP" in
-  push) push ;; project) project "$@" ;; many) many "$@" ;; moving) moving ;; transitions) transitions ;; effects) effects ;; photos) photos "$@" ;; whisper) whisper "$@" ;; voice) voice "$@" ;; teardown) teardown ;;
+  push) push ;; project) project "$@" ;; many) many "$@" ;; moving) moving "$@" ;; transitions) transitions ;; effects) effects ;; photos) photos "$@" ;; whisper) whisper "$@" ;; voice) voice "$@" ;; teardown) teardown ;;
   *) echo "unknown step $STEP"; exit 1 ;;
 esac

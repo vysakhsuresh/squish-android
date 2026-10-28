@@ -13,7 +13,7 @@ data class TrackSample(
      * along the track (ObjectTracker.scale, EDGE_PLAN F8): a face walking to
      * the camera grows from 1 towards 2. It used to be re-read each frame from
      * 0.94, 1 and 1.06 and never accumulated, so it could only ever be one of
-     * those three, and pulsed by twelve per cent a frame. It still moves in 5%
+     * those three, and pulsed by twelve per cent a frame. It still moves in 3%
      * steps, so the one place that uses it smooths it first ([withSmoothedScale]).
      */
     val scale: Float = 1f,
@@ -175,8 +175,15 @@ class ObjectTracker(
     private var currentMean = 0f
     private var currentNorm = 0f
 
+    /** The original's own statistics: the size is judged against it (see [step]).
+     */
+    private var originalMean = 0f
+    private var originalNorm = 1f
+
     init {
         recomputeStats()
+        originalMean = original.average().toFloat()
+        originalNorm = sqrt(original.fold(0f) { s, v -> s + (v - originalMean) * (v - originalMean) }).coerceAtLeast(1e-6f)
     }
 
     /**
@@ -192,6 +199,12 @@ class ObjectTracker(
 
     /** Steps since the thing was last found with confidence; the search widens with each. */
     private var lostSteps = 0
+
+    /**
+     * How strongly the thing matched while it was surely held, averaged: a lost
+     * thing is taken back only on a match nearly that strong (see [step]).
+     */
+    private var heldLevel = 1f
 
     /**
      * Searches around [lastX], [lastY] for the template.
@@ -249,22 +262,52 @@ class ObjectTracker(
 
         // The size, at the winning position only: a step either way from the
         // size it was last found at, taken only when it is plainly better, so
-        // texture noise does not walk the size about.
+        // texture noise does not walk the size about. Judged against the patch
+        // as first selected, not the template as learned: the learned one takes
+        // in each frame at the size it was found at, so a thing growing slowly
+        // was learned bigger a little every frame and a 5% step never looked
+        // better - a card that grew 1.6 times over nine seconds read 1.15 on the
+        // moto (28 Oct). The original does not grow; against it, the size does.
         var bestScale = scale
+        // Each size scored at its own best place within a couple of pixels: as a
+        // thing grows about its middle, the point the learned template holds
+        // slides on it against the original, and every size scored at that one
+        // place read a little off - the size then held for a second at a time
+        // on a growing card's real frames (28 Oct).
+        fun fitAt(s: Float): Float {
+            var top = -2f
+            for (dy in -FIT_SLACK..FIT_SLACK) for (dx in -FIT_SLACK..FIT_SLACK) {
+                val v = correlate(frame, bestX + dx, bestY + dy, s, original, originalMean, originalNorm)
+                if (v > top) top = v
+            }
+            return top
+        }
+        var bestFit = fitAt(scale)
         for (factor in SCALE_STEPS) {
             val candidate = (scale * factor).coerceIn(MIN_SCALE, MAX_SCALE)
-            val score = correlate(frame, bestX, bestY, candidate)
-            if (score > best + SCALE_MARGIN) {
-                best = score
+            val fit = fitAt(candidate)
+            if (fit > bestFit + SCALE_MARGIN) {
+                bestFit = fit
                 bestScale = candidate
             }
         }
-
-        val found = if (lostSteps > 0) best >= REFIND_ABOVE else best >= MotionTrack.LOST_BELOW
+        // Taken back only on a match nearly as strong as it was held at, and
+        // never under REFIND_ABOVE: a card held at 0.97 and hidden for a second
+        // was "found" in the fractal behind it at 0.74, a corner of the frame
+        // away, and the line pinned to it went there (28 Oct, the moto).
+        val refind = maxOf(REFIND_ABOVE, heldLevel * REFIND_SHARE)
+        val found = if (lostSteps > 0) best >= refind else best >= MotionTrack.LOST_BELOW
         if (found) {
             lostSteps = 0
-            scale = bestScale
-            if (best >= TEMPLATE_UPDATE_ABOVE) blendTemplate(frame, bestX, bestY, scale)
+            // The size only from a sure lock, as the template is learned only from
+            // one: a thing half seen behind something busy matched at about 0.5,
+            // just over LOST_BELOW, and each such frame stepped the size towards
+            // whatever was there (28 Oct, the moto: 1.09 to 0.76 over a second's gap).
+            if (best >= TEMPLATE_UPDATE_ABOVE) {
+                heldLevel = heldLevel * (1f - HELD_FOLLOW) + best * HELD_FOLLOW
+                scale = bestScale
+                blendTemplate(frame, bestX, bestY, scale)
+            }
         } else {
             lostSteps++
             // Below the bar a re-find must clear, it is still lost: said so, whatever the score.
@@ -297,47 +340,61 @@ class ObjectTracker(
     }
 
     /** ZNCC of the template against the frame patch centered at (x, y). */
-    private fun correlate(frame: LumaFrame, x: Int, y: Int, scale: Float): Float {
+    private fun correlate(
+        frame: LumaFrame, x: Int, y: Int, scale: Float,
+        against: FloatArray = current, againstMean: Float = currentMean, againstNorm: Float = currentNorm
+    ): Float {
         val halfW = templateWidth / 2
         val halfH = templateHeight / 2
         if (x - halfW < 0 || y - halfH < 0 ||
             x + halfW >= frame.width || y + halfH >= frame.height
         ) return -2f
 
+        // The frame under the template, sampled at [scale] round (x, y). Between
+        // pixels, not rounded to them: rounded, sizes a step apart sampled the very
+        // same pixels and scored alike - 1.00 and 1.05 against a test card grown
+        // to 1.2 differed by 0.001 - so the size never took a step (28 Oct). At
+        // the size it was first selected at, the pixels themselves, as before.
+        val patch = patchBuffer
         var patchSum = 0f
-        var count = 0
         for (ty in 0 until templateHeight) {
-            val sy = y - halfH + ((ty - halfH) * scale).roundToInt() + halfH
-            if (sy < 0 || sy >= frame.height) return -2f
+            val fy = y + (ty - halfH) * scale
+            if (fy < 0f || fy > frame.height - 1f) return -2f
             for (tx in 0 until templateWidth) {
-                val sx = x - halfW + ((tx - halfW) * scale).roundToInt() + halfW
-                if (sx < 0 || sx >= frame.width) return -2f
-                patchSum += frame.pixels[sy * frame.width + sx]
-                count++
+                val fx = x + (tx - halfW) * scale
+                if (fx < 0f || fx > frame.width - 1f) return -2f
+                val v = if (scale == 1f) frame.pixels[(y + ty - halfH) * frame.width + x + tx - halfW] else {
+                    val x0 = fx.toInt(); val y0 = fy.toInt()
+                    val x1 = minOf(x0 + 1, frame.width - 1); val y1 = minOf(y0 + 1, frame.height - 1)
+                    val ax = fx - x0; val ay = fy - y0
+                    val top = frame.pixels[y0 * frame.width + x0] * (1f - ax) + frame.pixels[y0 * frame.width + x1] * ax
+                    val bottom = frame.pixels[y1 * frame.width + x0] * (1f - ax) + frame.pixels[y1 * frame.width + x1] * ax
+                    top * (1f - ay) + bottom * ay
+                }
+                patch[ty * templateWidth + tx] = v
+                patchSum += v
             }
         }
-        if (count == 0) return -2f
-        val patchMean = patchSum / count
+        val patchMean = patchSum / patch.size
 
         var dot = 0f
         var patchVar = 0f
-        for (ty in 0 until templateHeight) {
-            val sy = y - halfH + ((ty - halfH) * scale).roundToInt() + halfH
-            for (tx in 0 until templateWidth) {
-                val sx = x - halfW + ((tx - halfW) * scale).roundToInt() + halfW
-                val p = frame.pixels[sy * frame.width + sx] - patchMean
-                val t = current[ty * templateWidth + tx] - currentMean
-                dot += t * p
-                patchVar += p * p
-            }
+        for (i in patch.indices) {
+            val p = patch[i] - patchMean
+            val t = against[i] - againstMean
+            dot += t * p
+            patchVar += p * p
         }
 
-        val denominator = currentNorm * sqrt(patchVar)
+        val denominator = againstNorm * sqrt(patchVar)
         // A patch with no variation correlates with nothing. Returning 0 rather than
         // dividing by it stops a blank wall scoring as a perfect match.
         if (denominator < 1e-6f) return 0f
         return (dot / denominator).coerceIn(-1f, 1f)
     }
+
+    /** The frame under the template, one correlation at a time (the tracker runs on one thread). */
+    private val patchBuffer = FloatArray(templateWidth * templateHeight)
 
     // Learned at the size it was found at, so the template stays the shape of
     // the thing in its own coordinates as the thing grows or shrinks.
@@ -383,16 +440,27 @@ class ObjectTracker(
     }
 
     private companion object {
-        /** A step either way from the size it was last found at. */
-        val SCALE_STEPS = floatArrayOf(0.95f, 1.05f)
+        /** A step either way from the size it was last found at: 3%, which a test card
+         *  growing a fifth of a per cent a frame is followed by within a step (5% lagged two). */
+        val SCALE_STEPS = floatArrayOf(0.97f, 1.03f)
 
         /** How much better a new size must match before it is taken. */
         const val SCALE_MARGIN = 0.004f
+
+        /** How far round the winning place each size is scored (see [step]). */
+        const val FIT_SLACK = 2
         const val MIN_SCALE = 0.25f
         const val MAX_SCALE = 4f
 
         /** How strong a match must be to take a lost thing back. */
         const val REFIND_ABOVE = 0.6f
+
+
+        /** The share of the level it was held at that a re-find must reach. */
+        const val REFIND_SHARE = 0.85f
+
+        /** How fast that level follows the sure matches. */
+        const val HELD_FOLLOW = 0.1f
 
         /** How fast the template follows what it sees. */
         const val BLEND = 0.06f

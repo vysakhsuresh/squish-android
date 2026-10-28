@@ -143,6 +143,23 @@ fun main() {
         check(after.emphasis == setOf(1, 2), "picked-out words after removal: ${after.emphasis}")
         check(after.wordEmoji == mapOf(1 to "🔥"), "emoji after removal: ${after.wordEmoji}")
     }
+    // A line pinned to a track grows with what it follows (F8, 28 Oct: TAG on
+    // a card that grew 1.6 times stayed its first size), and an unpinned one,
+    // or one on a track that never changed size, is drawn as it was.
+    run {
+        val track = com.squish.app.media.video.MotionTrack(listOf(
+            com.squish.app.media.video.TrackSample(0, 0.3f, 0.4f, scale = 1f),
+            com.squish.app.media.video.TrackSample(9000, 0.7f, 0.5f, scale = 1.6f)
+        ))
+        val line = com.squish.app.editor.TextOverlayItem(id = "tag", text = "TAG", startMs = 0, endMs = 9000, colorArgb = -1)
+        val pinned = line.copy(track = track)
+        val plain = line.frameAt(4500)?.scale ?: 0f
+        val grown = pinned.frameAt(4500)?.scale ?: 0f
+        check(kotlin.math.abs(grown - plain * 1.3f) < 0.02f, "a pinned line half way along a track growing to 1.6 is drawn at $grown, not ${plain * 1.3f}")
+        check(kotlin.math.abs((pinned.frameAt(8900)?.scale ?: 0f) - (line.frameAt(8900)?.scale ?: 0f) * 1.6f) < 0.03f, "a pinned line does not reach its track's 1.6")
+        check(line.frameAt(4500)?.scale == plain, "an unpinned line's size moved")
+    }
+
 
     if (problems.isEmpty()) println("CaptionWordsChecks: all checks passed")
     else { problems.forEach { println("FAIL: $it") }; exitProcess(1) }

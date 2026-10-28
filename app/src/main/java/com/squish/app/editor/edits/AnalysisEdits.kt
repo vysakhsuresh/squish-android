@@ -486,11 +486,14 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
         if (!trackStillFits(current)) return
         val clip = current.videoClips.firstOrNull { it.id == current.tracking.clipId } ?: return
         val timed = trackInTimelineTime(track, clip)
+        // Its scale smoothed as a pinned overlay's is: the line grows with the
+        // thing (TextOverlayItem.frameAt), and the raw reading moves in 3% steps.
+        val smooth = timed.copy(samples = com.squish.app.media.video.withSmoothedScale(timed.samples, PIN_SCALE_SMOOTH_SECONDS))
         record("Pin text") {
             _state.update { state ->
                 state.copy(
                     textOverlays = state.textOverlays.map {
-                        if (it.id == captionId) it.copy(track = timed) else it
+                        if (it.id == captionId) it.copy(track = smooth) else it
                     }
                 )
             }

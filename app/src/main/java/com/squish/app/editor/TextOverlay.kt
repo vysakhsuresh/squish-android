@@ -272,12 +272,23 @@ data class TextOverlayItem(
             else -> TextOverlayKind.Words
         }
 
+    /**
+     * How much bigger the thing it is pinned to is now than when it was
+     * pinned: a line on a thing walking towards the camera grows with it, as a
+     * pinned overlay does (EDGE_PLAN F8; the track's scale was smoothed when
+     * it was pinned). 1 for a line on no track. Part of where the line is,
+     * not of how it moves, so a paused preview keeps it (CaptionLayer).
+     */
+    fun trackScaleAt(timeMs: Long): Float = track?.sampleAt(timeMs)?.scale ?: 1f
+
     /** The caption's state at [timeMs] of the timeline, or null when it is not on screen. */
     fun frameAt(timeMs: Long): TextFrame? {
         // A shape has no words to be blank: it is on screen whenever its window is.
         if (timeMs < startMs || timeMs >= endMs || (text.isBlank() && !drawsWithoutWords)) return null
         val total = (endMs - startMs).coerceAtLeast(1L)
-        val frame = TextAnimation.frameAt(motion, motionOut, loop, motionInMs, motionOutMs, loopMs, timeMs - startMs, total, wordStartsMs)
+        val moving = TextAnimation.frameAt(motion, motionOut, loop, motionInMs, motionOutMs, loopMs, timeMs - startMs, total, wordStartsMs)
+        val grown = trackScaleAt(timeMs)
+        val frame = if (grown == 1f) moving else moving.copy(scale = moving.scale * grown)
         // Letters typed one at a time are not words said one at a time: a
         // Typewriter line keeps its reveal and shows no word style.
         if (isShape || sticker || motion == TextMotion.Typewriter) return frame

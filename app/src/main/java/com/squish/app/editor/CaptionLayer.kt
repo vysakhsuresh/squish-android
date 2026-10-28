@@ -111,7 +111,8 @@ fun CaptionLayer(
             val moving = CaptionRenderer.frameAt(item, timeMs) ?: continue
             // At rest the arrival is held still, but the word being said is not: a
             // paused karaoke line shows the word under the playhead, so scrubbing reads it.
-            val look = if (atRest) TextFrame(words = moving.words) else moving
+            // Its size on a track is where it is, not how it moves: kept at rest too.
+            val look = if (atRest) TextFrame(words = moving.words, scale = item.trackScaleAt(timeMs)) else moving
             val shown = CaptionRenderer.shownText(item, look)
             if (shown.isBlank() && !item.drawsWithoutWords) continue
 

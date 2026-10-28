@@ -185,6 +185,96 @@ fun main() {
             if (foundIn < 0 && abs(x - 40f) <= 2f && abs(y - 60f) <= 2f) foundIn = f
         }
         check(foundIn in 1..3, "the thing that came back was found ${if (foundIn < 0) "never" else "after $foundIn frames"}")
+
+        // The same growth taken slowly, as a thing walking towards the camera
+        // does: 1.6 times over 270 frames, under a fifth of a per cent a frame.
+        // On the moto (28 Oct, a card keyed from 25% to 40% across nine
+        // seconds) the size stopped at 1.15: each frame's growth was learned
+        // into the template before a 5% step could ever look better.
+        val slow = ObjectTracker(tmpl, size, size)
+        var sx = 70f
+        var sy = 90f
+        for (f in 1..270) {
+            val step = slow.step(scene(70f + f * 50f / 270f, 90f, s0 * (1f + 0.6f * f / 270f)), sx, sy, 16)
+            if (step.confidence >= com.squish.app.media.video.MotionTrack.LOST_BELOW) { sx = step.x; sy = step.y }
+        }
+        check(abs(slow.scale - 1.6f) <= 0.12f, "a thing growing slowly to 1.6 was followed to ${slow.scale}")
+        check(abs(sx - 120f) <= 3f && abs(sy - 90f) <= 3f, "the slowly growing thing was followed to ($sx, $sy), not (120, 90)")
+        // Gone behind something busy for a second: what is there only half
+        // matches, and the size must not follow it. On the moto (28 Oct) the card
+        // hidden over the fractal matched it at 0.47-0.5, the size walked from
+        // 1.09 to 0.76 over the gap, and the line pinned to it shrank.
+        val before = slow.scale
+        val rnd = java.util.Random(5)
+        for (f in 1..30) {
+            val faint = scene(sx, sy, s0 * before * 0.85f)
+            val noisy = LumaFrame(w, h, FloatArray(w * h) { k -> 0.6f * faint.pixels[k] + 0.4f * rnd.nextFloat() })
+            slow.step(noisy, sx, sy, 16)
+        }
+        check(abs(slow.scale - before) <= 0.06f, "a weak match over a second's gap moved the size from $before to ${slow.scale}")
+        // And it went on growing while it was hidden: it comes back a quarter
+        // bigger, and the size is found again, not left where it was (the card
+        // on the moto came back at 1.3 and the size stayed at 1.04 to the end).
+        val back = before * 1.25f
+        for (f in 1..10) {
+            val step = slow.step(scene(sx, sy, s0 * back), sx, sy, 16)
+            if (step.confidence >= com.squish.app.media.video.MotionTrack.LOST_BELOW) { sx = step.x; sy = step.y }
+        }
+        check(abs(slow.scale - back) <= 0.12f, "a thing back from a gap a quarter bigger (${back}) was followed at ${slow.scale}")
+    }
+
+    // ---- The same with colour bars, whose stripes repeat (28 Oct, the moto) ----
+    // A test card: seven bars over a row of blocks. Its stripes match themselves
+    // a bar's width off at the wrong size too, so a size a step either way can be
+    // no better than the size it has - and after a gap the card, grown on while
+    // hidden, came back at 1.3 and was followed at 1.04 to the end.
+    run {
+        val w = 320
+        val h = 200
+        val levels = floatArrayOf(0.75f, 0.7f, 0.6f, 0.55f, 0.45f, 0.4f, 0.3f)
+        fun card(cx: Float, cy: Float, half: Float?): LumaFrame {
+            val px = FloatArray(w * h) { background(it % w, it / w) }
+            if (half != null) for (y in 0 until h) for (x in 0 until w) {
+                val u = (x - cx) / half
+                val v = (y - cy) / (half * 0.6f)
+                if (abs(u) <= 1f && abs(v) <= 1f) {
+                    val bar = ((u + 1f) / 2f * 7f).toInt().coerceIn(0, 6)
+                    px[y * w + x] = if (v < 0.4f) levels[bar] else if (((u + 1f) * 3f).toInt() % 2 == 0) 0.95f else 0.05f
+                }
+            }
+            return LumaFrame(w, h, px)
+        }
+        val h0 = 20f
+        val size = 25
+        val first = card(80f, 100f, h0)
+        val tmpl = FloatArray(size * size) { i -> first.pixels[(100 - 12 + i / size) * w + (80 - 12 + i % size)] }
+        val t = ObjectTracker(tmpl, size, size)
+        var x = 80f
+        var y = 100f
+        // Growing 1.0 to 1.2 over 90 frames, a third of a second each way.
+        for (f in 1..90) {
+            val step = t.step(card(80f + f * 0.4f, 100f, h0 * (1f + 0.2f * f / 90f)), x, y, 16)
+            if (step.confidence >= com.squish.app.media.video.MotionTrack.LOST_BELOW) { x = step.x; y = step.y }
+        }
+        val grown = t.scale
+        check(abs(grown - 1.2f) <= 0.08f, "a growing test card was followed to $grown, not 1.2")
+        // Gone for 30 frames - and while it is, something like it elsewhere: a
+        // faded, noisy copy (on the moto the fractal took the track at 0.74 over
+        // the second the card was hidden, far from it). Not taken for it.
+        val rnd = java.util.Random(9)
+        for (f in 1..30) {
+            val fake = card(240f, 140f, h0 * grown)
+            val step = t.step(LumaFrame(w, h, FloatArray(w * h) { k -> 0.45f * fake.pixels[k] + 0.55f * rnd.nextFloat() }), x, y, 16)
+            check(step.confidence < com.squish.app.media.video.MotionTrack.LOST_BELOW || abs(step.x - x) < 30f,
+                "a faded copy 100 px away was taken for the hidden card at frame $f (${step.confidence} at ${step.x}, ${step.y})")
+            if (step.confidence >= com.squish.app.media.video.MotionTrack.LOST_BELOW) { x = step.x; y = step.y }
+        }
+        val back = 1.2f * 1.25f
+        for (f in 1..12) {
+            val step = t.step(card(116f + f * 0.4f, 100f, h0 * back), x, y, 16)
+            if (step.confidence >= com.squish.app.media.video.MotionTrack.LOST_BELOW) { x = step.x; y = step.y }
+        }
+        check(abs(t.scale - back) <= 0.12f, "a test card back from a gap at $back was followed at ${t.scale}")
     }
 
     println("tracker: ${13 * 13} offsets searched, $exact found exactly")
