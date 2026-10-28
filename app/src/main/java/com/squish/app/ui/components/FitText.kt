@@ -45,7 +45,7 @@ fun FitText(
             val room = result.layoutInput.constraints.maxWidth
             val overflowing = result.hasVisualOverflow ||
                 (result.lineCount > 0 && result.isLineEllipsized(0))
-            val next = TextFit.nextScale(scale, overflowing, room, fittedAt, minScale)
+            val next = TextFit.nextScale(scale, overflowing, room, fittedAt, minScale, naturalWidth = result.multiParagraph.intrinsics.maxIntrinsicWidth)
             fittedAt = room
             if (next != scale) scale = next
         }

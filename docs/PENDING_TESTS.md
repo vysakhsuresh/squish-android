@@ -24,6 +24,10 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
    tour` on the perf build - "open Effects" and "Effects sheet scroll" were
    18 ms of GPU a frame at 90 Hz; the tiles now share one clock stepping every
    50 ms. Check the tiles still read as moving.
+6. **Shrink-to-fit labels in one step** (C7, FitText): open Text - the title
+   tiles' samples fit their tiles at once (no visible shrinking), and every
+   other FitText label (tool tiles, chips) still fits; `bench.sh tour`'s
+   "open Text" was app p90 27 ms.
 
 ## The EDGE_PLAN items still open
 

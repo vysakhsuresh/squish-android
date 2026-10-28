@@ -26,6 +26,9 @@ object TextFit {
      */
     const val GROWTH_SLACK = 4
 
+    /** A hair under the exact fit, so hinting at the new size does not land a pixel over. */
+    const val FIT_MARGIN = 0.99f
+
     /**
      * The scale to lay the line out at next, given [scale] now.
      *
@@ -43,9 +46,19 @@ object TextFit {
         overflowing: Boolean,
         room: Int,
         fittedAt: Int,
-        minScale: Float
+        minScale: Float,
+        /**
+         * How wide the line is at [scale], whole, when it is known (the layout's
+         * intrinsic width). Given, an overflowing line goes to the size that fits
+         * in one step: in steps of [STEP] a sample shrunk from 1 to 0.4 took ten
+         * layouts, a frame each, and the Text sheet's thirty-one title tiles
+         * opening together held the main thread 27 ms at p90 (C7 tour, 28 Oct).
+         */
+        naturalWidth: Float = 0f
     ): Float = when {
         room > fittedAt + GROWTH_SLACK && scale < 1f -> 1f
+        overflowing && scale > minScale && naturalWidth > room && room > 0 ->
+            minOf(scale * room / naturalWidth * FIT_MARGIN, scale - 0.001f).coerceAtLeast(minScale)
         overflowing && scale > minScale -> (scale - STEP).coerceAtLeast(minScale)
         else -> scale
     }

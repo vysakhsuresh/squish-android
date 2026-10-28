@@ -77,6 +77,30 @@ fun main() {
         check(200 * narrow <= 130, "at 130px it settled at $narrow, which is ${200 * narrow}px")
     }
 
+    // --- Given the line's own width, it fits in one step (28 Oct). ----------
+    // A layout knows how wide the whole line is; stepping down 0.06 a frame
+    // took ten frames from 1 to 0.4, and thirty-one title tiles opening at
+    // once held the main thread for them.
+    run {
+        for ((intrinsic, room) in listOf(200 to 150, 400 to 170, 1000 to 400, 260 to 255)) {
+            var scale = 1f
+            var fittedAt = 0
+            var passes = 0
+            while (passes < 20) {
+                val overflowing = intrinsic * scale > room
+                val next = TextFit.nextScale(scale, overflowing, room, fittedAt, 0.4f, naturalWidth = intrinsic * scale)
+                fittedAt = room
+                passes++
+                if (next == scale) break
+                scale = next
+            }
+            val exact = minOf(1f, room.toFloat() / intrinsic).coerceAtLeast(0.4f)
+            check(passes <= 2, "$intrinsic px in $room px took $passes layouts to settle")
+            check(intrinsic * scale <= room + 0.5f || scale == 0.4f, "$intrinsic px in $room px settled at $scale, still ${intrinsic * scale} px")
+            check(scale >= exact * 0.97f, "$intrinsic px in $room px came down to $scale, well under the ${exact} that fits")
+        }
+    }
+
     // --- A wobble is not a growth. ------------------------------------------
     //
     // Without the slack, a box that measures a pixel or two wider on the second
