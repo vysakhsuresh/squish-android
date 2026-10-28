@@ -164,7 +164,7 @@ off the toolbar's screen and the tour skipped them.
 | Measure | Result | Against 24 Oct |
 |---|---|---|
 | cold start | 331 ms and 374 ms (432 on the first run after the install) | 383 |
-| project open | editor shown 1130 ms on the first run after the install; the 200-shot edit's editor showed in 173 ms on this build earlier the same night | 195 |
+| project open | warm, three runs: editor shown 157-199 ms, first frame 854-900 ms (1130 ms on the first run after the install) | 195; 913 |
 | scrub (10 swipes) | 688 frames; **13.1% janky**; median 11 ms, p90 21 ms, p95 26 ms | 40.2%; 22 / 48 / 61 |
 | playback, 0 overlays | 0 dropped; 26.7% janky, median 12 ms, p90 16 ms | 23.6%; 15 / 22 |
 | playback, 1 overlay | 0 dropped; 31.7% janky, median 12 ms, p90 17 ms | 20.4%; 15 / 23 |
