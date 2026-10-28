@@ -140,6 +140,10 @@ coldstart() {
 
 open_project() { # variant
   home; sh_ logcat -c
+  # The app comes back on the tab it was left on; the grid is under Projects
+  # (29 Oct: on Tools, every open failed and the quality step then measured
+  # whatever export was newest).
+  tap_text "Projects" >/dev/null; sleep 1
   # The grid lists the newest first, so a bench project made days ago is
   # further down: scrolled a screen at a time until its card is in sight.
   local tries=0 h w; h=$(screen_h); w=$(screen_w)
@@ -332,10 +336,17 @@ export_() { # variant, size chip label, tag
   tap_text "Export" || return 1; sleep 2
   tap_text "$chip" || return 1; sleep 1
   sh_ logcat -c
+  # Only a file this render made is read and deleted. It used to take the
+  # newest Squish export whatever happened - a render that never ran (29 Oct:
+  # the project not found) measured and deleted a test export from an hour
+  # before, and could as well have deleted the owner's own.
+  local before; before=$(newest_export)
   tap_text "Render and save" || return 1
   local i; for i in $(seq 300); do perf_lines | grep -q " export " && break; sleep 2; done
   local line; line=$(perf_lines | grep -oE 'export [0-9]+ ms .*' | head -1)
+  [ -n "$line" ] || { say "export $tag: no export finished within 600 s - nothing read, nothing deleted"; return 1; }
   local id; id=$(newest_export)
+  [ -n "$id" ] && [ "$id" != "$before" ] || { say "export $tag: no new file in the gallery - nothing read, nothing deleted"; return 1; }
   MSYS_NO_PATHCONV=1 $ADB exec-out "content read --uri content://media/external/video/media/$id" > "$WORK/$tag.mp4"
   sh_ content delete --uri "content://media/external/video/media/$id"
   say "export $tag: $line"

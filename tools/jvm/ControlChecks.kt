@@ -1145,6 +1145,15 @@ fun main() {
             "a bent line's arc is measured without what is drawn on it - an emoji after a word pushes the last letters off the path")
     }
     run {
+        // A bench never deletes a gallery file it did not make: export_ took the
+        // newest Squish export when a render never ran, read it and deleted it
+        // (29 Oct - a test file that time; it could have been the owner's).
+        val bench = java.io.File("tools/bench/bench.sh").readText()
+        val matrix = java.io.File("tools/bench/matrix.sh").readText()
+        check(bench.contains("[ \"\$id\" != \"\$before\" ]") && matrix.contains("[ \"\$xid\" != \"\$before\" ]"),
+            "a bench script can read and delete a gallery file its own render did not make")
+    }
+    run {
         // A pick that is full says so: the media grid stopped at 30 of 50 photos
         // and a tap past it did nothing, with no word why (28 Oct, the moto).
         val sheet = read("$SRC/ui/components/MediaLibrarySheet.kt")

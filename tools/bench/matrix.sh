@@ -90,10 +90,12 @@ for f in "$DIR"/*; do
   exported="no export"
   if tap_text "Export"; then
     sleep 2; tap_text "480p" || true; sleep 1; sh_ logcat -c
+    # Only a file this render made is read and deleted (bench.sh export_ says why).
+    before=$(newest_export)
     if tap_text "Render and save"; then
       done_=""; for i in $(seq 150); do done_=$(sh_ logcat -d | grep -m1 -oE "SquishPerf: export [0-9]+ ms .*|SquishExport: failed.*"); [ -n "$done_" ] && break; sleep 2; done
       xid=$(newest_export)
-      if echo "$done_" | grep -q "SquishPerf: export" && [ -n "$xid" ]; then
+      if echo "$done_" | grep -q "SquishPerf: export" && [ -n "$xid" ] && [ "$xid" != "$before" ]; then
         MSYS_NO_PATHCONV=1 $ADB exec-out "content read --uri content://media/external/video/media/$xid" > "$WORK/$name.export.mp4"
         exported="exported (${done_#SquishPerf: }); probe: $(probe "$WORK/$name.export.mp4")"
         if echo "$name" | grep -q "^sync_"; then
