@@ -39,11 +39,11 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 ## Still to do on the phone
 
 1. **Scrubbing a 200-shot edit** (`edge.sh many 200`, zoomed out so about 60
-   shots are on screen): the app's own work was a median 26 ms a frame. With
-   TimelineState's sorted lists kept per clip list (TimelineDerivedChecks) it is
-   15-18 ms - still over budget. What is left is building ClipViews as shots
-   scroll in (TraceTop's new `TRACE_UNDER=<method>` mode shows it). Next step: a
-   plain drawn bar for a clip only a few dp wide.
+   shots are on screen): the app's own work was a median 26 ms a frame (p90 62).
+   Two fixes, both seen: TimelineState's lists kept per clip list (15-18 ms),
+   then clips under 8 dp drawn as bars (ThinClips) - 9-11 ms median, p90 24-26.
+   Still over the 11.1 ms p90 bar; what is left is spread across the strip and
+   the preview (`TRACE_UNDER=<method>` in TraceTop lists one method's callees).
 2. **The Export sheet's opening:** 19 ms of GPU a frame for its half-second
    slide-up (a full-height sheet and scrim over the live editor).
 

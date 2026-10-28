@@ -84,6 +84,7 @@ run exportplan $TIMELINE "$SRC/media/ExportPlan.kt" tools/jvm/ExportPlanChecks.k
 run tshapes    "$SRC/media/TransitionShapes.kt" tools/jvm/TransitionShapeChecks.kt
 run lanes      $TIMELINE tools/jvm/LaneChecks.kt
 run derived    $TIMELINE tools/jvm/TimelineDerivedChecks.kt
+run thinclips  "$SRC/timeline/ThinClips.kt" tools/jvm/ThinClipsChecks.kt
 run overlay    $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/media/ExportPlan.kt" tools/jvm/OverlayChecks.kt
 run text       $TIMELINE "$SRC/editor/EditRules.kt" "$SRC/editor/OverlayRules.kt" "$SRC/editor/TextStyle.kt" \
                "$SRC/media/audio/SpeechSegmenter.kt" tools/jvm/stub/MonoPcm.kt "$SRC/media/ExportPlan.kt" tools/jvm/TextChecks.kt

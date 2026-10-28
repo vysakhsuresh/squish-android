@@ -136,6 +136,9 @@ private val GUTTER = 48.dp
 private val RULER_HEIGHT = 26.dp
 private val HANDLE_WIDTH = 20.dp
 
+/** How far past a bar (ThinClips) a tap still picks it: a bar is narrower than a finger. */
+private const val THIN_TAP_SLOP_DP = 12f
+
 /**
  * The most the rows take before they scroll inside the strip: four full rows.
  * The ruler stays put above them, so where the playhead is in time never
@@ -1782,6 +1785,10 @@ private fun Lane(
 ) {
     com.squish.app.util.PerfFlags.hit("Lane")
     val latestBareTap by rememberUpdatedState(onBareTap)
+    val latestLaneSelect by rememberUpdatedState(onSelect)
+    // The clips drawn as bars this composition (ThinClips), for a tap on the lane.
+    // A plain holder, not a state: only the tap reads it, never the composition.
+    val thinBars = remember { java.util.concurrent.atomic.AtomicReference(emptyList<ThinClips.Bar>()) }
 
     Box(
         modifier = Modifier
@@ -1800,7 +1807,14 @@ private fun Lane(
             // scrolled the strip away from what was being looked at was a tap
             // that lost the place.
             .pointerInput(Unit) {
-                detectTapGestures { latestBareTap() }
+                detectTapGestures { offset ->
+                    // A bar has no view to take its own tap: the lane finds it.
+                    val w = drawn.value
+                    val hit = thinBars.get().takeIf { it.isNotEmpty() }?.let { bars ->
+                        ThinClips.at(bars, w.msAt(offset.x), slopMs = w.msForDp(THIN_TAP_SLOP_DP).toLong())
+                    }
+                    if (hit != null) latestLaneSelect(hit) else latestBareTap()
+                }
             }
     ) {
         // The scale alone, the same at every step of the drawn window, and each
@@ -1809,10 +1823,25 @@ private fun Lane(
         // recomposed for it (EDGE_PLAN C3). Only one crossing an edge is.
         val scale = remember(window.pixelsPerSecond, window.density, window.viewportPx) { window.copy(scrollMs = 0.0) }
         val beatsOf = remember(clips, soundBeats) { clips.filter { it.kind == ClipKind.Audio }.associate { it.id to soundBeats(it) } }
+        val bars = ArrayList<ThinClips.Bar>()
+        val barColors = ArrayList<Color>()
         clips.forEach { clip ->
             // Off-screen clips are not built at all. This is what makes a timeline
             // of a hundred cuts cost the same to lay out as one of three.
             val span = window.clampToView(clip.timelineStartMs, clip.timelineEndMs) ?: return@forEach
+            // Too narrow to show a frame: a bar in the canvas below, not a view (ThinClips).
+            if (ThinClips.drawnThin(
+                    widthDp = window.widthDp(clip.timelineEndMs - clip.timelineStartMs),
+                    selected = clip.id == selectedId || clip.id in alsoSelected,
+                    lifted = clip.id == liftedId,
+                    trimmed = trimming?.id == clip.id,
+                    missing = clip.uri?.toString() in missingUris
+                )
+            ) {
+                bars += ThinClips.Bar(clip.id, clip.timelineStartMs, clip.timelineEndMs)
+                barColors += clipColor?.invoke(clip) ?: accent
+                return@forEach
+            }
             // Keyed by clip, so a clip that changes place keeps its own gestures
             // instead of handing the finger to whichever clip now sits in its slot.
             key(clip.id) {
@@ -1833,6 +1862,37 @@ private fun Lane(
                     onKeyTap = onKeyTap,
                     beats = beatsOf[clip.id] ?: emptyList()
                 )
+            }
+        }
+        thinBars.set(bars)
+        if (bars.isNotEmpty()) {
+            val folded = row.folded
+            Canvas(
+                modifier = Modifier
+                    .matchParentSize()
+                    // A screen reader cannot pick out a bar a few dp wide; it is told
+                    // what they are and how to reach them one by one.
+                    .semantics { contentDescription = "${bars.size} short clips - zoom in to pick one" }
+            ) {
+                // Placed as a ClipView is - from the drawn window, read here in the
+                // draw phase, so a scrub moves the bars without composing anything.
+                val w = drawn.value
+                val gap = 1.dp.toPx()
+                val edge = 1.dp.toPx()
+                for (i in bars.indices) {
+                    val b = bars[i]
+                    val left = w.xPx(b.startMs)
+                    val right = w.xPx(b.endMs)
+                    if (right < 0f || left > size.width) continue
+                    val width = (right - left - gap).coerceAtLeast(1f)
+                    val radius = androidx.compose.ui.geometry.CornerRadius(minOf(2.dp.toPx(), width / 2f))
+                    val tint = barColors[i]
+                    drawRoundRect(tint.copy(alpha = if (folded) 0.5f else 0.26f), Offset(left, 0f), Size(width, size.height), radius)
+                    if (width > edge * 2) drawRoundRect(
+                        tint.copy(alpha = 0.5f), Offset(left, 0f), Size(width, size.height), radius,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(edge)
+                    )
+                }
             }
         }
 

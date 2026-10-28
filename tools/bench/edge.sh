@@ -210,6 +210,9 @@ photos() { # N generated photos (PNG) into Pictures/SquishEdge, for the photo pi
   local dir="$WORK/edge_photos"; mkdir -p "$dir"
   powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Drawing; for (\$i = 1; \$i -le $n; \$i++) { \$b = New-Object System.Drawing.Bitmap 1600, 1200; \$g = [System.Drawing.Graphics]::FromImage(\$b); \$g.Clear([System.Drawing.Color]::FromArgb(255, (\$i * 37) % 256, (\$i * 91) % 256, (\$i * 53) % 256)); \$g.DrawString(\"Squish \$i\", (New-Object System.Drawing.Font 'Arial', 120), [System.Drawing.Brushes]::White, 100, 450); \$b.Save(\"$(cygpath -w "$dir")\\edge_photo_\$i.jpg\", [System.Drawing.Imaging.ImageFormat]::Jpeg); \$g.Dispose(); \$b.Dispose() }"
   for i in $(seq 1 $n); do MSYS_NO_PATHCONV=1 $ADB push "$(cygpath -m "$dir/edge_photo_$i.jpg")" /sdcard/Pictures/SquishEdge/ >/dev/null; done
+  # Pushed files sit in MediaStore as pending (is_pending=1) until scanned, and
+  # an app's query - the media grid's included - leaves pending rows out (28 Oct).
+  for i in $(seq 1 $n); do sh_ am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file:///sdcard/Pictures/SquishEdge/edge_photo_$i.jpg" >/dev/null; done
   sleep 5
   local ids=""
   for i in $(seq 1 $n); do local id; id=$(media_id "edge_photo_$i.jpg" images); [ -n "$id" ] && ids="$ids images:$id"; done
