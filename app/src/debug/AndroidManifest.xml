@@ -32,5 +32,10 @@
             android:exported="true"
             android:showWhenLocked="true"
             android:label="Squish voice split probe" />
+        <!-- What MagicTouch hands back for a tap (debug/MagicProbeActivity.kt, EDGE_PLAN F7). -->
+        <activity
+            android:name="com.squish.app.debug.MagicProbeActivity"
+            android:exported="true"
+            android:label="Squish MagicTouch probe" />
     </application>
 </manifest>

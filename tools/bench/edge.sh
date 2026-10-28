@@ -9,6 +9,7 @@
 #   project NAME FILE [speed=0.25] [blend] [denoise=0.8] [deflicker=0.8] [overlays=6:FILE]
 #                        a project of one clip of FILE (a name under the pushed set)
 #   many N               a project of N shots cut from the benchmark clips (C6)
+#   moving               a picture moving slowly over a busy ground, to cut out and track (F7, F8)
 #   transitions          every transition kind once, one per join (F3)
 #   effects              every placed effect once, a second each (F2)
 #   photos N             N generated photos into Pictures/SquishEdge (C6), for the picker
@@ -110,6 +111,21 @@ project() { # NAME FILE [options]
   fi
   draft_json "$name" "$(uri $id)" "$played" "$clips" > "$WORK/edge_draft.json"
   slot_for "$id" "$name" "$WORK/edge_draft.json"
+}
+
+moving() { # a thing moving slowly across a busy ground, to cut out and to track (F7, F8)
+  free
+  . "$WORK/state.$SERIAL" 2>/dev/null
+  [ -n "${IDS:-}" ] || { echo "the benchmark clips are not on the phone (bench.sh setup)"; return 1; }
+  # The fractal zoom under, and the colour bars over it as a 30% picture
+  # keyed from left to right and a little down over nine seconds: one distinct
+  # textured thing, at a speed a hand or a car moves, on a ground that moves too.
+  local ground thing; ground=$(echo $IDS | cut -d" " -f1); thing=$(echo $IDS | cut -d" " -f6)
+  local keys='"keyframes":[{"atMs":0,"scale":0.3,"offsetXFraction":-0.32,"offsetYFraction":-0.1,"rotationDegrees":0,"easing":"Linear"},{"atMs":9000,"scale":0.3,"offsetXFraction":0.32,"offsetYFraction":0.12,"rotationDegrees":0,"easing":"Linear"}]'
+  local clips; clips="$(clip_json main0 "$(uri $ground)" bench_1.mp4 0 9000 0 0 ""),$(clip_json pip1 "$(uri $thing)" bench_6.mp4 0 9000 0 1 ",\"scale\":0.3,\"offsetXFraction\":-0.32,\"offsetYFraction\":-0.1" | sed 's/"scale":1,//; s/"keyframes":\[\]/'"$keys"'/')"
+  draft_json "Edge moving" "$(uri $ground)" 9000 "$clips" > "$WORK/edge_draft.json"
+  sed -i 's/"sourceDurationMs":[0-9]*/"sourceDurationMs":10000/g' "$WORK/edge_draft.json"
+  slot_for "$ground" "Edge moving" "$WORK/edge_draft.json"
 }
 
 many() { # N shots cut from the benchmark clips, half a second each (C6)
@@ -288,6 +304,6 @@ teardown() {
 }
 
 case "$STEP" in
-  push) push ;; project) project "$@" ;; many) many "$@" ;; transitions) transitions ;; effects) effects ;; photos) photos "$@" ;; whisper) whisper "$@" ;; voice) voice "$@" ;; teardown) teardown ;;
+  push) push ;; project) project "$@" ;; many) many "$@" ;; moving) moving ;; transitions) transitions ;; effects) effects ;; photos) photos "$@" ;; whisper) whisper "$@" ;; voice) voice "$@" ;; teardown) teardown ;;
   *) echo "unknown step $STEP"; exit 1 ;;
 esac

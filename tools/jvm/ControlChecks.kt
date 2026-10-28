@@ -1119,6 +1119,16 @@ fun main() {
         check(Regex(Regex.escape("TypedEcho()")).findAll(text).count() >= 2, "a text field in TextSheet no longer goes through TypedEcho")
     }
     run {
+        // MagicTouch's point is in the frame's pixels, though its class is called
+        // NormalizedKeypoint: given fractions, every tap read as the top-left
+        // pixel and Tap a thing cut out nothing (28 Oct, the moto).
+        val seg = read("$SRC/media/video/Segmenter.kt")
+        check(
+            seg.contains("point.first.coerceIn(0f, 1f) * frame.width") && seg.contains("point.second.coerceIn(0f, 1f) * frame.height"),
+            "Segmenter hands MagicTouch its point as fractions - it reads pixels, and every tap lands on the corner"
+        )
+    }
+    run {
         // Every item on a composited roll leaves its chain at the canvas's size.
         // A filler left at its own 16 px changed the size of the roll's last
         // stage at each clip-to-filler change, Media3 remade the textures the

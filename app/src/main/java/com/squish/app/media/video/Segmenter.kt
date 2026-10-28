@@ -52,6 +52,10 @@ class PersonMasks(val width: Int, val height: Int, val timesMs: LongArray, val m
                 masks.masks.forEach { o.write(it) }
             }
             tmp.renameTo(file)
+            // The same clip, span and point write the same path: an analysis run
+            // again (turned off and on, a fix) must not be read from the copy of
+            // the last one - the export drew an empty mask over a good file (28 Oct).
+            synchronized(this) { cache.remove(file.path); cache.remove(file.absolutePath) }
         }
 
         /** Loaded masks, kept by file, so the preview and the export share one copy. */
@@ -179,7 +183,11 @@ object Segmenter {
             onProgress(count, count)
             val dir = File(context.filesDir, "segments").apply { mkdirs() }
             val tag = pointAt?.let { (x, y) -> "_at${(x * 1000).roundToInt()}x${(y * 1000).roundToInt()}" } ?: ""
-            val file = File(dir, "${uri.toString().hashCode().toUInt().toString(16)}_${fromMs}_$toMs$tag.bin")
+            // A file of its own each run, so an analysis made again - the same clip,
+            // span and point - is never read from the masks a cache kept of the last
+            // one (BackgroundEffect loads once per path; PersonMasks caches by it).
+            // Files no draft names are swept.
+            val file = File(dir, "${uri.toString().hashCode().toUInt().toString(16)}_${fromMs}_$toMs${tag}_${System.currentTimeMillis()}.bin")
             // The flicker between samples taken out (EDGE_PLAN F7): the outline no longer boils.
             val steady = MaskRefine.temporal(masks, MASK_SIZE * MASK_SIZE)
             PersonMasks.write(file, PersonMasks(MASK_SIZE, MASK_SIZE, times.toLongArray(), steady.toTypedArray()))
@@ -259,8 +267,16 @@ object Segmenter {
         point: Pair<Float, Float>,
         out: ByteArray
     ) {
+        // In the frame's pixels, whatever the class is called: MediaPipe 0.10.14
+        // reads a NormalizedKeypoint here as pixels, so fractions put every tap
+        // on the top-left pixel and the cut-out came back empty - a red square
+        // tapped in its middle gave 3 pixels; in pixels, the square, 9748 of its
+        // 9600 (debug/MagicProbeActivity on the moto, 28 Oct).
         val roi = com.google.mediapipe.tasks.vision.interactivesegmenter.InteractiveSegmenter.RegionOfInterest.create(
-            com.google.mediapipe.tasks.components.containers.NormalizedKeypoint.create(point.first.coerceIn(0f, 1f), point.second.coerceIn(0f, 1f))
+            com.google.mediapipe.tasks.components.containers.NormalizedKeypoint.create(
+                point.first.coerceIn(0f, 1f) * frame.width,
+                point.second.coerceIn(0f, 1f) * frame.height
+            )
         )
         val result = segmenter.segment(BitmapImageBuilder(frame).build(), roi)
         val all = result.confidenceMasks().orElse(null) ?: return
