@@ -62,10 +62,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -198,7 +195,7 @@ fun ExportScreen(
                         .background(accentSweep(SquishColors.Cyan)),
                     contentAlignment = Alignment.Center
                 ) {
-                    BrushTick(modifier = Modifier.size(46.dp))
+                    BrushTick(modifier = Modifier.size(60.dp))
                 }
 
                 Text(
@@ -670,12 +667,19 @@ private fun ShareTarget(index: Int, label: String, icon: ImageVector, tile: Brus
         kotlinx.coroutines.delay(260L + index * 90L)
         arrive.animateTo(1f, spring(dampingRatio = 0.38f, stiffness = 220f))
     }
-    val bob by rememberInfiniteTransition(label = "bob").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1600 + index * 230, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "bob"
-    )
+    // A few bobs and then still. Bobbing for ever kept the screen drawing
+    // every frame while it stood (the GPU never rests, and uiautomator never
+    // sees it idle - 28 Oct, on the moto).
+    val bob = remember { Animatable(0.5f) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(700L + index * 90L)
+        val half = 800 + index * 115
+        repeat(BOBS) {
+            bob.animateTo(1f, tween(half, easing = FastOutSlowInEasing))
+            bob.animateTo(0f, tween(half, easing = FastOutSlowInEasing))
+        }
+        bob.animateTo(0.5f, tween(half / 2, easing = FastOutSlowInEasing))
+    }
     Box(
         modifier = Modifier
             .size(64.dp)
@@ -684,7 +688,7 @@ private fun ShareTarget(index: Int, label: String, icon: ImageVector, tile: Brus
                 scaleX = s * (if (pressed) 1.06f else 1f)
                 scaleY = s
                 rotationZ = if (pressed) 0f else tilt * arrive.value
-                translationY = (bob - 0.5f) * 5.dp.toPx()
+                translationY = (bob.value - 0.5f) * 5.dp.toPx()
                 alpha = arrive.value.coerceIn(0f, 1f)
             }
             .shadow(10.dp, shape, ambientColor = SHARE_GLOWS[index % SHARE_GLOWS.size], spotColor = SHARE_GLOWS[index % SHARE_GLOWS.size])
@@ -705,6 +709,9 @@ private fun ShareTarget(index: Int, label: String, icon: ImageVector, tile: Brus
         )
     }
 }
+
+/** How many times each share tile bobs before it settles. */
+private const val BOBS = 3
 
 /** Each share tile's own lean, so the row looks scattered by hand rather than ruled. */
 private val SHARE_TILTS = floatArrayOf(-7f, 5f, -4f, 8f)
@@ -735,9 +742,9 @@ private fun BrushTick(modifier: Modifier = Modifier) {
             close()
         }
         // A second, faint pass a hair off: the edge of wet paint is never one line.
-        drawPath(stroke, SquishColors.Background.copy(alpha = 0.35f), alpha = 1f,
+        drawPath(stroke, Color.White.copy(alpha = 0.35f), alpha = 1f,
             style = Stroke(width = size.minDimension * 0.025f, cap = StrokeCap.Round))
-        drawPath(stroke, SquishColors.Background)
+        drawPath(stroke, Color.White)
         // Dry streaks where the bristles run out of paint.
         for (line in BrushTickShape.bristles(p)) {
             for ((a, b) in line.zipWithNext()) {

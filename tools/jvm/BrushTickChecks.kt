@@ -26,6 +26,11 @@ fun main() {
     check(w(0.4f) > w(0.95f) * 2.5f, "the stroke does not run out to a point: ${w(0.4f)} in the dip, ${w(0.95f)} at the lift")
     check(w(0f) < w(0.3f), "the stroke does not land lighter than it presses: ${w(0f)} against ${w(0.3f)}")
     check((0..100).all { w(it / 100f) > 0f }, "the stroke vanishes along the way")
+    // Seen on the moto (28 Oct): pressed to 0.17 of the box over the short
+    // stroke, the drop read as a blob, not a brush mark.
+    val widest = (0..100).maxOf { w(it / 100f) }
+    check(widest <= 0.14f, "the stroke is too heavy for a tick: $widest of the box at its widest")
+    check(w(0.6f) >= w(0.3f) * 0.7f, "the rising arm thins too soon: ${w(0.6f)} against ${w(0.3f)} at the dip")
 
     // A tick: the dip below both ends, and the rising arm the longer.
     val spine = BrushTickShape.spine

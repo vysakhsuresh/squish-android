@@ -1126,6 +1126,9 @@ fun main() {
         val done = read("$SRC/export/ExportScreen.kt")
         check(Regex("""bottomBar = \{[\s\S]{0,900}?"Back to Squish"""").containsMatchIn(done), "the done screen's buttons are no longer pinned in its bottom bar")
         check(done.contains("BrushTick(modifier = Modifier.size(") && !done.contains("Icons.Filled.CheckCircle,"), "the done screen's tick is not the painted one")
+        // A done screen that animates for ever never rests the GPU and is never
+        // idle to uiautomator (28 Oct): the share tiles bob a few times, then stop.
+        check(!done.contains("rememberInfiniteTransition") && !done.contains("infiniteRepeatable"), "the done screen animates for ever")
     }
     run {
         // A bent line keeps each word's colour: text drawn on a path takes no

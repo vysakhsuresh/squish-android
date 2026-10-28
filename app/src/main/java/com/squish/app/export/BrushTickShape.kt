@@ -2,6 +2,7 @@ package com.squish.app.export
 
 import kotlin.math.PI
 import kotlin.math.hypot
+import kotlin.math.pow
 import kotlin.math.sin
 
 /**
@@ -53,10 +54,12 @@ object BrushTickShape {
      * a point as it lifts.
      */
     fun widthAt(s: Float): Float {
-        val land = (s / 0.08f).coerceIn(0f, 1f)
-        val press = 0.13f + 0.04f * sin(PI * (s / 0.45f).coerceIn(0f, 1f)).toFloat()
-        val lift = 1f - ((s - 0.55f) / 0.45f).coerceIn(0f, 1f)
-        return press * (0.55f + 0.45f * land) * (0.18f + 0.82f * lift * lift)
+        // Lighter where it lands and heaviest at the dip (a third of the way):
+        // pressed hard over the whole short stroke, it read as a blob on the
+        // phone (28 Oct). The rising arm holds its weight and then runs out.
+        val press = 0.075f + 0.055f * (s / 0.3f).coerceIn(0f, 1f)
+        val t = ((s - 0.35f) / 0.65f).coerceIn(0f, 1f)
+        return press * (0.12f + 0.88f * (1f - t.pow(1.6f)))
     }
 
     /**
