@@ -292,7 +292,7 @@ sliders() {
     esac
     [ -n "$picked" ] && sleep 1.2
     seen=" "
-    local pass; for pass in 1 2 3; do
+    local pass; for pass in $(seq ${SLIDER_PASSES:-3}); do
       dump
       grep -E 'class="android.widget.SeekBar"' "$WORK/ui.txt" > "$WORK/sl_nodes.txt"
       while IFS= read -r node; do
