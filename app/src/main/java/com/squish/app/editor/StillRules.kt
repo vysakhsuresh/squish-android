@@ -26,7 +26,7 @@ object StillRules {
     const val STEP_MS = 30_000L
 
     /** Past where a photo lands, how much its first rendering covers: room to nudge its end out. */
-    const val FIRST_HEADROOM_MS = 2_000L
+    const val FIRST_HEADROOM_MS = 1_000L
 
     /**
      * How long a photo's clip is first rendered, landing at [landingMs]: that and

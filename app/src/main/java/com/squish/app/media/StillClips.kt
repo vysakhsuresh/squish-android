@@ -58,7 +58,7 @@ object StillClips {
      * past the end is rendered again, longer. It was ten seconds for everything,
      * and fifty photos took 161 s to add (28 Oct, the moto).
      */
-    const val RENDER_MS = 5_000L
+    const val RENDER_MS = 4_000L
 
     /** Tall enough for a phone-sized export, small enough to render in a few seconds. */
     private const val MAX_SHORT_SIDE = 1080

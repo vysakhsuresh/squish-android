@@ -300,11 +300,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         // Every picked item at once rather than one after another, in the
         // order picked: ten clips used to be ten probes in a row, and a photo
         // among them held every clip after it until its render finished. The
-        // files are opened off the main thread; photo renders are two at a
-        // time, as many as a phone's encoder takes well side by side.
+        // files are opened off the main thread; photo renders are three at a
+        // time, as Add media's are (EDGE_PLAN C6).
         val pictures = withContext(Dispatchers.IO) { start.uris.map { com.squish.app.av.AvImages.isPicture(app, it) } }
         _state.update { it.copy(preparingStills = pictures.count { it }) }
-        val renders = kotlinx.coroutines.sync.Semaphore(2)
+        val renders = kotlinx.coroutines.sync.Semaphore(3)
         val gathered = try {
             kotlinx.coroutines.coroutineScope {
                 start.uris.mapIndexed { i, picked ->

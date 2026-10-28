@@ -73,7 +73,7 @@ fun main() {
     for (landing in listOf(2_000L, 3_000L, 4_000L, 5_000L, 8_000L)) {
         val first = StillRules.firstRenderMs(landing)
         check("a $landing ms photo is rendered $first ms - not past where it lands with room to nudge", first >= landing + 1_000L)
-        check("a $landing ms photo is rendered $first ms - more than it needs", first <= landing + 2_000L)
+        check("a $landing ms photo is rendered $first ms - more than it needs", first <= landing + 1_000L)
     }
     check("a 3 s photo is still rendered ten seconds", StillRules.firstRenderMs(3_000L) < 10_000L)
     check("a photo is rendered shorter than the least a clip may be", StillRules.firstRenderMs(0L) >= MIN_CLIP_MS)
