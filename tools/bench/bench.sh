@@ -369,7 +369,10 @@ probe() {
 
 quality() {
   free
-  export_ plain "Original" quality || return
+  # 720p, not Original: a plain edit at its own size is copied rather than
+  # encoded (29 Oct: 589 ms and the source's own bytes), and SSIM of a copy
+  # measures nothing. Not comparable with the 24 Oct figure, which was 1080p.
+  export_ plain "720p" quality || return
   local W; W=$(cygpath -w "$WORK")
   for x in quality source; do rm -rf "$WORK/frames_$x"; done
   powershell -NoProfile -ExecutionPolicy Bypass -File "$ROOT/tools/desktop/frames.ps1" -Video "$W\\quality.mp4" -OutDir "$W\\frames_quality" -Count 10 -Width 960 >/dev/null
@@ -377,7 +380,7 @@ quality() {
   local std; std=$(ls ~/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.0.20/*/kotlin-stdlib-2.0.20.jar | head -1)
   (cd "$ROOT" && sh tools/jvm/jc.sh FrameCompare tools/jvm/FrameCompare.kt >/dev/null 2>&1)
   local out="$(cygpath -m "${TMPDIR:-/tmp}")/squish-jvm/out-FrameCompare"
-  say "quality (plain 10 s, Standard): $("$HOME/.jdks/jbr-21.0.11/bin/java" -cp "$out;$(cygpath -m "$std")" FrameCompareKt "$(cygpath -m "$WORK/frames_source")" "$(cygpath -m "$WORK/frames_quality")" | tail -1), $(stat -c %s "$WORK/quality.mp4") bytes"
+  say "quality (plain 10 s, 720p, Standard): $("$HOME/.jdks/jbr-21.0.11/bin/java" -cp "$out;$(cygpath -m "$std")" FrameCompareKt "$(cygpath -m "$WORK/frames_source")" "$(cygpath -m "$WORK/frames_quality")" | tail -1), $(stat -c %s "$WORK/quality.mp4") bytes"
 }
 
 # Pick to playable: each file opened as "Open with" opens it, timed from the

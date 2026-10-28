@@ -170,7 +170,7 @@ off the toolbar's screen and the tour skipped them.
 | playback, 1 overlay | 0 dropped; 31.7% janky, median 12 ms, p90 17 ms | 20.4%; 15 / 23 |
 | playback, 3 overlays | 0 dropped; 24.8% janky, median 11 ms, p90 15 ms | 19.8%; 14 / 23 |
 | export 1080p30 | 43.7 s for 60 s, 1.37x; 1800 frames, 33.33 ms x1799 | the same |
-| quality | SSIM 0.882 - but the plain edit at Original is now copied, not encoded (589 ms, 17x, 22.3 MB, the source's size), so this is frames.ps1's own imprecision on identical pictures, not the encoder; the step needs a size that forces an encode to mean what it did | SSIM 0.864 (an encode) |
+| quality | SSIM 0.882 - but the plain edit at Original is now copied, not encoded (589 ms, 17x, 22.3 MB, the source's size), so this is frames.ps1's own imprecision on identical pictures, not the encoder; the step now exports at 720p, which encodes: **SSIM 0.864** (min 0.826), 3.6 MB, 4.3 s (2.32x) | SSIM 0.864 (an encode at 1080p) |
 | import, pick to playable | activity 450 ms; first frame 948 ms | not measured |
 
 The scrub went from 40% of frames late to 13% (C3's work and tonight's kept
