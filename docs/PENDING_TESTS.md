@@ -17,10 +17,13 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 3. **Render's preflight off the main thread**: tap Render on a long edit (Edge
    transitions, 52 shots) - no freeze; `adb logcat -s StrictMode` shows no
    SquishError.canRead (seen gone once on 28 Oct; check again with this build).
-5. **The Effects sheet at 20 tile steps a second** (C7): `bench.sh <serial> x tour` on the perf build - "open Effects" and "Effects sheet scroll" were GPU 18 ms a frame at 90 Hz; the tiles now share one clock stepping every 50 ms. Check the tiles still read as moving.
 4. **The tracker on the hidden card** (F8): `edge.sh moving hide` - over the
    gap the card is lost and found again in place (seen); after it the size
    should follow again - only known to fail when the tap is on the bars alone.
+5. **The Effects sheet at 20 tile steps a second** (C7): `bench.sh <serial> x
+   tour` on the perf build - "open Effects" and "Effects sheet scroll" were
+   18 ms of GPU a frame at 90 Hz; the tiles now share one clock stepping every
+   50 ms. Check the tiles still read as moving.
 
 ## The EDGE_PLAN items still open
 
