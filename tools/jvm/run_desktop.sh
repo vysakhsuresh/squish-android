@@ -58,6 +58,7 @@ run passstage  "$SRC/media/effects/PassStage.kt" tools/jvm/PassStageChecks.kt
 run hdrrules   "$SRC/media/HdrRules.kt" tools/jvm/HdrRulesChecks.kt
 run whisperwindows "$SRC/media/audio/WhisperText.kt" "$SRC/media/audio/WhisperWindows.kt" tools/jvm/WhisperWindowsChecks.kt
 run typedecho "$SRC/editor/TypedEcho.kt" tools/jvm/TypedEchoChecks.kt
+run brushtick "$SRC/export/BrushTickShape.kt" tools/jvm/BrushTickChecks.kt
 run stripdraw  $TIMELINE "$SRC/timeline/StripDraw.kt" tools/jvm/StripDrawChecks.kt
 run undo       "$SRC/editor/UndoStack.kt" tools/jvm/UndoChecks.kt
 run housekeeping "$SRC/data/DraftHousekeeping.kt" "$SRC/data/DraftFiles.kt" tools/jvm/HousekeepingChecks.kt

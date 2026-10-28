@@ -1119,6 +1119,13 @@ fun main() {
         check(Regex(Regex.escape("TypedEcho()")).findAll(text).count() >= 2, "a text field in TextSheet no longer goes through TypedEcho")
     }
     run {
+        // A bent line keeps each word's colour: text drawn on a path takes no
+        // spans, and "good" picked green on an arched line stayed pink (28 Oct).
+        val renderer = read("$SRC/media/CaptionRenderer.kt")
+        check(Regex("""item\.wordColors\[i\][\s\S]{0,200}?drawTextOnPath\(word\.value""").containsMatchIn(renderer),
+            "a bent line draws its words in one colour - CaptionRenderer's path text no longer takes wordColors")
+    }
+    run {
         // MagicTouch's point is in the frame's pixels, though its class is called
         // NormalizedKeypoint: given fractions, every tap read as the top-left
         // pixel and Tap a thing cut out nothing (28 Oct, the moto).

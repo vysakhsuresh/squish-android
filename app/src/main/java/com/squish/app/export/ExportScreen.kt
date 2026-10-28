@@ -55,6 +55,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -350,20 +365,20 @@ fun ExportedFile(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ShareTarget("WhatsApp", ShareGlyphs.WhatsApp, ShareStyle.WhatsApp) {
+        ShareTarget(0, "WhatsApp", ShareGlyphs.WhatsApp, ShareStyle.WhatsApp) {
             if (!ShareUtils.share(context, uri, mime, "com.whatsapp")) {
                 onNotice("Nothing on this phone can share that.")
             }
         }
-        ShareTarget("Instagram", ShareGlyphs.Instagram, ShareStyle.Instagram) {
+        ShareTarget(1, "Instagram", ShareGlyphs.Instagram, ShareStyle.Instagram) {
             if (!ShareUtils.share(context, uri, mime, "com.instagram.android")) {
                 onNotice("Nothing on this phone can share that.")
             }
         }
-        ShareTarget("Mail", ShareGlyphs.Mail, ShareStyle.Mail) {
+        ShareTarget(2, "Mail", ShareGlyphs.Mail, ShareStyle.Mail) {
             sendByEmail(context, uri, fileName, isAudio) { onNotice(it) }
         }
-        ShareTarget("More", ShareGlyphs.More, ShareStyle.More) {
+        ShareTarget(3, "More", ShareGlyphs.More, ShareStyle.More) {
             if (!ShareUtils.share(context, uri, mime, null)) {
                 onNotice("Nothing on this phone can share that.")
             }
@@ -631,21 +646,44 @@ private fun SavedToCard(isAudio: Boolean, fileName: String, inGallery: Boolean) 
  * touch loses anything.
  */
 @Composable
-private fun ShareTarget(label: String, icon: ImageVector, tile: Brush, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(20.dp)
+private fun ShareTarget(index: Int, label: String, icon: ImageVector, tile: Brush, onClick: () -> Unit) {
+    // Playful, as the owner asked (28 Oct): each tile a soft blob tilted its own
+    // way, bouncing in one after another, bobbing a little at rest, and
+    // squashing flat and straight under the finger.
+    val shape = RoundedCornerShape(topStart = 26.dp, topEnd = 16.dp, bottomEnd = 26.dp, bottomStart = 18.dp)
+    val tilt = SHARE_TILTS[index % SHARE_TILTS.size]
     val press = remember { MutableInteractionSource() }
     val pressed by press.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.9f else 1f, spring(dampingRatio = 0.45f), label = "press")
+    val squash by animateFloatAsState(if (pressed) 0.84f else 1f, spring(dampingRatio = 0.35f, stiffness = 500f), label = "press")
+    val arrive = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(260L + index * 90L)
+        arrive.animateTo(1f, spring(dampingRatio = 0.38f, stiffness = 220f))
+    }
+    val bob by rememberInfiniteTransition(label = "bob").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1600 + index * 230, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "bob"
+    )
     Box(
         modifier = Modifier
-            .size(62.dp)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .size(64.dp)
+            .graphicsLayer {
+                val s = arrive.value * squash
+                scaleX = s * (if (pressed) 1.06f else 1f)
+                scaleY = s
+                rotationZ = if (pressed) 0f else tilt * arrive.value
+                translationY = (bob - 0.5f) * 5.dp.toPx()
+                alpha = arrive.value.coerceIn(0f, 1f)
+            }
+            .shadow(10.dp, shape, ambientColor = SHARE_GLOWS[index % SHARE_GLOWS.size], spotColor = SHARE_GLOWS[index % SHARE_GLOWS.size])
             .clip(shape)
             .background(tile)
-            // A soft light across the top edge, so the tile reads as a surface
+            // A soft light across the top, so the tile reads as a glossy sweet
             // rather than a flat swatch.
-            .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.22f), Color.Transparent), endY = 90f))
-            .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
+            .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.32f), Color.Transparent), endY = 80f))
+            .border(1.5.dp, Color.White.copy(alpha = 0.22f), shape)
             .clickable(interactionSource = press, indication = null, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -653,8 +691,49 @@ private fun ShareTarget(label: String, icon: ImageVector, tile: Brush, onClick: 
             icon,
             contentDescription = "Share to $label",
             tint = Color.White,
-            modifier = Modifier.size(32.dp)
+            modifier = Modifier.size(32.dp).graphicsLayer { rotationZ = -tilt * 0.5f * arrive.value }
         )
+    }
+}
+
+/** Each share tile's own lean, so the row looks scattered by hand rather than ruled. */
+private val SHARE_TILTS = floatArrayOf(-7f, 5f, -4f, 8f)
+
+/** The glow under each tile: its own colour, faintly. */
+private val SHARE_GLOWS = listOf(Color(0xFF25D366), Color(0xFFE1306C), Color(0xFF4F7CFF), Color(0xFF9A8CFF))
+
+/**
+ * The done screen's tick, painted on with a brush (BrushTickShape): it sweeps
+ * in from where the brush lands to where it lifts, with a few dry streaks
+ * through it, a moment after the circle under it pops.
+ */
+@Composable
+private fun BrushTick(modifier: Modifier = Modifier) {
+    val paint = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(180L)
+        paint.animateTo(1f, tween(520, easing = FastOutSlowInEasing))
+    }
+    Canvas(modifier = modifier) {
+        val p = paint.value
+        val outline = BrushTickShape.outline(p)
+        if (outline.size < 3) return@Canvas
+        fun at(pt: Pair<Float, Float>) = Offset(pt.first * size.width, pt.second * size.height)
+        val stroke = Path().apply {
+            moveTo(at(outline.first()).x, at(outline.first()).y)
+            for (pt in outline.drop(1)) lineTo(at(pt).x, at(pt).y)
+            close()
+        }
+        // A second, faint pass a hair off: the edge of wet paint is never one line.
+        drawPath(stroke, SquishColors.Background.copy(alpha = 0.35f), alpha = 1f,
+            style = Stroke(width = size.minDimension * 0.025f, cap = StrokeCap.Round))
+        drawPath(stroke, SquishColors.Background)
+        // Dry streaks where the bristles run out of paint.
+        for (line in BrushTickShape.bristles(p)) {
+            for ((a, b) in line.zipWithNext()) {
+                drawLine(SquishColors.Cyan.copy(alpha = 0.45f), at(a), at(b), strokeWidth = size.minDimension * 0.018f, cap = StrokeCap.Round)
+            }
+        }
     }
 }
 

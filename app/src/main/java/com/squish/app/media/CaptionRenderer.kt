@@ -576,8 +576,19 @@ object CaptionRenderer {
             canvas.drawTextOnPath(shown, path, along, 0f, edge)
         }
         if (item.glow) paint.color = lighten(item.colorArgb)
-        gradientFor(item, width.toFloat(), height.toFloat())?.let { paint.shader = it }
-        canvas.drawTextOnPath(shown, path, along, 0f, paint)
+        val fill = gradientFor(item, width.toFloat(), height.toFloat())
+        if (fill != null || item.wordColors.isEmpty()) {
+            fill?.let { paint.shader = it }
+            canvas.drawTextOnPath(shown, path, along, 0f, paint)
+        } else {
+            // Each word in its own colour, as a straight line's spans give it: text
+            // on a path takes no spans, and a bent line lost every word's colour
+            // (28 Oct, the moto: "good" picked green stayed the line's pink).
+            Regex("\\S+").findAll(shown).forEachIndexed { i, word ->
+                val own = TextPaint(paint).apply { item.wordColors[i]?.let { color = it } }
+                canvas.drawTextOnPath(word.value, path, along + paint.measureText(shown, 0, word.range.first), 0f, own)
+            }
+        }
 
         if (!item.flipped) return Painted(bitmap, width, height)
         val mirror = Matrix().apply { preScale(-1f, 1f) }
