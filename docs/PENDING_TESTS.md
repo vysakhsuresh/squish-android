@@ -57,7 +57,7 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 | B4 HDR | Keep HDR on a phone with an HDR encoder (the S23); Dolby Vision |
 | C1 export speed | release build re-timed 29 Oct: 60 s at 1080p in 43.7 s (1.37x), the same as A1 - the encoder is the limit; InShot on the same edit not compared |
 | C2 smart render | copying stretches of a several-shot edit (not built - Media3 limit) |
-| C5 proxies | a real 1080p60, 10-bit or HEVC file taking the Auto proxy path |
+| C5 proxies | the Auto path seen on a generated 10-bit HEVC file (29 Oct); left: camera footage, and overlay footage on weak decoders |
 | C6 snappy | FOUND: 50 photos took 161 s to add (each a 10 s, 30 fps clip for a 3 s slide) and the media grid stopped at 30 picks without a word. Now: renders the landing length + 2 s (StillRules.firstRenderMs), the grid takes 100 and says when full; a new project of 50 photos opens in 66 s (renders 3 at a time, 4 s each) - still slow, about 1.3 s a photo. Next: open at once and render photos behind the editor |
 | C7 smoothness | the whole tour is measured now (bench.sh found Looks under its real name); GPU-bound against 11.1 ms p90 and not met |
 | D6 live sliders | Filters (under Vivid) and Mask (once added) now driven: Strength, Across, Up/down all live; the rest of Mask's sliders sit below where the step scrolls |
