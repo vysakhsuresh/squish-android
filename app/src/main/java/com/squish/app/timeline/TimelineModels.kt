@@ -1003,17 +1003,17 @@ data class TimelineState(
      */
     val missingUris: Set<String> = emptySet()
 ) {
-    val videoClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Video }.sortedBy { it.timelineStartMs }
+    // Worked out once per clip list, not on every read (DerivedClips).
+    private val derived: DerivedClips get() = DerivedClips.of(clips)
+    val videoClips: List<Clip> get() = derived.video
     /** The base picture - the cuts-only spine of the edit. */
-    val baseVideoClips: List<Clip>
-        get() = clips.filter { it.kind == ClipKind.Video && it.layer == 0 }.sortedBy { it.timelineStartMs }
+    val baseVideoClips: List<Clip> get() = derived.base
     /** Anything floating over the base: picture-in-picture, bugs, reaction cams. */
-    val overlayClips: List<Clip>
-        get() = clips.filter { it.kind == ClipKind.Video && it.layer > 0 }.sortedBy { it.timelineStartMs }
-    val layerCount: Int get() = clips.filter { it.kind == ClipKind.Video }.maxOfOrNull { it.layer } ?: 0
-    val audioClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Audio }.sortedBy { it.timelineStartMs }
-    val textClips: List<Clip> get() = clips.filter { it.kind == ClipKind.Text }.sortedBy { it.timelineStartMs }
-    val durationMs: Long get() = clips.maxOfOrNull { it.timelineEndMs } ?: 0L
+    val overlayClips: List<Clip> get() = derived.overlay
+    val layerCount: Int get() = derived.layerCount
+    val audioClips: List<Clip> get() = derived.audio
+    val textClips: List<Clip> get() = derived.text
+    val durationMs: Long get() = derived.durationMs
     val selectedClip: Clip? get() = clips.firstOrNull { it.id == selectedClipId }
 
     /** Whether [id] is selected: the one whose tools show, or one selected alongside it. */
@@ -2437,3 +2437,41 @@ fun TimelineState.withClipsDuplicated(ids: Set<String>, spanMs: Long? = null, co
 /** How long a set of things is, from its first start to its last end. */
 fun spanOf(ranges: List<Pair<Long, Long>>): Long =
     if (ranges.isEmpty()) 0L else (ranges.maxOf { it.second } - ranges.minOf { it.first }).coerceAtLeast(0L)
+
+/**
+ * TimelineState's sorted lists and length for one list of clips, worked out
+ * once. They were getters that filtered and sorted every clip on each read, and
+ * the strip and the preview read them many times a frame: scrubbing a 200-shot
+ * edit on the moto spent a median 26 ms a frame in the app (28 Oct). The
+ * playhead is in the state, so every scrub frame is a new state with the same
+ * clips - the answers are kept against the clip list itself, by identity. A
+ * clip list is never changed once it is in a state (CLAUDE.md: never mutate a
+ * list you have passed down), which is what makes that safe.
+ * tools/jvm/TimelineDerivedChecks.kt holds the answers and the keeping.
+ */
+internal class DerivedClips private constructor(val clips: List<Clip>) {
+    val video: List<Clip> = clips.filter { it.kind == ClipKind.Video }.sortedBy { it.timelineStartMs }
+    // A stable sort's subsequence is the sort of the subsequence, so these are
+    // the lists the old getters gave.
+    val base: List<Clip> = video.filter { it.layer == 0 }
+    val overlay: List<Clip> = video.filter { it.layer > 0 }
+    val layerCount: Int = video.maxOfOrNull { it.layer } ?: 0
+    val audio: List<Clip> = clips.filter { it.kind == ClipKind.Audio }.sortedBy { it.timelineStartMs }
+    val text: List<Clip> = clips.filter { it.kind == ClipKind.Text }.sortedBy { it.timelineStartMs }
+    val durationMs: Long = clips.maxOfOrNull { it.timelineEndMs } ?: 0L
+
+    companion object {
+        // A few lists at once: the editor and an undo preview, or a sheet's own
+        // state beside the editor's, read in turn would push one entry out every time.
+        private const val KEPT = 4
+        @Volatile private var kept: List<DerivedClips> = emptyList()
+
+        fun of(clips: List<Clip>): DerivedClips {
+            val now = kept
+            now.firstOrNull { it.clips === clips }?.let { return it }
+            val made = DerivedClips(clips)
+            kept = (listOf(made) + now).take(KEPT)
+            return made
+        }
+    }
+}

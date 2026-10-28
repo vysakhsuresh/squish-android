@@ -53,12 +53,14 @@ tap_text() {
 tap_tool() {
   tap_text "$1" >/dev/null 2>&1 && return 0
   local h w y i; h=$(screen_h); w=$(screen_w); y=$(( h * 905 / 1000 ))
-  for i in 1 2 3 4; do
-    sh_ input swipe $(( w * 85 / 100 )) $y $(( w * 15 / 100 )) $y 300; sleep 0.8
+  for i in 1 2 3 4 5 6 7 8; do
+    # Short and slow: a long quick swipe flings the row past the tool between
+    # two looks, and Mask was never found (28 Oct).
+    sh_ input swipe $(( w * 75 / 100 )) $y $(( w * 30 / 100 )) $y 600; sleep 0.8
     tap_text "$1" >/dev/null 2>&1 && return 0
   done
-  for i in 1 2 3 4 5 6 7 8; do
-    sh_ input swipe $(( w * 15 / 100 )) $y $(( w * 85 / 100 )) $y 300; sleep 0.8
+  for i in $(seq 16); do
+    sh_ input swipe $(( w * 30 / 100 )) $y $(( w * 75 / 100 )) $y 600; sleep 0.8
     tap_text "$1" >/dev/null 2>&1 && return 0
   done
   say "  (could not find \"$1\" on the toolbar)"; return 1
@@ -210,7 +212,9 @@ tour() {
   tap_text "Settings" && sleep 1.5 && tour_step "settings scroll" fling_up; sh_ input keyevent KEYCODE_BACK; sleep 1
   open_project ${SCRUB_PROJECT:-n1} || return
   local t
-  for t in Edit Sound Text Stickers Overlay Effects Look; do
+  # TOUR_TOOLS picks some (e.g. "Looks"): after Effects, whose tiles never let
+  # uiautomator see the screen idle, the steps that follow can lose their place.
+  for t in ${TOUR_TOOLS:-Edit Sound Text Stickers Overlay Effects Looks}; do
     tour_step "open $t" open_tool "$t"
     tour_step "$t sheet scroll" sheet_scroll
     close_sheet
@@ -275,6 +279,14 @@ sliders() {
   for tool in ${SLIDER_TOOLS:-Adjust Filters Opacity Placement Mask Effects Crop Blur Speed}; do
     tap_tool "$tool" || { say "slider $tool: (tool not on the toolbar)"; continue; }
     sleep 1.5
+    # Filters shows its sliders only under a look, Mask only once one is added:
+    # one is picked first, and taken back after the sheet closes.
+    local picked=""
+    case $tool in
+      Filters) tap_text "Vivid" >/dev/null && picked=1 ;;
+      Mask) tap_text "Add a mask" >/dev/null && picked=1 ;;
+    esac
+    [ -n "$picked" ] && sleep 1.2
     seen=" "
     local pass; for pass in 1 2 3; do
       dump
@@ -289,6 +301,7 @@ sliders() {
       sheet_scroll_up
     done
     close_sheet
+    [ -n "$picked" ] && { tap_text "Undo(: [^\"]*)?" >/dev/null || say "  (could not undo the $tool pick)"; sleep 1; }
   done
 }
 sheet_scroll_up() { local h w; h=$(screen_h); w=$(screen_w); sh_ input swipe $((w/2)) $((h*90/100)) $((w/2)) $((h*72/100)) 350; sleep 0.6; }

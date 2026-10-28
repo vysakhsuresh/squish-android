@@ -1,43 +1,51 @@
-# What is still to be tested - 28 October 2026
+# What is still to be tested - 28 October 2026, night
 
 Everything below is built, and most of it checked on the JVM, but not yet seen
 on the phone (or, for sound, not heard by an ear). In the order to do it when
 the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 
-## First - built on 28 Oct, installed on the phone, not yet looked at
+## Seen on the moto the evening of 28 Oct (was this list's top)
 
-0. **Install the latest debug build first.** The one put on the phone at about
-   07:10 on 28 Oct has the playful share tiles but NOT the pinned buttons or the
-   painted tick: that edit never reached the file (ControlChecks now refuses
-   it). Built since, with both.
-1. **The done screen** (after any export): the two buttons, Back to Squish and
-   Back to editor, side by side in a bar pinned to the bottom, visible without
-   scrolling; the tick painted on with a brush a moment after the circle pops;
-   the share tiles bouncing in one after another, each tilted, bobbing a little,
-   squashing under the finger, a coloured glow under each.
-2. **A colour on one word of a bent line** (E3): Text, Style, Bend to an arch,
-   pick a word under "A word", pick a colour - the word in that colour in the
-   preview and in a file. (Before the fix the colour was dropped on a bend.)
-3. **Render's preflight off the main thread**: tap Render on a long edit (Edge
-   transitions, 52 shots) - no freeze; `adb logcat -s StrictMode` shows no
-   SquishError.canRead (seen gone once on 28 Oct; check again with this build).
-4. **The tracker on the hidden card** (F8): `edge.sh moving hide` - over the
-   gap the card is lost and found again in place (seen); after it the size
-   should follow again - only known to fail when the tap is on the bars alone.
-5. **The Effects sheet at 20 tile steps a second** (C7): `bench.sh <serial> x
-   tour` on the perf build - "open Effects" and "Effects sheet scroll" were
-   18 ms of GPU a frame at 90 Hz; the tiles now share one clock stepping every
-   50 ms. Check the tiles still read as moving.
-6. **From the review of 28 Oct** (built, not seen): a pinned line grown with its
-   track has its box and handles round the grown letters, and a tap on its
-   outer part selects it; a line pinned in a draft from before 28 Oct keeps its
-   size; a bent line paged by a word style colours the right words, and an
-   emoji after a word does not shift the colours; an Arabic bent line with a
-   word colour is drawn whole, in order.
-7. **Shrink-to-fit labels in one step** (C7, FitText): open Text - the title
-   tiles' samples fit their tiles at once (no visible shrinking), and every
-   other FitText label (tool tiles, chips) still fits; `bench.sh tour`'s
-   "open Text" was app p90 27 ms.
+- **The done screen:** both buttons in a bar pinned to the bottom, seen without
+  scrolling, and Back to Squish lands on the home screen. The tick looked like a
+  small dark blob, so it is now bigger, white, and lighter where the brush lands
+  (BrushTickChecks fails on the old shape). The share tiles bobbed for ever,
+  which kept the screen drawing and uiautomator never saw it idle; they now bob
+  three times and settle (ControlChecks refuses an endless animation there).
+- **A colour on one word of a bent line:** "good" in green on an arched line,
+  in the preview and in a 480p file.
+- **Render's preflight off the main thread:** StrictMode showed five small reads
+  left during a 52-shot render (the exports folder, its mkdirs, the file's
+  length). Moved off, in the editor and the quick tools; 0 violations now.
+- **The tracker on the hidden card** (debug/TrackProbeActivity, run on the export):
+  within 3% of the card's real size before and after the gap, held still over
+  it, found in place at 5.0 s.
+- **A pinned line that grows:** its box and handles wrap the grown letters, and a
+  tap on the grown edge selects it. A line pinned in an older draft (no
+  trackGrows) follows but keeps its size.
+- **Bent-line colours, paged and with an emoji and in Arabic:** FOUND - an emoji
+  after a word made the last word lose its middle letters ("w d"): the arc was
+  measured on the bare text. Fixed (measured on what is laid on it) and seen in
+  the preview and a file: "five" green on its page of three, "bold" green after
+  the emoji, the Arabic line whole and in order.
+- **The Effects tiles at 20 steps a second:** they still move (two screenshots
+  0.4 s apart differ by 14-15 levels over the tiles, 0 over the paused picture).
+  GPU cost while opening the sheet is not lower (p90 17.6 ms against 18).
+- **Shrink-to-fit labels in one step:** the Text sheet's title samples fit at
+  once; opening Text is now app p90 9.6 ms (was 27).
+- **C6:** undo and redo 0-1 ms each; cold start 318 ms median (A1 was 383); a
+  200-shot project opens its editor in 173 ms, first picture at 908 ms.
+
+## Still to do on the phone
+
+1. **Scrubbing a 200-shot edit** (`edge.sh many 200`, zoomed out so about 60
+   shots are on screen): the app's own work was a median 26 ms a frame. With
+   TimelineState's sorted lists kept per clip list (TimelineDerivedChecks) it is
+   15-18 ms - still over budget. What is left is building ClipViews as shots
+   scroll in (TraceTop's new `TRACE_UNDER=<method>` mode shows it). Next step: a
+   plain drawn bar for a clip only a few dp wide.
+2. **The Export sheet's opening:** 19 ms of GPU a frame for its half-second
+   slide-up (a full-height sheet and scrim over the live editor).
 
 ## The EDGE_PLAN items still open
 
@@ -47,15 +55,13 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 | B1 formats | the HEVC 10-bit, HDR10, HLG and Dolby Vision files through tools/bench/matrix.sh; scrub and cut per file; colour read off each export |
 | B3 A/V sync | the song sits a steady 67-106 ms behind the picture in the preview - needs an ear to tell a real lag from reporting |
 | B4 HDR | Keep HDR on a phone with an HDR encoder (the S23); Dolby Vision |
-| B5 high frame rate | slowing the 240 fps clip on the Speed sheet, and its hint |
 | C1 export speed | a release-build timing; InShot on the same edit for comparison |
 | C2 smart render | copying stretches of a several-shot edit (not built - Media3 limit) |
 | C5 proxies | a real 1080p60, 10-bit or HEVC file taking the Auto proxy path |
-| C6 snappy | undo/redo/add-media timings read off SquishPerf on the phone |
-| C7 smoothness | the release-build tour against 11.1 ms p90 is GPU-bound and not met; Look and Export steps (now reachable, bench.sh scrolls the toolbar) |
-| D6 live sliders | the 55 sliders not driven one by one; Filters and Mask need a look or shape picked first |
+| C6 snappy | 50 photos added (`edge.sh photos 50`); the 200-shot scrub (above) |
+| C7 smoothness | the whole tour is measured now (bench.sh found Looks under its real name); GPU-bound against 11.1 ms p90 and not met |
+| D6 live sliders | Filters (under Vivid) and Mask (once added) now driven: Strength, Across, Up/down all live; the rest of Mask's sliders sit below where the step scrolls |
 | E1 captions | Malayalam accuracy past the small Whisper model |
-| E3 text depth | Comic's edges; a word colour on a straight line; item 2 above |
 | F1 slow motion | small fast subjects that slow and overlap come out a little narrow (a known limit, 10%) |
 | F8 tracking, reframe | auto-reframe on real faces and things (no such footage on the phone) |
 | G1, G2 sound | sound effects and noise reduction heard by an ear |
@@ -63,7 +69,9 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 ## Housekeeping owed to the phone
 
 - `sh tools/bench/edge.sh <serial> x teardown` - deletes every test export and
-  project made on 27-28 Oct by MediaStore id and slot.
+  project made on 27-28 Oct by MediaStore id and slot (tonight's renders are
+  in its EXPORT_IDS; the 200-shot project in its SLOTS).
 - Remove `files/stickers/edge_ball.gif` (the GIF test sticker, by run-as).
 - Settings' Online left off (it is off).
-- Screen stay-awake was switched on for testing and switched back off (28 Oct).
+- The perf build may be the one installed; put the debug build back before
+  anything that needs run-as.

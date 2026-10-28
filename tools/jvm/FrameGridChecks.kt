@@ -94,6 +94,22 @@ fun main() {
         check(slots(out, times, onGrid = false) == kept(out, times), "stamping changed which frames ${out.toInt()} keeps")
     }
 
+    // Footage slowed below the rate (28 Oct, the moto): 240 fps at 0.18x is 43 frames a
+    // second into a 60 fps grid, kept "on the grid" because the footage itself is
+    // fast - and every other frame was pulled onto a slot 6.5 ms early, so the file
+    // alternated 16.67 and 29.63 ms. With no frames to spare, each keeps its stamp;
+    // and 50 fps into 60 the same.
+    for (inFps in listOf(43.2, 50.0)) {
+        val times = steady(inFps, 5.0)
+        val s = slots(60f, times, onGrid = true)
+        val gaps = s.zipWithNext { a, b -> b - a }
+        check(gaps.max() - gaps.min() <= 2, "${inFps} fps into a 60 fps grid wrote uneven frames, ${gaps.min()} to ${gaps.max()} us")
+    }
+    // A wobble about the grid's own rate is still taken onto it.
+    val jitter = (0 until 300).map { i -> i * 16_667L + if (i % 2 == 0) 300L else -300L }.map { it.coerceAtLeast(0L) }
+    val js = slots(60f, jitter, onGrid = true)
+    check(js.drop(1).withIndex().all { (i, t) -> t == js.first() + (i + 1) * 16_666L || Math.abs(t - (js.first() + (i + 1) * 16_666L)) <= 2 }, "60 fps footage with a 0.3 ms wobble was not put on the 60 fps grid")
+
     // A new stream starts again; the first frame is always kept.
     val g = FrameGrid(30f)
     check(g.keep(0L) && !g.keep(10_000L), "the grid did not start on the first frame")

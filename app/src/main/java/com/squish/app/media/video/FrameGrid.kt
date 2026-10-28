@@ -47,7 +47,11 @@ class FrameGrid(fps: Float, private val onGrid: Boolean = false) {
             nextUs = timeUs + periodUs
             slot = timeUs
         } else {
-            slot = if (onGrid) due else timeUs
+            // Onto the grid only while the frames come at least as close as it:
+            // slowed below the rate (240 fps at 0.18x, 43 a second into 60), there
+            // is nothing to spare, and pulling every other frame onto a slot wrote
+            // 16.67 and 29.63 ms frames alternating (28 Oct, the moto).
+            slot = if (onGrid && gap <= periodUs + periodUs / 10) due else timeUs
         }
         return true
     }

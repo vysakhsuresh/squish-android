@@ -53,6 +53,9 @@ fun main(args: Array<String>) {
     val stack = ArrayList<Frame>()
     val inclusive = HashMap<Long, Long>()
     val self = HashMap<Long, Long>()
+    // under=<name>: what the first method whose name contains it calls, child by child.
+    val under = System.getenv("TRACE_UNDER")
+    val children = HashMap<Long, Long>()
     var total = 0L
     var first = -1L
     var last = 0L
@@ -80,6 +83,7 @@ fun main(args: Array<String>) {
                 if (stack.none { it.method == f.method }) inclusive[f.method] = (inclusive[f.method] ?: 0) + dur
                 self[f.method] = (self[f.method] ?: 0) + (dur - f.child).coerceAtLeast(0)
                 stack.lastOrNull()?.let { it.child += dur }
+                if (under != null) stack.lastOrNull()?.let { p -> if (methods[p.method]?.contains(under) == true && stack.dropLast(1).none { methods[it.method]?.contains(under) == true }) children[f.method] = (children[f.method] ?: 0) + dur }
                 if (stack.isEmpty()) total += dur
             }
         }
@@ -95,4 +99,5 @@ fun main(args: Array<String>) {
     }
     show("inclusive", inclusive)
     show("self", self)
+    if (under != null) show("called directly by *$under*", children)
 }
