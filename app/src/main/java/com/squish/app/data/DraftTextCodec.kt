@@ -85,6 +85,7 @@ internal object DraftTextCodec {
             put("shapeFilled", item.shapeFilled)
         }
         put("stripRow", item.stripRow)
+        if (item.trackGrows) put("trackGrows", true)
         item.track?.let { t ->
             put("track", JSONArray().apply {
                 t.samples.forEach { sample ->
@@ -138,6 +139,7 @@ internal object DraftTextCodec {
             design = com.squish.app.editor.StickerDesign.named(json.optString("design").takeIf { it.isNotEmpty() }),
             gif = json.optString("gif").takeIf { it.isNotEmpty() },
             stripRow = json.optInt("stripRow", 0).coerceAtLeast(0),
+            trackGrows = json.optBoolean("trackGrows", false),
             track = json.optJSONArray("track")?.let { array ->
                 MotionTrack(
                     (0 until array.length()).mapNotNull { i ->

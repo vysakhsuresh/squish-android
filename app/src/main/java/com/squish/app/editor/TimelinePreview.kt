@@ -809,11 +809,18 @@ fun TimelinePreview(
                 val box = textBoxes[item.id] ?: return@mapIndexedNotNull null
                 val (x, y) = item.anchorAt(layerTime)
                 val placed = TextGeometry.transformOf(x, y, item.rotationDegrees, box.width, box.height, keptFrame.width, keptFrame.height)
+                // Grown with the thing it is pinned to, the box round it too: drawn
+                // bigger, the line's box and its handles sat inside the letters and a
+                // tap on its outer part missed it (review, 28 Oct). The placement
+                // gestures work from stays the line's own size.
+                val grown = item.trackScaleAt(layerTime)
+                val drawnBox = if (grown == 1f) placed
+                    else TextGeometry.transformOf(x, y, item.rotationDegrees, box.width * grown, box.height * grown, keptFrame.width, keptFrame.height)
                 val size = item.sizeSp
                 OverlayOnPicture(
                     clipId = item.id,
                     layer = TEXT_LAYER_BASE + index,
-                    drawn = placed,
+                    drawn = drawnBox,
                     placed = placed,
                     aspect = TextGeometry.aspect(box.width, box.height),
                     limit = { t -> TextGeometry.limited(t, placed, size) },

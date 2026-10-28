@@ -493,7 +493,7 @@ internal class AnalysisEdits(host: EditHost, private val clips: ClipEdits) : Edi
             _state.update { state ->
                 state.copy(
                     textOverlays = state.textOverlays.map {
-                        if (it.id == captionId) it.copy(track = smooth) else it
+                        if (it.id == captionId) it.copy(track = smooth, trackGrows = true) else it
                     }
                 )
             }

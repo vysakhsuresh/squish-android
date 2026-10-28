@@ -152,7 +152,10 @@ fun main() {
             com.squish.app.media.video.TrackSample(9000, 0.7f, 0.5f, scale = 1.6f)
         ))
         val line = com.squish.app.editor.TextOverlayItem(id = "tag", text = "TAG", startMs = 0, endMs = 9000, colorArgb = -1)
-        val pinned = line.copy(track = track)
+        val pinned = line.copy(track = track, trackGrows = true)
+        // A line pinned by an older build: the same track, its size never drawn.
+        val older = line.copy(track = track)
+        check(older.frameAt(4500)?.scale == line.frameAt(4500)?.scale, "a line pinned before lines grew with their track now changes size")
         val plain = line.frameAt(4500)?.scale ?: 0f
         val grown = pinned.frameAt(4500)?.scale ?: 0f
         check(kotlin.math.abs(grown - plain * 1.3f) < 0.02f, "a pinned line half way along a track growing to 1.6 is drawn at $grown, not ${plain * 1.3f}")

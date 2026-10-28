@@ -149,6 +149,15 @@ data class TextOverlayItem(
     val track: MotionTrack? = null,
 
     /**
+     * Whether the line grows and shrinks with its [track]'s size, as well as
+     * following its place. Set when a line is pinned from 28 Oct on: a track
+     * pinned before holds the old tracker's raw readings - 5% steps, a size that
+     * walked down over gaps - which were never drawn, and drawing them now would
+     * set an old draft's pinned line pulsing (review, 28 Oct).
+     */
+    val trackGrows: Boolean = false,
+
+    /**
      * Which of the text rows on the timeline strip this line would rather be on,
      * where nothing else is in the way there (see TimelineLanes.rows). Only where
      * it is drawn: it changes nothing on the picture.
@@ -279,7 +288,7 @@ data class TextOverlayItem(
      * it was pinned). 1 for a line on no track. Part of where the line is,
      * not of how it moves, so a paused preview keeps it (CaptionLayer).
      */
-    fun trackScaleAt(timeMs: Long): Float = track?.sampleAt(timeMs)?.scale ?: 1f
+    fun trackScaleAt(timeMs: Long): Float = if (!trackGrows) 1f else track?.sampleAt(timeMs)?.scale ?: 1f
 
     /** The caption's state at [timeMs] of the timeline, or null when it is not on screen. */
     fun frameAt(timeMs: Long): TextFrame? {

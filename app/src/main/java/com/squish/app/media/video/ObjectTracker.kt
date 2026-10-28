@@ -204,7 +204,7 @@ class ObjectTracker(
      * How strongly the thing matched while it was surely held, averaged: a lost
      * thing is taken back only on a match nearly that strong (see [step]).
      */
-    private var heldLevel = 1f
+    private var heldLevel = -1f
 
     /**
      * Searches around [lastX], [lastY] for the template.
@@ -299,12 +299,16 @@ class ObjectTracker(
         val found = if (lostSteps > 0) best >= refind else best >= MotionTrack.LOST_BELOW
         if (found) {
             lostSteps = 0
+            // Every step it is found at, weak ones too, and from the first one
+            // rather than from 1: started at 1 and moved only by sure matches, a
+            // thing held at 0.5-0.7 needed 0.85 to be taken back after a gap and
+            // never was (review, 28 Oct).
+            heldLevel = if (heldLevel < 0f) best else heldLevel * (1f - HELD_FOLLOW) + best * HELD_FOLLOW
             // The size only from a sure lock, as the template is learned only from
             // one: a thing half seen behind something busy matched at about 0.5,
             // just over LOST_BELOW, and each such frame stepped the size towards
             // whatever was there (28 Oct, the moto: 1.09 to 0.76 over a second's gap).
             if (best >= TEMPLATE_UPDATE_ABOVE) {
-                heldLevel = heldLevel * (1f - HELD_FOLLOW) + best * HELD_FOLLOW
                 scale = bestScale
                 blendTemplate(frame, bestX, bestY, scale)
             }

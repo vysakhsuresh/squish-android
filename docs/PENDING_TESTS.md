@@ -6,6 +6,10 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 
 ## First - built on 28 Oct, installed on the phone, not yet looked at
 
+0. **Install the latest debug build first.** The one put on the phone at about
+   07:10 on 28 Oct has the playful share tiles but NOT the pinned buttons or the
+   painted tick: that edit never reached the file (ControlChecks now refuses
+   it). Built since, with both.
 1. **The done screen** (after any export): the two buttons, Back to Squish and
    Back to editor, side by side in a bar pinned to the bottom, visible without
    scrolling; the tick painted on with a brush a moment after the circle pops;
@@ -24,7 +28,13 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
    tour` on the perf build - "open Effects" and "Effects sheet scroll" were
    18 ms of GPU a frame at 90 Hz; the tiles now share one clock stepping every
    50 ms. Check the tiles still read as moving.
-6. **Shrink-to-fit labels in one step** (C7, FitText): open Text - the title
+6. **From the review of 28 Oct** (built, not seen): a pinned line grown with its
+   track has its box and handles round the grown letters, and a tap on its
+   outer part selects it; a line pinned in a draft from before 28 Oct keeps its
+   size; a bent line paged by a word style colours the right words, and an
+   emoji after a word does not shift the colours; an Arabic bent line with a
+   word colour is drawn whole, in order.
+7. **Shrink-to-fit labels in one step** (C7, FitText): open Text - the title
    tiles' samples fit their tiles at once (no visible shrinking), and every
    other FitText label (tool tiles, chips) still fits; `bench.sh tour`'s
    "open Text" was app p90 27 ms.

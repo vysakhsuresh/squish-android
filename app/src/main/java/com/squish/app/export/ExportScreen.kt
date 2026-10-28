@@ -143,7 +143,34 @@ fun ExportScreen(
     val fileUri = record?.mediaUri ?: Uri.fromFile(File(resultPath))
     var notice by remember { mutableStateOf<String?>(null) }
 
-    Scaffold(containerColor = SquishColors.Background) { padding ->
+    Scaffold(
+        containerColor = SquishColors.Background,
+        // The ways off this screen, held at the bottom where the thumb is. In the
+        // scrolling column they were the last thing on it, and on a phone the
+        // second - Back to Squish - sat under the navigation bar until the page
+        // was dragged up (seen on the moto, 28 Oct).
+        bottomBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(SquishColors.Background)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                SquishOutlinedButton(
+                    text = "Back to Squish",
+                    modifier = Modifier.weight(1f),
+                    onClick = onDone
+                )
+                SquishPrimaryButton(
+                    text = backLabel,
+                    modifier = Modifier.weight(1f),
+                    onClick = onBack
+                )
+            }
+        }
+    ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             Column(
                 modifier = Modifier
@@ -171,12 +198,7 @@ fun ExportScreen(
                         .background(accentSweep(SquishColors.Cyan)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Filled.CheckCircle,
-                        contentDescription = null,
-                        tint = SquishColors.Background,
-                        modifier = Modifier.size(40.dp)
-                    )
+                    BrushTick(modifier = Modifier.size(46.dp))
                 }
 
                 Text(
@@ -211,19 +233,7 @@ fun ExportScreen(
                     onNotice = { notice = it }
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
-                SquishPrimaryButton(
-                    text = backLabel,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onBack
-                )
-                SquishOutlinedButton(
-                    text = "Back to Squish",
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onDone
-                )
-                // No floating back orb: it sat on the share row, and the way back
-                // is the button just above.
+                // The way back is in the bar at the bottom.
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }

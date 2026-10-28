@@ -262,7 +262,7 @@ object CaptionRenderer {
             }
         }
         // A line bent into an arc is laid along a circle instead (EDGE_PLAN E3).
-        if (item.arc != 0f) return paintArc(item, shown, textSize, paint)
+        if (item.arc != 0f) return paintArc(item, shown, textSize, paint, firstWord = words?.from ?: 0)
 
         val fullLayout = layout(item, sizing, paint, maxWidth, sizing, grow)
         val shownLayout = layout(item, filled, paint, fullLayout.width, sizing, grow)
@@ -507,7 +507,7 @@ object CaptionRenderer {
      * same order. One line only - a bend over wrapped lines would bend each
      * round a different circle - and the word styles stay with straight lines.
      */
-    private fun paintArc(item: TextOverlayItem, shown: String, textSize: Float, paint: TextPaint): Painted {
+    private fun paintArc(item: TextOverlayItem, shown: String, textSize: Float, paint: TextPaint, firstWord: Int = 0): Painted {
         val bend = item.arc.coerceIn(-1f, 1f)
         paint.textAlign = Paint.Align.LEFT
         // The whole line's length, so revealed letters do not re-bend it.
@@ -577,16 +577,27 @@ object CaptionRenderer {
         }
         if (item.glow) paint.color = lighten(item.colorArgb)
         val fill = gradientFor(item, width.toFloat(), height.toFloat())
-        if (fill != null || item.wordColors.isEmpty()) {
+        // Right to left, a word drawn at its offset from the start would land in
+        // reverse order; such a line is drawn whole, in the line's colour.
+        val rtl = java.text.Bidi.requiresBidi(shown.toCharArray(), 0, shown.length)
+        if (fill != null || item.wordColors.isEmpty() || rtl) {
             fill?.let { paint.shader = it }
             canvas.drawTextOnPath(shown, path, along, 0f, paint)
         } else {
             // Each word in its own colour, as a straight line's spans give it: text
             // on a path takes no spans, and a bent line lost every word's colour
-            // (28 Oct, the moto: "good" picked green stayed the line's pink).
-            Regex("\\S+").findAll(shown).forEachIndexed { i, word ->
-                val own = TextPaint(paint).apply { item.wordColors[i]?.let { color = it } }
-                canvas.drawTextOnPath(word.value, path, along + paint.measureText(shown, 0, word.range.first), 0f, own)
+            // (28 Oct, the moto: "good" picked green stayed the line's pink). Split
+            // as everything else splits a line (CaptionWords.words, on spaces), and
+            // counted from the page's first word, as the straight line's spans are -
+            // a regex's \S+ also broke at a no-break space, which joins a word to
+            // its emoji, and every colour after it shifted (review, 28 Oct).
+            var at = 0
+            CaptionWords.words(shown).forEachIndexed { i, word ->
+                if (word.isNotEmpty()) {
+                    val own = TextPaint(paint).apply { item.wordColors[firstWord + i]?.let { color = it } }
+                    canvas.drawTextOnPath(word, path, along + paint.measureText(shown, 0, at), 0f, own)
+                }
+                at += word.length + 1
             }
         }
 

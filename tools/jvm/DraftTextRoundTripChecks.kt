@@ -119,7 +119,8 @@ private fun wildLine(): TextOverlayItem = TextOverlayItem(
             TrackSample(600L, 0.45f, 0.65f, 1.2f, 0.75f)
         )
     ),
-    stripRow = 3
+    stripRow = 3,
+    trackGrows = true
 )
 
 /** A line with nothing set on it. Also the fixture's own yardstick. */

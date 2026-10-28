@@ -225,7 +225,14 @@ class ExportService : Service() {
          * as it is read, so the dashboard says it a single time. Null when the
          * last export ended, is still running here, or is a week old.
          */
-        fun takeInterrupted(context: Context): ExportEntry? {
+        fun takeInterrupted(context: Context): ExportEntry? =
+            // On the journal's own thread, after any write queued before it: read
+            // beside a begin()'s write, it could see the file truncated, take that
+            // for nothing and delete the running export's entry (review, 28 Oct).
+            // Blocking; called off the main thread (HomeScreen).
+            journalling.submit(java.util.concurrent.Callable { readInterrupted(context) }).get()
+
+        private fun readInterrupted(context: Context): ExportEntry? {
             val file = journal(context)
             val entry = runCatching { if (file.exists()) ExportJournal.decode(file.readText()) else null }.getOrNull()
             if (entry == null) { runCatching { file.delete() }; return null }

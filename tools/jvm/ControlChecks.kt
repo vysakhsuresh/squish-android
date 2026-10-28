@@ -1119,10 +1119,21 @@ fun main() {
         check(Regex(Regex.escape("TypedEcho()")).findAll(text).count() >= 2, "a text field in TextSheet no longer goes through TypedEcho")
     }
     run {
+        // The done screen's ways back are pinned at the bottom, and its tick is
+        // painted. Back to Squish sat under the navigation bar until the page was
+        // dragged (the owner, 28 Oct) - and the first fix for it never reached
+        // the file while its commit said it had, which nothing caught.
+        val done = read("$SRC/export/ExportScreen.kt")
+        check(Regex("""bottomBar = \{[\s\S]{0,900}?"Back to Squish"""").containsMatchIn(done), "the done screen's buttons are no longer pinned in its bottom bar")
+        check(done.contains("BrushTick(modifier = Modifier.size(") && !done.contains("Icons.Filled.CheckCircle,"), "the done screen's tick is not the painted one")
+    }
+    run {
         // A bent line keeps each word's colour: text drawn on a path takes no
         // spans, and "good" picked green on an arched line stayed pink (28 Oct).
         val renderer = read("$SRC/media/CaptionRenderer.kt")
-        check(Regex("""item\.wordColors\[i\][\s\S]{0,200}?drawTextOnPath\(word\.value""").containsMatchIn(renderer),
+        check(Regex("""item\.wordColors\[firstWord \+ i\][\s\S]{0,200}?drawTextOnPath\(word, path""").containsMatchIn(renderer) &&
+            renderer.contains("paintArc(item, shown, textSize, paint, firstWord = words?.from ?: 0)") &&
+            renderer.contains("CaptionWords.words(shown).forEachIndexed { i, word ->"),
             "a bent line draws its words in one colour - CaptionRenderer's path text no longer takes wordColors")
     }
     run {
