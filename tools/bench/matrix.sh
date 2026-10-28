@@ -68,6 +68,25 @@ for f in "$DIR"/*; do
     sleep 3; set -- $xy; sh_ input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )); sleep 2
     play="played $(sh_ logcat -d -s SquishPerf:I | grep -oE 'pause [0-9]+ ms at=[0-9]+' | tail -1 | grep -oE 'at=[0-9]+')"
   fi
+  # A scrub along the strip and a cut where it stops (B1: "scrubs, cuts"), so
+  # the export below is of the cut edit. The strip is dragged on the main
+  # track's row - the row the "Mute audio" button heads.
+  cut="not cut"
+  # A moment for the screen to settle: an HDR file's preview copy animates its
+  # notice while it is made, and uiautomator cannot read a screen that never idles.
+  for i in 1 2 3 4 5 6; do dump; grep -q 'Mute audio' "$WORK/ui.txt" && break; sleep 3; done
+  mute=$(grep -E '(text|content-desc)="Mute audio"' "$WORK/ui.txt" | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | head -1 | grep -oE '[0-9]+' | tr '\n' ' ')
+  if [ -n "$mute" ]; then
+    set -- $mute; row=$(( ($2 + $4) / 2 )); wpx=$(sh_ wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f1)
+    sh_ input swipe $(( wpx * 62 / 100 )) $row $(( wpx * 52 / 100 )) $row 600; sleep 1.5
+    dump
+    at=$(grep -oE 'content-desc="Playhead at [^"]*"' "$WORK/ui.txt" | head -1 | sed 's/.*Playhead at //; s/"$//')
+    tap_text "Split at the playhead" || true; sleep 1.5
+    dump
+    clips=$(grep -oE 'text="[0-9]+ clips? · [^"]*"' "$WORK/ui.txt" | head -1 | sed 's/text="//; s/ · .*//')
+    crash=$(( crash + $(sh_ logcat -d | grep -cE "FATAL EXCEPTION|ANR in $PKG") ))
+    cut="scrubbed to ${at:-?}, cut there: ${clips:-?}"
+  fi
   exported="no export"
   if tap_text "Export"; then
     sleep 2; tap_text "480p" || true; sleep 1; sh_ logcat -c
@@ -86,7 +105,7 @@ for f in "$DIR"/*; do
       fi
     fi
   fi
-  say "$name: ${first:-NO FIRST FRAME within 90 s}; crashes $crash; $play; $exported"
+  say "$name: ${first:-NO FIRST FRAME within 90 s}; crashes $crash; $play; $cut; $exported"
   sh_ content delete --uri "content://media/external/video/media/$id"
 done
 

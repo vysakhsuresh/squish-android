@@ -52,7 +52,7 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 | item | what is left to see |
 |---|---|
 | A1 benchmarks | re-baseline after tonight's changes (bench.sh all on the perf build) |
-| B1 formats | HDR10, HLG and 10-bit HEVC done through matrix.sh (29 Oct); left: Dolby Vision (no test file), scrub and cut per file |
+| B1 formats | HDR10, HLG and 10-bit HEVC done through matrix.sh (29 Oct). matrix.sh now scrubs and cuts each file before its export (seen on a plain file: scrubbed to 0:04, cut, 2 clips, exported); on the HDR files uiautomator never read the screen while their preview copy was made, so their cut is unread. Left: Dolby Vision (no test file), the cut on the HDR files |
 | B3 A/V sync | the song sits a steady 67-106 ms behind the picture in the preview - needs an ear to tell a real lag from reporting |
 | B4 HDR | Keep HDR on a phone with an HDR encoder (the S23); Dolby Vision |
 | C1 export speed | release build re-timed 29 Oct: 60 s at 1080p in 43.7 s (1.37x), the same as A1 - the encoder is the limit; InShot on the same edit not compared |
