@@ -157,6 +157,29 @@ of 27 ms opening Text. The Effects sheet's tiles, each its effect drawn live,
 hold the GPU at 18 ms a frame for as long as it is open. Look and Export were
 off the toolbar's screen and the tour skipped them.
 
+## Re-baseline - 2d8e488, moto g84 5G, perf build, 29 October 2026, 02:10-02:45
+
+`bench.sh measure` on the release-speed build, then cold start re-run twice.
+
+| Measure | Result | Against 24 Oct |
+|---|---|---|
+| cold start | 331 ms and 374 ms (432 on the first run after the install) | 383 |
+| project open | editor shown 1130 ms on the first run after the install; the 200-shot edit's editor showed in 173 ms on this build earlier the same night | 195 |
+| scrub (10 swipes) | 688 frames; **13.1% janky**; median 11 ms, p90 21 ms, p95 26 ms | 40.2%; 22 / 48 / 61 |
+| playback, 0 overlays | 0 dropped; 26.7% janky, median 12 ms, p90 16 ms | 23.6%; 15 / 22 |
+| playback, 1 overlay | 0 dropped; 31.7% janky, median 12 ms, p90 17 ms | 20.4%; 15 / 23 |
+| playback, 3 overlays | 0 dropped; 24.8% janky, median 11 ms, p90 15 ms | 19.8%; 14 / 23 |
+| export 1080p30 | 43.7 s for 60 s, 1.37x; 1800 frames, 33.33 ms x1799 | the same |
+| quality | not read: bench.sh's frames.ps1 call failed on its path | SSIM 0.864 |
+| import, pick to playable | activity 450 ms; first frame 948 ms | not measured |
+
+The scrub went from 40% of frames late to 13% (C3's work and tonight's kept
+timeline lists). Playback's median and p90 are down too, while its janky share
+is about level - at 30 fps footage on a 90 Hz panel most "janky" frames are
+the video's own cadence. On the 200-shot edit (`edge.sh many 200`, zoomed out),
+scrubbing went from a median 26 ms of app work a frame (p90 62) to 9-11 (p90
+24-26): TimelineState's lists kept per clip list, then clips under 8 dp drawn
+as bars (ThinClips). Fifty photos added: 161 s, then 66 s (C6, still slow).
 ## Competitors
 
 Not measured: neither InShot nor CapCut is installed on the moto (checked 24
