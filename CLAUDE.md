@@ -263,6 +263,20 @@ not here.
 Everything in this list is reasoned-about, not seen. Anyone who reaches a device
 should work through it and then delete what holds up.
 
+- **28 October, the morning with the phone.** Seen on the moto: F7's Tap a
+  thing had never cut anything out (MagicTouch reads its point in pixels -
+  see Conventions) and now cuts out and follows a moving card, preview and
+  file; F8's tracker follows a growing card to within 2% and a pinned line
+  grows with it, and over a second's gap the card is lost and found again
+  in place; F4 (animated stickers, a recoloured price tag, a GIF) and F2's
+  61 effects in the preview as in a file; D6's sliders live (bench.sh's
+  sliders step had never undone a drag - Bench plain restored); C3's
+  accessibility change measured slower and removed; Stickers' 155 ms open
+  frame fixed. Built and installed, not yet looked at: the done screen's
+  pinned buttons, brush tick and playful share tiles; a word colour on a bent
+  line. **`docs/PENDING_TESTS.md` is the list of what is left, in order** -
+  start there when the phone is back.
+
 - **27-28 October, the night with the phone.** Seen on the moto: Edit all
   typed into fast keeps every letter and one Undo takes the row back; F1's
   small fast dot first came out torn (one dot, its middle in pieces, grey
@@ -1703,6 +1717,18 @@ should work through it and then delete what holds up.
   there that is mutated after it is handed on, and never mutate a list you
   have passed down: a composable given the same list will skip, and show the
   old content.
+- **MediaPipe 0.10.14's InteractiveSegmenter reads its NormalizedKeypoint in
+  the frame's pixels**, whatever the class is called. Given fractions, every
+  tap is the top-left pixel and the mask comes back empty - F7 shipped that
+  way for three days. `debug/MagicProbeActivity` logs every mask's range for
+  a tap, on a red square and on a file's first frame; run it before
+  suspecting the model.
+- **The tracker judges size against the patch as first selected**, sampled
+  between pixels, each size at its best place within two pixels, and only on
+  a sure match. Against the learned template a slow growth is learned in
+  before a size step can win, and rounded sampling makes neighbouring sizes
+  score alike. A patch that is only stripes cannot find its size again after
+  a gap; that is a limit, not a bug to chase.
 - **Every item on a composited roll must leave its chain at one size.**
   Media3 1.11.1's `TexturePool.ensureConfigured` (under
   FinalShaderProgramWrapper) deletes and remakes all a roll's output
