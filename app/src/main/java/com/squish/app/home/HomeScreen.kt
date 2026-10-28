@@ -159,7 +159,7 @@ fun HomeScreen(
     }
 
     // What is picked lands as one project, the picker's order kept.
-    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
+    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(SYSTEM_MAX_PICK)) { uris ->
         uris.forEach { context.keepReadAccess(it) }
         viewModel.startProject(uris, onOpenProject)
     }
@@ -893,4 +893,7 @@ private val TILE_MIN_HEIGHT = 156.dp
 private val SECTION_GAP = 10.dp
 
 /** As many as the editor's own picker takes. */
-private const val MAX_PICK = 30
+private const val MAX_PICK = 100
+
+/** The system photo picker's own cap: it refuses a number past MediaStore.getPickImagesMaxLimit, and says its limit itself. */
+private const val SYSTEM_MAX_PICK = 30

@@ -67,6 +67,17 @@ fun main() {
     check("dragged back in, a clip is never shorter than the least", backIn.sourceOutMs == maxOf(3_000L, MIN_CLIP_MS))
     check("after a longer rendering lands, the tail is within its file", !StillRules.outrunsFile(freed.copy(sourceDurationMs = StillRules.renderLengthFor(freed.sourceOutMs, RENDERED))))
 
+    // The first rendering is what the photo lands at and a little more, not ten
+    // seconds whatever it lands at: fifty photos took 161 s to add on the moto
+    // (28 Oct), each a 10 s, 30 fps clip for a 3 s slide.
+    for (landing in listOf(2_000L, 3_000L, 4_000L, 5_000L, 8_000L)) {
+        val first = StillRules.firstRenderMs(landing)
+        check("a $landing ms photo is rendered $first ms - not past where it lands with room to nudge", first >= landing + 1_000L)
+        check("a $landing ms photo is rendered $first ms - more than it needs", first <= landing + 2_000L)
+    }
+    check("a 3 s photo is still rendered ten seconds", StillRules.firstRenderMs(3_000L) < 10_000L)
+    check("a photo is rendered shorter than the least a clip may be", StillRules.firstRenderMs(0L) >= MIN_CLIP_MS)
+
     if (failures.isEmpty()) {
         println("PASS - a photo's length on the strip holds: the ceiling, what is owed a longer rendering, and how long it is made")
     } else {

@@ -39,7 +39,7 @@ import kotlin.coroutines.resume
  * phone, and from then on it is a clip like any other - trimmed, cut, graded,
  * dissolved. A blank is the same thing made from a plain black frame.
  *
- * Each is rendered [RENDER_MS] long and placed at [DEFAULT_MS], so there is room
+ * Each is rendered at least [RENDER_MS] long and placed at [DEFAULT_MS], so there is room
  * to drag its end out, as in other editors, without making it again. Kept under
  * files/, not the cache: a draft refers to the file, and Android empties caches.
  *
@@ -52,8 +52,13 @@ object StillClips {
     /** How long a photo or blank lands on the timeline. */
     const val DEFAULT_MS = 3_000L
 
-    /** How long each is rendered - the most its end can be dragged out to. */
-    const val RENDER_MS = 10_000L
+    /**
+     * The least each is rendered. A photo added from the picker is rendered to
+     * where it lands and a little more (StillRules.firstRenderMs); a tail let go
+     * past the end is rendered again, longer. It was ten seconds for everything,
+     * and fifty photos took 161 s to add (28 Oct, the moto).
+     */
+    const val RENDER_MS = 5_000L
 
     /** Tall enough for a phone-sized export, small enough to render in a few seconds. */
     private const val MAX_SHORT_SIDE = 1080

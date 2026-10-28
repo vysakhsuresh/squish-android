@@ -803,7 +803,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             try {
                 fun one(uri: Uri): suspend () -> StillSource? = {
                     if (isPhoto[uri] == true) {
-                        StillClips.fromImage(app, uri)?.let { StillSource(it, displayNameOf(uri) ?: "Photo") }
+                        StillClips.fromImage(app, uri, minMs = com.squish.app.editor.StillRules.firstRenderMs(Preferences.stillMs(app)))?.let { StillSource(it, displayNameOf(uri) ?: "Photo") }
                     } else {
                         StillSource(uri, null)
                     }

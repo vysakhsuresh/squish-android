@@ -320,7 +320,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                         // its file is the render, so it needs no copy at all.
                         val uri = picked
                         val source = if (pictures[i]) {
-                            val still = renders.withPermit { StillClips.fromImage(app, uri) }
+                            val still = renders.withPermit { StillClips.fromImage(app, uri, minMs = StillRules.firstRenderMs(stillMs)) }
                             _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
                             still?.let { Triple(it, name ?: displayNameOf(uri) ?: "Photo", true) }
                         } else {
@@ -1657,7 +1657,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             val replacement = if (image) {
                 _state.update { it.copy(preparingStills = it.preparingStills + 1) }
                 try {
-                    StillClips.fromImage(app, picked)
+                    // As long as the longest window it goes under: a still shorter than a
+                    // clip's window cuts the clip to fit (relinked, below).
+                    val longest = _state.value.videoClips.filter { it.uri == missing }.maxOfOrNull { it.sourceOutMs } ?: 0L
+                    StillClips.fromImage(app, picked, minMs = StillRules.firstRenderMs(longest))
                 } finally {
                     _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
                 }

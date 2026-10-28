@@ -25,6 +25,20 @@ object StillRules {
     /** The rendering grows by half-minutes, from the rendered still's own length. */
     const val STEP_MS = 30_000L
 
+    /** Past where a photo lands, how much its first rendering covers: room to nudge its end out. */
+    const val FIRST_HEADROOM_MS = 2_000L
+
+    /**
+     * How long a photo's clip is first rendered, landing at [landingMs]: that and
+     * [FIRST_HEADROOM_MS]. It was ten seconds whatever the photo landed at, and
+     * fifty photos took 161 s to add on the moto (28 Oct) - every frame of a
+     * still is encoded, and a 3 s slide had 300 of them. A tail let go past the
+     * rendering's end is rendered again ([renderLengthFor]), as it always was
+     * past ten seconds.
+     */
+    fun firstRenderMs(landingMs: Long): Long =
+        (landingMs.coerceAtLeast(0L) + FIRST_HEADROOM_MS).coerceAtLeast(com.squish.app.timeline.MIN_CLIP_MS)
+
     /**
      * The length to render a photo's clip at so it covers a tail let go at
      * [sourceOutMs]: the next whole step at or past it, never shorter than

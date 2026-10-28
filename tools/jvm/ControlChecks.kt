@@ -1145,6 +1145,13 @@ fun main() {
             "a bent line's arc is measured without what is drawn on it - an emoji after a word pushes the last letters off the path")
     }
     run {
+        // A pick that is full says so: the media grid stopped at 30 of 50 photos
+        // and a tap past it did nothing, with no word why (28 Oct, the moto).
+        val sheet = read("$SRC/ui/components/MediaLibrarySheet.kt")
+        check(sheet.contains("picked.size >= maxPick ->") && sheet.contains("the most one go adds"),
+            "the media grid stops taking picks without saying so")
+    }
+    run {
         // Clips a few dp wide are bars in their lane's canvas, and a tap on one
         // still selects it: zoomed out over 200 shots, building their ClipViews
         // as they scrolled in was most of the scrub's frame (28 Oct, the moto).

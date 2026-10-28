@@ -163,6 +163,9 @@ fun MediaLibrarySheet(
                         when {
                             access == MediaLibrary.Access.None -> "Needs access to the phone's photos and videos"
                             count == null -> "Reading the phone's library…"
+                            // Full: a tap past the cap does nothing, so the header says why
+                            // (28 Oct: the 31st of 50 photos was tapped and nothing happened).
+                            maxPick > 1 && picked.size >= maxPick -> "$maxPick picked - the most one go adds"
                             access == MediaLibrary.Access.Partial -> "Showing the $count you selected"
                             else -> if (count == 1) "1 item, newest first" else "$count items, newest first"
                         },

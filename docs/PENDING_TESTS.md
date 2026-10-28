@@ -58,7 +58,7 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 | C1 export speed | a release-build timing; InShot on the same edit for comparison |
 | C2 smart render | copying stretches of a several-shot edit (not built - Media3 limit) |
 | C5 proxies | a real 1080p60, 10-bit or HEVC file taking the Auto proxy path |
-| C6 snappy | 50 photos added (`edge.sh photos 50`); the 200-shot scrub (above) |
+| C6 snappy | FOUND: 50 photos took 161 s to add (each a 10 s, 30 fps clip for a 3 s slide) and the media grid stopped at 30 picks without a word. Now: renders the landing length + 2 s (StillRules.firstRenderMs), the grid takes 100 and says when full; a new project of 50 photos opens in 87 s - still slow. Next: open at once and render photos behind the editor |
 | C7 smoothness | the whole tour is measured now (bench.sh found Looks under its real name); GPU-bound against 11.1 ms p90 and not met |
 | D6 live sliders | Filters (under Vivid) and Mask (once added) now driven: Strength, Across, Up/down all live; the rest of Mask's sliders sit below where the step scrolls |
 | E1 captions | Malayalam accuracy past the small Whisper model |

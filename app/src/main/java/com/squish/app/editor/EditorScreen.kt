@@ -347,7 +347,7 @@ fun EditorScreen(
     // Several at once, added in the order picked - one video at a time made
     // building an edit from a handful of shots a chore. In at the playhead, where
     // the strip is looking - see insertSourcesAtPlayhead.
-    val pickExtraClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
+    val pickExtraClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(SYSTEM_MAX_PICK)) { uris ->
         uris.forEach { context.keepReadAccess(it) }
         viewModel.insertWhenOpened(uris)
     }
@@ -358,7 +358,7 @@ fun EditorScreen(
     val addVideos = { library = LibraryUse.Main }
     // Photos and videos, several at once: a logo, a cut-out and a reaction clip
     // are all overlays. It was one video at a time.
-    val pickOverlayClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
+    val pickOverlayClips = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(SYSTEM_MAX_PICK)) { uris ->
         uris.forEach { context.keepReadAccess(it) }
         viewModel.addOverlaysWhenOpened(uris)
     }
@@ -1471,8 +1471,11 @@ private fun RelinkCard(
     }
 }
 
-/** The most videos one pick adds. The picker needs a number; this is well past a normal batch. */
-private const val MAX_PICK = 30
+/** The most one pick adds. The picker needs a number; 30 stopped a batch of 50 photos without a word (28 Oct). */
+private const val MAX_PICK = 100
+
+/** The system photo picker's own cap: it refuses a number past MediaStore.getPickImagesMaxLimit, and says its limit itself. */
+private const val SYSTEM_MAX_PICK = 30
 
 /** How far below its place a sheet starts as it opens, and how faint: it rises the rest of the way (C7). */
 private const val SHEET_RISE_DP = 36f
