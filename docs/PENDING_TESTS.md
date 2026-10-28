@@ -52,10 +52,10 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 | item | what is left to see |
 |---|---|
 | A1 benchmarks | re-baseline after tonight's changes (bench.sh all on the perf build) |
-| B1 formats | the HEVC 10-bit, HDR10, HLG and Dolby Vision files through tools/bench/matrix.sh; scrub and cut per file; colour read off each export |
+| B1 formats | HDR10, HLG and 10-bit HEVC done through matrix.sh (29 Oct); left: Dolby Vision (no test file), scrub and cut per file |
 | B3 A/V sync | the song sits a steady 67-106 ms behind the picture in the preview - needs an ear to tell a real lag from reporting |
 | B4 HDR | Keep HDR on a phone with an HDR encoder (the S23); Dolby Vision |
-| C1 export speed | a release-build timing; InShot on the same edit for comparison |
+| C1 export speed | release build re-timed 29 Oct: 60 s at 1080p in 43.7 s (1.37x), the same as A1 - the encoder is the limit; InShot on the same edit not compared |
 | C2 smart render | copying stretches of a several-shot edit (not built - Media3 limit) |
 | C5 proxies | a real 1080p60, 10-bit or HEVC file taking the Auto proxy path |
 | C6 snappy | FOUND: 50 photos took 161 s to add (each a 10 s, 30 fps clip for a 3 s slide) and the media grid stopped at 30 picks without a word. Now: renders the landing length + 2 s (StillRules.firstRenderMs), the grid takes 100 and says when full; a new project of 50 photos opens in 66 s (renders 3 at a time, 4 s each) - still slow, about 1.3 s a photo. Next: open at once and render photos behind the editor |
