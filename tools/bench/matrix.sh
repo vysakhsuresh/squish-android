@@ -9,8 +9,8 @@
 # three seconds, exported at 480p, the export probed (tools/jvm/Mp4Probe.kt)
 # and, for the sync clips, the source and the export read by
 # debug/SyncProbeActivity. A screenshot of the editor is kept for each. Every
-# file, export and project it makes is removed at the end, the access it
-# grants revoked. One line per file in build/matrix/report.txt.
+# file, export and project it makes is removed at the end, and the access it
+# grants taken back only if it was not there before. One line per file in build/matrix/report.txt.
 set -u
 SERIAL=${1:?serial}; DIR=${2:?matrix dir}; ONLY=${3:-}
 ADB="C:/Users/vysak/AppData/Local/Android/Sdk/platform-tools/adb -s $SERIAL"
@@ -48,6 +48,10 @@ free
 say "== footage matrix on $(sh_ getprop ro.product.model | tr -d '\r') at $(git -C "$ROOT" rev-parse --short HEAD), $(date '+%Y-%m-%d %H:%M')"
 PRE=$(sh_ run-as $PKG ls files/projects | grep -oE '^j[0-9a-f]+' | sort -u | tr '\n' ' ')
 sh_ mkdir -p /sdcard/Movies/SquishMatrix
+# Granted for the run, and taken back after only if it was not granted before:
+# a revoke at the end took the owner's own grant with it, and every project
+# on the phone then said its clips could not be opened (29 Oct).
+HAD_VIDEO=$(sh_ dumpsys package $PKG | grep -c "READ_MEDIA_VIDEO: granted=true")
 sh_ pm grant $PKG android.permission.READ_MEDIA_VIDEO
 
 for f in "$DIR"/*; do
@@ -118,5 +122,5 @@ for slot in $(sh_ run-as $PKG ls files/projects | grep -oE '^j[0-9a-f]+' | sort 
   for s in json bak.json meta.json pending.snap.json snap.json; do sh_ run-as $PKG rm -f "files/projects/$slot.$s" 2>/dev/null; done
 done
 sh_ rmdir /sdcard/Movies/SquishMatrix 2>/dev/null
-sh_ pm revoke $PKG android.permission.READ_MEDIA_VIDEO
+[ "$HAD_VIDEO" = "0" ] && sh_ pm revoke $PKG android.permission.READ_MEDIA_VIDEO
 say "== done; screenshots and exports in build/matrix"

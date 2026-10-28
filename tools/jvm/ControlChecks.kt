@@ -1152,6 +1152,12 @@ fun main() {
         val matrix = java.io.File("tools/bench/matrix.sh").readText()
         check(bench.contains("[ \"\$id\" != \"\$before\" ]") && matrix.contains("[ \"\$xid\" != \"\$before\" ]"),
             "a bench script can read and delete a gallery file its own render did not make")
+        // Nor takes back a permission it cannot tell is its own: the matrix's
+        // revoke at the end took the owner's grant, and every project then
+        // said its clips could not be opened (29 Oct).
+        val edge = java.io.File("tools/bench/edge.sh").readText()
+        check(listOf(bench, matrix, edge).none { Regex("(?m)^\\s*sh_ pm revoke").containsMatchIn(it) },
+            "a bench script revokes a media permission it may not have granted")
     }
     run {
         // A pick that is full says so: the media grid stopped at 30 of 50 photos

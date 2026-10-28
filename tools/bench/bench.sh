@@ -410,8 +410,9 @@ teardown() {
     local id; id=$(media_id "$(basename "$f")")
     [ -n "$id" ] && sh_ content delete --uri "content://media/external/video/media/$id"
   done
-  sh_ pm revoke $PKG android.permission.READ_MEDIA_VIDEO
-  sh_ pm revoke $PKG android.permission.READ_MEDIA_IMAGES
+  # Not revoked: setup cannot tell its own grant from the owner's, and a
+  # revoke took the owner's with it - every project then said its clips could
+  # not be opened (29 Oct, the matrix runner).
   : > "$STATE"
   say "teardown done"
 }
