@@ -320,7 +320,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                         // its file is the render, so it needs no copy at all.
                         val uri = picked
                         val source = if (pictures[i]) {
-                            val still = renders.withPermit { StillClips.fromImage(app, uri, minMs = StillRules.firstRenderMs(stillMs)) }
+                            val still = renders.withPermit { StillClips.fromImage(app, uri, exactMs = StillRules.QUICK_MS) }
                             _state.update { it.copy(preparingStills = (it.preparingStills - 1).coerceAtLeast(0)) }
                             still?.let { Triple(it, name ?: displayNameOf(uri) ?: "Photo", true) }
                         } else {
@@ -352,7 +352,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         var cursor = 0L
         val clips = probed.map { (source, meta) ->
             val (uri, label, still) = source
-            val placed = if (still) minOf(stillMs, meta.durationMs) else meta.durationMs
+            // A photo at its full length on its quick rendering, lengthened behind
+            // the editor once it is open (ClipEdits.lengthenStills).
+            val placed = if (still) stillMs else meta.durationMs
             Clip(
                 kind = ClipKind.Video,
                 uri = uri,
@@ -411,6 +413,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(failure = SquishError.FileUnreadable()) }
         }
         markOpened()
+        this.clips.lengthenStills()
         val files = clips.mapNotNull { it.uri }.distinct()
         files.filterNot(StillClips::isStill).forEach(::checkDecodable)
         ensureProxies(files)
@@ -1247,6 +1250,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         ExportService.begin(getApplication(), title, current.projectId)
 
         exportJob = viewModelScope.launch {
+            // Photos still on their quick renderings first (ClipEdits.lengthenStills),
+            // and the edit read again after: where a photo goes in as its own clip
+            // rather than its picture, a quick one would run out of frames.
+            if (clips.awaitStills()) current = _state.value
             // The edit as it is goes to disk before the encode starts, not a tick
             // later: a long export is exactly when the app is most likely to be
             // sent to the back and killed, and a nudge made a second before
@@ -1499,6 +1506,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         confirmSourceAudio(snapshot.sourceUri)
         reportMissingMedia(snapshot.clips + snapshot.audioClips)
         markOpened()
+        // A draft saved while its photos were still on their quick renderings.
+        clips.lengthenStills()
         files.filterNot(StillClips::isStill).forEach(::checkDecodable)
         restoreAudioWaveforms(snapshot.audioClips)
     }

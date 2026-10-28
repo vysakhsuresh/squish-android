@@ -76,6 +76,19 @@ fun main() {
         check("a $landing ms photo is rendered $first ms - more than it needs", first <= landing + 1_000L)
     }
     check("a 3 s photo is still rendered ten seconds", StillRules.firstRenderMs(3_000L) < 10_000L)
+
+    // A photo landed at its length on its quick first rendering is one the
+    // lengthening behind the editor picks up, at every length Settings offers;
+    // a photo that lands on a file covering it is not.
+    for (landing in listOf(2_000L, 3_000L, 4_000L, 5_000L, 8_000L)) {
+        val quick = Clip(
+            id = "q$landing", kind = ClipKind.Video, label = "Photo", sourceInMs = 0, sourceOutMs = landing,
+            timelineStartMs = 0, sourceDurationMs = StillRules.QUICK_MS
+        )
+        check("a $landing ms photo on its quick rendering is not lengthened", StillRules.outrunning(listOf(quick)).size == 1)
+        check("a $landing ms photo is not owed a rendering that covers it", StillRules.renderLengthFor(quick.sourceOutMs, RENDERED) >= landing)
+    }
+    check("the quick rendering is not quick", StillRules.QUICK_MS * 4 <= StillRules.firstRenderMs(2_000L))
     check("a photo is rendered shorter than the least a clip may be", StillRules.firstRenderMs(0L) >= MIN_CLIP_MS)
 
     if (failures.isEmpty()) {

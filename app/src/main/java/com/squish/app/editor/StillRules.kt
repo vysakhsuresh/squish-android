@@ -25,6 +25,18 @@ object StillRules {
     /** The rendering grows by half-minutes, from the rendered still's own length. */
     const val STEP_MS = 30_000L
 
+    /**
+     * How long a picked photo is first rendered: enough for the strip and the
+     * preview to have a file, and a tenth of what it costs to cover the photo.
+     * It lands at its full length on top of that file - outrunning it, which
+     * the preview shows as the picture held - and is lengthened behind the
+     * editor, one photo at a time (ClipEdits.lengthenStills). The phone's
+     * encoder takes one still at a time whatever is asked of it: three started
+     * together, two waited eight seconds for the third (29 Oct, the moto), and
+     * a still's cost is its frames, 1.6 s for four seconds of them.
+     */
+    const val QUICK_MS = 500L
+
     /** Past where a photo lands, how much its first rendering covers: room to nudge its end out. */
     const val FIRST_HEADROOM_MS = 1_000L
 

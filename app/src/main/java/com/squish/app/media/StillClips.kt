@@ -26,6 +26,7 @@ import com.google.common.collect.ImmutableList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.coroutines.resume
@@ -81,7 +82,17 @@ object StillClips {
      * clip is what the strip and the preview play, the picture is what the
      * export writes.
      */
-    suspend fun fromImage(context: Context, image: Uri, minMs: Long = RENDER_MS): Uri? {
+    suspend fun fromImage(
+        context: Context,
+        image: Uri,
+        minMs: Long = RENDER_MS,
+        /**
+         * Rendered exactly this long instead, under [RENDER_MS] if asked: the
+         * quick first rendering of a photo that is lengthened behind the editor
+         * (StillRules.QUICK_MS).
+         */
+        exactMs: Long? = null
+    ): Uri? {
         val name = uniqueName("photo")
         // A picture Android's decoders refuse - a camera RAW, a TIFF, a PSD, an
         // SVG - is decoded by the app's own (AvImages) into a file they read,
@@ -90,7 +101,7 @@ object StillClips {
             com.squish.app.av.AvImages.readableFile(context, image, dir(context), name, MAX_EXPORT_SIDE)
         } ?: return null
         try {
-            val clip = render(context, readable, name, maxOf(RENDER_MS, minMs)) ?: return null
+            val clip = render(context, readable, name, exactMs ?: maxOf(RENDER_MS, minMs)) ?: return null
             withContext(Dispatchers.IO) { keepOriginal(context, readable, name) }
             return clip
         } finally {
@@ -337,7 +348,7 @@ object StillClips {
      * A plain black clip, [width] by [height] - the edit's own frame shape, so it
      * sits in the timeline without bars.
      */
-    suspend fun blank(context: Context, width: Int, height: Int): Uri? {
+    suspend fun blank(context: Context, width: Int, height: Int, minMs: Long = RENDER_MS): Uri? {
         val (w, h) = fit(width.takeIf { it > 0 } ?: 1080, height.takeIf { it > 0 } ?: 1920)
         val frame = File(dir(context), "blank_${w}x$h.png")
         // Through a .part and trusted only when it has length, the way
@@ -365,7 +376,9 @@ object StillClips {
             }
             if (!made) return null
         }
-        return render(context, Uri.fromFile(frame), uniqueName("blank"), RENDER_MS)
+        // As long as it lands: a blank has no picture kept beside it, so nothing
+        // lengthens it later (ClipEdits.lengthenStills skips it).
+        return render(context, Uri.fromFile(frame), uniqueName("blank"), maxOf(RENDER_MS, minMs))
     }
 
     private suspend fun render(
@@ -387,7 +400,10 @@ object StillClips {
         // part-written megabyte stayed in files/stills/ for good, since Android
         // never clears that directory and only the Settings storage card would
         // have taken it. ReverseRenderer does the same operation this way.
-        val done = runCatching {
+        // Timed (SquishPerf "still"): what a photo costs to add is this, and how
+        // much of it is the render's setup rather than its frames decides
+        // whether a shorter first render is worth having (EDGE_PLAN C6).
+        val done = rendering.withPermit { val began = android.os.SystemClock.elapsedRealtime(); runCatching {
             withContext(Dispatchers.Main) {
                 transcode(context.applicationContext, image, partial, outW, outH, lengthMs, withSound = true) || run {
                     // The silent track is a convenience, not the point. A phone whose
@@ -400,6 +416,7 @@ object StillClips {
                 }
             }
         }.onFailure { runCatching { partial.delete() } }.getOrThrow()
+            .also { com.squish.app.av.Perf.took("still", android.os.SystemClock.elapsedRealtime() - began, "length=$lengthMs ${outW}x$outH") } }
         return if (done && partial.length() > 0 && partial.renameTo(target)) {
             Uri.fromFile(target)
         } else {
@@ -559,4 +576,11 @@ object StillClips {
 
     /** The rate most phone footage runs at, so a dissolve into a photo is as smooth as the shot beside it. */
     private const val FRAME_RATE = 30
+
+    /**
+     * At most three renders at once, whoever asks: lengthening the photos of a
+     * project starts one per clip (ClipEdits.extendStill), and fifty at once is
+     * more than a phone's encoder takes.
+     */
+    private val rendering = kotlinx.coroutines.sync.Semaphore(3)
 }

@@ -803,7 +803,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             try {
                 fun one(uri: Uri): suspend () -> StillSource? = {
                     if (isPhoto[uri] == true) {
-                        StillClips.fromImage(app, uri, minMs = com.squish.app.editor.StillRules.firstRenderMs(Preferences.stillMs(app)))?.let { StillSource(it, displayNameOf(uri) ?: "Photo") }
+                        StillClips.fromImage(app, uri, exactMs = StillRules.QUICK_MS)?.let { StillSource(it, displayNameOf(uri) ?: "Photo") }
                     } else {
                         StillSource(uri, null)
                     }
@@ -818,6 +818,8 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                     uris.map { uri -> async { gate.withPermit { one(uri)() } } }.awaitAll()
                 }
                 addSources(sources.filterNotNull(), failedAny = sources.any { it == null }, at = at)
+                // Placed on their quick renderings; made to cover their clips behind the editor.
+                lengthenStills()
                 // EDGE_PLAN C6: pick to placed, photos rendered and all.
                 com.squish.app.av.Perf.took("add-media", android.os.SystemClock.elapsedRealtime() - t0, "${uris.size} items, $photos photos")
             } finally {
@@ -843,7 +845,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
             _state.update { it.copy(preparingStills = it.preparingStills + 1) }
             try {
                 val current = _state.value
-                val made = StillClips.blank(app, current.framedWidth, current.framedHeight)
+                val made = StillClips.blank(app, current.framedWidth, current.framedHeight, minMs = StillRules.firstRenderMs(Preferences.stillMs(app)))
                 if (made == null) {
                     _state.update { it.copy(failure = SquishError.StillFailed("Blank")) }
                     return@launch
@@ -905,8 +907,16 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 _state.update { current ->
                     val base = current.videoClips.filter { it.layer == 0 }.sortedBy { it.timelineStartMs }
                     // A still lands short and can be dragged out to its full render.
-                    val lengths = probed.map { (_, meta, label) ->
-                        if (label != null) minOf(Preferences.stillMs(app), meta.durationMs) else meta.durationMs
+                    val lengths = probed.map { (uri, meta, label) ->
+                        // A photo at its full length, not its file's: it lands on its quick
+                        // rendering (StillRules.QUICK_MS) and is lengthened to cover it after,
+                        // which needs the picture kept beside it. A blank has none, so it is
+                        // rendered as long as it lands and placed within its file.
+                        when {
+                            label == null -> meta.durationMs
+                            hasPicture(uri) -> Preferences.stillMs(app)
+                            else -> minOf(Preferences.stillMs(app), meta.durationMs)
+                        }
                     }
                     val insertion = if (at == null) null
                     else EditRules.insertion(base.map { Span(it.timelineStartMs, it.timelineEndMs) }, at, lengths)
@@ -1547,11 +1557,56 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
      * and a photo cannot be dragged past [StillRules.MAX_MS].
      */
     private fun extendStill(clipId: String) {
-        val clip = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return
-        val uri = clip.uri ?: return
-        if (!hasPicture(uri) || !extending.add(clipId)) return
+        if (!claimStill(clipId)) return
+        viewModelScope.launch { lengthenClaimed(clipId) }
+    }
+
+    /** Takes [clipId] for a longer rendering: a still with its picture kept, and none under way for it. */
+    private fun claimStill(clipId: String): Boolean {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId } ?: return false
+        val uri = clip.uri ?: return false
+        return hasPicture(uri) && extending.add(clipId)
+    }
+
+    /**
+     * The photos landed on their quick first renderings (StillRules.QUICK_MS),
+     * or opened from a draft saved before they were lengthened, made to cover
+     * their clips - one at a time, in one job, so a Freeze or a Replace asked
+     * for meanwhile waits behind one rendering and not fifty.
+     */
+    fun lengthenStills() {
+        if (lengthening?.isActive == true) return
+        lengthening = viewModelScope.launch {
+            val tried = HashSet<String>()
+            while (true) {
+                val next = StillRules.outrunning(_state.value.videoClips)
+                    .firstOrNull { it.id !in tried && it.id !in extending } ?: break
+                tried += next.id
+                if (claimStill(next.id)) lengthenClaimed(next.id)
+            }
+        }
+    }
+
+    private var lengthening: kotlinx.coroutines.Job? = null
+
+    /**
+     * Until no still is being lengthened. The export waits here: where a photo
+     * goes into the file as its own clip rather than as its picture (the
+     * opening photo of a layered export, a retimed one), a clip still on its
+     * quick rendering would run out of frames.
+     */
+    suspend fun awaitStills(): Boolean {
+        var waited = false
+        while (extending.isNotEmpty() || lengthening?.isActive == true) { waited = true; kotlinx.coroutines.delay(100) }
+        return waited
+    }
+
+    private suspend fun lengthenClaimed(clipId: String) {
+        val clip = _state.value.videoClips.firstOrNull { it.id == clipId }
+        val uri = clip?.uri
+        if (clip == null || uri == null) { extending.remove(clipId); return }
         val wanted = StillRules.renderLengthFor(clip.sourceOutMs, StillClips.RENDER_MS)
-        viewModelScope.launch {
+        run {
             var landed = false
             try {
                 // Said when it fails: the photo then plays its old length in the
@@ -1560,7 +1615,7 @@ internal class ClipEdits(host: EditHost) : EditArea(host) {
                 val fileMs = longer?.let { ThumbnailExtractor.probe(app, it).durationMs } ?: 0L
                 if (longer == null || fileMs <= 0L) {
                     _state.update { it.copy(failure = SquishError.StillFailed(clip.label.ifBlank { "Photo" })) }
-                    return@launch
+                    return
                 }
                 // As it is now, not as it was: it may have been trimmed again,
                 // or replaced, while the render ran.

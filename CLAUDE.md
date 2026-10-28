@@ -278,9 +278,9 @@ should work through it and then delete what holds up.
   app** - TimelineState's lists kept per clip list and clips under 8 dp drawn
   as bars (ThinClips): 9-11 ms; **the media grid stopped at 30 picks without
   a word** (100 now, and it says when full); **50 photos took 161 s to add**
-  - renders now as long as a photo lands plus a second, three at a time: 66 s,
-  still slow (next: open the editor first and render behind it, with a limit
-  on how many renders run and the export waiting for them); HDR10, HLG and
+  - each photo is now rendered half a second, the editor opens, and they are
+  lengthened behind it one at a time (the encoder takes one still at a time):
+  11.3 s, with Export waiting for the lengthening; HDR10, HLG and
   10-bit HEVC through the matrix with the bars right. Tools: TraceTop's
   `TRACE_UNDER=<method>` lists one method's callees; bench.sh's tour finds
   "Looks" and runs a subset (`TOUR_TOOLS`); edge.sh photos scans what it
