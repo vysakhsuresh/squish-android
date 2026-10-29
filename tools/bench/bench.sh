@@ -310,6 +310,30 @@ sliders() {
 }
 sheet_scroll_up() { local h w; h=$(screen_h); w=$(screen_w); sh_ input swipe $((w/2)) $((h*90/100)) $((w/2)) $((h*72/100)) 350; sleep 0.6; }
 
+# Adjust's fourteen sliders are one control behind a row of chips: each chip
+# is tapped (the row scrolled along to it) and its slider held mid-drag as
+# slider_test does for the rest. AdjustField's labels, in its order.
+adjust_sliders() {
+  open_project ${SCRUB_PROJECT:-plain} || return
+  dump
+  local mute; mute=$(bounds_of "$(grep -E '(text|content-desc)="Mute audio"' "$WORK/ui.txt" | head -1)")
+  local w; w=$(screen_w)
+  [ -n "$mute" ] && { set -- $mute; sh_ input tap $(( w * 60 / 100 )) $(( ($2 + $4) / 2 )); sleep 1.2; }
+  tap_tool "Adjust" || { say "slider Adjust: (tool not on the toolbar)"; return; }
+  sleep 1.5
+  dump
+  local row; row=$(bounds_of "$(grep -E 'text="Contrast"' "$WORK/ui.txt" | head -1)"); set -- $row; local y=$(( ($2 + $4) / 2 ))
+  local label k node
+  for label in Brightness Contrast Saturation Exposure Temperature Tint Highlights Shadows Sharpen Vignette Hue Fade Grain "Smooth skin"; do
+    for k in 1 2 3 4 5 6; do tap_text "$label" >/dev/null && break; sh_ input swipe $(( w * 70 / 100 )) $y $(( w * 40 / 100 )) $y 500; sleep 0.6; done
+    sleep 0.8; dump
+    node=$(grep -E 'class="android.widget.SeekBar"' "$WORK/ui.txt" | grep -E "content-desc=\"$label\"" | head -1)
+    [ -n "$node" ] || { say "slider Adjust/$label: (no slider after its chip)"; continue; }
+    slider_test Adjust "$node"
+  done
+  close_sheet
+}
+
 playback() {
   free
   for v in n0 n1 n3; do
@@ -421,7 +445,7 @@ teardown() {
 }
 
 case "$STEP" in
-  setup) setup ;; perf) perf_install ;; coldstart) coldstart ;; open) open ;; scrub) scrub ;; scrubfs) scrubfs ;; tour) tour ;; sliders) sliders ;;
+  setup) setup ;; perf) perf_install ;; coldstart) coldstart ;; open) open ;; scrub) scrub ;; scrubfs) scrubfs ;; tour) tour ;; sliders) sliders ;; adjust) adjust_sliders ;;
   playback) playback ;; export) do_export ;; quality) quality ;; import) import_ ;; teardown) teardown ;;
   measure) coldstart; open; scrub; playback; do_export; quality; import_ ;;
   projects) k=1; for v in plain n0 n1 n3; do make_project $v $k; k=$((k+1)); done ;;
