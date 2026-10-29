@@ -66,12 +66,14 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 | F8 tracking, reframe | auto-reframe on real faces and things (no such footage on the phone) |
 | G1, G2 sound | sound effects and noise reduction heard by an ear |
 
-## Housekeeping owed to the phone
+## Housekeeping - done 29 Oct, 04:20
 
-- `sh tools/bench/edge.sh <serial> x teardown` - deletes every test export and
-  project made on 27-28 Oct by MediaStore id and slot (tonight's renders are
-  in its EXPORT_IDS; the 200-shot project in its SLOTS).
-- Remove `files/stickers/edge_ball.gif` (the GIF test sticker, by run-as).
-- Settings' Online left off (it is off).
-- The perf build may be the one installed; put the debug build back before
-  anything that needs run-as.
+- `edge.sh teardown`: 51 test renders, 63 pushed test files and 20 test
+  projects deleted by id and slot; six more test projects from the night
+  (four 50-photo projects, two benchmark imports) deleted by slot after
+  their titles were checked; the GIF test sticker removed; Settings' storage
+  card cleared 363 MB of photo renders no project uses (533 MB -> 170 MB).
+  The bench projects and clips from 24 Oct stay, as before.
+- Settings' Online is off. The media permissions are as the owner set them
+  (READ_MEDIA_VIDEO had been revoked by matrix.sh and was granted back).
+- The debug build is installed, with everything above.
