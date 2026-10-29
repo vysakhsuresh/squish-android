@@ -310,6 +310,25 @@ sliders() {
 }
 sheet_scroll_up() { local h w; h=$(screen_h); w=$(screen_w); sh_ input swipe $((w/2)) $((h*90/100)) $((w/2)) $((h*72/100)) 350; sleep 0.6; }
 
+# Every slider on the sheet that is open now, scrolled through - for sheets no
+# step opens by itself (a line's Style, a sticker's): open it by hand, then
+#   SHEET=<name> sh tools/bench/bench.sh <serial> x here
+sheet_sliders() {
+  local tool=${SHEET:-sheet} seen=" " pass node key
+  for pass in $(seq ${SLIDER_PASSES:-6}); do
+    dump
+    grep -E 'class="android.widget.SeekBar"' "$WORK/ui.txt" > "$WORK/sl_nodes.txt"
+    while IFS= read -r node; do
+      key=$(echo "$node" | grep -oE '(content-desc|text)="[^"]+"' | head -1)
+      case "$seen" in *"|$key|"*) continue ;; esac
+      seen="$seen|$key|"
+      slider_test "$tool" "$node"
+      dump
+    done < "$WORK/sl_nodes.txt"
+    sheet_scroll_up
+  done
+}
+
 # Adjust's fourteen sliders are one control behind a row of chips: each chip
 # is tapped (the row scrolled along to it) and its slider held mid-drag as
 # slider_test does for the rest. AdjustField's labels, in its order.
@@ -445,7 +464,7 @@ teardown() {
 }
 
 case "$STEP" in
-  setup) setup ;; perf) perf_install ;; coldstart) coldstart ;; open) open ;; scrub) scrub ;; scrubfs) scrubfs ;; tour) tour ;; sliders) sliders ;; adjust) adjust_sliders ;;
+  setup) setup ;; perf) perf_install ;; coldstart) coldstart ;; open) open ;; scrub) scrub ;; scrubfs) scrubfs ;; tour) tour ;; sliders) sliders ;; adjust) adjust_sliders ;; here) sheet_sliders ;;
   playback) playback ;; export) do_export ;; quality) quality ;; import) import_ ;; teardown) teardown ;;
   measure) coldstart; open; scrub; playback; do_export; quality; import_ ;;
   projects) k=1; for v in plain n0 n1 n3; do make_project $v $k; k=$((k+1)); done ;;

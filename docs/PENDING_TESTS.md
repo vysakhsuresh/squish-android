@@ -60,7 +60,7 @@ the phone is back. `docs/EDGE_PLAN.md` holds the evidence for each item.
 | C5 proxies | the Auto path seen on a generated 10-bit HEVC file (29 Oct); left: camera footage, and overlay footage on weak decoders |
 | C6 snappy | FOUND: 50 photos took 161 s to add (each a 10 s, 30 fps clip for a 3 s slide) and the media grid stopped at 30 picks without a word. Now: renders the landing length + 2 s (StillRules.firstRenderMs), the grid takes 100 and says when full; then each photo rendered half a second first and lengthened behind the editor one at a time (the encoder takes one still at a time anyway): a new project of 50 photos opens in 11.3 s on the perf build, six added in 2.8 s, an export made while they lengthen waits and comes out whole (150 s, 4500 even frames, every photo in it) |
 | C7 smoothness | the whole tour is measured now (bench.sh found Looks under its real name); GPU-bound against 11.1 ms p90 and not met |
-| D6 live sliders | 27 of 58 seen live (29 Oct: all 14 of Adjust via `bench.sh adjust`, Filters' Strength, all 6 of Mask); left: text and sticker sliders, sound sliders, effect knobs |
+| D6 live sliders | 30 of 58 seen live (29 Oct: all 14 of Adjust, Filters' Strength, all 6 of Mask, a line's Size, Width and Bend); left: Bubble and Animation tabs, stickers, sound sliders, effect knobs |
 | E1 captions | Malayalam accuracy past the small Whisper model |
 | F1 slow motion | small fast subjects that slow and overlap come out a little narrow (a known limit, 10%) |
 | F8 tracking, reframe | auto-reframe on real faces and things (no such footage on the phone) |
